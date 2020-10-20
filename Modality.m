@@ -1,4 +1,4 @@
-classdef (Abstract) Modality < handle
+classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
     % Modality Class.
     % This is a "superclass" for the classes that will handle the
     % different Data types (modalities) from each Acquisition (for info about
