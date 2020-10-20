@@ -73,42 +73,20 @@ classdef Protocol < handle
         function generateList(obj)
            % This function uses the ProtoFunc to create the lists of
            % Subjects and Acquisitions.
-         
-           RecInfo = obj.ProtoFunc(obj.MainDir);
-           if isempty(obj.Array.ObjList)
-               genList(obj, RecInfo);
-           else
-               disp('There are elements in the Array. Use "Protocol".resetList to erase the Array and try again.')
-           end
-           
+           SubjArray = obj.ProtoFunc(obj);
+           obj.Array.addObj(SubjArray);
+           disp('List Generated')
         end
         
+        function updateList(obj)
+            newArray = obj.ProtoFunc(obj);
+            % To be continued.
+            
+        end
         function resetList(obj)
             obj.Array = ObjectListManager;
         end
-        
-        function ignoreList = createIgnorelist(obj)
-            % This function gets the full path of all files in the Protocol
-            % list.
-            % zu verbessern...
-            ignoreList = [];
-            for i = nSubj:-1:1
-                nAcq = numel(obj.Array.ObjList(i).Array.ObjList);
-                for j = nAcq:-1:1
-                    nMod = numel(obj.Array.ObjList(i).Array.ObjList(j).Array.ObjList);
-                    for k = nMod:-1:1
-                        list = [];
-                        folder = obj.Array.ObjList(i).Array.ObjList(j).Array.ObjList(k).Folder;
-                        files = obj.Array.ObjList(i).Array.ObjList(j).Array.ObjList(k).FileName;
-                        for p = numel(files):-1:1
-                            list{p} = [folder files{p}];
-                        end
-                        ignoreList = [ignoreList; list'];                        
-                    end
-                end
-            end
-        end
-        
+               
         function delete(obj)
 %             for i = 1:length(obj.Array.ObjList)
 %                 obj.Array.ObjList.delete
@@ -126,35 +104,3 @@ classdef Protocol < handle
     end
     
 end
-
-
-%%% Local Functions %%%
-
-function genList(obj, RecInfo)
-% This function uses the information in the structure "RecInfo" to create
-% the chain of Subject, Acquisition and Modality objects inside the "Array"
-% property of the "Protocol" object.
-
-for i = length(RecInfo):-1:1
-    tmpSubj(i) = Subject(RecInfo(i).ID, RecInfo(i).GroupID, []);
-    for j = length(RecInfo(i).Acquisition):-1:1
-        tmpAcq(j) = Acquisition(RecInfo(i).Acquisition(j).ID,[]);
-        %RecInfo(i).Acquisition.isObj = true;
-        for k = 1:length(RecInfo(i).Acquisition(j).Modality)
-            tmpName =  RecInfo(i).Acquisition(j).Modality(k).Type;
-            eval(['tmpAcq(j).Array.addObj(' tmpName ');']);
-            tmpAcq(j).Array.ObjList(k).ID = RecInfo(i).Acquisition(j).ID;
-            tmpAcq(j).Array.ObjList(k).Folder =  RecInfo(i).Acquisition(j).Modality(k).Folder;
-            tmpAcq(j).Array.ObjList(k).FileName = RecInfo(i).Acquisition(j).Modality(k).Files;
-        end
-        Mods = tmpMod;
-        tmpAcq(j).Array.addObj(Mods);
-    end
-    Acqs = tmpAcq;
-    tmpSubj(i).Array.addObj(Acqs);
-end
-Subjs = tmpSubj;
-obj.Array.addObj(Subjs);
-clear tmp*
-end
-   
