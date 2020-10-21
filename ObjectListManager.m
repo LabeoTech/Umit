@@ -47,42 +47,49 @@ classdef ObjectListManager < handle
             %   The input idx is the index of the object(s) in the
             %   obj.ObjList. The index "idx" can be obtained using the
             %   findElement function.
-            
+            % To be improved.
             obj.ObjList(idx) = [];
             disp(['Object(s) with index(es) ' num2str(idx) ' successfully removed']);
         end
         
-        function indObj = findElement(obj, criteria, pattern)
+        function indElem = findElement(obj, varargin)
             % This function looks for an specific object inside
             % ObjList.
-            %   The inputs "criteria" and "pattern" are a string or a cell
-            %   array of strings with the object property names
-            %   ("criteria") and the "pattern" to do the string comparison.
-          
-            props = setdiff(properties(obj.ObjList), 'Array')'; % Exclude "Array" from query.
-            [idx, loc] = ismember(criteria, props);
-            
-            % Transform strings to cell.
-            if ischar(criteria)
-                criteria  = {criteria};
-            end
-            if ischar(pattern)
-                pattern = {pattern};
+            %   INDELEM = findElement(CRITERIA#1, PATTERN#1, CRITERIA#2,
+            %   PATTERN(s)#2, ...) returns the index(es) of the ObjectList
+            %   that have 'criteria#1' AND 'criteria#2' AND ... .           
+            %   "Criteria" must be a string with the name of a object's
+            %   property. "Pattern" has to be from the data type of the
+            %   queried property.
+                        
+            % Controls for empty variables or odd number of variables.
+            if ( isempty(varargin)) || ( mod(length(varargin),2)~=0 ) 
+                error('InsufficientInputs')
             end
             
-            if ~all(idx)
-                disp('The following criteria dont exist and will be ignored:')
-                disp(criteria(~idx))
-                disp(['Valid properties for object of type ' class(obj) ' are: '])
-                disp(props);
+            criteria = varargin(1:2:end); % Keep it as cell array.
+            pattern = varargin(2:2:end); 
+            propNames = properties(obj.ObjList);
+            idx = cellfun(@(x) any(strcmp(propNames,x)), criteria,...
+                'UniformOutput', false); idx = [idx{:}];
+            if any(~idx)
+                disp('The following criteria were not found:')
+                disp(criteria(~idx));
             end
-            pattern = pattern(loc(loc~=0)); % Reorders pattern Idem for pattens.
-            for i = 1:numel(pattern)
-                eval(['idxArray(i,:) = strcmp({obj.ObjList.' props{i} '}, pattern{i});']);
+            criteria = criteria(idx); % Eliminate criteria inputs not found in the ObjectList.
+            pattern = pattern(idx);
+            idx = [];
+            for i = 1:length(criteria)
+                if ischar(pattern{i})
+                eval(['idx(i,:) = strcmp({obj.ObjList.' criteria{i} '}, ''' pattern{i} ''');'])
+                else
+                    % Just in case if the variable is not a string.
+                eval(['idx(i,:) = cellfun(@(x) isequal(x, ' pattern{i} '), {obj.ObjList.' criteria{i} '});']);
+                end
             end
-            indObj = find(all(idxArray,1));
+            indElem = find(all(idx,1)); % Must respect ALL patterns.
+            
         end
-        
         function eraseObjArray(obj)
             % This function erases the ObjArray property.
             obj.ObjList = [];
@@ -91,10 +98,10 @@ classdef ObjectListManager < handle
         
         function delete(obj) % To be rechecked.
             
-            for i = 1:length(obj.ObjList)
-                delete(obj.ObjList(i))
-                disp(['# ' num2str(i) ' -- Object of type ' class(obj.ObjList(i)) ' deleted from the list'])
-            end
+%             for i = 1:length(obj.ObjList)
+%                 delete(obj.ObjList(i))
+%                 disp(['# ' num2str(i) ' -- Object of type ' class(obj.ObjList(i)) ' deleted from the list'])
+%             end
         end
         
         

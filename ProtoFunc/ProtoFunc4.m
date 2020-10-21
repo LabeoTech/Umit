@@ -9,7 +9,7 @@ expSubj = 'Mouse_\d*'; % For Subject ID
 expAcq = 'Acq_\d*'; % For Acquisition ID
 expLabeo = '(ai|img)_\d*.bin'; % For Labeo Data
 expDLC = 'DLCdata_\d*.txt'; % For DeepLabCut Data
-
+cd(obj.MainDir);
 namesSubj = getNamesFromDir(obj.MainDir, expSubj,1); % Extract Subject Names
 
 namesAcq = arrayfun(@(x) getNamesFromDir(x{:}, expAcq, 1), namesSubj, 'UniformOutput', false);
