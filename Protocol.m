@@ -6,7 +6,7 @@ classdef Protocol < handle
     %   following classes: Subject, Acquisition and children of the abstract
     %   class "Modality".
     
-    properties 
+    properties
         MainDir % Folder containing all experiment files.
         SaveDir % Folder to save "Protocol" object and HDF5 files. Default value = current folder.
         ProtoFunc % Function handle of the user-defined OpenProtocol
@@ -22,7 +22,7 @@ classdef Protocol < handle
         function obj = Protocol(MainDir, SaveDir, ProtoFunc, Array)
             % Class constructor.
             %   This function initiates the object "Protocol" with the
-            %   properties: MainDir, SaveDir, ProtoFunc and Array. 
+            %   properties: MainDir, SaveDir, ProtoFunc and Array.
             %   All first inputs must be provided. If Array is empty,
             %   the function creates an emtpy Array.
             if nargin > 0
@@ -71,36 +71,87 @@ classdef Protocol < handle
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         
         function generateList(obj)
-           % This function uses the ProtoFunc to create the lists of
-           % Subjects and Acquisitions.
-           SubjArray = obj.ProtoFunc(obj);
-           obj.Array.addObj(SubjArray);
-           disp('List Generated')
+            % This function uses the ProtoFunc to create the lists of
+            % Subjects and Acquisitions.
+            SubjArray = obj.ProtoFunc(obj);
+            obj.Array.addObj(SubjArray);
+            disp('List Generated')
         end
         
-        function updateList(obj)
-            newArray = obj.ProtoFunc(obj);
-            % To be continued.
+        function updateList(obj, varargin)
+            % This function updates the list of Subjects using
+            % obj.ProtoFunc.
+            %   The optional input (boolean) allows the user to not discard
+            %   (FALSE) elements that were not found during the update. 
+            %       *This option does not seem wise since keeping invalid 
+            %       paths of filenames may cause problems later on the 
+            %       analysis pipeline. "A voir..."
+            %   IF discardData == FALSE, a warning message is thrown.
             
+            if nargin < 2
+                discardData = true;
+            else
+                discardData = varargin{1};
+            end
+            newArray = obj.ProtoFunc(obj);
+            % 1st, control for new or deleted Subjects:
+            iNewSubj = ~ismember({newArray.ID}, {obj.Array.ObjList.ID}); % New subjects in the newArray.
+            iMissSubj = ~ismember({obj.Array.ObjList.ID},{newArray.ID});% Subjects from original list that are no longer in the newArray.
+            
+            % 2nd, control for new or deleted Acquisitions from each Subject: 
+            indNwArr = find(~iNewSubj);
+            indObj = arrayfun(@(a) find(strcmp({newArray(indNwArr).ID}, a)),...
+                {obj.Array.ObjList.ID}, 'UniformOutput', false); indObj = [indObj{:}]; 
+            
+            iNewAcq = arrayfun(@(a,b) ~ismember({a.Array.ObjList.ID}, {b.Array.ObjList.ID}),...
+                newArray(indNwArr), obj.Array.ObjList(indObj), 'UniformOutput', false);
+            iMissAcq = arrayfun(@(a,b) ~ismember({b.Array.ObjList.ID}, {a.Array.ObjList.ID}),...
+                newArray(indNwArr), obj.Array.ObjList(indObj), 'UniformOutput', false);
+            
+            %%% Updates the existing list:
+            % Add new Acquisitions:
+            indSubj = find(cellfun(@(x) any(x), iNewAcq));
+            for i = 1:length(indSubj)
+                indAcq = find(iNewAcq{indSubj(i)});
+                arrayfun(@(x) obj.Array.ObjList(indObj(indSubj(i))).Array.addObj(x.Array.ObjList(indAcq)), ...
+                    newArray(indNwArr(indSubj(i))));
+            end
+            %   Add new Subjects:
+            if any(iNewSubj)
+                obj.Array.addObj(newArray(iNewSubj));
+            end
+            
+            if discardData
+                %   Remove existing Acquisitions:
+                indSubj = find(cellfun(@(x) any(x), iMissAcq));
+                for i = 1:length(indSubj)
+                    indAcq = find(iMissAcq{indSubj(i)});
+                    obj.Array.ObjList(indObj(indSubj(i))).Array.removeObj(indAcq);
+                end
+                %   Remove existing Subjects:
+                if any(iMissSubj)
+                    obj.Array.removeObj(find(iMissSubj))
+                end
+            else
+                warning('Keeping invalid Paths and/or files may cause problems later on during the analysis')
+            end
+            disp('update complete!')
         end
-        function resetList(obj)
-            obj.Array = ObjectListManager;
-        end
-               
+                
         function delete(obj)
-%             for i = 1:length(obj.Array.ObjList)
-%                 obj.Array.ObjList.delete
-%             end
+            %             for i = 1:length(obj.Array.ObjList)
+            %                 obj.Array.ObjList.delete
+            %             end
             disp('Protocol deleted')
         end
         
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-                    %%% Extra Methods for Protocol class %%%
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    
-    
-    
-    
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        %%% Extra Methods for Protocol class %%%
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        
+        
+        
+        
     end
     
 end

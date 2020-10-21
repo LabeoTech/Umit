@@ -53,7 +53,7 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         
         function delete(obj)
-            disp(['Modality of type ' class(obj) ' deleted'])
+%             disp(['Modality of type ' class(obj) ' deleted'])
         end
         
     end

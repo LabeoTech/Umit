@@ -61,7 +61,7 @@ classdef Subject < handle
 %             for i = 1:length(obj.Array.ObjList)
 %                 obj.Array.ObjList.delete
 %             end
-            disp('Subject deleted')
+%             disp('Subject deleted')
         end
         
         

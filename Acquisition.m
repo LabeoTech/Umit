@@ -54,7 +54,7 @@ classdef Acquisition < handle
 %             for i = 1:length(obj.Array.ObjList)
 %                 obj.Array.ObjList.delete
 %             end
-            disp('Acquisition deleted')
+%             disp('Acquisition deleted')
         end
         
         
