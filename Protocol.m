@@ -13,10 +13,7 @@ classdef Protocol < handle
         % where the Subjects and Acquisition data are created.
         Array % List of Subjects. Default: empty ObjectListManager.
     end
-    properties (Access = private)
-        RecordingStruct % Recording Structure obtained from ProtoFunc.
-    end
-    
+   
     methods
         
         function obj = Protocol(MainDir, SaveDir, ProtoFunc, Array)
@@ -73,7 +70,7 @@ classdef Protocol < handle
         function generateList(obj)
             % This function uses the ProtoFunc to create the lists of
             % Subjects and Acquisitions.
-            SubjArray = obj.ProtoFunc(obj);
+            SubjArray = obj.ProtoFunc(obj.MainDir);
             obj.Array.addObj(SubjArray);
             disp('List Generated')
         end
@@ -137,7 +134,22 @@ classdef Protocol < handle
             end
             disp('update complete!')
         end
-                
+      function out = getFilePath(obj)
+            % This function gets all the PATHS of the files from the acquisitions.
+            out = [];
+            acqList = arrayfun(@(x) x.Array.ObjList, obj.Array.ObjList, 'UniformOutput', false);
+            for i = 1:length(acqList)
+                for j = 1:length(acqList{i})
+                    for k = 1:length(acqList{i}(j).Array.ObjList)
+                        Folder = acqList{i}(j).Array.ObjList(k).Folder;
+                        FileName = acqList{i}(j).Array.ObjList(k).FileName;
+                        FullPath = fullfile(Folder, FileName)';
+                        out = [out;FullPath];
+                    end
+                end
+            end
+      end
+        
         function delete(obj)
             %             for i = 1:length(obj.Array.ObjList)
             %                 obj.Array.ObjList.delete

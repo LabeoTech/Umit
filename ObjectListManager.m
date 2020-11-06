@@ -90,6 +90,7 @@ classdef ObjectListManager < handle
             indElem = find(all(idx,1)); % Must respect ALL patterns.
             
         end
+        
         function eraseObjArray(obj)
             % This function erases the ObjArray property.
             obj.ObjList = [];
