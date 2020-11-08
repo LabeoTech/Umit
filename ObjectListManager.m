@@ -52,45 +52,6 @@ classdef ObjectListManager < handle
             disp(['Object(s) with index(es) ' num2str(idx) ' successfully removed']);
         end
         
-        function indElem = findElement(obj, varargin)
-            % This function looks for an specific object inside
-            % ObjList.
-            %   INDELEM = findElement(CRITERIA#1, PATTERN#1, CRITERIA#2,
-            %   PATTERN(s)#2, ...) returns the index(es) of the ObjectList
-            %   that have 'criteria#1' AND 'criteria#2' AND ... .           
-            %   "Criteria" must be a string with the name of a object's
-            %   property. "Pattern" has to be from the data type of the
-            %   queried property.
-                        
-            % Controls for empty variables or odd number of variables.
-            if ( isempty(varargin)) || ( mod(length(varargin),2)~=0 ) 
-                error('InsufficientInputs')
-            end
-            
-            criteria = varargin(1:2:end); % Keep it as cell array.
-            pattern = varargin(2:2:end); 
-            propNames = properties(obj.ObjList);
-            idx = cellfun(@(x) any(strcmp(propNames,x)), criteria,...
-                'UniformOutput', false); idx = [idx{:}];
-            if any(~idx)
-                disp('The following criteria were not found:')
-                disp(criteria(~idx));
-            end
-            criteria = criteria(idx); % Eliminate criteria inputs not found in the ObjectList.
-            pattern = pattern(idx);
-            idx = [];
-            for i = 1:length(criteria)
-                if ischar(pattern{i})
-                eval(['idx(i,:) = strcmp({obj.ObjList.' criteria{i} '}, ''' pattern{i} ''');'])
-                else
-                    % Just in case if the variable is not a string.
-                eval(['idx(i,:) = cellfun(@(x) isequal(x, ' pattern{i} '), {obj.ObjList.' criteria{i} '});']);
-                end
-            end
-            indElem = find(all(idx,1)); % Must respect ALL patterns.
-            
-        end
-        
         function eraseObjArray(obj)
             % This function erases the ObjArray property.
             obj.ObjList = [];
@@ -99,17 +60,32 @@ classdef ObjectListManager < handle
         
         function delete(obj) % To be rechecked.
             
-%             for i = 1:length(obj.ObjList)
-%                 delete(obj.ObjList(i))
-%                 disp(['# ' num2str(i) ' -- Object of type ' class(obj.ObjList(i)) ' deleted from the list'])
-%             end
+            %             for i = 1:length(obj.ObjList)
+            %                 delete(obj.ObjList(i))
+            %                 disp(['# ' num2str(i) ' -- Object of type ' class(obj.ObjList(i)) ' deleted from the list'])
+            %             end
         end
+    end
+    % Methods with restricted Access
+    methods (Access = {?Protocol})
         
-        
+        function iElem = findElement(obj, PropName, exp)
+            % This function looks for an specific object inside
+            % ObjList.
+            %   INDELEM = findElement(PROPERTY_NAME, REGULAR_EXPRESSION)
+            %   returns the index(es) of the ObjectList with 'PROPERTY_NAME'
+            %   equals to the REGULAR_EXPRESSION. Output is a logical array
+            %   that returns TRUE for existing elements with the parameters
+            %   from the regular expression.
+            
+            eval(['iElem = arrayfun(@(x) ~isempty(regexp(x.' PropName ', ''' exp ''')), obj.ObjList)']);
+        end
         
     end
     
 end
+
+
 
 
 %%% Local functions %%%
@@ -159,9 +135,9 @@ isDup = ismember({objectList.ID}, {obj.ObjList.ID});
 if any(isDup)
     objectList = objectList(~isDup);
     disp('The following objects already exist on the ObjList and were ignored.')
-    loc = find(isDup); 
+    loc = find(isDup);
     for i = 1:numel(loc)
-        disp(obj.ObjList(loc(i))) 
+        disp(obj.ObjList(loc(i)))
     end
 end
 
