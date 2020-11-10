@@ -13,7 +13,7 @@ classdef Protocol < handle
         % where the Subjects and Acquisition data are created.
         Array % List of Subjects. Default: empty ObjectListManager.
     end
-   
+    
     methods
         
         function obj = Protocol(MainDir, SaveDir, ProtoFunc, Array)
@@ -79,9 +79,9 @@ classdef Protocol < handle
             % This function updates the list of Subjects using
             % obj.ProtoFunc.
             %   The optional input (boolean) allows the user to not discard
-            %   (FALSE) elements that were not found during the update. 
-            %       *This option does not seem wise since keeping invalid 
-            %       paths of filenames may cause problems later on the 
+            %   (FALSE) elements that were not found during the update.
+            %       *This option does not seem wise since keeping invalid
+            %       paths of filenames may cause problems later on the
             %       analysis pipeline. "A voir..."
             %   IF discardData == FALSE, a warning message is thrown.
             
@@ -95,10 +95,10 @@ classdef Protocol < handle
             iNewSubj = ~ismember({newArray.ID}, {obj.Array.ObjList.ID}); % New subjects in the newArray.
             iMissSubj = ~ismember({obj.Array.ObjList.ID},{newArray.ID});% Subjects from original list that are no longer in the newArray.
             
-            % 2nd, control for new or deleted Acquisitions from each Subject: 
+            % 2nd, control for new or deleted Acquisitions from each Subject:
             indNwArr = find(~iNewSubj);
             indObj = arrayfun(@(a) find(strcmp({newArray(indNwArr).ID}, a)),...
-                {obj.Array.ObjList.ID}, 'UniformOutput', false); indObj = [indObj{:}]; 
+                {obj.Array.ObjList.ID}, 'UniformOutput', false); indObj = [indObj{:}];
             
             iNewAcq = arrayfun(@(a,b) ~ismember({a.Array.ObjList.ID}, {b.Array.ObjList.ID}),...
                 newArray(indNwArr), obj.Array.ObjList(indObj), 'UniformOutput', false);
@@ -134,36 +134,105 @@ classdef Protocol < handle
             end
             disp('update complete!')
         end
-      function out = getFilePath(obj)
-            % This function gets all the PATHS of the files from the acquisitions.
+        
+        function out = getFilePath(obj, varargin)
+            % This function gets the PATHS of the files from the acquisitions.
+            if nargin < 2
+                FilterExp = createFilterStruct;
+            else
+                FilterExp = varargin{1};
+            end
             out = [];
-            acqList = arrayfun(@(x) x.Array.ObjList, obj.Array.ObjList, 'UniformOutput', false);
-            for i = 1:length(acqList)
-                for j = 1:length(acqList{i})
-                    for k = 1:length(acqList{i}(j).Array.ObjList)
-                        Folder = acqList{i}(j).Array.ObjList(k).Folder;
-                        FileName = acqList{i}(j).Array.ObjList(k).FileName;
+            indS = queryFilter(obj.Array, FilterExp.Subject);
+            for i = 1:numel(indS)
+                indA = queryFilter(obj.Array.ObjList(indS(i)).Array, FilterExp.Acquisition);
+                for j = 1:numel(indA)
+                    indM = queryFilter(obj.Array.ObjList(indS(i)).Array.ObjList(indA(j)).Array, FilterExp.Modality);
+                    for k = 1:indM
+                        Folder = obj.Array.ObjList(indS(i)).Array.ObjList(indA(j)).Array.ObjList(indM(k)).Folder;
+                        FileName = obj.Array.ObjList(indS(i)).Array.ObjList(indA(j)).Array.ObjList(indM(k)).FileName;
                         FullPath = fullfile(Folder, FileName)';
                         out = [out;FullPath];
                     end
                 end
             end
-      end
+        end
         
+        function out = getModalityProp(obj, PropName, varargin)
+            % This function gets a list of the Properties from a Modality.
+            %   PROPNAME can be a string or a cell of strings.
+            if nargin < 3
+                FilterExp = createFilterStruct;
+            else
+                FilterExp = varargin{1};
+            end
+            if ~iscell(PropName)
+                PropName = {PropName};
+            end
+            out = [];
+            indS = queryFilter(obj.Array, FilterExp.Subject);
+            for i = 1:numel(indS)
+                indA = queryFilter(obj.Array.ObjList(indS(i)).Array, FilterExp.Acquisition);
+                for j = 1:numel(indA)
+                    indM = queryFilter(obj.Array.ObjList(indS(i)).Array.ObjList(indA(j)).Array, FilterExp.Modality);
+                    for k = 1:indM
+                        for p = 1:numel(PropName)
+                            eval(['tmp = {obj.Array.ObjList(indS(i)).Array.ObjList(indA(j)).Array.ObjList(indM(k)).' PropName{p} '};']);
+                            out = [out;tmp];
+                        end
+                    end
+                end
+            end
+        end
+        
+        
+        function FilterExp = createFilterStruct(obj)
+            % Creates an empty structure with the query info used in some
+            % "get" functions.
+            Query = struct('PropName', [], 'Expression', [], 'logicalOperator', []);
+            FilterExp = struct('Subject', Query, 'Acquisition', Query, 'Modality', Query);
+        end
         function delete(obj)
             %             for i = 1:length(obj.Array.ObjList)
             %                 obj.Array.ObjList.delete
             %             end
             disp('Protocol deleted')
         end
-        
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        %%% Extra Methods for Protocol class %%%
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        
-        
-        
-        
     end
-    
+end
+
+% Local functions
+
+function ind = queryFilter(objectArray, FilterExp)
+% This function applies a filter (FILTEREXP) to the OBJECTARRAY and outputs the
+% indices of filtered elements.
+
+if isempty(FilterExp.PropName)|| isempty(FilterExp)
+    ind = 1:length(objectArray.ObjList);
+    return
+end
+idx = false(length(FilterExp), length(objectArray.ObjList));
+for i = 1:length(FilterExp)
+    PropName = strtrim(FilterExp.PropName);
+    exp = FilterExp.Expression;
+    idx(i,:) = objectArray.findElement(PropName, exp);
+end
+
+if ~isempty(FilterExp(1).logicalOperator)
+    tmp = idx(1,:);
+    for i = 1:length(FilterExp) - 1
+        logicOp = strtrim(FilterExp(i).logicalOperator);
+        if strcmpi(logicOp, 'AND') || strcmp(logicOp, '&')
+            tmp = ( tmp & idx(i+1,:) );
+        elseif strcmpi(logicOp, 'OR') || strcmp(logicOp, '|')
+            tmp = ( tmp | idx(i+1,:) );
+        else
+            warning(['Invalid logical operator : ' FilterExp(i).logicalOperator '. Used an AND(&) instead. Check query parameters and try again.']);
+            tmp = ( tmp & idx(i+1,:) );
+        end
+    end
+    ind = find(tmp);
+else
+    ind = find(idx);
+end
 end

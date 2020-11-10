@@ -68,8 +68,7 @@ classdef ObjectListManager < handle
     end
     % Methods with restricted Access
     methods (Access = {?Protocol})
-        
-        function iElem = findElement(obj, PropName, exp)
+        function iElem = findElement(obj, PropName, exp) %#ok
             % This function looks for an specific object inside
             % ObjList.
             %   INDELEM = findElement(PROPERTY_NAME, REGULAR_EXPRESSION)
@@ -78,9 +77,8 @@ classdef ObjectListManager < handle
             %   that returns TRUE for existing elements with the parameters
             %   from the regular expression.
             
-            eval(['iElem = arrayfun(@(x) ~isempty(regexp(x.' PropName ', ''' exp ''')), obj.ObjList)']);
+            eval(['iElem = arrayfun(@(x) ~isempty(regexp(x.' PropName ', ''' exp ''')), obj.ObjList);']);
         end
-        
     end
     
 end
