@@ -1,5 +1,5 @@
 classdef Labeo < Modality
-    % LabeoTech imaging class.
+    % "LabeoTech" imaging class.
     %   This class deals with the imaging data format from LabeoTech.
 %     properties
        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
