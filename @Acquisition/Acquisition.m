@@ -17,7 +17,7 @@ classdef Acquisition < handle
     
     methods
         
-        function obj = Acquisition(ID, Array, Folder)
+        function obj = Acquisition(ID, Folder, Array)
             % Class Constructor.
             %   This function initiates the Acquisition class with the
             %   Acquisition ID an Array. Acquisition's ID

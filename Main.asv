@@ -30,6 +30,24 @@ ppPipe.b.FuncName = 'Ana_IOI_FullFrame';
 ppPipe.b.FuncParams = 'FOLDER, 0, 1, 1, []';
 
 %% Run PreProcessing Pipeline
-myProtocol.runPreProcessingPipeline(ppPipe, query_filter)
+myProtocol.runPreProcessingPipeline(ppPipe,query_filter)
+Ana_IOI_FullFrame(myProtocol.Array.ObjList(2).Array.ObjList(1).Array.ObjList.Folder, 0, 1, 1, [])
+
+
+
+
+
+test = myProtocol.Array.ObjList.Array.ObjList(1);
+test.Array.ObjList(1).run_Ana_IOI_FullFrame(test.Array.ObjList(1).Folder, 0, 1, 1, [])
+log = test.Array.ObjList(1).LastLog;
+test.save2LogBook(log);
+
+
+
+
+
+
+
+
 
 
