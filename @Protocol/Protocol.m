@@ -162,7 +162,7 @@ classdef Protocol < handle
             % This function gets a list of the Properties from a Modality.
             %   PROPNAME can be a string or a cell of strings.
             if nargin < 3
-                FilterExp = createFilterStruct;
+                FilterExp = obj.createFilterStruct;
             else
                 FilterExp = varargin{1};
             end
@@ -185,23 +185,98 @@ classdef Protocol < handle
             end
         end
         
-        
-        function FilterExp = createFilterStruct(obj)
+        function runPreProcessingPipeline(obj, ppPipe, FilterExp)
+            % This function runs a Pipeline using a ppPIPE structure.
+            %    OPTIONS: query filter(FILTEREXP)
+            outputFileName = ['ppPipe_Summary_' num2str(round(posixtime(datetime('now')))) '.csv'];
+            filename = fullfile(pwd, outputFileName);
+            fid = fopen(filename, 'w'); 
+            fprintf(fid,'Subject, Acquisition, FunctionName, Status, RunDateTime\n');
+            if isempty(FilterExp)
+                FilterExp = obj.createFilterStruct;
+            end
+            indS = queryFilter(obj.Array, FilterExp.Subject);
+            for i = 1:numel(indS)
+                tmpS = obj.Array.ObjList(indS(i));
+                indA = queryFilter(tmpS.Array, FilterExp.Acquisition);
+                for j = 1:numel(indA)
+                    tmpA = tmpS.Array.ObjList(indA(j));
+                    indM = queryFilter(tmpA.Array, FilterExp.Modality);
+                    load(tmpA.LogBookFile);
+                    for k = 1:indM
+                        pipeSteps = fieldnames(ppPipe);
+                        tmpM = tmpA.Array.ObjList(indM(k));
+                        for p = 1:numel(pipeSteps)
+                            ppStruct = ppPipe.(pipeSteps{p});
+                            ppStruct.FuncParams = strrep(ppStruct.FuncParams, 'FOLDER',['''' tmpM.Folder '''']);
+                            isLogged = checkInLogBook(LogBook, ppStruct);
+                            if ~isLogged
+                                %%% RUN THE PIPELINE STEP %%%
+                                eval(['tmpM.run_' ppStruct.FuncName '(' ppStruct.FuncParams ')'])
+                                %%% LOG NEW ENTRY IN LOGBOOK %%%
+                                tmpM.LastLog.FunctionName = {ppStruct.FuncName};
+                                tmpM.LastLog.FuncParams = {ppStruct.FuncParams};
+                                tmpA.save2LogBook(tmpM.LastLog);
+                                failed = ~tmpM.LastLog.Completed;
+                                if failed
+                                    %%% IF JOB FAILED, SKIP THE REST OF THE
+                                    %%% PIPELINE.
+                                    fprintf(fid, '%s, %s, %s, %s, %s\n', ...
+                                        tmpS.ID, tmpA.ID, ppStruct.FuncName, 'FAILED' ,  tmpM.LastLog.RunDateTime);
+                                    disp(repmat('*', 1, 100))
+                                    disp(['The function ''' ppStruct.FuncName ''' failed.'])
+                                    disp('All dependent functions in the pipeline were aborted.')
+                                    disp(['Check the LogBook in ' tmpA.LogBookFile ' and re-run the Pipeline']);
+                                    disp(repmat('*', 1, 100))
+                                    break
+                                end
+                                fprintf(fid, '%s, %s, %s, %s, %s\n', ...
+                                        tmpS.ID, tmpA.ID, ppStruct.FuncName, 'COMPLETED' ,  tmpM.LastLog.RunDateTime);
+                            else
+                                disp(repmat('*', 1, 100))
+                                disp(['The function ''' ppStruct.FuncName ''' was previously run on the Data and will be skipped.'])
+                                disp('Trying to run the next step on the Pipeline...')
+                                disp(repmat('*', 1, 100))
+                            end
+                        end
+                    end
+                end
+            end
+            fclose(fid);
+        end
+ 
+        function FilterExp = createFilterStruct(~)
             % Creates an empty structure with the query info used in some
             % "get" functions.
             Query = struct('PropName', [], 'Expression', [], 'logicalOperator', []);
             FilterExp = struct('Subject', Query, 'Acquisition', Query, 'Modality', Query);
         end
-        function delete(obj)
-            %             for i = 1:length(obj.Array.ObjList)
-            %                 obj.Array.ObjList.delete
-            %             end
+        function delete
             disp('Protocol deleted')
         end
     end
 end
 
 % Local functions
+
+function isLogged = checkInLogBook(LogBook, pipeStruct)
+% This function checks if the job in the pipeline (PIPESTRUCT) has already
+% been processed.
+isLogged = false;
+if isempty(LogBook)
+    return
+end
+a = strcmp(pipeStruct.ClassName, LogBook.ModalityName);
+b = strcmp(pipeStruct.FuncName, LogBook.FunctionName);
+FP_pipe = regexprep(pipeStruct.FuncParams, '\s', '');
+FP_logBook = regexprep(LogBook.FuncParams, '\s', '');
+c = strcmp(FP_pipe, FP_logBook);
+d = LogBook.Completed == 1;
+
+if sum(a & b & c & d)
+    isLogged = true;
+end
+end
 
 function ind = queryFilter(objectArray, FilterExp)
 % This function applies a filter (FILTEREXP) to the OBJECTARRAY and outputs the

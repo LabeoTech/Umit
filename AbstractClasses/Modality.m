@@ -8,11 +8,12 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         ID % Unique Identifier of the object.
         Folder % Path of directory containing raw data.
         FileName % File(s) containing raw data.
+        LastLog % Table with the info of the last Analysis run in the object's dataset.
     end
     
     methods
         
-        function obj = Modality(ID, Folder, FileName)
+        function obj = Modality(ID, Folder, FileName, ~)
             % Construct an instance of this class.
             %   The Folder and FileName are defined here.
             %   Folder must be a valid Directory while FileName has to be a
@@ -25,6 +26,7 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
             else
                 obj.ID = 'def';
             end
+            obj.LastLog = createLog;
         end
         
         %%% Property Set Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -86,4 +88,11 @@ elseif ischar(FileName)
 else
     error('Wrong Data type. FileName must be a String or a cell array containing strings.');
 end
+end
+
+%%% Local Functions
+
+function Log = createLog
+Log = table({'None'},{'None'},{'None'},0,0,{'None'}, 'VariableNames', {'ModalityName', 'FunctionName', ...
+    'FuncParams', 'Completed', 'RunDateTime', 'Messages'});
 end
