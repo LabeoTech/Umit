@@ -171,6 +171,9 @@ classdef PipelineManager < handle
             obj.tmp_LogBook = [];
             obj.PipelineSummary(1,:) = [];
             disp(obj.PipelineSummary)
+            % Save Protocol Object:
+            protocol = obj.ProtocolObj;
+            save([obj.ProtocolObj.SaveDir obj.ProtocolObj.Name '.mat'], 'protocol');            
         end
         
         function savePipe(obj, filename)
