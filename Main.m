@@ -12,7 +12,7 @@ savedir = 'G:\RS_data';
 protocol = Protocol('RSandET_project', maindir, savedir, @protoFunc_RS, []);
 protocol.generateList;
 protocol.generateSaveFolders;
-save([savedir filesep 'ProtocolFile.mat'], 'protocol');
+save([protocol.SaveDir protocol.Name '.mat'], 'protocol');
 %% Query filter
 protocol.FilterStruct.Subject.PropName = '';
 protocol.FilterStruct.Subject.Expression = '';
