@@ -40,44 +40,78 @@ classdef ObjectListManager < handle
                 newObj = compareLists(obj, newObj);
             end
             obj.ObjList = [obj.ObjList newObj];
+            if ~isempty(newObj) && isa(newObj, 'Subject') || isa(newObj, 'Acquisition')
+                % This if statement is to control for objects added
+                % manually (one at a time).
+                if isempty(newObj(1).Array.ObjList)
+                    uiwait(warndlg(['Object of type ' class(newObj) ' is empty. You have to include at least one element inside it before continuing the analysis.'], 'Warning!', 'modal'));
+                end
+            end
         end
         
-        function removeObj(obj,idx)
+        function out = removeObj(obj,idx)
             % This function removes a specific object from the obj.ObjList.
             %   The input idx is the index of the object(s) in the
             %   obj.ObjList. The index "idx" can be obtained using the
-            %   findElement function.
-            % To be improved.
+            %   findElement function. The function outputs a string array
+            %   containing the class and ID of the deleted objects.
+            out = arrayfun(@(x) [string(class(x)) string(x.ID) string(x.SaveFolder)], obj.ObjList(idx), 'UniformOutput', false);
+            out = [out{:}];
+            out = reshape(out, [3 length(idx)]); out = out';
             obj.ObjList(idx) = [];
             disp(['Object(s) with index(es) ' num2str(idx) ' successfully removed']);
         end
         
-        function eraseObjArray(obj)
-            % This function erases the ObjArray property.
-            obj.ObjList = [];
-            disp('ObjArray successfully erased')
-        end
+        %         function eraseObjArray(obj)
+        %             % This function erases the ObjArray property.
+        %             obj.ObjList = [];
+        %             disp('ObjArray successfully erased')
+        %         end
         
+        function out = listProp(obj, propName)%#ok
+            % LISTPROP lists all values of PROPNAME from objects inside OBJ.OBJLIST.
+            idx = arrayfun(@(x) ismember(propName, properties(x)), obj.ObjList);%#ok
+            eval(['out = {obj.ObjList(idx).' propName '};']);
+        end
+                
+        function iElem = findElement(obj, PropName, str, queryMethod)
+            % This function looks for an specific object inside
+            % ObjList.
+            %   INDELEM = findElement(PROPERTY_NAME, STRING, QUERYMETHOD)
+            %   returns the index(es) of the ObjectList with 'PROPERTY_NAME'
+            %   equals to the STRING. Output is the index of the element in OBJ.OBJLIST
+            %   Three query methods are accepted: 'strcmp', 'contains' and
+            %   'regexp'.
+            arguments
+                obj
+                PropName
+                str
+                queryMethod {mustBeMember(queryMethod, {'contains', 'regexp', 'strcmp'})} = 'contains'
+            end
+            
+            if isempty(PropName)
+                iElem = 1:length(obj.ObjList);
+            else
+                
+                switch queryMethod
+                    case 'strcmp'
+                        eval(['iElem = find(strcmp(''' str ''', {obj.ObjList.' PropName '}));'])
+                    case 'contains'
+                        eval(['iElem = find(contains({obj.ObjList.' PropName '}, ''' str '''));'])
+                    case 'regexp'
+                        eval(['iElem = regexp({obj.ObjList.' PropName '}, ''' str ''');'])
+                        iElem = find([iElem{:}]);%#ok
+                end
+            end
+        end
+    end
+    methods (Access = private)
         function delete(obj) % To be rechecked.
             
             %             for i = 1:length(obj.ObjList)
             %                 delete(obj.ObjList(i))
             %                 disp(['# ' num2str(i) ' -- Object of type ' class(obj.ObjList(i)) ' deleted from the list'])
             %             end
-        end
-    end
-    % Methods with restricted Access
-    methods (Access = {?Protocol})
-        function iElem = findElement(obj, PropName, exp) %#ok
-            % This function looks for an specific object inside
-            % ObjList.
-            %   INDELEM = findElement(PROPERTY_NAME, REGULAR_EXPRESSION)
-            %   returns the index(es) of the ObjectList with 'PROPERTY_NAME'
-            %   equals to the REGULAR_EXPRESSION. Output is a logical array
-            %   that returns TRUE for existing elements with the parameters
-            %   from the regular expression.
-            
-            eval(['iElem = arrayfun(@(x) ~isempty(regexp(x.' PropName ', ''' exp ''')), obj.ObjList);']);
         end
     end
     

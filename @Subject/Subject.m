@@ -5,15 +5,22 @@ classdef Subject < handle
     %   ID, GroupID (name of experimental group) and an "ObjectListManager"
     %   object containing an array of "Acquisition" objects.
     
-    properties 
+    properties
         ID % Subject ID
         GroupID % Experimental Group of Subject.
-        Array % List of Acquisitions. 
+        Array % List of Acquisitions.
+        Calcium_indicator % Name of the calcium indicator.
+
     end
-    
+    properties (SetAccess = {?Protocol,?ObjectListManager})
+        SaveFolder; % Folder were transformed data are saved.
+    end
+    properties (SetAccess = {?PipelineManager})
+        LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
+    end
     methods
         
-        function obj = Subject(ID, GroupID, Array)
+        function obj = Subject(ID, GroupID, Array, Calcium_indicator)
             % Class Constructor.
             %   This function initiates the Subject class with the
             %   animal's basic information and an Array. Subject's ID
@@ -24,6 +31,7 @@ classdef Subject < handle
                 obj.ID = ID;
                 obj.GroupID = GroupID;
                 obj.Array = Array;
+                obj.Calcium_indicator = Calcium_indicator;
             else
                 obj.ID = 'def';
                 obj.GroupID = 'def';
@@ -43,7 +51,7 @@ classdef Subject < handle
             mustBeNonzeroLengthText(GroupID); % Checks if string is empty.
             obj.GroupID = GroupID;
         end
-            
+        
         function set.Array(obj, Array)
             % Set function for Array property.
             %   Accepts only a "ObjectListManager" object as input. If
@@ -55,28 +63,34 @@ classdef Subject < handle
                 obj.Array = ObjectListManager();
             end
         end
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-       
-        function delete(obj)
-%             for i = 1:length(obj.Array.ObjList)
-%                 obj.Array.ObjList.delete
-%             end
-%             disp('Subject deleted')
+        
+        function set.SaveFolder(obj, SaveFolder)
+            % Set function for SaveFolder property.
+            obj.SaveFolder = checkFolder(SaveFolder);
         end
         
+        function set.Calcium_indicator(obj, GECI)
+            % Set function for CALCIUM_INDICATOR property.
+            mustBeText(GECI);
+            obj.Calcium_indicator = GECI;
+        end
         
-        
-        
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-                         %%% Extra Methods for Subject class %%%
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        
-        
-        
-        
-        
-        
-        
+        function dummyMethodForTesting(obj)
+%             a = {}; % Creating an error...
+%             a(end) = "200"
+            disp(class(obj))
+            disp(['This is a dummy function for testing of SUBJECT ' obj.ID '!'])
+        end
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     end
+    methods (Access = private)
+        function delete(obj)
+            %             for i = 1:length(obj.Array.ObjList)
+            %                 obj.Array.ObjList.delete
+            %             end
+            %             disp('Subject deleted')
+        end
+    end
+    
 end
 

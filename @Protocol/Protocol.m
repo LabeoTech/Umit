@@ -7,51 +7,86 @@ classdef Protocol < handle
     %   class "Modality".
     
     properties
-        MainDir % Folder containing all experiment files.
+        Name % Title of Project.
+        MainDir % Folder containing all Raw recordings.
         SaveDir % Folder to save "Protocol" object and HDF5 files. Default value = current folder.
         ProtoFunc % Function handle of the user-defined OpenProtocol
         % where the Subjects and Acquisition data are created.
         Array % List of Subjects. Default: empty ObjectListManager.
+        LogBookFile % MAT file with a table containing information about the Pipeline Operations run by PIPELINEMANAGER.
+        garbageList % Table with a list of removed elements
+        Idx_Filtered % Structure containing indices of Subject/Acquisition/Modality after using a Query Filter as OBJ.QUERYFILTER
+        FilterStruct % Structure containing strings used to filter objects. Used by OBJ.QUERYFILTER.
     end
-    
+    properties (SetAccess = {?PipelineManager})
+        LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
+        
+    end
+   
     methods
         
-        function obj = Protocol(MainDir, SaveDir, ProtoFunc, Array)
+        function obj = Protocol(Name, MainDir, SaveDir, ProtoFunc, Array)
             % Class constructor.
             %   This function initiates the object "Protocol" with the
             %   properties: MainDir, SaveDir, ProtoFunc and Array.
             %   All first inputs must be provided. If Array is empty,
             %   the function creates an emtpy Array.
             if nargin > 0
+                obj.Name = Name;
+                obj.Array = Array;
                 obj.MainDir = MainDir;
                 obj.SaveDir = SaveDir;
                 obj.ProtoFunc = ProtoFunc;
-                obj.Array = Array;
             else
                 obj.Array = ObjectListManager();
             end
+            obj.Idx_Filtered = {};
+            obj.createLogBookFile
+            obj.createFilterStruct
         end
         
         %%% Property Set Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        function set.Name(obj, Name)
+            % Set function for Project Name
+            %   Accepts only text.
+            mustBeText(Name);
+            obj.Name = Name;
+        end
         function set.MainDir(obj, MainDir)
             % Set function for MainDir property.
             %   Accepts only existing Folders as input.
-            mustBeFolder(MainDir); % Checks for existing Path..
-            obj.MainDir = checkFolder(MainDir);
+            MainDir = checkFolder(MainDir);
+            mustBeFolder(MainDir); % Checks for existing Path.
+            if isempty(obj.Array.ObjList)
+                obj.MainDir = MainDir;
+            else
+                obj.changeMainDir(MainDir);
+                obj.MainDir = MainDir;
+            end
         end
         
         function set.SaveDir(obj, SaveDir)
             % Set function for SaveDir property.
-            %   Accepts only existing Folders as input.
-            mustBeFolder(SaveDir); % Checks for existing Path..
-            obj.SaveDir = checkFolder(SaveDir);
+            %   Accepts only existing Folders as input. Updates all
+            %   SAVEFOLDERS of other Objects contained in OBJ.
+            SaveDir = checkFolder(SaveDir);
+            mustBeFolder(SaveDir); % Checks for existing Path.
+            if isempty(obj.Array.ObjList)
+                obj.SaveDir = SaveDir;
+            else
+                obj.changeSaveDir(SaveDir);
+                obj.SaveDir = SaveDir;
+            end
         end
         
         function set.ProtoFunc(obj, ProtoFunc)
             % Set function for ProtoFunc property.
-            %   Accepts only valid function handles.
-            mustBeA(ProtoFunc, 'function_handle');
-            obj.ProtoFunc = ProtoFunc; % Checks if ProtoFunc is a function handle.
+            %   Accepts only valid function handles. Returns PROTOFUNC if
+            %   empty.
+            if ~isempty(ProtoFunc)
+                mustBeA(ProtoFunc, 'function_handle');
+                obj.ProtoFunc = ProtoFunc; % Checks if ProtoFunc is a function handle.
+            end
         end
         
         function set.Array(obj, Array)
@@ -65,33 +100,64 @@ classdef Protocol < handle
                 obj.Array = ObjectListManager();
             end
         end
+        
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         
         function generateList(obj)
             % This function uses the ProtoFunc to create the lists of
             % Subjects and Acquisitions. Input is an Array of SUBJECT
             % objects.
-            SubjArray = obj.ProtoFunc(obj.MainDir);
+            SubjArray = obj.ProtoFunc(obj);
             obj.Array.addObj(SubjArray);
             disp('List Generated')
         end
         
+        function generateSaveFolders(obj)
+            % GENERATESAVEFOLDERS creates directories in OBJ.SAVEDIR
+            % containing folders for Subjects, Acquisitions and modalities.
+            
+            subjList = obj.Array.listProp('ID');
+            acqList = arrayfun(@(x) x.Array.listProp('ID'), obj.Array.ObjList, 'UniformOutput', false);
+            modList = arrayfun(@(x) arrayfun(@(y) y.Array.listProp('ID'), x.Array.ObjList, 'UniformOutput', false), obj.Array.ObjList, 'UniformOutput', false);
+            
+            for i = 1:length(subjList)
+                tmpS = subjList{i};
+                for j = 1:length(acqList{i})
+                    tmpA = acqList{i}{j};
+                    for k = 1:length(modList{i}{j})
+                        tmpM = modList{i}{j}{k};
+                        [status, msg, ~] = mkdir(fullfile(obj.SaveDir, tmpS, tmpA, tmpM));
+                        if  status
+                            obj.Array.ObjList(i).SaveFolder = fullfile(obj.SaveDir, tmpS);
+                            obj.Array.ObjList(i).Array.ObjList(j).SaveFolder = fullfile(obj.SaveDir, tmpS, tmpA);
+                            obj.Array.ObjList(i).Array.ObjList(j).Array.ObjList(k).SaveFolder = fullfile(obj.SaveDir, tmpS, tmpA, tmpM);
+                        else
+                            disp(['ERROR trying to create folder in path: ' tmpFolder])
+                            disp(msg);
+                        end
+                    end
+                end
+            end
+            disp('Save Folders generated!');
+        end
         function updateList(obj, varargin)
             % This function updates the list of Subjects using
             % obj.ProtoFunc.
             %   The optional input (boolean) allows the user to not discard
             %   (FALSE) elements that were not found during the update.
-            %       *This option does not seem wise since keeping invalid
+            %       *This is not a wise option since keeping invalid
             %       paths of filenames may cause problems later on the
             %       analysis pipeline. "A voir..."
             %   IF discardData == FALSE, a warning message is thrown.
-            
             if nargin < 2
                 discardData = true;
             else
                 discardData = varargin{1};
             end
             newArray = obj.ProtoFunc(obj);
+            % Delete objects listed in OBJ.GARBAGELIST from NEWARRAY
+            newArray = obj.removeGarbage(newArray);
+            
             % 1st, control for new or deleted Subjects:
             iNewSubj = ~ismember({newArray.ID}, {obj.Array.ObjList.ID}); % New subjects in the newArray.
             iMissSubj = ~ismember({obj.Array.ObjList.ID},{newArray.ID});% Subjects from original list that are no longer in the newArray.
@@ -118,197 +184,243 @@ classdef Protocol < handle
             if any(iNewSubj)
                 obj.Array.addObj(newArray(iNewSubj));
             end
+            % Add new Folders to OBJ.SAVEDIR
+            obj.generateSaveFolders();
             
             if discardData
                 %   Remove existing Acquisitions:
                 indSubj = find(cellfun(@(x) any(x), iMissAcq));
                 for i = 1:length(indSubj)
                     indAcq = find(iMissAcq{indSubj(i)});
-                    obj.Array.ObjList(indObj(indSubj(i))).Array.removeObj(indAcq);
+                    remInfo = obj.Array.ObjList(indObj(indSubj(i))).Array.removeObj(indAcq);
+                    obj.garbageList = [obj.garbageList; remInfo];
                 end
                 %   Remove existing Subjects:
                 if any(iMissSubj)
-                    obj.Array.removeObj(find(iMissSubj))
+                    remInfo = obj.Array.removeObj(find(iMissSubj));
+                    obj.garbageList = [obj.garbageList; remInfo];
                 end
             else
-                warning('Keeping invalid Paths and/or files may cause problems later on during the analysis')
+                uiwait(warndlg('Keeping invalid Paths and/or files may cause problems later on during the analysis', 'Warning!', 'modal'));
             end
-            disp('update complete!')
+            uiwait(msgbox('Project update completed!'));
         end
         
-        function out = getFilePath(obj, varargin)
-            % This function gets the PATHS of the files from the acquisitions.
-            if nargin < 2
-                FilterExp = createFilterStruct;
-            else
-                FilterExp = varargin{1};
+        function manualRemoveObj(obj, args)
+            % This function manually removes one Subject/Acquisition from
+            % Protocol.
+            arguments
+                obj
+                args.SubjectIndex (1,1) = 0;
+                args.AcqIndex (1,1) = 0;
             end
-            out = [];
-            indS = queryFilter(obj.Array, FilterExp.Subject);
-            for i = 1:numel(indS)
-                indA = queryFilter(obj.Array.ObjList(indS(i)).Array, FilterExp.Acquisition);
-                for j = 1:numel(indA)
-                    indM = queryFilter(obj.Array.ObjList(indS(i)).Array.ObjList(indA(j)).Array, FilterExp.Modality);
-                    for k = 1:indM
-                        Folder = obj.Array.ObjList(indS(i)).Array.ObjList(indA(j)).Array.ObjList(indM(k)).Folder;
-                        FileName = obj.Array.ObjList(indS(i)).Array.ObjList(indA(j)).Array.ObjList(indM(k)).FileName;
-                        FullPath = fullfile(Folder, FileName)';
-                        out = [out;FullPath];
+            if args.SubjectIndex == 0
+                return
+            elseif args.AcqIndex == 0
+                iRem = obj.Array.removeObj(args.SubjectIndex);
+            else
+                iRem = obj.Array.ObjList(args.SubjectIndex).Array.removeObj(args.AcqIndex);
+            end
+            obj.garbageList = [obj.garbageList; iRem];
+        end
+        
+        function newObj = removeGarbage(obj, newObj)
+            % This function removes from NEWOBJ elements (Subjects /
+            % Acquisitions) listed in OBJ.GARBAGELIST.
+            gbList = obj.garbageList;
+            for i= 1:size(gbList,1)
+                type = gbList(i,1);
+                switch type
+                    case 'Subject'
+                        newObj(strcmp(gbList(i,2),{newObj.ID})) = [];
+                    case 'Acquisition'
+                        str = erase(gbList(i,3), obj.SaveDir);
+                        str = split(str, filesep);
+                        subjID = str{1};
+                        idxS = find(strcmp(subjID, {newObj.ID}));
+                        idx = find(strcmp(gbList(i,2), {newObj(idxS).Array.ObjList.ID}));
+                        newObj(idxS).Array.removeObj(idx);
+                end
+            end
+        end
+        
+        function purgeGarbageList(obj)
+            % This function erases the OBJ.GARBAGELIST
+            obj.garbageList = [];
+            disp('Garbage List was reset!');
+        end
+        
+        function clearLogBook(obj)
+            % This function resets the LogBook saved in OBJ.LOGBOOKFILE
+            obj.createLogBookFile;
+        end
+            
+        
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        
+        function queryFilter(obj)
+            % QUERYFILTER creates a cell array containing 1x3 array
+            % of indices of Subject, Acquisition and Modality,
+            % respectively. The function uses the property FILTERSTRUCT to
+            % filter objects.
+            %Reset Idx_Filtered
+            obj.Idx_Filtered = [];
+            % Filter Subjects
+            indS = obj.Array.findElement(obj.FilterStruct.Subject.PropName, obj.FilterStruct.Subject.Expression, obj.FilterStruct.FilterMethod);
+            % Filter Acquisitions
+            for i = 1:length(indS)
+                indA = obj.Array.ObjList(indS(i)).Array.findElement(obj.FilterStruct.Acquisition.PropName, obj.FilterStruct.Acquisition.Expression, obj.FilterStruct.FilterMethod);
+                % Filter Modality
+                for j = 1:length(indA)
+                    indM = obj.Array.ObjList(indS(i)).Array.ObjList(indA(j)).Array.findElement(obj.FilterStruct.Modality.PropName, obj.FilterStruct.Modality.Expression, obj.FilterStruct.FilterMethod);
+                    for k = 1:length(indM)
+                        obj.Idx_Filtered = [obj.Idx_Filtered ;[indS(i) indA(j) indM(k)]];
                     end
                 end
             end
         end
         
-        function out = getModalityProp(obj, PropName, varargin)
-            % This function gets a list of the Properties from a Modality.
-            %   PROPNAME can be a string or a cell of strings.
-            if nargin < 3
-                FilterExp = obj.createFilterStruct;
-            else
-                FilterExp = varargin{1};
+        function LogBook = createEmptyTable(obj)
+            % CREATEEMPTYTABLE outputs an empty Table to be filled with the information of pipelines
+            % from PIPELINEMANAGER.
+            LogBook = table({'None'}, {'None'}, {'None'}, {'None'}, {'None'},  {'None'},...
+                0,datetime('now'),{'None'}, 'VariableNames', {'Subject', 'Acquisition',...
+                'Recording', 'ClassName', 'Job', 'UUID','Completed', 'RunDateTime', 'Messages'});
+        end
+        
+        %         % OLD QUERY FUNCTION
+        %         function ind = queryFilter(~, targetObj, FilterExp, filterMethod)
+        %             % This function applies a filter (OBJ.FILTERSTRUCT) to TARGETOBJ
+        %             % and outputs a list of indices of filtered elements.
+        %
+        %             PropName = strtrim(FilterExp.PropName);
+        %             exp = FilterExp.Expression;
+        %             ind = targetObj.Array.findElement(PropName, exp);
+        %
+        %
+        %             if ~isempty(FilterExp(1).logicalOperator)
+        %                 tmp = idx(1,:);
+        %                 for i = 1:length(FilterExp) - 1
+        %                     logicOp = strtrim(FilterExp(i).logicalOperator);
+        %                     if strcmpi(logicOp, 'AND') || strcmp(logicOp, '&')
+        %                         tmp = ( tmp & idx(i+1,:) );
+        %                     elseif strcmpi(logicOp, 'OR') || strcmp(logicOp, '|')
+        %                         tmp = ( tmp | idx(i+1,:) );
+        %                     else
+        %                         uiwait(warndlg(['Invalid logical operator : ' FilterExp(i).logicalOperator '. Used an AND(&) instead. Check query parameters and try again.'], 'Warning!', 'modal'));
+        %                         tmp = ( tmp & idx(i+1,:) );
+        %                     end
+        %                 end
+        %                 ind = find(tmp);
+        %             else
+        %                 ind = find(idx);
+        %             end
+        %         end
+        
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        
+        function s = saveobj(obj)
+            s.Name = obj.Name;
+            s.MainDir = obj.MainDir;
+            s.SaveDir = obj.SaveDir;
+            s.ProtoFunc = obj.ProtoFunc;
+            s.Array = obj.Array;
+            s.LogBookFile = obj.LogBookFile;
+            s.garbageList = obj.garbageList;
+            s.LastLog = obj.LastLog;
+            s.Idx_Filtered = obj.Idx_Filtered;
+            s.FilterStruct = obj.FilterStruct;
+        end
+        
+    end
+    methods (Access = private)
+        
+        function createFilterStruct(obj)
+            % CREATEFILTERSTRUCT creates an empty structure with the query info.
+            Query = struct('PropName', [], 'Expression', []);
+            obj.FilterStruct = struct('Subject', Query, 'Acquisition', Query, 'Modality', Query, 'FilterMethod', 'contains'); 
+        end
+        
+        function createLogBookFile(obj)
+            % This function creates an empty table LOGBOOK and saves in a .MAT file (LOGBOOKFILE).
+            if ~isempty(obj.SaveDir)
+                LogBook = obj.createEmptyTable;
+                obj.LogBookFile = fullfile(obj.SaveDir, 'LogBook.mat');
+                save(obj.LogBookFile, 'LogBook');
+                disp(['Emtpy Log Book Created in ' obj.SaveDir]);
             end
-            if ~iscell(PropName)
-                PropName = {PropName};
-            end
-            out = [];
-            indS = queryFilter(obj.Array, FilterExp.Subject);
-            for i = 1:numel(indS)
-                indA = queryFilter(obj.Array.ObjList(indS(i)).Array, FilterExp.Acquisition);
-                for j = 1:numel(indA)
-                    indM = queryFilter(obj.Array.ObjList(indS(i)).Array.ObjList(indA(j)).Array, FilterExp.Modality);
-                    for k = 1:indM
-                        for p = 1:numel(PropName)
-                            eval(['tmp = {obj.Array.ObjList(indS(i)).Array.ObjList(indA(j)).Array.ObjList(indM(k)).' PropName{p} '};']);
-                            out = [out;tmp];
+        end
+        
+        
+        function changeMainDir(obj, newMainDir)
+            % CHANGEMAINDIR changes the main directory where the raw data
+            % are located. Paths from raw data inside OBJ will be updated to the new
+            % NEWMAINDIR.
+            %   This function must be used after the user manually moves the
+            %   files from OBJ.MAINDIR to NEWMAINDIR. The paths inside
+            %   OBJ.MAINDIR must remain unchanged.
+            
+            newMainDir = checkFolder(newMainDir);
+            if ~isempty(obj.Array.ObjList)
+                for i = 1:length(obj.Array.ObjList)
+                    tmpS = obj.Array.ObjList(i);
+                    for j = 1:length(tmpS.Array.ObjList)
+                        tmpA = tmpS.Array.ObjList(j);
+                        for k = 1:length(tmpA.Array.ObjList)
+                            tmpM = tmpA.Array.ObjList(k);
+                            tmpM.RawFolder = strrep(tmpM.RawFolder, obj.MainDir, newMainDir);
                         end
                     end
                 end
             end
         end
         
-        function runPreProcessingPipeline(obj, ppPipe, FilterExp)
-            % This function runs a Pipeline using a ppPIPE structure.
-            %    OPTIONS: query filter(FILTEREXP)
-            outputFileName = ['ppPipe_Summary_' num2str(round(posixtime(datetime('now')))) '.csv'];
-            filename = fullfile(pwd, outputFileName);
-            fid = fopen(filename, 'w'); 
-            fprintf(fid,'Subject, Acquisition, FunctionName, Status, RunDateTime\n');
-            if isempty(FilterExp)
-                FilterExp = obj.createFilterStruct;
-            end
-            indS = queryFilter(obj.Array, FilterExp.Subject);
-            for i = 1:numel(indS)
-                tmpS = obj.Array.ObjList(indS(i));
-                indA = queryFilter(tmpS.Array, FilterExp.Acquisition);
-                for j = 1:numel(indA)
-                    tmpA = tmpS.Array.ObjList(indA(j));
-                    indM = queryFilter(tmpA.Array, FilterExp.Modality);
-                    load(tmpA.LogBookFile);
-                    for k = 1:indM
-                        pipeSteps = fieldnames(ppPipe);
-                        tmpM = tmpA.Array.ObjList(indM(k));
-                        for p = 1:numel(pipeSteps)
-                            ppStruct = ppPipe.(pipeSteps{p});
-                            ppStruct.FuncParams = strrep(ppStruct.FuncParams, 'FOLDER',['''' tmpM.Folder '''']);
-                            isLogged = checkInLogBook(LogBook, ppStruct);
-                            if ~isLogged
-                                %%% RUN THE PIPELINE STEP %%%
-                                eval(['tmpM.run_' ppStruct.FuncName '(' ppStruct.FuncParams ')'])
-                                %%% LOG NEW ENTRY IN LOGBOOK %%%
-                                tmpM.LastLog.FunctionName = {ppStruct.FuncName};
-                                tmpM.LastLog.FuncParams = {ppStruct.FuncParams};
-                                tmpA.save2LogBook(tmpM.LastLog);
-                                failed = ~tmpM.LastLog.Completed;
-                                if failed
-                                    %%% IF JOB FAILED, SKIP THE REST OF THE
-                                    %%% PIPELINE.
-                                    fprintf(fid, '%s, %s, %s, %s, %s\n', ...
-                                        tmpS.ID, tmpA.ID, ppStruct.FuncName, 'FAILED' ,  tmpM.LastLog.RunDateTime);
-                                    disp(repmat('*', 1, 100))
-                                    disp(['The function ''' ppStruct.FuncName ''' failed.'])
-                                    disp('All dependent functions in the pipeline were aborted.')
-                                    disp(['Check the LogBook in ' tmpA.LogBookFile ' and re-run the Pipeline']);
-                                    disp(repmat('*', 1, 100))
-                                    break
-                                end
-                                fprintf(fid, '%s, %s, %s, %s, %s\n', ...
-                                        tmpS.ID, tmpA.ID, ppStruct.FuncName, 'COMPLETED' ,  tmpM.LastLog.RunDateTime);
-                            else
-                                disp(repmat('*', 1, 100))
-                                disp(['The function ''' ppStruct.FuncName ''' was previously run on the Data and will be skipped.'])
-                                disp('Trying to run the next step on the Pipeline...')
-                                disp(repmat('*', 1, 100))
-                            end
+        function changeSaveDir(obj, newSaveDir)
+            % CHANGESAVEDIR changes the main directory where the transformed data
+            % are located. Paths from transformed data inside OBJ will be updated to the new
+            % NEWSAVEDIR.
+            %   This function must be used after the user manually moves the
+            %   files from OBJ.SAVEDIR to NEWSAVEDIR. The paths inside
+            %   OBJ.SAVEDIR must remain unchanged.
+            
+            newSaveDir = checkFolder(newSaveDir);
+            if ~isempty(obj.Array.ObjList)
+                for i = 1:length(obj.Array.ObjList)
+                    tmpS = obj.Array.ObjList(i);
+                    for j = 1:length(tmpS.Array.ObjList)
+                        tmpA = tmpS.Array.ObjList(j);
+                        for k = 1:length(tmpA.Array.ObjList)
+                            tmpM = tmpA.Array.ObjList(k);
+                            tmpM.SaveFolder = strrep(tmpM.SaveFolder, obj.SaveDir, newSaveDir);
                         end
                     end
                 end
             end
-            fclose(fid);
         end
- 
-        function FilterExp = createFilterStruct(~)
-            % Creates an empty structure with the query info used in some
-            % "get" functions.
-            Query = struct('PropName', [], 'Expression', [], 'logicalOperator', []);
-            FilterExp = struct('Subject', Query, 'Acquisition', Query, 'Modality', Query);
-        end
-        function delete
-            disp('Protocol deleted')
+        
+        
+        %         function delete(obj)
+        %             disp('Protocol deleted')
+        %         end
+    end
+    methods (Static)
+        function obj = loadobj(s)
+            if isstruct(s)
+                newObj = Protocol;
+                newObj.Name = s.Name;
+                newObj.MainDir = s.MainDir;
+                newObj.SaveDir = s.SaveDir;
+                newObj.ProtoFunc = s.ProtoFunc;
+                newObj.Array = s.Array;
+                newObj.LogBookFile = s.LogBookFile;
+                newObj.garbageList = s.garbageList;
+                newObj.LastLog = s.LastLog;
+                newObj.Idx_Filtered = s.Idx_Filtered;
+                newObj.FilterStruct = s.FilterStruct;
+                obj = newObj;
+            else
+                obj = s;
+            end
         end
     end
-end
-
-% Local functions
-
-function isLogged = checkInLogBook(LogBook, pipeStruct)
-% This function checks if the job in the pipeline (PIPESTRUCT) has already
-% been processed.
-isLogged = false;
-if isempty(LogBook)
-    return
-end
-a = strcmp(pipeStruct.ClassName, LogBook.ModalityName);
-b = strcmp(pipeStruct.FuncName, LogBook.FunctionName);
-FP_pipe = regexprep(pipeStruct.FuncParams, '\s', '');
-FP_logBook = regexprep(LogBook.FuncParams, '\s', '');
-c = strcmp(FP_pipe, FP_logBook);
-d = LogBook.Completed == 1;
-
-if sum(a & b & c & d)
-    isLogged = true;
-end
-end
-
-function ind = queryFilter(objectArray, FilterExp)
-% This function applies a filter (FILTEREXP) to the OBJECTARRAY and outputs the
-% indices of filtered elements.
-
-if isempty(FilterExp.PropName)|| isempty(FilterExp)
-    ind = 1:length(objectArray.ObjList);
-    return
-end
-idx = false(length(FilterExp), length(objectArray.ObjList));
-for i = 1:length(FilterExp)
-    PropName = strtrim(FilterExp.PropName);
-    exp = FilterExp.Expression;
-    idx(i,:) = objectArray.findElement(PropName, exp);
-end
-
-if ~isempty(FilterExp(1).logicalOperator)
-    tmp = idx(1,:);
-    for i = 1:length(FilterExp) - 1
-        logicOp = strtrim(FilterExp(i).logicalOperator);
-        if strcmpi(logicOp, 'AND') || strcmp(logicOp, '&')
-            tmp = ( tmp & idx(i+1,:) );
-        elseif strcmpi(logicOp, 'OR') || strcmp(logicOp, '|')
-            tmp = ( tmp | idx(i+1,:) );
-        else
-            warning(['Invalid logical operator : ' FilterExp(i).logicalOperator '. Used an AND(&) instead. Check query parameters and try again.']);
-            tmp = ( tmp & idx(i+1,:) );
-        end
-    end
-    ind = find(tmp);
-else
-    ind = find(idx);
-end
 end

@@ -6,14 +6,20 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
     
     properties
         ID % Unique Identifier of the object.
-        Folder % Path of directory containing raw data.
-        FileName % File(s) containing raw data.
-        LastLog % Table with the info of the last Analysis run in the object's dataset.
+        RawFolder % Path of directory containing raw data.
+        RawFiles % File(s) containing raw data.
+        RecordingSystem % Name of the system used to record the data.
+        SampleRateHz % Sampling rate of the recording in Hz.
     end
-    
+    properties (SetAccess = {?Protocol})
+        SaveFolder % Path of directory containing transformed data.
+    end
+    properties (SetAccess = {?PipelineManager})
+        LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
+    end
     methods
         
-        function obj = Modality(ID, Folder, FileName, ~)
+        function obj = Modality(ID, RawFolder, RawFiles, RecordingSystem, SampleRate, ~)
             % Construct an instance of this class.
             %   The Folder and FileName are defined here.
             %   Folder must be a valid Directory while FileName has to be a
@@ -21,12 +27,13 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
             %   that exist in the "Folder" directory.
             if nargin > 0
                 obj.ID = ID;
-                obj.Folder = Folder;
-                obj.FileName = FileName;
+                obj.RawFolder = RawFolder;
+                obj.RawFiles = RawFiles;
+                obj.RecordingSystem = RecordingSystem;
+                obj.SampleRate = SampleRate;
             else
                 obj.ID = 'def';
-            end
-            obj.LastLog = createLog;
+            end            
         end
         
         %%% Property Set Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -34,36 +41,56 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
             % Set function for ID property.
             %   Accepts only non-empty strings.
             mustBeNonzeroLengthText(ID); % Checks if string is empty.
-            obj.ID = [ID '_' class(obj)]; % Adds a '_' + class Name to the ID.
+            obj.ID = ID;
         end
         
-        function set.Folder(obj, Folder)
-            % Set function of Folder property.
+        function set.RawFolder(obj, RawFolder)
+            % Set function of RAWFOLDER property.
             %   This function accepts only existing folders.
-            mustBeFolder(Folder); 
-            obj.Folder = checkFolder(Folder);
+            mustBeFolder(RawFolder);
+            obj.RawFolder = checkFolder(RawFolder);
         end
         
-        function set.FileName(obj,FileName)
-            % Set function of FileName property.
-            %   Validates if Files exist in Folder, then sets the FileName
+        function set.RawFiles(obj,RawFiles)
+            % Set function of RAWFILES property.
+            %   Validates if Files exist in Folder, then sets the RAWFILES
             %   property, otherwise throws an error. Duplicate file names
             %   are ignored.
             
-            obj.FileName = validateFileName(obj.Folder, FileName);
+            obj.RawFiles = validateFileName(obj.RawFolder, RawFiles);
         end
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        function set.RecordingSystem(obj, RecordingSystem)
+            % Set function of RecordingSystem property.
+            %   Validates if RECORDINGSYSTEM is a string.
+            mustBeText(RecordingSystem)
+            obj.RecordingSystem = RecordingSystem;
+        end
         
+        function set.SampleRateHz(obj, SampleRate)
+            % Set function of SampleRate property( in Hz ).
+            %   Transforms SAMPLERATE to integer.
+            obj.SampleRateHz = int32(SampleRate); % Rounds-up to integer.
+        end
+        
+         function set.SaveFolder(obj, SaveFolder)
+            % Set function of SAVEFOLDER property.
+            %   This function accepts only existing folders.
+            obj.SaveFolder = checkFolder(SaveFolder);
+        end
+       
+    end
+    
+    methods (Access = protected)
         function delete(obj)
-%             disp(['Modality of type ' class(obj) ' deleted'])
+            %             disp(['Modality of type ' class(obj) ' deleted'])
         end
-        
     end
 end
 
+
 % Local Functions
 function FileName = validateFileName(Folder, FileName)
-% This functions validates if the files in "FileName" exist in "Folder".
+% This functions validates if the files in FILENAME exist in FOLDER.
 % File(s) not found are removed from the list.
 
 if iscell(FileName)
@@ -88,11 +115,4 @@ elseif ischar(FileName)
 else
     error('Wrong Data type. FileName must be a String or a cell array containing strings.');
 end
-end
-
-%%% Local Functions
-
-function Log = createLog
-Log = table({'None'},{'None'},{'None'},0,0,{'None'}, 'VariableNames', {'ModalityName', 'FunctionName', ...
-    'FuncParams', 'Completed', 'RunDateTime', 'Messages'});
 end
