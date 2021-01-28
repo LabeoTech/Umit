@@ -1,7 +1,21 @@
 TO DO LIST:
 
+ORGANIZATION OF TOOLBOX FILES/SCRIPTS
 
+1 - Change "CalciumImaging" class name to something more generalized such as "FluorescenceImaging"...
 
-- "Protocol" class:
-	-- Function updateList:
-		- For now, the function only controls for new/missing "Subjects" and "Acquisition. Perhaps, it would be interesting to look for modalities, files and folders as well.
+2 - Put all analysis methods outside classes and organize them in folders.
+
+3 - Use function datetime as parameter in the pipeline LogBook.
+
+4 - PIPELINEMANAGER: Implement "erase intermediate" data in the pipeline.
+
+5 - Create method "run_externalFunction" in all classes.
+
+6 - Create dimensions description {'X', 'Y', 'T'} to metaData of created files.
+
+7 - Rewrite Filtering/PreProcessing functions to accept different types (dimensions) of datasets.
+
+8 - Create Data Visualization plugin for Seed-pixel-correlation.
+
+9 - Create Image Registration function (look into Python toolbox)
