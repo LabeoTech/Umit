@@ -1,11 +1,12 @@
-classdef CalciumImaging < Modality
-    % "Calcium Imaging" class.
-    %   This class deals with the calcium imaging data.
+classdef FluorescenceImaging < Modality
+    % "Fluorescence Imaging" class.
+    %   This class deals with the fluorescence imaging data.
     properties
         NumberOfChannels % Number of Channels in the recording.
+        Fluo_channel_file
     end
     properties (SetAccess = private)
-        Fluo_channel_file
+%         Fluo_channel_file
         Red_channel_file
         Green_channel_file
         Amber_channel_file
@@ -19,7 +20,7 @@ classdef CalciumImaging < Modality
     
     methods
         % Constructor
-        %                 function obj = CalciumImaging()
+        %                 function obj = FluorescenceImaging()
         %
         %
         %                 end
@@ -225,15 +226,15 @@ classdef CalciumImaging < Modality
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%% TESTING %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function dummyMethodForTesting(obj)
             disp(class(obj))
-            disp(['This is a dummy function #1 for testing of CALCIUM IMAGING ' obj.ID '!'])
+            disp(['This is a dummy function #1 for testing of Fluorescence IMAGING ' obj.ID '!'])
         end
         function dummyMethodForTesting2(obj)
             disp(class(obj))
-            disp(['This is a dummy function #2 for testing of CALCIUM IMAGING ' obj.ID '!'])
+            disp(['This is a dummy function #2 for testing of Fluorescence IMAGING ' obj.ID '!'])
         end
         function dummyMethodForTesting3(obj)
             disp(class(obj))
-            disp(['This is a dummy function #3 for testing of CALCIUM IMAGING ' obj.ID '!'])
+            disp(['This is a dummy function #3 for testing of Fluorescence IMAGING ' obj.ID '!'])
         end
         function dummyMethodForTesting_WithError(obj)
             %%%ERROR%%

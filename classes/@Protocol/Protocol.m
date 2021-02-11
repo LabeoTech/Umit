@@ -20,7 +20,6 @@ classdef Protocol < handle
     end
     properties (SetAccess = {?PipelineManager})
         LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
-        
     end
    
     methods
@@ -102,7 +101,6 @@ classdef Protocol < handle
         end
         
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        
         function generateList(obj)
             % This function uses the ProtoFunc to create the lists of
             % Subjects and Acquisitions. Input is an Array of SUBJECT
@@ -266,13 +264,15 @@ classdef Protocol < handle
             %Reset Idx_Filtered
             obj.Idx_Filtered = [];
             % Filter Subjects
-            indS = obj.Array.findElement(obj.FilterStruct.Subject.PropName, obj.FilterStruct.Subject.Expression, obj.FilterStruct.FilterMethod);
+            indS = getIndex(obj, obj, obj.FilterStruct.Subject);
             % Filter Acquisitions
             for i = 1:length(indS)
-                indA = obj.Array.ObjList(indS(i)).Array.findElement(obj.FilterStruct.Acquisition.PropName, obj.FilterStruct.Acquisition.Expression, obj.FilterStruct.FilterMethod);
+                targetObj = obj.Array.ObjList(indS(i));
+                indA = getIndex(obj, targetObj, obj.FilterStruct.Acquisition);
                 % Filter Modality
                 for j = 1:length(indA)
-                    indM = obj.Array.ObjList(indS(i)).Array.ObjList(indA(j)).Array.findElement(obj.FilterStruct.Modality.PropName, obj.FilterStruct.Modality.Expression, obj.FilterStruct.FilterMethod);
+                    targetObj = obj.Array.ObjList(indS(i)).Array.ObjList(indA(j));
+                    indM = getIndex(obj, targetObj, obj.FilterStruct.Modality);
                     for k = 1:length(indM)
                         obj.Idx_Filtered = [obj.Idx_Filtered ;[indS(i) indA(j) indM(k)]];
                     end
@@ -280,42 +280,20 @@ classdef Protocol < handle
             end
         end
         
+        function clearFilterStruct(obj)
+           % CLEARFILTERSTRUCT Resets the Filter Parameters to an empty
+           % Structure.
+            obj.createFilterStruct;
+        end
         function LogBook = createEmptyTable(obj)
             % CREATEEMPTYTABLE outputs an empty Table to be filled with the information of pipelines
             % from PIPELINEMANAGER.
-            LogBook = table({'None'}, {'None'}, {'None'}, {'None'}, {'None'},  {'None'},...
+            LogBook = table({'None'}, {'None'}, {'None'}, {'None'}, {'None'},  {'None'}, {'None'}, ...
                 0,datetime('now'),{'None'}, 'VariableNames', {'Subject', 'Acquisition',...
-                'Recording', 'ClassName', 'Job', 'UUID','Completed', 'RunDateTime', 'Messages'});
+                'Recording', 'ClassName', 'Job', 'InputFile_UUID', 'InputFile_Path', 'Completed', 'RunDateTime', 'Messages'});
         end
         
-        %         % OLD QUERY FUNCTION
-        %         function ind = queryFilter(~, targetObj, FilterExp, filterMethod)
-        %             % This function applies a filter (OBJ.FILTERSTRUCT) to TARGETOBJ
-        %             % and outputs a list of indices of filtered elements.
-        %
-        %             PropName = strtrim(FilterExp.PropName);
-        %             exp = FilterExp.Expression;
-        %             ind = targetObj.Array.findElement(PropName, exp);
-        %
-        %
-        %             if ~isempty(FilterExp(1).logicalOperator)
-        %                 tmp = idx(1,:);
-        %                 for i = 1:length(FilterExp) - 1
-        %                     logicOp = strtrim(FilterExp(i).logicalOperator);
-        %                     if strcmpi(logicOp, 'AND') || strcmp(logicOp, '&')
-        %                         tmp = ( tmp & idx(i+1,:) );
-        %                     elseif strcmpi(logicOp, 'OR') || strcmp(logicOp, '|')
-        %                         tmp = ( tmp | idx(i+1,:) );
-        %                     else
-        %                         uiwait(warndlg(['Invalid logical operator : ' FilterExp(i).logicalOperator '. Used an AND(&) instead. Check query parameters and try again.'], 'Warning!', 'modal'));
-        %                         tmp = ( tmp & idx(i+1,:) );
-        %                     end
-        %                 end
-        %                 ind = find(tmp);
-        %             else
-        %                 ind = find(idx);
-        %             end
-        %         end
+        
         
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         
@@ -337,7 +315,7 @@ classdef Protocol < handle
         
         function createFilterStruct(obj)
             % CREATEFILTERSTRUCT creates an empty structure with the query info.
-            Query = struct('PropName', [], 'Expression', []);
+            Query = struct('PropName', '', 'Expression', '', 'LogicalOperator', '');
             obj.FilterStruct = struct('Subject', Query, 'Acquisition', Query, 'Modality', Query, 'FilterMethod', 'contains'); 
         end
         
@@ -397,7 +375,32 @@ classdef Protocol < handle
                 end
             end
         end
-        
+        function out = getIndex(obj, targetObj, FilterStruct)
+            % GETINDEX applies a filter (OBJ.FILTERSTRUCT) to TARGETOBJ
+            % and outputs a list of indices of filtered elements.
+            
+            ind = cell(1,length(FilterStruct));
+            for i = 1:length(FilterStruct)
+                Filt = FilterStruct(i);
+                ind{i} = targetObj.Array.findElement(Filt.PropName, Filt.Expression, obj.FilterStruct.FilterMethod);
+            end
+            if length(FilterStruct) > 1
+            for i = 1:length(FilterStruct)-1
+                switch FilterStruct(i).LogicalOperator
+                    case 'AND'
+                        ind{i+1} = intersect(ind{i}, ind{i+1}); % Selects elements common to both arrays.
+                    case 'OR'
+                        ind{i+1} = setxor(ind{i}, ind{i+1}); % Selects elements that are NOT common to both arrays.
+                    case 'NOT'
+                        ind{i+1} = setdiff(ind{i}, ind{i+1}); % Selects elements from 1st array that are not in the 2nd array.
+                    otherwise
+                        ind{i+1} = union(ind{i}, ind{i+1}); % Selects the combined elements from both arrays.
+                end         
+            end
+            end
+            out = ind{end};
+        end
+
         
         %         function delete(obj)
         %             disp('Protocol deleted')

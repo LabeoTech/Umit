@@ -1,5 +1,5 @@
 {"ISAtoolbox_methodsInventory":{
-  "CalciumImaging":{
+  "FluorescenceImaging":{
     "run_ImagesClassification":{
       "input":"", "opts":{
         "BinningSpatial":1, "BinningTemp":1,"b_SubROI":false, "b_IgnoreStim":true},
@@ -9,7 +9,11 @@
       "input":"datFileName", "opts":"" ,"output":"GSR_file"},
     "run_TemporalFilter":{
       "input":"datFileName", "opts":{"LowCutOff":0.0083, "HighCutOff":5}, "output":"TemporalFilter_file"},
-    "run_SeedPixelCorrelation":{"input":"datFileName","opts":"", "output":"SeedPixelCorr_file"}
+    "run_SeedPixelCorrelation":{"input":"datFileName","opts":"", "output":"SeedPixelCorr_file"},
+    "dummyMethodForTesting":{"input":"", "opts":"", "output":""},
+    "dummyMethodForTesting2":{"input":"", "opts":"", "output":""},
+    "dummyMethodForTesting3":{"input":"", "opts":"", "output":""},
+    "dummyMethodForTesting_WithError":{"input":"", "opts":"", "output":""}
   }
 }
 }

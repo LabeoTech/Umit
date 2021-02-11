@@ -31,6 +31,9 @@ elseif any(strcmp(opts.flag, {'-a', 'append'})) && ~exist(DatFileName, 'file')
     msg = ['Cant save file. The file ' DatFileName ' does not exist in Matlab''s path'];
     throwAsCaller(MException(errID,msg))
 else
+    if exist(DatFileName, 'file') % Delete existing files if "-w" option is chosen.
+        delete(DatFileName);
+    end
     fid = fopen(DatFileName, 'w');
     saveMetaData(metaDatFilename, metaDat);
 end

@@ -5,12 +5,16 @@ classdef PipelineManager < handle
     %  as a sequence of steps(i.e. step 1, step 2, step3, ... step N).
     %  Controls for run / failed / completed / aborted steps in the
     %  pipeline.
-    
+    properties
+        EraseIntermediate % Boolean to indicate if PIPELINEMANAGER will delete intermediate files in the pipeline. It keeps only the first and last file in the pipeline.
+        IgnoreLogBook % Boolean. If true, PIPELINEMANAGER will ignore identical jobs previously run (logged in OBJ.PROTOCOLOBJ.LOGBOOKFILE).
+    end
     properties (SetAccess = private, SetObservable)
         Pipe % Array containing steps of the pipeline.
         ProtocolObj % Protocol Object.
         State % Boolean indicating if the task in pipeline was successful (TRUE) or not (FALSE).
         tmp_LogBook % Temporary stores the table in PROTOCOL.LOGBOOKFILE
+        tmp_BranchPipeline % Temporary stores LogBook from a Hierarchical branch.
         PipelineSummary % Shows the jobs run in the current Pipeline
         FunctionList % Structure containing the Public methods of all Classes in the ISAtoolbox with its inputs, optional parameters and outputs.
     end
@@ -25,6 +29,8 @@ classdef PipelineManager < handle
                 obj.ProtocolObj = ProtocolObj;
             end
             obj.readJSON;
+            obj.EraseIntermediate = false;
+            obj.IgnoreLogBook = false;
         end
         % Set functions
         function set.ProtocolObj(obj, ProtocolObj)
@@ -32,7 +38,7 @@ classdef PipelineManager < handle
             obj.ProtocolObj = ProtocolObj;
         end
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        
+               
         function addTask(obj,className, funcName, params)
             arguments
                 obj
@@ -76,13 +82,15 @@ classdef PipelineManager < handle
             else
                 task.input = obj.Pipe(end).output;
             end
+            if iscell(task.input) && numel(task.input) > 1
+                task.input = obj.pickAnInput(task);
+            end
             task.output = params.output;
             task.opts = params.opts;
             task.level = lvl;
             funcStr = obj.createFuncStr(task,funcName);
             task.funcStr = funcStr;
             obj.Pipe = [obj.Pipe;task];
-            
         end
         
         function opts = setOpts(obj, className, funcName)
@@ -126,8 +134,7 @@ classdef PipelineManager < handle
             % Identify the maximum level in the hierarchy to run the
             % pipeline.
             top_lvl = max([obj.Pipe.level]);
-            % Filter objects.
-            obj.ProtocolObj.queryFilter;
+            % Get indexes of Filtered Objects from OBJ.PROTOCOLOBJ.QUERYFILTER function.
             idxList = obj.ProtocolObj.Idx_Filtered;
             % Identify branches in the hierarchy that will be processed in
             % a single pipeline run.
@@ -155,26 +162,32 @@ classdef PipelineManager < handle
                         a = a+1;
                     end
             end
+            f = waitbar(0,'Analysing data...', 'Name', 'Pipeline progress');
             % run pipeline at each branch of the hierarchy
             uniq_branch = unique(ppIdx);
             for i = 1:length(uniq_branch)
                 obj.State = true;
+                waitbar(i/length(uniq_branch),f);
                 branch = idxList(ppIdx == uniq_branch(i),:);
                 obj.run_tasksOnBranch(branch);
                 if ~obj.State
                     continue
                 end
             end
-            LogBook = obj.tmp_LogBook;
+            obj.PipelineSummary(1,:) = []; % remove dummy row.
+            LogBook = obj.PipelineSummary;
             save(obj.ProtocolObj.LogBookFile, 'LogBook');
             cd(obj.ProtocolObj.SaveDir);
-            obj.tmp_LogBook = [];
-            obj.PipelineSummary(1,:) = [];
+            
             disp(obj.PipelineSummary)
             % Save Protocol Object:
             protocol = obj.ProtocolObj;
-            save([obj.ProtocolObj.SaveDir obj.ProtocolObj.Name '.mat'], 'protocol');            
+            save([obj.ProtocolObj.SaveDir obj.ProtocolObj.Name '.mat'], 'protocol'); 
+            disp('Protocol object Saved!');
+            waitbar(1,f,'Finished!');
+            delete(f)
         end
+        
         
         function savePipe(obj, filename)
             % SAVEPIPE saves the structure OBJ.PIPE in a .MAT file in the
@@ -288,7 +301,7 @@ classdef PipelineManager < handle
             
             % Split pipeline if there is more than one level.
             ppLine = obj.pipeSplitter;
-            
+            obj.tmp_BranchPipeline = obj.ProtocolObj.createEmptyTable;
             for i = 1:length(ppLine)
                 subtasks = ppLine{i};
                 lvl = subtasks.level;
@@ -303,6 +316,8 @@ classdef PipelineManager < handle
                 
                 for j = 1:size(targetIdxArr,1)
                     targetObj = obj.getTargetObj(targetIdxArr(j,:));
+                    LastLog = obj.ProtocolObj.createEmptyTable;
+                    targetObj.LastLog = LastLog;
                     for k = 1:length(subtasks)
                         task = subtasks(k);
                         obj.run_taskOnTarget(targetObj, task);
@@ -310,9 +325,10 @@ classdef PipelineManager < handle
                             return
                         end
                     end
-                    
+                    obj.tmp_BranchPipeline = [obj.tmp_BranchPipeline; targetObj.LastLog];
                 end
             end
+            obj.eraseIntermediateFiles();
         end
         
         function run_taskOnTarget(obj, targetObj, task)
@@ -339,14 +355,20 @@ classdef PipelineManager < handle
                 evalStr = strrep(evalStr, task.input , ['targetObj.' task.input]);
                 task.funcStr = strrep(task.funcStr, task.input, ['targetObj.' task.input]);
                 task.input = targetObj.(task.input);
+                LastLog.InputFile_Path = {task.input};
                 inputMetaData = strrep(task.input, '.dat', '_info.mat');
                 mDt = matfile(inputMetaData);
-                LastLog.UUID = {mDt.fileUUID};
+                LastLog.InputFile_UUID = {mDt.fileUUID};
             end
             LastLog.ClassName = {class(targetObj)};
             LastLog.Job = {task.funcStr};
             % Check if Job was already performed:
-            b_isLogged = obj.checkInLogBook(obj.tmp_LogBook, LastLog);
+            if ~obj.IgnoreLogBook
+                b_isLogged = obj.checkInLogBook(obj.tmp_LogBook, LastLog);
+            else
+                b_isLogged = false;
+            end
+            
             if ~b_isLogged
                 % Run the step:
                 try
@@ -361,9 +383,8 @@ classdef PipelineManager < handle
                 end
                 LastLog.Completed = state;
                 LastLog.RunDateTime = datetime('now');
-                targetObj.LastLog = LastLog;
-                obj.tmp_LogBook = [obj.tmp_LogBook ; LastLog];
-                obj.PipelineSummary = [obj.PipelineSummary ; LastLog];
+                targetObj.LastLog = [targetObj.LastLog; LastLog];
+                obj.PipelineSummary = [obj.PipelineSummary; LastLog];
                 obj.State = state;
                 if LastLog.Completed
                     disp('Done!')
@@ -371,7 +392,7 @@ classdef PipelineManager < handle
                     disp('Failed!')
                 end
             else
-                disp('Skipped!')
+                disp([task.funcName ' Skipped!'])
                 return
             end
         end
@@ -433,20 +454,19 @@ classdef PipelineManager < handle
             funcStr = strrep(funcStr, ',)', ')');
         end
         
-        function newOutput = pickAnOutput(~,List)
-            %PICKANOUTPUT prompts a LISTDLG to user-input of a function's
-            % output when more than one output is possible.
-            %   TO BE REVISITED, if this scenario wont be the case anymore.
-            [indx,tf] = listdlg('PromptString', 'Select one of the Outputs', 'ListString',List, 'SelectionMode', 'single');
+        function newInput = pickAnInput(~,task)
+            %PICKANINPUT prompts a LISTDLG to user-input of a function's
+            % input when more than one output is possible.
+            [indx,tf] = listdlg('PromptString', {'Select one of the inputs from', ['the function ' task.funcName]}, 'ListString',task.input, 'SelectionMode', 'single');
             if tf
-                newOutput = List{indx};
+                newInput = task.input{indx};
             else
-                newOutput = '';
+                newInput = '';
             end
         end
         
         function out = askForFirstInput(obj, funcName)
-            % ASKFORFIRSTINPUT creates an input promt to get user to give the INPUT
+            % ASKFORFIRSTINPUT creates an input prompt to get user to give the INPUT
             % of the first task in the pipeline.
             out = '';
             classes = fieldnames(obj.FunctionList);
@@ -464,6 +484,35 @@ classdef PipelineManager < handle
             out = PropList{indx};
         end
         
+        function eraseIntermediateFiles(obj)
+            % ERASEINTERMEDIATEFILES deletes the file generated from the previous
+            % step in the pipeline if OBJ.ERASEINTERMEDIATE is True, except
+            % the first and last files in the pipeline.
+                        
+            % Temporary solution for removing dummy rows from table OBJ.TMP_BRANCHPIPELINE:  
+            idx = strcmp(obj.tmp_BranchPipeline.Subject(:,1), 'None');
+            obj.tmp_BranchPipeline(idx,:) = [];
+            
+            if ~obj.EraseIntermediate || height(obj.tmp_BranchPipeline) < 2
+                return
+            end
+            
+            for i = 2:height(obj.tmp_BranchPipeline)
+                step = obj.tmp_BranchPipeline(i,:); 
+                delete(step.InputFile_Path{:});
+                delete(strrep(step.InputFile_Path{:}, '.dat', '_info.mat'));
+                obj.tmp_BranchPipeline.InputFile_Path(i) = {'Deleted'};
+                disp(['File ' step.InputFile_Path{:} ' deleted!'])
+            end 
+            
+            % Update OBJ.PIPELINESUMMARY
+            for i = 1:height(obj.tmp_BranchPipeline)
+                idx = strcmp(obj.PipelineSummary.InputFile_UUID(:), obj.tmp_BranchPipeline.InputFile_UUID(i));
+                obj.PipelineSummary(idx,:) = obj.tmp_BranchPipeline(i,:);
+            end
+            
+        end
+    
     end
 end
 

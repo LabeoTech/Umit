@@ -9,29 +9,50 @@ clearvars
 %% Create Protocol Object
 maindir = 'G:\RestingState_and_EyeTracking_SampleData';
 savedir = 'G:\RS_data';
-protocol = Protocol('RSandET_project', maindir, savedir, @protoFunc_RS, []);
+protocol = Protocol('TestProtocol', maindir, savedir, @protoFunc_RS, []);
 protocol.generateList;
 protocol.generateSaveFolders;
 save([protocol.SaveDir protocol.Name '.mat'], 'protocol');
 %% Query filter
+% Clear previously saved Filter structure:
+protocol.clearFilterStruct
+% Query subjects
 protocol.FilterStruct.Subject.PropName = '';
 protocol.FilterStruct.Subject.Expression = '';
+protocol.FilterStruct.Subject.LogicalOperator ='NOT';
+    % Excludes a subject from query:
+protocol.FilterStruct.Subject(2).PropName = 'ID';
+protocol.FilterStruct.Subject(2).Expression = 'M0005844209';
+% Query Acquisition and Modality:
 protocol.FilterStruct.Acquisition.PropName = 'ID';
-protocol.FilterStruct.Acquisition.Expression = 'RS_and_ET'; % Leave empty to select all
+protocol.FilterStruct.Acquisition.Expression = 'RS_o'; % Leave empty to select all
 protocol.FilterStruct.Modality.PropName = ''; % Leave empty to select all. This works as well.
 % protocol.FilterStruct.Modality.Expression = '';
-protocol.FilterStruct.FilterMethod = 'strcmp'; % Options: 'contains', 'regexp', 'strcmp';
+
+% Choose query method:
+protocol.FilterStruct.FilterMethod = 'contains'; % Options: 'contains', 'regexp', 'strcmp';
+% Perform query:
 protocol.queryFilter;
-idx = protocol.Idx_Filtered;
+% Display indices of selected branches from the Protocol hierarchy:
+idx = protocol.Idx_Filtered
+
 %% Preprocessing Pipeline
 % Create pipeline
 pipe = PipelineManager([], protocol);
+% Delete intermediate files (optional). It will keep the first and last files from the Pipeline:
+pipe.EraseIntermediate = true;
+% TESTING:
+pipe.addTask('FluorescenceImaging', 'dummyMethodForTesting')
+pipe.addTask('FluorescenceImaging', 'dummyMethodForTesting_WithError')
+pipe.addTask('FluorescenceImaging', 'dummyMethodForTesting3')
+
 % Select Optional Parameters:
-opts = pipe.setOpts('CalciumImaging', 'run_ImagesClassification');
-pipe.addTask('CalciumImaging', 'run_ImagesClassification', 'output', 'Fluo_channel_file', 'opts', opts);
-pipe.addTask('CalciumImaging', 'run_GSR');
-% pipe.addTask('CalciumImaging', 'run_TemporalFilter');
-pipe.addTask('CalciumImaging', 'run_SeedPixelCorrelation');
+opts = pipe.setOpts('FluorescenceImaging', 'run_ImagesClassification');
+pipe.addTask('FluorescenceImaging', 'run_ImagesClassification', 'opts', opts);
+% pipe.addTask('FluorescenceImaging', 'run_ImagesClassification', 'output', 'Fluo_channel_file', 'opts', opts);
+pipe.addTask('FluorescenceImaging', 'run_GSR');
+% pipe.addTask('FluorescenceImaging', 'run_TemporalFilter');
+pipe.addTask('FluorescenceImaging', 'run_SeedPixelCorrelation');
 
 pipe.run_pipeline
 % Save Pipeline
