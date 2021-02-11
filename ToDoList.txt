@@ -2,13 +2,13 @@ TO DO LIST:
 
 ORGANIZATION OF TOOLBOX FILES/SCRIPTS
 
-1 - Change "CalciumImaging" class name to something more generalized such as "FluorescenceImaging"...
+1 - Change "CalciumImaging" class name to something more generalized such as "FluorescenceImaging"... // DONE!
 
 2 - Put all analysis methods outside classes and organize them in folders.
 
 3 - Use function datetime as parameter in the pipeline LogBook.
 
-4 - PIPELINEMANAGER: Implement "erase intermediate" data in the pipeline.
+4 - PIPELINEMANAGER: Implement "erase intermediate" data in the pipeline. // DONE!
 
 5 - Create method "run_externalFunction" in all classes.
 
