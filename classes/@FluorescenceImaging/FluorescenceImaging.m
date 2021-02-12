@@ -111,31 +111,28 @@ classdef FluorescenceImaging < Modality
                 opts.LowCutOff {mustBeNumeric} = 1/120 % Need to find a better way to choose Default value!
                 opts.HighCutOff {mustBeNumeric} = 5  % Need to find a better way to choose Default value!
             end
-            
+            Freq =  obj.SampleRateHz/obj.NumberOfChannels;
             % Open memMapfile:
             mmData = mapDatFile(datFileName);
+            data = mmData.Data.data;
             % Set temporal Filter params:
-            szData = size(mmData.Data.data);
-            f = fdesign.lowpass('N,F3dB', 4, opts.LowCutOff, 10);
+            szData = size(data);
+            f = fdesign.lowpass('N,F3dB', 4, opts.LowCutOff, Freq);
             lpass = design(f,'butter'); lp_sosM = lpass.sosMatrix; lp_SV = lpass.ScaleValues;
-            f = fdesign.lowpass('N,F3dB', 4, opts.HighCutOff, 10);
+            f = fdesign.lowpass('N,F3dB', 4, opts.HighCutOff, Freq);
             hpass = design(f,'butter'); hp_sosM = hpass.sosMatrix; hp_SV = hpass.ScaleValues;
-            % Create MetaData struct:
-            datFile =  fullfile(obj.SaveFolder, 'tempFilt.dat');
-            metaDat = struct('datName', 'data', 'datSize', szData([1 2]),...
-                'datLength', szData(3), 'Datatype', 'single', 'datFile', datFile);
-            % Create empty .DAT file and save MetaData struct:
-            save2Dat(datFile, [], 'metaData', metaDat)
+            
             for ind = 1:szData(1)
-                data = mmData.Data.data(ind,:,:);
-                Sig = double(squeeze(data))';
+                Sig = double(squeeze(data(ind,:,:)))';
                 % Apply temporal filter:
                 dl = single(filtfilt(lp_sosM, lp_SV, Sig));
                 dh = single(filtfilt(hp_sosM, hp_SV, Sig));
-                data = (dh./dl)';                
-                % Append DATA to .DAT file:
-                save2Dat(datFile, data, 'flag', '-a');
+                data(ind,:,:) = (dh./dl)';                
             end
+             % Generate .DAT and .MAT file Paths:
+            datFile = fullfile(obj.SaveFolder, 'TempFilt.dat');
+             % Save to .DAT file and create .MAT file with metaData:
+            save2Dat(datFile, data);
             obj.TemporalFilter_file = datFile;
         end
         
