@@ -6,13 +6,7 @@ classdef FluorescenceImaging < Modality
         Fluo_channel_file
     end
     properties (SetAccess = private)
-%         Fluo_channel_file
-        Red_channel_file
-        Green_channel_file
-        Amber_channel_file
-        GSR_file
-        TemporalFilter_file
-        SeedPixelCorr_file
+        Outputs_Ptr_file
     end
     properties (Access = {?PipelineManager})
         
@@ -83,13 +77,15 @@ classdef FluorescenceImaging < Modality
             szData = size(data);
             data = reshape(data, [], szData(3), 1);
             % Calculate GSR:
+            mData = mean(data,3);
             Sig = mean(data); 
             Sig = Sig / mean(Sig);
             X = [ones(szData(3),1), Sig'];
             B = X\data';
             A = X*B;
             clear X B Sig
-            data = data - A';
+            data = data - A';%Centre a 0
+            data = data + mData; %Centre sur valeur moyenne constante.    
             data = reshape(data,szData);
                         
             % Generate .DAT and .MAT file Paths:
@@ -177,6 +173,25 @@ classdef FluorescenceImaging < Modality
                 Fr = squeeze(mmData.Data.CM(:,:,ind));
                 imagesc(Fr); axis image;
             end
+        end
+        
+        function externalCallTo(obj, func2Call, param)
+           % Dans Param:
+           % Function a appeler
+           % les channels a utiliser.
+           %Initialization
+           Out = [];
+           
+           %Building needed Paths:
+           %Ouvrir fichier Ptr.txt et aller chercher les bon paths.
+           %Reconstruire selon les ROOTs par ex:
+           %du fichier, on a: Fluo_channel_file		{Proto_ROOT}\{Subject_ROOT}\{Acq_ROOT}\fChan.dat
+           Str = '{Proto_ROOT}\{Subject_ROOT}\{Acq_ROOT}\fChan.dat';
+           %Remplacer les {.} selon les parents de l<objet.
+           
+           eval(['Out = ' func2Call '(' param ');']); 
+           
+           Add2TxtFile...
         end
         %         function draw_manualROI(~, s_file, nROI)
         %             % Function that plots an image from the cortex and allows the
