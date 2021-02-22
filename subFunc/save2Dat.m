@@ -1,17 +1,18 @@
-function save2Dat(DatFileName, data, opts)
+function save2Dat(DatFileName, data, varargin)
 % SAVE2DAT saves data to binary .dat files. If it is a new file, it creates
 % a .MAT file containing the data's METADATA. FLAG variable indicates if it
 % appends ('-A', '-APPEND') to an existing file.
 
-arguments
-    DatFileName
-    data
-    opts.metaData = []
-    opts.flag string {mustBeMember(opts.flag, {'-a', '-append', '-w', '-write'})} = '-w'
-end
-
-metaDat = opts.metaData;
-metaDatFilename = strrep(DatFileName, '.dat', '_info.mat');
+% Arguments validation
+p = inputParser;
+addRequired(p,'DatFileName', @(x) validateattributes(x, {'char', 'string'}, {'nonempty'}));
+addRequired(p, 'data', @(x) validateattributes(x, {'single'}, {'nonempty'}));
+addOptional(p, 'flag', '-w', @(x) ischar(x) || isstring(x) && mustBeMember(x, {'-w', '-write', '-a', '-append'}));
+addOptional(p, 'metaData', struct(), @isstruct);
+parse(p, DatFileName, data, varargin{:});
+%%%%%%
+metaDat = p.Results.metaData;
+metaDatFilename = strrep(p.Results.DatFileName, '.dat', '_info.mat');
 if isempty(metaDat)
     metaDat = struct;
     metaDat.datName = 'data';
@@ -21,20 +22,21 @@ if isempty(metaDat)
     metaDat.datLength = ds(3:end); % Accounts for 3+ dimensions.
     metaDat.Datatype = class(data);
 end
-% Create an unique file identifier. To be used by class PIPELINEMANAGER.
-metaDat(1).fileUUID = convertStringsToChars(matlab.lang.internal.uuid);
 
-if any(strcmp(opts.flag, {'-a', 'append'})) && exist(DatFileName, 'file')
-    fid = fopen(DatFileName, 'a');
-elseif any(strcmp(opts.flag, {'-a', 'append'})) && ~exist(DatFileName, 'file')
+% Create an unique file identifier. To be used by class PIPELINEMANAGER.
+metaDat(1).fileUUID = char(java.util.UUID.randomUUID);
+
+if any(strcmp(p.Results.flag, {'-a', 'append'})) && exist(p.Results.DatFileName, 'file')
+    fid = fopen(p.Results.DatFileName, 'a');
+elseif any(strcmp(p.Results.flag, {'-a', 'append'})) && ~exist(p.Results.DatFileName, 'file')
     errID = 'IsaToolbox:FileNotFound';
-    msg = ['Cant save file. The file ' DatFileName ' does not exist in Matlab''s path'];
+    msg = ['Cant save file. The file ' p.Results.DatFileName ' does not exist in Matlab''s path'];
     throwAsCaller(MException(errID,msg))
 else
-    if exist(DatFileName, 'file') % Delete existing files if "-w" option is chosen.
-        delete(DatFileName);
+    if exist(p.Results.DatFileName, 'file') % Delete existing files if "-w" option is chosen.
+        delete(p.Results.DatFileName);
     end
-    fid = fopen(DatFileName, 'w');
+    fid = fopen(p.Results.DatFileName, 'w');
     saveMetaData(metaDatFilename, metaDat);
 end
 fwrite(fid, data, class(data));

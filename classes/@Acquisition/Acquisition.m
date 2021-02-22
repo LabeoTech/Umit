@@ -12,11 +12,10 @@ classdef Acquisition < handle
         Array % List of Modalities.
         Start_datetime % Date and time of the beginning of the acquisition. EMPTY FOR NOW.
     end
-    properties (SetAccess = {?Protocol})
-        SaveFolder; % Folder were transformed data are saved.
-    end
-    properties (SetAccess = {?PipelineManager})
+    properties (SetAccess = {?Protocol, ?PipelineManager})
+        SaveFolder % Path of directory containing transformed data.
         LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
+        FilePtr % JSON file containing information of files created using PIPELINEMANAGER.
     end
     methods
         
@@ -32,14 +31,14 @@ classdef Acquisition < handle
                 obj.Array = Array;
             else
                 obj.ID = 'def';
-                obj.Array = ObjectListManager();
+                obj.Array = [];
             end
         end
         
         %%% Property Set Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function set.ID(obj, ID)
             % Set function for ID property.
-            mustBeNonzeroLengthText(ID); % Checks if string is empty.
+            validateattributes(ID, {'char', 'string'}, {'nonempty'}); % Validates if ID is a non-empty text.
             obj.ID = ID;
         end
         
@@ -47,8 +46,9 @@ classdef Acquisition < handle
             % Set function for Array property.
             %   Accepts only a "ObjectListManager" object as input. If
             %   empty, creates an default "ObjectListManager" object.
-            if ~isempty(Array)
-                mustBeA(Array, 'ObjectListManager'); % Checks if Array is an "ObjectListManager".
+            if isa(Array, 'Modality')
+                obj.Array.addObj(Array);
+            elseif isa(Array, 'ObjectListManager')
                 obj.Array = Array;
             else
                 obj.Array = ObjectListManager();
@@ -75,7 +75,7 @@ classdef Acquisition < handle
             elseif isnat(start_datetime)
                 obj.Start_datetime = [];
             else
-                mustBeA(start_datetime, 'datetime');
+                validateattributes(start_datetime, {'datetime'}, {'nonempty'});
                 obj.Start_datetime = start_datetime;
             end
         end
@@ -91,6 +91,19 @@ classdef Acquisition < handle
                 out = datestr(obj.Start_datetime, 31);
             end
         end
+        
+         function createFilePtr(obj)
+             % This function creates a JSON file containing basic information from object.
+             
+             % FilePtr full path:
+             obj.FilePtr = fullfile(obj.SaveFolder, 'FilePtr.json');
+             A = struct('Type', class(obj), 'ID', obj.ID, 'Files', []);
+             txt = jsonencode(A);
+             fid = fopen(obj.FilePtr, 'w');
+             fprintf(fid, '%s', txt);
+             fclose(fid);
+         end
+        
         %%%%%%%%%%
         function dummyMethodForTesting(obj)
             disp(class(obj))

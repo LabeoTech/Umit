@@ -11,15 +11,15 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         RecordingSystem % Name of the system used to record the data.
         SampleRateHz % Sampling rate of the recording in Hz.
     end
-    properties (SetAccess = {?Protocol})
+    properties (SetAccess = {?Protocol, ?PipelineManager})
         SaveFolder % Path of directory containing transformed data.
-    end
-    properties (SetAccess = {?PipelineManager})
         LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
+        FilePtr % JSON file containing information of files created using PIPELINEMANAGER.
     end
+    
     methods
         
-        function obj = Modality(ID, RawFolder, RawFiles, RecordingSystem, SampleRate, ~)
+        function obj = Modality(ID, RawFolder, RawFiles, RecordingSystem, SampleRate)
             % Construct an instance of this class.
             %   The Folder and FileName are defined here.
             %   Folder must be a valid Directory while FileName has to be a
@@ -40,14 +40,14 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         function set.ID(obj, ID)
             % Set function for ID property.
             %   Accepts only non-empty strings.
-            mustBeNonzeroLengthText(ID); % Checks if string is empty.
+            validateattributes(ID, {'char', 'string'}, {'nonempty'}); % Validates if ID is a non-empty text.
             obj.ID = ID;
         end
         
         function set.RawFolder(obj, RawFolder)
             % Set function of RAWFOLDER property.
             %   This function accepts only existing folders.
-            mustBeFolder(RawFolder);
+            obj.validate_path(RawFolder);
             obj.RawFolder = checkFolder(RawFolder);
         end
         
@@ -57,62 +57,80 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
             %   property, otherwise throws an error. Duplicate file names
             %   are ignored.
             
-            obj.RawFiles = validateFileName(obj.RawFolder, RawFiles);
+            obj.RawFiles = obj.validateFileName(RawFiles);
         end
         function set.RecordingSystem(obj, RecordingSystem)
             % Set function of RecordingSystem property.
             %   Validates if RECORDINGSYSTEM is a string.
-            mustBeText(RecordingSystem)
+            validateattributes(RecordingSystem, {'char', 'string'}, {'scalartext'}); % Validates if RecordingSystem is text.
             obj.RecordingSystem = RecordingSystem;
         end
         
         function set.SampleRateHz(obj, SampleRate)
             % Set function of SampleRate property( in Hz ).
-            %   Transforms SAMPLERATE to integer.
-            obj.SampleRateHz = int32(SampleRate); % Rounds-up to integer.
+            obj.SampleRateHz = double(SampleRate); 
         end
         
          function set.SaveFolder(obj, SaveFolder)
             % Set function of SAVEFOLDER property.
             %   This function accepts only existing folders.
             obj.SaveFolder = checkFolder(SaveFolder);
+         end
+         %%% Validators %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        function validate_path(~, input)
+            if ~isfolder(input)
+                errID = 'IsaToolbox:InvalidInput';
+                msg = 'Input is not a valid folder or it is not in MATLAB''s path.';
+                error(errID, msg);
+            end
         end
-       
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+         function createFilePtr(obj)
+             % This function creates a JSON file containing basic information from object.
+             
+             % FilePtr full path:
+             obj.FilePtr = fullfile(obj.SaveFolder, 'FilePtr.json');
+             A = struct('Type', class(obj), 'ID', obj.ID, 'Files', []);
+             txt = jsonencode(A);
+             fid = fopen(obj.FilePtr, 'w');
+             fprintf(fid, '%s', txt);
+             fclose(fid);
+         end
     end
-    
     methods (Access = protected)
         function delete(obj)
             %             disp(['Modality of type ' class(obj) ' deleted'])
+        end
+
+        function FileName = validateFileName(obj, FileName)
+            % This functions validates if the files in FILENAME exist in FOLDER.
+            % File(s) not found are removed from the list.
+            
+            if iscell(FileName)
+                % Removes duplicates.
+                [~,idx] = ismember(unique(FileName), FileName); % Keeps the first of the list;
+                FileName = FileName(idx);
+                % Removes non-existant file names from the list "FileName"
+                tmp = cellfun(@(x) isfile([obj.RawFolder x]), FileName, 'UniformOutput', false);
+                tmp = cell2mat(tmp);
+                if ~all(tmp)
+                    disp(['The following files were not found in ' obj.RawFolder ' and were ignored.'])
+                    disp(FileName(~tmp))
+                    FileName(~tmp)= [];
+                end
+            elseif ischar(FileName)
+                if isfile([obj.RawFolder FileName])
+                    return
+                else
+                    disp(['"' FileName '" was not found in ' obj.RawFolder ' and was ignored']);
+                    FileName = [];
+                end
+            else
+                error('Wrong Data type. FileName must be a String or a cell array containing strings.');
+            end
         end
     end
 end
 
 
 % Local Functions
-function FileName = validateFileName(Folder, FileName)
-% This functions validates if the files in FILENAME exist in FOLDER.
-% File(s) not found are removed from the list.
-
-if iscell(FileName)
-    % Removes duplicates.
-    [~,idx] = ismember(unique(FileName), FileName); % Keeps the first of the list;
-    FileName = FileName(idx);
-    % Removes non-existant file names from the list "FileName"
-    tmp = cellfun(@(x) isfile([Folder x]), FileName, 'UniformOutput', false);
-    tmp = cell2mat(tmp);
-    if ~all(tmp)
-        disp(['The following files were not found in ' Folder ' and were ignored.'])
-        disp(FileName(~tmp))
-        FileName(~tmp)= [];
-    end
-elseif ischar(FileName)
-    if isfile([Folder FileName])
-        return
-    else
-        disp(['"' FileName '" was not found in ' Folder ' and was ignored']);
-        FileName = [];
-    end
-else
-    error('Wrong Data type. FileName must be a String or a cell array containing strings.');
-end
-end

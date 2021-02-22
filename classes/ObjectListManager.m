@@ -5,7 +5,7 @@ classdef ObjectListManager < handle
     %   ObjectListManager only accepts objects with unique "ID" property.
     
     properties
-        ObjList(1,:) {mustBeVector} % Array of objects.
+        ObjList(1,:) % Array of objects.
     end
     
     methods
@@ -74,7 +74,7 @@ classdef ObjectListManager < handle
             eval(['out = {obj.ObjList(idx).' propName '};']);
         end
                 
-        function iElem = findElement(obj, PropName, str, queryMethod)
+        function iElem = findElement(obj, PropName, str, varargin)
             % This function looks for an specific object inside
             % ObjList.
             %   INDELEM = findElement(PROPERTY_NAME, STRING, QUERYMETHOD)
@@ -82,12 +82,12 @@ classdef ObjectListManager < handle
             %   equals to the STRING. Output is the index of the element in OBJ.OBJLIST
             %   Three query methods are accepted: 'strcmp', 'contains' and
             %   'regexp'.
-            arguments
-                obj
-                PropName
-                str
-                queryMethod {mustBeMember(queryMethod, {'contains', 'regexp', 'strcmp'})} = 'contains'
-            end
+            p = inputParser;
+            validateMethod = @(x) mustBeMember(x, {'contains', 'regexp', 'strcmp'});
+            addOptional(p, 'queryMethod', 'contains', validateMethod);
+            parse(p,varargin{:})
+            queryMethod = p.Results.queryMethod;
+            
             
             if isempty(PropName)
                 iElem = 1:length(obj.ObjList);

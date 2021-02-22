@@ -37,7 +37,7 @@ classdef Protocol < handle
                 obj.SaveDir = SaveDir;
                 obj.ProtoFunc = ProtoFunc;
             else
-                obj.Array = ObjectListManager();
+                obj.Array = [];
             end
             obj.Idx_Filtered = {};
             obj.createLogBookFile
@@ -48,14 +48,14 @@ classdef Protocol < handle
         function set.Name(obj, Name)
             % Set function for Project Name
             %   Accepts only text.
-            mustBeText(Name);
+            validateattributes(Name,{'char', 'string'}, {'nonempty'}, 'set.Name');
             obj.Name = Name;
         end
         function set.MainDir(obj, MainDir)
             % Set function for MainDir property.
             %   Accepts only existing Folders as input.
             MainDir = checkFolder(MainDir);
-            mustBeFolder(MainDir); % Checks for existing Path.
+            obj.validate_path(MainDir); % Checks for existing Path.
             if isempty(obj.Array.ObjList)
                 obj.MainDir = MainDir;
             else
@@ -69,7 +69,7 @@ classdef Protocol < handle
             %   Accepts only existing Folders as input. Updates all
             %   SAVEFOLDERS of other Objects contained in OBJ.
             SaveDir = checkFolder(SaveDir);
-            mustBeFolder(SaveDir); % Checks for existing Path.
+            obj.validate_path(SaveDir); % Checks for existing Path.
             if isempty(obj.Array.ObjList)
                 obj.SaveDir = SaveDir;
             else
@@ -83,8 +83,8 @@ classdef Protocol < handle
             %   Accepts only valid function handles. Returns PROTOFUNC if
             %   empty.
             if ~isempty(ProtoFunc)
-                mustBeA(ProtoFunc, 'function_handle');
-                obj.ProtoFunc = ProtoFunc; % Checks if ProtoFunc is a function handle.
+                validateattributes(ProtoFunc, {'function_handle'}, {'nonempty'}, 'set.ProtoFunc')% Checks if ProtoFunc is a function handle.
+                obj.ProtoFunc = ProtoFunc; 
             end
         end
         
@@ -92,14 +92,24 @@ classdef Protocol < handle
             % Set function for Array property.
             %   Accepts only a "ObjectListManager" object as input. If
             %   empty, creates an default "ObjectListManager" object.
-            if ~isempty(Array)
-                mustBeA(Array, 'ObjectListManager'); % Checks if Array is an "ObjectListManager".
+            if isa(Array, 'Subject')
+                obj.Array.addObj(Array);
+            elseif isa(Array, 'ObjectListManager')
                 obj.Array = Array;
             else
                 obj.Array = ObjectListManager();
             end
         end
         
+        
+        %%% Validators %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        function validate_path(~, input)
+            if ~isfolder(input)
+                errID = 'IsaToolbox:InvalidInput';
+                msg = 'Input is not a valid folder or it is not in MATLAB''s path.';
+                error(errID, msg);
+            end
+        end
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function generateList(obj)
             % This function uses the ProtoFunc to create the lists of
@@ -127,8 +137,11 @@ classdef Protocol < handle
                         [status, msg, ~] = mkdir(fullfile(obj.SaveDir, tmpS, tmpA, tmpM));
                         if  status
                             obj.Array.ObjList(i).SaveFolder = fullfile(obj.SaveDir, tmpS);
+                            obj.Array.ObjList(i).createFilePtr;
                             obj.Array.ObjList(i).Array.ObjList(j).SaveFolder = fullfile(obj.SaveDir, tmpS, tmpA);
+                            obj.Array.ObjList(i).Array.ObjList(j).createFilePtr;
                             obj.Array.ObjList(i).Array.ObjList(j).Array.ObjList(k).SaveFolder = fullfile(obj.SaveDir, tmpS, tmpA, tmpM);
+                            obj.Array.ObjList(i).Array.ObjList(j).Array.ObjList(k).createFilePtr;
                         else
                             disp(['ERROR trying to create folder in path: ' tmpFolder])
                             disp(msg);
@@ -204,20 +217,19 @@ classdef Protocol < handle
             uiwait(msgbox('Project update completed!'));
         end
         
-        function manualRemoveObj(obj, args)
+        function manualRemoveObj(obj, SubjectIndex, AcqIndex)
             % This function manually removes one Subject/Acquisition from
             % Protocol.
-            arguments
-                obj
-                args.SubjectIndex (1,1) = 0;
-                args.AcqIndex (1,1) = 0;
-            end
-            if args.SubjectIndex == 0
+            p = inputParser;
+            addOptional(p,'SubjectIndex', 0, @isnumeric);
+            addOptional(p,'AcqIndex', 0, @isnumeric);
+            parse(p, SubjectIndex, AcqIndex)
+            if p.Results.SubjectIndex == 0
                 return
-            elseif args.AcqIndex == 0
-                iRem = obj.Array.removeObj(args.SubjectIndex);
+            elseif p.Results.AcqIndex == 0
+                iRem = obj.Array.removeObj(p.Results.SubjectIndex);
             else
-                iRem = obj.Array.ObjList(args.SubjectIndex).Array.removeObj(args.AcqIndex);
+                iRem = obj.Array.ObjList(p.Results.SubjectIndex).Array.removeObj(p.Results.AcqIndex);
             end
             obj.garbageList = [obj.garbageList; iRem];
         end
@@ -362,11 +374,14 @@ classdef Protocol < handle
             %   OBJ.SAVEDIR must remain unchanged.
             
             newSaveDir = checkFolder(newSaveDir);
+            obj.LogBookFile = strrep(obj.LogBookFile, obj.SaveDir, newSaveDir);
             if ~isempty(obj.Array.ObjList)
                 for i = 1:length(obj.Array.ObjList)
                     tmpS = obj.Array.ObjList(i);
+                    tmpS.SaveFolder = strrep(tmpS.SaveFolder, obj.SaveDir, newSaveDir);
                     for j = 1:length(tmpS.Array.ObjList)
                         tmpA = tmpS.Array.ObjList(j);
+                        tmpA.SaveFolder = strrep(tmpA.SaveFolder, obj.SaveDir, newSaveDir);
                         for k = 1:length(tmpA.Array.ObjList)
                             tmpM = tmpA.Array.ObjList(k);
                             tmpM.SaveFolder = strrep(tmpM.SaveFolder, obj.SaveDir, newSaveDir);

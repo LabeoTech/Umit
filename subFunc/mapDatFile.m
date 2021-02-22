@@ -1,4 +1,4 @@
-function mmFile = mapDatFile(datFileName, metaDatFileName)
+function [mmFile,metaData] = mapDatFile(DatFileName, varargin)
 %MAPDATFILE creates a memmory map file of binary data stored as .DAT
 %files.
 % DATFILENAME: full path of .DAT file
@@ -8,15 +8,22 @@ function mmFile = mapDatFile(datFileName, metaDatFileName)
 %  as [METADATFILE.DATSIZE  METADATFILE.DATLENGTH]. The dataset found in
 %  MMFILE.DATA.data.
 
-arguments
-    datFileName {mustBeDatFile(datFileName)}
-    metaDatFileName {mustBeMATfileOrEmpty(metaDatFileName)} = ''
-end
+% Arguments validation
+p = inputParser;
+addRequired(p,'DatFileName', @mustBeDatFile);
+addOptional(p, 'metaDatFileName', '', @(x) ischar(x) || isstring(x));
+parse(p, DatFileName, varargin{:});
+%%%%%%
+%Initialize variables:
+DatFileName = p.Results.DatFileName;
+metaDatFileName = p.Results.metaDatFileName;
+%%%%
 if isempty(metaDatFileName)
-    metaDatFileName = strrep(datFileName, '.dat', '_info.mat');
+    metaDatFileName = strrep(DatFileName, '.dat', '_info.mat');
 end
 format = getFileFormat(metaDatFileName);
-mmFile = memmapfile(datFileName, 'Format', format);
+metaData = matfile(metaDatFileName);
+mmFile = memmapfile(DatFileName, 'Format', format);
 end
 
 % Local functions
@@ -44,11 +51,11 @@ if ~isfile(datFileName) && ~strcmp(datFileName(end-3:end), '.dat')
     throwAsCaller(MException(errID,msg))
 end
 end
-
-function mustBeMATfileOrEmpty(metaDatFile)
-if ~isfile(metaDatFile) && ~isempty(metaDatFile) || isfile(metaDatFile) && ~strcmp(metaDatFile(end-3:end), '.mat')
-    errID = 'IsaToolbox:InvalidFile';
-    msg = 'Invalid File!';
-    throwAsCaller(MException(errID,msg))
-end
-end
+% 
+% function mustBeMATfileOrEmpty(metaDatFile)
+% if ~isfile(metaDatFile) && ~isempty(metaDatFile) || isfile(metaDatFile) && ~strcmp(metaDatFile(end-3:end), '.mat')
+%     errID = 'IsaToolbox:InvalidFile';
+%     msg = 'Invalid File!';
+%     throwAsCaller(MException(errID,msg))
+% end
+% end
