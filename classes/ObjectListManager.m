@@ -40,7 +40,7 @@ classdef ObjectListManager < handle
                 newObj = compareLists(obj, newObj);
             end
             obj.ObjList = [obj.ObjList newObj];
-            if ~isempty(newObj) && isa(newObj, 'Subject') || isa(newObj, 'Acquisition')
+            if ~isempty(newObj) && ( isa(newObj, 'Subject') || isa(newObj, 'Acquisition')) 
                 % This if statement is to control for objects added
                 % manually (one at a time).
                 if isempty(newObj(1).Array.ObjList)
@@ -57,7 +57,7 @@ classdef ObjectListManager < handle
             %   containing the class and ID of the deleted objects.
             out = arrayfun(@(x) [string(class(x)) string(x.ID) string(x.SaveFolder)], obj.ObjList(idx), 'UniformOutput', false);
             out = [out{:}];
-            out = reshape(out, [3 length(idx)]); out = out';
+            out = reshape(out, [], length(idx)); out = out';
             obj.ObjList(idx) = [];
             disp(['Object(s) with index(es) ' num2str(idx) ' successfully removed']);
         end

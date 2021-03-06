@@ -134,7 +134,11 @@ classdef Protocol < handle
                     tmpA = acqList{i}{j};
                     for k = 1:length(modList{i}{j})
                         tmpM = modList{i}{j}{k};
-                        [status, msg, ~] = mkdir(fullfile(obj.SaveDir, tmpS, tmpA, tmpM));
+                        tmpFolder = fullfile(obj.SaveDir, tmpS, tmpA, tmpM);
+                        if exist(tmpFolder, 'dir')
+                            continue
+                        end
+                        [status, msg, ~] = mkdir(tmpFolder);
                         if  status
                             obj.Array.ObjList(i).SaveFolder = fullfile(obj.SaveDir, tmpS);
                             obj.Array.ObjList(i).createFilePtr;
@@ -142,7 +146,7 @@ classdef Protocol < handle
                             obj.Array.ObjList(i).Array.ObjList(j).createFilePtr;
                             obj.Array.ObjList(i).Array.ObjList(j).Array.ObjList(k).SaveFolder = fullfile(obj.SaveDir, tmpS, tmpA, tmpM);
                             obj.Array.ObjList(i).Array.ObjList(j).Array.ObjList(k).createFilePtr;
-                        else
+                        elseif ~status 
                             disp(['ERROR trying to create folder in path: ' tmpFolder])
                             disp(msg);
                         end
@@ -217,13 +221,14 @@ classdef Protocol < handle
             uiwait(msgbox('Project update completed!'));
         end
         
-        function manualRemoveObj(obj, SubjectIndex, AcqIndex)
+        function manualRemoveObj(obj, SubjectIndex, AcqIndex, b_delFolder)
             % This function manually removes one Subject/Acquisition from
             % Protocol.
             p = inputParser;
             addOptional(p,'SubjectIndex', 0, @isnumeric);
             addOptional(p,'AcqIndex', 0, @isnumeric);
-            parse(p, SubjectIndex, AcqIndex)
+            addOptional(p, 'b_delFolder', true, @islogical);
+            parse(p, SubjectIndex)
             if p.Results.SubjectIndex == 0
                 return
             elseif p.Results.AcqIndex == 0
@@ -231,6 +236,9 @@ classdef Protocol < handle
             else
                 iRem = obj.Array.ObjList(p.Results.SubjectIndex).Array.removeObj(p.Results.AcqIndex);
             end
+%             if p.Results.b_delFolder
+%                 rmdir(iRem(3), 's') % Delete save folder and its contents.
+%             end
             obj.garbageList = [obj.garbageList; iRem];
         end
         
@@ -249,7 +257,7 @@ classdef Protocol < handle
                         subjID = str{1};
                         idxS = find(strcmp(subjID, {newObj.ID}));
                         idx = find(strcmp(gbList(i,2), {newObj(idxS).Array.ObjList.ID}));
-                        newObj(idxS).Array.removeObj(idx);
+                        newObj(idxS).Array.ObjList(idx) = [];
                 end
             end
         end

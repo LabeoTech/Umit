@@ -212,7 +212,7 @@ classdef PipelineManager < handle
             % folder PIPELINECONFIGFiles inside MAINDIR of OBJ.PROTOCOLOBJ.
             savedir = obj.ProtocolObj.SaveDir;
             cd(savedir)
-            [~]= mkdir('PipeLineConfigFiles');
+            [~,~] = mkdir('PipeLineConfigFiles');
             cd('PipeLineConfigFiles');
             pipeStruct = obj.Pipe;
             txt = jsonencode(pipeStruct);
@@ -443,11 +443,6 @@ classdef PipelineManager < handle
                     if ischar(out)
                         out = {out};
                     end
-%                     % For testing...
-                    if isempty(out)
-                        out = task.Output;
-                    end
-%                     %
                     for i = 1:length(out)
                         SaveFolder = eval(['obj.tmp_TargetObj.' task.SaveIn]);
                         mDt_file = matfile(strrep(fullfile(SaveFolder, out{i}), '.dat', '_info.mat'));
@@ -519,7 +514,7 @@ classdef PipelineManager < handle
                 newInput = '';
             end
         end
-        function out = askForFirstInput(obj, FuncName)
+                function out = askForFirstInput(obj, FuncName)
             % ASKFORFIRSTINPUT creates an input prompt to get user to give the INPUT
             % of the first task in the pipeline.
             out = '';
@@ -537,9 +532,9 @@ classdef PipelineManager < handle
             end
             switch classes{indx}
                 case 'Subject'
-                    obj.readFilePtr(obj.ProtocolObj.Array.ObjList(idx(1,1)));
+                    obj.tmp_TargetObj = obj.ProtocolObj.Array.ObjList(idx(1,1));
                 case 'Acquisition'
-                    obj.readFilePtr(obj.ProtocolObj.Array.ObjList(idx(1,1)).Array.ObjList(idx(1,2)));
+                    obj.tmp_TargetObj = obj.ProtocolObj.Array.ObjList(idx(1,1)).Array.ObjList(idx(1,2));
                 otherwise
                     for i = 1:size(idx,1)
                         b_isMod = strcmp(class(obj.ProtocolObj.Array.ObjList(idx(i,1)).Array.ObjList(idx(i,2)).Array.ObjList(idx(i,3))), classes{indx});
@@ -547,8 +542,9 @@ classdef PipelineManager < handle
                             break
                         end
                     end
-                    obj.readFilePtr(obj.ProtocolObj.Array.ObjList(idx(i,1)).Array.ObjList(idx(i,2)).Array.ObjList(idx(i,3)));
+                    obj.tmp_TargetObj = obj.ProtocolObj.Array.ObjList(idx(i,1)).Array.ObjList(idx(i,2)).Array.ObjList(idx(i,3));
             end
+            obj.readFilePtr;
             FileList = {obj.tmp_FilePtr.Files};
             if isempty(FileList{:})
                 warndlg(['No Files found in ' obj.ProtocolObj.Array.ObjList(idx(i,1)).Array.ObjList(idx(i,2)).Array.ObjList(idx(i,3)).SaveFolder], 'Pipeline warning!', 'modal')
@@ -561,6 +557,7 @@ classdef PipelineManager < handle
             end
             out = FileList{indx};
         end
+
         function eraseIntermediateFiles(obj)
             % ERASEINTERMEDIATEFILES deletes the file generated from the previous
             % step in the pipeline if OBJ.ERASEINTERMEDIATE is True, except
