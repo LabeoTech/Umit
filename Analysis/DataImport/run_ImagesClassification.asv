@@ -20,6 +20,7 @@ parse(p, RawFolder, SaveFolder, varargin{:});
 RawFolder = p.Results.RawFolder;
 SaveFolder = p.Results.SaveFolder;
 opts = p.Results.opts;
+Output = p.Results.Output;
 outFile = {};
 %%%%
 % Calls function from IOI library. Temporary for now.
@@ -72,16 +73,16 @@ for i = 1:length(chanList)
     rising = (sig < thr & [sig(2:end) ; NaN] > thr);
     falling= (sig > thr & [sig(2:end) ; NaN] < thr);
     event_stmp  = any([rising;falling],1);
+    end
+    a.b_Analog_trig = event_stmp;
+    % Reset sigl
+    sig = AnalogIN(idx_camT, sigChan);
+    % TEMPORARY FIX.
+    filePath = fullfile(SaveFolder,chanName);
+    newmDfile = strrep(filePath, '.dat', '_info.mat');
+    [~] = movefile(chanName, filePath);
+    [~] = movefile(MetaDataFileName, newmDfile);
+    %%%%%%%%%%%%%%%%%
+    outFile = [outFile, chanName];
 end
-%Save event time stamps to meta data file:
-a.b_Analog_trig = event_stmp;
-% Reset sig
-sig = AnalogIN(idx_camT, sigChan);
-% TEMPORARY FIX.
-filePath = fullfile(SaveFolder,chanName);
-newmDfile = strrep(filePath, '.dat', '_info.mat');
-[~] = movefile(chanName, filePath);
-[~] = movefile(MetaDataFileName, newmDfile);
-%%%%%%%%%%%%%%%%%
-outFile = [outFile, chanName];
 end
