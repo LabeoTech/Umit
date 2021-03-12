@@ -668,11 +668,11 @@ classdef PipelineManager < handle
                 str = split(str, ',');
                 info.args.Input = strtrim(str{1});
                 info.args.SaveIn = strtrim(str{2});
-                expOutput = 'default_Output\s*=.*?(?=\r\n)';
+                expOutput = 'default_Output\s*=.*?(?=\n)';
                 str = regexp(txt, expOutput, 'match', 'once');
                 eval(str)
                 info.args.Output = default_Output;
-                expOpts = 'default_opts\s*=.*?(?=\r\n)';
+                expOpts = 'default_opts\s*=.*?(?=\n)';
                 str = regexp(txt, expOpts, 'match', 'once');
                 if ~isempty(str)
                 eval(str)
