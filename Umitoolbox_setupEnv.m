@@ -13,7 +13,8 @@ end
 if strcmp(sys, 'PCWIN64')
     system(['SETX Umitoolbox ' saveDir]);
 else
-    disp('Cant set an environment variable in this machine. This is temporary. Contact Labeo for details');
+    disp('Cannot set an environment variable in this machine yet. This is temporary. Contact Labeo for details.');
 end
-disp('done!')
+disp('done!');
+disp('Restart MATLAB to apply the changes!');
 end
