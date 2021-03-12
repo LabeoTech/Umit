@@ -4,6 +4,16 @@ function Umitoolbox_setupEnv
 % toolbox is located. This is used by the GUI scripts to find folders and
 % files in the computer.
 saveDir = uigetdir(pwd, 'Select Toolbox Folder');
-setenv('Umitoolbox', saveDir);
+sys = computer;
+myenv = getenv('Umitoolbox');
+if isfolder(myenv)
+    disp('Environment Variable Umitoolbox already exists!')
+    return
+end
+if strcmp(sys, 'PCWIN64')
+    system(['SETX Umitoolbox ' saveDir]);
+else
+    disp('Cant set an environment variable in this machine. This is temporary. Contact Labeo for details');
+end
 disp('done!')
 end
