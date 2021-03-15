@@ -40,12 +40,16 @@ idx = protocol.Idx_Filtered;
 % Create pipeline
 pipe = PipelineManager([], protocol, 'D:\Academico\PostDoc_UdeM\LabeoTech\IsaToolbox\Analysis');
 % Delete intermediate files (optional). It will keep the first and last files from the Pipeline:
-% pipe.EraseIntermediate = true;
+pipe.EraseIntermediate = true;
 pipe.IgnoreLoggedFiles = true;
 % Select Optional Parameters:
 opts = pipe.setOpts('run_ImagesClassification');
 pipe.addTask('FluorescenceImaging', 'run_ImagesClassification', opts);
 % pipe.addTask('FluorescenceImaging', 'run_ImagesClassification')
+pipe.addTask('FluorescenceImaging', 'dummyFunc4Testing');
+pipe.addTask('FluorescenceImaging', 'dummyFunc4Testing_2');
+pipe.addTask('FluorescenceImaging', 'dummyFunc4Testing_3');
+
 pipe.addTask('FluorescenceImaging', 'tempFiltNormalize');
 pipe.addTask('FluorescenceImaging', 'GSR')
 pipe.addTask('FluorescenceImaging', 'SeedPixCorr');

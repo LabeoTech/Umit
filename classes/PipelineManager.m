@@ -571,29 +571,37 @@ classdef PipelineManager < handle
                 return
             end
             
-            for i = 2:height(obj.tmp_BranchPipeline)
+            for i = 3:height(obj.tmp_BranchPipeline)
                 step = obj.tmp_BranchPipeline(i,:);
+                
                 if strcmp(step.InputFile_Path, 'None')
                     continue
                 end
+                
                 delete(step.InputFile_Path{:});
                 delete(strrep(step.InputFile_Path{:}, '.dat', '_info.mat'));
-                idx = strcmp(step.InputFile_Path{:}, {obj.tmp_FilePtr.Files.InputFile_Path});
+                disp(['File ' step.InputFile_Path{:} ' deleted!'])
+                
+                [~,fileName,ext] = fileparts(step.InputFile_Path{:});
+                idx = strcmp([fileName ext], {obj.tmp_FilePtr.Files.Name});
                 obj.tmp_FilePtr.Files(idx) = [];
                 obj.tmp_BranchPipeline.InputFile_Path(i) = {'Deleted'};
-                disp(['File ' step.InputFile_Path{:} ' deleted!'])
+                obj.tmp_BranchPipeline.InputFile_UUID(i) = {'Deleted'};
             end
             
             % Update OBJ.PIPELINESUMMARY
             for i = 1:height(obj.tmp_BranchPipeline)
-                if strcmp(obj.tmp_BranchPipeline.InputFile_UUID, 'None')
+                if strcmp(obj.tmp_BranchPipeline.InputFile_UUID(i), 'None')
                     continue
                 end
-                idx = strcmp(obj.PipelineSummary.InputFile_UUID(:), obj.tmp_BranchPipeline.InputFile_UUID(i));
+                idx = strcmp(obj.PipelineSummary.Job(:), obj.tmp_BranchPipeline.Job(i));
                 obj.PipelineSummary(idx,:) = obj.tmp_BranchPipeline(i,:);
             end
             % Update objects' FilePtrs.
-            
+            txt = jsonencode(obj.tmp_FilePtr);
+            fid = fopen(obj.tmp_TargetObj.FilePtr, 'w');
+            fprintf(fid, '%s', txt);
+            fclose(fid);
         end
         function readFilePtr(obj)
             % READFILEPTR loads the content of FILEPTR.JSON in a structure

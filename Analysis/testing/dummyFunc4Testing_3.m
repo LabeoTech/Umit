@@ -1,4 +1,4 @@
-function out = dummyFunc4Testing_2(File, SaveFolder)
+function out = dummyFunc4Testing_3(File, SaveFolder, varargin)
 % FUNCTEMPLATE is a dummy function that serves as a template for creating
 % functions compatible with the toolbox.
 %
@@ -9,7 +9,7 @@ function out = dummyFunc4Testing_2(File, SaveFolder)
 % 4 - opts: structure containing optional parameters for the function.
 %
 
-default_Output = 'dummyFile2.dat';
+default_Output = 'dummyFile3.dat';
 %%% Arguments parsing and validation %%%
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder

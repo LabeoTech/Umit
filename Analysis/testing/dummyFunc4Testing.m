@@ -1,4 +1,4 @@
-function out = dummyFunc4Testing(RawFolder, SaveFolder)
+function out = dummyFunc4Testing(RawFolder, SaveFolder, varargin)
 % FUNCTEMPLATE is a dummy function that serves as a template for creating
 % functions compatible with the toolbox.
 %
@@ -8,22 +8,28 @@ function out = dummyFunc4Testing(RawFolder, SaveFolder)
 % 3 - Output: Output file name or cell array of file names.
 % 4 - opts: structure containing optional parameters for the function.
 %
+default_Output = 'dummyFile.dat';
 %%% Arguments parsing and validation %%%
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder
 addRequired(p, 'RawFolder', @isfolder)% For Raw Folder as input
 % Save folder:
 addRequired(p, 'SaveFolder', @isfolder);
+% Output:
+addOptional(p, 'Output', default_Output);
 % Parse inputs:
 parse(p,RawFolder, SaveFolder);
 %Initialize Variables:
 RawFolder = p.Results.RawFolder;
 SaveFolder = p.Results.SaveFolder;
+Output = p.Results.Output;
 
 %%%%
 % Run your code here:
 disp('This is a dummy function for Pipeline testing!');
-out = [];
+a = zeros(3,3, 'single');
+save2Dat(fullfile(SaveFolder, Output), a);
+out = Output;
 end
 
 

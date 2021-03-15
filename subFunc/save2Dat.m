@@ -13,7 +13,7 @@ parse(p, DatFileName, data, varargin{:});
 %%%%%%
 metaDat = p.Results.metaData;
 metaDatFilename = strrep(p.Results.DatFileName, '.dat', '_info.mat');
-if isempty(metaDat)
+if isempty(fieldnames(metaDat))
     metaDat = struct;
     metaDat.datName = 'data';
     metaDat.datFile = DatFileName;
