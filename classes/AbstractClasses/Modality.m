@@ -10,6 +10,7 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         RawFiles % File(s) containing raw data.
         RecordingSystem % Name of the system used to record the data.
         SampleRateHz % Sampling rate of the recording in Hz.
+        MetaDataFile % File containing other information about the recording session.
     end
     properties (SetAccess = {?Protocol, ?PipelineManager})
         SaveFolder % Path of directory containing transformed data.
@@ -33,7 +34,7 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
                 obj.SampleRate = SampleRate;
             else
                 obj.ID = 'def';
-            end            
+            end
         end
         
         %%% Property Set Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -59,6 +60,7 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
             
             obj.RawFiles = obj.validateFileName(RawFiles);
         end
+        
         function set.RecordingSystem(obj, RecordingSystem)
             % Set function of RecordingSystem property.
             %   Validates if RECORDINGSYSTEM is a string.
@@ -68,15 +70,23 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         
         function set.SampleRateHz(obj, SampleRate)
             % Set function of SampleRate property( in Hz ).
-            obj.SampleRateHz = double(SampleRate); 
+            obj.SampleRateHz = double(SampleRate);
         end
         
-         function set.SaveFolder(obj, SaveFolder)
+        function set.SaveFolder(obj, SaveFolder)
             % Set function of SAVEFOLDER property.
             %   This function accepts only existing folders.
             obj.SaveFolder = checkFolder(SaveFolder);
-         end
-         %%% Validators %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        end
+        
+        function set.MetaDataFile(obj,MetaDataFile)
+            % Set function of METADATAFILE property.
+            %   Validates if Files exist in Folder, then sets the METADATAFILE
+            %   property, otherwise throws an error. Duplicate file names
+            %   are ignored.
+            obj.MetaDataFile = obj.validateFileName(MetaDataFile);
+        end
+        %%% Validators %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function validate_path(~, input)
             if ~isfolder(input)
                 errID = 'IsaToolbox:InvalidInput';
@@ -85,23 +95,22 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
             end
         end
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-         function createFilePtr(obj)
-             % This function creates a JSON file containing basic information from object.
-             
-             % FilePtr full path:
-             obj.FilePtr = fullfile(obj.SaveFolder, 'FilePtr.json');
-             A = struct('Type', class(obj), 'ID', obj.ID, 'Files', []);
-             txt = jsonencode(A);
-             fid = fopen(obj.FilePtr, 'w');
-             fprintf(fid, '%s', txt);
-             fclose(fid);
-         end
+        function createFilePtr(obj)
+            % This function creates a JSON file containing basic information from object.
+            
+            % FilePtr full path:
+            obj.FilePtr = fullfile(obj.SaveFolder, 'FilePtr.json');
+            A = struct('Type', class(obj), 'ID', obj.ID, 'Files', []);
+            txt = jsonencode(A);
+            fid = fopen(obj.FilePtr, 'w');
+            fprintf(fid, '%s', txt);
+            fclose(fid);
+        end
     end
     methods (Access = protected)
         function delete(obj)
             %             disp(['Modality of type ' class(obj) ' deleted'])
         end
-
         function FileName = validateFileName(obj, FileName)
             % This functions validates if the files in FILENAME exist in FOLDER.
             % File(s) not found are removed from the list.
@@ -131,6 +140,3 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         end
     end
 end
-
-
-% Local Functions

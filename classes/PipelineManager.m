@@ -1,17 +1,16 @@
 classdef PipelineManager < handle
-    % PIPELINEMANAGER Class that creates and manages pre-processing and
+    % PIPELINEMANAGER creates and manages pre-processing and
     % analysis pipelines.
     %  Creates a structure with the info necessary to run a simple pipeline
     %  as a sequence of steps(i.e. step 1, step 2, step3, ... step N).
-    %  Controls for run / failed / completed / aborted steps in the
-    %  pipeline.
+    %  Controls for failed / completed  steps in the pipeline.
     properties
         EraseIntermediate % Boolean to indicate if PIPELINEMANAGER will delete intermediate files in the pipeline. It keeps only the first and last file in the pipeline.
         IgnoreLoggedFiles % Boolean. If true, PIPELINEMANAGER will ignore identical jobs previously run (logged in OBJ.PROTOCOLOBJ.LOGBOOKFILE).
         FuncRootDir % Directory where all functions are located.
+        Pipe % Array containing steps of the pipeline.
     end
     properties (SetAccess = private, SetObservable)
-        Pipe % Array containing steps of the pipeline.
         ProtocolObj % Protocol Object.
         State % Boolean indicating if the task in pipeline was successful (TRUE) or not (FALSE).
         tmp_LogBook % Temporarily stores the table in PROTOCOL.LOGBOOKFILE
@@ -495,11 +494,11 @@ classdef PipelineManager < handle
             funcStr = ['out = ' params.Name '(''' params.Input ''',''' params.SaveIn ''''];
             idx = strcmp({obj.FunctionList.Name}, params.Name);
             def_Output = obj.FunctionList(idx).Output;
-                        
+            
             % add optional variables to the string:
             if ~isempty(params.opts)
                 funcStr = [funcStr ',opts'];
-            elseif ~isequaln(params.Output, def_Output) 
+            elseif ~isequaln(params.Output, def_Output)
                 funcStr = [funcStr ',' params.Output];
             end
             funcStr = [funcStr ');'];
@@ -514,7 +513,7 @@ classdef PipelineManager < handle
                 newInput = '';
             end
         end
-                function out = askForFirstInput(obj, FuncName)
+        function out = askForFirstInput(obj, FuncName)
             % ASKFORFIRSTINPUT creates an input prompt to get user to give the INPUT
             % of the first task in the pipeline.
             out = '';
@@ -545,19 +544,19 @@ classdef PipelineManager < handle
                     obj.tmp_TargetObj = obj.ProtocolObj.Array.ObjList(idx(i,1)).Array.ObjList(idx(i,2)).Array.ObjList(idx(i,3));
             end
             obj.readFilePtr;
-            FileList = {obj.tmp_FilePtr.Files};
-            if isempty(FileList{:})
+            FileList = {obj.tmp_FilePtr.Files.Name};
+            if isempty(FileList)
                 warndlg(['No Files found in ' obj.ProtocolObj.Array.ObjList(idx(i,1)).Array.ObjList(idx(i,2)).Array.ObjList(idx(i,3)).SaveFolder], 'Pipeline warning!', 'modal')
                 return
             else
-            [indx,tf] = listdlg('PromptString', {'Select the File from ' classes{indx},  'as input for the function :',  FuncName},'ListString',FileList, 'SelectionMode', 'single');
-            if ~tf
-                return
-            end
+                [indx,tf] = listdlg('PromptString', {'Select the File from ' classes{indx},  'as input for the function :',  FuncName},'ListString',FileList, 'SelectionMode', 'single');
+                if ~tf
+                    return
+                end
             end
             out = FileList{indx};
         end
-
+        
         function eraseIntermediateFiles(obj)
             % ERASEINTERMEDIATEFILES deletes the file generated from the previous
             % step in the pipeline if OBJ.ERASEINTERMEDIATE is True, except

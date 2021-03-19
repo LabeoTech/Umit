@@ -3,14 +3,15 @@ classdef Acquisition < handle
     % during an acquisition session.
     %   This class instantiates an object containing information about a
     %   modalities (ex. Brain Imaging, Eye Tracking) in a recording session.
-    %   It contains the acquisiion's identifier (ID)an "ObjectListManager"
+    %   It contains the acquisiion's identifier (ID) an "ObjectListManager"
     %   object containing an array of objects instantiated from a child
     %   class of "Modality".
     
     properties
         ID % Acquisition ID
         Array % List of Modalities.
-        Start_datetime % Date and time of the beginning of the acquisition. EMPTY FOR NOW.
+        Start_datetime % Date and time of the beginning of the acquisition. 
+        
     end
     properties (SetAccess = {?Protocol, ?PipelineManager})
         SaveFolder % Path of directory containing transformed data.
@@ -68,7 +69,7 @@ classdef Acquisition < handle
                 try
                     obj.Start_datetime = datetime(start_datetime, 'InputFormat', infmt);
                 catch
-                    error('Wrong DateTime format. It has to be like : yyyy-MM-dd HH:mm:ss')
+                    error(['Wrong DateTime format. It has to be like : ' infmt])
                 end
             elseif isempty(start_datetime)
                 obj.Start_datetime = [];
