@@ -23,7 +23,7 @@ opts = p.Results.opts;
 outFile = {};
 %%%%
 % Calls function from IOI library. Temporary for now.
-ImagesClassification(RawFolder, opts.BinningSpatial, opts.BinningTemp, opts.b_SubROI, opts.b_IgnoreStim);
+% ImagesClassification(RawFolder, opts.BinningSpatial, opts.BinningTemp, opts.b_SubROI, opts.b_IgnoreStim);
 cd(RawFolder)
 chanList = dir('*Chan*.dat'); chanList = {chanList.name};
 for i = 1:length(chanList)
@@ -54,9 +54,6 @@ for i = 1:length(chanList)
     else
         disp(['Successful tranfer of ' chanName ' to ' SaveFolder]);
     end
+    outFile = [outFile, chanName];
 end
-
-
-%%%%%%%%%%%%%%%%%
-outFile = [outFile, chanName];
 end
