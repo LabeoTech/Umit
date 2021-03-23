@@ -85,14 +85,14 @@ classdef PipelineManager < handle
             end
            
             % Determine the task INPUT:
-            b_needUserInput = strcmp(task.Input, 'File');
-            if isempty(obj.Pipe) && b_needUserInput
+            b_inputIsFile = strcmp(task.Input, 'File');
+            if isempty(obj.Pipe) && b_inputIsFile
                 task.Input = obj.askForFirstInput(p.Results.funcName);
                 if isempty(task.Input)
                     disp('Operation cancelled by user!')
                     return
                 end
-            elseif ~isempty(obj.Pipe)
+            elseif ~isempty(obj.Pipe) && b_inputIsFile
                 task.Input = obj.Pipe(end).Output;
             end
             % Choose input if multiple options are available:
@@ -103,8 +103,7 @@ classdef PipelineManager < handle
             % Complement info in task structure:
             task.className = p.Results.className;
             task.level = lvl;
-            funcStr = obj.createFuncStr(task);
-            task.funcStr = funcStr;
+%              task.funcStr = obj.createFuncStr(task);
             obj.Pipe = [obj.Pipe task];
         end
         
@@ -205,6 +204,26 @@ classdef PipelineManager < handle
             delete(f)
         end
         
+        function showPipeSummary(obj)
+            % SHOWPIPESUMMARY displays a summary of the pipeline steps in
+            % the command window.
+            
+            disp(repmat('-', 2,100));
+            fields = setdiff(fieldnames(obj.Pipe),{'opts', 'Output'});
+            for i = 1:length(obj.Pipe)
+                disp(['Step # ' num2str(i)])
+                for j = 1:length(fields)
+                   fprintf('%s : %s \n', fields{j}, num2str(obj.Pipe(i).(fields{j})))
+                end
+                disp('##Optional Parameters##')
+                Optsfields = fieldnames(obj.Pipe(i).opts);
+                for j = 1:length(Optsfields)
+                   fprintf('%s : %s \n', Optsfields{j}, num2str(obj.Pipe(i).opts.(Optsfields{j})))
+                end
+                disp(repmat('-', 1,100));           
+            end
+            disp(repmat('-', 1,100));           
+        end
         
         function savePipe(obj, filename)
             % SAVEPIPE saves the structure OBJ.PIPE in a .MAT file in the
@@ -352,8 +371,7 @@ classdef PipelineManager < handle
                 
                 for j = 1:size(targetIdxArr,1)
                     obj.getTargetObj(targetIdxArr(j,:));
-                    LastLog = obj.ProtocolObj.createEmptyTable;
-                    obj.tmp_TargetObj.LastLog = LastLog;
+                    obj.tmp_TargetObj.LastLog = obj.ProtocolObj.createEmptyTable;
                     obj.readFilePtr;
                     for k = 1:length(subtasks)
                         task = subtasks(k);
@@ -386,35 +404,11 @@ classdef PipelineManager < handle
                 LastLog(:,i) = str(i);
             end
             task.InputFile_UUID = 'None';
-            switch task.Input
-                case 'RawFolder'
-                    folder = obj.tmp_TargetObj.RawFolder;
-                    task.Input = folder;
-                    task.funcStr = strrep(task.funcStr, 'RawFolder', folder );
-                case 'SaveFolder'
-                    folder = obj.tmp_TargetObj.SaveFolder;
-                    task.Input = folder;
-                    task.funcStr = strrep(task.funcStr, 'SaveFolder', folder);
-                otherwise
-                    idx = strcmp(task.Input, {obj.tmp_FilePtr.Files.Name});
-                    if strcmp(obj.tmp_FilePtr.Files(idx).Folder, 'RawFolder')
-                        filePath = fullfile(obj.tmp_TargetObj.RawFolder, obj.tmp_FilePtr.Files(idx).Name);
-                    else
-                        filePath = fullfile(obj.tmp_TargetObj.SaveFolder, obj.tmp_FilePtr.Files(idx).Name);
-                    end
-                    task.funcStr = strrep(task.funcStr, task.Input, ['' filePath '']);
-                    task.Input = filePath;
-                    LastLog.InputFile_Path = {task.Input};
-                    inputMetaData = strrep(task.Input, '.dat', '_info.mat');
-                    mDt_input = matfile(inputMetaData); fileUUID = mDt_input.fileUUID;
-                    if iscell(fileUUID)
-                        fileUUID = [fileUUID{:}];
-                    end
-                    task.InputFile_UUID = fileUUID;
-                    LastLog.InputFile_UUID = {task.InputFile_UUID};
+            task = populateFuncStr(obj, task);
+            if ~strcmp(task.InputFile_UUID, 'None')
+                LastLog.InputFile_UUID = {task.InputFile_UUID};
+                LastLog.InputFile_Path = {task.Input};
             end
-            % Update SaveFolder in task.
-            task.funcStr = strrep(task.funcStr, 'SaveFolder', obj.tmp_TargetObj.SaveFolder);
             LastLog.ClassName = {class(obj.tmp_TargetObj)};
             LastLog.Job = {task.funcStr};
             % Check if Job was already performed:
@@ -425,7 +419,9 @@ classdef PipelineManager < handle
                     disp(['Running ' task.Name '...']);
                     % Load options structure in the workspace.
                     opts = task.opts;
+                    % Evaluate function string:
                     eval(task.funcStr);
+                    %
                     state = true;
                     LastLog.Messages = 'No Errors';
                 catch ME
@@ -438,29 +434,31 @@ classdef PipelineManager < handle
                 obj.PipelineSummary = [obj.PipelineSummary; LastLog];
                 obj.State = state;
                 if LastLog.Completed
-                    disp('Done!')
-                    if ischar(out)
-                        out = {out};
-                    end
-                    for i = 1:length(out)
-                        SaveFolder = eval(['obj.tmp_TargetObj.' task.SaveIn]);
-                        mDt_file = matfile(strrep(fullfile(SaveFolder, out{i}), '.dat', '_info.mat'));
-                        % Inheritance of MetaData from Input File (Different ones ONLY).
-                        if exist('mDt_input','var')
-                            mDt_file.Properties.Writable = true;
-                            props = setdiff(properties(mDt_input), properties(mDt_file));
-                            for k = 1:length(props)
-                                eval(['mDt_file.' props{k} '= mDt_input.' props{k} ';'])
+                    disp('Task Completed!')
+                    if exist('out', 'var')
+                        if ischar(out)
+                            out = {out};
+                        end
+                        for i = 1:length(out)
+                            SaveFolder = strip(task.SaveIn,'''');
+                            mDt_file = matfile(strrep(fullfile(SaveFolder, out{i}), '.dat', '_info.mat'));
+                            % Inheritance of MetaData from Input File (Different ones ONLY).
+                            if exist('mDt_input','var')
+                                mDt_file.Properties.Writable = true;
+                                props = setdiff(properties(mDt_input), properties(mDt_file));
+                                for k = 1:length(props)
+                                    eval(['mDt_file.' props{k} '= mDt_input.' props{k} ';'])
+                                end
                             end
+                            %
+                            fileUUID = mDt_file.fileUUID;
+                            if iscell(fileUUID)
+                                fileUUID = [fileUUID{:}];
+                            end
+                            task.File_UUID = fileUUID;
+                            task.FileName = out{i};
+                            obj.write2FilePtr(task);
                         end
-                        % 
-                        fileUUID = mDt_file.fileUUID;
-                        if iscell(fileUUID)
-                            fileUUID = [fileUUID{:}];
-                        end
-                        task.File_UUID = fileUUID;
-                        task.FileName = out{i};
-                        obj.write2FilePtr(task);
                     end
                 else
                     disp('Failed!')
@@ -485,24 +483,24 @@ classdef PipelineManager < handle
             end
             obj.tmp_TargetObj = targetObj;
         end
-        function funcStr = createFuncStr(obj, params)
-            % CREATEFUNCSTR checks for user-input parameters in PARAMS and
-            % changes the FUNCINFO fields accordingly. Outputs the string
-            % that will be passed in the EVAL function in
-            % OBJ.RUN_TASKONTARGET and the VARS structure.
-            
-            funcStr = ['out = ' params.Name '(''' params.Input ''',''' params.SaveIn ''''];
-            idx = strcmp({obj.FunctionList.Name}, params.Name);
-            def_Output = obj.FunctionList(idx).Output;
-            
-            % add optional variables to the string:
-            if ~isempty(params.opts)
-                funcStr = [funcStr ',opts'];
-            elseif ~isequaln(params.Output, def_Output)
-                funcStr = [funcStr ',' params.Output];
-            end
-            funcStr = [funcStr ');'];
-        end
+%         function funcStr = createFuncStr(obj, params)
+%             % CREATEFUNCSTR checks for user-input parameters in PARAMS and
+%             % changes the FUNCINFO fields accordingly. Outputs the string
+%             % that will be passed in the EVAL function in
+%             % OBJ.RUN_TASKONTARGET and the VARS structure.
+%             
+%             funcStr = [params.Name '(''' params.Input ''',''' params.SaveIn ''''];
+% %             idx = strcmp({obj.FunctionList.Name}, params.Name);
+% %             def_Output = obj.FunctionList(idx).Output;           
+%             % add optional variables to the string:
+%             if ~isempty(params.opts)
+%                 funcStr = [funcStr ',opts'];
+%             end
+%             if ~isempty(params.Output)
+%                funcStr = ['out = ' funcStr];
+%             end
+%             funcStr = [funcStr ');'];
+%         end
         function newInput = pickAnInput(~,task)
             %PICKANINPUT prompts a LISTDLG to user-input of a function's
             % input when more than one output is possible.
@@ -556,7 +554,6 @@ classdef PipelineManager < handle
             end
             out = FileList{indx};
         end
-        
         function eraseIntermediateFiles(obj)
             % ERASEINTERMEDIATEFILES deletes the file generated from the previous
             % step in the pipeline if OBJ.ERASEINTERMEDIATE is True, except
@@ -670,8 +667,9 @@ classdef PipelineManager < handle
                 info.args = [];
                 info.opts = [];
                 txt = fileread(funcFile);
+                funcStr = regexp(txt, '(?<=function\s*).*?(?=\n)', 'match', 'once');
                 expInput = ['(?<=' funcFile(1:end-2) '\s*\().*?(?=\))'];
-                str = regexp(txt, expInput, 'match', 'once');
+                str = regexp(funcStr, expInput, 'match', 'once');
                 str = split(str, ',');
                 info.args.Input = strtrim(str{1});
                 info.args.SaveIn = strtrim(str{2});
@@ -682,12 +680,65 @@ classdef PipelineManager < handle
                 expOpts = 'default_opts\s*=.*?(?=\n)';
                 str = regexp(txt, expOpts, 'match', 'once');
                 if ~isempty(str)
-                eval(str)
-                info.opts = default_opts;
+                    eval(str)
+                    info.opts = default_opts;
                 end
             end
         end
-        
+        function task = populateFuncStr(obj, task)
+            % POPULATEFUNCSTR replaces keywords in TASK.FUNCSTR with the
+            % info contained in OBJ.TMP_TARGETOBJ. It is used in
+            % OBJ.RUN_TASKONTARGET.
+            
+            %
+            % Replace Input string:
+            switch task.Input
+                case 'RawFolder'
+                    folder = obj.tmp_TargetObj.RawFolder;
+                    task.Input = ['''' folder ''''];
+                case 'SaveFolder'
+                    folder = obj.tmp_TargetObj.SaveFolder;
+                    task.Input = ['''' folder ''''];
+                case 'object'
+                    task.Input = 'obj.tmp_TargetObj';
+                otherwise
+                    idx = strcmp(task.Input, {obj.tmp_FilePtr.Files.Name});
+                    if strcmp(obj.tmp_FilePtr.Files(idx).Folder, 'RawFolder')
+                        filePath = fullfile(obj.tmp_TargetObj.RawFolder, obj.tmp_FilePtr.Files(idx).Name);
+                    else
+                        filePath = fullfile(obj.tmp_TargetObj.SaveFolder, obj.tmp_FilePtr.Files(idx).Name);
+                    end
+                    task.Input = ['''' filePath ''''];
+                    
+                    inputMetaData = strrep(filePath, '.dat', '_info.mat');
+                    mDt_input = matfile(inputMetaData); fileUUID = mDt_input.fileUUID;
+                    if iscell(fileUUID)
+                        fileUUID = [fileUUID{:}];
+                    end
+                    task.InputFile_UUID = fileUUID;
+                
+            end
+            % Replace SaveFolder string:
+            switch task.SaveIn
+                case 'RawFolder'
+                    folder = obj.tmp_TargetObj.RawFolder;
+                    task.SaveIn = ['''' folder ''''];
+                case 'SaveFolder'
+                    folder = obj.tmp_TargetObj.SaveFolder;
+                    task.SaveIn = ['''' folder ''''];
+            end
+            
+            funcStr = [task.Name '(' task.Input ',' task.SaveIn];
+            % Add optionals: 
+            if ~isempty(task.opts)  
+                funcStr = [funcStr ', opts'];
+            end
+            if ~isempty(task.Output)
+                funcStr = ['out = ' funcStr];
+            end
+            funcStr = [funcStr ');'];
+            task.funcStr = funcStr;
+        end
     end
 end
 

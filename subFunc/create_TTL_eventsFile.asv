@@ -1,8 +1,7 @@
-function create_TTL_eventsFile(saveFolder, TTLsignal, sample_rate, varargin)
-% CREATE_TTL_EVENTSFILE creates a .MAT file containing the channel, state
-% and time stamps of a TTL signal(TTLSIGNAL) passing a given threshold(THRESHOLD).
+function [eventID, state, timestamps] = getEventsFromTTL(TTLsignal, sample_rate, varargin)
+% GETEVENTSFROMTTL gets the channel, state and time stamps of a 
+% TTL signal(TTLSIGNAL) passing a given threshold(THRESHOLD).
 % Inputs:
-% saveFolder: folder where to save the .MAT file.
 % TTLsignal: a nChannel x Signal matrix containing the analog TTL signal.
 % sample_rate : The sample rate of the TTL signal recording.
 % threshold (Optional): threshold value in Volts. If not provided, 2.5V is

@@ -273,7 +273,27 @@ classdef Protocol < handle
             obj.createLogBookFile;
         end
             
-        
+        function out = extractFilteredObjects(obj, lvl)
+            %EXTRACTFILTEREDOBJECTS generates a cell array containing all
+            % objects listed in OBJ.IDX_FILTERED at the level LVL.
+            % Input: 
+            % lvl: 
+                % 1 - Subject            
+                % 2 - Acquisition
+                % 3 - Modality
+           out = {};
+                switch lvl
+                    case 1 
+                        indx = unique(obj.Idx_Filtered(:,1));
+                        out = arrayfun(@(x) obj.Array.ObjList(x), indx, 'UniformOutput', false);
+                    case 2
+                        indx = unique(obj.Idx_Filtered(:,[1 2]), 'rows');
+                        out = arrayfun(@(x,y) obj.Array.ObjList(x).Array.ObjList(y), indx(:,1), indx(:,2), 'UniformOutput', false);
+                    case 3 
+                        indx = unique(obj.Idx_Filtered, 'rows');
+                        out = arrayfun(@(x,y,z) obj.Array.ObjList(x).Array.ObjList(y).Array.ObjList(z), indx(:,1), indx(:,2), indx(:,3), 'UniformOutput', false);
+                end
+        end
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         
         function queryFilter(obj)

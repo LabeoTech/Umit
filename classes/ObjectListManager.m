@@ -100,7 +100,8 @@ classdef ObjectListManager < handle
                         eval(['iElem = find(contains({obj.ObjList.' PropName '}, ''' str '''));'])
                     case 'regexp'
                         eval(['iElem = regexp({obj.ObjList.' PropName '}, ''' str ''');'])
-                        iElem = find([iElem{:}]);%#ok
+                        iElem = cellfun(@(x) ~isempty(x), iElem); %#ok
+                        iElem = find(iElem);
                 end
             end
         end

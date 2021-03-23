@@ -1,5 +1,5 @@
-function out = get_timestampsFromSingleChannel(RawFolder, SaveFolder, varargin)
-% GET_TIMESTAMPSFROMSINGLECHANNEL creates an event .MAT file in SAVEFOLDER
+function getEventsFromSingleChannel(object, SaveFolder, varargin)
+% GET_EVENTSFROMSINGLECHANNEL creates an event .MAT file in SAVEFOLDER
 % from Analog signals recorded from ONE CHANNEL of LabeoTech Imaging systems.
 % Inputs:
 %   RawFolder: directory containing ai_xxxx.bin files.
@@ -11,33 +11,32 @@ function out = get_timestampsFromSingleChannel(RawFolder, SaveFolder, varargin)
 %       opts.threshold = Threshold  to be used in the signal detection.
 %       Default = 2.5 (v).
 % Output:
-%   TTL_events.mat file containing channel ID, state and timestamps. 
+%   TTL_events.mat file containing channel ID, state and timestamps.
 %   For details, see function CREATE_TTL_EVENTSFILE.m.
 %
 %%% Arguments parsing and validation %%%
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder
-addRequired(p, 'RawFolder', @isfolder)% For Raw Folder as input
+% Imaging Object:
+addRequired(p, 'object', @(x) isa(x,'Modality'));
 % Save folder:
 addRequired(p, 'SaveFolder', @isfolder);
 % Optional Parameters:
 % opts structure
 default_opts = struct('channel', -1, 'threshold', 2.5);
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(fieldnames(x)));
-% Output File: 
-default_Output = ''; % There is no Output file for this function.
 % Parse inputs:
-parse(p,RawFolder, SaveFolder, varargin{:});
+parse(p,object, SaveFolder, varargin{:});
 % Initialize Variables:
-RawFolder = p.Results.RawFolder;
+object = p.Results.object;
 SaveFolder = p.Results.SaveFolder;
 opts = p.Results.opts;
 %%%%
-cd(RawFolder)
-txt = fileread(fullfile(RawFolder, 'info.txt'));
-sr = regexp(txt, '(?<=AISampleRate:\s*)\d+', 'match', 'once');sr = str2double(sr);
+cd(object.RawFolder)
+txt = fileread(fullfile(object.RawFolder, 'info.txt'));
+sr = regexp(txt, '(?<=AISampleRate:\s*)\d+', 'match', 'once'); sr = str2double(sr);
 tAIChan = regexp(txt, '(?<=AINChannels:\s*)\d+', 'match', 'once'); tAIChan = str2double(tAIChan);
-aiFilesList = dir('ai_*.bin'); 
+aiFilesList = dir('ai_*.bin');
 AnalogIN = [];
 for ind = 1:size(aiFilesList,1)
     data = memmapfile(aiFilesList(ind).name, 'Offset', 5*4, 'Format', 'double', 'repeat', inf);
@@ -48,7 +47,7 @@ for ind = 1:size(aiFilesList,1)
     AnalogIN = [AnalogIN; tmp];
 end
 % Crop to first and last camera triggers:
-camT = diff(AnalogIN(:,1) > opts.threshold); camT = [camT;NaN];
+camT = diff(AnalogIN(:,1) > 2.5); camT = [camT;NaN];
 camTOn = find(camT == 1,1,'first');
 camTOff = find(camT == -1,1,'last');
 AnalogIN = AnalogIN(camTOn:camTOff,:);
@@ -60,6 +59,33 @@ if opts.channel == -1
 else
     sigChan = opts.channel;
 end
-% create TTL_events file:
-create_TTL_eventsFile(SaveFolder, AnalogIN(:,sigChan),sr,opts.threshold)
+signal = AnalogIN(:,sigChan);
+a = load(object.MetaDataFile);
+% Expand this IF statement to get SF/TF experiments.
+if isfield(a, 'BarSize')
+    Direction = a.DriftDirection;
+    nSweeps = a.nTrials;
+    if Direction == -1
+        dirID = repmat([0:90:270]',nSweeps*2,1); % accounts for ON/OFF state.
+        dirID = sort(dirID);
+    else
+        dirID = repmat(Direction, nSweeps*2,1);
+    end
+    [~, state, timestamps] = getEventsFromTTL(signal, sr, opts.threshold);
+    % This sections is to try to remove different artifacts from
+    % PsychToolbox...
+    deltaT = diff(timestamps);
+    idx = deltaT < (mean(deltaT) - 1.96*std(deltaT,1)); idx = [idx;false]; % Remove every pulse outside 1,96 STD below the mean (basic statistical outlier detection).
+    if sum(idx) > 0
+        disp('Artifact Detected and removed from Photodiode signal')
+    end
+    stateOn = find(state(~idx) == 1, 1, 'first');
+    stateOff = find(state(~idx) == 0, 1, 'Last');
+    state = state(stateOn:stateOff);
+    timestamps = timestamps(stateOn:stateOff);
+    %%%
+    
+    % Save to EVENTS.MAT file:
+    saveEventsFile(SaveFolder, dirID, timestamps, state) 
+end
 end

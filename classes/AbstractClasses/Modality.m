@@ -100,6 +100,10 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
             
             % FilePtr full path:
             obj.FilePtr = fullfile(obj.SaveFolder, 'FilePtr.json');
+            if exist(obj.FilePtr, 'file')
+                disp(['Skipped FilePtr creation. File pointer already exists in ' obj.SaveFolder ]);
+                return
+            end
             A = struct('Type', class(obj), 'ID', obj.ID, 'Files', []);
             txt = jsonencode(A);
             fid = fopen(obj.FilePtr, 'w');
