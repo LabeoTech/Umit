@@ -34,7 +34,7 @@ protocol.FilterStruct.FilterMethod = 'contains'; % Options: 'contains', 'regexp'
 % Perform query:
 protocol.queryFilter;
 % Display indices of selected branches from the Protocol hierarchy:
-idx = protocol.Idx_Filtered
+idx = protocol.Idx_Filtered;
 
 %% Preprocessing Pipeline
 % Create pipeline
@@ -56,7 +56,7 @@ pipe.addTask('FluorescenceImaging', 'getEventsFromSingleChannel', opts)
 % pipe.addTask('FluorescenceImaging', 'tempFiltNormalize');
 % pipe.addTask('FluorescenceImaging', 'GSR')
 pipe.addTask('FluorescenceImaging', 'SeedPixCorr');
-
+pipe.addTask('FluorescenceImaging','lookForMetaDataFile')
 pipe.showPipeSummary
 pipe.run_pipeline
 

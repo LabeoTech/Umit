@@ -216,13 +216,10 @@ classdef PipelineManager < handle
                    fprintf('%s : %s \n', fields{j}, num2str(obj.Pipe(i).(fields{j})))
                 end
                 disp('##Optional Parameters##')
-                if ~isempty(obj.Pipe(i).opts)
+                if ~isempty(obj.Pi
                 Optsfields = fieldnames(obj.Pipe(i).opts);
                 for j = 1:length(Optsfields)
                    fprintf('%s : %s \n', Optsfields{j}, num2str(obj.Pipe(i).opts.(Optsfields{j})))
-                end
-                else
-                    disp(' No optional parameters available')
                 end
                 disp(repmat('-', 1,100));           
             end
@@ -679,11 +676,7 @@ classdef PipelineManager < handle
                 info.args.SaveIn = strtrim(str{2});
                 expOutput = 'default_Output\s*=.*?(?=\n)';
                 str = regexp(txt, expOutput, 'match', 'once');
-                if isempty(str)
-                    default_Output = '';
-                else
-                    eval(str)
-                end
+                eval(str)
                 info.args.Output = default_Output;
                 expOpts = 'default_opts\s*=.*?(?=\n)';
                 str = regexp(txt, expOpts, 'match', 'once');
