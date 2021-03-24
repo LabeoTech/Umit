@@ -6,10 +6,11 @@ classdef Subject < handle
     %   object containing an array of "Acquisition" objects.
     
     properties
+        ID % Subject ID
         Calcium_indicator % Name of the calcium indicator.
     end
     properties (SetAccess = {?Protocol, ?PipelineManager, ?ObjectListManager})
-        ID % Subject ID
+        
         Array % List of Acquisitions.
         GroupID % Experimental Group of Subject.
         SaveFolder % Path of directory containing transformed data.

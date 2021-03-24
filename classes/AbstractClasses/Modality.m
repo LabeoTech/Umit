@@ -5,14 +5,14 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
     %   Acquisition objects see documentation on the "Acquisition" class.
     
     properties
+        ID % Unique Identifier of the object.
         RecordingSystem % Name of the system used to record the data.
         SampleRateHz % Sampling rate of the recording in Hz.
         MetaDataFile % File containing other information about the recording session.
-    end
-    properties (SetAccess = {?Protocol, ?PipelineManager, ?Acquisition, ?Subject})
-        ID % Unique Identifier of the object.
         RawFolder % Path of directory containing raw data.
         RawFiles % File(s) containing raw data.
+    end
+    properties (SetAccess = {?Protocol, ?PipelineManager, ?Acquisition, ?Subject})       
         SaveFolder % Path of directory containing transformed data.
         LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
         FilePtr % JSON file containing information of files created using PIPELINEMANAGER.
@@ -85,7 +85,11 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
             %   Validates if Files exist in Folder, then sets the METADATAFILE
             %   property, otherwise throws an error. Duplicate file names
             %   are ignored.
-            obj.MetaDataFile = obj.validateFileName(MetaDataFile);
+            if isfile(MetaDataFile)
+                obj.MetaDataFile = MetaDataFile;
+            else
+                disp([MetaDataFile ' was not found in ' obj.RawFolder ' and was ignored'])
+            end
         end
         
         function set.MyParent(obj, MyParent)

@@ -8,10 +8,10 @@ classdef Acquisition < handle
     %   class of "Modality".
     
     properties
+        ID % Acquisition ID
         Start_datetime % Date and time of the beginning of the acquisition. 
     end
     properties (SetAccess = {?Protocol, ?PipelineManager, ?Subject})
-        ID % Acquisition ID
         SaveFolder % Path of directory containing transformed data.
         Array % List of Modalities.
         LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.

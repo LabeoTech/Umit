@@ -26,7 +26,7 @@ idx = contains({mFiles.name}, subjName);
 
 if sum(idx)>0
     metaFile = mFiles(idx).name;
-    object.MetaDataFile = metaFile;
+    object.MetaDataFile = fullfile(object.RawFolder, metaFile);
 else 
     disp(['Could not file Meta data File in ' object.RawFolder]);
 end
