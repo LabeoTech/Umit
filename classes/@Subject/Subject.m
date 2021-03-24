@@ -6,12 +6,12 @@ classdef Subject < handle
     %   object containing an array of "Acquisition" objects.
     
     properties
-        ID % Subject ID
-        GroupID % Experimental Group of Subject.
-        Array % List of Acquisitions.
         Calcium_indicator % Name of the calcium indicator.
     end
     properties (SetAccess = {?Protocol, ?PipelineManager, ?ObjectListManager})
+        ID % Subject ID
+        Array % List of Acquisitions.
+        GroupID % Experimental Group of Subject.
         SaveFolder % Path of directory containing transformed data.
         LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
         FilePtr % JSON file containing information of files created using PIPELINEMANAGER.

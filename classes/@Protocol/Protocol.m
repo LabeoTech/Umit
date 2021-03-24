@@ -130,10 +130,18 @@ classdef Protocol < handle
             
             for i = 1:length(subjList)
                 tmpS = subjList{i};
+                indx = obj.Array.findElement('ID', tmpS, 'strcmp');
+                tmpS_obj = obj.Array.ObjList(indx);
                 for j = 1:length(acqList{i})
                     tmpA = acqList{i}{j};
+                    indx = tmpS_obj.Array.findElement('ID', tmpA, 'strcmp');
+                    tmpA_obj = tmpS_obj.Array.ObjList(indx);
+                    tmpA_obj.MyParent = tmpS_obj;
                     for k = 1:length(modList{i}{j})
                         tmpM = modList{i}{j}{k};
+                        indx = tmpA_obj.Array.findElement('ID', tmpM, 'strcmp');
+                        tmpM_obj = tmpA_obj.Array.ObjList(indx);
+                        tmpM_obj.MyParent = tmpA_obj;
                         tmpFolder = fullfile(obj.SaveDir, tmpS, tmpA, tmpM);
                         if exist(tmpFolder, 'dir')
                             continue
@@ -325,6 +333,7 @@ classdef Protocol < handle
            % Structure.
             obj.createFilterStruct;
         end
+        
         function LogBook = createEmptyTable(obj)
             % CREATEEMPTYTABLE outputs an empty Table to be filled with the information of pipelines
             % from PIPELINEMANAGER.
@@ -332,8 +341,6 @@ classdef Protocol < handle
                 0,datetime('now'),{'None'}, 'VariableNames', {'Subject', 'Acquisition',...
                 'Recording', 'ClassName', 'Job', 'InputFile_UUID', 'InputFile_Path', 'Completed', 'RunDateTime', 'Messages'});
         end
-        
-        
         
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         

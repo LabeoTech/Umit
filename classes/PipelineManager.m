@@ -222,7 +222,7 @@ classdef PipelineManager < handle
                    fprintf('%s : %s \n', Optsfields{j}, num2str(obj.Pipe(i).opts.(Optsfields{j})))
                 end
                 else
-                    disp(' No optional parameters available')
+                    disp(' No custom parameters selected.')
                 end
                 disp(repmat('-', 1,100));           
             end

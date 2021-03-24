@@ -32,12 +32,12 @@ if size(data,1) > size(data,2)
 end
 % Find samples that cross the threshold (rising and falling):
 szdat = size(data);
-idx = data > thr;
-dif = diff(idx,1,2); dif = [dif zeros(szdat(1),1)];
-
-[chanRise,tmRise] = find(dif == 1);
+idx_rise = data < thr & [data(:,2:end) nan(szdat(1),1)] > thr;
+idx_fall = data > thr & [data(:,2:end) nan(szdat(1),1)] < thr;
+[chanRise,tmRise] = find(idx_rise);
 tmRise = tmRise./sr; % transform sample into seconds;
-[chanFall,tmFall] = find(dif == -1);
+[chanFall,tmFall] = find(idx_fall);
+
 tmFall = tmFall./sr; % transform sample into seconds;
 eventID = uint16([chanRise chanFall]);
 timestamps = single([tmRise tmFall]);

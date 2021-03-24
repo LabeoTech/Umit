@@ -59,7 +59,8 @@ if opts.channel == -1
 else
     sigChan = opts.channel;
 end
-signal = AnalogIN(:,sigChan);
+signal = downsample(AnalogIN(:,sigChan),100); % I did this to try to eliminate artifacts due to the photodiode voltage fluctuations(BrunoO 23/03/2021).
+sr = sr/100;
 a = load(object.MetaDataFile);
 % Expand this IF statement to get SF/TF experiments.
 if isfield(a, 'BarSize')

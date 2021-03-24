@@ -8,12 +8,13 @@ classdef Acquisition < handle
     %   class of "Modality".
     
     properties
-        Start_datetime % Date and time of the beginning of the acquisition. 
-    end
-    properties (SetAccess = {?Protocol, ?PipelineManager, ?Subject})
         ID % Acquisition ID
-        SaveFolder % Path of directory containing transformed data.
         Array % List of Modalities.
+        Start_datetime % Date and time of the beginning of the acquisition. 
+        
+    end
+    properties (SetAccess = {?Protocol, ?PipelineManager})
+        SaveFolder % Path of directory containing transformed data.
         LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
         FilePtr % JSON file containing information of files created using PIPELINEMANAGER.
         MyParent % Subject object that contains ACQUISITION object.
@@ -83,10 +84,12 @@ classdef Acquisition < handle
         
         function set.MyParent(obj, MyParent)
             % Set function for MyParent property.
-            msg = 'Error setting Acquisition Parent Object. Object must be a Subject.';
-            assert(isa(MyParent, 'Subject'), msg);
-            obj.MyParent = MyParent;
+            validateattributes(MyParent
+                obj.Array.addObj(Array);
+            
+            
         end
+
                 
         %%% Property get functions
         function out = get.Start_datetime(obj)

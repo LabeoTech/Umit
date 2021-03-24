@@ -24,7 +24,7 @@ cd(object.RawFolder)
 mFiles = dir('*.mat');
 idx = contains({mFiles.name}, subjName);
 
-if ~isempty(idx)
+if sum(idx)>0
     metaFile = mFiles(idx).name;
     object.MetaDataFile = metaFile;
 else 

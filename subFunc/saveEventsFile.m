@@ -42,7 +42,8 @@ if isempty(state)
     state = ones(size(timestamps), 'single');
 end
 if isempty(eventNameList)
-    eventNameList = {num2str(unique(eventID))};
+    list = unique(eventID);
+    eventNameList = arrayfun(@num2str,list, 'UniformOutput', false);
 end
 % Checks for equality of lengths of eventID and timestamps
 errID = 'IsaToolbox:IncompatibleArraySizes';
