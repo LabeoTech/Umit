@@ -48,10 +48,8 @@ opts = pipe.setOpts('run_ImagesClassification');
 pipe.addTask('FluorescenceImaging', 'run_ImagesClassification', opts);
 opts = pipe.setOpts('getEventsFromSingleChannel');
 pipe.addTask('FluorescenceImaging', 'getEventsFromSingleChannel', opts)
-
-% pipe.addTask('FluorescenceImaging', 'dummyFunc4Testing');
-% pipe.addTask('FluorescenceImaging', 'dummyFunc4Testing_2');
-% pipe.addTask('FluorescenceImaging', 'dummyFunc4Testing_3');
+opts = pipe.setOpts('alignFrames');
+pipe.addTask('FluorescenceImaging', 'alignFrames', opts)
 
 % pipe.addTask('FluorescenceImaging', 'tempFiltNormalize');
 % pipe.addTask('FluorescenceImaging', 'GSR')
