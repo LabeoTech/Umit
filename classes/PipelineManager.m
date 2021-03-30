@@ -447,7 +447,9 @@ classdef PipelineManager < handle
                             SaveFolder = strip(task.SaveIn,'''');
                             mDt_file = matfile(strrep(fullfile(SaveFolder, out{i}), '.dat', '_info.mat'));
                             % Inheritance of MetaData from Input File (Different ones ONLY).
-                            if exist('mDt_input','var')
+                            Input = strip(task.Input,'''');
+                            if isfile(Input)
+                                mDt_input = matfile(strrep(Input, '.dat', '_info.mat'));
                                 mDt_file.Properties.Writable = true;
                                 props = setdiff(properties(mDt_input), properties(mDt_file));
                                 for k = 1:length(props)

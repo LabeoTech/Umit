@@ -17,15 +17,15 @@ save([protocol.SaveDir protocol.Name '.mat'], 'protocol');
 % Clear previously saved Filter structure:
 protocol.clearFilterStruct
 % Query subjects
-protocol.FilterStruct.Subject.PropName = 'ID';
-protocol.FilterStruct.Subject.Expression = 'M1D';
+% protocol.FilterStruct.Subject.PropName = 'ID';
+% protocol.FilterStruct.Subject.Expression = 'M1D';
 % protocol.FilterStruct.Subject.LogicalOperator ='NOT';
     % Excludes a subject from query:
 % protocol.FilterStruct.Subject(2).PropName = 'ID';
 % protocol.FilterStruct.Subject(2).Expression = 'M0005844209';
 % Query Acquisition and Modality:
 protocol.FilterStruct.Acquisition.PropName = 'ID';
-protocol.FilterStruct.Acquisition.Expression = 'RS'; % Leave empty to select all
+protocol.FilterStruct.Acquisition.Expression = 'SF'; % Leave empty to select all
 % protocol.FilterStruct.Modality.PropName = 'ID'; % Leave empty to select all. This works as well.
 % protocol.FilterStruct.Modality.Expression = 'Ctx';
 
@@ -50,7 +50,7 @@ opts = pipe.setOpts('getEventsFromSingleChannel');
 pipe.addTask('FluorescenceImaging', 'getEventsFromSingleChannel', opts)
 opts = pipe.setOpts('alignFrames');
 pipe.addTask('FluorescenceImaging', 'alignFrames', opts)
-
+pipe.addTask('FluorescenceImaging', 'calculateDF_F0')
 % pipe.addTask('FluorescenceImaging', 'tempFiltNormalize');
 % pipe.addTask('FluorescenceImaging', 'GSR')
 pipe.addTask('FluorescenceImaging', 'SeedPixCorr');

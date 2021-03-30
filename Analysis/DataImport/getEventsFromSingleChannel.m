@@ -62,31 +62,37 @@ end
 signal = downsample(AnalogIN(:,sigChan),100); % I did this to try to eliminate artifacts due to the photodiode voltage fluctuations(BrunoO 23/03/2021).
 sr = sr/100;
 a = load(object.MetaDataFile);
-% Expand this IF statement to get SF/TF experiments.
+
 if isfield(a, 'BarSize')
     Direction = a.DriftDirection;
     nSweeps = a.nTrials;
     if Direction == -1
-        dirID = repmat([0:90:270]',nSweeps*2,1); % accounts for ON/OFF state.
-        dirID = sort(dirID);
+        eventID = repmat([0:90:270]',nSweeps*2,1); % accounts for ON/OFF state.
+        eventID = sort(eventID);
     else
-        dirID = repmat(Direction, nSweeps*2,1);
+        eventID = repmat(Direction, nSweeps*2,1);
     end
-    [~, state, timestamps] = getEventsFromTTL(signal, sr, opts.threshold);
-    % This sections is to try to remove different artifacts from
-    % PsychToolbox...
-    deltaT = diff(timestamps);
-    idx = deltaT < (mean(deltaT) - 1.96*std(deltaT,1)); idx = [idx;false]; % Remove every pulse outside 1,96 STD below the mean (basic statistical outlier detection).
-    if sum(idx) > 0
-        disp('Artifact Detected and removed from Photodiode signal')
-    end
-    stateOn = find(state(~idx) == 1, 1, 'first');
-    stateOff = find(state(~idx) == 0, 1, 'Last');
-    state = state(stateOn:stateOff);
-    timestamps = timestamps(stateOn:stateOff);
-    %%%
-    
-    % Save to EVENTS.MAT file:
-    saveEventsFile(SaveFolder, dirID, timestamps, state) 
+    condList = num2cell(unique(eventID),2);
+elseif isfield(a,'TrialList')
+    [condList, ~, eventID] = unique(a.TrialList, 'rows');
+    condList = num2cell(condList,2);
+    % duplicate event ID to account for ON/OFF states:
+    eventID = repelem(eventID,2);
 end
+[~, state, timestamps] = getEventsFromTTL(signal, sr, opts.threshold);
+% This sections is to try to remove different artifacts from
+% PsychToolbox...
+deltaT = diff(timestamps);
+idx = deltaT < (mean(deltaT) - 1.96*std(deltaT,1)); idx = [idx;false]; % Remove every pulse outside 1,96 STD below the mean (basic statistical outlier detection).
+if sum(idx) > 0
+    disp('Artifact Detected and removed from Photodiode signal')
+end
+stateOn = find(state(~idx) == 1, 1, 'first');
+stateOff = find(state(~idx) == 0, 1, 'Last');
+state = state(stateOn:stateOff);
+timestamps = timestamps(stateOn:stateOff);
+%%%
+
+% Save to EVENTS.MAT file:
+saveEventsFile(SaveFolder, eventID, timestamps, state, condList)
 end

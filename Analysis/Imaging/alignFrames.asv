@@ -33,7 +33,7 @@ object = p.Results.object;
 SaveFolder = p.Results.SaveFolder;
 Output = p.Results.Output;
 opts = p.Results.opts;
-% outFile = erase(Output, '.dat')
+outFile = strrep(output, '.dat') '_aligned'];
 %%%%
 % Map reference frame:
 try
@@ -133,15 +133,14 @@ if opts.ApplyMask
     if opts.Crop2Mask
         [r,c] = find(mask);
         warp_data = warp_data(min(r):max(r), min(c):max(c), :);
-%         outFile = [outFile '_cropped'];
+        outFile = [outFile '_cropped'];
     end
 end
 % Un-flip data before saving...
 warp_data = flipud(rot90(warp_data));
 %%%
-% outFile = [outFile '.dat'];
-% datFile = fullfile(SaveFolder, outFile);
-datFile = fullfile(SaveFolder, Output);
+outFile = [outFile '.dat'];
+datFile = fullfile(SaveFolder, outFile);
 % Save to .DAT file and create .MAT file with metaData:
 save2Dat(datFile, warp_data);
 end
