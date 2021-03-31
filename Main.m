@@ -51,6 +51,8 @@ pipe.addTask('FluorescenceImaging', 'getEventsFromSingleChannel', opts)
 opts = pipe.setOpts('alignFrames');
 pipe.addTask('FluorescenceImaging', 'alignFrames', opts)
 pipe.addTask('FluorescenceImaging', 'calculateDF_F0')
+opts = pipe.setOpts('event_triggered_average');
+pipe.addTask('FluorescenceImaging', 'event_triggered_average', opts)
 % pipe.addTask('FluorescenceImaging', 'tempFiltNormalize');
 % pipe.addTask('FluorescenceImaging', 'GSR')
 pipe.addTask('FluorescenceImaging', 'SeedPixCorr');
