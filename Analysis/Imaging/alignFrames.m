@@ -48,20 +48,8 @@ refFr = ref_frame_info.reference_frame;
 % Get Reference frame file name:
 [~,ref_filename, ext] = fileparts(ref_frame_info.datFile);
 ref_filename = [ref_filename ext];
-% Check in object's FilePtr if a file with the same name exists in
-% SaveFolder:
-filePtr = object.FilePtr;
-txt = fileread(filePtr);
-a = jsondecode(txt);
-filenames = {a.Files.Name};
-if ~ismember(ref_filename, filenames)
-    msg = ['Cannot find ' ref_filename ' in SaveFolder'];
-    errID = 'MATLAB:UMIToolbox:FileNotFound';
-    error(errID, msg);
-else
-    mData = mapDatFile(fullfile(SaveFolder, ref_filename));
-end
-
+% Load file from SaveFolder with the same name of Reference Frame file:
+mData = mapDatFile(fullfile(SaveFolder, ref_filename));
 % Load Data:
 if size(mData.Data.data,3) < 100
     targetFr = mean(mData.Data.data);
@@ -91,11 +79,11 @@ catch ME
     rethrow(ME)
 end
 Rfixed = imref2d(size(refFr));
-if peak < 0.03
+if peak < 0.05
     disp('Phase correlation yielded a weak peak correlation value. Trying to apply intensity-based image registration...')
     [optimizer,metric] = imregconfig('multimodal');
-    optimizer.InitialRadius = 0.000625;
-    optimizer.MaximumIterations = 1000;
+    optimizer.InitialRadius = 0.0000625;
+    optimizer.MaximumIterations = 2000;
     tform = imregtform(targetFr, imref2d(size(targetFr)),refFr, Rfixed,'similarity',optimizer,metric);
 end
 targetFr = imwarp(targetFr,tform, 'OutputView',Rfixed);
@@ -142,6 +130,7 @@ warp_data = flipud(rot90(warp_data));
 % outFile = [outFile '.dat'];
 % datFile = fullfile(SaveFolder, outFile);
 datFile = fullfile(SaveFolder, Output);
+outFile = Output;
 % Save to .DAT file and create .MAT file with metaData:
 save2Dat(datFile, warp_data);
 end

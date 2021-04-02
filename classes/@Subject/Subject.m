@@ -8,13 +8,15 @@ classdef Subject < handle
     properties
         ID % Subject ID
         Calcium_indicator % Name of the calcium indicator.
+        MyParent % Protocol Object.
     end
     properties (SetAccess = {?Protocol, ?PipelineManager, ?ObjectListManager})
-        
         Array % List of Acquisitions.
         GroupID % Experimental Group of Subject.
-        SaveFolder % Path of directory containing transformed data.
         LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
+    end
+    properties (Dependent)
+        SaveFolder % Path of directory containing transformed data.
         FilePtr % JSON file containing information of files created using PIPELINEMANAGER.
     end
     methods
@@ -65,22 +67,44 @@ classdef Subject < handle
             end
         end
         
-        function set.SaveFolder(obj, SaveFolder)
-            % Set function for SaveFolder property.
-            obj.SaveFolder = checkFolder(SaveFolder);
-        end
+%         function set.SaveFolder(obj, SaveFolder)
+%             % Set function for SaveFolder property.
+%             obj.SaveFolder = checkFolder(SaveFolder);
+%         end
         
         function set.Calcium_indicator(obj, GECI)
             % Set function for CALCIUM_INDICATOR property.
             validateattributes(GECI, {'char', 'string'}, {'scalartext'}); % Validates if GECI is a non-empty text.
             obj.Calcium_indicator = GECI;
         end
-        
+        function set.MyParent(obj, Parent)
+            % Set function for MYPARENT property.
+            msgID = 'UMIToolbox:InvalidInput';
+            msg = 'Parent of Subject object must be a Protocol.';
+            assert(isa(Parent,'Protocol'), msgID, msg)
+            obj.MyParent = Parent;
+        end
+        %%% Property Get functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        function out = get.SaveFolder(obj)
+            % Get function for depentend property SaveFolder.
+            out = fullfile(obj.MyParent.SaveDir, obj.ID);
+            msgID = 'UMIToolbox:FolderNotFound';
+            msg = 'Subject SaveFolder doesnt exist.';
+            assert(isfolder(out), msgID,msg);
+        end
+        function out = get.FilePtr(obj)
+            % Get function for depentend property FilePtr.
+            out = fullfile(obj.MyParent.SaveDir, obj.ID, 'FilePtr.json');
+            msgID = 'UMIToolbox:FileNotFound';
+            msg = 'Subject FilePtr doesnt exist.';
+            assert(isfile(out), msgID,msg);
+        end
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function createFilePtr(obj)
             % This function creates a JSON file containing basic information from object.
             
             % FilePtr full path:
-            obj.FilePtr = fullfile(obj.SaveFolder, 'FilePtr.json');
+%             obj.FilePtr = fullfile(obj.SaveFolder, 'FilePtr.json');
             if exist(obj.FilePtr, 'file')
                 disp(['Skipped FilePtr creation. File pointer already exists in ' obj.SaveFolder ]);
                 return

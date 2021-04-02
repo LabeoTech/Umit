@@ -8,17 +8,21 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         ID % Unique Identifier of the object.
         RecordingSystem % Name of the system used to record the data.
         SampleRateHz % Sampling rate of the recording in Hz.
-        MetaDataFile % File containing other information about the recording session.
         RawFolder % Path of directory containing raw data.
         RawFiles % File(s) containing raw data.
-    end
-    properties (SetAccess = {?Protocol, ?PipelineManager, ?Acquisition, ?Subject})       
-        SaveFolder % Path of directory containing transformed data.
-        LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
-        FilePtr % JSON file containing information of files created using PIPELINEMANAGER.
         MyParent % Acquisition object that contains MODALITY object.
     end
-    
+    properties (SetAccess = {?Protocol, ?PipelineManager, ?Acquisition, ?Subject})       
+        LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
+    end
+    properties (Hidden)
+        MetaDataFileName %File containing other information about the recording session.
+    end
+    properties (Dependent)
+        SaveFolder % Path of directory containing transformed data.
+        MetaDataFile % FullPath of file containing other information about the recording session.
+        FilePtr % JSON file containing information of files created using PIPELINEMANAGER.
+    end
     methods
         
         function obj = Modality(ID, RawFolder, RawFiles, RecordingSystem, SampleRate)
@@ -74,31 +78,28 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
             obj.SampleRateHz = double(SampleRate);
         end
         
-        function set.SaveFolder(obj, SaveFolder)
-            % Set function of SAVEFOLDER property.
-            %   This function accepts only existing folders.
-            obj.SaveFolder = checkFolder(SaveFolder);
-        end
+%         function set.SaveFolder(obj, SaveFolder)
+%             % Set function of SAVEFOLDER property.
+%             %   This function accepts only existing folders.
+%             obj.SaveFolder = checkFolder(SaveFolder);
+%         end
         
-        function set.MetaDataFile(obj,MetaDataFile)
-            % Set function of METADATAFILE property.
+        function set.MetaDataFileName(obj,MetaDataFileName)
+            % Set function of METADATAFILENAME property.
             %   Validates if Files exist in Folder, then sets the METADATAFILE
             %   property, otherwise throws an error. Duplicate file names
             %   are ignored.
-            if isfile(MetaDataFile)
-                obj.MetaDataFile = MetaDataFile;
-            else
-                disp([MetaDataFile ' was not found in ' obj.RawFolder ' and was ignored'])
-            end
+            obj.MetaDataFileName = MetaDataFileName;
         end
         
         function set.MyParent(obj, MyParent)
             % Set function for MyParent property.
-            msg = 'Error setting Modality Parent Object. Object must be Acquitision.';
-            assert(isa(MyParent, 'Acquisition'), msg);
+            msgID = 'UMIToolbox:InvalidInput';
+            msg = 'Error setting Modality Parent Object. Parent must be Acquitision.';
+            assert(isa(MyParent, 'Acquisition'),msgID, msg);
             obj.MyParent = MyParent;
         end
-        %%% Validators %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        %%% Validators %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function validate_path(~, input)
             if ~isfolder(input)
                 errID = 'IsaToolbox:InvalidInput';
@@ -106,12 +107,32 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
                 error(errID, msg);
             end
         end
+        %%% Property Get functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        function out = get.SaveFolder(obj)
+            % Get function for depentend property SaveFolder.
+            out = fullfile(obj.MyParent.MyParent.MyParent.SaveDir, obj.MyParent.MyParent.ID, obj.MyParent.ID, obj.ID);
+            msgID = 'UMIToolbox:FolderNotFound';
+            msg = 'Modality SaveFolder doesnt exist.';
+            assert(isfolder(out), msgID,msg);
+        end
+        function out = get.FilePtr(obj)
+            % Get function for depentend property FilePtr.
+            out = fullfile(obj.MyParent.MyParent.MyParent.SaveDir, obj.MyParent.MyParent.ID, obj.MyParent.ID, obj.ID, 'FilePtr.json');
+            msgID = 'UMIToolbox:FileNotFound';
+            msg = 'Modality FilePtr doesnt exist.';
+            assert(isfile(out), msgID,msg);
+        end
+        function out = get.MetaDataFile(obj)
+            % Get function for depentend property MetaDataFile.
+            out = fullfile(obj.RawFolder, obj.MetaDataFileName);
+            msgID = 'UMIToolbox:FileNotFound';
+            msg = 'Modality MetaDataFile not found in Raw Folder.';
+            assert(isfile(out), msgID,msg);
+        end
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function createFilePtr(obj)
             % This function creates a JSON file containing basic information from object.
-            
             % FilePtr full path:
-            obj.FilePtr = fullfile(obj.SaveFolder, 'FilePtr.json');
             if exist(obj.FilePtr, 'file')
                 disp(['Skipped FilePtr creation. File pointer already exists in ' obj.SaveFolder ]);
                 return

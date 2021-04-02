@@ -87,7 +87,7 @@ datFile = fullfile(SaveFolder, Output);
 szAVG = size(AVG);
 metaDat = struct('datName', {'AVG', 'STD'}, 'datSize', {szAVG([1 2]), szAVG([1 2])},...
     'datLength', {szAVG(3:end) , szAVG(3:end)}, 'Datatype', {'single', 'single'}, 'datFile', datFile);
-metaDat(1).eventList = evDat.eventNameList; % Added event description from events.mat file to the metadata...
+metaDat(1).eventList = evDat.eventNameList; % Added event description from events.mat file to the metadata... Not sure if I'll keep this.
 % Save AVG and METADAT to DATFILE:
 save2Dat(datFile, AVG,'-w', metaDat)
 % Append "STD" to DATFILE:

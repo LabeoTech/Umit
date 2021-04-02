@@ -9,14 +9,16 @@ classdef Acquisition < handle
     
     properties
         ID % Acquisition ID
-        Start_datetime % Date and time of the beginning of the acquisition. 
+        Start_datetime % Date and time of the beginning of the acquisition.
+        MyParent % Subject object that contains ACQUISITION object.
     end
     properties (SetAccess = {?Protocol, ?PipelineManager, ?Subject})
-        SaveFolder % Path of directory containing transformed data.
         Array % List of Modalities.
         LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
+    end
+    properties (Dependent)
+        SaveFolder % Path of directory containing transformed data.
         FilePtr % JSON file containing information of files created using PIPELINEMANAGER.
-        MyParent % Subject object that contains ACQUISITION object.
     end
     methods
         
@@ -83,28 +85,40 @@ classdef Acquisition < handle
         
         function set.MyParent(obj, MyParent)
             % Set function for MyParent property.
-            msg = 'Error setting Acquisition Parent Object. Object must be a Subject.';
-            assert(isa(MyParent, 'Subject'), msg);
+            msgID = 'UMIToolbox:InvalidInput';
+            msg = 'Error setting Acquisition Parent Object. Parent must be a Subject.';
+            assert(isa(MyParent, 'Subject'), msgID, msg);
             obj.MyParent = MyParent;
+        end  
+        %%% Property Get functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        function out = get.SaveFolder(obj)
+            % Get function for depentend property SaveFolder.
+            out = fullfile(obj.MyParent.MyParent.SaveDir,obj.MyParent.ID, obj.ID);
+            msgID = 'UMIToolbox:FolderNotFound';
+            msg = 'Acquisition SaveFolder doesnt exist.';
+            assert(isfolder(out), msgID,msg);
         end
-                
-        %%% Property get functions
+        function out = get.FilePtr(obj)
+            % Get function for depentend property FilePtr.
+            out = fullfile(obj.MyParent.MyParent.SaveDir,obj.MyParent.ID, obj.ID, 'FilePtr.json');
+            msgID = 'UMIToolbox:FileNotFound';
+            msg = 'Acquisition FilePtr doesnt exist.';
+            assert(isfile(out), msgID,msg);
+        end
         function out = get.Start_datetime(obj)
             % This function transforms datetime objects in strings for
             % display in the GUI.
-            
             if isempty(obj.Start_datetime) || isnat(obj.Start_datetime)
                 out = '';
             else
                 out = datestr(obj.Start_datetime, 31);
             end
         end
-        
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
          function createFilePtr(obj)
              % This function creates a JSON file containing basic information from object.
              
              % FilePtr full path:
-             obj.FilePtr = fullfile(obj.SaveFolder, 'FilePtr.json');
              if exist(obj.FilePtr, 'file')
                  disp(['Skipped FilePtr creation. File pointer already exists in ' obj.SaveFolder ]);
                  return

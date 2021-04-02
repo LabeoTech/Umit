@@ -609,7 +609,12 @@ classdef PipelineManager < handle
             % READFILEPTR loads the content of FILEPTR.JSON in a structure
             % stored in OBJ.TMP_FILEPTR.
             txt = fileread(obj.tmp_TargetObj.FilePtr);
-            obj.tmp_FilePtr = jsondecode(txt);
+            a = jsondecode(txt);
+            for i = 1:numel(a.Files)
+                a.Files(i).Folder = tokenizePath(a.Files(i).Folder, obj.tmp_TargetObj, 'detokenize');
+                a.Files(i).InputFile_Path = tokenizePath(a.Files(i).InputFile_Path, obj.tmp_TargetObj, 'detokenize');
+            end
+                obj.tmp_FilePtr = a;
         end
         function write2FilePtr(obj, task)
             % WRITE2FILEPTR writes the File information stored in structure FILEINFO
@@ -635,6 +640,10 @@ classdef PipelineManager < handle
             % If there are files and none identical: Append
             else
                 obj.tmp_FilePtr.Files = [FileList; FileInfo];
+            end
+            for i = 1:numel(obj.tmp_FilePtr.Files)
+                obj.tmp_FilePtr.Files(i).Folder = tokenizePath(obj.tmp_FilePtr.Files(i).Folder, obj.tmp_TargetObj);
+                obj.tmp_FilePtr.Files(i).InputFile_Path = tokenizePath(obj.tmp_FilePtr.Files(i).InputFile_Path, obj.tmp_TargetObj);
             end
             txt = jsonencode(obj.tmp_FilePtr);
             fid = fopen(obj.tmp_TargetObj.FilePtr, 'w');
@@ -705,10 +714,10 @@ classdef PipelineManager < handle
             switch task.Input
                 case 'RawFolder'
                     folder = obj.tmp_TargetObj.RawFolder;
-                    task.Input = ['''' folder ''''];
+                    task.Input = folder; 
                 case 'SaveFolder'
                     folder = obj.tmp_TargetObj.SaveFolder;
-                    task.Input = ['''' folder ''''];
+                    task.Input = folder;
                 case 'object'
                     task.Input = 'obj.tmp_TargetObj';
                 otherwise
@@ -718,7 +727,7 @@ classdef PipelineManager < handle
                     else
                         filePath = fullfile(obj.tmp_TargetObj.SaveFolder, obj.tmp_FilePtr.Files(idx).Name);
                     end
-                    task.Input = ['''' filePath ''''];
+                    task.Input = filePath;
                     
                     inputMetaData = strrep(filePath, '.dat', '_info.mat');
                     mDt_input = matfile(inputMetaData); fileUUID = mDt_input.fileUUID;
@@ -732,13 +741,17 @@ classdef PipelineManager < handle
             switch task.SaveIn
                 case 'RawFolder'
                     folder = obj.tmp_TargetObj.RawFolder;
-                    task.SaveIn = ['''' folder ''''];
+                    task.SaveIn = folder;
                 case 'SaveFolder'
                     folder = obj.tmp_TargetObj.SaveFolder;
-                    task.SaveIn = ['''' folder ''''];
+                    task.SaveIn = folder;
             end
-            
-            funcStr = [task.Name '(' task.Input ',' task.SaveIn];
+            if ~strcmp(task.Input, 'obj.tmp_TargetObj')
+                funcStr = [task.Name '(''''' task.Input ''''',''''' task.SaveIn ''''];
+            else
+                funcStr = [task.Name '(' task.Input ',''' task.SaveIn ''''];
+            end
+                
             % Add optionals: 
             if ~isempty(task.opts)  
                 funcStr = [funcStr ', opts'];
