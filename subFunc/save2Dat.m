@@ -29,7 +29,7 @@ metaDat(1).fileUUID = char(java.util.UUID.randomUUID);
 if any(strcmp(p.Results.flag, {'-a', 'append'})) && exist(p.Results.DatFileName, 'file')
     fid = fopen(p.Results.DatFileName, 'a');
 elseif any(strcmp(p.Results.flag, {'-a', 'append'})) && ~exist(p.Results.DatFileName, 'file')
-    errID = 'IsaToolbox:FileNotFound';
+    errID = 'UMIToolbox:FileNotFound';
     msg = ['Cant save file. The file ' p.Results.DatFileName ' does not exist in Matlab''s path'];
     throwAsCaller(MException(errID,msg))
 else

@@ -95,9 +95,6 @@ classdef Subject < handle
         function out = get.FilePtr(obj)
             % Get function for depentend property FilePtr.
             out = fullfile(obj.MyParent.SaveDir, obj.ID, 'FilePtr.json');
-            msgID = 'UMIToolbox:FileNotFound';
-            msg = 'Subject FilePtr doesnt exist.';
-            assert(isfile(out), msgID,msg);
         end
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function createFilePtr(obj)
@@ -105,7 +102,7 @@ classdef Subject < handle
             
             % FilePtr full path:
 %             obj.FilePtr = fullfile(obj.SaveFolder, 'FilePtr.json');
-            if exist(obj.FilePtr, 'file')
+            if isfile(obj.FilePtr)
                 disp(['Skipped FilePtr creation. File pointer already exists in ' obj.SaveFolder ]);
                 return
             end

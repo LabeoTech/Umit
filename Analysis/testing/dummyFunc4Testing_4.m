@@ -1,4 +1,4 @@
-function dummyFunc4Testing_3(File, SaveFolder, varargin)
+function dummyFunc4Testing_4(object, SaveFolder, varargin)
 % FUNCTEMPLATE is a dummy function that serves as a template for creating
 % functions compatible with the toolbox.
 %
@@ -12,20 +12,18 @@ function dummyFunc4Testing_3(File, SaveFolder, varargin)
 %%% Arguments parsing and validation %%%
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder
-addRequired(p, 'File',@isfile)% For a File as input
+addRequired(p, 'object')
 % Save folder:
 addRequired(p, 'SaveFolder', @isfolder);
 % Parse inputs:
-parse(p,File, SaveFolder);
+parse(p,object, SaveFolder);
 %Initialize Variables:
-File = p.Results.File;
+object = p.Results.object;
 SaveFolder = p.Results.SaveFolder;
-
 
 %%%%
 % Run your code here:
 disp('This is a dummy function for Pipeline testing!');
 end
-
 
 

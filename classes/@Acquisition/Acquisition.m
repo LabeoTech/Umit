@@ -101,9 +101,6 @@ classdef Acquisition < handle
         function out = get.FilePtr(obj)
             % Get function for depentend property FilePtr.
             out = fullfile(obj.MyParent.MyParent.SaveDir,obj.MyParent.ID, obj.ID, 'FilePtr.json');
-            msgID = 'UMIToolbox:FileNotFound';
-            msg = 'Acquisition FilePtr doesnt exist.';
-            assert(isfile(out), msgID,msg);
         end
         function out = get.Start_datetime(obj)
             % This function transforms datetime objects in strings for
@@ -119,7 +116,7 @@ classdef Acquisition < handle
              % This function creates a JSON file containing basic information from object.
              
              % FilePtr full path:
-             if exist(obj.FilePtr, 'file')
+             if isfile(obj.FilePtr)
                  disp(['Skipped FilePtr creation. File pointer already exists in ' obj.SaveFolder ]);
                  return
              end

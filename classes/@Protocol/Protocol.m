@@ -96,9 +96,6 @@ classdef Protocol < handle
         function out = get.LogBookFile(obj)
             % Get function for depentend property SaveFolder.
             out = fullfile(obj.SaveDir, 'LogBook.mat');
-            msgID = 'UMIToolbox:FileNotFound';
-            msg = 'Protocol LogBook File not found in SaveDir.';
-            assert(isfile(out), msgID,msg);
         end
         %%% Validators %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function validate_path(~, input)
@@ -125,27 +122,20 @@ classdef Protocol < handle
                 tmpS = subjList{i};
                 indx = obj.Array.findElement('ID', tmpS, 'strcmp');
                 tmpS_obj = obj.Array.ObjList(indx);
+                mkdir(fullfile(obj.SaveDir, tmpS_obj.ID));
+                tmpS_obj.createFilePtr;
                 for j = 1:length(acqList{i})
                     tmpA = acqList{i}{j};
                     indx = tmpS_obj.Array.findElement('ID', tmpA, 'strcmp');
                     tmpA_obj = tmpS_obj.Array.ObjList(indx);
+                    mkdir(fullfile(obj.SaveDir, tmpS_obj.ID, tmpA_obj.ID));
+                    tmpA_obj.createFilePtr;
                     for k = 1:length(modList{i}{j})
                         tmpM = modList{i}{j}{k};
                         indx = tmpA_obj.Array.findElement('ID', tmpM, 'strcmp');
                         tmpM_obj = tmpA_obj.Array.ObjList(indx);
-                        tmpFolder = fullfile(obj.SaveDir, tmpS, tmpA, tmpM);
-                        if exist(tmpFolder, 'dir')
-                            continue
-                        end
-                        [status, msg, ~] = mkdir(tmpFolder);
-                        if  status
-                            tmpS_obj.createFilePtr;
-                            tmpA_obj.createFilePtr;
-                            tmpM_obj.createFilePtr;
-                        elseif ~status
-                            disp(['ERROR trying to create folder in path: ' tmpFolder])
-                            disp(msg);
-                        end
+                        mkdir(fullfile(obj.SaveDir, tmpS, tmpA, tmpM));
+                        tmpM_obj.createFilePtr;
                     end
                 end
             end

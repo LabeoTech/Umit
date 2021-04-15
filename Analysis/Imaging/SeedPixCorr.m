@@ -10,7 +10,7 @@ addRequired(p,'File',@isfile)% For a file as input.
 addRequired(p, 'SaveFolder', @isfolder);
 % Optional Parameters:
 % opts structure:
-default_opts = struct('imageResizeTo', 64);
+default_opts = struct('imageResizeTo', 64, 'FisherZ_transform', false);
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
 % Output File:
 default_Output = 'SeedPixCorr.dat';
@@ -23,20 +23,24 @@ SaveFolder = p.Results.SaveFolder;
 opts = p.Results.opts;
 Output = p.Results.Output;
 %%%%
-imsz = opts.imageResizeTo;
-
 % Open memMapfile:
 mmData = mapDatFile(File);
 % Load data:
 data = mmData.Data.data;
 % Calculate SeedPixel Correlation:
-A = imresize3(data, [imsz, imsz, size(data,3)]);
+% Preserve data Aspect Ratio:
+data_size = size(data);
+dataAspectRatio = opts.imageResizeTo/max(data_size([1 2]));
+xy_size = round(data_size([1 2]).*dataAspectRatio);
+A = imresize3(data, [xy_size(1), xy_size(2), size(data,3)]);
 B = reshape(A, [], size(A,3))';
 [CM, P] = corr(B);
-CM = reshape(CM, [imsz imsz imsz^2]);
-P = single(reshape(P, [imsz imsz imsz^2]));
-clear A B data
-
+% Apply Z Fisher transformation to corr Data:
+if opts.FisherZ_transform
+    CM = atanh(CM);
+end
+CM = reshape(CM, [xy_size(1) xy_size(2) xy_size(1)*xy_size(2)]);
+P = single(reshape(P, [xy_size(1) xy_size(2) xy_size(1)*xy_size(2)]));
 % SAVING DATA :
 % Generate .DAT and .MAT file Paths:
 datFile = fullfile(SaveFolder, Output);
@@ -50,5 +54,3 @@ save2Dat(datFile, CM,'-w', metaDat)
 save2Dat(datFile, P, '-a')
 outFile = Output;
 end
-
-

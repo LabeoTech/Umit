@@ -19,6 +19,7 @@ classdef PipelineManager < handle
         FunctionList % Structure containing the Public methods of all Classes in the ISAtoolbox with its inputs, optional parameters and outputs.
         tmp_FilePtr % Temporarily stores content of FILEPTR.JSON file from TARGETOBJ.
         tmp_TargetObj % % Temporarily stores an object (TARGEROBJ).
+        block_pipe = false % Boolean that, if true, the pipeline won't accept any other steps.
     end
     
     methods
@@ -43,6 +44,7 @@ classdef PipelineManager < handle
         
         function set.FuncRootDir(obj, FuncRootDir)
             obj.validate_path(FuncRootDir)
+            addpath(genpath(FuncRootDir));
             obj.FuncRootDir = FuncRootDir;
         end
         %%% Validators %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -66,7 +68,16 @@ classdef PipelineManager < handle
             idx = strcmp(p.Results.funcName, {obj.FunctionList.Name});
             funcInfo = obj.FunctionList(idx);
             task = obj.validateParams(p.Results.params,funcInfo);
-            
+            if obj.block_pipe
+               disp('No more steps allowed. Last step has no output.')
+                return
+            end
+            if isempty(task.Output)
+                warndlg(['The function ' task.Name ' has no outputs. '...
+                    'No more steps can be added to the pipeline after this one.'], 'Pipeline warning')
+                obj.block_pipe = true;
+            end
+                
             % Determine Level of the step in the hierarchy.
             switch p.Results.className
                 %                 case 'Protocol' % Disabled for now.
@@ -83,8 +94,7 @@ classdef PipelineManager < handle
             if ~b_valid
                 return
             end
-           
-            % Determine the task INPUT:
+            % Determine the task INPUT:                        
             b_inputIsFile = strcmp(task.Input, 'File');
             if isempty(obj.Pipe) && b_inputIsFile
                 task.Input = obj.askForFirstInput(p.Results.funcName);
@@ -93,17 +103,23 @@ classdef PipelineManager < handle
                     return
                 end
             elseif ~isempty(obj.Pipe) && b_inputIsFile
+                if ~contains(obj.Pipe(end).Output, '.dat')
+                    prevStep = obj.Pipe(end);
+                    errordlg({['Error adding ' task.Name ' to pipeline.'], ['The output of the previous step "' prevStep.Name ...
+                        '" (' prevStep.Output ') is incompatible with the current function input (' task.Input ').'], 'Try rearranging the pipeline to fix this.'}, 'Pipeline order error')
+                    return
+                end    
                 task.Input = obj.Pipe(end).Output;
             end
+
             % Choose input if multiple options are available:
             if iscell(task.Input) && numel(task.Input) > 1
                 task.Input = obj.pickAnInput(task);
             end
-            
-            % Complement info in task structure:
+
+            % Extra info in task structure:
             task.className = p.Results.className;
             task.level = lvl;
-%              task.funcStr = obj.createFuncStr(task);
             obj.Pipe = [obj.Pipe task];
         end
         
@@ -191,6 +207,7 @@ classdef PipelineManager < handle
             end
             
             obj.PipelineSummary(1,:) = []; % remove dummy row.
+            
             LogBook = obj.PipelineSummary;
             save(obj.ProtocolObj.LogBookFile, 'LogBook');
             cd(obj.ProtocolObj.SaveDir);
@@ -444,19 +461,18 @@ classdef PipelineManager < handle
                             out = {out};
                         end
                         for i = 1:length(out)
-                            SaveFolder = strip(task.SaveIn,'''');
+                            SaveFolder = task.SaveIn;
                             mDt_file = matfile(strrep(fullfile(SaveFolder, out{i}), '.dat', '_info.mat'));
-                            % Inheritance of MetaData from Input File (Different ones ONLY).
-                            Input = strip(task.Input,'''');
-                            if isfile(Input)
-                                mDt_input = matfile(strrep(Input, '.dat', '_info.mat'));
+                            % Inheritance of MetaData from last File created (Different ones ONLY by different function).
+                            lastFile = task.Input;
+                            if isfile(lastFile)
+                                lastMetaData = matfile(strrep(lastFile, '.dat', '_info.mat'));
                                 mDt_file.Properties.Writable = true;
-                                props = setdiff(properties(mDt_input), properties(mDt_file));
+                                props = setdiff(properties(lastMetaData), properties(mDt_file));
                                 for k = 1:length(props)
-                                    eval(['mDt_file.' props{k} '= mDt_input.' props{k} ';'])
+                                    eval(['mDt_file.' props{k} '= LastMetaData.' props{k} ';'])
                                 end
                             end
-                            %
                             fileUUID = mDt_file.fileUUID;
                             if iscell(fileUUID)
                                 fileUUID = [fileUUID{:}];
@@ -471,6 +487,7 @@ classdef PipelineManager < handle
                 end
             else
                 disp([task.Name ' Skipped!'])
+                obj.State = true;
                 return
             end
         end
@@ -622,7 +639,7 @@ classdef PipelineManager < handle
             
             %Initialize
             FileInfo = struct('Name', task.FileName, 'UUID', task.File_UUID, 'Folder', task.SaveIn, 'InputFile_Path', task.Input,...
-                'InputFile_UUID', task.InputFile_UUID, 'FunctionInfo', struct('Name', task.Name, 'DateNum', task.DateNum, 'Job', task.funcStr));
+                'InputFile_UUID', task.InputFile_UUID, 'creationDateTime', datestr(now), 'FunctionInfo', struct('Name', task.Name, 'DateNum', task.DateNum, 'Job', task.funcStr));
             FileList = obj.tmp_FilePtr.Files;
             % Check for Files already logged on FilePtr
             idx = false(length(FileList),2);
@@ -708,8 +725,7 @@ classdef PipelineManager < handle
             % POPULATEFUNCSTR replaces keywords in TASK.FUNCSTR with the
             % info contained in OBJ.TMP_TARGETOBJ. It is used in
             % OBJ.RUN_TASKONTARGET.
-            
-            %
+
             % Replace Input string:
             switch task.Input
                 case 'RawFolder'
@@ -721,6 +737,11 @@ classdef PipelineManager < handle
                 case 'object'
                     task.Input = 'obj.tmp_TargetObj';
                 otherwise
+                    if isempty(obj.tmp_FilePtr.Files)
+                        errID = 'MATLAB:UMIToolbox:MissingFilePointer';
+                        errMsg = ['Pointer of file ' task.Input ' is missing in FilePtr.json folder'];
+                        error(errID, errMsg);
+                    end
                     idx = strcmp(task.Input, {obj.tmp_FilePtr.Files.Name});
                     if strcmp(obj.tmp_FilePtr.Files(idx).Folder, 'RawFolder')
                         filePath = fullfile(obj.tmp_TargetObj.RawFolder, obj.tmp_FilePtr.Files(idx).Name);
@@ -735,7 +756,6 @@ classdef PipelineManager < handle
                         fileUUID = [fileUUID{:}];
                     end
                     task.InputFile_UUID = fileUUID;
-                
             end
             % Replace SaveFolder string:
             switch task.SaveIn
@@ -747,7 +767,7 @@ classdef PipelineManager < handle
                     task.SaveIn = folder;
             end
             if ~strcmp(task.Input, 'obj.tmp_TargetObj')
-                funcStr = [task.Name '(''''' task.Input ''''',''''' task.SaveIn ''''];
+                funcStr = [task.Name '(''' task.Input ''',''' task.SaveIn ''''];
             else
                 funcStr = [task.Name '(' task.Input ',''' task.SaveIn ''''];
             end

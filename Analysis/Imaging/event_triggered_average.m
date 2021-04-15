@@ -32,7 +32,7 @@ opts = p.Results.opts;
 Output = p.Results.Output;
 %%%%
 % Map movie and metadata to memory:
-[folder,~,~] = fileparts(File); % Assume that File is in the same folder as events.mat.
+[folder,~,~] = fileparts(File); % Assuming that File is in the same folder as events.mat.
 mData = mapDatFile(File);
 metaDat = matfile(strrep(File, '.dat', '_info.mat'));
 szdat = size(mData.Data.data);
@@ -60,7 +60,7 @@ for i = 1:n_trial
         snippet = mData.Data.data(:,:,start:stop);
         startFr = centralFr - (repFr(j) - start);
        	stopFr = centralFr + (stop - repFr(j));
-        data(j,i,:,:,startFr:stopFr) = snippet;    
+        data(j,i,:,:,startFr:stopFr) = snippet;
     end
 end
 % Check for NaNs and replace values using method specified by opts.PadWith:
@@ -88,6 +88,7 @@ szAVG = size(AVG);
 metaDat = struct('datName', {'AVG', 'STD'}, 'datSize', {szAVG([1 2]), szAVG([1 2])},...
     'datLength', {szAVG(3:end) , szAVG(3:end)}, 'Datatype', {'single', 'single'}, 'datFile', datFile);
 metaDat(1).eventList = evDat.eventNameList; % Added event description from events.mat file to the metadata... Not sure if I'll keep this.
+metaDat(1).eventFrame = centralFr;
 % Save AVG and METADAT to DATFILE:
 save2Dat(datFile, AVG,'-w', metaDat)
 % Append "STD" to DATFILE:

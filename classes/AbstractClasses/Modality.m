@@ -118,9 +118,6 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         function out = get.FilePtr(obj)
             % Get function for depentend property FilePtr.
             out = fullfile(obj.MyParent.MyParent.MyParent.SaveDir, obj.MyParent.MyParent.ID, obj.MyParent.ID, obj.ID, 'FilePtr.json');
-            msgID = 'UMIToolbox:FileNotFound';
-            msg = 'Modality FilePtr doesnt exist.';
-            assert(isfile(out), msgID,msg);
         end
         function out = get.MetaDataFile(obj)
             % Get function for depentend property MetaDataFile.
@@ -133,7 +130,7 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         function createFilePtr(obj)
             % This function creates a JSON file containing basic information from object.
             % FilePtr full path:
-            if exist(obj.FilePtr, 'file')
+            if isfile(obj.FilePtr)
                 disp(['Skipped FilePtr creation. File pointer already exists in ' obj.SaveFolder ]);
                 return
             end

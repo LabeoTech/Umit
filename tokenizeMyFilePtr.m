@@ -22,12 +22,13 @@ function tokenizeIt(myObj)
         return
     end
     for i = 1:numel(a.Files)
-        Folder = a.Files(i).Folder;
-        if strcmp(Folder, 'SaveFolder')
-            Folder = myObj.SaveFolder;
-        end
-        a.Files(i).Folder = tokenizePath(Folder, myObj);
-        a.Files(i).InputFile_Path = tokenizePath(a.Files(i).InputFile_Path, myObj);
+%         Folder = a.Files(i).Folder;
+%         if strcmp(Folder, 'SaveFolder')
+%             Folder = myObj.SaveFolder;
+%         end
+%         a.Files(i).Folder = tokenizePath(Folder, myObj);
+%         a.Files(i).InputFile_Path = tokenizePath(a.Files(i).InputFile_Path, myObj);
+       a.Files(i).creationDateTime = datestr(now);
     end
     txtOut = jsonencode(a);
     fid = fopen(myObj.FilePtr, 'w');

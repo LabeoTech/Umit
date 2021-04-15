@@ -50,7 +50,7 @@ end
 if strcmp(translation, 'tokenize')
     indx = find(cellfun(@(x) ~isempty(strfind(Path, x)), {tokens.Path}));%#ok
     out = Path;
-    for i = 1:numel(indx)
+    for i = numel(indx):-1:1
         out = strrep(out, strip(tokens(indx(i)).Path, filesep), tokens(indx(i)).Key);
     end
 else

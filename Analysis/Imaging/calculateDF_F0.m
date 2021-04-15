@@ -30,6 +30,9 @@ data = mData.Data.data;
 bsln = mean(data,3);
 % Calculate DeltaF/F0:
 data = (data - bsln)./ bsln;
+% Replace NaNs with zeros:
+idx = isnan(data);
+data(idx) = 0;
 %Save data using save2dat.m function
 datFile = fullfile(SaveFolder, Output);
 save2Dat(datFile, data);
