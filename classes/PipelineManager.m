@@ -470,7 +470,7 @@ classdef PipelineManager < handle
                                 mDt_file.Properties.Writable = true;
                                 props = setdiff(properties(lastMetaData), properties(mDt_file));
                                 for k = 1:length(props)
-                                    eval(['mDt_file.' props{k} '= LastMetaData.' props{k} ';'])
+                                    eval(['mDt_file.' props{k} '= lastMetaData.' props{k} ';'])
                                 end
                             end
                             fileUUID = mDt_file.fileUUID;

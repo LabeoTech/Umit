@@ -66,7 +66,8 @@ targetFr = imwarp(targetFr, tform, 'OutputView', Rfixed);
 str = split(object.SaveFolder, filesep);
 str = str(2:end); % Remove root folder.
 fig = figure('Name', strjoin(str, '-'), 'WindowState', 'maximized');
-imshowpair(refFr, targetFr);
+subplot(211);imshowpair(refFr, targetFr);
+subplot(212);imshowpair(refFr, targetFr, 'montage');
 waitfor(fig)
 %%%%%%
 answer = questdlg('Are you satisfied with the registration?', 'Image Registration result', 'Yes, proceed', 'No, redo', 'Cancel', 'Cancel');
@@ -89,6 +90,7 @@ switch answer
     case 'No, redo'
         b_redo = true;
 end
+disp('Done!');
 close all;
 end
 

@@ -56,7 +56,6 @@ end
 refFr = ref_frame_info.reference_frame;
 % MV method (use the unsharp mask to do the registration:)
 refFr_mask = imgaussfilt(refFr, 1) - imgaussfilt(refFr, 3);
-% refFr_mask = imsharpen(refFr,'Radius', 1.5, 'Amount', 1);
 % Get Reference frame file name:
 [~,ref_filename, ext] = fileparts(ref_frame_info.datFile);
 ref_filename = [ref_filename ext];
@@ -64,13 +63,13 @@ ref_filename = [ref_filename ext];
 mData = mapDatFile(fullfile(SaveFolder, ref_filename));
 % Load Data:
 if size(mData.Data.data,3) < 100
-    targetFr = flipud(rot90(mean(mData.Data.data)));
+    targetFr = flipud(rot90(mean(mData.Data.data,3)));
 else
     targetFr = flipud(rot90(mean(mData.Data.data(:,:,1:100),3)));
 end
 % Apply unsharp mask to data:
+targetFr = imsharpen(targetFr,'Radius', 1.5, 'Amount', 1);
 targetFr_mask = imgaussfilt(targetFr, 1) - imgaussfilt(targetFr, 3);
-% targetFr_mask = imsharpen(targetFr,'Radius', 1.5, 'Amount', 1);
 % Preprocessing:
 % Normalize images:
 refFr_mask = (refFr_mask - min(refFr_mask(:)))./(max(refFr_mask(:)) - min(refFr_mask(:)));
@@ -93,7 +92,7 @@ end
 if peak < 0.05
     disp('Phase correlation yielded a weak peak correlation value. Trying to apply intensity-based image registration...')
     [optimizer,metric] = imregconfig('multimodal');
-    optimizer.InitialRadius = 0.00000625;
+    optimizer.InitialRadius = 0.000000625;
     optimizer.MaximumIterations = 80000;
     tform = imregtform(targetFr_mask, imref2d(size(targetFr_mask)),refFr_mask, imref2d(size(refFr_mask)),'similarity',optimizer,metric);
 end
