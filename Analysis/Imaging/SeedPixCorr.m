@@ -25,6 +25,7 @@ Output = p.Results.Output;
 %%%%
 % Open memMapfile:
 mmData = mapDatFile(File);
+metaData = matfile(strrep(File, '.dat', '_info.mat'));
 % Load data:
 data = mmData.Data.data;
 % Calculate SeedPixel Correlation:
@@ -53,4 +54,12 @@ save2Dat(datFile, CM,'-w', metaDat)
 % Append "P" to DATFILE:
 save2Dat(datFile, P, '-a')
 outFile = Output;
+if ~isprop(metaData, 'BregmaXY')
+    warning('MATLAB:UMIToolbox:MissingInfo', 'Anatomical landmarks not found in input File metaData!')
+else
+    metaData_out = matfile(strrep(datFile, '.dat', '_info.mat'));
+    metaData_out.Properties.Writable = true;
+    metaData_out.BregmaXY = metaData.BregmaXY*dataAspectRatio;
+    metaData_out.LambdaXY = metaData.LambdaXY*dataAspectRatio;
+end
 end

@@ -86,9 +86,6 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         
         function set.MetaDataFileName(obj,MetaDataFileName)
             % Set function of METADATAFILENAME property.
-            %   Validates if Files exist in Folder, then sets the METADATAFILE
-            %   property, otherwise throws an error. Duplicate file names
-            %   are ignored.
             obj.MetaDataFileName = MetaDataFileName;
         end
         
@@ -119,12 +116,16 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
             % Get function for depentend property FilePtr.
             out = fullfile(obj.MyParent.MyParent.MyParent.SaveDir, obj.MyParent.MyParent.ID, obj.MyParent.ID, obj.ID, 'FilePtr.json');
         end
-        function out = get.MetaDataFile(obj)
+         function out = get.MetaDataFile(obj)
             % Get function for depentend property MetaDataFile.
+            if isempty(obj.MetaDataFileName)
+                out = 'none';
+            else
             out = fullfile(obj.RawFolder, obj.MetaDataFileName);
             msgID = 'UMIToolbox:FileNotFound';
             msg = 'Modality MetaDataFile not found in Raw Folder.';
             assert(isfile(out), msgID,msg);
+            end
         end
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function createFilePtr(obj)

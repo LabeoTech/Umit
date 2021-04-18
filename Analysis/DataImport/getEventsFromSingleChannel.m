@@ -90,7 +90,7 @@ if sum(idx) > 0
     disp('Artifact Detected and removed from Photodiode signal')
 end
 stateOn = find(state(~idx) == 1, 1, 'first');
-stateOff = find(state(~idx) == 0, 1, 'Last');
+stateOff = find(state(~idx) == 0, 1, 'last');
 state = state(stateOn:stateOff);
 timestamps = timestamps(stateOn:stateOff);
 %%%
