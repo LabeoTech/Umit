@@ -39,25 +39,24 @@ preFr = round(sr*opts.preEventTime_sec);
 postFr = round(sr*opts.postEventTime_sec);
 centralFr = preFr + 1;
 len_trial = preFr + postFr;
-n_reps = (sum(evDat.state == 1))/numel(evDat.eventNameList);
-n_trial = numel(evDat.eventNameList);
-data = nan(n_reps, n_trial, szdat(1), szdat(2), len_trial, 'single'); % (repetition, condition, X, Y, T).
+
+n_trial = sum(evDat.state == 1);
+timestamps = evDat.timestamps(evDat.state == 1);
+data = nan(n_trial, szdat(1), szdat(2), len_trial, 'single'); % (E(event), X, Y, T).
 % Fill empty matrix with data segments
 for i = 1:n_trial
-    repFr = round(sr.*evDat.timestamps(evDat.eventID == i & evDat.state == 1));
-    for j = 1:numel(repFr)
-        start = repFr(j) - preFr;
-        stop = repFr(j) + postFr - 1;
+    trialFr = round(sr*timestamps(i));
+    start = trialFr(i) - preFr;
+        stop = trialFr(i) + postFr - 1;
         if start < 1
             start = szdat(3);
         elseif stop > szdat(3)
             stop = szdat(3);
         end
         snippet = mData.Data.data(:,:,start:stop);
-        startFr = centralFr - (repFr(j) - start);
-       	stopFr = centralFr + (stop - repFr(j));
-        data(j,i,:,:,startFr:stopFr) = snippet;
-    end
+        startFr = centralFr - (trialFr(i) - start);
+       	stopFr = centralFr + (stop - trialFr(i));
+        data(i,:,:,startFr:stopFr) = snippet;
 end
 % Check for NaNs and replace values using method specified by opts.PadWith:
 idx = isnan(data);
@@ -68,8 +67,8 @@ if any(idx,'all')
         otherwise
             % The following lines are highly inefficient. To be improved.
             % Fill NaNs with the mean value of the trial
-            [rep,trial,x,y,time] = ind2sub(size(data),find(idx));
-            data(rep,trial,x,y,time) = nanmean(data(rep,trial,x,y,:),5);
+            [trial,x,y,time] = ind2sub(size(data),find(idx));
+            data(trial,x,y,time) = nanmean(data(trial,x,y,:),5);
     end
 end
 datFile = fullfile(SaveFolder, Output);
@@ -82,6 +81,3 @@ metaData.postEventTime_sec = opts.postEventTime_sec;
 % Output file names
 outFile = Output;
 end
-
-
-
