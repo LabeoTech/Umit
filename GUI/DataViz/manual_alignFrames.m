@@ -1,7 +1,7 @@
 function b_redo = manual_alignFrames(object, applyToFile)
 % MANUAL_ALIGNFRAMES uses cpselect, cpcorr, and fitgeotrans to select,
-% refine and align user-selected points to a reference frame. 
-% Inputs: 
+% refine and align user-selected points to a reference frame.
+% Inputs:
 %   - object: Imaging object.
 %   - applyToFile: file containing data that will be aligned.
 % Output:
@@ -22,7 +22,7 @@ try
             idx = true;
         end
     end
-        ref_frame_info = matfile(fullfile(ParentObj.SaveFolder, 'ImagingReferenceFrame.mat'));
+    ref_frame_info = matfile(fullfile(ParentObj.SaveFolder, 'ImagingReferenceFrame.mat'));
 catch ME
     causeException = MException('MATLAB:UMIToolbox:FileNotFound', 'Imaging Reference Frame file not found.');
     addCause(ME, causeException);
@@ -86,18 +86,15 @@ switch answer
                 b_applyMask = false;
                 b_crop2Mask = false;
         end
-        warpData(tform,refFr,ref_frame_info,translation,Rfixed,SaveFolder, applyToFile, b_applyMask, b_crop2Mask)
+        warpData(object,tform,refFr,ref_frame_info,translation,Rfixed,SaveFolder, applyToFile, b_applyMask, b_crop2Mask)
     case 'No, redo'
         b_redo = true;
 end
-%% INSERT CODE TO ADD FILE TO OBJECT'S FILE POINTER.
-
-
 disp('Done!');
 close all;
 end
 
-function warpData(tform,refFr,ref_frame_info, translation,Rfixed,SaveFolder, applyToFile, b_applyMask, b_crop2Mask)
+function warpData(obj,tform,refFr,ref_frame_info, translation,Rfixed,SaveFolder, applyToFile, b_applyMask, b_crop2Mask)
 try
     mData = mapDatFile(fullfile(SaveFolder, applyToFile));
     metaData_source = matfile(strrep(fullfile(SaveFolder, applyToFile), '.dat', '_info.mat'));
@@ -158,5 +155,62 @@ props = setdiff(properties(metaData_source), properties(metaData_target));
 for k = 1:length(props)
     eval(['metaData_target.' props{k} '= metaData_source.' props{k} ';'])
 end
+% Write to FilePtr:
+write2FilePtr(obj, datFile, fullfile(SaveFolder, applyToFile))
 uiwait(msgbox(['Aligned Frames saved in ' datFile],'Data Saved', 'help'));
+end
+
+function filePtr_struct = readFilePtr(obj)
+% READFILEPTR loads the content of FILEPTR.JSON in a structure
+% stored in OBJ.TMP_FILEPTR.
+txt = fileread(obj.FilePtr);
+a = jsondecode(txt);
+for i = 1:numel(a.Files)
+    a.Files(i).Folder = tokenizePath(a.Files(i).Folder, obj, 'detokenize');
+    a.Files(i).InputFile_Path = tokenizePath(a.Files(i).InputFile_Path, obj, 'detokenize');
+end
+filePtr_struct = a;
+end
+function write2FilePtr(obj, datFile, inputFile)
+% WRITE2FILEPTR writes the File information stored in structure FILEINFO
+% in OBJ.TMP_TARGETOBJ.FILEPTR.
+
+%Initialize
+metaData = matfile(strrep(datFile, '.dat', '_info.mat'));
+input_metaData = matfile(strrep(inputFile, '.dat', '_info.mat'));
+[Path, filename,ext] = fileparts(datFile);
+[~, input_filename, input_ext] = fileparts(inputFile);
+root = getenv('Umitoolbox');
+funcInfo = dir(fullfile(root, 'GUI','DataViz', 'manual_alignFrames.m'));
+FileInfo = struct('Name', [filename ext], 'UUID', metaData.fileUUID, 'Folder', tokenizePath(Path, obj),...
+    'InputFile_Path', tokenizePath(inputFile, obj), 'InputFile_UUID', input_metaData.fileUUID, ...
+    'creationDateTime', datestr(now), 'FunctionInfo', ...
+    struct('Name', 'manual_alignFrames', 'DateNum', funcInfo.datenum,...
+    'Job', ['manual_alignFrames(object, ''' input_filename input_ext '''):']));
+FileList = readFilePtr(obj);
+% Check for Files already logged on FilePtr
+idx = false(length(FileList),2);
+for i = 1:length(FileList.Files)
+    idx(i,1) = strcmp(FileInfo.Name, FileList.Files(i).Name);
+    idx(i,2) = strcmp(FileInfo.FunctionInfo.Name, FileList.Files(i).FunctionInfo.Name);
+end
+idx = all(idx,2);
+% If there are no Files
+if isempty(FileList.Files)
+    FileList.Files = FileInfo;
+    % If there are files and one identical, replace it.
+elseif ~isempty(FileList.Files) && any(idx)
+    FileList.Files(idx) = FileInfo;
+    % If there are files and none identical: Append
+else
+    FileList.Files = [FileList.Files; FileInfo];
+end
+for i = 1:numel(FileList.Files)
+    FileList.Files(i).Folder = tokenizePath(FileList.Files(i).Folder, obj);
+    FileList.Files(i).InputFile_Path = tokenizePath(FileList.Files(i).InputFile_Path, obj);
+end
+txt = jsonencode(FileList);
+fid = fopen(obj.FilePtr, 'w');
+fprintf(fid, '%s', txt);
+fclose(fid);
 end
