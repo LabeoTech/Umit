@@ -22,8 +22,8 @@ opts = p.Results.opts;
 outFile = {};
 %%%%
 % Calls function from IOI library. Temporary for now.
-ImagesClassification(RawFolder, opts.BinningSpatial, opts.BinningTemp, opts.b_SubROI, opts.b_IgnoreStim);
-cd(RawFolder)
+ImagesClassification(RawFolder, SaveFolder, opts.BinningSpatial, opts.BinningTemp, opts.b_SubROI, opts.b_IgnoreStim)
+cd(SaveFolder)
 chanList = dir('*Chan*.dat'); chanList = {chanList.name};
 for i = 1:length(chanList)
     chanName = chanList{i};
@@ -34,24 +34,22 @@ for i = 1:length(chanList)
             MetaDataFileName = 'Data_yellow.mat';            
         case 'gChan.dat'
             MetaDataFileName = 'Data_green.mat';
-        case {'fChan.dat', 'fChan_475.dat'}
-            MetaDataFileName = 'Data_Fluo.mat';            
+        case 'dChan.dat'
+            MetaDataFileName = 'Data_speckle.mat';
+        otherwise         
+            MetaDataFileName = strrep(chanName, 'fChan', 'Data_Fluo');
+            MetaDataFileName = strrep(MetaDataFileName, '.dat', '.mat');
     end
-    a =  matfile(fullfile(RawFolder,MetaDataFileName), 'Writable', true);
+    a =  matfile(fullfile(SaveFolder,MetaDataFileName), 'Writable', true);
     a.fileUUID = char(java.util.UUID.randomUUID);
     a.Datatype = 'single';
     a.datName = 'data';
     % TEMPORARY FIX.
     filePath = fullfile(SaveFolder,chanName);
     newmDfile = strrep(filePath, '.dat', '_info.mat');
-    statusDat = movefile(chanName, filePath);
     statusMat = movefile(MetaDataFileName, newmDfile);
-    if ~statusDat
-        disp(['Failed to transfer ' chanName ' to ' SaveFolder]);
-    elseif ~statusMat
-        disp(['Failed to transfer MetaData file of ' chanName ' to ' SaveFolder]);
-    else
-        disp(['Successful tranfer of ' chanName ' to ' SaveFolder]);
+    if ~statusMat
+        disp(['Failed to rename ' MetaDataFileName]);
     end
     outFile = [outFile, chanName];
 end

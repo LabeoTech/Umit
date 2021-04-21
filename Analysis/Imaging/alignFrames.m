@@ -119,7 +119,9 @@ warp_data = zeros(size(refFr_mask,1),size(refFr_mask,2), size(data,3), 'single')
 disp(['Performing alignment in data from ' opts.ApplyToFile '...']);
 tic;
 for i = 1:size(warp_data,3)
-    frame = imwarp(data(:,:,i), tform, 'OutputView', Rfixed);
+    frame = data(:,:,i);
+    frame = imtranslate(frame, fliplr(translation), 'FillValues', 0, 'OutputView','same');
+    frame = imwarp(frame, tform, 'OutputView', Rfixed);
     warp_data(:,:,i) = frame;
 end
 toc

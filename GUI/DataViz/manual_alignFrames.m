@@ -86,15 +86,18 @@ switch answer
                 b_applyMask = false;
                 b_crop2Mask = false;
         end
-        warpData(tform,refFr,ref_frame_info,Rfixed,SaveFolder, applyToFile, b_applyMask, b_crop2Mask)
+        warpData(tform,refFr,ref_frame_info,translation,Rfixed,SaveFolder, applyToFile, b_applyMask, b_crop2Mask)
     case 'No, redo'
         b_redo = true;
 end
+%% INSERT CODE TO ADD FILE TO OBJECT'S FILE POINTER.
+
+
 disp('Done!');
 close all;
 end
 
-function warpData(tform,refFr,ref_frame_info,Rfixed,SaveFolder, applyToFile, b_applyMask, b_crop2Mask)
+function warpData(tform,refFr,ref_frame_info, translation,Rfixed,SaveFolder, applyToFile, b_applyMask, b_crop2Mask)
 try
     mData = mapDatFile(fullfile(SaveFolder, applyToFile));
     metaData_source = matfile(strrep(fullfile(SaveFolder, applyToFile), '.dat', '_info.mat'));
@@ -108,7 +111,9 @@ data = flipud(rot90(mData.Data.data(:,:,:)));
 warp_data = zeros(size(refFr,1),size(refFr,2), size(data,3), 'single');
 disp(['Performing alignment in data from ' applyToFile '...']);
 for i = 1:size(warp_data,3)
-    frame = imwarp(data(:,:,i), tform, 'OutputView', Rfixed);
+    frame = data(:,:,i);
+    frame = imtranslate(frame, translation, 'FillValues', 0, 'OutputView','full');
+    frame = imwarp(frame, tform, 'OutputView', Rfixed);
     warp_data(:,:,i) = frame;
 end
 disp('Alignment finished.')
