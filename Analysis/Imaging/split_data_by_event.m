@@ -17,7 +17,7 @@ p = inputParser;
 addRequired(p,'File',@isfile)
 addRequired(p, 'SaveFolder', @isfolder);
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x) && ...
-    ismember(x.PadWith, {'mean', 'NaN', 'zero'})); % Padding options for cases where movie snippets dont have the same length.
+    ismember(x.PadWith, {'mean', 'NaN'}) || mustBePositive(x) && isinteger(x)); % Padding options for cases where movie snippets dont have the same length.
 addOptional(p, 'Output', default_Output)
 % Parse inputs:
 parse(p,File, SaveFolder, varargin{:});
@@ -44,33 +44,36 @@ n_trial = sum(evDat.state == 1);
 timestamps = evDat.timestamps(evDat.state == 1);
 data = nan(n_trial, szdat(1), szdat(2), len_trial, 'single'); % (E(event), X, Y, T).
 % Fill empty matrix with data segments
+fix_snippet = false;
 for i = 1:n_trial
     trialFr = round(sr*timestamps(i));
-    start = trialFr(i) - preFr;
-        stop = trialFr(i) + postFr - 1;
-        if start < 1
-            start = szdat(3);
-        elseif stop > szdat(3)
-            stop = szdat(3);
-        end
-        snippet = mData.Data.data(:,:,start:stop);
-        startFr = centralFr - (trialFr(i) - start);
-       	stopFr = centralFr + (stop - trialFr(i));
-        data(i,:,:,startFr:stopFr) = snippet;
-end
-% Check for NaNs and replace values using method specified by opts.PadWith:
-idx = isnan(data);
-if any(idx,'all')
-    switch opts.PadWith
-        case 'zero'
-            data(idx) = 0;
-        otherwise
-            % The following lines are highly inefficient. To be improved.
-            % Fill NaNs with the mean value of the trial
-            [trial,x,y,time] = ind2sub(size(data),find(idx));
-            data(trial,x,y,time) = nanmean(data(trial,x,y,:),5);
+    start = trialFr - preFr;
+    stop = trialFr + postFr - 1;
+    if start < 1
+        start = 1;
+        fix_snippet = true;
+    elseif stop > szdat(3)
+        stop = szdat(3);
+        fix_snippet = true;
     end
+    snippet = mData.Data.data(:,:,start:stop);
+    startFr = centralFr - (trialFr - start);
+    stopFr = centralFr + (stop - trialFr);
+    if fix_snippet
+        switch opts.PadWith
+            case 'mean'
+                avg = nanmean(snippet, 3);
+                avg = repmat(avg,1,1,size(data,4));
+                data(i,:,:,:) = avg;
+            case 'NaN'
+                % empty
+            otherwise
+                data(i,:,:,:) = opts.PadWith;
+        end
+    end
+    data(i,:,:,startFr:stopFr) = snippet;
 end
+
 datFile = fullfile(SaveFolder, Output);
 % Save AVG and METADAT to DATFILE:
 save2Dat(datFile, data)
@@ -78,6 +81,8 @@ metaData = matfile(strrep(datFile, '.dat', '_info.mat'));
 metaData.Properties.Writable = true;
 metaData.preEventTime_sec = opts.preEventTime_sec;
 metaData.postEventTime_sec = opts.postEventTime_sec;
+metaData.eventID = evDat.eventID(evDat.state == 1);
+metaData.eventNameList = evDat.eventNameList;
 % Output file names
 outFile = Output;
 end

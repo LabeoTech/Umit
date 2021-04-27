@@ -122,19 +122,19 @@ classdef Protocol < handle
                 tmpS = subjList{i};
                 indx = obj.Array.findElement('ID', tmpS, 'strcmp');
                 tmpS_obj = obj.Array.ObjList(indx);
-                mkdir(fullfile(obj.SaveDir, tmpS_obj.ID));
+                [~,~] = mkdir(fullfile(obj.SaveDir, tmpS_obj.ID));
                 tmpS_obj.createFilePtr;
                 for j = 1:length(acqList{i})
                     tmpA = acqList{i}{j};
                     indx = tmpS_obj.Array.findElement('ID', tmpA, 'strcmp');
                     tmpA_obj = tmpS_obj.Array.ObjList(indx);
-                    mkdir(fullfile(obj.SaveDir, tmpS_obj.ID, tmpA_obj.ID));
+                    [~,~] = mkdir(fullfile(obj.SaveDir, tmpS_obj.ID, tmpA_obj.ID));
                     tmpA_obj.createFilePtr;
                     for k = 1:length(modList{i}{j})
                         tmpM = modList{i}{j}{k};
                         indx = tmpA_obj.Array.findElement('ID', tmpM, 'strcmp');
                         tmpM_obj = tmpA_obj.Array.ObjList(indx);
-                        mkdir(fullfile(obj.SaveDir, tmpS, tmpA, tmpM));
+                        [~,~] = mkdir(fullfile(obj.SaveDir, tmpS, tmpA, tmpM));
                         tmpM_obj.createFilePtr;
                     end
                 end
@@ -403,6 +403,12 @@ classdef Protocol < handle
             end
             for i = 1:numel(obj.Array.ObjList)
                 obj.Array.ObjList(i).MyParent = obj;
+                for j = 1:numel(obj.Array.ObjList(i).Array.ObjList)
+                    obj.Array.ObjList(i).Array.ObjList(j).MyParent = obj.Array.ObjList(i);
+                    for k = 1:numel(obj.Array.ObjList(i).Array.ObjList(j).Array.ObjList)
+                        obj.Array.ObjList(i).Array.ObjList(j).Array.ObjList(k).MyParent = obj.Array.ObjList(i).Array.ObjList(j);
+                    end
+                end
             end
         end
     end

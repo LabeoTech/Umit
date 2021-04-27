@@ -7,7 +7,8 @@ for i = 1:numel(protObj.Array.ObjList)
     if ~isempty(info.Files)
 %         info = tokenizeIt(info,tmpS);
 %         info = addCreateDateTime(info, tmpS);
-        info = fillFileInfo(info, tmpS);
+%         info = fillFileInfo(info, tmpS);
+        info = addOptsField(info);
         writeFilePtr(tmpS.FilePtr, info)
     end
     for j = 1:numel(tmpS.Array.ObjList)
@@ -16,7 +17,8 @@ for i = 1:numel(protObj.Array.ObjList)
         if ~isempty(info.Files)
 %             info = tokenizeIt(info,tmpA);
 %             info = addCreateDateTime(info, tmpA);
-            info = fillFileInfo(info, tmpA);
+%             info = fillFileInfo(info, tmpA);
+            info = addOptsField(info);
             writeFilePtr(tmpA.FilePtr, info)
         end
         for k = 1:numel(tmpA.Array.ObjList)
@@ -25,8 +27,9 @@ for i = 1:numel(protObj.Array.ObjList)
             if ~isempty(info.Files)
 %                 info = tokenizeIt(info,tmpM);
 %                 info = addCreateDateTime(info, tmpM);
+                  info = addOptsField(info);
             else
-                info = fillFileInfo(info, tmpM);
+%                 info = fillFileInfo(info, tmpM);
             end
             writeFilePtr(tmpM.FilePtr, info)
         end
@@ -36,6 +39,16 @@ disp('Finished fix!');
 end
 
 % Fix functions :
+
+function info = addOptsField(info)
+          info.Files = rmfield(info.Files, 'opts');
+          for i = 1:numel(info.Files)
+            info.Files(i).FunctionInfo.opts = '';
+          end
+end
+       
+
+
 function info = fillFileInfo(info, myObj)
 folder = myObj.SaveFolder;
 files = dir([folder '\*.dat']);

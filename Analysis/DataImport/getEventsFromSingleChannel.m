@@ -75,13 +75,18 @@ if isfield(a, 'BarSize')
         eventID = repmat(Direction, nSweeps*2,1);
     end
     condList = num2cell(unique(eventID),2);
+    [~, state, timestamps] = getEventsFromTTL(signal, sr, opts.threshold);
 elseif isfield(a,'TrialList')
     [condList, ~, eventID] = unique(a.TrialList, 'rows');
     condList = num2cell(condList,2);
     % duplicate event ID to account for ON/OFF states:
     eventID = repelem(eventID,2);
+    [~, state, timestamps] = getEventsFromTTL(signal, sr, opts.threshold);
+else
+    [eventID, state, timestamps] = getEventsFromTTL(signal, sr, opts.threshold);
+    condList = unique(eventID);
+    condList = num2cell(condList,2);
 end
-[~, state, timestamps] = getEventsFromTTL(signal, sr, opts.threshold);
 % This sections is to try to remove different artifacts from
 % PsychToolbox...
 deltaT = diff(timestamps);

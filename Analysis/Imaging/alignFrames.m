@@ -97,7 +97,7 @@ if peak < 0.05
     tform = imregtform(targetFr_mask, imref2d(size(targetFr_mask)),refFr_mask, imref2d(size(refFr_mask)),'similarity',optimizer,metric);
 end
 Rfixed = imref2d(size(refFr));
-targetFr = imwarp(targetFr,tform, 'OutputView',Rfixed);
+targetFr = imwarp(targetFr,tform,'nearest', 'OutputView',Rfixed);
 %%%%%
 % For debugging:
 figure('Name', strjoin({object.MyParent.MyParent.ID object.MyParent.ID object.ID}, '-'));
@@ -121,7 +121,7 @@ tic;
 for i = 1:size(warp_data,3)
     frame = data(:,:,i);
     frame = imtranslate(frame, fliplr(translation), 'FillValues', 0, 'OutputView','same');
-    frame = imwarp(frame, tform, 'OutputView', Rfixed);
+    frame = imwarp(frame, tform, 'nearest', 'OutputView', Rfixed);
     warp_data(:,:,i) = frame;
 end
 toc

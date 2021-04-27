@@ -437,6 +437,11 @@ classdef PipelineManager < handle
             if ~b_isLogged || (b_isLogged && obj.IgnoreLoggedFiles)
                 % Run the step:
                 try
+                    if strcmp(task.Input, 'missing')
+                        errID = 'MATLAB:Umitoolbox:FileNotFound';
+                        errmsg = ['Input File for function ' task.Name ' not found!'];
+                        error(errID,errmsg);
+                    end
                     disp(['Running ' task.Name '...']);
                     % Load options structure in the workspace.
                     opts = task.opts;
@@ -639,7 +644,9 @@ classdef PipelineManager < handle
             
             %Initialize
             FileInfo = struct('Name', task.FileName, 'UUID', task.File_UUID, 'Folder', task.SaveIn, 'InputFile_Path', task.Input,...
-                'InputFile_UUID', task.InputFile_UUID, 'creationDateTime', datestr(now), 'FunctionInfo', struct('Name', task.Name, 'DateNum', task.DateNum, 'Job', task.funcStr));
+                'InputFile_UUID', task.InputFile_UUID, 'creationDateTime', datestr(now), 'FunctionInfo', ...
+                struct('Name', task.Name, 'DateNum', task.DateNum, 'Job', task.funcStr, 'opts', task.opts));
+            
             FileList = obj.tmp_FilePtr.Files;
             % Check for Files already logged on FilePtr
             idx = false(length(FileList),2);
@@ -743,7 +750,11 @@ classdef PipelineManager < handle
                         error(errID, errMsg);
                     end
                     idx = strcmp(task.Input, {obj.tmp_FilePtr.Files.Name});
-                    if strcmp(obj.tmp_FilePtr.Files(idx).Folder, 'RawFolder')
+                    if sum(idx) == 0
+                        task.Input = 'missing';
+                        task.funcStr = '';
+                        return
+                    elseif strcmp(obj.tmp_FilePtr.Files(idx).Folder, 'RawFolder')
                         filePath = fullfile(obj.tmp_TargetObj.RawFolder, obj.tmp_FilePtr.Files(idx).Name);
                     else
                         filePath = fullfile(obj.tmp_TargetObj.SaveFolder, obj.tmp_FilePtr.Files(idx).Name);
@@ -764,13 +775,15 @@ classdef PipelineManager < handle
                     task.SaveIn = folder;
                 case 'SaveFolder'
                     folder = obj.tmp_TargetObj.SaveFolder;
-                    task.SaveIn = folder;
+                    task.SaveIn = folder;                   
             end
             if ~strcmp(task.Input, 'obj.tmp_TargetObj')
                 funcStr = [task.Name '(''' task.Input ''',''' task.SaveIn ''''];
             else
                 funcStr = [task.Name '(' task.Input ',''' task.SaveIn ''''];
             end
+            % Fix empty input character "~":
+            funcStr = strrep(funcStr, '''~''', '~');
                 
             % Add optionals: 
             if ~isempty(task.opts)  

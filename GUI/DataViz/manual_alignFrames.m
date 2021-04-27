@@ -61,7 +61,7 @@ movPts_adj = cpcorr(movPts,fxPts,targetFr,refFr);
 % Perform image registration:
 tform = fitgeotrans(movPts_adj,fxPts,'nonreflectivesimilarity');
 Rfixed = imref2d(size(refFr));
-targetFr = imwarp(targetFr, tform, 'OutputView', Rfixed);
+targetFr = imwarp(targetFr, tform,'nearest', 'OutputView', Rfixed);
 % Show results:
 str = split(object.SaveFolder, filesep);
 str = str(2:end); % Remove root folder.
@@ -110,7 +110,7 @@ disp(['Performing alignment in data from ' applyToFile '...']);
 for i = 1:size(warp_data,3)
     frame = data(:,:,i);
     frame = imtranslate(frame, translation, 'FillValues', 0, 'OutputView','full');
-    frame = imwarp(frame, tform, 'OutputView', Rfixed);
+    frame = imwarp(frame, tform, 'nearest', 'OutputView', Rfixed);
     warp_data(:,:,i) = frame;
 end
 disp('Alignment finished.')
@@ -142,7 +142,7 @@ warp_data = flipud(rot90(warp_data));
 %%%
 % outFile = [outFile '.dat'];
 % datFile = fullfile(SaveFolder, outFile);
-datFile = fullfile(SaveFolder, 'mov_aligned.dat');
+datFile = fullfile(SaveFolder, 'mov_aligned_manual.dat');
 % Save to .DAT file and create .MAT file with metaData:
 save2Dat(datFile, warp_data);
 % Add Bregma and Lambda coordinates to file meta data:

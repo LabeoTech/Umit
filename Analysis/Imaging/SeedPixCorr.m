@@ -31,9 +31,15 @@ data = mmData.Data.data;
 % Calculate SeedPixel Correlation:
 % Preserve data Aspect Ratio:
 data_size = size(data);
-dataAspectRatio = opts.imageResizeTo/max(data_size([1 2]));
-xy_size = round(data_size([1 2]).*dataAspectRatio);
-A = imresize3(data, [xy_size(1), xy_size(2), size(data,3)]);
+if opts.imageResizeTo == -1
+    dataAspectRatio = 1;
+    xy_size = data_size([1 2]);
+    A = data;
+else
+    dataAspectRatio = opts.imageResizeTo/max(data_size([1 2]));
+    xy_size = round(data_size([1 2]).*dataAspectRatio);
+    A = imresize3(data, [xy_size(1), xy_size(2), size(data,3)], 'nearest');
+end
 B = reshape(A, [], size(A,3))';
 [CM, P] = corr(B);
 % Apply Z Fisher transformation to corr Data:

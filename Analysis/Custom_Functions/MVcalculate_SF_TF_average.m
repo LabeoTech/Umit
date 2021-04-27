@@ -28,20 +28,20 @@ SaveFolder = p.Results.SaveFolder;
 Output = p.Results.Output;
 %%%%
 % Map movie and metadata to memory:
-mData = mapDatFile(File);
-metaDat = matfile(strrep(File, '.dat', '_info.mat'));
-szdat = size(mData.Data.AVG);
+[mData, metaDat] = mapDatFile(File);
+szdat = size(mData.Data.data);
 % Combine Directions and calculate average and Standard deviation movies.
-eventList = metaDat.eventList; 
-eventList = cell2mat(eventList{1});
-a = unique(eventList(:,1:3), 'rows');
-AVG = zeros(szdat(1), szdat(2),szdat(3), size(a,1), 'single');
-STD = zeros(szdat(1), szdat(2),szdat(3), size(a,1), 'single');
+eventNameList = metaDat.eventNameList; 
+eventNameList = cell2mat(eventNameList);
+a = unique(eventNameList(:,1:3), 'rows');
+AVG = zeros(size(a,1), szdat(2), szdat(3),szdat(4), 'single');
+STD = zeros(size(a,1), szdat(2), szdat(3),szdat(4), 'single');
 for i = 1:size(a,1)
-    indx = find(all(eventList(:,1:3) == a(i,:),2));
-    raw_data_subset = mData.Data.AVG(:,:,:,indx);
-    AVG(:,:,:,i)= nanmean(raw_data_subset,4);
-    STD(:,:,:,i)= std(raw_data_subset,0,4,'omitnan');
+    idx = find(all(eventNameList(:,1:3) == a(i,:),2));
+    indx_trials = arrayfun(@(x) metaDat.eventID == x, idx, 'UniformOutput', false); indx_trials = any(cell2mat(indx_trials'),2);
+    raw_data_subset = mData.Data.data(indx_trials,:,:,:);
+    AVG(i,:,:,:)= nanmean(raw_data_subset,1);
+    STD(i,:,:,:)= std(raw_data_subset,0,1,'omitnan');
 end
 datFile = fullfile(SaveFolder, Output);
 % Create MetaData structure:
