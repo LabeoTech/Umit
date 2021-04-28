@@ -301,27 +301,27 @@ classdef PipelineManager < handle
                 end
             end
         end
-        function isLogged = checkInLogBook(~,LogBook, LogTable)
-            % This function checks if the job in the pipeline has already
-            % been successfully processed.
-            isLogged = false;
-            if isempty(LogBook)
-                return
-            end
-            c1 = table2array(LogBook(:,1:6));
-            c2 = table2array(LogTable(:,1:6));
-            idx = false(size(c1));
-            for i = 1:size(c1,2)
-                idx(:,i) = strcmp(c2(i), c1(:,i));
-            end
-            idx = all(idx,2);
-            a = any(idx);
-            b = any(LogBook.Completed(idx));
-            
-            if a && b
-                isLogged = true;
-            end
-        end
+%         function isLogged = checkInLogBook(~,LogBook, LogTable)
+%             % This function checks if the job in the pipeline has already
+%             % been successfully processed.
+%             isLogged = false;
+%             if isempty(LogBook)
+%                 return
+%             end
+%             c1 = table2array(LogBook(:,1:6));
+%             c2 = table2array(LogTable(:,1:6));
+%             idx = false(size(c1));
+%             for i = 1:size(c1,2)
+%                 idx(:,i) = strcmp(c2(i), c1(:,i));
+%             end
+%             idx = all(idx,2);
+%             a = any(idx);
+%             b = any(LogBook.Completed(idx));
+%             
+%             if a && b
+%                 isLogged = true;
+%             end
+%         end
         function b_isLogged = checkInFilePtr(obj, task)
            % CHECKINFILEPTR compares the information in LASTLOG with the JSON file content
            % of OBJ.TMP_TARGETOBJ. This function is used in
@@ -334,12 +334,13 @@ classdef PipelineManager < handle
            if isempty(FileInfo)
                return
            end
-           idx = false(length(FileInfo),4);
+           idx = false(length(FileInfo),5);
            for i = 1:length(FileInfo)
                idx(i,1) = strcmp(FileInfo(i).FunctionInfo.Job, task.funcStr);
                idx(i,2) = strcmp(FileInfo(i).FunctionInfo.Name, task.Name);
                idx(i,3) = isequaln(FileInfo(i).FunctionInfo.DateNum, task.DateNum);
                idx(i,4) = strcmp(FileInfo(i).InputFile_UUID, task.InputFile_UUID);
+               idx(i,5) = isequaln(FileInfo(i).FunctionInfo.opts, task.opts);
            end
            idx = all(idx,2);
            b_isLogged = any(idx);    
