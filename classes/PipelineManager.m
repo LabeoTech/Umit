@@ -745,13 +745,8 @@ classdef PipelineManager < handle
                 case 'object'
                     task.Input = 'obj.tmp_TargetObj';
                 otherwise
-                    if isempty(obj.tmp_FilePtr.Files)
-                        errID = 'MATLAB:UMIToolbox:MissingFilePointer';
-                        errMsg = ['Pointer of file ' task.Input ' is missing in FilePtr.json folder'];
-                        error(errID, errMsg);
-                    end
                     idx = strcmp(task.Input, {obj.tmp_FilePtr.Files.Name});
-                    if sum(idx) == 0
+                    if isempty(obj.tmp_FilePtr.Files) || sum(idx) == 0
                         task.Input = 'missing';
                         task.funcStr = '';
                         return

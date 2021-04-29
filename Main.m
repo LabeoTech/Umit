@@ -15,16 +15,16 @@ protocol.generateSaveFolders;
 save(fullfile(protocol.SaveDir, [protocol.Name '.mat']), 'protocol');
 %% Load existing Protocol Object:
 addpath(genpath('G:\DummyDataSet_4_testing'));
-maindir = 'G:\DummyDataSet_4_testing';
-savedir = 'G:\DummyDataSet_4_testing\ProjectSaveDir';
-ProjectName = 'dummyTest2';
+maindir = 'F:\Solenn';
+savedir = 'E:\Solenn_Data\ProjectSaveDir';
+ProjectName = 'Solenn_backupData_2.mat';
 load(fullfile(savedir, ProjectName));
 %% Query filter
 % Clear previously saved Filter structure:
 protocol.clearFilterStruct
 % Query subjects
 protocol.FilterStruct.Subject.PropName = 'ID';
-protocol.FilterStruct.Subject.Expression = 'M13';
+protocol.FilterStruct.Subject.Expression = 'M1s3';
 % protocol.FilterStruct.Subject.LogicalOperator ='NOT';
     % Excludes a subject from query:
 % protocol.FilterStruct.Subject(2).PropName = 'ID';
