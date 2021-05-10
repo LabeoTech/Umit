@@ -1,18 +1,22 @@
-function deleteDatFile(file, FilePtr)
+function status = deleteDatFile(file, FilePtr)
 % DELETEDATFILE deletes a file from a folder and from the file pointer.
 % Inputs:
 % file : full path of .DAT file to be deleted.
 % FilePtr: full path to file pointer JSON file listing the .DAT file to be
 % deleted.
+status = false;
 info = readPtr(FilePtr);
 [~, filename, ext] = fileparts(file);
 idx = strcmp([filename,ext], {info.Files.Name});
 info.Files(idx) = [];
 if sum(idx) == 1
     delete(file);
-    delete(strrep(file,'.dat', '_info.mat'));
+    if strcmp(ext, '.dat')
+        delete(strrep(file,'.dat', '_info.mat'));
+    end
     disp('File deleted!')
     write2Ptr(info,FilePtr);
+    status = true;
 elseif sum(idx) == 0
     disp('File not found in File pointer')
 else

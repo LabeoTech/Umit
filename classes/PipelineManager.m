@@ -468,12 +468,15 @@ classdef PipelineManager < handle
                         end
                         for i = 1:length(out)
                             SaveFolder = task.SaveIn;
-                            mDt_file = matfile(strrep(fullfile(SaveFolder, out{i}), '.dat', '_info.mat'));
+                            if endsWith(out{i}, '.dat')
+                                mDt_file = matfile(strrep(fullfile(SaveFolder, out{i}), '.dat', '_info.mat'),'Writable', true);
+                            else
+                                mDt_file = matfile(out{i},'Writable', true);
+                            end
                             % Inheritance of MetaData from last File created (Different ones ONLY by different function).
                             lastFile = task.Input;
                             if isfile(lastFile)
                                 lastMetaData = matfile(strrep(lastFile, '.dat', '_info.mat'));
-                                mDt_file.Properties.Writable = true;
                                 props = setdiff(properties(lastMetaData), properties(mDt_file));
                                 for k = 1:length(props)
                                     eval(['mDt_file.' props{k} '= lastMetaData.' props{k} ';'])

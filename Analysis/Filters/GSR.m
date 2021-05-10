@@ -1,7 +1,6 @@
 function outFile = GSR(File, SaveFolder, varargin)
 % GSR performs global signal regression to data with path specified as
 % ARGS.INPUT in order to remove global fluctuations from signal.
-
 % Defaults:
 default_Output = 'GSR.dat';
 

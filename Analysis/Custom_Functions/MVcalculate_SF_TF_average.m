@@ -4,7 +4,7 @@ function outFile = MVcalculate_SF_TF_average(File, SaveFolder, varargin)
 % This function averages specific conditions in the SF/TF experiments.
 %
 % Inputs:
-%   File: fullpath of eventTrigAVG.DAT file (output of event_triggered_average function).
+%   File: fullpath of data_splitByEvent.DAT file (output of event_triggered_average function).
 %   SaveFolder: path to save the output file.
 %   Output (optional) : Name of outFile.
 % Output:
@@ -30,6 +30,10 @@ Output = p.Results.Output;
 % Map movie and metadata to memory:
 [mData, metaDat] = mapDatFile(File);
 szdat = size(mData.Data.data);
+% Check if file has 4-D:
+if numel(szdat) ~= 4
+    error('Wrong input file. Input must have 4 dimensions.');
+end
 % Combine Directions and calculate average and Standard deviation movies.
 eventNameList = metaDat.eventNameList; 
 eventNameList = cell2mat(eventNameList);

@@ -1,6 +1,6 @@
 function outFile = split_data_by_event(File, SaveFolder, varargin)
-% SPLIT_DATA_BY_EVENT reshapes an image time series dataset in a 5D matrix of 
-% dimensions  repetition (R), condition (C) , X,Y,T.%
+% SPLIT_DATA_BY_EVENT reshapes an image time series dataset in a 4D matrix of 
+% dimensions  Event (E), X,Y,T.%
 % Inputs:
 %   File: fullpath of functional imaging .DAT file.
 %   SaveFolder: path to save the output file.
