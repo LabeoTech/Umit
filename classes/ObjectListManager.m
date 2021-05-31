@@ -88,7 +88,6 @@ classdef ObjectListManager < handle
             parse(p,varargin{:})
             queryMethod = p.Results.queryMethod;
             
-            
             if isempty(PropName)
                 iElem = 1:length(obj.ObjList);
             else

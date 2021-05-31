@@ -275,6 +275,48 @@ classdef Protocol < handle
                         out = arrayfun(@(x,y,z) obj.Array.ObjList(x).Array.ObjList(y).Array.ObjList(z), indx(:,1), indx(:,2), indx(:,3), 'UniformOutput', false);
                 end
         end
+        function addTextEvent(obj, Text, dateAndTime, varargin)
+            default_flag = 'add';
+            p = inputParser;
+            validFlag = @(x) ischar(x) && ismember(x, {'add', 'overwrite'});
+            validText = @(x) ischar(x) || (iscell(x) && (ischar([x{:}])));
+            addRequired(p, 'Text', validText);
+            addRequired(p, 'dateAndTime', @isdatetime);
+            addOptional(p,'flag', default_flag, validFlag);
+            parse(p, Text, dateAndTime, varargin{:});
+            eventID = p.Results.Text;
+            timestamps = p.Results.dateAndTime;
+            flag = p.Results.flag;
+            
+            txtEv_file = fullfile(obj.SaveDir, 'Text_events.mat');
+            if ~isfile(txtEv_file) && strcmp(flag, 'add')
+                flag = 'overwrite';
+                answer = questdlg(['Text Event file not found in ' obj.SaveDir '. Create a new file?'], ...
+                    'Create Text Event File', 'Yes', 'Cancel', 'Cancel');
+                if strcmp(answer, 'Cancel') || isempty(answer)
+                    disp('Operation cancelled by user')
+                    return
+                end
+            elseif isfile(txtEv_file) && strcmp(flag, 'overwrite')    
+                answer = questdlg('Text Event file will be overwritten. Proceed?', ...
+                    'Create Text Event File', 'Yes', 'No. Add a new entry instead', 'Cancel', 'Cancel');
+                switch answer
+                    case {'Cancel', 0}
+                        disp('Operation cancelled by user')
+                        return
+                    case 'No. Add a new entry'
+                        flag = 'add';
+                end
+            end
+                            
+            switch flag
+                case 'add'
+                    f = '-a';
+                otherwise
+                    f = '-w';
+            end
+            create_Text_eventsFile(obj.SaveDir, eventID, timestamps, f)
+        end
         function queryFilter(obj)
             % QUERYFILTER creates a cell array containing 1x3 array
             % of indices of Subject, Acquisition and Modality,
