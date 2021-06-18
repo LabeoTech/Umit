@@ -74,7 +74,8 @@ classdef PipelineManager < handle
             end
             if isempty(task.Output)
                 warndlg(['The function ' task.Name ' has no outputs. '...
-                    'No more steps can be added to the pipeline after this one.'], 'Pipeline warning')
+                    'No more steps can be added to the pipeline after this one.'],...
+                    'Pipeline warning')
                 obj.block_pipe = true;
             end
                 
@@ -105,8 +106,10 @@ classdef PipelineManager < handle
             elseif ~isempty(obj.Pipe) && b_inputIsFile
                 if ~contains(obj.Pipe(end).Output, '.dat')
                     prevStep = obj.Pipe(end);
-                    errordlg({['Error adding ' task.Name ' to pipeline.'], ['The output of the previous step "' prevStep.Name ...
-                        '" (' prevStep.Output ') is incompatible with the current function input (' task.Input ').'], 'Try rearranging the pipeline to fix this.'}, 'Pipeline order error')
+                    errordlg({['Error adding ' task.Name ' to pipeline.'],...
+                        ['The output of the previous step "' prevStep.Name ...
+                        '" (' prevStep.Output ') is incompatible with the current function input (' task.Input ').'],...
+                        'Try rearranging the pipeline to fix this.'}, 'Pipeline order error')
                     return
                 end    
                 task.Input = obj.Pipe(end).Output;
@@ -178,7 +181,7 @@ classdef PipelineManager < handle
                 case 2
                     a = 1;
                     uniqA = unique(idxList(:,[1 2]),'rows');
-                    for i = 1:length(uniqA)
+                    for i = 1:size(uniqA,1)
                         idx = all(idxList(:,[1 2]) == uniqA(i,:),2);
                         ppIdx(idx) = a;
                         a = a+1;
