@@ -33,7 +33,12 @@ SaveFolder = p.Results.SaveFolder;
 opts = p.Results.opts;
 %%%%
 % Check if MetaDataFile exists:
-assert(isfile(object.MetaDataFile), 'MATLAB:UMIToolbox:FileNotFound', ['MetaDataFile not found in ' object.RawFolder])
+if ~isfile(object.MetaDataFile)
+    errID = 'MATLAB:UMIToolbox:FileNotFound';
+    errMsg = ['MetaDataFile not found in ' object.RawFolder];
+    errMsg = strrep(errMsg, '\' , '\\');
+    error(errID, errMsg);
+end
 cd(object.RawFolder)
 txt = fileread(fullfile(object.RawFolder, 'info.txt'));
 sr = regexp(txt, '(?<=AISampleRate:\s*)\d+', 'match', 'once'); sr = str2double(sr);

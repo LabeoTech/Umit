@@ -34,10 +34,10 @@ if ischar(eventID)
     eventID = {eventID};
 end
 % Flip arrays to have one column.
-if size(eventID,1)<size(eventID,2)
+if size(eventID,1) < size(eventID,2)
     eventID = eventID';
 end
-if size(timestamps,1)<size(timestamps,2)
+if size(timestamps,1) < size(timestamps,2)
     timestamps = timestamps';
 end
 % Check for equality of lengths of eventID and timestamps:
@@ -54,7 +54,7 @@ switch flag
         try
             a = load(filename);
         catch
-            errID = 'IsaToolbox:MissingFile';
+            errID = 'UMIToolbox:MissingFile';
             msg = ['Text_events.mat not found in ' saveFolder];
             throw(MException(errID,msg))
         end

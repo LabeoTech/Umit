@@ -1,4 +1,4 @@
-function out = dummyFunc4Testing_5(RawFolder, SaveFolder, varargin)
+function out = dummyFunc4Testing_5(SaveFolder, varargin)
 % FUNCTEMPLATE is a dummy function that serves as a template for creating
 % functions compatible with the toolbox.
 %
