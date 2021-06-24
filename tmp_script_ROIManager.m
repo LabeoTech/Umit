@@ -167,5 +167,238 @@ for colIdx = 1 : numel(uit.ColumnName)
   jTable.getColumnModel.getColumn(colIdx-1).setCellRenderer(cr);
 end
 
+%% Testing NaN region exclusion from ROI
+close all
+% Test image:
+imag = reference_frame;
+% add region with NaNs:
+imag(50:70,40:60) = NaN;
+imag(60,50) = 1;
+imag(61,50) = 1;
+
+% Plot:
+figure;
+ax =gca;
+imH = imagesc(ax,imag); axis image;
+% Create Polyshape by hand:
+rect = drawpolygon(ax);
+pS_orig = polyshape(rect.Position);
+delete(rect);
+hold on
+p0 = plot(pS_orig);
+p0.FaceColor = 'none'; p0.EdgeColor = [1 1 1];
+
+% Create non_nan_msk:
+not_nan_msk = ~isnan(imag);
+
+% Create mask from polyshape using POLY2MASK:
+pS_orig_msk = poly2mask(pS_orig.Vertices(:,1), pS_orig.Vertices(:,2), ...
+    size(imag,1), size(imag,2));
+% Create intersect_msk:
+intersect_msk = not_nan_msk & pS_orig_msk;
+% Visualize:
+hold(ax,'on')
+imagesc(intersect_msk, 'AlphaData', .5*intersect_msk);
+% Create new polyshape from intersect_msk:
+% bwboundaries method:
+B = bwboundaries(intersect_msk);
+X = cellfun(@(x) x(:,1), B, 'UniformOutput', false);
+Y = cellfun(@(x) x(:,2), B, 'UniformOutput', false);
+pS_intersect = polyshape(Y,X);
+
+%bwtraceboundary method:
+% [x_init, y_init] = find(intersect_msk,1, 'first');
+% tmp = bwtraceboundary(intersect_msk,[x_init y_init],'E');
+% pS_intersect = polyshape(tmp(:,2), tmp(:,1));
+% Visualize:
+p1 = plot(pS_intersect);
+hold(ax,'off');
+
+% Chech if POLY2MASK of polyshape derived from maks degrades the ROI too
+% much:
+
+% POLY2MASK method:
+
+% nReg = pS_intersect.NumRegions;
+% test_msk = false([size(imag), nReg]);
+% tmp_ps = regions(pS_intersect);
+% for i = 1:nReg
+%     test_msk(:,:,i) = poly2mask(tmp_ps(i).Vertices(:,1), tmp_ps(i).Vertices(:,2), ...
+%     size(imag,1), size(imag,2));
+% end
+% test_msk = any(test_msk,3);
+
+% Create isinterior method:
+[r,c] = find(imag);
+idx = pS_intersect.isinterior(c,r);
+test_msk = false(size(imag));
+X = c(idx);
+Y = r(idx);
+for i = 1:size(X,1)
+    test_msk(Y(i),X(i)) = true;
+end
+
+
+
+figure;
+imshowpair(intersect_msk, test_msk)
+
+
+
+%%$$ OK!! But there is some erosion!
+
+%% Controlling for ROIS partially out of image:
+
+close all
+figure;
+ax =gca;
+ax.Color = [0 0 0];
+imH = imagesc(ax,imag); axis image;
+% Create Polyshape by hand:
+rect = drawpolygon(ax);
+pS_orig = polyshape(rect.Position);
+delete(rect);
+hold on
+p0 = plot(pS_orig);
+p0.FaceColor = 'none'; p0.EdgeColor = [1 1 1];
+% Create polyshape with image size:
+[h,w] = size(imag);
+pS_imag = polyshape((.5 + [0 0 w w]), (.5 + [h 0 0 h]));
+p1 = plot(pS_imag);
+p1.EdgeColor = [0 1 0];
+p1.FaceColor = "none";
+pS_intersect = pS_orig.intersect(pS_imag);
+
+p2 = plot(pS_intersect);
+p2.FaceColor = [1 0 0];
+p2.EdgeColor = [0 0 1];
+
+%%$$ OK!!  
+%%
+
+
+
+
+
+
+
+
+% Create NaN mask:
+nan_msk = isnan(imag);
+% Create a polyshape from nan_msk:
+[x_init, y_init] = find(nan_msk,1, 'first');
+tmp = bwtraceboundary(nan_msk,[x_init y_init],'E');
+pS_nan= polyshape(tmp(:,2), tmp(:,1));
+pS_subtract= pS_orig.subtract(pS_nan);
+
+p1 = plot([pS_nan, pS_subtract]);
+
+p1(1).EdgeColor = [0 0 0];
+p1(2).EdgeColor = [0 1 0];
+% Find pixels inside pS_subtract:
+[r,c] = find(imag);
+idx_in = pS_subtract.isinterior(c,r);
+% Create not_nan_msk:
+not_nan_msk = false(size(imag));
+X = c(idx_in);
+Y = r(idx_in);
+for i = 1:size(X,1)
+    not_nan_msk(Y(i),X(i)) = true;
+end
+% overlay not_nan_msk:
+imagesc(not_nan_msk, 'AlphaData', .3.*not_nan_msk)
+
+
+% Create Mask from polyshape:
+[r,c] = find(imag);
+idx = pS_orig.isinterior(c,r);
+ps_msk = false(size(imag));
+X = c(idx);
+Y = r(idx);
+for i = 1:size(X,1)
+    ps_msk(Y(i),X(i)) = true;
+end
+% Plot ROI pixels:
+imagesc(ps_msk, 'AlphaData', .3*ps_msk)
+hold off
+% Create mask from intersection:
+intersect_msk = not_nan_msk.*ps_msk;
+% Create polyshape from mask:
+[x_init, y_init] = find(intersect_msk,1, 'first');
+tmp = bwtraceboundary(intersect_msk,[x_init y_init],'E');
+pS_rebuild = polyshape(tmp(:,2), tmp(:,1));
+% Validate all:
+close all
+figure;
+imagesc(imag); axis image;
+hold on
+imagesc(intersect_msk, 'AlphaData', .2.*intersect_msk);
+p1 = plot(pS_orig); p1.FaceColor = 'none'
+plot(pS_rebuild)
+for i = 1:length(B)
+    vtcs = B{i};
+    p_all(i) = plot(polyshape(vtcs(:,2), vtcs(:,1)))
+end
+
+
+figure;
+imagesc(intersect_msk); axis image
+hold on
+p0 = plot(tmp(:,2), tmp(:,1));
+p1 = plot(pS_orig);
+p1.FaceColor = 'none';
+p1.EdgeColor = [1 1 1];
+p2 = plot(pS_rebuild);
+
+% Compare pixels inside:
+[r,c] = find(imag);
+b_isinOrig = pS_orig.isinterior(c,r);
+b_isinRebuild = pS_rebuild.isinterior(c,r);
+
+% Visualize differences:
+msk_orig = false(size(intersect_msk));
+msk_rebuild = msk_orig;
+X_o = r(b_isinOrig);
+Y_o = c(b_isinOrig);
+X_r = r(b_isinRebuild);
+Y_r = c(b_isinRebuild);
+for i = 1:length(X_o)
+    msk_orig(X_o(i),Y_o(i)) = true;
+end
+    
+for i = 1:length(X_r)
+    msk_rebuild(X_r(i),Y_r(i)) = true;
+end
+figure;
+imagesc(msk_rebuild .*msk_orig)
+imshowpair(msk_orig, msk_rebuild)
+% Comparing ISINTERIOR vs poly2mask:
+ps_rebuil_msk = poly2mask(pS_rebuild.Vertices(:,1), pS_rebuild.Vertices(:,2), ...
+    size(imag,1), size(imag,2));
+
+figure;
+imshowpair(msk_rebuild, ps_rebuil_msk, 'falsecolor', 'Scaling', 'joint')
+
+figure;
+imshowpair(msk_orig, ps_msk, 'falsecolor', 'Scaling', 'joint')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
