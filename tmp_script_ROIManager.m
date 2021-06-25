@@ -186,7 +186,7 @@ pS_orig = polyshape(rect.Position);
 delete(rect);
 hold on
 p0 = plot(pS_orig);
-p0.FaceColor = 'none'; p0.EdgeColor = [1 1 1];
+p0.FaceColor = [0 1 0]; p0.EdgeColor = [0 0 0];
 
 % Create non_nan_msk:
 not_nan_msk = ~isnan(imag);
