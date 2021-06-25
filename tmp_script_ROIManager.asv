@@ -406,10 +406,6 @@ for i = 1:size(X,1)
 end
 
 
-eroded_msk = bwmorph(ps_msk, 'shrink', 1);
-imshowpair(ps_msk,eroded_msk, 'falsecolor', 'Scaling', 'joint');
-
-
 
 
 
