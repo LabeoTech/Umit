@@ -409,7 +409,55 @@ end
 eroded_msk = bwmorph(ps_msk, 'shrink', 1);
 imshowpair(ps_msk,eroded_msk, 'falsecolor', 'Scaling', 'joint');
 
+%% Test DRAWPOINT
 
+close all
+figure;
+ax =gca;
+ax.Color = [0 0 0];
+imH = imagesc(ax,imag); axis image;
+% Create point:
+pt= drawpoint(ax);
+
+% New origin:
+newOrigin = round(pt.Position);
+
+% Shift X-Axis:
+xLab = 0:20:ax.XLim(2);
+xLab = unique([-xLab xLab]);
+xLoc = xLab + newOrigin(1);
+idx = xLoc >= 0;
+
+set(ax, 'XTick', xLoc(idx), 'XTickLabel', arrayfun(@(x) num2str(x), xLab(idx),...
+    'UniformOutput', false));
+% Shift Y-Axis:
+yLab = 0:20:ax.YLim(2);
+yLab = unique([-yLab yLab]);
+yLoc = yLab + newOrigin(2);
+idx = yLoc >= 0;
+
+set(ax, 'YTick', yLoc(idx), 'YTickLabel', arrayfun(@(x) num2str(x), yLab(idx),...
+    'UniformOutput', false));
+line([newOrigin(1) newOrigin(1)], ax.YLim, 'Color','k')
+line(ax.XLim, [newOrigin(2) newOrigin(2)], 'Color','k')
+
+
+xLab = unique([-xLab xLab]);
+xPos = xLab + newOrigin(1);
+idx = xPos>=0;
+
+
+xLab = sort([-xLab xLab(2:end)]);
+xLab = xLab + newOrigin(1);
+xLab = xLab(xLab>=0);
+
+
+newX = ax.XTick - newOrigin(1);
+newY = ax.YTick - newOrigin(2);
+newXLabel = arrayfun(@(x) num2str(x), newX, 'UniformOutput', false);
+newYLabel = arrayfun(@(x) num2str(x), newY, 'UniformOutput', false);
+ax.XTickLabel = newXLabel;
+ax.YTickLabel = newYLabel;
 
 
 
