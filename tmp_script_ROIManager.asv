@@ -443,8 +443,8 @@ line(ax.XLim, [newOrigin(2) newOrigin(2)], 'Color','k')
 %%
 
 a = [1, -1, 10]
-if all(size(a) == ([1 3]))
-    disp('has 1;2 size');
+if size(a) = ([1 3])
+    disp('has neg');
 elseif a(3) == 10
     disp('3rd elem = 10')
 else
