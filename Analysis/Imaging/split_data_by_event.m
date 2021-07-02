@@ -17,7 +17,7 @@ p = inputParser;
 addRequired(p,'File',@isfile)
 addRequired(p, 'SaveFolder', @isfolder);
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x) && ...
-    ismember(x.PadWith, {'mean', 'NaN'}) || mustBePositive(x) && isinteger(x)); % Padding options for cases where movie snippets dont have the same length.
+    ismember(x.PadWith, {'mean', 'NaN'}) || isnumeric(x)); % Padding options for cases where movie snippets dont have the same length.
 addOptional(p, 'Output', default_Output)
 % Parse inputs:
 parse(p,File, SaveFolder, varargin{:});
@@ -75,7 +75,7 @@ for i = 1:n_trial
 end
 
 datFile = fullfile(SaveFolder, Output);
-% Save AVG and METADAT to DATFILE:
+% Save DATA and METADATA to DATFILE:
 save2Dat(datFile, data)
 metaData = matfile(strrep(datFile, '.dat', '_info.mat'));
 metaData.Properties.Writable = true;

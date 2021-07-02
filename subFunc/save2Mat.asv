@@ -1,4 +1,4 @@
-function save2Mat(MatFileName, data, obsID, dim_names, varargin)
+function save2Mat(MatFileName, data, labels, dim_names, varargin)
 % SAVE2MAT validates all variables necessary for the statistical module
 % and saves DATA and metadata variables to MATFILENAME.
 %
@@ -9,7 +9,7 @@ function save2Mat(MatFileName, data, obsID, dim_names, varargin)
 % data = 1D cell array with length equal to the number of elements of 
 % observations "O".
 %
-% obsID = 1+D cell array of characters containing the description of each
+% obsID= 1+D cell array of characters containing the description of each
 % observation.
 %
 % dim_names = cell array of characters with the dimension description. See
@@ -38,13 +38,12 @@ data = p.Results.data;
 obsID = p.Results.obsID;
 dim_names = upper(p.Results.dim_names);
 metaData = p.Results.appendMetaData;
-
 % Further validate data:
 errID = 'Umitoolbox:save2Mat:IncompatibleSize';
 errMsg = 'The lenght of data is different from the number of observations.';
 assert(isequaln(lenght(data),length(obsID)), errID, errMsg);
 errID = 'Umitoolbox:save2Mat:IncompatibleSize';
-errMsg = 'The number of dimensions of data is different from the number of dimension names.';
+errMsg = 'The size of the numeric matrix in data is different from the number of dimension names.';
 assert(isequaln(ndims(data{1}),numel(dim_names)), errID, errMsg);
 
 % Further validate dim_names:
@@ -73,7 +72,7 @@ s.fileUUID = fileUUID;
 if ismember('E', dim_names)
     fn = fieldnames(s);
     errID = 'Umitoolbox:save2Mat:MissingInfo';
-    errMsg = 'An event dimension name ("E") was detected but no event info ("eventID" and "eventNameList")was found in metaData.';
+    errMsg = 'An event dimension name ("E") was detected but no event info was found in metaData.';
     assert(all(ismember({'eventID', 'eventNameList'}, fn)), errID, errMsg);
 end
 
@@ -81,5 +80,4 @@ end
 save(mFile, '-struct', s);
 [p,n,ext] = fileparts(mFile);
 disp(['Stats data saved in ' p ' as ' [n ext]]);
-
 end

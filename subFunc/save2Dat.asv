@@ -16,6 +16,7 @@ function save2Dat(DatFileName, data, dim_names, varargin)
 % "E" = events; *In this case, the function will validate if event IDs and
 % Names are contained in "data" file.
 
+
 % Arguments validation
 p = inputParser;
 addRequired(p,'DatFileName', @(x) validateattributes(x, {'char', 'string'}, {'nonempty'}));
@@ -27,7 +28,7 @@ parse(p, DatFileName, data, dim_names, varargin{:});
 %%%%%%
 DatFileName = p.Results.DatFileName;
 data = p.Results.data;
-dim_names = upper(p.Results.dim_names);
+dim_names = p.Results.dim_names;
 flag = p.Results.flag;
 metaDat = p.Results.metaData;
 metaDatFilename = strrep(DatFileName, '.dat', '_info.mat');
@@ -39,10 +40,11 @@ errMsg = 'List of dimension names contain invalid values.';
 assert(all(ismember(dim_names, dim_names_info.dims_dict)), errID, errMsg);
 % Validate if data size is equal to the length of dim_names:
 errID = 'Umitoolbox:save2Dat:IncompatibleSize';
-errMsg = 'The number of dimensions of data is different from the number of dimension names.';
-assert(isequaln(ndims(data),numel(dim_names)), errID, errMsg);
+errMsg = 'The size of the numeric matrix in data is different from the number of dimension names.';
+assert(isequaln(ndims(data{1}),numel(dim_names)), errID, errMsg);
 
-% Create metaData structure (if not provided):
+
+
 if isempty(fieldnames(metaDat))
     metaDat = struct;
     metaDat.datName = 'data';

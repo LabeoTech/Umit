@@ -46,7 +46,7 @@ if isempty(eventNameList)
     eventNameList = arrayfun(@num2str,list, 'UniformOutput', false);
 end
 % Checks for equality of lengths of eventID and timestamps
-errID = 'IsaToolbox:IncompatibleArraySizes';
+errID = 'Umitoolbox:saveEventsFile:IncompatibleArraySizes';
 msg = 'IncompatibleArraySizes: eventID and timestamps must have the same length.';
 assert(isequal(length(eventID), length(state), length(timestamps)), errID, msg)
 % Check if the number of elements in eventNameList is equal to the unique

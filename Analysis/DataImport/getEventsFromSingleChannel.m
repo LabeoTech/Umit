@@ -34,7 +34,7 @@ opts = p.Results.opts;
 %%%%
 % Check if MetaDataFile exists:
 if ~isfile(object.MetaDataFile)
-    errID = 'MATLAB:UMIToolbox:FileNotFound';
+    errID = 'MATLAB:UMIToolbox:getEventsFromSingleChannel:FileNotFound';
     errMsg = ['MetaDataFile not found in ' object.RawFolder];
     errMsg = strrep(errMsg, '\' , '\\');
     error(errID, errMsg);
