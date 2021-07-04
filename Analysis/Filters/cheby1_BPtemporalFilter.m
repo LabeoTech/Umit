@@ -23,9 +23,10 @@ opts = p.Results.opts;
 Output = p.Results.Output;
 %%%%
 % memmap DataFile and MetaDataFile:
-mDat = mapDatFile(File);
-mDt = matfile(strrep(File, '.dat', '_info.mat'));
+[mDat, mDt] = mapDatFile(File);
 Freq = mDt.Freq;
+% Locate "T"ime dimension:
+indxT = strcmp('T', mDt.dim_names);
 % Initialize Chebyshev Filter Parameters:
 bp = [opts.LowPassHz opts.HighPassHz]/(Freq/2); % Divide LowPass and HighPass values by Nyquist.
 [b,a] = cheby1(2,0.5,bp);
@@ -33,7 +34,7 @@ bp = [opts.LowPassHz opts.HighPassHz]/(Freq/2); % Divide LowPass and HighPass va
 data = mDat.Data.data;
 % Filter:
 szData = size(data);
-data = reshape(data,[], szData(3));
+data = reshape(data,[], szData(indxT));
 for i = 1:size(data,1)
     data(i,:) = single(filtfilt(b,a,double(data(i,:))));
 end
@@ -42,7 +43,7 @@ data = reshape(data,szData);
 % Generate .DAT and .MAT file Paths:
 datFile = fullfile(SaveFolder, Output);
 % Save to .DAT file and create .MAT file with metaData:
-save2Dat(datFile, data);
+save2Dat(datFile, data, mDt.dim_names);
 outFile = Output;
 end
 

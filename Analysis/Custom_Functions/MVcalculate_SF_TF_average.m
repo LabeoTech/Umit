@@ -51,12 +51,14 @@ datFile = fullfile(SaveFolder, Output);
 % Create MetaData structure:
 szAVG = size(AVG);
 metaDat = struct('datName', {'AVG', 'STD'}, 'datSize', {szAVG([1 2]), szAVG([1 2])},...
-    'datLength', {szAVG(3:end) , szAVG(3:end)}, 'Datatype', {'single', 'single'}, 'datFile', datFile);
+    'datLength', {szAVG(3:end) , szAVG(3:end)}, 'Datatype', {'single', 'single'},...
+    'datFile', datFile);
 metaDat(1).eventList = num2cell(a,2); % Added event description from events.mat file to the metadata.
 % Save AVG and METADAT to DATFILE:
-save2Dat(datFile, AVG,'-w', metaDat)
+dim_names = {'E','X','Y', 'T'};
+save2Dat(datFile, AVG, dim_names,'-w', metaDat)
 % Append "STD" to DATFILE:
-save2Dat(datFile, STD, '-a')
+save2Dat(datFile, STD, dim_names, '-a')
 % Output file names
 outFile = Output;
 end

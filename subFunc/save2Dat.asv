@@ -41,14 +41,7 @@ assert(all(ismember(dim_names, dim_names_info.dims_dict)), errID, errMsg);
 errID = 'Umitoolbox:save2Dat:IncompatibleSize';
 errMsg = 'The number of dimensions of data is different from the number of dimension names.';
 assert(isequaln(ndims(data),numel(dim_names)), errID, errMsg);
-% Check if "E" exists in dim_names and verify if event info exists in "s"
-% struct:
-if ismember('E', dim_names)
-    fn = fieldnames(metaDat);
-    errID = 'Umitoolbox:save2Mat:MissingInfo';
-    errMsg = 'An event dimension name ("E") was detected but no event info ("eventID" and "eventNameList") was found in metaData.';
-    assert(all(ismember({'eventID', 'eventNameList'}, fn)), errID, errMsg);
-end
+
 % Create metaData structure (if not provided):
 if isempty(fieldnames(metaDat))
     metaDat = struct;
@@ -58,15 +51,20 @@ if isempty(fieldnames(metaDat))
     metaDat.datSize = ds([1 2]);
     metaDat.datLength = ds(3:end); % Accounts for 3+ dimensions.
     metaDat.Datatype = class(data);
-    metaDat.dim_names = dim_names;
-else
-    metaDat(1).dim_names = dim_names;
+    metaDat.dim_n
 end
-
 
 % Create an unique file identifier. To be used by class PIPELINEMANAGER.
 metaDat(1).fileUUID = char(java.util.UUID.randomUUID);
 
+% Check if "E" exists in dim_names and verify if event info exists in "s"
+% struct:
+if ismember('E', dim_names)
+    fn = fieldnames(metaDat);
+    errID = 'Umitoolbox:save2Mat:MissingInfo';
+    errMsg = 'An event dimension name ("E") was detected but no event info ("eventID" and "eventNameList") was found in metaData.';
+    assert(all(ismember({'eventID', 'eventNameList'}, fn)), errID, errMsg);
+end
 
 % Save data to .dat file and metaData to .mat file:
 if any(strcmp(flag, {'-a', 'append'})) && exist(DatFileName, 'file')

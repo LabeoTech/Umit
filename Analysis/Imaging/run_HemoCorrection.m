@@ -44,7 +44,7 @@ disp('Finished hemodynamic correction.')
 delete('Data_Fluo.mat');
 
 % Save to .DAT file and create .MAT file with metaData:
-datFile = fullfile(SaveFolder, default_Output);
+datFile = fullfile(SaveFolder, default_Output, fluoMetaData.dim_names);
 save2Dat(datFile, data);
 
 % Add fluo channel metaData info to new file metadata:

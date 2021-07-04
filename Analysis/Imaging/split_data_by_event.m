@@ -29,8 +29,7 @@ Output = p.Results.Output;
 %%%%
 % Map movie and metadata to memory:
 [folder,~,~] = fileparts(File); % Assuming that File is in the same folder as events.mat.
-mData = mapDatFile(File);
-metaDat = matfile(strrep(File, '.dat', '_info.mat'));
+[mData, metaDat] = mapDatFile(File);
 szdat = size(mData.Data.data);
 evDat = load(fullfile(folder, 'events.mat'));
 % Create empty matrix:
@@ -76,8 +75,9 @@ end
 
 datFile = fullfile(SaveFolder, Output);
 % Save DATA and METADATA to DATFILE:
-save2Dat(datFile, data)
-metaData = matfile(strrep(datFile, '.dat', '_info.mat'));
+dim_names = {'E', 'X', 'Y', 'T'};
+save2Dat(datFile, data, dim_names)
+[~, metaData] = mapDatFile(datFile);
 metaData.Properties.Writable = true;
 metaData.preEventTime_sec = opts.preEventTime_sec;
 metaData.postEventTime_sec = opts.postEventTime_sec;

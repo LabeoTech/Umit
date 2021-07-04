@@ -21,9 +21,9 @@ SaveFolder = p.Results.SaveFolder;
 Output = p.Results.Output;
 %%%%
 
-mmData = mapDatFile(File);
+[mData, metaData] = mapDatFile(File);
 % Load Data:
-data = mmData.Data.data;
+data = mData.Data.data;
 szData = size(data);
 data = reshape(data, [], szData(3), 1);
 % Calculate GSR:
@@ -42,7 +42,7 @@ data = reshape(data,szData);
 % Generate .DAT and .MAT file Paths:
 datFile = fullfile(SaveFolder, Output);
 % Save to .DAT file and create .MAT file with metaData:
-save2Dat(datFile, data);
+save2Dat(datFile, data, metaData.dim_names);
 outFile = Output;
 end
 

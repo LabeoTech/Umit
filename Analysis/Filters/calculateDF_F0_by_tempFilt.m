@@ -1,7 +1,6 @@
 function outFile = calculateDF_F0_by_tempFilt(File, SaveFolder, varargin)
 % CALCULATEDF_F0_BY_TEMPFILT normalizes imaging data using temporal filtering method.
 
-
 %%% Arguments parsing and validation %%%
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder
@@ -24,10 +23,9 @@ opts = p.Results.opts;
 Output = p.Results.Output;
 %%%%
 % Open memMapfile and metaData:
-mmData = mapDatFile(File);
-mDt = matfile(strrep(File, '.dat','_info.mat'));
+[mData, mDt] = mapDatFile(File);
 % Load Data and Sample Rate:
-data = mmData.Data.data;
+data = mData.Data.data;
 if (mean(reshape(data,[],size(data,3)),1) < 0.5)
     data = data + 1;
 end
@@ -48,12 +46,13 @@ for ind = 1:szData(1)
     dh = single(filtfilt(hp_sosM, hp_SV, Sig));
     data(ind,:,:) = (dh./dl)';
 end
-% Replace NaNs with zeros:
-idx = isnan(data);
-data(idx) = 0;
+% % Replace NaNs with zeros: (Why? this seems wrong...)
+% idx = isnan(data);
+% data(idx) = 0;
+
 % SAVING DATA :
 % Generate .DAT and .MAT file Paths:
-datFile = fullfile(SaveFolder, Output);
+datFile = fullfile(SaveFolder, Output, mDt.dim_names);
 % Save to .DAT file and create .MAT file with metaData:
 save2Dat(datFile, data);
 outFile = Output;

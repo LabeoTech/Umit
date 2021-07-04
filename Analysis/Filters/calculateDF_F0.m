@@ -24,17 +24,19 @@ SaveFolder = p.Results.SaveFolder;
 Output = p.Results.Output;
 %%%%
 % Load Data:
-mData = mapDatFile(File);
+[mData, metaData] = mapDatFile(File);
 data = mData.Data.data;
-% Calculate baseline
-bsln = mean(data,3);
+% Find "T"ime dimension:
+indxT = find(strcmp('T', metaData.dim_names));
+% Calculate baseline over time
+bsln = mean(data,indxT);
 % Calculate DeltaF/F0:
 data = (data - bsln)./ bsln;
-% Replace NaNs with zeros:
-idx = isnan(data);
-data(idx) = 0;
+% % Replace NaNs with zeros:
+% idx = isnan(data);
+% data(idx) = 0;
 %Save data using save2dat.m function
-datFile = fullfile(SaveFolder, Output);
+datFile = fullfile(SaveFolder, Output, metaData.dim_names);
 save2Dat(datFile, data);
 % Output file names
 outFile = Output;

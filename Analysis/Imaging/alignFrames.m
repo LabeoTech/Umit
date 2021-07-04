@@ -106,8 +106,7 @@ subplot(212);imshowpair(refFr, targetFr, 'montage');
 %%%%%%
 % Apply mask to data file:
 try
-    mData = mapDatFile(fullfile(SaveFolder, opts.ApplyToFile));
-    metaData_source = matfile(strrep(fullfile(SaveFolder, opts.ApplyToFile), '.dat', '_info.mat'));
+    [mData, metaData_source] = mapDatFile(fullfile(SaveFolder, opts.ApplyToFile));
 catch ME
     causeException = MException('MATLAB:UMIToolbox:FileNotFound', 'DAT file not found.');
     addCause(ME, causeException);
@@ -157,9 +156,10 @@ warp_data = flipud(rot90(warp_data));
 datFile = fullfile(SaveFolder, Output);
 outFile = Output;
 % Save to .DAT file and create .MAT file with metaData:
-save2Dat(datFile, warp_data);
+save2Dat(datFile, warp_data, metaData_source.dim_names);
 % Add Bregma and Lambda coordinates to file meta data:
-metaData_target = matfile(strrep(datFile, '.dat', '_info.mat'),'Writable', true);
+[~, metaData_target] = mapDatFile(datFile);
+metaData_target.Properties.Writable = true;
 metaData_target.BregmaXY = BregmaXY;
 metaData_target.LambdaXY = LambdaXY;
 % Inherit properties from opts.Apply2File metadata (quick fix for the loophole on PIPELINEMANAGER when alignFrames is used):

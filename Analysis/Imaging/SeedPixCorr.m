@@ -10,7 +10,7 @@ addRequired(p,'File',@isfile)% For a file as input.
 addRequired(p, 'SaveFolder', @isfolder);
 % Optional Parameters:
 % opts structure:
-default_opts = struct('imageResizeTo', 64, 'FisherZ_transform', false);
+default_opts = struct('imageResizeTo', -1, 'FisherZ_transform', false);
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
 % Output File:
 default_Output = 'SeedPixCorr.dat';
@@ -24,10 +24,17 @@ opts = p.Results.opts;
 Output = p.Results.Output;
 %%%%
 % Open memMapfile:
-mmData = mapDatFile(File);
-metaData = matfile(strrep(File, '.dat', '_info.mat'));
+[mData, metaData] = mapDatFile(File);
 % Load data:
-data = mmData.Data.data;
+data = mData.Data.data;
+% Check if data is a 3-D matrix with dimensions 'X', 'Y' and 'T':
+[idx, locB] = ismember({'X', 'Y', 'T'}, metaData.dim_names);
+if ~all(idx)
+    error('Umitoolbox:SeedPixCorr:WrongInput', ...
+        'Input Data must be a a 3-D matrix with dimensions "X", "Y" and "T".');
+end
+% Permute data to have 'X', 'Y', 'T' dimensions:
+data = permute(data, locB);
 % Calculate SeedPixel Correlation:
 % Preserve data Aspect Ratio:
 data_size = size(data);
@@ -52,18 +59,19 @@ P = single(reshape(P, [xy_size(1) xy_size(2) xy_size(1)*xy_size(2)]));
 % Generate .DAT and .MAT file Paths:
 datFile = fullfile(SaveFolder, Output);
 % Create MetaData structure:
+dim_names = {'X', 'Y', 'S'};
 szCM = size(CM);
 metaDat = struct('datName', {'CM', 'P'}, 'datSize', {szCM([1 2]), szCM([1 2])},...
     'datLength', {szCM(3) szCM(3)}, 'Datatype', {'single', 'single'}, 'datFile', datFile);
 % Save CM and METADAT to DATFILE:
-save2Dat(datFile, CM,'-w', metaDat)
+save2Dat(datFile, CM, dim_names,'-w', metaDat)
 % Append "P" to DATFILE:
-save2Dat(datFile, P, '-a')
+save2Dat(datFile, P, dim_names, '-a')
 outFile = Output;
 if ~isprop(metaData, 'BregmaXY')
     warning('MATLAB:UMIToolbox:MissingInfo', 'Anatomical landmarks not found in input File metaData!')
 else
-    metaData_out = matfile(strrep(datFile, '.dat', '_info.mat'));
+    [~, metaData_out] = mapDatFile(datFile);
     metaData_out.Properties.Writable = true;
     metaData_out.BregmaXY = metaData.BregmaXY*dataAspectRatio;
     metaData_out.LambdaXY = metaData.LambdaXY*dataAspectRatio;

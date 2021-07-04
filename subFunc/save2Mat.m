@@ -23,6 +23,9 @@ function save2Mat(MatFileName, data, obsID, dim_names, varargin)
 % "E" = events; *In this case, the function will validate if event IDs and
 % Names are contained in "data" file.
 
+% appendMetaData (optional Name-value parameter):
+%  handle to .MAT (matfile) containing metaData that will be added the
+%  output .MAT file.
 % Arguments validation
 p = inputParser;
 addRequired(p,'MatFileName',...

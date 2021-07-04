@@ -44,6 +44,7 @@ for i = 1:length(chanList)
     a.fileUUID = char(java.util.UUID.randomUUID);
     a.Datatype = 'single';
     a.datName = 'data';
+    a.dim_names = {'Y', 'X', 'T'};
     % TEMPORARY FIX.
     filePath = fullfile(SaveFolder,chanName);
     newmDfile = strrep(filePath, '.dat', '_info.mat');
