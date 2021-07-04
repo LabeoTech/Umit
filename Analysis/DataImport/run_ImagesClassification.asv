@@ -26,7 +26,7 @@ existing_ChanList  = dir('*Chan*.dat');
 % Calls function from IOI library. Temporary for now.
 ImagesClassification(RawFolder, SaveFolder, opts.BinningSpatial, opts.BinningTemp, opts.b_SubROI, opts.b_IgnoreStim)
 % Get only new files created during ImagesClassification:
-chanList = dir('*Chan*.dat');
+chanList = dir('*Chan*.dat'); 
 idxName = ismember({chanList.name}, {existing_ChanList.name});
 idxDate = ismember([chanList.datenum], [existing_ChanList.datenum]);
 idxNew = ~all([idxName; idxDate],1);
@@ -37,12 +37,12 @@ for i = 1:length(chanList)
         case 'rChan.dat'
             MetaDataFileName = 'Data_red.mat';
         case 'yChan.dat'
-            MetaDataFileName = 'Data_yellow.mat';
+            MetaDataFileName = 'Data_yellow.mat';            
         case 'gChan.dat'
             MetaDataFileName = 'Data_green.mat';
         case 'dChan.dat'
             MetaDataFileName = 'Data_speckle.mat';
-        otherwise
+        otherwise         
             MetaDataFileName = strrep(chanName, 'fChan', 'Data_Fluo');
             MetaDataFileName = strrep(MetaDataFileName, '.dat', '.mat');
     end
@@ -58,15 +58,14 @@ for i = 1:length(chanList)
     if ~statusMat
         disp(['Failed to rename ' MetaDataFileName]);
     else
-        % Flip X,Y axis:
-        [mData, metaData] = mapDatFile(filePath);
-        if strcmpi(metaData.FirstDim, 'Y')
-            mData.Writable = true;
-            mData.Data.data = permute(mData.Data.data, [2 1 3]);
-            metaData.Properties.Writable = true;
-            metaData.dim_names = metaData.dim_names([2 1 3]);
-            metaData.FirstDim = lower(metaData.dim_names{1});
-        end
+       [mData, metaData] = mapDatFile(filePath)
+       test = mData.Data.(metaData.datName);
+       test = permute(test, [2 1 3]);
+       isequaln(flipud(rot90(mData.Data.(metaData.datName))), test)
+       figure; imagesc(test(:,:,1));
+       figure; imagesc(mData.Data.(metaData.datName)(:,:,1))
+       
+        
     end
     outFile = [outFile, chanName];
 end

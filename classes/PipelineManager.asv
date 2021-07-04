@@ -412,7 +412,7 @@ classdef PipelineManager < handle
                 % Run the step:
                 try
                     if strcmp(task.Input, 'missing')
-                        errID = 'MATLAB:Umitoolbox:PipelineManager:FileNotFound';
+                        errID = 'MATLAB:Umitoolbox:FileNotFound';
                         errmsg = ['Input File for function ' task.Name ' not found!'];
                         error(errID,errmsg);
                     end

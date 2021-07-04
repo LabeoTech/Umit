@@ -21,8 +21,8 @@ parse(p,File, SaveFolder, varargin{:});
 %Initialize Variables:
 File = p.Results.File; 
 SaveFolder = p.Results.SaveFolder;
-Output = p.Results.Output;
 %%%%
+
 % Load Data:
 [mData, metaData] = mapDatFile(File);
 data = mData.Data.data;
@@ -36,10 +36,9 @@ data = (data - bsln)./ bsln;
 % idx = isnan(data);
 % data(idx) = 0;
 %Save data using save2dat.m function
-datFile = fullfile(SaveFolder, Output, metaData.dim_names);
-save2Dat(datFile, data);
-% Output file names
-outFile = Output;
+[~,filename,~] = fileparts(File);
+outFile = [filename '_deltaF_F0.dat'];
+save2Dat(fullfile(SaveFolder, outFile), data, metaData.dim_names);
 end
 
 

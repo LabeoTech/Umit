@@ -28,8 +28,8 @@ Output = p.Results.Output;
 % Run your code here:
 disp('This is a dummy function for Pipeline testing!');
 a = zeros(3,3, 'single');
-save2Dat(fullfile(SaveFolder, Output), a);
-out = Output;
+out = 'customName1.dat';
+save2Dat(fullfile(SaveFolder, out), a, {'X', 'Y'});
 end
 
 
