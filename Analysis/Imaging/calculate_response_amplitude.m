@@ -82,7 +82,7 @@ switch opts.timeWindow
 end
 
 % Get baseline (pre_trigger) and postTrigger data:
-bsln = data(1:metaData.preEventTime_sec,:);
+bsln = data(1:trigFrame-1,:);
 postTrig = data(trigFrame:endFrame,:);
 
 % Use aggregate function OR value defined by User:
@@ -99,12 +99,11 @@ Amp = reshape(Amp, new_sz);
 
 % Find singleton dimensions:
 singletonDims = size(Amp) == 1;
-
 % Permute Amp to original data size and remove singleton dimensions:
-Amp = squeeze(permute(Amp,new_dim_indx)); 
+Amp = squeeze(permute(Amp,[2:numel(dims) 1])); 
 
 % Do the same in dimension names:
-singletonDims = singletonDims(new_dim_indx);
+singletonDims = singletonDims([2:numel(dims) 1]);
 new_dim_names = dims(~singletonDims); 
 
 % Save DATA, METADATA and DIMENSION_NAMES to DATFILE:

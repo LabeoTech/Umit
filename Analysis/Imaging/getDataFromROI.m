@@ -1,4 +1,4 @@
-function outFile = getDataFromROI(File, SaveFolder, varargin)
+function mFile = getDataFromROI(File, SaveFolder, varargin)
 % GETDATAFROMROI extracts and aggregates data from regions of interest
 % (ROIs) in imaging data using an "ROI_xxxxxx.mat" file located in
 % subject's folder.
@@ -37,7 +37,7 @@ if iscell(datName)
 end
 data = mData.Data.(datName);
 data_sz = size(data);
-% Parse File path to find subject folder:
+% Parse File path to find subject folder (FIND A BETTER WAY TO DO THIS!):
 str = split(File, filesep);
 subjFolder = strjoin(str(1:end-3), filesep);
 ROIfile = dir([subjFolder filesep 'ROI_*.mat']);
@@ -48,7 +48,7 @@ if isempty(ROIfile)
 end
 % Load ROI file:
 roi_data = load(fullfile(ROIfile.folder, ROIfile.name));
-% locate "X" and "Y" dimensions in metaData:
+% locate "X" and "Y" dimensions in metaData and in ROI info:
 dim_names = metaData.dim_names;
 xLoc = find(strcmp(dim_names, 'X'));
 yLoc = find(strcmp(dim_names, 'Y'));
@@ -58,7 +58,7 @@ errMsg = 'Data file frame size is different from the one in ROI file';
 assert(isequal([data_sz(yLoc) data_sz(xLoc)], size(roi_data.img_info.data)), errID, errMsg)
 % permute matrix:
 orig_dim = 1:ndims(mData.Data.data);
-new_dim = [xLoc yLoc setdiff(orig_dim, [xLoc yLoc])];
+new_dim = [yLoc xLoc setdiff(orig_dim, [xLoc yLoc])];
 data = permute(data, new_dim);
 dim_names = dim_names(new_dim);
 % reshape matrix:
@@ -79,10 +79,11 @@ for i = 1:length(roi_pixVals)
     roi_pixVals{i} = pixVals;
 end
 % Save data to .mat:
-filename = fullfile(SaveFolder, default_Output);
+mFile = fullfile(SaveFolder, default_Output);
 
 new_dim_names ={'O', dim_names{3:end}};
-save2Mat(filename, roi_pixVals, roi_names, new_dim_names, 'appendMetaData', metaData)
+save2Mat(mFile, roi_pixVals, roi_names, new_dim_names, 'appendMetaData', metaData)
+outFile = default_Output;
 end
 
 % Local function:

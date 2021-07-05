@@ -30,8 +30,9 @@ function save2Mat(MatFileName, data, obsID, dim_names, varargin)
 p = inputParser;
 addRequired(p,'MatFileName',...
     @(x) isfolder(fileparts(x)) && endsWith(x,'.mat')); % Validates if MatFileName is a fullpath and .MAT.
-validData = @(x) iscell(x) & ~isempty(x) & isa(x{:}, 'single'); % Data validation function.
-addRequired(p, 'data', validData);
+% validData = @(x) iscell(x) & ~isempty(x) & isa(x{:}, 'single'); % Data validation function.
+% addRequired(p, 'data', validData);
+addRequired(p, 'data');
 addRequired(p, 'obsID', @iscell);
 addRequired(p, 'dim_names', @iscell);
 addParameter(p, 'appendMetaData', [], @(x) isempty(x) || isa(x, 'matlab.io.MatFile'));
@@ -45,7 +46,7 @@ metaData = p.Results.appendMetaData;
 % Further validate data:
 errID = 'Umitoolbox:save2Mat:IncompatibleSize';
 errMsg = 'The lenght of data is different from the number of observations.';
-assert(isequaln(lenght(data),length(obsID)), errID, errMsg);
+assert(isequaln(length(data),length(obsID)), errID, errMsg);
 errID = 'Umitoolbox:save2Mat:IncompatibleSize';
 errMsg = 'The number of dimensions of data is different from the number of dimension names.';
 assert(isequaln(ndims(data{1}),numel(dim_names)), errID, errMsg);
@@ -81,7 +82,7 @@ if ismember('E', dim_names)
 end
 
 % Save "s" struct to file: 
-save(mFile, '-struct', s);
+save(mFile, '-struct', 's', '-v7.3');
 [p,n,ext] = fileparts(mFile);
 disp(['Stats data saved in ' p ' as ' [n ext]]);
 

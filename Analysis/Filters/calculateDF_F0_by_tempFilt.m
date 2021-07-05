@@ -47,14 +47,11 @@ for ind = 1:szData(1)
     dh = single(filtfilt(hp_sosM, hp_SV, Sig));
     data(ind,:,:) = (dh./dl)';
 end
-% % Replace NaNs with zeros: (Why? this seems wrong...)
-% idx = isnan(data);
-% data(idx) = 0;
 
 % SAVING DATA :
 % Generate .DAT and .MAT file Paths:
-[~,filename,~] = fileparts(File);
-outFile = [filename '_deltaF_F0.dat'];
+[~,filename,ext] = fileparts(File);
+outFile = ['deltaF_F0_' filename ext];
 % Save to .DAT file and create .MAT file with metaData:
 save2Dat(fullfile(SaveFolder, outFile), data, metaData.dim_names);
 end

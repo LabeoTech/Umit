@@ -41,7 +41,9 @@ len_trial = preFr + postFr;
 
 n_trial = sum(evDat.state == 1);
 timestamps = evDat.timestamps(evDat.state == 1);
-data = nan(n_trial, szdat(1), szdat(2), len_trial, 'single'); % (E(event), X, Y, T).
+new_dims = {'E', 'Y', 'X','T'};
+[~, locB]= ismember(new_dims([2,3]), metaDat.dim_names);
+data = nan([n_trial, szdat(locB), len_trial], 'single');
 % Fill empty matrix with data segments
 fix_snippet = false;
 for i = 1:n_trial
@@ -75,8 +77,7 @@ end
 
 datFile = fullfile(SaveFolder, Output);
 % Save DATA and METADATA to DATFILE:
-dim_names = {'E', 'X', 'Y', 'T'};
-save2Dat(datFile, data, dim_names)
+save2Dat(datFile, data, new_dims)
 [~, metaData] = mapDatFile(datFile);
 metaData.Properties.Writable = true;
 metaData.preEventTime_sec = opts.preEventTime_sec;
