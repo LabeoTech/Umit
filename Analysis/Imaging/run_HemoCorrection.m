@@ -25,34 +25,38 @@ opts = p.Results.opts;
 cd(SaveFolder)
 [~,fluoMetaData]= mapDatFile(File);
 if isempty(fluoMetaData)
-    errID = 'MATLAB:UMIToolbox:FileNotFound';
+    errID = 'MATLAB:UMIToolbox:run_HemoCorrection:FileNotFound';
     errMsg = ['Meta data file of fluo channel not found in ' SaveFolder];
     error(errID, errMsg);
 else
     % Create temporary MAT file for compatibility with IOI function:
-    copyfile(fluoMetaData.Properties.Source, 'Data_Fluo.mat');
+    [Path,filename,ext] = fileparts(fluoMetaData.Properties.Source);
+    newFile = fullfile(Path, [erase(filename, '_info') ext]);
+    copyfile(fluoMetaData.Properties.Source, newFile);
 end
 % Translate opts to char cell array:
 fields = fieldnames(opts);
 idx = cellfun(@(x) opts.(x), fields);
-list = fields(idx);
+list = fields(idx)';
 % Run HemoCorrection function from IOI library:
 disp('Performing hemodynamic correction in fluo channel...')
 data = HemoCorrection(SaveFolder, list);
 disp('Finished hemodynamic correction.')
 % delete temporary MAT file:
-delete('Data_Fluo.mat');
+delete(newFile);
 
 % Save to .DAT file and create .MAT file with metaData:
-datFile = fullfile(SaveFolder, default_Output, fluoMetaData.dim_names);
-save2Dat(datFile, data);
+[~,filename,~] = fileparts(newFile);
+outFile = ['hemoCorr_' filename '.dat'];
+datFile = fullfile(SaveFolder, outFile);
+save2Dat(datFile, data, fluoMetaData.dim_names);
 
 % Add fluo channel metaData info to new file metadata:
-[~,metaData] = mapDatFile(datFile);
-metaData.Properties.Writable = true;
-props = setdiff(properties(fluoMetaData), properties(metaData));
-for k = 1:length(props)
-    eval(['metaData.' props{k} '= fluoMetaData.' props{k} ';'])
-end
-outFile = default_Output;
+% [~,metaData] = mapDatFile(datFile);
+% metaData.Properties.Writable = true;
+% props = setdiff(properties(fluoMetaData), properties(metaData));
+% for k = 1:length(props)
+%     eval(['metaData.' props{k} '= fluoMetaData.' props{k} ';'])
+% end
+
 end

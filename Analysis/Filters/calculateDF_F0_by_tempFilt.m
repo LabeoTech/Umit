@@ -1,6 +1,8 @@
 function outFile = calculateDF_F0_by_tempFilt(File, SaveFolder, varargin)
 % CALCULATEDF_F0_BY_TEMPFILT normalizes imaging data using temporal filtering method.
 
+default_Output = 'deltaF_F0_by_tempFilt.dat';
+
 %%% Arguments parsing and validation %%%
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder
@@ -12,7 +14,7 @@ addRequired(p, 'SaveFolder', @isfolder);
 default_opts = struct('HighPassHz', -1); % This default value will be translated as the Nyquist of the sample rate
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
 % Output File:
-default_Output = 'deltaF_F0_by_tempFilt.dat';
+
 addOptional(p, 'Output', default_Output, @(x) ischar(x) || isstring(x) || iscell(x));
 % Parse inputs:
 parse(p,File, SaveFolder, varargin{:});
@@ -20,16 +22,15 @@ parse(p,File, SaveFolder, varargin{:});
 File = p.Results.File;
 SaveFolder = p.Results.SaveFolder;
 opts = p.Results.opts;
-Output = p.Results.Output;
 %%%%
 % Open memMapfile and metaData:
-[mData, mDt] = mapDatFile(File);
+[mData, metaData] = mapDatFile(File);
 % Load Data and Sample Rate:
 data = mData.Data.data;
 if (mean(reshape(data,[],size(data,3)),1) < 0.5)
     data = data + 1;
 end
-Freq = mDt.Freq;
+Freq = metaData.Freq;
 if opts.HighPassHz == -1
     opts.HighPassHz = Freq/2; % Translate "-1" to Nyquist.
 end
@@ -52,10 +53,10 @@ end
 
 % SAVING DATA :
 % Generate .DAT and .MAT file Paths:
-datFile = fullfile(SaveFolder, Output, mDt.dim_names);
+[~,filename,~] = fileparts(File);
+outFile = [filename '_deltaF_F0.dat'];
 % Save to .DAT file and create .MAT file with metaData:
-save2Dat(datFile, data);
-outFile = Output;
+save2Dat(fullfile(SaveFolder, outFile), data, metaData.dim_names);
 end
 
 

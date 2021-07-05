@@ -16,12 +16,12 @@ function outFile = calculate_response_amplitude(File, SaveFolder, varargin)
 %   outFile: name of Output file.
 
 % Defaults:
-default_opts = struct('preEvent_value', 'median', 'postEvent_value', 'max', 'timeWindow', 'all');
-default_Output = 'respAmplitude.dat'; 
+default_opts = struct('preEvent_value', 'median', 'postEvent_value', 'max', 'timeWindow', -1);
+default_Output = 'amplitude_Map.dat'; 
 %%% Arguments parsing and validation %%%
 % Parse inputs:
 p = inputParser;
-addRequired(p,'File',@isfile & endsWith('.dat'))
+addRequired(p,'File',@(x) isfile(x) & endsWith(x,'.dat'))
 addRequired(p, 'SaveFolder', @isfolder);
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
 addOptional(p, 'Output', default_Output)
@@ -38,10 +38,10 @@ Output = p.Results.Output;
 errID = 'Umitoolbox:calculate_respose_amplitude:InvalidDataType';
 errMsg = 'Invalid Input. Input must be member of {"mean", "median", "min","max"} or a numeric scalar';
 valid_Opts1 = @(x) (ismember(char(x), {'mean', 'median', 'min','max'}) || (isscalar(x) && isnumeric(x)));
-valid_Opts2 = @(x) (strcmp(char(x), 'all') || (isscalar(x) && mustBePositive(x)));
+valid_Opts2 = @(x) (isscalar(x) && (x == -1 || x>0));
 assert(valid_Opts1(opts.preEvent_value), errID, errMsg);
 assert(valid_Opts1(opts.postEvent_value), errID, errMsg);
-assert(valid_Opts2(opts.timeWindow), errID, 'Input must be a scalar positive numeric value or the string "all".');
+assert(valid_Opts2(opts.timeWindow), errID, 'Input must be a scalar positive numeric value or "-1".');
 
 % Map Data and metadata:
 [mData, metaData] = mapDatFile(File);
@@ -72,7 +72,7 @@ data = reshape(data,data_sz(1), []);
 % Perform amplitude calculation:
 trigFrame = round(metaData.preEventTime_sec * metaData.Freq);
 switch opts.timeWindow
-    case 'all'
+    case -1
         endFrame  = size(data,1);
     otherwise
         endFrame  = round(metaData.Freq * opts.timeWindow);

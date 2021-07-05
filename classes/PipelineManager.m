@@ -21,6 +21,10 @@ classdef PipelineManager < handle
         tmp_TargetObj % % Temporarily stores an object (TARGEROBJ).
         block_pipe = false % Boolean that, if true, the pipeline won't accept any other steps.
     end
+    properties (Access = private)
+        current_task % Task structure currently running.
+        current_pipe % Pipeline currently running.
+    end
     methods
         % Constructor
         function obj = PipelineManager(Pipe, ProtocolObj, FuncRootDir)
@@ -354,6 +358,7 @@ classdef PipelineManager < handle
             obj.tmp_BranchPipeline = obj.ProtocolObj.createEmptyTable;
             for i = 1:length(ppLine)
                 subtasks = ppLine{i};
+                obj.current_pipe = subtasks;
                 lvl = subtasks.level;
                 switch lvl
                     case 1
@@ -369,8 +374,8 @@ classdef PipelineManager < handle
                     obj.tmp_TargetObj.LastLog = obj.ProtocolObj.createEmptyTable;
                     obj.readFilePtr;
                     for k = 1:length(subtasks)
-                        task = subtasks(k);
-                        obj.run_taskOnTarget(task);
+                        obj.current_task = subtasks(k);
+                        obj.run_taskOnTarget;
                         if ~obj.State
                             return
                         end
@@ -380,13 +385,13 @@ classdef PipelineManager < handle
             end
             obj.eraseIntermediateFiles();
         end
-        function run_taskOnTarget(obj, task)
+        function run_taskOnTarget(obj)
             % RUN_TASKONTARGET runs a task in the pipeline structure array in
             % TASK.
             %   It checks if the command TASK.FUNCNAME was already
             %   sucessfully performed by comparing it to the LOGBOOK from
             %   the PROTOCOL object. Also, it appends the information of
-            %   the task on the object's LASTLOG .
+            %   the task on the object's LASTLOG.
             
             cd(obj.tmp_TargetObj.SaveFolder);
             LastLog = obj.ProtocolObj.createEmptyTable;
@@ -398,6 +403,7 @@ classdef PipelineManager < handle
             for i = 1:length(str)
                 LastLog(:,i) = str(i);
             end
+            task = obj.current_task;
             task.InputFile_UUID = 'None';
             task = populateFuncStr(obj, task);
             if ~strcmp(task.InputFile_UUID, 'None')
@@ -461,6 +467,7 @@ classdef PipelineManager < handle
                             end
                             task.File_UUID = fileUUID;
                             task.FileName = out{i};
+                            obj.current_task = task;
                             obj.write2FilePtr(task);
                         end
                     end
@@ -705,16 +712,28 @@ classdef PipelineManager < handle
                 otherwise
                     idx = strcmp(task.Input, {obj.tmp_FilePtr.Files.Name});
                     if isempty(obj.tmp_FilePtr.Files) || sum(idx) == 0
-                        task.Input = 'missing';
-                        task.funcStr = '';
-                        return
+                        % Try to find file with name different from
+                        % default:
+                        idx_pipe = strcmp(task.Input, {obj.current_pipe.Output});
+                        prev_task = obj.current_pipe(idx_pipe);
+                        % Find file in FilePtr from function in prev_task:
+                        fcn_info = arrayfun(@(x) x.FunctionInfo, obj.tmp_FilePtr.Files);
+                        idxFcnName = strcmp({fcn_info.Name}, prev_task.Name);
+                        idxFcnDate = [fcn_info.DateNum] == prev_task.DateNum;
+                        idx = idxFcnName & idxFcnDate;
+                        if sum(idx) == 1
+                            filePath = fullfile(obj.tmp_TargetObj.SaveFolder, obj.tmp_FilePtr.Files(idx).Name);
+                        else
+                            task.Input = 'missing';
+                            task.funcStr = '';
+                            return
+                        end
                     elseif strcmp(obj.tmp_FilePtr.Files(idx).Folder, 'RawFolder')
                         filePath = fullfile(obj.tmp_TargetObj.RawFolder, obj.tmp_FilePtr.Files(idx).Name);
                     else
                         filePath = fullfile(obj.tmp_TargetObj.SaveFolder, obj.tmp_FilePtr.Files(idx).Name);
                     end
                     task.Input = filePath;
-                    
                     inputMetaData = strrep(filePath, '.dat', '_info.mat');
                     mDt_input = matfile(inputMetaData); fileUUID = mDt_input.fileUUID;
                     if iscell(fileUUID)

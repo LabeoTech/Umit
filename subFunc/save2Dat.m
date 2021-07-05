@@ -43,12 +43,12 @@ errMsg = 'The number of dimensions of data is different from the number of dimen
 assert(isequaln(ndims(data),numel(dim_names)), errID, errMsg);
 % Check if "E" exists in dim_names and verify if event info exists in "s"
 % struct:
-if ismember('E', dim_names)
-    fn = fieldnames(metaDat);
-    errID = 'Umitoolbox:save2Mat:MissingInfo';
-    errMsg = 'An event dimension name ("E") was detected but no event info ("eventID" and "eventNameList") was found in metaData.';
-    assert(all(ismember({'eventID', 'eventNameList'}, fn)), errID, errMsg);
-end
+% if ismember('E', dim_names)
+%     fn = fieldnames(metaDat);
+%     errID = 'Umitoolbox:save2Mat:MissingInfo';
+%     errMsg = 'An event dimension name ("E") was detected but no event info ("eventID" and "eventNameList") was found in metaData.';
+%     assert(all(ismember({'eventID', 'eventNameList'}, fn)), errID, errMsg);
+% end
 % Create metaData structure (if not provided):
 if isempty(fieldnames(metaDat))
     metaDat = struct;
@@ -95,9 +95,9 @@ if length(metaDat) > 1
     for i=1:length(fn)
         s.(fn{i}) = {metaDat.(fn{i})};
     end
-    save(metaDatFilename, '-struct', 's');
+    save(metaDatFilename, '-struct', 's', '-v7.3');
 else
-    save(metaDatFilename, '-struct', 'metaDat');
+    save(metaDatFilename, '-struct', 'metaDat', '-v7.3');
 end
 end
 
