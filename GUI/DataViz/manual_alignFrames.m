@@ -124,7 +124,7 @@ if b_applyMask
         errID = 'MATLAB:UMIToolbox:VariableNotFound';
         error(errID, msg);
     end
-    warp_data = bsxfun(@times, warp_data, mask);
+    warp_data = bsxfun(@rdivide, warp_data, mask); % Create NaNs outside ROI.
     disp('Mask applied')
     if b_crop2Mask
         [r,c] = find(mask);
@@ -137,8 +137,8 @@ if b_applyMask
     end
 end
 %%%
-[~,filename,~] = fileparts(mData.Filename);
-outFile = [filename '_aligned.dat'];
+[~,filename,ext] = fileparts(mData.Filename);
+outFile = [ 'aligned_' filename ext];
 datFile = fullfile(SaveFolder, outFile);
 save2Dat(datFile, warp_data, metaData_source.dim_names);
 % Add Bregma and Lambda coordinates to file meta data:
