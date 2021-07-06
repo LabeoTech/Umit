@@ -28,10 +28,10 @@ Output = p.Results.Output;
 % Load data:
 data = mData.Data.data;
 % Check if data is a 3-D matrix with dimensions 'X', 'Y' and 'T':
-[idx, locB] = ismember({'X', 'Y', 'T'}, metaData.dim_names);
+[idx, locB] = ismember({'Y', 'X', 'T'}, metaData.dim_names);
 if ~all(idx)
     error('Umitoolbox:SeedPixCorr:WrongInput', ...
-        'Input Data must be a a 3-D matrix with dimensions "X", "Y" and "T".');
+        'Input Data must be a a 3-D matrix with dimensions "Y", "X" and "T".');
 end
 % Permute data to have 'X', 'Y', 'T' dimensions:
 data = permute(data, locB);
@@ -59,7 +59,7 @@ P = single(reshape(P, [xy_size(1) xy_size(2) xy_size(1)*xy_size(2)]));
 % Generate .DAT and .MAT file Paths:
 datFile = fullfile(SaveFolder, Output);
 % Create MetaData structure:
-dim_names = {'X', 'Y', 'S'};
+dim_names = {'Y', 'X', 'S'};
 szCM = size(CM);
 metaDat = struct('datName', {'CM', 'P'}, 'datSize', {szCM([1 2]), szCM([1 2])},...
     'datLength', {szCM(3) szCM(3)}, 'Datatype', {'single', 'single'}, 'datFile', datFile);
