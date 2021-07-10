@@ -32,8 +32,10 @@ opts = p.Results.opts;
 % map File:
 [mData, metaData] = mapDatFile(File);
 datName = metaData.datName;
+dim_names = metaData.dim_names;
 if iscell(datName)
     datName = datName{1};
+    dim_names = dim_names{1};
 end
 data = mData.Data.(datName);
 data_sz = size(data);
@@ -49,7 +51,6 @@ end
 % Load ROI file:
 roi_data = load(fullfile(ROIfile.folder, ROIfile.name));
 % locate "X" and "Y" dimensions in metaData and in ROI info:
-dim_names = metaData.dim_names;
 xLoc = find(strcmp(dim_names, 'X'));
 yLoc = find(strcmp(dim_names, 'Y'));
 % Check if frame size is the same as the one in ROI file:
@@ -57,7 +58,7 @@ errID = 'Umitoolbox:getDataFromROI:IncompatibleSizes';
 errMsg = 'Data file frame size is different from the one in ROI file';
 assert(isequal([data_sz(yLoc) data_sz(xLoc)], size(roi_data.img_info.data)), errID, errMsg)
 % permute matrix:
-orig_dim = 1:ndims(mData.Data.data);
+orig_dim = 1:ndims(mData.Data.(datName));
 new_dim = [yLoc xLoc setdiff(orig_dim, [xLoc yLoc])];
 data = permute(data, new_dim);
 dim_names = dim_names(new_dim);
