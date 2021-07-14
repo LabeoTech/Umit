@@ -709,29 +709,37 @@ classdef PipelineManager < handle
                     task.Input = folder;
                 case 'object'
                     task.Input = 'obj.tmp_TargetObj';
-                otherwise
-                    idx = strcmp(task.Input, {obj.tmp_FilePtr.Files.Name});
-                    if isempty(obj.tmp_FilePtr.Files) || sum(idx) == 0
-                        % Try to find file with name different from
-                        % default:
-                        idx_pipe = strcmp(task.Input, {obj.current_pipe.Output});
-                        prev_task = obj.current_pipe(idx_pipe);
-                        % Find file in FilePtr from function in prev_task:
-                        fcn_info = arrayfun(@(x) x.FunctionInfo, obj.tmp_FilePtr.Files);
-                        idxFcnName = strcmp({fcn_info.Name}, prev_task.Name);
-                        idxFcnDate = [fcn_info.DateNum] == prev_task.DateNum;
-                        idx = idxFcnName & idxFcnDate;
-                        if sum(idx) == 1
-                            filePath = fullfile(obj.tmp_TargetObj.SaveFolder, obj.tmp_FilePtr.Files(idx).Name);
-                        else
-                            task.Input = 'missing';
-                            task.funcStr = '';
-                            return
-                        end
-                    elseif strcmp(obj.tmp_FilePtr.Files(idx).Folder, 'RawFolder')
-                        filePath = fullfile(obj.tmp_TargetObj.RawFolder, obj.tmp_FilePtr.Files(idx).Name);
+                     otherwise
+                    % ALL THIS SECTION NEEDS TO BE CHANGED!!
+                    if isempty(obj.tmp_FilePtr.Files)
+                        task.Input = 'missing';
+                        task.funcStr = '';
+                        return
                     else
-                        filePath = fullfile(obj.tmp_TargetObj.SaveFolder, obj.tmp_FilePtr.Files(idx).Name);
+                        idx = strcmp(task.Input, {obj.tmp_FilePtr.Files.Name});
+                        if sum(idx) == 0
+                            % Try to find file with name different from
+                            % default:
+                            idx_pipe = strcmp(task.Input, {obj.current_pipe.Output});
+                            prev_task = obj.current_pipe(idx_pipe);
+                            % Find file in FilePtr from function in prev_task:
+                            fcn_info = arrayfun(@(x) x.FunctionInfo, obj.tmp_FilePtr.Files);
+                            idxFcnName = strcmp({fcn_info.Name}, prev_task.Name);
+                            idxFcnDate = [fcn_info.DateNum] == prev_task.DateNum;
+                            idx = idxFcnName & idxFcnDate;
+                            if sum(idx) == 1
+                                filePath = fullfile(obj.tmp_TargetObj.SaveFolder, obj.tmp_FilePtr.Files(idx).Name);
+                            else
+                                task.Input = 'missing';
+                                task.funcStr = '';
+                                return
+                            end
+                        end
+                        if strcmp(obj.tmp_FilePtr.Files(idx).Folder, 'RawFolder')
+                            filePath = fullfile(obj.tmp_TargetObj.RawFolder, obj.tmp_FilePtr.Files(idx).Name);
+                        else
+                            filePath = fullfile(obj.tmp_TargetObj.SaveFolder, obj.tmp_FilePtr.Files(idx).Name);
+                        end
                     end
                     task.Input = filePath;
                     inputMetaData = strrep(filePath, '.dat', '_info.mat');
