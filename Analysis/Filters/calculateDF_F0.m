@@ -35,9 +35,10 @@ data = (data - bsln)./ bsln;
 % % Replace NaNs with zeros:
 % idx = isnan(data);
 % data(idx) = 0;
-%Save data using save2dat.m function
-[~,filename,~] = fileparts(File);
-outFile = [filename '_deltaF_F0.dat'];
+% SAVING DATA :
+% Generate .DAT and .MAT file Paths:
+[~,filename,ext] = fileparts(File);
+outFile = ['deltaF_F0_' filename ext];
 save2Dat(fullfile(SaveFolder, outFile), data, metaData.dim_names);
 end
 

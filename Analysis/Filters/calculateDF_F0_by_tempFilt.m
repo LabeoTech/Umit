@@ -27,7 +27,7 @@ opts = p.Results.opts;
 [mData, metaData] = mapDatFile(File);
 % Load Data and Sample Rate:
 data = mData.Data.data;
-if (mean(reshape(data,[],size(data,3)),1) < 0.5)
+if (mean(reshape(data,[],size(data,3)),1, 'omitnan') < 0.5)
     data = data + 1;
 end
 Freq = metaData.Freq;

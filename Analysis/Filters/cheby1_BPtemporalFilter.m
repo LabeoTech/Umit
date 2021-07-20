@@ -32,6 +32,9 @@ bp = [opts.LowPassHz opts.HighPassHz]/(Freq/2); % Divide LowPass and HighPass va
 [b,a] = cheby1(2,0.5,bp);
 % Load data:
 data = mDat.Data.data;
+% Find NaNs and replace them with zeros:
+idx_nan = isnan(data);
+data(idx_nan) = 0;
 % Filter:
 szData = size(data);
 data = reshape(data,[], szData(indxT));
@@ -39,6 +42,8 @@ for i = 1:size(data,1)
     data(i,:) = single(filtfilt(b,a,double(data(i,:))));
 end
 data = reshape(data,szData);
+% Put NaNs back to data:
+data(idx_nan) = NaN;
 % SAVING DATA :
 % Generate .DAT and .MAT file Paths:
 datFile = fullfile(SaveFolder, Output);

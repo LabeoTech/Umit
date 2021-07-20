@@ -27,6 +27,9 @@ Output = p.Results.Output;
 [mData, metaData] = mapDatFile(File);
 % Load data:
 data = mData.Data.data;
+% Find NaNs and replace them with zeros:
+idx_nan = isnan(data);
+data(idx_nan) = 0;
 % Check if data is a 3-D matrix with dimensions 'X', 'Y' and 'T':
 [idx, locB] = ismember({'Y', 'X', 'T'}, metaData.dim_names);
 if ~all(idx)
@@ -48,6 +51,8 @@ else
     A = imresize3(data, [xy_size(1), xy_size(2), size(data,3)], 'nearest');
 end
 B = reshape(A, [], size(A,3))';
+% % Put NaNs back to data:
+% B(idx_nan) = NaN;
 [CM, P] = corr(B);
 % Apply Z Fisher transformation to corr Data:
 if opts.FisherZ_transform

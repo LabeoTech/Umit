@@ -24,6 +24,10 @@ Output = p.Results.Output;
 [mData, metaData] = mapDatFile(File);
 % Load Data:
 data = mData.Data.data;
+% Find NaNs and replace them with zeros:
+idx_nan = isnan(data);
+data(idx_nan) = 0;
+% Reshape data:
 szData = size(data);
 data = reshape(data, [], szData(3), 1);
 % Calculate GSR:
@@ -37,7 +41,8 @@ clear X B Sig
 data = data - A';%Center at Zero
 data = data + mData; %Center over constant mean value.
 data = reshape(data,szData);
-
+% Put NaNs back to data:
+data(idx_nan) = NaN;
 % SAVING DATA :
 % Generate .DAT and .MAT file Paths:
 datFile = fullfile(SaveFolder, Output);
