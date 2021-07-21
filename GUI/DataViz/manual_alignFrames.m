@@ -124,7 +124,9 @@ if b_applyMask
         errID = 'MATLAB:UMIToolbox:VariableNotFound';
         error(errID, msg);
     end
-    warp_data = bsxfun(@rdivide, warp_data, mask); % Create NaNs outside ROI.
+    mask(mask == 0) = nan;
+    warp_data = bsxfun(@times, warp_data, mask); % Create NaNs outside ROI.
+    mask(isnan(mask)) = 0;
     disp('Mask applied')
     if b_crop2Mask
         [r,c] = find(mask);
