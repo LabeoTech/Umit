@@ -106,12 +106,14 @@ end
 data = mData.Data.data;
 warp_data = zeros(size(refFr,1),size(refFr,2), size(data,3), 'single');
 disp(['Performing alignment in data from ' applyToFile '...']);
+tic;
 for i = 1:size(warp_data,3)
     frame = data(:,:,i);
     frame = imtranslate(frame, translation, 'FillValues', 0, 'OutputView','full');
     frame = imwarp(frame, tform, 'nearest', 'OutputView', Rfixed);
     warp_data(:,:,i) = frame;
 end
+toc
 disp('Alignment finished.')
 %%%%%
 BregmaXY = ref_frame_info.BregmaXY;
@@ -124,9 +126,11 @@ if b_applyMask
         errID = 'MATLAB:UMIToolbox:VariableNotFound';
         error(errID, msg);
     end
-    mask(mask == 0) = nan;
-    warp_data = bsxfun(@times, warp_data, mask); % Create NaNs outside ROI.
-    mask(isnan(mask)) = 0;
+    sz = size(warp_data);
+    mask = repmat(mask,1,1,sz(3));
+    warp_data = warp_data(:);
+    warp_data(~mask(:)) = nan;
+    warp_data = reshape(warp_data,sz);
     disp('Mask applied')
     if b_crop2Mask
         [r,c] = find(mask);
