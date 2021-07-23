@@ -22,6 +22,7 @@ opts = p.Results.opts;
 outFile = {};
 %%%%
 % Get existing ImagesClassification files in directory:
+cd(SaveFolder);
 existing_ChanList  = dir('*.dat');
 idxName = ismember({existing_ChanList.name}, default_Output);
 existing_ChanList = existing_ChanList(idxName);
