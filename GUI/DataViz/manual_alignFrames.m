@@ -33,8 +33,27 @@ refFr = ref_frame_info.reference_frame;
 % Get Reference frame file name:
 [~,ref_filename, ext] = fileparts(ref_frame_info.datFile);
 ref_filename = [ref_filename ext];
-% Load file from SaveFolder with the same name of Reference Frame file:
-mData = mapDatFile(fullfile(SaveFolder, ref_filename));
+% Try to load file from SaveFolder with the same name of Reference Frame file:
+try
+    mData = mapDatFile(fullfile(SaveFolder, ref_filename));
+catch
+    answer = questdlg(['Cannot find file with name ' ref_filename ' in ' SaveFolder '.'],...
+        'Failed to find target file', 'Load manually', 'Cancel', 'Cancel');
+    if strcmp(answer, 'Load manually')
+        cd(SaveFolder);
+       [file, path] = uigetfile('*.dat', 'Select File to compare with reference frame', 'green.dat');
+       if file == 0
+        disp('Operation cancelled by user')
+        return
+       end
+       mData = mapDatFile(fullfile(path,file)); 
+    else
+        disp('Operation cancelled by user')
+        return
+    end
+end
+        
+    
 % Load Data:
 if size(mData.Data.data,3) < 100
     targetFr = mean(mData.Data.data);
