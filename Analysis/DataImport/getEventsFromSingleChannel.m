@@ -66,7 +66,7 @@ if opts.channel == -1
 else
     sigChan = opts.channel;
 end
-signal = downsample(AnalogIN(:,sigChan),100); % I did this to try to eliminate artifacts due to the photodiode voltage fluctuations(BrunoO 23/03/2021).
+signal = downsample(AnalogIN(:,sigChan),100); % I did this to try to eliminate fast artifacts due to the photodiode voltage fluctuations(BrunoO 23/03/2021).
 sr = sr/100;
 a = load(object.MetaDataFile);
 

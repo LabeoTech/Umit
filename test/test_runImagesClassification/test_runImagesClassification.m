@@ -34,12 +34,12 @@ classdef test_runImagesClassification < matlab.unittest.TestCase
                 end
                 testCase.verifyEqual(Exp, Out);
             end
+            % Remove created files from outFolder:
+            files = dir(fullfile(root, outFolder));
+            files = files([files.isdir]==0);
+            arrayfun(@(x) delete(fullfile(x.folder, x.name)),files);
+            disp('Files removed from outFolder!!');
         end
-%         function imaginarySolution(testCase)
-%             actSolution = quadraticSolver(1,2,10);
-%             expSolution = [-1+3i -1-3i];
-%             testCase.verifyEqual(actSolution,expSolution)
-%         end
     end
     
 end
