@@ -41,12 +41,12 @@ catch
         'Failed to find target file', 'Load manually', 'Cancel', 'Cancel');
     if strcmp(answer, 'Load manually')
         cd(SaveFolder);
-       [file, path] = uigetfile('*.dat', 'Select File to compare with reference frame', 'green.dat');
-       if file == 0
-        disp('Operation cancelled by user')
-        return
-       end
-       mData = mapDatFile(fullfile(path,file)); 
+        [file, path] = uigetfile('*.dat', 'Select File to compare with reference frame', 'green.dat');
+        if file == 0
+            disp('Operation cancelled by user')
+            return
+        end
+        mData = mapDatFile(fullfile(path,file));
     else
         disp('Operation cancelled by user')
         return
