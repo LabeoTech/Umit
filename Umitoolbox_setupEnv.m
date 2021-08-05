@@ -10,11 +10,13 @@ if isfolder(myenv)
     disp('Environment Variable Umitoolbox already exists!')
     return
 end
-if strcmp(sys, 'PCWIN64')
-    system(['SETX Umitoolbox ' saveDir]);
-else
-    disp('Cannot set an environment variable in this machine yet. This is temporary. Contact Labeo for details.');
+switch sys
+    case 'PCWIN64'
+        system(['SETX Umitoolbox ' saveDir]);
+        disp('done!');
+        disp('Restart MATLAB to apply the changes!');
+    otherwise
+        disp('For this computer, you have to set manually the environment variable "Umitoolbox"');
 end
-disp('done!');
-disp('Restart MATLAB to apply the changes!');
+
 end
