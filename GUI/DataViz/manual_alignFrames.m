@@ -69,9 +69,10 @@ if size(mData.Data.data,3) < 100
 else
     targetFr = mean(mData.Data.data(:,:,1:100),3);
 end
-% Apply unsharp mask to data:
-targetFr = imsharpen(targetFr, 'Radius', 1.5, 'Amount',1);
 % Preprocessing:
+% Apply unsharp mask to data:
+refFr = imsharpen(refFr, 'Radius', 1.5, 'Amount',1);
+targetFr = imsharpen(targetFr, 'Radius', 1.5, 'Amount',1);
 % Normalize images:
 refFr = (refFr - min(refFr(:)))./(max(refFr(:)) - min(refFr(:)));
 targetFr = (targetFr - min(targetFr(:)))./(max(targetFr(:)) - min(targetFr(:)));
@@ -84,6 +85,10 @@ translation = (targetFr_center - refFr_center);
 targetFr = imtranslate(targetFr, translation, 'FillValues', 0, 'OutputView','full');
 % Lauch control points selector
 [movPts, fxPts] = cpselect(targetFr, refFr,'Wait', true);
+if isempty(movPts)
+    disp('Operation cancelled by User')
+    return
+end
 % Adjust moving points:
 movPts_adj = cpcorr(movPts,fxPts,targetFr,refFr);
 % Perform image registration:
@@ -114,6 +119,7 @@ switch answer
         warpData(object,tform,refFr,ref_frame_info,translation,Rfixed,SaveFolder, applyToFile, b_applyMask, b_crop2Mask)
     case 'No, redo'
         b_redo = true;
+        disp('Operation cancellec by User')
 end
 disp('Done!');
 close all;
