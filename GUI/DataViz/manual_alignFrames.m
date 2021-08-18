@@ -31,29 +31,38 @@ end
 % Load Reference Frame;
 refFr = ref_frame_info.reference_frame;
 % Get Reference frame file name:
-[~,ref_filename, ext] = fileparts(ref_frame_info.datFile);
-ref_filename = [ref_filename ext];
-% Try to load file from SaveFolder with the same name of Reference Frame file:
-try
-    mData = mapDatFile(fullfile(SaveFolder, ref_filename));
-catch
-    answer = questdlg(['Cannot find file with name ' ref_filename ' in ' SaveFolder '.'],...
-        'Failed to find target file', 'Load manually', 'Cancel', 'Cancel');
-    if strcmp(answer, 'Load manually')
-        cd(SaveFolder);
-        [file, path] = uigetfile('*.dat', 'Select File to compare with reference frame', 'green.dat');
-        if file == 0
+if ~isempty(ref_frame_info.datFile)
+    [~,ref_filename, ext] = fileparts(ref_frame_info.datFile);
+    ref_filename = [ref_filename ext];
+    % Try to load file from SaveFolder with the same name of Reference Frame file:
+    try
+        mData = mapDatFile(fullfile(SaveFolder, ref_filename));
+    catch
+        answer = questdlg(['Cannot find file with name ' ref_filename ' in ' SaveFolder '.'],...
+            'Failed to find target file', 'Load manually', 'Cancel', 'Cancel');
+        if strcmp(answer, 'Load manually')
+            cd(SaveFolder);
+            [file, path] = uigetfile('*.dat', 'Select File to compare with reference frame', 'green.dat');
+            if file == 0
+                disp('Operation cancelled by user')
+                return
+            end
+            mData = mapDatFile(fullfile(path,file));
+        else
             disp('Operation cancelled by user')
             return
         end
-        mData = mapDatFile(fullfile(path,file));
-    else
+    end
+else
+    cd(SaveFolder);
+    [file, path] = uigetfile('*.dat', 'Select File to compare with reference frame', 'green.dat');
+    if file == 0
         disp('Operation cancelled by user')
         return
     end
+    mData = mapDatFile(fullfile(path,file));
 end
-        
-    
+
 % Load Data:
 if size(mData.Data.data,3) < 100
     targetFr = mean(mData.Data.data);
@@ -93,14 +102,11 @@ answer = questdlg('Are you satisfied with the registration?', 'Image Registratio
 switch answer
     case 'Yes, proceed'
         %%%%%
-        mask_question = questdlg('Optional Operations:', 'Options', 'Apply Mask only', 'Apply Mask and crop', 'None', 'None');
+        mask_question = questdlg('Optional Operations:', 'Options', 'Apply Mask','None', 'None');
         switch mask_question
             case 'Apply Mask only'
                 b_applyMask = true;
                 b_crop2Mask = false;
-            case 'Apply Mask and crop'
-                b_applyMask = true;
-                b_crop2Mask = true;
             otherwise
                 b_applyMask = false;
                 b_crop2Mask = false;
@@ -117,7 +123,7 @@ function warpData(obj,tform,refFr,ref_frame_info, translation,Rfixed,SaveFolder,
 try
     [mData, metaData_source] = mapDatFile(fullfile(SaveFolder, applyToFile));
 catch ME
-    causeException = MException('MATLAB:UMIToolbox:FileNotFound', 'DAT file not found.');
+    causeException = MException('MATLAB:UMIToolbox:manual_alignFrames:FileNotFound', 'DAT file not found.');
     addCause(ME, causeException);
     rethrow(ME)
 end
@@ -135,14 +141,14 @@ end
 toc
 disp('Alignment finished.')
 %%%%%
-BregmaXY = ref_frame_info.BregmaXY;
-LambdaXY = ref_frame_info.LambdaXY;
+% BregmaXY = ref_frame_info.BregmaXY;
+% LambdaXY = ref_frame_info.LambdaXY;
 %%%%%
 if b_applyMask
     mask = ref_frame_info.logical_mask;
     if isempty(mask)
         msg = 'Logical Mask not found in ImagingReferenceFrame.mat';
-        errID = 'MATLAB:UMIToolbox:VariableNotFound';
+        errID = 'MATLAB:UMIToolbox:manual_alignFrames:VariableNotFound';
         error(errID, msg);
     end
     sz = size(warp_data);
@@ -151,15 +157,15 @@ if b_applyMask
     warp_data(~mask(:)) = nan;
     warp_data = reshape(warp_data,sz);
     disp('Mask applied')
-    if b_crop2Mask
-        [r,c] = find(mask);
-        warp_data = warp_data(min(r):max(r), min(c):max(c), :);
-        BregmaXY(1) = BregmaXY(1) - min(c)+1;
-        BregmaXY(2) = BregmaXY(2) - min(r)+1;
-        LambdaXY(1) = LambdaXY(1) - min(c)+1;
-        LambdaXY(2) = LambdaXY(2) - min(r)+1;
-        disp('Frames cropped.')
-    end
+%     if b_crop2Mask
+%         [r,c] = find(mask);
+%         warp_data = warp_data(min(r):max(r), min(c):max(c), :);
+%         BregmaXY(1) = BregmaXY(1) - min(c)+1;
+%         BregmaXY(2) = BregmaXY(2) - min(r)+1;
+%         LambdaXY(1) = LambdaXY(1) - min(c)+1;
+%         LambdaXY(2) = LambdaXY(2) - min(r)+1;
+%         disp('Frames cropped.')
+%     end
 end
 %%%
 [~,filename,ext] = fileparts(mData.Filename);
@@ -167,31 +173,21 @@ outFile = [ 'aligned_' filename ext];
 datFile = fullfile(SaveFolder, outFile);
 save2Dat(datFile, warp_data, metaData_source.dim_names);
 % Add Bregma and Lambda coordinates to file meta data:
-[~, metaData_target] = mapDatFile(datFile);
-metaData_target.Properties.Writable = true;
-metaData_target.BregmaXY = BregmaXY;
-metaData_target.LambdaXY = LambdaXY;
-% Inherit properties from applyToFile metadata (quick fix for the loophole on PIPELINEMANAGER when alignFrames is used):
-props = setdiff(properties(metaData_source), properties(metaData_target));
-for k = 1:length(props)
-    eval(['metaData_target.' props{k} '= metaData_source.' props{k} ';'])
-end
+% [~, metaData_target] = mapDatFile(datFile);
+% metaData_target.Properties.Writable = true;
+% metaData_target.refPt = ref_frame_info.refPt;
+% % metaData_target.BregmaXY = BregmaXY;
+% % metaData_target.LambdaXY = LambdaXY;
+% % Inherit properties from applyToFile metadata (quick fix for the loophole on PIPELINEMANAGER when alignFrames is used):
+% props = setdiff(properties(metaData_source), properties(metaData_target));
+% for k = 1:length(props)
+%     eval(['metaData_target.' props{k} '= metaData_source.' props{k} ';'])
+% end
 % Write to FilePtr:
 write2FilePtr(obj, datFile, fullfile(SaveFolder, applyToFile))
 uiwait(msgbox(['Aligned Frames saved in ' datFile],'Data Saved', 'help'));
 end
 
-function filePtr_struct = readFilePtr(obj)
-% READFILEPTR loads the content of FILEPTR.JSON in a structure
-% stored in OBJ.TMP_FILEPTR.
-txt = fileread(obj.FilePtr);
-a = jsondecode(txt);
-for i = 1:numel(a.Files)
-    a.Files(i).Folder = tokenizePath(a.Files(i).Folder, obj, 'detokenize');
-    a.Files(i).InputFile_Path = tokenizePath(a.Files(i).InputFile_Path, obj, 'detokenize');
-end
-filePtr_struct = a;
-end
 function write2FilePtr(obj, datFile, inputFile)
 % WRITE2FILEPTR writes the File information stored in structure FILEINFO
 % in OBJ.TMP_TARGETOBJ.FILEPTR.
@@ -234,4 +230,15 @@ txt = jsonencode(FileList);
 fid = fopen(obj.FilePtr, 'w');
 fprintf(fid, '%s', txt);
 fclose(fid);
+end
+function filePtr_struct = readFilePtr(obj)
+% READFILEPTR loads the content of FILEPTR.JSON in a structure
+% stored in OBJ.TMP_FILEPTR.
+txt = fileread(obj.FilePtr);
+a = jsondecode(txt);
+for i = 1:numel(a.Files)
+    a.Files(i).Folder = tokenizePath(a.Files(i).Folder, obj, 'detokenize');
+    a.Files(i).InputFile_Path = tokenizePath(a.Files(i).InputFile_Path, obj, 'detokenize');
+end
+filePtr_struct = a;
 end
