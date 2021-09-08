@@ -18,4 +18,4 @@ ORGANIZATION OF TOOLBOX FILES/SCRIPTS
 
 8 - Create Data Visualization plugin for Seed-pixel-correlation. DONE!
 
-9 - Create Image Registration function (look into Python toolbox)
+9 - Create Image Registration function (look into Python toolbox) (No... there is everything you need here in Matlab. Ask Sam or Marleen for this. Functions are already working.)
