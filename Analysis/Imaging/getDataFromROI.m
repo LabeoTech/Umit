@@ -1,4 +1,4 @@
-function mFile = getDataFromROI(File, SaveFolder, varargin)
+function outFile = getDataFromROI(File, SaveFolder, varargin)
 % GETDATAFROMROI extracts and aggregates data from regions of interest
 % (ROIs) in imaging data using an "ROI_xxxxxx.mat" file located in
 % subject's folder.
@@ -19,7 +19,7 @@ addRequired(p, 'File', @(x) isfile(x) && endsWith(x, '.dat'));
 addRequired(p, 'SaveFolder', @isfolder);
 % Optional Parameters:
 % opts structure:
-default_opts = struct('SpatialAggFcn', 'mean');
+default_opts = struct('ROI_filename', 'ROI_data.mat', 'SpatialAggFcn', 'mean');
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) &&...
     ismember(x.SpatialAggFcn, {'none','mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}));
 % Parse inputs:
@@ -42,14 +42,14 @@ data_sz = size(data);
 % Parse File path to find subject folder (FIND A BETTER WAY TO DO THIS!):
 str = split(File, filesep);
 subjFolder = strjoin(str(1:end-3), filesep);
-ROIfile = dir([subjFolder filesep 'ROI_*.mat']);
-if isempty(ROIfile)
+ROIfile = fullfile(subjFolder, opts.ROI_filename);
+if ~isfile(ROIfile)
     errID = 'Umitoolbox:getDataFromROI:FileNotFound';
     errMsg = ['ROI file not found in ' subjFolder];
     error(errID, errMsg);
 end
 % Load ROI file:
-roi_data = load(fullfile(ROIfile.folder, ROIfile.name));
+roi_data = load(ROIfile);
 % locate "X" and "Y" dimensions in metaData and in ROI info:
 xLoc = find(strcmp(dim_names, 'X'));
 yLoc = find(strcmp(dim_names, 'Y'));
@@ -81,11 +81,12 @@ for i = 1:length(roi_pixVals)
 end
 
 % Save data to .mat:
-mFile = fullfile(SaveFolder, default_Output);
-
+[~, datFile,~] = fileparts(File);
+[~,roi_filename,~] = fileparts(opts.ROI_filename);
+outFile = [roi_filename '_' datFile '.mat'];
+mFile = fullfile(SaveFolder, outFile);
 new_dim_names ={'O', dim_names{3:end}};
 save2Mat(mFile, roi_pixVals, roi_names, new_dim_names, 'appendMetaData', metaData)
-outFile = default_Output;
 end
 
 % Local function:
