@@ -31,7 +31,7 @@ optargs(1:numvarargs) = varargin;
 [method] = optargs{:};    % Place optional args in memorable variable names
 
 % Initialization.
-[imageHeight imageWidth ~] = size(image);
+[imageHeight, imageWidth, ~] = size(image);
 centerX = floor(imageWidth/2+1);
 centerY = floor(imageHeight/2+1);
 
