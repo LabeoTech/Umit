@@ -17,7 +17,7 @@ function outFile = alignFrames(object, SaveFolder, varargin)
 
 % Defaults:
 default_Output = 'mov_aligned.dat'; 
-default_opts = struct('ApplyToFile', 'fChan_475.dat', 'ApplyMask', false, 'Crop2Mask', false);
+default_opts = struct('ApplyToFile', 'fluo.dat', 'ApplyMask', false, 'Crop2Mask', false);
 %%% Arguments parsing and validation %%%
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder
@@ -54,8 +54,9 @@ catch ME
 end
 % Load Reference Frame;
 refFr = ref_frame_info.reference_frame;
+% refFr_mask = imsharpen(refFr ,'Radius', 1.5, 'Amount', 1);
 % MV method (use the unsharp mask to do the registration:)
-refFr_mask = imgaussfilt(refFr, 1) - imgaussfilt(refFr, 3);
+refFr_mask = imgaussfilt(refFr, .5) - imgaussfilt(refFr, 8);
 % Get Reference frame file name:
 [~,ref_filename, ext] = fileparts(ref_frame_info.datFile);
 ref_filename = [ref_filename ext];
@@ -63,46 +64,47 @@ ref_filename = [ref_filename ext];
 mData = mapDatFile(fullfile(SaveFolder, ref_filename));
 % Load Data:
 if size(mData.Data.data,3) < 100
-    targetFr = flipud(rot90(mean(mData.Data.data,3)));
+    targetFr = mean(mData.Data.data,3);
 else
-    targetFr = flipud(rot90(mean(mData.Data.data(:,:,1:100),3)));
+    targetFr = mean(mData.Data.data(:,:,1:100),3);
 end
 % Apply unsharp mask to data:
-targetFr = imsharpen(targetFr,'Radius', 1.5, 'Amount', 1);
-targetFr_mask = imgaussfilt(targetFr, 1) - imgaussfilt(targetFr, 3);
+% targetFr_mask = imsharpen(targetFr,'Radius', 1.5, 'Amount', 1);
+targetFr_mask = imgaussfilt(targetFr, .5) - imgaussfilt(targetFr, 8);
+
 % Preprocessing:
 % Normalize images:
-refFr_mask = (refFr_mask - min(refFr_mask(:)))./(max(refFr_mask(:)) - min(refFr_mask(:)));
-targetFr_mask = (targetFr_mask - min(targetFr_mask(:)))./(max(targetFr_mask(:)) - min(targetFr_mask(:)));
+% refFr_mask = (refFr_mask - min(refFr_mask(:)))./(max(refFr_mask(:)) - min(refFr_mask(:)));
+% targetFr_mask = (targetFr_mask - min(targetFr_mask(:)))./(max(targetFr_mask(:)) - min(targetFr_mask(:)));
 % Aling images' centers:
-refFr_center(1) = size(refFr,1)/2;
-refFr_center(2) = size(refFr,2)/2;
-targetFr_center(1) = size(targetFr,1)/2;
-targetFr_center(2) = size(targetFr,2)/2;
-translation = refFr_center - targetFr_center;
-targetFr_mask = imtranslate(targetFr_mask, fliplr(translation), 'FillValues', 0, 'OutputView','same');
+% refFr_center(1) = size(refFr,1)/2;
+% refFr_center(2) = size(refFr,2)/2;
+% targetFr_center(1) = size(targetFr,1)/2;
+% targetFr_center(2) = size(targetFr,2)/2;
+% translation = refFr_center - targetFr_center;
+% targetFr_mask = imtranslate(targetFr_mask, fliplr(translation), 'FillValues', 0, 'OutputView','same');
 % Perform image registration:
 try
-[tform, peak] = imregcorr(targetFr_mask,refFr_mask, 'similarity');
+[tform, peak] = imregcorr(targetFr_mask,refFr_mask, 'similarity', 'Window', true);
+Rfixed = imref2d(size(refFr));
 catch ME
     causeException = MException('MATLAB:UMIToolbox:MissingOutput', 'your version of he built-in MATLAB function "imregcorr" does not provide "peak" as output. You need to add it to the function and try again.');
     addCause(ME, causeException);
     rethrow(ME)
 end
 if peak < 0.05
-    disp('Phase correlation yielded a weak peak correlation value. Trying to apply intensity-based image registration...')
+    disp('Phase correlation yielded a weak peak correlation value. Trying to apply intensity-based image registration instead ...')
     [optimizer,metric] = imregconfig('multimodal');
     optimizer.InitialRadius = 0.000000625;
     optimizer.MaximumIterations = 80000;
     tform = imregtform(targetFr_mask, imref2d(size(targetFr_mask)),refFr_mask, imref2d(size(refFr_mask)),'similarity',optimizer,metric);
 end
-Rfixed = imref2d(size(refFr));
-targetFr = imwarp(targetFr,tform,'nearest', 'OutputView',Rfixed);
+targetFr_mask = imwarp(targetFr_mask ,tform,'cubic', 'OutputView',Rfixed); % Chose "cubic" because "nearest" was showing stripes when rotating the target.
 %%%%%
 % For debugging:
 figure('Name', strjoin({object.MyParent.MyParent.ID object.MyParent.ID object.ID}, '-'));
-subplot(211);imshowpair(refFr, targetFr);
-subplot(212);imshowpair(refFr, targetFr, 'montage');
+subplot(211);imshowpair(refFr_mask, targetFr_mask);
+subplot(212);imshowpair(refFr_mask, targetFr_mask, 'montage');drawnow;
 %%%%%%
 % Apply mask to data file:
 try
@@ -113,21 +115,21 @@ catch ME
     rethrow(ME)
 end
 % This section may be too greedy on RAM and not efficient...
-data = flipud(rot90(mData.Data.data(:,:,:)));
+data = mData.Data.data(:,:,:);
 warp_data = zeros(size(refFr_mask,1),size(refFr_mask,2), size(data,3), 'single');
 disp(['Performing alignment in data from ' opts.ApplyToFile '...']);
 tic;
 for i = 1:size(warp_data,3)
     frame = data(:,:,i);
-    frame = imtranslate(frame, fliplr(translation), 'FillValues', 0, 'OutputView','same');
-    frame = imwarp(frame, tform, 'nearest', 'OutputView', Rfixed);
+%     frame = imtranslate(frame, fliplr(translation), 'FillValues', 0, 'OutputView','same');
+    frame = imwarp(frame, tform, 'nearest', 'OutputView', Rfixed); % Interp method = "nearest" to be "safe"...
     warp_data(:,:,i) = frame;
 end
 toc
 disp('Alignment finished.')
 %%%%%
-BregmaXY = ref_frame_info.BregmaXY;
-LambdaXY = ref_frame_info.LambdaXY;
+refPt = ref_frame_info.refPt;
+
 %%%%%
 if opts.ApplyMask
     mask = ref_frame_info.logical_mask;
@@ -141,27 +143,23 @@ if opts.ApplyMask
     if opts.Crop2Mask
         [r,c] = find(mask);
         warp_data = warp_data(min(r):max(r), min(c):max(c), :);
-        BregmaXY(1) = BregmaXY(1) - min(c)+1;
-        BregmaXY(2) = BregmaXY(2) - min(r)+1;
-        LambdaXY(1) = LambdaXY(1) - min(c)+1;
-        LambdaXY(2) = LambdaXY(2) - min(r)+1;
+        refPt(1) = refPt(1) - min(c)+1;
+        refPt(2) = refPt(2) - min(r)+1;
         disp('Frames cropped.')
     end
 end
 % Un-flip data before saving...
-warp_data = flipud(rot90(warp_data));
+% warp_data = flipud(rot90(warp_data));
 %%%
-% outFile = [outFile '.dat'];
-% datFile = fullfile(SaveFolder, outFile);
-datFile = fullfile(SaveFolder, Output);
-outFile = Output;
+outFile = [ 'aligned_' opts.ApplyToFile];
+datFile = fullfile(SaveFolder, outFile);
 % Save to .DAT file and create .MAT file with metaData:
 save2Dat(datFile, warp_data, metaData_source.dim_names);
 % Add Bregma and Lambda coordinates to file meta data:
 [~, metaData_target] = mapDatFile(datFile);
 metaData_target.Properties.Writable = true;
-metaData_target.BregmaXY = BregmaXY;
-metaData_target.LambdaXY = LambdaXY;
+metaData_target.refPt = refPt;
+% metaData_target.LambdaXY = LambdaXY;
 % Inherit properties from opts.Apply2File metadata (quick fix for the loophole on PIPELINEMANAGER when alignFrames is used):
 props = setdiff(properties(metaData_source), properties(metaData_target));
 for k = 1:length(props)
