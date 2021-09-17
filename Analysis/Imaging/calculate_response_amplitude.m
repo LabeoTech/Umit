@@ -75,7 +75,7 @@ switch opts.timeWindow
     case -1
         endFrame  = size(data,1);
     otherwise
-        endFrame  = round(metaData.Freq * opts.timeWindow);
+        endFrame  = trigFrame + round(metaData.Freq * opts.timeWindow);
         if endFrame > size(data,1)
             endFrame = size(data,1);
         end
