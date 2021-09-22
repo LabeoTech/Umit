@@ -20,7 +20,7 @@ classdef StatsManager < handle
     end
     properties (SetAccess = private)
         timestamp_list % List of timestamps associated with each object in list_of_objs.
-        stats_data     % Structure containing all data and metadata created.
+        stats_data     = struct() % Structure containing all data and metadata created.
     end
     
     methods
@@ -87,7 +87,8 @@ classdef StatsManager < handle
             % It checks if stats_filename is a .MAT file.
             errID = 'Umitoolbox:StatsManager:InvalidInput';
             errMsg = 'Wrong input. Stats file must be a .MAT file';
-            assert(isa(stats_filename, 'char') & endsWith(stats_filename, '.mat'), errID, errMsg);
+            assert(isa(stats_filename, 'char') & endsWith(stats_filename, '.mat'),...
+                errID, errMsg);
             obj.stats_filename = stats_filename;
         end
         
@@ -197,45 +198,70 @@ classdef StatsManager < handle
         end
                
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-                
+        
         function createDataStruct(obj)
             % CREATEDATASTRUCT generates a structure containing all
             % data and metadata provided as inputs to STATSMANAGER class.
             
-            stats_data = struct();
-            groupNames = unique(obj.list_of_groups);
-            for i = 1:numel(groupNames)
-                idx_group = strcmp(obj.list_of_groups, groupNames{i});
-                stats_data(i).groupName = groupNames{i};
-                stats_data(i).data = getElementInfo(obj,idx_group);
-                
-                
+            for i = 1:numel(obj.list_of_objs)
+                obj.stats_data(i).groupName = obj.list_of_groups{i};
+                obj.stats_data(i).subjID = obj.getElementInfo(obj.list_of_objs{i},'Subject', 'ID');
+                obj.stats_data(i).acqID = obj.getElementInfo(obj.list_of_objs{i},'Acquisition', 'ID');
+                obj.stats_data(i).acqTimeStamp = obj.getElementInfo(obj.list_of_objs{i},...
+                    'Acquisition', 'Start_datetime');
+                obj.stats_data(i).modID = obj.getElementInfo(obj.list_of_objs{i},'Modality', 'ID');
+                obj.stats_data(i).MatFile = obj.MfileArr{i};
+                obj.stats_data(i).observations = struct('ID', '', 'data', []);
+                for j = 1:numel(obj.obs_list)
+                    data = obj.stats_data(i).MatFile.data;
+                    idx = strcmp(obj.obs_list{j}, obj.stats_data(i).MatFile.obsID);
+                    % If the observation is missing, skip.
+                    if sum(idx) == 0
+                        continue
+                    end
+                    obj.stats_data(i).observations(j).ID = obj.obs_list{j};
+                    obj.stats_data(i).observations(j).data = data{idx};
+                    obj.stats_data(i).observations(j).dataSize = ...
+                        size(obj.stats_data(i).observations(j).data);
+                    
+                end
             end
-            
-            function out = getElementInfo(obj,idx)
-                % getElementInfo gathers all data and metadata of all
-                % elements from a group and saves it in a structure.
-                obj_list = obj.list_of_objs(idx);
-                matfile_list = obj.MfileArr(idx);
-                
-                
-                
-                
-                
-                
-            end
-                
             
             
         end
+        
+        function out = getElementInfo(~,elem,className, propName)
+            % getElementInfo retrieves the property PROPNAME from an
+            % object ELEM of class CLASSNAME or from its Parents.
             
-            
+            % Find the object of class CLASSNAME:
+            b_isClass = false;
+            while ~b_isClass
+                if isa(elem, className)|| isa(elem, 'Protocol')
+                    b_isClass = true;
+                else
+                    elem = elem.MyParent;
+                end
+            end
+            % Get PROPNAME VALUE
+            if isprop(elem, propName)
+                out = elem.(propName);
+            else
+                out = [];
+            end
+        end
         
-        
-        
-        
+        %%%%%%%%%%%%%%%%%%
         
     end
+            
+            
+        
+        
+        
+        
+        
+   
     
     
     
