@@ -87,6 +87,10 @@ outFile = [roi_filename '_' datFile '.mat'];
 mFile = fullfile(SaveFolder, outFile);
 new_dim_names ={'O', dim_names{3:end}};
 save2Mat(mFile, roi_pixVals, roi_names, new_dim_names, 'appendMetaData', metaData)
+% Append ROIfilename to the .MAT file:
+mF = matfile(mFile);
+mF.Properties.Writable = true;
+mF.ROIfile = ROIfile;
 end
 
 % Local function:
