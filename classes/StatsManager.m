@@ -170,7 +170,6 @@ classdef StatsManager < handle
             msgbox(['Data saved to file : ' filename], 'to CSV');
         end
     end
-    
    
     methods(Access = private)
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -256,11 +255,12 @@ classdef StatsManager < handle
         end
                
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        
         function createDataStruct(obj)
             % CREATEDATASTRUCT generates a structure containing all
             % data and metadata provided as inputs to STATSMANAGER class.
-            
+            obj.stats_data = struct('groupName','', 'subjID', '', 'acqID', '',...
+                'acqTimeStamp', '', 'acqIdx', [],'modID','','MatFile',[],'observations',...
+                struct('ID', '','data',[]));
             for i = 1:numel(obj.list_of_objs)
                 obj.stats_data(i).groupName = obj.list_of_groups{i};
                 obj.stats_data(i).subjID = obj.getElementInfo(obj.list_of_objs{i},'Subject', 'ID');
@@ -269,7 +269,7 @@ classdef StatsManager < handle
                     'Acquisition', 'Start_datetime');
                 obj.stats_data(i).modID = obj.getElementInfo(obj.list_of_objs{i},'Modality', 'ID');
                 obj.stats_data(i).MatFile = obj.MfileArr{i};
-                obj.stats_data(i).observations = struct('ID', '', 'data', []);
+%                 obj.stats_data(i).observations = struct('ID', '', 'data', []);
                 for j = 1:numel(obj.obs_list)
                     data = obj.stats_data(i).MatFile.data;
                     idx = strcmp(obj.obs_list{j}, obj.stats_data(i).MatFile.obsID);
@@ -284,8 +284,17 @@ classdef StatsManager < handle
                     
                 end
             end
-            
-            
+            disp('OK!')
+            % Create Relative time per subject's acquisitions:
+            subjs = unique({obj.stats_data.subjID});
+            for i = 1:numel(subjs)
+                indx = find(strcmp(subjs{i}, {obj.stats_data.subjID}));
+                acq_time_list = datetime(vertcat(obj.stats_data(indx).acqTimeStamp));
+                [~,tm_idx] = sort(acq_time_list);
+                [~,rel_time]= sort(tm_idx);
+               obj.stats_data(indx) = arrayfun(@(x,y) setfield(obj.stats_data(x),'acqIdx',y),...
+                    indx, rel_time');
+            end
         end
         
         function out = getElementInfo(~,elem,className, propName)
@@ -337,6 +346,7 @@ classdef StatsManager < handle
                 b_isNameValid = all(cellfun(@(x) isvarname(x), eventNames));
             else
                 b_isNameValid = false;
+                eventNames = [];
             end
             for i = 1:size(data,2)
                 if b_isNameValid
