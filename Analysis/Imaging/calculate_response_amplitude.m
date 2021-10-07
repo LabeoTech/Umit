@@ -1,5 +1,5 @@
 function outFile = calculate_response_amplitude(File, SaveFolder, varargin)
-% CALCULATE_RESPONSE_AMPLITUDE in data split into events ("E" dimension in
+% CALCULATE_RESPONSE_AMPLITUDE works with data split into events ("E" dimension in ...
 % "dim_names" variable). It calculates the signal amplitude in time ("T").
 % The calculation consists on a value "postEventTime" calculated in a time window
 % between the event trigger and a given time in seconds ("timeWindow") minus a value
