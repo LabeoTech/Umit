@@ -45,6 +45,7 @@ subjFolder = strjoin(str(1:end-3), filesep);
 ROIfile = fullfile(subjFolder, opts.ROI_filename);
 if ~isfile(ROIfile)
     errID = 'Umitoolbox:getDataFromROI:FileNotFound';
+    subjFolder = strrep(subjFolder, '\', '\\');
     errMsg = ['ROI file not found in ' subjFolder];
     error(errID, errMsg);
 end
