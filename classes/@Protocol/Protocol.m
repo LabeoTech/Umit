@@ -349,8 +349,8 @@ classdef Protocol < handle
             % CREATEEMPTYTABLE outputs an empty Table to be filled with the information of pipelines
             % from PIPELINEMANAGER.
             LogBook = table({'None'}, {'None'}, {'None'}, {'None'}, {'None'},  {'None'}, {'None'}, ...
-                0,datetime('now'),{'None'}, 'VariableNames', {'Subject', 'Acquisition',...
-                'Recording', 'ClassName', 'Job', 'InputFile_UUID', 'InputFile_Path', 'Completed', 'RunDateTime', 'Messages'});
+                0,datetime('now'),{'None'}, {'None'}, 'VariableNames', {'Subject', 'Acquisition',...
+                'Recording', 'ClassName', 'Job', 'InputFile_UUID', 'InputFile_Path', 'Completed', 'RunDateTime', 'Messages', 'Messages_short'});
         end
         function s = saveobj(obj)
             s.Name = obj.Name;
