@@ -1,37 +1,4 @@
-## Welcome to GitHub Pages
+# Welcome to the Umit (*U*niversal *m*esoscale *I*maging *T*oolbox) Wiki!  
+Recent advances in genetic tools, such as fast-responding calcium indicators (e.g., GCaMP6f) as well as the increasingly accessible high-speed, high-resolution and high throughput longitudinal recording systems allowed the acquisition of faster and more detailed images at mesoscale level for months on large cohorts of animals. This generates large amounts of data that need to be stored, pre-processed and analyzed in a timely manner which can become a limiting factor as experiments become larger and more complex.   
 
-You can use the [editor on GitHub](https://github.com/S-Belanger/Umit/edit/gh-pages/index.md) to maintain and preview the content for your website in Markdown files.
-
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
-
-### Markdown
-
-Markdown is a lightweight and easy-to-use syntax for styling your writing. It includes conventions for
-
-```markdown
-Syntax highlighted code block
-
-# Header 1
-## Header 2
-### Header 3
-
-- Bulleted
-- List
-
-1. Numbered
-2. List
-
-**Bold** and _Italic_ and `Code` text
-
-[Link](url) and ![Image](src)
-```
-
-For more details see [GitHub Flavored Markdown](https://guides.github.com/features/mastering-markdown/).
-
-### Jekyll Themes
-
-Your Pages site will use the layout and styles from the Jekyll theme you have selected in your [repository settings](https://github.com/S-Belanger/Umit/settings/pages). The name of this theme is saved in the Jekyll `_config.yml` configuration file.
-
-### Support or Contact
-
-Having trouble with Pages? Check out our [documentation](https://docs.github.com/categories/github-pages-basics/) or [contact support](https://support.github.com/contact) and we’ll help you sort it out.
+The ***umIToolbox***, or ***umIT*** for short is a toolbox written in MATLAB created to help researchers manage and automate critical steps of processing large-scale imaging datasets. The toolbox is currently in active development and new features are added periodically. The toolbox can be found in our [GitHub repository](https://github.com/S-Belanger/Umit). If you have any bugs or suggestions on how to improve the toolbox, let us know by opening an issue in the [GitHub issue tracker](https://github.com/S-Belanger/Umit/issues) or you can ask for help from other users of the toolbox through our [Discussion Forum](https://github.com/S-Belanger/Umit/discussions)!
