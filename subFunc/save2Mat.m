@@ -9,7 +9,7 @@ function save2Mat(MatFileName, data, obsID, dim_names, varargin)
 % data = 1D cell array with length equal to the number of elements of 
 % observations "O".
 %
-% obsID = 1+D cell array of characters containing the description of each
+% obsID = 1D cell array of characters containing the description of each
 % observation.
 %
 % dim_names = cell array of characters with the dimension description. See
