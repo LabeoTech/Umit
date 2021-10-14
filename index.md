@@ -5,6 +5,14 @@ The ***umIToolbox***, or ***umIT*** for short is a toolbox written in MATLAB cre
 
 ___
 
+### Table of contents
+* [An overview](#an-overview)
+* empty-link1
+* empty-link2
+* empty-link3
+* empty-link4
+
+___
 ## An overview
 A typical imaging **project** consists of one or more cohorts of **subject**s (e.g. mice) that undergo one or more **acquisition** (i.e. recording) sessions. Frequently, other recording **modalities** are associated with the imaging data such as behavioral responses, eye/body tracking, etc. The toolbox follows the same organization principle where one can manage subjects, acquisitions and recording modalities for a given project.   
 
@@ -17,5 +25,6 @@ In addition to the experiment management tool, the toolbox provides a series of 
 
 ![fig2](/assets/img/umIT_4axis.png)
 ###### Fig 2. The 4 main roles of **umIT**.  
+
 
 
