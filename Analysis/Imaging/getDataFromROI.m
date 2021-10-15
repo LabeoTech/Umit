@@ -11,7 +11,7 @@ function outFile = getDataFromROI(File, SaveFolder, varargin)
 %   outFile: .MAT file containing ROI names and aggregate data.
 %
 % Defaults:
-default_Output = 'ROI_data.mat'; 
+default_Output = 'ROI_data.mat';
 
 %%% Arguments parsing and validation %%%
 p = inputParser;
@@ -108,13 +108,13 @@ switch fcn_name
         out = mode(vals, 1);
     case 'std'
         out = std(vals, 0, 1, 'omitnan');
-    case 'max' 
+    case 'max'
         out = max(vals, [], 1, 'omitnan');
     case 'min'
         out = min(vals, [], 1, 'omitnan');
     case 'sum'
         out = sum(vals, 1, 'omitnan');
-    otherwise 
+    otherwise
         out = vals;
 end
 end

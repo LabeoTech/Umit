@@ -49,5 +49,5 @@ dim_names = {'O','O'};
 % Save to .MAT file and append dataFile variables to i:
 [~,filename,ext] = fileparts(p.Results.File);
 outFile = ['CorrMatrix_' filename ext];
-save2Mat(fullfile(SaveFolder, outFile), corrMat,dataFile.obsID, dim_names, 'appendMetaData', dataFile);
+save2Mat(fullfile(SaveFolder, outFile), corrMat,dataFile.obsID, dim_names, 'label',dataFile.obsID , 'appendMetaData', dataFile);
 end
