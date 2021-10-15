@@ -29,7 +29,7 @@ mD = matfile(evntFile);
 state = mD.state;
 evntID = mD.eventID;
 evntID = evntID(state == 1);
-evntNums = cellfun(@(x) str2double(x), mD.eventNameList);
+evntNums = cellfun(@(x) str2num(x), mD.eventNameList, 'UniformOutput',0); 
 evntNums = cell2mat(evntNums);
 uniq_gratings = unique(evntNums(:,1:3), 'rows');
 newIDs = zeros(size(evntNums,1),1);
