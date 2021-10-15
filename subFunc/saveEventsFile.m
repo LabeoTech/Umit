@@ -45,7 +45,7 @@ if isempty(eventNameList)
     eventNameList = num2cell(unique(eventID));
 end
 % Transform numerical eventNameList to string:
-eventNameList = arrayfun(@num2str,eventNameList, 'UniformOutput', false);
+eventNameList = cellfun(@num2str,eventNameList, 'UniformOutput', false);
 % Checks for equality of lengths of eventID and timestamps
 errID = 'Umitoolbox:saveEventsFile:IncompatibleArraySizes';
 msg = 'IncompatibleArraySizes: eventID and timestamps must have the same length.';
