@@ -43,8 +43,9 @@ if isempty(state)
 end
 if isempty(eventNameList)
     list = unique(eventID);
-    eventNameList = arrayfun(@num2str,list, 'UniformOutput', false);
 end
+% Transform numerical eventNameList to string:
+eventNameList = arrayfun(@num2str,list, 'UniformOutput', false);
 % Checks for equality of lengths of eventID and timestamps
 errID = 'Umitoolbox:saveEventsFile:IncompatibleArraySizes';
 msg = 'IncompatibleArraySizes: eventID and timestamps must have the same length.';
