@@ -1,16 +1,13 @@
-function change_SF_TF_eventInfo(File, SaveFolder)
-% CHANGE_SF_TF_EVENTINFO modifies the metadata .MAT file from data_splitByEvent.dat
-% to consider different directions of the same grating as repetitions (not
-% distinct conditions). 
-% This is a custom function from Matthieu Vanni's
-% lab.
+function mergeDirs_in_eventFile(File, SaveFolder)
+% MERGEDIRS_IN_EVENTFILE modifies the variables in events.mat file 
+% by merging the grating directions as "repetitions" of the same stimulus.
+% This is a custom function used in Matthieu Vanni's lab.
+
 % Inputs:
-%   RawFolder: directory containing ai_xxxx.bin files.
+%   File: This is a dummy variable so the function can work!! No changes
+%   are applied to the file's metadata.
 %   SaveFolder: directory to save .MAT eventsfile.
-% Output:
-%   events.mat file containing channel ID, state and timestamps.
-%   For details, see function CREATE_TTL_EVENTSFILE.m.
-%
+
 %%% Arguments parsing and validation %%%
 p = inputParser;
 addRequired(p,'File',@isfile)
@@ -18,7 +15,6 @@ addRequired(p, 'SaveFolder', @isfolder);
 % Parse inputs:
 parse(p,File, SaveFolder);
 %Initialize Variables:
-File = p.Results.File; 
 SaveFolder = p.Results.SaveFolder;
 %%%%
 % Check if events.mat exists:
@@ -33,14 +29,12 @@ mD = matfile(evntFile);
 state = mD.state;
 evntID = mD.eventID;
 evntID = evntID(state == 1);
-
-evntNames = mD.eventNameList;
-
-evntNames = cell2mat(evntNames);
-uniq_gratings = unique(evntNames(:,1:3), 'rows');
-newIDs = zeros(size(evntNames,1),1);
+evntNums = cellfun(@(x) str2double(x), mD.eventNameList);
+evntNums = cell2mat(evntNums);
+uniq_gratings = unique(evntNums(:,1:3), 'rows');
+newIDs = zeros(size(evntNums,1),1);
 for i = 1:size(uniq_gratings,1)
-    idx = ismember(evntNames(:,1:3), uniq_gratings(i,:),'rows');
+    idx = ismember(evntNums(:,1:3), uniq_gratings(i,:),'rows');
     newIDs(idx) = i;
 end
 
@@ -50,12 +44,12 @@ for i = 1:length(evntID)
     newID = newIDs(evntID(i));
     newID_list(idx) = newID;
 end
-
-new_eventID = newID_list;
+% Recreate eventNameList
 new_eventNameList = num2cell(uniq_gratings,2);
-% Change info in file metadata:
-[~, metaDat] = mapDatFile(File);
-metaDat.Properties.Writable = true;
-metaDat.eventID = new_eventID;
-metaDat.eventNameList = new_eventNameList;
+% Transform items back to strings:
+new_eventNameList = cellfun(@(x) num2str(x), new_eventNameList, 'UniformOutput',0);
+% Change "events.mat" file:
+mD.Properties.Writable = true;
+mD.eventID = repelem(newID_list,2); % Replace IDs for state == 0
+mD.eventNameList = new_eventNameList;
 end
