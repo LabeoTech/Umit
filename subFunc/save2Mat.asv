@@ -35,7 +35,7 @@ addRequired(p,'MatFileName',...
 addRequired(p, 'data');
 addRequired(p, 'obsID', @iscell);
 addRequired(p, 'dim_names', @iscell);
-addOptional(p, 'labels', 'val', @(x) (iscell(x) && ischar(x{:})) || (ischar(x)));
+addOptional(p, 'labels', @(x) (iscell(x) && ischar(x{:})) || (ischar(x)));
 addParameter(p, 'appendMetaData', [], @(x) isempty(x) || isa(x, 'matlab.io.MatFile'));
 parse(p, MatFileName, data, obsID, dim_names, varargin{:});
 % Instantiate input variables:
@@ -86,11 +86,10 @@ if ismember('E', dim_names)
     
     
 end
-disp('Prepping Labels...');
+
 % Prepare "labels" to save:
 if ischar(labels)
-    
-end
+    for i
 
 
 
