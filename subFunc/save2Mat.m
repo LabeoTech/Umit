@@ -82,10 +82,17 @@ if ismember('E', dim_names)
     errID = 'Umitoolbox:save2Mat:MissingInfo';
     errMsg = 'An event dimension name ("E") was detected but no event info ("eventID" and "eventNameList")was found in metaData.';
     assert(all(ismember({'eventID', 'eventNameList'}, fn)), errID, errMsg);
-    disp('loading Event label...')
-    %%% TO BE DONE... %%% 
-    
+    disp('Creating labels for Events...')
+    % Build Event Labels:
+    label = cell(1,length(s.eventID));
+    for i = 1:numel(s.eventNameList)
+        indx = find(s.eventID == i);
+        for j = 1:numel(indx)
+            label{indx(j)} = strjoin({s.eventNameList{i}, 'rep', num2str(j)}, '_');
+        end
+    end
 end
+% 
 disp('Prepping label...');
 % Prepare "label" to save:
 if ischar(label)
