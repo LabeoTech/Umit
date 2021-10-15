@@ -35,14 +35,14 @@ addRequired(p,'MatFileName',...
 addRequired(p, 'data');
 addRequired(p, 'obsID', @iscell);
 addRequired(p, 'dim_names', @iscell);
-addOptional(p, 'labels', 'val', @(x) (iscell(x) && ischar(x{:})) || (ischar(x)));
+addParameter(p, 'label', 'val', @(x) (iscell(x) && ischar(x{:})) || (ischar(x)));
 addParameter(p, 'appendMetaData', [], @(x) isempty(x) || isa(x, 'matlab.io.MatFile'));
 parse(p, MatFileName, data, obsID, dim_names, varargin{:});
 % Instantiate input variables:
 mFile = p.Results.MatFileName;
 data = p.Results.data;
 obsID = p.Results.obsID;
-labels = p.Results.labels;
+label = p.Results.label;
 dim_names = upper(p.Results.dim_names);
 metaData = p.Results.appendMetaData;
 
@@ -82,20 +82,21 @@ if ismember('E', dim_names)
     errID = 'Umitoolbox:save2Mat:MissingInfo';
     errMsg = 'An event dimension name ("E") was detected but no event info ("eventID" and "eventNameList")was found in metaData.';
     assert(all(ismember({'eventID', 'eventNameList'}, fn)), errID, errMsg);
-    disp('loading Event Labels...')
-    
-    
-end
-disp('Prepping Labels...');
-% Prepare "labels" to save:
-if ischar(labels)
+    disp('loading Event label...')
+    %%% TO BE DONE... %%% 
     
 end
-
-
-
-
-
+disp('Prepping label...');
+% Prepare "label" to save:
+if ischar(label)
+    label = arrayfun(@(x) strjoin({label, num2str(x)}, '_'), 1:length(s.data{1}), 'UniformOutput', 0);
+end
+% Check if "label" has the same length of data:
+errID = 'Umitoolbox:save2Mat:IncompatibleSize';
+errMsg = 'The lenght of Labels is different from the length of data.';
+assert(isequaln(length(s.data{1}),length(label)), errID, errMsg);
+% Add "label" to s:
+s.label = label;
 % Save "s" struct to file: 
 save(mFile, '-struct', 's', '-v7.3');
 [p,n,ext] = fileparts(mFile);
