@@ -433,7 +433,7 @@ classdef PipelineManager < handle
                 catch ME
                     state = false;
                     LastLog.Messages = {getReport(ME)};
-                    LastLog.Messages_short = {getReport(ME, 'basic')};
+                    LastLog.Messages_short = {getReport(ME, 'basic','hyperlinks','off')};
                 end
                 LastLog.Completed = state;
                 LastLog.RunDateTime = datetime('now');
