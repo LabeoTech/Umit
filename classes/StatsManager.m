@@ -105,7 +105,7 @@ classdef StatsManager < handle
         end
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         
-        function [tableArr, condNames, b_isNameValid] = createTable(obj, varargin)
+        function [tableArr, condNames] = createTable(obj, varargin)
             % This function creates a table or an array of tables
             % containing ROI data from each observation.
             % Input:
@@ -113,8 +113,7 @@ classdef StatsManager < handle
             % Output:
             % tableArr (cell array of tables) = tables containing data and
             % metadata from all observations in obj.stats_data structure.
-            % condNames (cell array of chat) = output of genRawTable fcn.
-            % b_isNameValid (bool) = output of genRawTable fcn.
+            % condNames (cell array of chat) = output of genRawTable fcn.            
             
             p = inputParser;
             addRequired(p, 'obj');
@@ -122,51 +121,31 @@ classdef StatsManager < handle
             parse(p,obj, varargin{:});
             obj = p.Results.obj;
             tableType = p.Results.tableType;
-            
+            disp('Creating table...')
             % Create tables:
             if strcmp(tableType, 'raw')
-                disp('Go!')
                 tableArr = cell(1,numel(obj.obs_list));
-                for i = 1:numel(obj.obs_list)
-                    [tableArr{i}, condNames, b_isNameValid] = obj.genRawTable(obj.obs_list{i});    
+                [tableArr{1}, condNames] = obj.genRawTable(obj.obs_list{1});    
+                for i = 2:numel(obj.obs_list)
+                    [tableArr{i}, ~] = obj.genRawTable(obj.obs_list{i});    
                 end
-                % Note: Not the best way of extracting event and condition
-                % names from metaData...
             else
                 disp('No!')
             end
+            disp('Table created!')
         end
         
         function exportToCSV(obj, filename)
-            % This function creates a .CSV file containing all data and
-            % metadata from the observations in obj.obs_list.
+            % This function creates a .CSV file containing all data created
+            % by the method "createTable".
             % Input:
             % filename (char): valid path for a .CSV file.
-                 
-            % Unpack stats_data structure into a cell array:
-            data = {};
-            for i = 1:length(obj.stats_data)
-                obs_info = arrayfun(@(x) [{x.ID}, num2cell(x.data)], obj.stats_data(i).observations,...
-                    'UniformOutput', false)';
-                obs_info = vertcat(obs_info{:});
-                meta_info = repmat({obj.stats_data(i).groupName, obj.stats_data(i).subjID,...
-                    obj.stats_data(i).acqID, obj.stats_data(i).modID,...
-                    obj.stats_data(i).acqTimeStamp},size(obs_info,1),1);
-                data = [data;meta_info obs_info];
-            end
-            % check if data has event labels
-            if isprop(obj.stats_data(1).MatFile, 'eventNameList')
-                dataNames = cellfun(@(x) num2str(x), obj.stats_data(1).MatFile.eventNameList,...
-                    'UniformOutput', false)';
-            else
-                dataNames = arrayfun(@(x) ['Condition_' num2str(x)],1:size(data,2)-6,...
-                    'UniformOutput',false);
-            end    
-            % Create header:
-            header = [{'Group_name','Subject_ID','Acquisition_ID', 'Modality_ID',...
-                'Datetime', 'ROI_name'} dataNames];
-            data = vertcat(header,data);
-            writecell(data,filename);
+            
+            [table_arr, labels] = obj.createTable; table_arr = table_arr';
+            data = table2cell(vertcat(table_arr{:}));
+            new_header = [table_arr{1}.Properties.VariableNames(1:5), labels'];
+            data = vertcat(new_header,data);
+            tablewritecell(data,filename);
             msgbox(['Data saved to file : ' filename], 'to CSV');
         end
     end
@@ -318,14 +297,14 @@ classdef StatsManager < handle
             end
         end
         
-        function [tab, eventNames, b_isNameValid] = genRawTable(obj, obs_ID)
+        function [tab, all_eventNames] = genRawTable(obj, obs_ID)
             % This function creates a table containing all "raw" data of
             % the observation "obs_ID" from the .MAT files.
             % Input
             % obs_ID (char) = Name of observation
             % Outputs:
             % tab (table)  = table containing observation data and metadata
-            % eventNames(cell array of char) = array of names for
+            % all_eventNames (cell array of char) = array of names for
             % conditions/repetitions.
                         
             indx = find(arrayfun(@(x) any(strcmp(obs_ID, {x.observations.ID})), obj.stats_data));
@@ -335,25 +314,24 @@ classdef StatsManager < handle
             Groups = {obj.stats_data(indx).groupName};
             acqTime = cellfun(@(x) datetime(x),{obj.stats_data(indx).acqTimeStamp});
             tab = table(subj_list', acq_list', mod_list',Groups',acqTime');
-            tab.Properties.VariableNames = {'Subject', 'Acquisition', 'Modality', 'Group', 'TimeStamp'};
-            obs_indx = arrayfun(@(x) find(strcmp(obs_ID, {x.observations.ID})), obj.stats_data(indx));
-            data = arrayfun(@(x,y) obj.stats_data(x).observations(y).data, indx, obs_indx, 'UniformOutput',false);
+            tab.Properties.VariableNames = {'Subject', 'Acquisition', 'Modality',...
+                'Group', 'TimeStamp'};
+            obs_indx = arrayfun(@(x) find(strcmp(obs_ID, {x.observations.ID})),...
+                obj.stats_data(indx));
+            data = arrayfun(@(x,y) obj.stats_data(x).observations(y).data,...
+                indx, obs_indx, 'UniformOutput',false);
             data = data';
-            data = vertcat(data{:});
-            if isprop(obj.stats_data(indx(1)).MatFile, 'eventNameList')
-                eventNames = cellfun(@(x)num2str(x), obj.stats_data(indx(1)).MatFile.eventNameList, 'UniformOutput', false);
-                % Check for valid variable names:
-                b_isNameValid = all(cellfun(@(x) isvarname(x), eventNames));
-            else
-                b_isNameValid = false;
-                eventNames = [];
-            end
-            for i = 1:size(data,2)
-                if b_isNameValid
-                    tab.(eventNames{i}) = data(:,i);
-                else
-                    tab.(['Cond_' num2str(i)]) = data(:,i);
-                end
+            all_eventNames = arrayfun(@(x) obj.stats_data(x).MatFile.label,...
+                indx, 'UniformOutput', 0)';
+            all_eventNames = unique(vertcat(all_eventNames{:}));
+            for i = 1:numel(all_eventNames)
+                evnt_name = all_eventNames{i};
+                idx_lab = arrayfun(@(x) strcmp(evnt_name, obj.stats_data(x).MatFile.label),...
+                    indx, 'UniformOutput',0)';
+                idx_tmp = cellfun(@(x) any(x), idx_lab);
+                tmp = nan(length(data),1);
+                tmp(idx_tmp) = cellfun(@(x,y) x(y),data(idx_tmp), idx_lab(idx_tmp), 'UniformOutput',1);
+                tab.(['Val' num2str(i)]) = tmp;
             end
         end
         %%%%%%%%%%%%%%%%%%
