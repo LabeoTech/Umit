@@ -145,7 +145,7 @@ classdef StatsManager < handle
             data = table2cell(vertcat(table_arr{:}));
             new_header = [table_arr{1}.Properties.VariableNames(1:5), labels'];
             data = vertcat(new_header,data);
-            tablewritecell(data,filename);
+            writecell(data,filename);
             msgbox(['Data saved to file : ' filename], 'to CSV');
         end
     end
