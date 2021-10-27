@@ -142,11 +142,10 @@ classdef StatsManager < handle
             % filename (char): valid path for a .CSV file.
             
             [table_arr, labels] = obj.createTable; table_arr = table_arr';
-            obsID_col = cellfun(@(x,y) repmat({x},1,height(y)), obj.obs_list', table_arr,...
-                'UniformOutput',0); obsID_col = [obsID_col{:}]';
+%             obsID_col = cellfun(@(x,y) repmat({x},1,height(y)), obj.obs_list', table_arr,...
+%                 'UniformOutput',0); obsID_col = [obsID_col{:}]';
             data = table2cell(vertcat(table_arr{:}));
-            new_header = [table_arr{1}.Properties.VariableNames(1:5), 'obsID', labels'];
-            data = [data(:,1:5) obsID_col data(:,6:end)];
+            new_header = [table_arr{1}.Properties.VariableNames(1:6), labels'];
             data = vertcat(new_header,data);
             writecell(data,filename);
             msgbox(['Data saved to file : ' filename], 'to CSV');
@@ -316,9 +315,10 @@ classdef StatsManager < handle
             mod_list = {obj.stats_data(indx).modID};
             Groups = {obj.stats_data(indx).groupName};
             acqTime = cellfun(@(x) datetime(x),{obj.stats_data(indx).acqTimeStamp});
-            tab = table(subj_list', acq_list', mod_list',Groups',acqTime');
+            obsIDs = repmat({obs_ID},size(acqTime));
+            tab = table(subj_list', acq_list', mod_list',Groups',acqTime', obsIDs');
             tab.Properties.VariableNames = {'Subject', 'Acquisition', 'Modality',...
-                'Group', 'TimeStamp'};
+                'Group', 'TimeStamp', 'obsID'};
             obs_indx = arrayfun(@(x) find(strcmp(obs_ID, {x.observations.ID})),...
                 obj.stats_data(indx));
             data = arrayfun(@(x,y) obj.stats_data(x).observations(y).data,...
