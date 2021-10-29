@@ -88,7 +88,7 @@ classdef Subject < handle
         function out = get.SaveFolder(obj)
             % Get function for depentend property SaveFolder.
             out = fullfile(obj.MyParent.SaveDir, obj.ID);
-            msgID = 'UMIToolbox:FolderNotFound';
+            msgID = 'umIToolbox:FolderNotFound';
             msg = 'Subject SaveFolder doesnt exist.';
             assert(isfolder(out), msgID,msg);
         end

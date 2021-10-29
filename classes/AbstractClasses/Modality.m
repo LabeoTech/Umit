@@ -53,8 +53,12 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         function set.RawFolder(obj, RawFolder)
             % Set function of RAWFOLDER property.
             %   This function accepts only existing folders.
-            obj.validate_path(RawFolder);
-            obj.RawFolder = checkFolder(RawFolder);
+            if ~isfolder(RawFolder)
+                msg = ['The folder "' RawFolder '" does not exist or isn''t in Matlab''s Path.'];
+                disp(msg)
+            else
+                obj.RawFolder = checkFolder(RawFolder, 'raw');
+            end  
         end
         
         function set.RawFiles(obj,RawFiles)
@@ -99,9 +103,9 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         %%% Validators %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function validate_path(~, input)
             if ~isfolder(input)
-                errID = 'IsaToolbox:InvalidInput';
-                msg = 'Input is not a valid folder or it is not in MATLAB''s path.';
-                error(errID, msg);
+                errID = 'umIToolbox:InvalidInput';
+                msg = ['The folder "' input '" does not exist or isn''t in Matlab''s Path.'];
+                throw(errID, msg)
             end
         end
         %%% Property Get functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -154,12 +158,12 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
                 % Removes duplicates.
                 [~,idx] = ismember(unique(FileName), FileName); % Keeps the first of the list;
                 FileName = FileName(idx);
-                % Removes non-existant file names from the list "FileName"
+                % Removes non-existent file names from the list "FileName"
                 tmp = cellfun(@(x) isfile([obj.RawFolder x]), FileName, 'UniformOutput', false);
                 tmp = cell2mat(tmp);
                 if ~all(tmp)
                     disp(['The following files were not found in ' obj.RawFolder ' and were ignored.'])
-                    disp(FileName(~tmp))
+                    disp(FileName(~tmp)')
                     FileName(~tmp)= [];
                 end
             elseif ischar(FileName)

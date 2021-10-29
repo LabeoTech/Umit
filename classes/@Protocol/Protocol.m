@@ -53,7 +53,7 @@ classdef Protocol < handle
         function set.MainDir(obj, MainDir)
             % Set function for MainDir property.
             %   Accepts only existing Folders as input.
-            MainDir = checkFolder(MainDir);
+            MainDir = checkFolder(MainDir, 'raw');
             obj.validate_path(MainDir); % Checks for existing Path.
             if isempty(obj.Array.ObjList)
                 obj.MainDir = MainDir;
@@ -99,8 +99,9 @@ classdef Protocol < handle
         end
         %%% Validators %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function validate_path(~, input)
-            msgID = 'UMIToolbox:InvalidInput';
-            msg = 'Input is not a valid folder or it is not in MATLAB''s path.';
+            msgID = 'umIToolbox:InvalidInput';
+            str = strrep(input, filesep, repmat(filesep,1,2));
+            msg = ['The input "' str '" is not a valid folder or it is not in MATLAB''s path:'];
             assert(isfolder(input),msgID, msg)
         end
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -431,6 +432,12 @@ classdef Protocol < handle
             if isstruct(s)
                 newObj = Protocol;
                 newObj.Name = s.Name;
+                % Check MainDir and SaveDir existance:
+                errID = 'umIToolbox:Protocol:InvalidInput';
+                errMsg = ' is not an existing folder!';
+                assert(isfolder(s.MainDir),errID, [strrep(s.MainDir,filesep, repmat(filesep,1,2)), errMsg]);
+                assert(isfolder(s.SaveDir),errID, [strrep(s.MainDir,filesep, repmat(filesep,1,2)), errMsg]);
+                %%%
                 newObj.MainDir = s.MainDir;
                 newObj.SaveDir = s.SaveDir;
                 newObj.ProtoFunc = s.ProtoFunc;

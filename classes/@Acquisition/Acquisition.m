@@ -60,7 +60,7 @@ classdef Acquisition < handle
         
         function set.SaveFolder(obj, SaveFolder)
             % Set function for SAVEFOLDER property and creates LogBook inside SAVEFOLDER.
-            obj.SaveFolder = checkFolder(SaveFolder);
+            obj.SaveFolder = checkFolder(SaveFolder, 'new');
         end
         
         function set.Start_datetime(obj, start_datetime)
