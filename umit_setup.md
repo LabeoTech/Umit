@@ -10,4 +10,4 @@ Then, create an environment variable named **Umitoolbox** with the path for the 
 
 Now the toolbox is ready to use!   
 
-[**Home**](https://s-belanger.github.io/Umit)
+[**Home**](/index.md)
