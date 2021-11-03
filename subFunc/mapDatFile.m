@@ -21,6 +21,11 @@ metaDatFileName = p.Results.metaDatFileName;
 if isempty(metaDatFileName)
     metaDatFileName = strrep(DatFileName, '.dat', '_info.mat');
 end
+% Temporary fix for different ".mat" filename convention:
+if ~isfile(metaDatFileName)
+    metaDatFileName = strrep(DatFileName, '.dat', '.mat');
+end
+
 format = getFileFormat(metaDatFileName);
 metaData = matfile(metaDatFileName);
 mmFile = memmapfile(DatFileName, 'Format', format);
