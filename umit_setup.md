@@ -1,6 +1,6 @@
 ## umIToolbox setup
 
-The current version of the umIToolbox was written in Matlab and is compatible with versions R2019a and above.
+The current version of the umIToolbox was written in Matlab and is compatible with versions ***R2019a*** and above.
 The following Matlab toolboxes are necessary to run all modules of ***umIT*** :
 * Imaging processing toolbox
 * ...
