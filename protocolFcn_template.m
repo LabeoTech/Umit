@@ -1,25 +1,23 @@
 function out = protocolFcn_template(obj)
 % User-defined function. This Function is used inside "Protocol" object to generate the
-% list of Subjects and Acquisitions. In addition, this function will be used to update
-% the content of the obj.MainDir (Folder where the Data is).
+% list of Subjects, Acquisitions and Modalities. 
+% This function will be used to update the content of the obj.MainDir (Folder where the Data is).
 % Input:
-% obj = self referring handle of Protocol class.
+% obj (Protocol class) = self referring handle of Protocol class.
 % Output: 
-% out = array of objects from Subject class containing Acquisition and
+% out (Subject class) = array of objects from Subject class containing Acquisition and
 % Modalities.
 
 % This is a template for creating a protocol function. 
 % This template reads mesoscale imaging datasets created with the imaging
 % systems from Labeo Technologies Inc. The imaging raw data are stored in a 
 % series of binary files (.bin). This template function scans a directory
-% (obj.MainDir) containing folders with subfolders containing the imaging
-% data and a text file with the recording metadata. 
+% (obj.MainDir) containing folders with the imaging data and a text file 
+% with the recording information. 
 % The folder tree is organized as :
-%       MainDir--
+%      MainDir --
 %                |
-%                |-- DAYFOLDER-- (ex. "21ST0402")
-%                               |
-%                               |--RECORDINGFOLDER-- (ex. "M2D_OD_Ret_21ST0401")
+%                |--RECORDINGFOLDER-- (ex. "M2D_RS_21ST0401")
 %                                                   |
 %                                                   |-xxxx.bin
 %                                                   |-xxxx.bin
@@ -27,8 +25,32 @@ function out = protocolFcn_template(obj)
 %                                                      ...
 %                                                   |-xxxx.bin
 %                                                   |-info.txt
-%
- 
+
+% The names of subjects (Subject ID) and acquisitions (Acquisition ID) are encoded in the
+% folder names separated by an underscore as SUBJID "_" ACQID. For example:
+% Lets take the example folder above (M2D_RS_21ST0401), here we have:
+% Subject ID: "M2D"
+% Acquisition ID: "RS_21ST0401
+
+% Minimal information required:
+%   In order to make this function work, we need to set the following properties
+%   for each object created in this function:
+%       Subject:
+%               -ID (str)
+%       Acquisition:
+%               -ID (str)
+%               -Start_datetime (datetime): Timestamp of the beginning of
+%               the recording.
+%       Modality: 
+%               -ID (str) 
+%               -RawFolder (str): Full path for an existing folder
+%                containing raw data from a given modality. 
+%               -RawFiles (cell): list of raw file names with the file extensions.
+% * Other properties can be set as well. Please, check the documentation
+% for the classes "Subject", "Acquisition", "Modality" and those derived
+% from it.
+
+
 
 % Regular expression to find the raw data files:
 expLabeo = '(ai|img)_\d*.bin'; % For Labeo Data
