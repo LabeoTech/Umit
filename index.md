@@ -11,7 +11,8 @@ ___
 * [The main user interface](/main_GUI.md)
 * [Creating a new project](/ht_create_new_project.md)
 * [Running an analysis pipeline](/ht_run_pipeline.md)
-* [Visualizing results](/ht_viz_data.md)
+* [Visualizing results](/ht_viz_data.md)   
+
 ___
 ## An overview
 A typical imaging **project** consists of one or more cohorts of **subject**s (e.g. mice) that undergo one or more **acquisition** (i.e. recording) sessions. Frequently, other recording **modalities** are associated with the imaging data such as behavioral responses, eye/body tracking, etc. The toolbox follows the same organization principle where one can manage subjects, acquisitions and recording modalities for a given project.   
