@@ -12,4 +12,4 @@ However, if your are running Matlab in Windows, execute the function *Umitoolbox
 
 Now the toolbox is ready to use!   
 
-[**<<Home**](/index.md)                                       [**Creating a new project>>**](/create_new_project.md)
+[**<< Home**](/index.md)                                       [**Creating a new project >>**](/create_new_project.md)
