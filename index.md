@@ -8,7 +8,7 @@ ___
 ### Getting started with ***umIT***
 * [An overview](#an-overview)
 * [umIT installation ](/umit_install.md)
-* [The main user interface](/main_GUI.md)
+* [The main user interface](/mainGUI.md)
 * [Creating a new project](/ht_create_new_project.md)
 * [Running an analysis pipeline](/ht_run_pipeline.md)
 * [Visualizing results](/ht_viz_data.md)   
