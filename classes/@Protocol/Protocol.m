@@ -89,7 +89,7 @@ classdef Protocol < handle
             elseif isa(Array, 'ObjectListManager')
                 obj.Array = Array;
             else
-                obj.Array = ObjectListManager();
+                obj.Array = ObjectListManager([],obj);
             end
         end
          %%% Property Get functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

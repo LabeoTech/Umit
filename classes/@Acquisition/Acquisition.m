@@ -9,11 +9,11 @@ classdef Acquisition < handle
     
     properties
         ID % Acquisition ID
-        Start_datetime % Date and time of the beginning of the acquisition.
-        MyParent % Subject object that contains ACQUISITION object.
+        Start_datetime % Date and time of the beginning of the acquisition.       
     end
-    properties (SetAccess = {?Protocol, ?PipelineManager, ?Subject})
+    properties (SetAccess = {?Protocol, ?PipelineManager, ?Subject, ?ObjectListManager})
         Array % List of Modalities.
+        MyParent % Subject object that contains ACQUISITION object.
         LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
     end
     properties (Dependent)
@@ -54,7 +54,7 @@ classdef Acquisition < handle
             elseif isa(Array, 'ObjectListManager')
                 obj.Array = Array;
             else
-                obj.Array = ObjectListManager();
+                obj.Array = ObjectListManager([],obj);
             end
         end
         

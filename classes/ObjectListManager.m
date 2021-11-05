@@ -8,28 +8,32 @@ classdef ObjectListManager < handle
         ObjList(1,:) % Array of objects.
     end
     
+    properties (Access = private)
+        parentObj % Parent object that contains an ObjectListManager object.
+    end
+    
     methods
-        function obj = ObjectListManager(objectList)
+        function obj = ObjectListManager(objectList, parentObj)
             % Class Constructor.
             %   This function initiates the ObjectListManager class by
             %   creating a vector of objects. It checks if the input
             %   (objectList) is an object or an array of objects from
             %   the following classes: Subject, Acquisition or Modality.
-            %   If no input argument is provided, it creates an empty
-            %   ObjList.
-            
-            if nargin > 0
+                        
+            if ~isempty(objectList)
                 checkIfIsObj(objectList);
                 objectList = checkForDuplicates(objectList);
                 obj.ObjList = objectList;
             end
-        end
-        
+            obj.parentObj = parentObj;
+        end 
         function addObj(obj, newObj)
             % Adds a new object to the ObjList list.
             %   This function will accept only valid objects as
             %   input. Otherwise, it will throw an error.
-            
+            % Inputs:
+            % newObj : scalar or array of valid objects ("Subject",
+            % "Acquisition" or "Modality").
             if size(newObj,1) > size(newObj,2)
                 % transpose Object list if not organized in columns
                 newObj = newObj';
@@ -39,6 +43,10 @@ classdef ObjectListManager < handle
             if ~isempty(obj.ObjList)
                 newObj = compareLists(obj, newObj);
             end
+            % Set "MyParent" property of newObj:
+            for i = 1:length(newObj)
+                newObj(i).MyParent = obj.parentObj;
+            end 
             obj.ObjList = [obj.ObjList newObj];
             if ~isempty(newObj) && ( isa(newObj, 'Subject') || isa(newObj, 'Acquisition')) 
                 % This if statement is to control for objects added

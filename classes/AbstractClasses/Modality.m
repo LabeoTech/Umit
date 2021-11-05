@@ -10,10 +10,10 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         SampleRateHz % Sampling rate of the recording in Hz.
         RawFolder % Path of directory containing raw data.
         RawFiles % File(s) containing raw data.
-        MyParent % Acquisition object that contains MODALITY object.
     end
-    properties (SetAccess = {?Protocol, ?PipelineManager, ?Acquisition, ?Subject})       
+    properties (SetAccess = {?Protocol, ?PipelineManager, ?Acquisition, ?Subject, ?ObjectListManager})       
         LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
+        MyParent % Acquisition object that contains MODALITY object.
     end
     properties (Hidden)
         MetaDataFileName %File containing other information about the recording session.

@@ -8,10 +8,11 @@ classdef Subject < handle
     properties
         ID % Subject ID
         Calcium_indicator % Name of the calcium indicator.
-        MyParent % Protocol Object.
+        
     end
     properties (SetAccess = {?Protocol, ?PipelineManager, ?ObjectListManager})
         Array % List of Acquisitions.
+        MyParent % Protocol Object.
         GroupID % Experimental Group of Subject.
         LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
     end
@@ -63,7 +64,7 @@ classdef Subject < handle
             elseif isa(Array, 'ObjectListManager')
                 obj.Array = Array;
             else
-                obj.Array = ObjectListManager();
+                obj.Array = ObjectListManager([],obj);
             end
         end
         
