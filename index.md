@@ -1,17 +1,17 @@
-# Welcome to the umIT (*u*niversal *m*esoscale *I*maging *T*oolbox) Wiki!  
+# Welcome to the umIT (*u*niversal *m*esoscale *I*maging *T*oolbox) Wiki page!  
 Recent advances in genetic tools, such as fast-responding calcium indicators (e.g., GCaMP6f) as well as the increasingly accessible high-speed, high-resolution and high throughput longitudinal recording systems allowed the acquisition of faster and more detailed images at mesoscale level for months on large cohorts of animals. This generates large amounts of data that need to be stored, pre-processed and analyzed in a timely manner which can become a limiting factor as experiments become larger and more complex.   
 
 The ***umIToolbox***, or ***umIT*** for short is a toolbox written in MATLAB created to help researchers manage and automate critical steps of processing large-scale imaging datasets. The toolbox is currently in active development and new features are added periodically. The toolbox can be found in our [GitHub repository](https://github.com/S-Belanger/Umit). If you encounter any bugs or have suggestions on how to improve the toolbox, let us know by opening an issue in the [GitHub issue tracker](https://github.com/S-Belanger/Umit/issues). You can also use the project's [discussion forum](https://github.com/S-Belanger/Umit/discussions) to share ideas and questions with the developers and other users of the toolbox.
 
 ___
 
-### Table of contents
+### Getting started with ***umIT***
 * [An overview](#an-overview)
-* [Toolbox setup](/umit_setup.md)
-* empty-link2
-* empty-link3
-* empty-link4
-
+* [umIT installation ](/umit_install.md)
+* [The main user interface](/main_GUI.md)
+* [Creating a new project](/ht_create_new_project.md)
+* [Running an analysis pipeline](/ht_run_pipeline.md)
+* [Visualizing results](/ht_viz_data.md)
 ___
 ## An overview
 A typical imaging **project** consists of one or more cohorts of **subject**s (e.g. mice) that undergo one or more **acquisition** (i.e. recording) sessions. Frequently, other recording **modalities** are associated with the imaging data such as behavioral responses, eye/body tracking, etc. The toolbox follows the same organization principle where one can manage subjects, acquisitions and recording modalities for a given project.   
