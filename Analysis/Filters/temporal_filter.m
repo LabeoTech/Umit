@@ -36,7 +36,6 @@ SaveFolder = p.Results.SaveFolder;
 opts = p.Results.opts;
 Output = p.Results.Output;
 %%%%
-
 % memory map DataFile and MetaDataFile:
 [mDat, mDt] = mapDatFile(File);
 if opts.HighCutOffHz == -1
@@ -48,8 +47,8 @@ data = mDat.Data.data;
 idx_nan = isnan(data);
 data(idx_nan) = 0;
 % Run Temporal filter function
-data = NormalisationFiltering(data, mDt.Freq, opts.LowCutOffHz, opts.HighCutOffHz, ...
-    opts.Normalize);
+data = NormalisationFiltering(fileparts(File), data, opts.LowCutOffHz, opts.HighCutOffHz, ...
+    opts.Normalize, mDt.Freq);
 % Put NaNs back to data:
 data(idx_nan) = NaN;
 % SAVING DATA :
