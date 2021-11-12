@@ -27,14 +27,15 @@ classdef PipelineManager < handle
     end
     methods
         % Constructor
-        function obj = PipelineManager(Pipe, ProtocolObj, FuncRootDir)
+        function obj = PipelineManager(Pipe, ProtocolObj)
             % PIPELINEMANAGER Construct an instance of this class
             %   PIPE is a structure containing all the information of the pipeline.
             if nargin > 0
                 obj.Pipe = Pipe;
-                obj.ProtocolObj = ProtocolObj;
-                obj.FuncRootDir = FuncRootDir;
+                obj.ProtocolObj = ProtocolObj;               
             end
+            root = getenv('Umitoolbox');
+            obj.FuncRootDir = fullfile(root, 'Analysis');
             obj.createFunctionList;
             obj.EraseIntermediate = false;
             obj.IgnoreLoggedFiles = false;
