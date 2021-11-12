@@ -30,7 +30,8 @@ data = p.Results.data;
 dim_names = upper(p.Results.dim_names);
 flag = p.Results.flag;
 metaDat = p.Results.metaData;
-metaDatFilename = strrep(DatFileName, '.dat', '_info.mat');
+metaDatFilename = strrep(DatFileName, '.dat', '.mat');
+clear p
 % Further validate dim_names:
 root = getenv('Umitoolbox');
 dim_names_info = load(fullfile(root, 'subFunc','dimension_names.mat'));
