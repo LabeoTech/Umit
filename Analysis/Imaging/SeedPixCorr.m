@@ -10,7 +10,7 @@ default_opts = struct('imageResizeTo', -1, 'FisherZ_transform', false);
 %%% Arguments parsing and validation %%%
 p = inputParser;
 addRequired(p,'data',@(x) isnumeric(x) & ndims(x) == 3); % Validate if the input is a 3-D numerical matrix:
-addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile')); % MetaData associated to "data".
+addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
 % Optional Parameters:
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
 % Parse inputs:

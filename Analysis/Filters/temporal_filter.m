@@ -28,7 +28,7 @@ default_opts = struct('LowCutOffHz', .0033, 'HighCutOffHz', 0, 'Normalize', true
 %%% Arguments parsing and validation %%%
 p = inputParser;
 addRequired(p,'data',@(x) isnumeric(x) & ndims(x) == 3); % Validate if the input is a 3-D numerical matrix:
-addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile')); % MetaData associated to "data".
+addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
 % Parse inputs:
 parse(p,data, metaData, varargin{:});

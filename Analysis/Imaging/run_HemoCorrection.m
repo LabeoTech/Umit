@@ -1,4 +1,4 @@
-function outData = run_HemoCorrection(SaveFolder, varargin)
+function [outData, metaData] = run_HemoCorrection(SaveFolder, varargin)
 % RUN_HEMOCORRECTION calls the function
 % HEMOCORRECTION from the IOI library (LabeoTech).
 % In brief, this function removes hemodynamic fluctuations from any
@@ -33,5 +33,8 @@ list = fields(idx)';
 % Run HemoCorrection function from IOI library:
 disp('Performing hemodynamic correction in fluo channel...')
 outData = HemoCorrection(p.Results.SaveFolder, list);
+tmp = dir(fullfile(p.Results.SaveFolder, 'fluo*.dat'));
+fluoMetaData = load(fullfile(tmp(1).folder, strrep(tmp(1).name, '.dat','.mat')));
+metaData = genMetaData(outData, fluoMetaData.dim_names, fluoMetaData);
 disp('Finished hemodynamic correction.')
 end

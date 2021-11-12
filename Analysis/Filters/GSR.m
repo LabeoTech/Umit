@@ -14,7 +14,7 @@ default_Output = 'GSR.dat'; %#ok. This line is here just for Pipeline management
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder
 addRequired(p,'data',@(x) isnumeric(x) & ndims(x) == 3); % Validate if the input is a 3-D numerical matrix:
-addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile')); % MetaData associated to "data".
+addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
 % Parse inputs:
 parse(p,outData, metaData);
 %Initialize Variables:
