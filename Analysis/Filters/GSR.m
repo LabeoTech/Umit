@@ -1,4 +1,4 @@
-function outData = GSR(outData, metaData)
+function outData = GSR(data, metaData)
 % GSR performs global signal regression to data with path specified as
 % ARGS.INPUT in order to remove global fluctuations from signal.
 
@@ -16,7 +16,7 @@ p = inputParser;
 addRequired(p,'data',@(x) isnumeric(x) & ndims(x) == 3); % Validate if the input is a 3-D numerical matrix:
 addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
 % Parse inputs:
-parse(p,outData, metaData);
+parse(p,data, metaData);
 %Initialize Variables:
 outData = p.Results.data;
 metaData = p.Results.metaData;
