@@ -16,7 +16,7 @@ parse(p, DatFileName, data, metaData);
 %%%%%%
 DatFileName = p.Results.DatFileName;
 data = p.Results.data;
-metaData = upper(p.Results.dim_names);
+metaData = p.Results.metaData;
 clear p
 % Further validate dim_names:
 root = getenv('Umitoolbox');
@@ -31,7 +31,7 @@ assert(isequaln(ndims(data),numel(metaData.dim_names)), errID, errMsg);
 % Create an unique file identifier. To be used by class PIPELINEMANAGER.
 metaData(1).fileUUID = char(java.util.UUID.randomUUID);
 % Save meta data file:
-save(strrep(DatFileName, '.mat', '.dat'), '-struct', 'metaData', '-v7.3');
+save(strrep(DatFileName, '.dat', '.mat'), '-struct', 'metaData', '-v7.3');
 % Save data to .dat file and metaData to .mat file:
 if exist(DatFileName, 'file') % Delete existing files if "-w" option is chosen.
     delete(DatFileName);
