@@ -1,5 +1,5 @@
 # umIT (universal mesoscopic Imaging Toolbox)
-In memory of Umit Keysan (1992-2018)
+In memory of Umit Keysan (1992-2019)
 
 Optical Imagery Serialized Analysis Toolbox 
 This toolbox is conceived to manage, analyse and visualize serialized imaging datasets.
