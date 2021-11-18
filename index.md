@@ -3,6 +3,8 @@ Recent advances in genetic tools, such as fast-responding calcium indicators (e.
 
 The ***umIToolbox***, or ***umIT*** for short is a toolbox written in MATLAB created to help researchers manage and automate critical steps of processing large-scale imaging datasets. The toolbox is currently in active development and new features are added periodically. The toolbox can be found in our [GitHub repository](https://github.com/S-Belanger/Umit). If you encounter any bugs or have suggestions on how to improve the toolbox, let us know by opening an issue in the [GitHub issue tracker](https://github.com/S-Belanger/Umit/issues). You can also use the project's [discussion forum](https://github.com/S-Belanger/Umit/discussions) to share ideas and questions with the developers and other users of the toolbox.
 
+This toolbox is dedicated to our beloved friend ***Umit Keysan*** (1992-2019).
+
 ___
 
 ### Getting started with ***umIT***
