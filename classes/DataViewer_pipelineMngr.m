@@ -80,7 +80,7 @@ classdef DataViewer_pipelineMngr < handle
             % Check if function already exists in current pipe and update function string:
             funcInfo.inStr = strrep(funcInfo.inStr, 'SaveFolder','obj.current_folder');
             funcInfo.inStr = strrep(funcInfo.inStr, 'RawFolder','obj.current_folder');
-            if isempty(obj.pipe) 
+            if isempty(obj.pipe)
                 % Rebuild funcStr by replacing 'data' and 'metaData'
                 % variables in the input arguments:
                 funcInfo.inStr = strrep(funcInfo.inStr, 'data','obj.current_data');
@@ -97,9 +97,9 @@ classdef DataViewer_pipelineMngr < handle
                 funcInfo.inStr = strrep(funcInfo.inStr, 'file','outFile');
                 funcInfo.funcStr = [funcInfo.outStr, funcInfo.inStr];
                 % Save to Pipeline:
-                obj.pipe = [obj.pipe; funcInfo]; 
+                obj.pipe = [obj.pipe; funcInfo];
             end
-                        
+            
         end
         
         function showFuncList(obj)
@@ -131,11 +131,20 @@ classdef DataViewer_pipelineMngr < handle
             end
             disp('Finished pipeline!');
         end
+        
+        function reset_pipe(obj)
+            % This function erases the pipe property and resets the funcList
+            % property.
+            obj.pipe = struct;
+            obj.funcList = struct.empty;
+            obj.createFcnList;
+        end
+        
+        
     end
     
-    
     methods (Access = private)
-                        
+        
         function [b_OK, idx_fcn]= check_funcName(obj, func)
             % This function is used by "setOpts" and "addTask" methods to
             % validate if the input "func" is valid.
@@ -165,6 +174,8 @@ classdef DataViewer_pipelineMngr < handle
             % This function creates a structure containing all information
             % about the analysis functions inside the "Analysis" folder.
             
+            
+            % Set Defaults:
             default_Output = '';
             default_opts = struct();
             
