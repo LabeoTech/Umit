@@ -73,7 +73,6 @@ classdef DataViewer_pipelineMngr < handle
             if ~b_OK
                 return
             end
-            disp(['adding "' obj.funcList(idx).name '" to pipeline...']);
             funcInfo = obj.funcList(idx).info;
             funcInfo.name = obj.funcList(idx).name;
             
@@ -87,7 +86,7 @@ classdef DataViewer_pipelineMngr < handle
                 funcInfo.inStr = strrep(funcInfo.inStr, 'metaData','obj.current_metaData');
                 funcInfo.funcStr = [funcInfo.outStr, funcInfo.inStr];
                 obj.pipe = [obj.pipe; funcInfo];
-            elseif contains({obj.pipe.name}, funcInfo.name)
+            elseif contains(funcInfo.name, {obj.pipe.name})
                 disp('Function already exists in Pipeline');
                 return
             else
@@ -99,7 +98,7 @@ classdef DataViewer_pipelineMngr < handle
                 % Save to Pipeline:
                 obj.pipe = [obj.pipe; funcInfo];
             end
-            
+            disp(['Added "' obj.funcList(idx).name '" to pipeline.']);
         end
         
         function showFuncList(obj)
@@ -111,6 +110,41 @@ classdef DataViewer_pipelineMngr < handle
             end
         end
         
+        function varargout = showPipeSummary(obj)
+            % This method creates a summary of the current pipeline.
+            
+            % Output (optional): if an output variable exists, it creates a
+            % character array, if not, the information is displayed in the
+            % command window.
+            
+            if isempty(obj.pipe)
+                disp('Pipeline is empty!')
+                if nargout == 1
+                    varargout{1} = '';
+                end
+                return
+            end
+            
+            str = sprintf('%s\n', 'Pipeline Summary:');
+            for i = 1:length(obj.pipe)
+                str =  [str sprintf('-->> Step # %d <<---\n', i)];
+                if isempty(obj.pipe(i).opts)
+                    opts = {'none'; 'none'};
+                else
+                    opts = [fieldnames(obj.pipe(i).opts)';...
+                        cellfun(@(x) num2str(x), struct2cell(obj.pipe(i).opts), 'UniformOutput', false)'];
+                end
+                txt = sprintf('Function name : %s\nJob: "%s"\nOptional Parameters:\n',...
+                    obj.pipe(i).name, obj.pipe(i).funcStr);
+                str = [str, txt, sprintf('\t%s : %s\n', opts{:}), sprintf('-------------------\n')];                
+            end
+            if nargout == 0 
+                disp(str)
+            else 
+                varargout{1} = str;
+            end
+        end
+        
         function out = run_pipeline(obj)
             % Very (I mean... very!) simple function to run pipeline.
             
@@ -119,6 +153,7 @@ classdef DataViewer_pipelineMngr < handle
             %   transformed data.
             
             h = waitbar(0, 'Initiating pipeline...');
+            h.Children.Title.Interpreter = 'none';
             for i = 1:length(obj.pipe)
                 waitbar(i/length(obj.pipe), h,...
                     ['Processing ' obj.pipe(i).name '... Step' num2str(i) '/' num2str(length(obj.pipe))]);
@@ -126,16 +161,18 @@ classdef DataViewer_pipelineMngr < handle
                 eval(obj.pipe(i).funcStr);
             end
             close(h);
-            for i = 1:numel(obj.pipe(end).output)
-                eval(['out.' (obj.pipe(end).output{i}) ' = ' obj.pipe(end).output{i} ';'])
-            end
+%             for i = 1:numel(obj.pipe(end).output)
+%                 eval(['out.' (obj.pipe(end).output{i}) ' = ' obj.pipe(end).output{i} ';'])
+%             end
+            out.data = outData;
+            out.metaData = metaData;
             disp('Finished pipeline!');
         end
         
         function reset_pipe(obj)
             % This function erases the pipe property and resets the funcList
             % property.
-            obj.pipe = struct;
+            obj.pipe = struct.empty;
             obj.funcList = struct.empty;
             obj.createFcnList;
         end
