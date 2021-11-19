@@ -27,7 +27,8 @@ existing_ChanList  = dir(fullfile(SaveFolder,'*.dat'));
 idxName = ismember({existing_ChanList.name}, default_Output);
 existing_ChanList = existing_ChanList(idxName);
 % Calls function from IOI library. Temporary for now.
-ImagesClassification(RawFolder, SaveFolder, opts.BinningSpatial, opts.BinningTemp, opts.b_IgnoreStim, opts.b_SubROI)
+ImagesClassification(RawFolder, SaveFolder, opts.BinningSpatial, opts.BinningTemp,...
+    opts.b_IgnoreStim, opts.b_SubROI);
 % Get only new files created during ImagesClassification:
 chanList = dir(fullfile(SaveFolder,'*.dat'));
 idx = ismember({chanList.name}, default_Output);
@@ -36,5 +37,20 @@ idxName = ismember({chanList.name}, {existing_ChanList.name});
 idxDate = ismember([chanList.datenum], [existing_ChanList.datenum]);
 idxNew = ~all([idxName; idxDate],1);
 chanList = {chanList(idxNew).name};
+% If there is Stimulation, add "eventID" and "eventNameList" to the output
+% files of ImagesClassification.
+if ~opts.b_IgnoreStim
+    disp('Creating events file.');    
+    % Here the first channel fom "chanList" is chosen to retrieve the
+    % "Stim" data:
+    chan = matfile(fullfile(SaveFolder, strrep(chanList{1}, '.dat', '.mat'))); 
+    [eventID, state, timestamps] = getEventsFromTTL(chan.Stim, chan.Freq, .5);    
+    eventNameList = {num2str(unique(eventID))};    
+    if isempty(eventID)
+        warning('Stim signal not found! Skipped Event file creation.')
+    else 
+        saveEventsFile(SaveFolder, eventID, timestamps, state, eventNameList)
+    end
+end
 outFile = fullfile(SaveFolder, chanList);
 end
