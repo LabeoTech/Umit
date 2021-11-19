@@ -11,7 +11,7 @@ function save2Dat(DatFileName, data, metaData)
 p = inputParser;
 addRequired(p,'DatFileName', @(x) validateattributes(x, {'char', 'string'}, {'nonempty'}));
 addRequired(p, 'data', @(x) validateattributes(x, {'single'}, {'nonempty'}));
-addOptional(p, 'metaData', struct(), @isstruct);
+addOptional(p, 'metaData', struct(), @(x) isstruct(x) | isa(x, 'matlab.io.MatFile'));
 parse(p, DatFileName, data, metaData);
 %%%%%%
 DatFileName = p.Results.DatFileName;

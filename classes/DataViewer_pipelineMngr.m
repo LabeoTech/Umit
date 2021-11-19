@@ -77,14 +77,19 @@ classdef DataViewer_pipelineMngr < handle
             funcInfo.name = obj.funcList(idx).name;
             
             % Check if function already exists in current pipe and update function string:
-            funcInfo.inStr = strrep(funcInfo.inStr, 'SaveFolder','obj.current_folder');
-            funcInfo.inStr = strrep(funcInfo.inStr, 'RawFolder','obj.current_folder');
+            funcInfo.funcStr = strrep(funcInfo.funcStr, 'SaveFolder','obj.current_folder');
+            funcInfo.funcStr = strrep(funcInfo.funcStr, 'RawFolder','obj.current_folder');
+            % Replace "data", "outData" and "metaData" by obj's respective
+            % properties:
+            funcInfo.funcStr = strrep(funcInfo.funcStr, 'data,', 'obj.current_data,');
+            funcInfo.funcStr = strrep(funcInfo.funcStr, 'metaData', 'obj.current_metaData');
+            funcInfo.funcStr = strrep(funcInfo.funcStr, 'outData', 'obj.current_data');
             if isempty(obj.pipe)
                 % Rebuild funcStr by replacing 'data' and 'metaData'
                 % variables in the input arguments:
-                funcInfo.inStr = strrep(funcInfo.inStr, 'data','obj.current_data');
-                funcInfo.inStr = strrep(funcInfo.inStr, 'metaData','obj.current_metaData');
-                funcInfo.funcStr = [funcInfo.outStr, funcInfo.inStr];
+%                 funcInfo.inStr = strrep(funcInfo.inStr, 'data','obj.current_data');
+%                 funcInfo.inStr = strrep(funcInfo.inStr, 'metaData','obj.current_metaData');
+%                 funcInfo.funcStr = [funcInfo.outStr, funcInfo.inStr];
                 obj.pipe = [obj.pipe; funcInfo];
             elseif contains(funcInfo.name, {obj.pipe.name})
                 disp('Function already exists in Pipeline');
@@ -92,9 +97,9 @@ classdef DataViewer_pipelineMngr < handle
             else
                 % Change input names of function string:
                 % Possible input-output matches:
-                funcInfo.inStr = strrep(funcInfo.inStr, 'data','outData');
-                funcInfo.inStr = strrep(funcInfo.inStr, 'file','outFile');
-                funcInfo.funcStr = [funcInfo.outStr, funcInfo.inStr];
+%                 funcInfo.inStr = strrep(funcInfo.inStr, 'data','outData');
+%                 funcInfo.inStr = strrep(funcInfo.inStr, 'file','outFile');
+%                 funcInfo.funcStr = [funcInfo.outStr, funcInfo.inStr];
                 % Save to Pipeline:
                 obj.pipe = [obj.pipe; funcInfo];
             end
@@ -164,8 +169,8 @@ classdef DataViewer_pipelineMngr < handle
 %             for i = 1:numel(obj.pipe(end).output)
 %                 eval(['out.' (obj.pipe(end).output{i}) ' = ' obj.pipe(end).output{i} ';'])
 %             end
-            out.data = outData;
-            out.metaData = metaData;
+            out.data = obj.current_data;
+            out.metaData = obj.current_metaData;
             disp('Finished pipeline!');
         end
         

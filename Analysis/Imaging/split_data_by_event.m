@@ -86,8 +86,11 @@ for i = 1:n_trial
     outData(i,:,:,startFr:stopFr) = snippet;
 end
 % Add variables to metaData.
-metaData.preEventTime_sec = opts.preEventTime_sec;
-metaData.postEventTime_sec = opts.postEventTime_sec;
-metaData.eventID = evDat.eventID(evDat.state == 1);
-metaData.eventNameList = evDat.eventNameList;
+extraParams.Freq = metaData.Freq;
+extraParams.preEventTime_sec = opts.preEventTime_sec;
+extraParams.preEventTime_sec = opts.preEventTime_sec;
+extraParams.postEventTime_sec = opts.postEventTime_sec;
+extraParams.eventID = evDat.eventID(evDat.state == 1);
+extraParams.eventNameList = evDat.eventNameList;
+metaData = genMetaData(outData, new_dims, extraParams);
 end
