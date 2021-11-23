@@ -6,9 +6,9 @@ function [outFile, metaData] = loadDatFile(DatFileName, varargin)
 %       "datFile". Enter an empty char('') to automatically look for the .mat
 %       metaData file.
 % Outputs:
-%   outFile: numerical data matrix or a memmapfile containing the mapped
+%   outFile (numerical array) : data matrix containing the mapped
 %       data.
-%   metaData: metaData associated with "outFile" as a matfile variable.
+%   metaData (struct): metaData associated with "outFile".
 
 % Arguments validation
 p = inputParser;
@@ -28,7 +28,7 @@ if isempty(metaDatFileName)
     end
 end
 % Get metaData file:
-metaData = matfile(metaDatFileName);
+metaData = load(metaDatFileName);
 
 % Read binary file:
 fid = fopen(DatFileName);
