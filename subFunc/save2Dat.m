@@ -30,6 +30,8 @@ errMsg = 'The number of dimensions of data is different from the number of dimen
 assert(isequaln(ndims(data),numel(metaData.dim_names)), errID, errMsg);
 % Create an unique file identifier. To be used by class PIPELINEMANAGER.
 metaData(1).fileUUID = char(java.util.UUID.randomUUID);
+% Update datFile variable in metaData:
+metaData.datFile = DatFileName;
 % Save meta data file:
 save(strrep(DatFileName, '.dat', '.mat'), '-struct', 'metaData', '-v7.3');
 % Save data to .dat file and metaData to .mat file:
