@@ -24,14 +24,44 @@ classdef DataViewer_pipelineMngr < handle
             obj.fcnDir = fullfile(rootDir, 'Analysis');
             obj.createFcnList;
             obj.data = data;
-            if isa(metaData, 'matlab.io.MatFile')
-                obj.metaData = load(metaData.Properties.Source);
-            else
-                obj.metaData = metaData;
-            end
+            obj.metaData = metaData;
             obj.SaveFolder = SaveFolder;
             obj.RawFolder = RawFolder; 
         end
+        %%%%% SETTERS %%%%
+        
+        function set.metaData(obj, metaData)
+            % This set function makes sure that relevant variables inside "metaData"
+            % are kept intact throughout the analysis pipeline.
+            
+            % Transform matFiles in structure:
+            if isa(metaData, 'matlab.io.MatFile')
+                metaData = load(metaData.Properties.Source);
+            end
+            % For cases where "metaData" will be overwritten:
+            if ~isempty(obj.metaData)
+                disp('Updating metaData...');
+                % Append new fields:
+                newFields = setdiff(fieldnames(metaData), fieldnames(obj.metaData));
+                for i = 1:numel(newFields)
+                    obj.metaData.(newFields{i}) = metaData.(newFields{i});
+                end
+                % Update variables related to data dimension:
+                obj.metaData.datSize = metaData.datSize;
+                obj.metaData.datLength = metaData.datLength;
+                obj.metaData.dim_names = metaData.dim_names;
+                
+                % Replace dataHistory field:
+                if isfield(metaData, 'dataHistory')
+                    obj.metaData.dataHistory = metaData.dataHistory;
+                end
+            else
+                obj.metaData = metaData;
+            end
+            
+        end
+        
+        
         
         function setOpts(obj, func)
             % SETOPTS opens an INPUTDLG for entry of optional variables
@@ -208,8 +238,8 @@ classdef DataViewer_pipelineMngr < handle
                     opts = [fieldnames(obj.pipe(i).opts)';...
                         cellfun(@(x) num2str(x), struct2cell(obj.pipe(i).opts), 'UniformOutput', false)'];
                 end
-                txt = sprintf('Function name : %s\nJob: "%s"\nOptional Parameters:\n',...
-                    obj.pipe(i).name, obj.pipe(i).funcStr);
+                txt = sprintf('Function name : %s\nOptional Parameters:\n',...
+                    obj.pipe(i).name);
                 str = [str, txt, sprintf('\t%s : %s\n', opts{:})];
                 if obj.pipe(i).b_save2Dat
                     str = [str, sprintf('Save to file: "%s"\n', fullfile(obj.SaveFolder, obj.pipe(i).datFileName))];
@@ -223,15 +253,15 @@ classdef DataViewer_pipelineMngr < handle
             end
         end
         
-        function run_pipeline(obj)
+        function varargout = run_pipeline(obj)
             % Very (I mean... very!) simple function to run pipeline.
             % This functions renames the input and output variables
             % contained in the function string and evaluates it
             % sequentially:            
-            % Outputs:
-            %   outData(numeric matrix) : transformed "dataIn".
-            %   metaData(struct) : updated metaData structure containing
-            %       all fields created during the pipeline.
+            % Outputs (optional):
+            %   outMsg (str) : Message containing the string "Pipeline
+            %   Finished" or an Exception report if errors were found
+            %   during execution.
                        
             disp('Running pipeline on Data...');
 
@@ -251,12 +281,18 @@ classdef DataViewer_pipelineMngr < handle
                     if obj.pipe(i).b_save2Dat
                         save2Dat(obj.pipe(i).datFileName, obj.data, obj.metaData);
                     end
+                    outMsg = 'Pipeline Finished.';
                 catch ME
-                    rethrow(ME)
+                    outMsg = getReport(ME,'extended', 'hyperlinks', 'off');
+                    break
                 end
             end
             close(h);
-            disp('Finished pipeline!');
+            if nargout == 0
+                disp(outMsg)
+            else
+                varargout{1} = outMsg;
+            end
         end
         
         function reset_pipe(obj)
@@ -333,7 +369,8 @@ classdef DataViewer_pipelineMngr < handle
                 expInput = ['(?<=' funcName '\s*\().*?(?=\))'];
                 str = regexp(funcStr, expInput, 'match', 'once');
                 str = strip(split(str, ','));
-                info.argsIn = setdiff(str, {'varargin'});
+                idx_varargin = strcmp(str, 'varargin');
+                info.argsIn = str(~idx_varargin);
                 expOutput = 'default_Output\s*=.*?(?=\n)';
                 str = regexp(txt, expOutput, 'match', 'once');
                 if isempty(str)
@@ -369,7 +406,7 @@ classdef DataViewer_pipelineMngr < handle
                'folder', funcInfo.folder, 'creationDatetime', datetime(funcInfo.date),...
                'opts', step.opts);
            % First, we need to know if the output is a "data" or a file:
-           if strcmp(step.argsOut{:}, 'outFile')
+           if any(strcmp(step.argsOut, 'outFile'))
                for i = 1:length(obj.outFile)
                    % Map existing metaData file to memory:
                    mtD = matfile(strrep(obj.outFile{i}, '.dat', '.mat'));
