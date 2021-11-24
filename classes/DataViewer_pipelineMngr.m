@@ -126,11 +126,31 @@ classdef DataViewer_pipelineMngr < handle
                 return
             else
                 % Control for multiple outputs from the previous step:
-                % Ask user which output file needs to be passed to the
-                % current function: 
+                % Here, we assume that functions with multiple outputs
+                % create only "Files" and not "data" in the workspace.
+                % Given that, we will update the function string to load
+                % one of the "Files" in the workspace before running the 
+                % current step.
                 
-                %%%%%%%%%%%%%%% TO BE DONE!!! %%%%%%%%%%%%%%%%%%
-                
+                if numel(obj.pipe(end).outFileName) > 1 && strcmp(obj.pipe(end).argsOut, 'outFile')
+                    disp('Controlling for multiple outputs')
+                    w = warndlg({'Previous step has multiple output files!',...
+                        'Please, select one to be analysed!'});
+                    waitfor(w);
+                    [indx, tf] = listdlg('ListString', obj.pipe(end).outFileName,...
+                        'SelectionMode','single');
+                    if ~tf
+                        disp('Operation cancelled by User')
+                        return
+                    end
+        
+                    % Update function string to load "data" and "metaData"
+                    % from the selected file. Here, we assume that the
+                    % given file is located in the "SaveFolder".
+                    str = ['[obj.data, obj.metaData] = loadDatFile(fullfile(obj.SaveFolder, '''...
+                        obj.pipe(end).outFileName{indx} '''));'];
+                    funcInfo.funcStr = [str, funcInfo.funcStr];
+                end
                 % Save to Pipeline:
                 obj.pipe = [obj.pipe; funcInfo];
             end
