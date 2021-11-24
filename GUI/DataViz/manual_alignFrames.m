@@ -179,16 +179,16 @@ outFile = [ 'aligned_' filename ext];
 datFile = fullfile(SaveFolder, outFile);
 save2Dat(datFile, warp_data, metaData_source.dim_names);
 % Add Bregma and Lambda coordinates to file meta data:
-% [~, metaData_target] = mapDatFile(datFile);
-% metaData_target.Properties.Writable = true;
+[~, metaData_target] = mapDatFile(datFile);
+metaData_target.Properties.Writable = true;
 % metaData_target.refPt = ref_frame_info.refPt;
 % % metaData_target.BregmaXY = BregmaXY;
 % % metaData_target.LambdaXY = LambdaXY;
-% % Inherit properties from applyToFile metadata (quick fix for the loophole on PIPELINEMANAGER when alignFrames is used):
-% props = setdiff(properties(metaData_source), properties(metaData_target));
-% for k = 1:length(props)
-%     eval(['metaData_target.' props{k} '= metaData_source.' props{k} ';'])
-% end
+% Inherit properties from applyToFile metadata (quick fix for the loophole on PIPELINEMANAGER when alignFrames is used):
+props = setdiff(properties(metaData_source), properties(metaData_target));
+for k = 1:length(props)
+    eval(['metaData_target.' props{k} '= metaData_source.' props{k} ';'])
+end
 % Write to FilePtr:
 write2FilePtr(obj, datFile, fullfile(SaveFolder, applyToFile))
 uiwait(msgbox(['Aligned Frames saved in ' datFile],'Data Saved', 'help'));
