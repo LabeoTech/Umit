@@ -162,7 +162,7 @@ classdef DataViewer_pipelineMngr < handle
                 % one of the "Files" in the workspace before running the 
                 % current step.
                 
-                if numel(obj.pipe(end).outFileName) > 1 && strcmp(obj.pipe(end).argsOut, 'outFile')
+                if (numel(obj.pipe(end).outFileName) > 1) && any(strcmp(obj.pipe(end).argsOut, 'outFile'))
                     disp('Controlling for multiple outputs')
                     w = warndlg({'Previous step has multiple output files!',...
                         'Please, select one to be analysed!'});
