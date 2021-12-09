@@ -1,3 +1,4 @@
 # theme: jekyll-theme-slate
-remote_theme:  tomjoht/documentation-theme-jekyll 
+url: tomjoht.github.io
+baseurl: /Umit
 
