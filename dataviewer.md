@@ -12,7 +12,8 @@ The app opens the following data (dimension names):
 ##### Syntax
 ___
 
-```DataViewer()``` Opens the main GUI.
+```DataViewer()``` Opens the main GUI.   
+
 ```DataViewer(datFile)``` Opens the app with the imaging data from ```datFile```. The input ```datFile``` is a string with the name of a .DAT file located in the current directory or the full path of a .DAT file created by one of the [analysis functions](/index.md/#analysisfunctions) of ***umIT***.
 
 ##### Exploring Image time series (Y,X,T)
