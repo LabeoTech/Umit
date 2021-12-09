@@ -8,12 +8,28 @@ This toolbox is dedicated to our beloved friend ***Umit Keysan*** (1992-2019).
 ___
 
 ### Getting started with ***umIT***
+Here, you will find the minimal information to get started with the toolbox.
 * [An overview](#an-overview)
-* [umIT installation ](/umit_install.md)
-* [The main user interface](/mainGUI.md)
-* [Creating a new project](/ht_create_new_project.md)
-* [Running an analysis pipeline](/ht_run_pipeline.md)
-* [Visualizing results](/ht_viz_data.md)   
+* [umIT installation](/umit_install.md) 
+* [The main user interface](/mainGUI.md) 
+* [Creating a new project](/ht_create_new_project.md) (in construction)
+* [Running an analysis pipeline](/ht_run_pipeline.md) (in construction)
+* [Visualizing results](/ht_viz_data.md)  (in construction)
+
+___ 
+
+### Documentation
+
+Here you will find more information on the features of each **app** from the toolbox and the documentation of the built-in **analysis functions**.   
+
+Some of the apps work as standalone, meaning that they can operate without using the main interface (i.e., the experiment management system). This is particularly useful if you want to quickly analyse and visualize a small number of imaging recording sessions before running it through the experiment management system. 
+##### Apps
+* [DataViewer](/dataviewer.md) : Basic exploration of imaging data. Works as standalone.
+* [ROImanager](/ROImanager.md) : Creation and management of Regions of interest. Works as standalone.
+
+##### Analysis functions
+*
+*
 
 ___
 ## An overview
