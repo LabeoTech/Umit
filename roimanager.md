@@ -20,6 +20,7 @@ ___
 ___   
 
 The graphical interface is composed of a main window containing file and data control options as well as a table listing all ROIs over the image.
+
 ![ROImanager_MainFig](/assets/img/roimanager_mainFig.png)
 
 ##### 1. Menu Bar
