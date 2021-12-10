@@ -46,7 +46,7 @@ In addition, one can move the white crosshair in the *Image Window* using the X 
 
 ##### 4. Image window
 Click on the image to select a pixel. For image time series, the signal amplitude of the selected pixel will be updated in the temporal profile figure. Use the figure's *Data Tips* button to add data tips containing the pixel's location and it's value.
-<img src="{{ "/assets/gif/dataviewer_imagFig_clicking.gif" | prepend: site.baseurl | prepend: site.url}}" alt="DataViewer_Anim1" />
+<img src="https://s-belanger.github.io/Umit/assets/gif/dataviewer_imagFig_clicking.gif" alt="DataViewer_Anim1" />
 
 ##### 4. Time profile window
 This window will be visible only for data containing **T**ime dimension. Double-click over the plotted line to shift the current frame to the point in time. As for the *Image Window*, use the figure's *Data Tips* button to add data tips  showing the signal amplitude and time delay values.
