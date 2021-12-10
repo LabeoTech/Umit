@@ -25,7 +25,7 @@ Here you will find more information on the features of each **app** from the too
 Some of the apps work as standalone, meaning that they can operate without using the main interface (i.e., the experiment management system). This is particularly useful if you want to quickly analyse and visualize a small number of imaging recording sessions before running it through the experiment management system. 
 ##### Apps
 * [DataViewer](/dataviewer.md) : Basic exploration of imaging data. Works as standalone.
-* [ROImanager](/ROImanager.md) : Creation and management of Regions of interest. Works as standalone.
+* [ROImanager](/roimanager.md) : Creation and management of Regions of interest. Works as standalone.
 
 ##### Analysis functions
 *
