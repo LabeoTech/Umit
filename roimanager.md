@@ -50,7 +50,7 @@ The graphical interface is composed of a main window containing file and data co
 * **Image >>**
     * **Set Origin>>** Sets the axis origin (0,0) of the image
         *  ***New:*** Allows the selection of a new origin.
-        *  ***Import from file:*** Import the origin coordinates stored in a variable inside a .mat file.
+        *  ***Import from file:*** Import the origin coordinates stored in a variable inside a .mat file. The coordinates must be inside the image’s limits.
         *  ***Align image to origin:*** Allows the rotation of the around the origin.
     * ***Set pixel size:*** Sets the pixel ratio in pixel per millimeter.
     * ***Set colormap:*** Sets image colormap and clipping values.
@@ -68,7 +68,7 @@ There are 3 options to display the ROIs over the image:
 
 ##### 3. ROI table.
 A table containing the ROI name, type (Shape or point), date of creation, centroid coordinates as well as descriptive statistics of the shape and and selected pixels. 
-##### Next title 
+#####  
 ___
 
 Next text.
