@@ -62,7 +62,7 @@ for i = 1:n_trial
     stopFr = centralFr + (stop - trialFr);
     if fix_snippet
         warning(['Snippet size is out of bounds from Data.'...
-            ' Missing data points will be replaced with ' opts.PaWith]);
+            ' Missing data points will be replaced with ' opts.PadWith]);
         switch opts.PadWith
             case 'mean'
                 avg = nanmean(snippet, 3);
