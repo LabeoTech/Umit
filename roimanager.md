@@ -20,12 +20,12 @@ ___
 ##### Sections
 ___   
 
-* [The interface](#theinterface)
-* [Image settings](#imagesettings)
-* [Drawing and editing polygonal ROIs](#drawingandeditingpolygonalrois)
-* [Creating point ROIs](#creatingpointrois)
-* [Using the Mouse Brain Atlas preset ROIs](#usingthemousebrainatlaspresetrois)
-* [Rules for ROI fitting](#rulesforroifitting)
+* [The interface](#the-interface)
+* [Image settings](#image-settings)
+* [Drawing and editing polygonal ROIs](#drawing-and-editing-polygonal-rois)
+* [Creating point ROIs](#creating-point-rois)
+* [Using the Mouse Brain Atlas preset ROIs](#using-the-mouse-brain-atlas-preset-rois)
+* [Rules for ROI fitting](#rules-for-roi-fitting)
 
 ##### The interface
 ___   
