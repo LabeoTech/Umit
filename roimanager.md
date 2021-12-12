@@ -53,7 +53,7 @@ The graphical interface is composed of a main window containing file and data co
     * **Set Origin>>** Sets the axis origin (0,0) of the image
         *  ***New:*** Allows the selection of a new origin.
         *  ***Import from file:*** Import the origin coordinates stored in a variable inside a .mat file. The coordinates must be inside the image’s limits.
-        *  ***Align image to origin:*** Allows the rotation of the around the origin.
+        *  ***Align image to origin:*** Allows the rotation of the around the origin. This option is disabled when ```ROImanager``` is used as *Add-on* in [DataViewer](/dataviewer.md) app.
     * ***Set pixel size:*** Sets the pixel ratio in pixel per millimeter.
     * ***Set colormap:*** Sets image colormap and clipping values.
     * **Mask>>** Creates a logical mask to help with ROI drawing.
@@ -70,10 +70,33 @@ There are 3 options to display the ROIs over the image:
 
 ##### 3. ROI table.
 A table containing the ROI name, type (Shape or point), date of creation, centroid coordinates as well as descriptive statistics of the shape and and selected pixels. 
-#####  
+
+![ROImanager_Table](/assets/img/roimanager_roitable.png)
+
+#####  Drawing and editing polygonal ROIs
 ___
 
-Next text.
+To create a new polygonal ROI:
+1. Click on Draw>>Polygon.
+2. Enter the name of the new ROI
+3. Draw the polygon. 
+4. Once the drawing is finished, one can edit the shape by adding/deleting vertices or translating the polygon across the image.
+5. Finally, double-click inside the ROI to save.
+
+<img src="https://s-belanger.github.io/Umit/assets/gifs/roimanager_creatingShapeROI.gif" alt="ROImanager_ROIShapeCreationGif"/>
+
+Now, to edit the ROI: 
+1. Select the ROI by checking the correspondent box in the *Selection* column of the ROI table.
+2. Click on Selection>>Edit>> (Constrained Edit/ Unconstrained Edit). 
+3. Edit the ROI shape.
+4. Double-click inside the ROI to save.
+
+###### Example of constrained edit:
+<img src="https://s-belanger.github.io/Umit/assets/gifs/roimanager_constEditShapeROI.gif" alt="ROImanager_ROIShapeEdit1Gif"/>
+
+###### Example of unconstrained edit:
+<img src="https://s-belanger.github.io/Umit/assets/gifs/roimanager_UnconstEditShapeROI.gif" alt="ROImanager_ROIShapeEdit2Gif"/>
+
 
 
 [**<< Home**](/index.md)
