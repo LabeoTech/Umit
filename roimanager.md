@@ -17,6 +17,16 @@ ___
 
 ```ROImanager(ROIfile)```: Opens the image and ROIs contained in the ```ROIfile```. The ```ROIfile``` is a string with the name of a .mat file with prefix *"ROI_"* located in the current directory or its full path. The ```ROIfile``` is created by ```ROImanager``` to store ROI information.
 
+##### Sections
+___   
+
+* [The interface](#theinterface)
+* [Image settings](#imagesettings)
+* [Drawing and editing polygonal ROIs](#drawingandeditingpolygonalrois)
+* [Creating point ROIs](#creatingpointrois)
+* [Using the Mouse Brain Atlas preset ROIs](#usingthemousebrainatlaspresetrois)
+* [Rules for ROI fitting](#rulesforroifitting)
+
 ##### The interface
 ___   
 
@@ -73,6 +83,9 @@ A table containing the ROI name, type (Shape or point), date of creation, centro
 
 ![ROImanager_Table](/assets/img/roimanager_roitable.png)
 
+#####  Image settings
+___
+
 #####  Drawing and editing polygonal ROIs
 ___
 
@@ -97,13 +110,26 @@ Now, to edit the ROI:
 ###### Example of unconstrained edit:
 <img src="https://s-belanger.github.io/Umit/assets/gifs/roimanager_UnconstEditShapeROI.gif" alt="ROImanager_ROIShapeEdit2Gif"/>
 
+#####  Creating point ROIs
+___
 
+Point ROIs are simply ROIs consisted of a single pixel from the image. This type of ROI does not allow any type of editing. Thus, if you want to change the location of the ROI, you can simply create a new point with the same name of the one that you want to change.
+
+To create a point ROI:
+1. Click on Draw>>Point
+2. Enter the name of the new ROI
+3. Select the point on the image.
+4. Double-click to save.
+
+<img src="https://s-belanger.github.io/Umit/assets/gifs/roimanager_creatingPointROI.gif" alt="ROImanager_ROIShapeEdit2Gif"/>
 
 [**<< Home**](/index.md)
 
+#####  Using the Mouse Brain Atlas preset ROIs
+___
 
-
-
+#####  Rules for ROI fitting
+___
 
 
 
