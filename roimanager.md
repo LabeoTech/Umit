@@ -125,15 +125,58 @@ ___
 
 The preset ROIs were created from the top projection of the mouse cortical areas (see image below) obtained from the *Mouse Allen Brain Atlas*. 
 
+> Tip: For a more accurate result, it is advisable to set **Bregma** as the image's **origin** and to set the image's **pixel size** before drawing the ROIs from the Mouse Brain Atlas. Once these parameters are set, the ROI mask will be automatically place the mask's Bregma over the origin point and resize it to approximate the mask's real size.
+
 ![ROImanager_MouseAreas](/assets/img/roimanager_mouse-areas.png)
-> Note: The position of the **Bregma** is provided here as a rough estimate. The data from the Mouse Brain atlas does not provide any anatomical landmark coordinates from the mouse skull. For more info on this, see this [discussion](https://community.brain-map.org/t/why-doesnt-the-3d-mouse-brain-atlas-have-bregma-coordinates/158) from the Allen Brain Map community Forum.
+
+> Note: The position of the **Bregma** is provided here as a rough estimate. The data from the Mouse Brain atlas does not provide any anatomical landmark coordinates from the mouse skull. For more info on this, see this [discussion](https://community.brain-map.org/t/why-doesnt-the-3d-mouse-brain-atlas-have-bregma-coordinates/158) from the Allen Brain Map Community Forum.
+
+There are two modes for the Mouse Brain Atlas preset ROIs: *Areas* and *Centroids*. The *Areas* option draws the full surface of each cortical area while the *Centroids* option creates a circle around the area's centroid. 
+Optional parameters for each mode can be set by clicking on *Draw >> Mouse Allen Brain Atlas >> (Areas/Centroids) >> Options...*.
+#####  Area options
+One can choose to use the full surface of each ROI (default) or to shrink it by N pixels. This only affects the selected pixels inside the ROIs and not the shape themselves. The shrinking algorithm removes pixels from the ROI border.
+
+![ROImanager_AreaOptions](/assets/img/roimanager_area-options.png)
+
+######  Example of shrinking of the Left primary visual cortex ROI by removing 15 pixels from the ROI border:
+![ROImanager_AreaShrinkEx](/assets/img/roimanager_area-shrink-example.png)
+
+#####  Centroid options
+One can choose the radius of the circles in pixels (default = 1 px) and in millimeters. The latter is only available if the image's *pixel size* is already set. 
+![ROImanager_CentroidOptions](/assets/img/roimanager_centroid-options.png)
+> Note: If the ROIs are larger than the cortical areas themselves, the circles will automatically intersect with the areas' borders to avoid selecting pixels outside the areas.
+
+
+##### Area selection
+Once the options are set (either for Areas or Centroids), click on Select (Areas/Centroids) button. 
+A table containing the columns acronyms, names, functional modality and Selection will appear. 
+
+![ROImanager_MouseAreasSelectionBox](/assets/img/roimanager_area-selection-fig.png)
+
+> Tip: For checking/uncheking multiple chekboxes from the *Selected* column, first highlight the cells, then click outside the table and press *Enter*.
+
+After checking the areas, close the window to save.
+##### Fitting the mask
+After areas selection, a mask is plotted over the image and can be fitted using a constrained edit method.
+<img src="https://s-belanger.github.io/Umit/assets/gifs/roimanager_fittingMouseAreas.gif" alt="ROImanager_MouseAreasFitGif"/>
 
 #####  Rules for ROI fitting
 ___
 
+The ```ROImanager``` app will automatically detect if the ROIs are over an invalid region of the image. 
+Invalid regions consist of :
+* Regions outside the image boundaries.
+* Areas of the image containing ```NaN```s.
+* Areas outside the selected area using a logical mask.
 
+If the ROI is completely inside an invalid region, it will be automatically deleted. However, if the ROI is partially inside an invalid region, a window will appear giving a choice to delete, try to fix or ignore. 
+If *try to fix* is selected, ```ROImanager``` will redraw the ROI shape based on the valid pixels inside the image. 
+> Note: Depending on the size of the remaining ROIs, the fixing algorithm may create empty ROIs (without any pixels inside) or split the ROI. Check the descriptive statistics on the table to spot potentially broken ROIs!
 
+If *ignore* is selected, some of the ROI shape statistics, such as the centroid coordinates or area, may be wrong. Regarding the selected pixels inside the ROIs, the pixels located outside the image will be removed, however the ones in regions with ```NaN```s or outside the logical mask areas will be kept. 
 
+###### Example of ROI fix partially outside the logical mask
+<img src="https://s-belanger.github.io/Umit/assets/gifs/roimanager_fixingROIs.gif" alt="ROImanager_FixingROIGif"/>
 
 
 
