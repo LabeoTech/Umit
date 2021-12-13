@@ -21,7 +21,6 @@ ___
 ___   
 
 * [The interface](#the-interface)
-* [Image settings](#image-settings)
 * [Drawing and editing polygonal ROIs](#drawing-and-editing-polygonal-rois)
 * [Creating point ROIs](#creating-point-rois)
 * [Using the Mouse Brain Atlas preset ROIs](#using-the-mouse-brain-atlas-preset-rois)
@@ -83,9 +82,6 @@ A table containing the ROI name, type (Shape or point), date of creation, centro
 
 ![ROImanager_Table](/assets/img/roimanager_roitable.png)
 
-#####  Image settings
-___
-
 #####  Drawing and editing polygonal ROIs
 ___
 
@@ -123,10 +119,14 @@ To create a point ROI:
 
 <img src="https://s-belanger.github.io/Umit/assets/gifs/roimanager_creatingPointROI.gif" alt="ROImanager_ROIShapeEdit2Gif"/>
 
-[**<< Home**](/index.md)
 
 #####  Using the Mouse Brain Atlas preset ROIs
 ___
+
+The preset ROIs were created from the top projection of the mouse cortical areas (see image below) obtained from the *Mouse Allen Brain Atlas*. 
+
+![ROImanager_MouseAreas](/assets/img/roimanager_mouse-areas.png)
+> Note: The position of the **Bregma** is provided here as a rough estimate. The data from the Mouse Brain atlas does not provide any anatomical landmark coordinates from the mouse skull. For more info on this, see this [discussion] (https://community.brain-map.org/t/why-doesnt-the-3d-mouse-brain-atlas-have-bregma-coordinates/158) from the Allen Brain Map community Forum.
 
 #####  Rules for ROI fitting
 ___
@@ -136,3 +136,23 @@ ___
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[**<< Home**](/index.md)
