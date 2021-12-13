@@ -139,11 +139,14 @@ One can choose to use the full surface of each ROI (default) or to shrink it by 
 <img src="https://s-belanger.github.io/Umit/assets/img/roimanager_area-options.png" alt="ROImanager_AreaOptions" width = "400"/>
 
 ######  Example of shrinking of the Left primary visual cortex ROI by removing 15 pixels from the ROI border:
-![ROImanager_AreaShrinkEx](/assets/img/roimanager_area-shrink-example.png)
+
+<img src="https://s-belanger.github.io/Umit/assets/img/roimanager_area-shrink-example.png" alt="ROImanager_AreaShrinkEx" width = "400"/>
 
 #####  Centroid options
 One can choose the radius of the circles in pixels (default = 1 px) and in millimeters. The latter is only available if the image's *pixel size* is already set. 
-![ROImanager_CentroidOptions](/assets/img/roimanager_centroid-options.png)
+
+<img src="https://s-belanger.github.io/Umit/assets/img/roimanager_centroid-options.png" alt="ROImanager_CentroidOptions" width = "400"/>
+
 > Note: If the ROIs are larger than the cortical areas themselves, the circles will automatically intersect with the areas' borders to avoid selecting pixels outside the areas.
 
 
