@@ -144,10 +144,9 @@ classdef StatsManager < handle
             [table_arr, labels] = obj.createTable; table_arr = table_arr';
 %             obsID_col = cellfun(@(x,y) repmat({x},1,height(y)), obj.obs_list', table_arr,...
 %                 'UniformOutput',0); obsID_col = [obsID_col{:}]';
-            data = table2cell(vertcat(table_arr{:}));
-            new_header = [table_arr{1}.Properties.VariableNames(1:6), labels'];
-            data = vertcat(new_header,data);
-            writecell(data,filename);
+            data = vertcat(table_arr{:});
+            data.Properties.VariableNames(7:end) = labels;
+            writetable(data,filename);
             msgbox(['Data saved to file : ' filename], 'to CSV');
         end
     end
