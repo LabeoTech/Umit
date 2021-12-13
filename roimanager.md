@@ -126,7 +126,7 @@ ___
 The preset ROIs were created from the top projection of the mouse cortical areas (see image below) obtained from the *Mouse Allen Brain Atlas*. 
 
 ![ROImanager_MouseAreas](/assets/img/roimanager_mouse-areas.png)
-> Note: The position of the **Bregma** is provided here as a rough estimate. The data from the Mouse Brain atlas does not provide any anatomical landmark coordinates from the mouse skull. For more info on this, see this [discussion] (https://community.brain-map.org/t/why-doesnt-the-3d-mouse-brain-atlas-have-bregma-coordinates/158) from the Allen Brain Map community Forum.
+> Note: The position of the **Bregma** is provided here as a rough estimate. The data from the Mouse Brain atlas does not provide any anatomical landmark coordinates from the mouse skull. For more info on this, see this [discussion](https://community.brain-map.org/t/why-doesnt-the-3d-mouse-brain-atlas-have-bregma-coordinates/158) from the Allen Brain Map community Forum.
 
 #####  Rules for ROI fitting
 ___
