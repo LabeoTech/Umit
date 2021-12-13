@@ -36,7 +36,7 @@ The graphical interface is composed of a main window, containing file and data c
     * ***Data processing:*** **(Standalone only)** Tool to setup image processing pipeline on the data using the [analysis functions](/index.md/#analysisfunctions) from the toolbox. 
     *  ***Save as...:*** Open dialog to save current data into a .DAT file.
 * ***Add-ons >>***
-    * ***ROImanager:*** Launches the [ROImanager](/ROImanager.md) app as add-on.
+    * ***ROImanager:*** Launches the [ROImanager](/roimanager.md) app as add-on.
 
 ##### 2. File info
 Displays the current file path and the experiment type.
@@ -53,7 +53,7 @@ Use the figure's *Data Tips* button to add data tips containing the pixel's loca
 
 <img src="https://s-belanger.github.io/Umit/assets/gifs/dataviewer_imagFig_clicking.gif" alt="DataViewer_Anim1" />
 
-##### 4. Time profile window
+##### 5. Time profile window
 This window will be visible only for data containing **T**ime dimension. Double-click over the plotted line to shift the current frame to the point in time.   
 As for the *Image Window*, use the figure's *Data Tips* button to add data tips  showing the signal amplitude and time delay values.    
 
