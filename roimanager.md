@@ -136,7 +136,7 @@ Optional parameters for each mode can be set by clicking on *Draw >> Mouse Allen
 #####  Area options
 One can choose to use the full surface of each ROI (default) or to shrink it by N pixels. This only affects the selected pixels inside the ROIs and not the shape themselves. The shrinking algorithm removes pixels from the ROI border.
 
-<img src="https://s-belanger.github.io/Umit/assets/img/roimanager_area-options.png" alt="ROImanager_AreaOptions" width = "150"/>
+<img src="https://s-belanger.github.io/Umit/assets/img/roimanager_area-options.png" alt="ROImanager_AreaOptions" width = "400"/>
 
 ######  Example of shrinking of the Left primary visual cortex ROI by removing 15 pixels from the ROI border:
 ![ROImanager_AreaShrinkEx](/assets/img/roimanager_area-shrink-example.png)
