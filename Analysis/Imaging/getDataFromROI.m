@@ -40,14 +40,20 @@ end
 data = mData.Data.(datName);
 data_sz = size(data);
 % Parse File path to find subject folder (FIND A BETTER WAY TO DO THIS!):
-str = split(File, filesep);
-subjFolder = strjoin(str(1:end-3), filesep);
-ROIfile = fullfile(subjFolder, opts.ROI_filename);
+ROIfile = opts.ROI_filename;
 if ~isfile(ROIfile)
-    errID = 'Umitoolbox:getDataFromROI:FileNotFound';
-    subjFolder = strrep(subjFolder, '\', '\\');
-    errMsg = ['ROI file not found in ' subjFolder];
-    error(errID, errMsg);
+    % If ROIfile does not exist, try to find the file in the Subject's
+    % folder:
+    try
+        str = split(File, filesep);
+        subjFolder = strjoin(str(1:end-3), filesep);
+        ROIfile = fullfile(subjFolder, opts.ROI_filename);
+    catch
+        errID = 'Umitoolbox:getDataFromROI:FileNotFound';
+        subjFolder = strrep(subjFolder, '\', '\\');
+        errMsg = ['ROI file not found in ' subjFolder];
+        error(errID, errMsg);
+    end
 end
 % Load ROI file:
 roi_data = load(ROIfile);
