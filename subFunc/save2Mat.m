@@ -96,12 +96,12 @@ end
 disp('Prepping label...');
 % Prepare "label" to save:
 if ischar(label)
-    label = arrayfun(@(x) strjoin({label, num2str(x)}, '_'), 1:length(s.data{1}), 'UniformOutput', 0);
+    label = arrayfun(@(x) strjoin({label, num2str(x)}, '_'), 1:size(s.data{1},2), 'UniformOutput', 0);
 end
 % Check if "label" has the same length of data:
 errID = 'Umitoolbox:save2Mat:IncompatibleSize';
 errMsg = 'The lenght of Labels is different from the length of data.';
-assert(isequaln(length(s.data{1}),length(label)), errID, errMsg);
+assert(isequaln(size(s.data{1},2),length(label)), errID, errMsg);
 % Add "label" to s:
 s.label = label;
 % Save "s" struct to file: 
