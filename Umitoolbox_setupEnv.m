@@ -9,15 +9,17 @@ sys = computer;
 myenv = getenv('Umitoolbox');
 if isfolder(myenv)
     disp('Environment Variable Umitoolbox already exists!')
-    return
+else
+    switch sys
+        case 'PCWIN64'
+            system(['SETX Umitoolbox ' saveDir]);
+            disp('done!');
+            disp('Restart MATLAB to apply the changes!');
+        otherwise
+            disp('For this computer, you have to set manually the environment variable "Umitoolbox"');
+    end
 end
-switch sys
-    case 'PCWIN64'
-        system(['SETX Umitoolbox ' saveDir]);
-        disp('done!');
-        disp('Restart MATLAB to apply the changes!');
-    otherwise
-        disp('For this computer, you have to set manually the environment variable "Umitoolbox"');
-end
-
+% Add toolbox to savePath:
+root = getenv('Umitoolbox');
+addpath(genpath(root)); savepath
 end
