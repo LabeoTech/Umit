@@ -36,7 +36,7 @@ addRequired(p, 'data');
 addRequired(p, 'obsID', @iscell);
 addRequired(p, 'dim_names', @iscell);
 addParameter(p, 'label', 'val', @(x) (iscell(x) && ischar([x{:}])) || (ischar(x)));
-addParameter(p, 'appendMetaData', [], @(x) isempty(x) || isa(x, 'matlab.io.MatFile'));
+addParameter(p, 'appendMetaData', [], @(x) isempty(x) || isa(x, 'matlab.io.MatFile') || isstruct(x));
 parse(p, MatFileName, data, obsID, dim_names, varargin{:});
 % Instantiate input variables:
 mFile = p.Results.MatFileName;

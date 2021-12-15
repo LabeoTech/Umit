@@ -1,7 +1,7 @@
 function outFile = alignFrames(object, SaveFolder, varargin)
-% ALIGNFRAMES uses phase correlation to align anatomical images (green
-% channel) to a reference frame created using the app
-% mouse_ref_frame_creator.
+% ALIGNFRAMES uses phase correlation to align images 
+% to a reference frame created using the app ROImanager.
+
 % Inputs:
 % object: Imaging object pointing to data to be aligned.
 % SaveFolder: Folder where data are stored.
@@ -33,7 +33,8 @@ object = p.Results.object;
 SaveFolder = p.Results.SaveFolder;
 Output = p.Results.Output;
 opts = p.Results.opts;
-% outFile = erase(Output, '.dat')
+clear p
+
 %%%%
 % Map reference frame:
 try
@@ -44,9 +45,8 @@ try
         if isa(ParentObj, 'Subject')
             idx = true;
         end
-        
     end
-        ref_frame_info = matfile(fullfile(ParentObj.SaveFolder, 'ImagingReferenceFrame.mat'));
+    ref_frame_info = matfile(fullfile(ParentObj.SaveFolder, 'ImagingReferenceFrame.mat'));
 catch ME
     causeException = MException('MATLAB:UMIToolbox:FileNotFound', 'Imaging Reference Frame file not found.');
     addCause(ME, causeException);

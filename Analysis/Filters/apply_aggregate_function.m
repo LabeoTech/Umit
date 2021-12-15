@@ -1,39 +1,39 @@
-function outFile = apply_aggregate_function(File, SaveFolder, varargin)
+function [outData, metaData] = apply_aggregate_function(data, metaData, varargin)
 % APPLY_AGGREGATE_FUNCTION applies an aggregate function to one or more
 % dimensions of a .DAT file. 
+
 % Inputs:
-%   File : fullpath of functional imaging .DAT file.
-%   SaveFolder : path to save the output file.
-%   Output (optional) : Name of outFile.
+%   data: numerical matrix containing imaging data.
+%   metaData: .mat file with meta data associated with "data".
 %   opts (optional) : structure containing the function's parameters:
 %       aggregateFcn (default = "mean") : name of the aggregate function.
 %       dimensionName (default = "T") : name of the dimension(s) to perform
 %       the calculation.
 % Output:
-%   outFile : name of Output file.
+%   outData: numerical matrix containing aggregated imaging data.   
+%   metaData: .mat file with meta data associated with "outData".
 
 % Defaults:
 default_opts = struct('aggregateFcn', 'mean', 'dimensionName', 'T');
 default_Output = 'aggFcn_applied.dat'; 
+
 %%% Arguments parsing and validation %%%
 % Parse inputs:
 p = inputParser;
-addRequired(p,'File',@(x) isfile(x) & endsWith(x,'.dat'))
-addRequired(p, 'SaveFolder', @isfolder);
+addRequired(p,'data',@(x) isnumeric(x)); % Validate if the input is a 3-D numerical matrix:
+addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x) && ...
     ismember(x.aggregateFcn, {'mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}) && ...
     ~isempty(x.dimensionName) && (iscell(x.dimensionName) && ischar(x.dimenqsionName{:}) || ...
     ischar(x.dimensionName)));
-addOptional(p, 'Output', default_Output)
 % Parse inputs:
-parse(p,File, SaveFolder, varargin{:});
+parse(p,data, metaData, varargin{:});
 %Initialize Variables:
-File = p.Results.File; 
-SaveFolder = p.Results.SaveFolder;
+data = p.Results.data; 
+metaData = p.Results.metaData;
 opts = p.Results.opts;
-
-% Map .DAT file to memory:
-[mData, metaData] = mapDatFile(File);
+clear p
+%%%%%%%%%%%%%%%%%%%%%%%
 
 % Parse dimension names from opts struct:
 str = opts.dimensionName;
@@ -48,8 +48,6 @@ data_dim_names = metaData.dim_names;
 % Look for "E"vent dimension:
 idx_evnt = strcmp('E',data_dim_names(dimVec));
 
-% Load Data:
-data = mData.Data.(metaData.datName);
 % Permute data to bring "dimVec" to firsts dimensions:
 orig_sz = size(data);
 data = permute(data,[dimVec, setdiff(1:ndims(data), dimVec)]);
@@ -66,24 +64,21 @@ end
 singDims = ( size(data) == 1 );
 % Permute data back and remove singleton dimensions:
 [~,locB] = ismember(orig_sz, perm_sz);
-data = squeeze(permute(data, locB));
+outData = squeeze(permute(data, locB));
 % Update dim_names:
 singDims = singDims(locB);
 % new_dim_names = metaData.dim_names;
 data_dim_names (singDims) = [];
-% Save DATA, METADATA and DIMENSION_NAMES to DATFILE:
-[~,filename, ~] = fileparts(mData.Filename);
-filename = [opts.aggregateFcn '_over_' [dim_names{:}] '_' filename '.dat'];
-datFile = fullfile(SaveFolder, filename);
-save2Dat(datFile, data, data_dim_names);
-% IF "E"vent dimension was processed, update eventID variable in metaData file:
+
+% Create metaData structure based on aggregated data:
 if exist('new_eventID', 'var')
-    [~, metaData] = mapDatFile(datFile);
-    metaData.Properties.Writable = true;
-    metaData.eventID = new_eventID;
+    % IF "E"vent dimension was processed, update eventID variable in metaData file:
+    s = struct('eventID', new_eventID);
+    metaData = genMetaData(outData, data_dim_names,s);
+else
+    metaData = genMetaData(outData, data_dim_names);
 end
-% Output filename:
-outFile = filename;
+
 end
 
 % Local function:

@@ -1,71 +1,80 @@
-function outFile = getDataFromROI(File, SaveFolder, varargin)
+function outFile = getDataFromROI(data, metaData, SaveFolder, varargin)
 % GETDATAFROMROI extracts and aggregates data from regions of interest
 % (ROIs) in imaging data using an "ROI_xxxxxx.mat" file located in
 % subject's folder.
-%
+
 % Inputs:
-%   File: Imaging data file with 2+ dimensions (.DAT file).
+%   data: numerical matrix containing imaging data.
+%   metaData: .mat file with meta data associated with "data".
 %   SaveFolder: Folder where data are stored.
-%   Output: name of .DAT file saved in SAVEFOLDER.
 % Outputs:
 %   outFile: .MAT file containing ROI names and aggregate data.
-%
-% Defaults:
-default_Output = 'ROI_data.mat';
 
+% Defaults:
+default_Output = 'ROI_data.mat'; %#ok
+default_opts = struct('ROI_filename', 'ROI_data.mat', 'SpatialAggFcn', 'mean');
 %%% Arguments parsing and validation %%%
 p = inputParser;
-addRequired(p, 'File', @(x) isfile(x) && endsWith(x, '.dat'));
+addRequired(p,'data',@(x) isnumeric(x)); % Validate if the input is a 3-D numerical matrix:
+addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
 addRequired(p, 'SaveFolder', @isfolder);
 % Optional Parameters:
-% opts structure:
-default_opts = struct('ROI_filename', 'ROI_data.mat', 'SpatialAggFcn', 'mean');
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) &&...
     ismember(x.SpatialAggFcn, {'none','mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}));
+addOptional(p, 'object', [], @(x) isempty(x) || isa(x,'Acquisition') || isa(x,'Modality')); 
+
 % Parse inputs:
-parse(p,File, SaveFolder, varargin{:});
+parse(p,data, metaData, SaveFolder, varargin{:});
 % Initialize Variables:
-File = p.Results.File;
+data = p.Results.data;
+metaData = p.Results.metaData;
 SaveFolder = p.Results.SaveFolder;
 opts = p.Results.opts;
+object = p.Results.object;
+clear p
+%%%%%%%%%%%%%%%%
 
-% map File:
-[mData, metaData] = mapDatFile(File);
+% For backward compatibility with previous versions of umIT when .DAT files contained 
+% more than one matrix:
 datName = metaData.datName;
 dim_names = metaData.dim_names;
 if iscell(datName)
-    datName = datName{1};
     dim_names = dim_names{1};
 end
-data = mData.Data.(datName);
-data_sz = size(data);
-% Parse File path to find subject folder (FIND A BETTER WAY TO DO THIS!):
-ROIfile = opts.ROI_filename;
-if ~isfile(ROIfile)
-    % If ROIfile does not exist, try to find the file in the Subject's
-    % folder:
-    try
-        str = split(File, filesep);
-        subjFolder = strjoin(str(1:end-3), filesep);
-        ROIfile = fullfile(subjFolder, opts.ROI_filename);
-    catch
+%%%%%%%%%%%%%%%
+
+% Parse File path to find subject folder:
+if ~isempty(object)
+    % If a umIT's valid object is provided, it means that the function is being run by 
+    % PipelineManager. In this case, find the subject's folder an try to
+    % find the ROI file there: 
+    idx = false;
+    while ~idx
+        ParentObj = object.MyParent;
+        idx = isa(ParentObj, 'Subject');
+    end  
+    if ~isfile(fullfile(ParentObj.SaveFolder, opts.ROI_filename))
         errID = 'Umitoolbox:getDataFromROI:FileNotFound';
-        subjFolder = strrep(subjFolder, '\', '\\');
+        subjFolder = strrep(ParentObj.SaveFolder, '\', '\\');
         errMsg = ['ROI file not found in ' subjFolder];
         error(errID, errMsg);
+    else
+        opts.ROI_filename = fullfile(ParentObj.SaveFolder, opts.ROI_filename);
     end
 end
+
 % Load ROI file:
-roi_data = load(ROIfile);
+roi_data = load(opts.ROI_filename);
 % locate "X" and "Y" dimensions in metaData and in ROI info:
 xLoc = find(strcmp(dim_names, 'X'));
 yLoc = find(strcmp(dim_names, 'Y'));
 % Check if frame size is the same as the one in ROI file:
+data_sz = size(data);
 errID = 'Umitoolbox:getDataFromROI:IncompatibleSizes';
 errMsg = 'Data file frame size is different from the one in ROI file';
 assert(isequal([data_sz(yLoc) data_sz(xLoc)], size(roi_data.img_info.data)), errID, errMsg)
 % permute matrix:
-orig_dim = 1:ndims(mData.Data.(datName));
+orig_dim = 1:ndims(data);
 new_dim = [yLoc xLoc setdiff(orig_dim, [xLoc yLoc])];
 data = permute(data, new_dim);
 dim_names = dim_names(new_dim);
@@ -88,16 +97,18 @@ for i = 1:length(roi_pixVals)
 end
 
 % Save data to .mat:
-[~, datFile,~] = fileparts(File);
+[~, datFile,~] = fileparts(metaData.datFile);
 [~,roi_filename,~] = fileparts(opts.ROI_filename);
 outFile = [roi_filename '_' datFile '.mat'];
 mFile = fullfile(SaveFolder, outFile);
 new_dim_names ={'O', dim_names{3:end}};
+if isa(metaData, 'matlab.io.MatFile')
+    metaData.Properties.Writable = true;
+else
+    metaData.Writable = true;
+end
+metaData.ROIfile = opts.ROI_filename;
 save2Mat(mFile, roi_pixVals, roi_names, new_dim_names, 'appendMetaData', metaData)
-% Append ROIfilename to the .MAT file:
-mF = matfile(mFile);
-mF.Properties.Writable = true;
-mF.ROIfile = ROIfile;
 end
 
 % Local function:
