@@ -17,8 +17,9 @@ function [outData, metaData] = calculate_response_amplitude(data, metaData, vara
 %   metaData: .mat file with meta data associated with "outData".
 
 % Defaults:
+default_Output = 'amplitude_Map.dat'; %#ok This line is here just for Pipeline management.
 default_opts = struct('preEvent_value', 'median', 'postEvent_value', 'max', 'timeWindow', -1);
-default_Output = 'amplitude_Map.dat'; %#ok
+
 %%% Arguments parsing and validation %%%
 % Parse inputs:
 p = inputParser;

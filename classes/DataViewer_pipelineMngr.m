@@ -346,7 +346,7 @@ classdef DataViewer_pipelineMngr < handle
                 % Validate if all input arguments from the function are
                 % "valid" inputs keywords:
                 kwrds_args = {'data', 'metaData', 'SaveFolder', 'RawFolder', 'opts'};
-                kwrds_out = {'outFile', 'outData', 'metaData'};
+                kwrds_out = {'outFile', 'outData', 'metaData', 'outDataStat'};
                 if all(ismember(out.argsIn, kwrds_args)) && all(ismember(out.argsOut, kwrds_out))
                     disp(list(i).name);
                     [~,list(i).name, ~] = fileparts(list(i).name);

@@ -1,4 +1,4 @@
-function outFile = getDataFromROI(data, metaData, SaveFolder, varargin)
+function outDataStat = getDataFromROI(data, metaData, varargin)
 % GETDATAFROMROI extracts and aggregates data from regions of interest
 % (ROIs) in imaging data using an "ROI_xxxxxx.mat" file located in
 % subject's folder.
@@ -6,29 +6,26 @@ function outFile = getDataFromROI(data, metaData, SaveFolder, varargin)
 % Inputs:
 %   data: numerical matrix containing imaging data.
 %   metaData: .mat file with meta data associated with "data".
-%   SaveFolder: Folder where data are stored.
-% Outputs:
-%   outFile: .MAT file containing ROI names and aggregate data.
+% Output:
+%   outDataStat: structure containing stats-ready data extracted from ROIs.
 
 % Defaults:
-default_Output = 'ROI_data.mat'; %#ok
+default_Output = 'ROI_data.mat'; %#ok This line is here just for Pipeline management.
 default_opts = struct('ROI_filename', 'ROI_data.mat', 'SpatialAggFcn', 'mean');
 %%% Arguments parsing and validation %%%
 p = inputParser;
 addRequired(p,'data',@(x) isnumeric(x)); % Validate if the input is a 3-D numerical matrix:
 addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
-addRequired(p, 'SaveFolder', @isfolder);
 % Optional Parameters:
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) &&...
     ismember(x.SpatialAggFcn, {'none','mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}));
 addOptional(p, 'object', [], @(x) isempty(x) || isa(x,'Acquisition') || isa(x,'Modality')); 
 
 % Parse inputs:
-parse(p,data, metaData, SaveFolder, varargin{:});
+parse(p,data, metaData, varargin{:});
 % Initialize Variables:
 data = p.Results.data;
 metaData = p.Results.metaData;
-SaveFolder = p.Results.SaveFolder;
 opts = p.Results.opts;
 object = p.Results.object;
 clear p
@@ -96,11 +93,6 @@ for i = 1:length(roi_pixVals)
     roi_pixVals{i} = pixVals;
 end
 
-% Save data to .mat:
-[~, datFile,~] = fileparts(metaData.datFile);
-[~,roi_filename,~] = fileparts(opts.ROI_filename);
-outFile = [roi_filename '_' datFile '.mat'];
-mFile = fullfile(SaveFolder, outFile);
 new_dim_names ={'O', dim_names{3:end}};
 if isa(metaData, 'matlab.io.MatFile')
     metaData.Properties.Writable = true;
@@ -108,7 +100,7 @@ else
     metaData.Writable = true;
 end
 metaData.ROIfile = opts.ROI_filename;
-save2Mat(mFile, roi_pixVals, roi_names, new_dim_names, 'appendMetaData', metaData)
+outDataStat = save2Mat([], roi_pixVals, roi_names, new_dim_names, 'appendMetaData', metaData);
 end
 
 % Local function:

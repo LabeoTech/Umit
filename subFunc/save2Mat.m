@@ -1,35 +1,36 @@
-function save2Mat(MatFileName, data, obsID, dim_names, varargin)
+function varargout = save2Mat(MatFileName, data, obsID, dim_names, varargin)
 % SAVE2MAT validates all variables necessary for the statistical module
 % and saves DATA and metadata variables to MATFILENAME.
 %
 % Inputs:
 %
-% MatFileName = full path of .MAT filename
-%
-% data = 1D cell array with length equal to the number of elements of 
-% observations "O".
-%
-% obsID = 1D cell array of characters containing the description of each
-% observation.
-%
-% dim_names = cell array of characters with the dimension description. See
-% documentation on how to label dimension names. Examples of dimension
-% names are listed below:
-% "O" = observation;
-% "X" = x axis;
-% "Y" = y axis;
-% "Z" = z axis;
-% "T" = time;
-% "E" = events; *In this case, the function will validate if event IDs and
-% Names are contained in "data" file.
+%   MatFileName = full path of .MAT filename or an empty array. If empty,
+%       the function will generate a structure as output, otherwise it will
+%       save the variables to a .MAT file "MatFileName".
+%   data = 1D cell array with length equal to the number of elements of 
+%       observations "O".
+%   obsID = 1D cell array of characters containing the description of each
+%       observation.
+%   dim_names = cell array of characters with the dimension description. See
+%       documentation on how to label dimension names. Examples of dimension
+%       names are listed below:
+%           "O" = observation;
+%           "X" = x axis;
+%           "Y" = y axis;
+%           "Z" = z axis;
+%           "T" = time;
+%           "E" = events; *In this case, the function will validate if event IDs and
+%           Names are contained in "data" file.
+%   appendMetaData (optional Name-value parameter):
+%       handle to .MAT (matfile) containing metaData that will be added the
+%       output .MAT file.
+% Output (optional):
+%   out = structure containing data and metaData.
 
-% appendMetaData (optional Name-value parameter):
-%  handle to .MAT (matfile) containing metaData that will be added the
-%  output .MAT file.
 % Arguments validation
 p = inputParser;
 addRequired(p,'MatFileName',...
-    @(x) isfolder(fileparts(x)) && endsWith(x,'.mat')); % Validates if MatFileName is a fullpath and .MAT.
+    @(x) isempty(x) || (isfolder(fileparts(x)) && endsWith(x,'.mat'))); % Validates if MatFileName is a fullpath and .MAT OR is empty.
 % validData = @(x) iscell(x) & ~isempty(x) & isa(x{:}, 'single'); % Data validation function.
 % addRequired(p, 'data', validData);
 addRequired(p, 'data');
@@ -37,6 +38,7 @@ addRequired(p, 'obsID', @iscell);
 addRequired(p, 'dim_names', @iscell);
 addParameter(p, 'label', 'val', @(x) (iscell(x) && ischar([x{:}])) || (ischar(x)));
 addParameter(p, 'appendMetaData', [], @(x) isempty(x) || isa(x, 'matlab.io.MatFile') || isstruct(x));
+addParameter(p, 'genFile', false, @islogical)
 parse(p, MatFileName, data, obsID, dim_names, varargin{:});
 % Instantiate input variables:
 mFile = p.Results.MatFileName;
@@ -45,7 +47,8 @@ obsID = p.Results.obsID;
 label = p.Results.label;
 dim_names = upper(p.Results.dim_names);
 metaData = p.Results.appendMetaData;
-
+b_genFile = p.Results.genFile;
+clear p
 % Further validate data:
 errID = 'Umitoolbox:save2Mat:IncompatibleSize';
 errMsg = 'The lenght of data is different from the number of observations.';
@@ -62,8 +65,7 @@ errID = 'Umitoolbox:save2Mat:InvalidName';
 errMsg = 'List of dimension names contain invalid values.';
 assert(all(ismember(dim_names, dim_names_info.dims_dict)), errID, errMsg);
 
-% Generate File UUID:
-fileUUID = char(java.util.UUID.randomUUID);
+
 
 % Create structure with data and metadata:
 if ~isempty(metaData)
@@ -73,8 +75,6 @@ end
 s.data = data;
 s.obsID = obsID;
 s.dim_names = dim_names;
-s.fileUUID = fileUUID;
-
 % Check if "E" exists in dim_names and verify if event info exists in "s"
 % struct:
 if ismember('E', dim_names)
@@ -104,9 +104,15 @@ errMsg = 'The lenght of Labels is different from the length of data.';
 assert(isequaln(size(s.data{1},2),length(label)), errID, errMsg);
 % Add "label" to s:
 s.label = label;
-% Save "s" struct to file: 
-save(mFile, '-struct', 's', '-v7.3');
-[p,n,ext] = fileparts(mFile);
-disp(['Stats data saved in ' p ' as ' [n ext]]);
+if ~b_genFile
+    % Add file unique identifier:
+    s.fileUUID = char(java.util.UUID.randomUUID);
+    % Save "s" struct to file:
+    save(mFile, '-struct', 's', '-v7.3');
+    [p,n,ext] = fileparts(mFile);
+    disp(['Stats data saved in ' p ' as ' [n ext]]);
+else
+    varargout{1} = s;
+end
 
 end
