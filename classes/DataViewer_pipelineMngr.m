@@ -16,6 +16,7 @@ classdef DataViewer_pipelineMngr < handle
         SaveFolder % folder where data created will be stored (Save Directory).
         RawFolder % folder where the Raw data are stored (Pertinent for Data Import functions only!)
         outFile % list of file names created by some functions that generate .DAT files instead of data as outputs (e.g. run_ImagesClassification)
+        dataHistory % structure containing the History of analysis functions applied to the current data.        
     end    
    
     methods
@@ -29,7 +30,6 @@ classdef DataViewer_pipelineMngr < handle
             obj.RawFolder = RawFolder; 
         end
         %%%%% SETTERS %%%%
-        
         function set.metaData(obj, metaData)
             % This set function makes sure that relevant variables inside "metaData"
             % are kept intact throughout the analysis pipeline.
@@ -60,9 +60,7 @@ classdef DataViewer_pipelineMngr < handle
             end
             
         end
-        
-        
-        
+        %%%%%%%%%%%%%%%%%% 
         function setOpts(obj, func)
             % SETOPTS opens an INPUTDLG for entry of optional variables
             % (OPTS) of methods in the Pipeline. Output: Structure
@@ -127,10 +125,10 @@ classdef DataViewer_pipelineMngr < handle
             
             % Replace Input argument names:
             argsIn = replace(funcInfo.argsIn, {'RawFolder', 'SaveFolder', 'data', 'metaData'}, ...
-                {'obj.RawFolder', 'obj.SaveFolder', 'obj.data', 'obj.metaData'});            
+                {['''' obj.RawFolder ''''], ['''' obj.SaveFolder ''''], 'obj.data', 'obj.metaData'});            
             % Replace output argument names:
-            argsOut = replace(funcInfo.argsOut, {'outData', 'metaData', 'outFile'},...
-                {'obj.data', 'obj.metaData', 'obj.outFile'});
+            argsOut = replace(funcInfo.argsOut, {'outData', 'metaData', 'outDataStat', 'outFile'},...
+                {'obj.data', 'obj.metaData', 'obj.data', 'obj.outFile'});
             % Build function string:
             funcInfo.funcStr = ['[' strjoin(argsOut, ',') ']=' funcInfo.name '('...
                 strjoin(argsIn, ',') ');'];
@@ -271,7 +269,7 @@ classdef DataViewer_pipelineMngr < handle
                 waitbar(i/length(obj.pipe), h,...
                     ['Processing ' obj.pipe(i).name '... Step' num2str(i)...
                     '/' num2str(length(obj.pipe))]);
-                opts = obj.pipe(i).opts;
+                opts = obj.pipe(i).opts; %#ok "opts" is used in an "eval" function.
                 try
                     % Run the function:
                     eval(obj.pipe(i).funcStr);
@@ -402,31 +400,30 @@ classdef DataViewer_pipelineMngr < handle
            timestamp = datetime('now');
            funcInfo = obj.funcList(strcmp(step.name, {obj.funcList.name}));
            % Create a local structure with the function's info:
-           dataHistory = struct('runDatetime', timestamp, 'name', funcInfo.name,...
+           curr_dtHist = struct('runDatetime', timestamp, 'name', funcInfo.name,...
                'folder', funcInfo.folder, 'creationDatetime', datetime(funcInfo.date),...
-               'opts', step.opts);
+               'opts', step.opts, 'funcStr', step.funcStr, 'outputFile_list', 'none');
            % First, we need to know if the output is a "data" or a file:
            if any(strcmp(step.argsOut, 'outFile'))
+               curr_dtHist.outputFile_list = obj.outFile;
                for i = 1:length(obj.outFile)
                    % Map existing metaData file to memory:
                    mtD = matfile(strrep(obj.outFile{i}, '.dat', '.mat'));
                    mtD.Properties.Writable = true;
                    % Create or update "dataHistory" structure:
                    if isprop(mtD, 'dataHistory')
-                       mtD.dataHistory = [mtD.dataHistory; dataHistory];
+                       mtD.dataHistory = [mtD.dataHistory; curr_dtHist];
                    else
-                       mtD.dataHistory = dataHistory;
+                       mtD.dataHistory = curr_dtHist;
                    end
                end
            else
                if isfield(obj.metaData, 'dataHistory')
-                   obj.metaData.dataHistory = [obj.metaData.dataHistory; dataHistory];
+                   obj.metaData.dataHistory = [obj.metaData.dataHistory; curr_dtHist];
                else
-                   obj.metaData.dataHistory = dataHistory;
+                   obj.metaData.dataHistory = curr_dtHist;
                end
-           end
-            
+           end 
         end
-        
     end
 end
