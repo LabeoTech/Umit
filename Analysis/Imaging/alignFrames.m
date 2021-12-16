@@ -1,6 +1,6 @@
 function outFile = alignFrames(object, SaveFolder, varargin)
 % ALIGNFRAMES uses phase correlation to align images 
-% to a reference frame created using the app ROImanager.
+% to a reference frame created using the ROImanager app.
 
 % Inputs:
 % object: Imaging object pointing to data to be aligned.
