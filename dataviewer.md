@@ -29,12 +29,14 @@ The graphical interface is composed of a main window, containing file and data c
     * ***Open:***  Opens dialog to load previously saved .DAT files.
     * ***Import Raw data:*** Import raw data from **LabeoTech Imaging Systems**.
     * ***Export images:*** Opens dialog to export Image and temporal signal windows (PNG (default), JPEG, PDF or EPS formats).
+    * ***Save as...:*** Open dialog to save current data into a .DAT file.
 * **Settings >>**
     * ***Image Options:*** Opens dialog to set image colormap and clipping values.
     * ***Playback speed:*** Sets movie speed for playback button (3. Controls). If the selected speed is too high, the app will reduce it to avoid lag.
 * ***Utilities >>***
     * ***Data processing:*** **(Standalone only)** Tool to setup image processing pipeline on the data using the [analysis functions](/index.md/#analysisfunctions) from the toolbox. 
-    *  ***Save as...:*** Open dialog to save current data into a .DAT file.
+    * ***View Data History:*** Opens a table showing information about the analysis functions run for the opened data file.
+    * ***Extract data from ROI:*** **(Standalone only)** Tool to create a .MAT file containing data from the displayed ROIs.
 * ***Add-ons >>***
     * ***ROImanager:*** Launches the [ROImanager](/roimanager.md) app as add-on.
 
