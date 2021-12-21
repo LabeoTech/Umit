@@ -271,6 +271,12 @@ classdef DataViewer_pipelineMngr < handle
                     '/' num2str(length(obj.pipe))]);
                 opts = obj.pipe(i).opts; %#ok "opts" is used in an "eval" function.
                 try
+                    % Check if step was already run:
+                    b_skip = obj.checkDataHistory(obj.pipe(i));
+                    if b_skip
+                        disp(['Step #' num2str(i) ' skipped!'])
+                        continue
+                    end
                     % Run the function:
                     eval(obj.pipe(i).funcStr);
                     % Update the metaData with the current function info:
@@ -400,9 +406,9 @@ classdef DataViewer_pipelineMngr < handle
            timestamp = datetime('now');
            funcInfo = obj.funcList(strcmp(step.name, {obj.funcList.name}));
            % Create a local structure with the function's info:
-           curr_dtHist = struct('runDatetime', timestamp, 'name', funcInfo.name,...
-               'folder', funcInfo.folder, 'creationDatetime', datetime(funcInfo.date),...
-               'opts', step.opts, 'funcStr', step.funcStr, 'outputFile_list', 'none');
+           curr_dtHist = struct('runDatetime', timestamp, 'name', {funcInfo.name},...
+               'folder', {funcInfo.folder}, 'creationDatetime', datetime(funcInfo.date),...
+               'opts', step.opts, 'funcStr', {step.funcStr}, 'outputFile_list', 'none');
            % First, we need to know if the output is a "data" or a file:
            if any(strcmp(step.argsOut, 'outFile'))
                curr_dtHist.outputFile_list = obj.outFile;
@@ -424,6 +430,30 @@ classdef DataViewer_pipelineMngr < handle
                    obj.metaData.dataHistory = curr_dtHist;
                end
            end 
+        end
+        
+        function b_skip = checkDataHistory(obj,step)
+            % This method verifies if the function to be run in "step" was
+            % already performed or not on the current data. 
+            % If so, the pipeline step will be skipped.
+            % Input:
+            %   step (struct): structure containing the function information that
+            %   will run on the data.
+            % Output:
+            %   b_skip (bool): True if the step was already run on the
+            %   data and should be skipped.
+            
+            disp('Checking step...');
+            b_skip = false;
+            % Find function info in Function List:
+            fcnInfo = obj.funcList(strcmp(step.name, {obj.funcList.name}));
+            % Find step info in object's dataHistory:
+            dH = obj.metaData.dataHistory(strcmp(step.name, {obj.metaData.dataHistory.name}));
+            % If the function's creation date AND the function string are
+            % the same, we consider that the current step was already run.
+            if ( isequal(datetime(fcnInfo.date), dH.creationDatetime) & strcmp(step.funcStr, dH.funcStr) )
+                b_skip = true;
+            end
         end
     end
 end
