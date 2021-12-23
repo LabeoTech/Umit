@@ -31,6 +31,10 @@ Some of the apps work as standalone, meaning that they can operate without using
 *
 *
 
+##### How To's
+* [Create a data processing pipeline](/ht_buildpipeline.md)
+* [Extract data from ROI](/ht_getdatafromroi.md) using the standalone version of [*DataViewer*](/dataviewer.md)
+
 ___
 ## An overview
 A typical imaging **project** consists of one or more cohorts of **subject**s (e.g. mice) that undergo one or more **acquisition** (i.e. recording) sessions. Frequently, other recording **modalities** are associated with the imaging data such as behavioral responses, eye/body tracking, etc. The toolbox follows the same organization principle where one can manage subjects, acquisitions and recording modalities for a given project.   
