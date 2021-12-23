@@ -283,7 +283,7 @@ classdef DataViewer_pipelineMngr < handle
                     obj.updateDataHistory(obj.pipe(i));
                     % If user wants, save the output to a file:
                     if obj.pipe(i).b_save2Dat
-                        save2Dat(obj.pipe(i).datFileName, obj.data, obj.metaData);
+                        save2Dat(fullfile(obj.SaveFolder, obj.pipe(i).datFileName), obj.data, obj.metaData);
                     end
                     outMsg = 'Pipeline Finished.';
                 catch ME
@@ -355,6 +355,7 @@ classdef DataViewer_pipelineMngr < handle
                     disp(list(i).name);
                     [~,list(i).name, ~] = fileparts(list(i).name);
                     list(i).info = out;
+                    
                     obj.funcList = [obj.funcList ; list(i)];
                 end
                 
@@ -451,7 +452,10 @@ classdef DataViewer_pipelineMngr < handle
             dH = obj.metaData.dataHistory(strcmp(step.name, {obj.metaData.dataHistory.name}));
             % If the function's creation date AND the function string are
             % the same, we consider that the current step was already run.
-            if ( isequal(datetime(fcnInfo.date), dH.creationDatetime) & strcmp(step.funcStr, dH.funcStr) )
+            if isempty(dH)
+                return
+            elseif ( isequal(datetime(fcnInfo.date), dH.creationDatetime) &&...
+                    strcmp(step.funcStr, dH.funcStr) ) && isequaln(step.opts, dH.opts)
                 b_skip = true;
             end
         end
