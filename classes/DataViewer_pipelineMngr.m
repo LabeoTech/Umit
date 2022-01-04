@@ -449,8 +449,15 @@ classdef DataViewer_pipelineMngr < handle
             % Find function info in Function List:
             fcnInfo = obj.funcList(strcmp(step.name, {obj.funcList.name}));
             % Find step info in object's dataHistory:
+            
+            % For retro-compatibility with data created in previous
+            % versions of umIT:
+            if ~isfield(obj.metaData, 'dataHistory')
+                return
+            end
+            
             dH = obj.metaData.dataHistory(strcmp(step.name, {obj.metaData.dataHistory.name}));
-            % If the function's creation date AND the function string are
+            % If the function's creation date AND the function string AND optional parameters are
             % the same, we consider that the current step was already run.
             if isempty(dH)
                 return
