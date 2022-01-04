@@ -30,10 +30,11 @@ Some of the apps work as standalone, meaning that they can operate without using
 ##### Analysis functions
 *
 *
+___
 
-##### How To's
-* [Create a data processing pipeline](/ht_buildpipeline.md)
-* [Extract data from ROI](/ht_getdatafromroi.md) using the standalone version of [*DataViewer*](/dataviewer.md)
+### How To's
+* [Build a data processing pipeline](/ht_buildpipeline.md)
+* [Extract data from ROI](/ht_getdatafromroi.md) using the standalone version of [*DataViewer*](/dataviewer.md) (link not functional)
 
 ___
 ## An overview

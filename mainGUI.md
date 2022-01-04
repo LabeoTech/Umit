@@ -39,4 +39,7 @@ Here are more detailed information on the components of each tab:
 * [Visualization](/visualization_tab.md) (Data visualization)
 * [Analysis](/analysis_tab.md) (Results visualisation and analysis)
 
-[**<< Home**](/index.md)                                                                       [**Next item >>**](/file.md)
+
+
+
+[**<< Home**](/index.md)                                                                   

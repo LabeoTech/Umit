@@ -3,7 +3,6 @@
 The current version of the umIToolbox was written in Matlab and is compatible with versions ***R2019a*** and above.
 The following Matlab toolboxes are necessary to run all modules of ***umIT*** :
 * Imaging processing toolbox
-* Signal processing toolbox
 * Statistics and Machine Learning Toolbox
 
 To install ***umIT*** , first clone or download the source code from our [GitHub repository](https://github.com/S-Belanger/Umit).
@@ -15,4 +14,4 @@ However, if your are running Matlab in Windows, execute the function *Umitoolbox
 
 Now the toolbox is ready to use!   
 
-[**<< Home**](/index.md)                                       [**Creating a new project >>**](/create_new_project.md)
+[**<< Home**](/index.md)                                
