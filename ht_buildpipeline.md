@@ -33,7 +33,11 @@ To execute an analysis pipeline in the standalone version of the ```DataViewer``
 4. Click on *Create Pipeline*. 
 5. A window will appear containing a summary of the pipeline steps. Click on *Run* to run the pipeline.
 6. Once finished, the final processed file will be displayed. If the last step of the pipeline was not saved during the pipeline creation using the Pipeline Builder interface, the file will be saved with a temporary file  name with prefix ```tmpFile_```. You can save the processed imaging by clicking on *File >> Save as...*. 
->> Note: All temporary files (```tmpFile_xxxx.dat```) contained in the save directory will be deleted by closing the app. Be sure to save the displayed imaging data before closing.
+
+
+> Note: All temporary files (```tmpFile_xxxx.dat```) contained in the save directory will be deleted by closing the app. Be sure to save the displayed imaging data before closing.
+
+
 
 
 
