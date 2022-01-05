@@ -1,7 +1,7 @@
 ### How to build an analysis pipeline
 
 One can build an analysis pipeline through the main GUI [Pipeline control panel](/pipeline_tab.md) tab or using the standalone version of the [DataViewer](/dataviewer.md) app.
-##### The interface
+##### The Pipeline Bulder interface
 ___   
 
 ![pipelineBuilderGUI](/assets/img/pipelinebuilder_mainFig.png)
@@ -23,10 +23,17 @@ List of functions (steps) from the pipeline. The pipeline will run as the order 
 * ***Remove item:*** Removes the selected function from the pipeline.
 * ***Save step:*** Saves the selected step to a .dat file. Opens a dialog box to type the name of the .DAT file. Some functions do not provide imaging data as outputs and will not allow saving the step. Please, refer to the [analysis functions](/index.md/#analysisfunctions) section for details.
 
-##### Building a pipeline in *DataViewer* standalone app
+##### Running an analysis pipeline in *DataViewer* standalone app
 ___   
 
-
+To execute an analysis pipeline in the standalone version of the ```DataViewer``` app:
+1. Open the imaging file to be processed.
+2. Click on *Utilities >> Data Processing* to open the pipeline builder interface.
+3. Select the analysis functions to run on the file.
+4. Click on *Create Pipeline*. 
+5. A window will appear containing a summary of the pipeline steps. Click on *Run* to run the pipeline.
+6. Once finished, the final processed file will be displayed. If the last step of the pipeline was not saved during the pipeline creation using the Pipeline Builder interface, the file will be saved with a temporary file  name with prefix ```tmpFile_```. You can save the processed imaging by clicking on *File >> Save as...*. 
+>> Note: All temporary files (```tmpFile_xxxx.dat```) contained in the save directory will be deleted by closing the app. Be sure to save the displayed imaging data before closing.
 
 
 
