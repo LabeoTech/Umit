@@ -23,7 +23,7 @@ List of functions (steps) from the pipeline. The pipeline will run as the order 
 * ***Remove item:*** Removes the selected function from the pipeline.
 * ***Save step:*** Saves the selected step to a .dat file. Opens a dialog box to type the name of the .DAT file. Some functions do not provide imaging data as outputs and will not allow saving the step. Please, refer to the [analysis functions](/index.md/#analysisfunctions) section for details.
 
-##### Running an analysis pipeline in *DataViewer* standalone app
+##### Running an analysis pipeline from *DataViewer* standalone app
 ___   
 
 To execute an analysis pipeline in the standalone version of the ```DataViewer``` app:
@@ -36,6 +36,26 @@ To execute an analysis pipeline in the standalone version of the ```DataViewer``
 
 
 > Note: All temporary files (```tmpFile_xxxx.dat```) contained in the save directory will be deleted by closing the app. Be sure to save the displayed imaging data before closing.
+
+
+##### Running an analysis pipeline from umIT's main interface
+___  
+
+To execute an analysis pipeline from the main GUI of **umIT**:
+
+1. In the *pipeline control panel* tab, select the objects to be processed in the folder tree.
+2. Save selection by clicking on *Select* button.
+3. Click on *Configure New Pipeline* to open the pipeline builder interface.
+2. In the pipeline builder interface, select the analysis functions to run on the file.
+3. Click on *Create Pipeline*. 
+4. In the *pipeline control panel* tab, a summary of the pipeline will be displayed on the *Pipeline status* panel.
+5. Click on *Run Pipeline* to execute the pipeline over the selected objects.
+6. Once finished, a table containing a summary of the pipeline will be displayed in the *Pipeline Summary* panel.
+
+
+
+
+
 
 
 
