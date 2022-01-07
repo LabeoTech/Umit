@@ -1,25 +1,27 @@
 classdef PipelineManager < handle
-    % PIPELINEMANAGER creates and manages pre-processing and
-    % analysis pipelines.
-    %  Creates a structure with the info necessary to run a simple pipeline
-    %  as a sequence of steps(i.e. step 1, step 2, step3, ... step N).
-    %  Controls for failed / completed  steps in the pipeline.
-    properties
-        EraseIntermediate % Boolean to indicate if PIPELINEMANAGER will delete intermediate files in the pipeline. It keeps only the first and last file in the pipeline.
-        IgnoreLoggedFiles % Boolean. If true, PIPELINEMANAGER will ignore identical jobs previously run (logged in OBJ.PROTOCOLOBJ.LOGBOOKFILE).
-        FuncRootDir % Directory where all functions are located.
-        Pipe % Array containing steps of the pipeline.
+    % PIPELINEMANAGER manages data processing pipelines.
+    % This class allows the creation of analysis pipeline and manages the execution of
+    % functions. In addition, it controls for failed / completed  steps in the pipeline.
+    
+    properties               
+        b_ignoreLoggedFiles logical % If true, PIPELINEMANAGER will ignore identical jobs previously run.        
     end
-    properties (SetAccess = private, SetObservable)
-        ProtocolObj % Protocol Object.
-        State % Boolean indicating if the task in pipeline was successful (TRUE) or not (FALSE).
-        tmp_LogBook % Temporarily stores the table in PROTOCOL.LOGBOOKFILE
+    properties (SetAccess = private)    
+        
+        % Structure array containing steps of the pipeline. 
+        pipe = struct('className', '','argsIn', {},'argsOut',{},'outFileName','',...
+            'inputFileName', '','lvl', [], 'b_save2Dat', logical.empty, 'datFileName',...
+            '', 'opts',[],'name','');% !!If the fields are changed, please apply 
+                                        % them to the set method of this property.
+                                        
+        fcnDir char % Directory of the analysis functions.        
+        funcList struct % structure containing the info about each function in the "fcnDir".
+        ProtocolObj Protocol % Protocol Object.
+        b_taskState logical % Boolean indicating if the task in pipeline was successful (TRUE) or not (FALSE).
+        tmp_LogBook % Temporarily stores the table from PROTOCOL.LOGBOOKFILE
         tmp_BranchPipeline % Temporarily stores LogBook from a Hierarchical branch.
         PipelineSummary % Shows the jobs run in the current Pipeline
-        FunctionList % Structure containing the Public methods of all Classes in the ISAtoolbox with its inputs, optional parameters and outputs.
-        tmp_FilePtr % Temporarily stores content of FILEPTR.JSON file from TARGETOBJ.
         tmp_TargetObj % % Temporarily stores an object (TARGEROBJ).
-        block_pipe = false % Boolean that, if true, the pipeline won't accept any other steps.
     end
     properties (Access = private)
         current_task % Task structure currently running.
@@ -27,111 +29,51 @@ classdef PipelineManager < handle
     end
     methods
         % Constructor
-        function obj = PipelineManager(Pipe, ProtocolObj)
+        function obj = PipelineManager(ProtocolObj)
             % PIPELINEMANAGER Construct an instance of this class
-            %   PIPE is a structure containing all the information of the pipeline.
-            if nargin > 0
-                obj.Pipe = Pipe;
-                obj.ProtocolObj = ProtocolObj;               
-            end
-            root = getenv('Umitoolbox');
-            obj.FuncRootDir = fullfile(root, 'Analysis');
-            obj.createFunctionList;
-            obj.EraseIntermediate = false;
-            obj.IgnoreLoggedFiles = false;
-        end
-        % Set functions
-        function set.ProtocolObj(obj, ProtocolObj)
-            validateattributes(ProtocolObj, {'Protocol'}, {'nonempty'});
-            obj.ProtocolObj = ProtocolObj;
-        end
-        function set.FuncRootDir(obj, FuncRootDir)
-            obj.validate_path(FuncRootDir)
-            addpath(genpath(FuncRootDir));
-            obj.FuncRootDir = FuncRootDir;
-        end
-        %%% Validators %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        function validate_path(~, input)
-            if ~isfolder(input)
-                errID = 'IsaToolbox:InvalidInput';
-                msg = 'Input is not a valid folder or it is not in MATLAB''s path.';
-                error(errID, msg);
-            end
-        end
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        function addTask(obj,className, funcName, varargin)
+            %  Input:
+            %   ProtocolObj(Protocol): Protocol object. This input is
+            %   needed to have access to the protocol's hierarchy of
+            %   objects.
+            
             p = inputParser;
-            addRequired(p,'className', @(x) ischar(x) || isstring(x));
-            addRequired(p,'funcName', @(x) ischar(x) || isstring(x));
-            addOptional(p, 'params', struct, @isstruct);
-            parse(p,className, funcName, varargin{:});
-
-            idx = strcmp(p.Results.funcName, {obj.FunctionList.Name});
-            funcInfo = obj.FunctionList(idx);
-            task = obj.validateParams(p.Results.params,funcInfo);
-            if obj.block_pipe
-               disp('No more steps allowed. Last step has no output.')
-                return
-            end
-            if isempty(task.Output)
-                warndlg(['The function ' task.Name ' has no outputs. '...
-                    'No more steps can be added to the pipeline after this one.'],...
-                    'Pipeline warning')
-                obj.block_pipe = true;
-            end
-                
-            % Determine Level of the step in the hierarchy.
-            switch p.Results.className
-                %                 case 'Protocol' % Disabled for now.
-                %                     lvl = 4;
-                case 'Subject'
-                    lvl = 3;
-                case 'Acquisition'
-                    lvl = 2;
-                otherwise
-                    lvl = 1;
-            end
-            % Adds a step to the pipeline:
-            b_valid = obj.validateTask(p.Results.className, task);
-            if ~b_valid
-                return
-            end
-            % Determine the task INPUT:                        
-            b_inputIsFile = strcmp(task.Input, 'File');
-            if isempty(obj.Pipe) && b_inputIsFile
-                task.Input = obj.askForFirstInput(p.Results.funcName);
-                if isempty(task.Input)
-                    disp('Operation cancelled by user!')
-                    return
-                end
-            elseif ~isempty(obj.Pipe) && b_inputIsFile
-                if ~contains(obj.Pipe(end).Output, '.dat')
-                    prevStep = obj.Pipe(end);
-                    errordlg({['Error adding ' task.Name ' to pipeline.'],...
-                        ['The output of the previous step "' prevStep.Name ...
-                        '" (' prevStep.Output ') is incompatible with the current function input (' task.Input ').'],...
-                        'Try rearranging the pipeline to fix this.'}, 'Pipeline order error')
-                    return
-                end    
-                task.Input = obj.Pipe(end).Output;
-            end
-
-            % Choose input if multiple options are available:
-            if iscell(task.Input) && numel(task.Input) > 1
-                task.Input = obj.pickAnInput(task);
-            end
-
-            % Extra info in task structure:
-            task.className = p.Results.className;
-            task.level = lvl;
-            obj.Pipe = [obj.Pipe task];
+            addRequired(p,'ProtocolObj', @(x) isa(x, 'Protocol'));
+            parse(p,ProtocolObj);                        
+            obj.ProtocolObj = p.Results.ProtocolObj;
+            root = getenv('Umitoolbox');
+            obj.fcnDir = fullfile(root, 'Analysis');
+            obj.createFcnList;            
+            obj.b_ignoreLoggedFiles = false;
         end
-        function opts = setOpts(obj, funcName)
+        % SETTERS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        function set.pipe(obj, pipe)
+            % Pipeline structure setter. If pipe is empty, create an empty
+            % structure containing tasks fields.
+                        
+            if isempty(fieldnames(pipe))
+                pipe = struct('className', '','argsIn', {},'argsOut',{},'outFileName','',...
+                    'inputFileName', '','lvl', [], 'b_save2Dat', logical.empty, 'datFileName',...
+                    '', 'opts',[],'name','');
+            end
+            % Check if all fields exist:
+            if ~all(ismember(fieldnames(pipe),fieldnames(obj.pipe)))
+                error('umIToolbox:PipelineManager:InvalidInput',...
+                    'The pipeline structure provided is invalid!');
+            end
+            obj.pipe = pipe;
+        end
+        
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        function setOpts(obj, func)
             % SETOPTS opens an INPUTDLG for entry of optional variables
-            % (OPTS) of methods in the Pipeline. Output: Structure
-            % containing the variables and values.
-            idx = strcmp(funcName, {obj.FunctionList.Name});
-            S = obj.FunctionList(idx).opts;
+            % (OPTS) of methods in the Pipeline.
+            
+            idx = obj.check_funcName(func);
+            if isempty(idx)
+                return
+            end
+            
+            S = obj.funcList(idx).info.opts;
             fields = fieldnames(S);
             b_isNum = structfun(@(x) isnumeric(x), S);
             b_isLogic = structfun(@(x) islogical(x), S);
@@ -143,22 +85,190 @@ classdef PipelineManager < handle
                 end
             end
             prompt = fields;
-            dlgtitle = ['Set optional parameters for ' funcName];
+            dlgtitle = ['Set optional parameters for ' obj.funcList(idx).name];
             dims = [1 35];
             definput = structfun(@(x) {num2str(x)}, S);
-            answer = inputdlg(prompt,dlgtitle,dims,definput);
+            opts.Resize = 'on';
+            answer = inputdlg(prompt,dlgtitle,dims,definput,opts);
+            if isempty(answer)
+                disp('Operation cancelled by User');
+                return
+            end
             fields = fieldnames(S);
-            opts = struct;
             for i = 1:length(answer)
                 if b_isNum(i)
-                    opts.(fields{i}) = str2double(answer{i});
+                    obj.funcList(idx).info.opts.(fields{i}) = str2double(answer{i});
                 elseif b_isLogic(i)
-                    opts.(fields{i}) = logical(str2double(answer{i}));
+                    obj.funcList(idx).info.opts.(fields{i}) = logical(str2double(answer{i}));
                 else
-                    opts.(fields{i}) = answer{i};
+                    obj.funcList(idx).info.opts.(fields{i}) = answer{i};
                 end
             end
+            disp(['Optional Parameters set for function : ' obj.funcList(idx).name]);
+        end
+        function addTask(obj,className, func, varargin)
+            % This method adds an analysis function, or task, to the
+            % pipeline. Here, we can choose to save the output of a given
+            % task as a .DAT file. ADDTASK will create a string containing 
+            % the task that will be evaluated during pipeline execution.
+            % Inputs:
+            %   className (str): name of the object (Subject, Acquitision,
+            %       Modality, etc) that the task will run.
+            %   func (str || char):  name or index of the analysis function
+            %       contained in obj.funcList property.
+            %   b_save2Dat (bool): Optional. True means that the output data 
+            %       from the function will be saved as a .DAT file.
+            %   datFileName(char): Optional. Name of the file to be saved.
+            %       If not provided, the analysis function's default
+            %       filename will be used.
+            
+            p = inputParser;
+            addRequired(p,'className', @(x) ischar(x) || isstring(x));
+            addRequired(p, 'func', @(x) ischar(x) || isnumeric(x));
+            addOptional(p, 'b_save2Dat', false, @islogical);
+            addOptional(p, 'datFileName', '', @ischar);
+            parse(p,className, func, varargin{:});
+            
+            % Check if the function name is valid:
+            idx = obj.check_funcName(p.Results.func);
+            if isempty(idx)
+                warning('Operation cancelled! The function "%s" does not exist!',...
+                    p.Results.func);
+                return
+            end
+            % Create "task" structure. This is the one that will be added
+            % to the pipeline:
+            task = obj.funcList(idx).info;
+            task.inputFileName = '';
+            task.className = p.Results.className;
+            task.name = obj.funcList(idx).name;
+            task.b_save2Dat = p.Results.b_save2Dat;
+            task.datFileName = p.Results.datFileName;
+            % Determine Level of the task in the Protocol's hierarchy.
+            switch p.Results.className
+                %                 case 'Protocol' % Disabled for now.
+                %                     lvl = 4;
+                case 'Subject'
+                    task.lvl = 3;
+                case 'Acquisition'
+                    task.lvl = 2;
+                otherwise
+                    task.lvl = 1;
+            end
+            % Control for steps already in the pipeline:
+            if any(strcmp(task.name, {obj.pipe.name}))
+                warning('Operation cancelled! The function "%s" already exists in the Pipeline!',....
+                    task.name);
+                return
+            end
+            
+            % Case where this task is the 1st step of the pipeline:
+            if isempty(obj.pipe)
+                task.inputFileName = obj.getFirstInputFile(task);                
+            end
+            % Control for multiple outputs from the previous step:
+            % Here, we assume that functions with multiple outputs
+            % create only "Files" and not "data".
+            % Therefore, we will update the function string to load
+            % one of the "Files" before running the task.
+            
+            % Look from bottom to top of the pipeline for tasks with files
+            % as outputs. This is necessary because not all analysis
+            % functions have outputs.
+            
+            if any(strcmp(task.argsIn, 'data'))
+                 for idxOutFile = length(obj.pipe):-1:1
+                     if any(strcmp('outFile', obj.pipe(idxOutFile).argsOut))
+                         break
+                     end
+                 end
+                 if iscell(obj.pipe(idxOutFile).outFileName)
+                     % Ask user to select a file:
+                     disp('Controlling for multiple outputs')
+                     w = warndlg({'Previous step has multiple output files!',...
+                         'Please, select one to be analysed!'});
+                     waitfor(w);
+                     [indxFile, tf] = listdlg('ListString', obj.pipe(idxOutFile).outFileName,...
+                         'SelectionMode','single');
+                     if ~tf
+                         disp('Operation cancelled by User')
+                         return
+                     end
+                     task.inputFileName = obj.pipe(idxOutFile).outFileName{indxFile};
+                 else
+                     task.inputFileName = obj.pipe(idxOutFile).outFileName;
+                 end
+            end
+            
+            % Save to Pipeline:
+            obj.pipe = [obj.pipe; task];
+            disp(['Added "' task.name '" to pipeline.']);
+           
+            % Control for data to be saved as .DAT files for task:
+            if ~task.b_save2Dat
+                return
+            end
+            if ~any(strcmp('data', task.argsOut)) 
+                warning(['Cannot save output to .DAT file for the function'...
+                    ' "%s" \nbecause it doesn''t have any data as output!'], task.name);
+                return
+            end
+            % Save datFileName as default output name from task's function:
+            if isempty(task.datFileName)
+                obj.pipe(end).datFileName = obj.pipe(end).outFileName;
+            end                                    
+        end
+        function varargout = showPipeSummary(obj)
+            % This method creates a summary of the current pipeline.
+            
+            % Output (optional): if an output variable exists, it creates a
+            % character array, if not, the information is displayed in the
+            % command window.
+            
+            if isempty(obj.pipe)
+                disp('Pipeline is empty!')
+                if nargout == 1
+                    varargout{1} = '';
+                end
+                return
+            end
+            
+            str = sprintf('%s\n', 'Pipeline Summary:');
+            for i = 1:length(obj.pipe)
+                str =  [str sprintf('--->> Step # %d <<---\n', i)];
+                if isempty(obj.pipe(i).opts)
+                    opts = {'none'; 'none'};
+                else
+                    opts = [fieldnames(obj.pipe(i).opts)';...
+                        cellfun(@(x) num2str(x), struct2cell(obj.pipe(i).opts), 'UniformOutput', false)'];
+                end
+                txt = sprintf('Function name : %s\nOptional Parameters:\n',...
+                    obj.pipe(i).name);
+                str = [str, txt, sprintf('\t%s : %s\n', opts{:})];
+                if obj.pipe(i).b_save2Dat
+                    str = [str, sprintf('Data to be saved as : "%s"\n', obj.pipe(i).datFileName)];
+                end
+                if ~isempty(obj.pipe(i).inputFileName)
+                    str = [str, sprintf('Input File Name : "%s"\n', obj.pipe(i).inputFileName)];
+                end
+                str = [str, sprintf('--------------------\n')];
+            end
+            if nargout == 0
+                disp(str)
+            else
+                varargout{1} = str;
+            end
         end        
+        function showFuncList(obj)
+            % Displays a list of analysis function from "obj.funcList" in
+            % the command window.
+            disp('List of available functions (index : Name) :');
+            for i = 1:length(obj.funcList)
+                fprintf('%d : %s\n', i, obj.funcList(i).name);
+            end
+        end
+        
+        % TO BE CHANGED... %%
         function run_pipeline(obj)
             % RUN_PIPELINE runs the tasks in OBJ.PIPE
             lbf = matfile(obj.ProtocolObj.LogBookFile);
@@ -222,30 +332,8 @@ classdef PipelineManager < handle
             waitbar(1,f,'Finished!');
             delete(f)
         end
-        function showPipeSummary(obj)
-            % SHOWPIPESUMMARY displays a summary of the pipeline steps in
-            % the command window.
-            
-            disp(repmat('-', 2,100));
-            fields = setdiff(fieldnames(obj.Pipe),{'opts', 'Output'});
-            for i = 1:length(obj.Pipe)
-                disp(['Step # ' num2str(i)])
-                for j = 1:length(fields)
-                   fprintf('%s : %s \n', fields{j}, num2str(obj.Pipe(i).(fields{j})))
-                end
-                disp('##Optional Parameters##')
-                if ~isempty(obj.Pipe(i).opts)
-                Optsfields = fieldnames(obj.Pipe(i).opts);
-                for j = 1:length(Optsfields)
-                   fprintf('%s : %s \n', Optsfields{j}, num2str(obj.Pipe(i).opts.(Optsfields{j})))
-                end
-                else
-                    disp(' No custom parameters selected.')
-                end
-                disp(repmat('-', 1,100));           
-            end
-            disp(repmat('-', 1,100));           
-        end
+        
+        % Pipeline Management methods:       
         function savePipe(obj, filename)
             % SAVEPIPE saves the structure OBJ.PIPE in a .MAT file in the
             % folder PIPELINECONFIGFiles inside MAINDIR of OBJ.PROTOCOLOBJ.
@@ -271,58 +359,19 @@ classdef PipelineManager < handle
             obj.Pipe = a;
         end
         
+        function reset_pipe(obj)
+            % This function erases the pipe property and resets the funcList
+            % property to default parameter values.
+            
+            obj.pipe = struct();
+            obj.funcList = struct.empty;
+            obj.createFcnList;
+        end
     end
     
     methods (Access = private)
-        function newParams = validateParams(~, params,funcInfo)
-            % VALIDATEPARAMS checks for user-input parameters in PARAMS and
-            % changes the FUNCINFO fields accordingly. Outputs NEWPARAMS with
-            % the updated info.
-            newParams = funcInfo; newParams.opts = '';
-            if isempty(fieldnames(params))
-                return
-            end
-            paramsFields = fieldnames(params);
-            for i = 1:length(paramsFields)
-                newParams.opts.(paramsFields{i}) = params.(paramsFields{i});
-            end
-        end
-        function b_valid = validateTask(obj, className, task)
-            % VALIDATETASK verifies if the task is already listed in Pipeline.
-            b_valid = true;
-            
-            if isempty(obj.Pipe)
-                return
-            else
-                if any(all([strcmp(className, {obj.Pipe.className}); strcmp(task.Name, {obj.Pipe.Name})],1))
-                    disp(['Function with name ' task.Name ' in class ' className ' already in the Pipeline and was ignored'])
-                    b_valid = false;
-                end
-            end
-        end
-        function b_isLogged = checkInFilePtr(obj, task)
-           % CHECKINFILEPTR compares the information in LASTLOG with the JSON file content
-           % of OBJ.TMP_TARGETOBJ. This function is used in
-           % OBJ.RUN_TASKONTARGET
-           %Initialize:
-           b_isLogged = false;
-           idx = [];
-           FileInfo = obj.tmp_FilePtr.Files;
-           
-           if isempty(FileInfo)
-               return
-           end
-           idx = false(length(FileInfo),5);
-           for i = 1:length(FileInfo)
-               idx(i,1) = strcmp(FileInfo(i).FunctionInfo.Job, task.funcStr);
-               idx(i,2) = strcmp(FileInfo(i).FunctionInfo.Name, task.Name);
-               idx(i,3) = isequaln(FileInfo(i).FunctionInfo.DateNum, task.DateNum);
-               idx(i,4) = strcmp(FileInfo(i).InputFile_UUID, task.InputFile_UUID);
-               idx(i,5) = isequaln(FileInfo(i).FunctionInfo.opts, task.opts);
-           end
-           idx = all(idx,2);
-           b_isLogged = any(idx);    
-        end
+        
+        
         function subTasks = pipeSplitter(obj)
             % PIPESPLITTER segments the pipeline in sub-pipelines that are run
             % at each level of the Hierarchy.
@@ -496,21 +545,28 @@ classdef PipelineManager < handle
                     targetObj = obj.ProtocolObj.Array.ObjList(targetIdx(1)).Array.ObjList(targetIdx(2)).Array.ObjList(targetIdx(3));
             end
             obj.tmp_TargetObj = targetObj;
-        end
-        function newInput = pickAnInput(~,task)
-            %PICKANINPUT prompts a LISTDLG to user-input of a function's
-            % input when more than one output is possible.
-            [indx,tf] = listdlg('PromptString', {'Select one of the inputs from', ['the function ' task.Name]}, 'ListString',task.Input, 'SelectionMode', 'single');
-            if tf
-                newInput = task.Input{indx};
-            else
-                newInput = '';
-            end
-        end
-        function out = askForFirstInput(obj, FuncName)
-            % ASKFORFIRSTINPUT creates an input prompt to get user to give the INPUT
-            % of the first task in the pipeline.
+        end        
+        
+        function out = getFirstInputFile(obj, funcInfo)
+            % This method verifies is the function has any data as input.
+            % If yes, then a creates an dialog box containing a list of .DAT files
+            % to choose as input. This method is called by ADDTASK only
+            % when the first task of a pipeline is created.
+            % Input:
+            %   funcInfo (struct): structure containing the task's function info.
+            % Output:
+            %   out (char): name of input file. Empty if file does not exist.
+            
+            % Initialize output structure:
             out = '';
+                        
+            % Control for tasks that do not have any data as input:
+            if ~any(strcmp('data', funcInfo.argsIn))
+                return
+            end
+            
+            % Get all existing objects from the selected items in Protocol
+            % object:
             idx = obj.ProtocolObj.Idx_Filtered;
             idx = unique(idx,'rows');
             classes = {};
@@ -518,16 +574,16 @@ classdef PipelineManager < handle
                 classes{i} = class(obj.ProtocolObj.Array.ObjList(idx(i,1)).Array.ObjList(idx(i,2)).Array.ObjList(idx(i,3)));
             end
             classes = [{'Subject', 'Acquisition'}  classes]; classes = unique(classes);
-            
+            % Select Object containing input file:
             [indx,tf] = listdlg('PromptString', {'Select the Object containing', 'the input for the function :',  FuncName},'ListString',classes, 'SelectionMode', 'single');
             if ~tf
                 return
             end
             switch classes{indx}
                 case 'Subject'
-                    obj.tmp_TargetObj = obj.ProtocolObj.Array.ObjList(idx(1,1));
+                    targetObj = obj.ProtocolObj.Array.ObjList(idx(1,1));
                 case 'Acquisition'
-                    obj.tmp_TargetObj = obj.ProtocolObj.Array.ObjList(idx(1,1)).Array.ObjList(idx(1,2));
+                    targetObj = obj.ProtocolObj.Array.ObjList(idx(1,1)).Array.ObjList(idx(1,2));
                 otherwise
                     for i = 1:size(idx,1)
                         b_isMod = strcmp(class(obj.ProtocolObj.Array.ObjList(idx(i,1)).Array.ObjList(idx(i,2)).Array.ObjList(idx(i,3))), classes{indx});
@@ -535,66 +591,27 @@ classdef PipelineManager < handle
                             break
                         end
                     end
-                    obj.tmp_TargetObj = obj.ProtocolObj.Array.ObjList(idx(i,1)).Array.ObjList(idx(i,2)).Array.ObjList(idx(i,3));
+                    targetObj = obj.ProtocolObj.Array.ObjList(idx(i,1)).Array.ObjList(idx(i,2)).Array.ObjList(idx(i,3));
             end
-            obj.readFilePtr;
-            FileList = {obj.tmp_FilePtr.Files.Name};
+            % Display a list of .DAT files from the selected
+            % object(targetObj):
+            FileList = dir(fullfile(targetObj.SaveFolder, '*.dat'));
             if isempty(FileList)
-                warndlg(['No Files found in ' obj.ProtocolObj.Array.ObjList(idx(i,1)).Array.ObjList(idx(i,2)).Array.ObjList(idx(i,3)).SaveFolder], 'Pipeline warning!', 'modal')
+                warndlg(['No Files found in ' targetObj.SaveFolder], 'Pipeline warning!', 'modal')
                 return
             else
-                [indx,tf] = listdlg('PromptString', {'Select the File from ' classes{indx},  'as input for the function :',  FuncName},'ListString',FileList, 'SelectionMode', 'single');
+                [indx,tf] = listdlg('PromptString', {'Select the File from ' classes{indx},...
+                    'as input for the function :',  FuncName},'ListString',{FileList.name}, 'SelectionMode',...
+                    'single');
                 if ~tf
                     return
                 end
             end
-            out = FileList{indx};
+            
+            out = FileList{indx}.name;
+            
         end
-        function eraseIntermediateFiles(obj)
-            % ERASEINTERMEDIATEFILES deletes the file generated from the previous
-            % step in the pipeline if OBJ.ERASEINTERMEDIATE is True, except
-            % the first and last files in the pipeline.
-            
-            % Temporary solution for removing dummy rows from table OBJ.TMP_BRANCHPIPELINE:
-            idx = strcmp(obj.tmp_BranchPipeline.Subject(:,1), 'None');
-            obj.tmp_BranchPipeline(idx,:) = [];
-            
-            if ~obj.EraseIntermediate || height(obj.tmp_BranchPipeline) < 2
-                return
-            end
-            
-            for i = 3:height(obj.tmp_BranchPipeline)
-                step = obj.tmp_BranchPipeline(i,:);
-                
-                if strcmp(step.InputFile_Path, 'None')
-                    continue
-                end
-                
-                delete(step.InputFile_Path{:});
-                delete(strrep(step.InputFile_Path{:}, '.dat', '_info.mat'));
-                disp(['File ' step.InputFile_Path{:} ' deleted!'])
-                
-                [~,fileName,ext] = fileparts(step.InputFile_Path{:});
-                idx = strcmp([fileName ext], {obj.tmp_FilePtr.Files.Name});
-                obj.tmp_FilePtr.Files(idx) = [];
-                obj.tmp_BranchPipeline.InputFile_Path(i) = {'Deleted'};
-                obj.tmp_BranchPipeline.InputFile_UUID(i) = {'Deleted'};
-            end
-            
-            % Update OBJ.PIPELINESUMMARY
-            for i = 1:height(obj.tmp_BranchPipeline)
-                if strcmp(obj.tmp_BranchPipeline.InputFile_UUID(i), 'None')
-                    continue
-                end
-                idx = strcmp(obj.PipelineSummary.Job(:), obj.tmp_BranchPipeline.Job(i));
-                obj.PipelineSummary(idx,:) = obj.tmp_BranchPipeline(i,:);
-            end
-            % Update objects' FilePtrs.
-            txt = jsonencode(obj.tmp_FilePtr);
-            fid = fopen(obj.tmp_TargetObj.FilePtr, 'w');
-            fprintf(fid, '%s', txt);
-            fclose(fid);
-        end
+        
         function readFilePtr(obj)
             % READFILEPTR loads the content of FILEPTR.JSON in a structure
             % stored in OBJ.TMP_FILEPTR.
@@ -642,44 +659,64 @@ classdef PipelineManager < handle
             fprintf(fid, '%s', txt);
             fclose(fid);
         end
-        function createFunctionList(obj)
-            % CREATEFUNCTIONLIST parses all functions inside
-            % OBJ.FUNCROOTDIR to get function information.
+        function createFcnList(obj)
+            % This function creates a structure containing all information
+            % about the analysis functions inside the "Analysis" folder.
+            % This information is stored in the "funcList" property of
+            % PipelineManager.
             
-            % NEEDS TO BE IMPROVED OR CHANGED TO A BETTER METHOD TO GET
-            % FUNCTIONS INPUTS/OUTPUTS. It is too dependent on how the
-            % functions are coded.
+            % !!For now, it will read only folders directly below the
+            % "Analysis" folder. Subfolders inside these folders will not
+            % be read.
             
-            %Initialize:
-            List = struct();
+            % Set Defaults:
             default_Output = '';
             default_opts = struct();
-            %
-            cd(obj.FuncRootDir);
-            funcList = dir('*/*.m');
-            for i = 1:length(funcList)
-                cd(funcList(i).folder);
-                List(i).Name = funcList(i).name(1:end-2); % Remove ".m" from function name.
-                List(i).FunctionFolder = funcList(i).folder;
-                List(i).DateNum = funcList(i).datenum;
-                info = parseFuncFile(funcList(i).name);
-                fn = fieldnames(info.args);
-                for k = 1:length(fn)
-                    List(i).(fn{k}) = info.args.(fn{k});
+            
+            disp('Creating Fcn list...');
+            list = dir(fullfile(obj.fcnDir, '\*\*.m'));
+            for i = 1:length(list)
+                out = parseFuncFile(list(i));
+                % Validate if all input arguments from the function are
+                % "valid" inputs keywords:
+                kwrds_args = {'data', 'metaData', 'SaveFolder', 'RawFolder', 'opts', 'object'};
+                kwrds_out = {'outFile', 'outData', 'metaData', 'outDataStat'};
+                if all(ismember(out.argsIn, kwrds_args)) && all(ismember(out.argsOut, kwrds_out))
+%                     disp(list(i).name);
+                    [~,list(i).name, ~] = fileparts(list(i).name);
+                    list(i).info = out;
+                    
+                    obj.funcList = [obj.funcList ; list(i)];
                 end
-                List(i).opts = info.opts;
+                
             end
-            obj.FunctionList = List;
-            function info = parseFuncFile(funcFile)
-                info.args = [];
-                info.opts = [];
-                txt = fileread(funcFile);
+            disp('Function list created!');
+            function info = parseFuncFile(fcnStruct)
+                % This function reads the code inside a function listed in
+                % "fcnStruct" to retrieve input arguments, outputs and
+                % default options. 
+                % Input:
+                %   fcnStruct (struct): structure containing the file info
+                %   from a given analysis function.
+                % Output:
+                %   info (struct): structure containing list of arguments
+                %   (inputs and outputs) and optional parameters from the
+                %   analysis function.
+                
+                info = struct('argsIn', {},'argsOut', {}, 'outFileName', '', 'opts', []);
+                txt = fileread(fullfile(fcnStruct.folder, fcnStruct.name));
                 funcStr = regexp(txt, '(?<=function\s*).*?(?=\n)', 'match', 'once');
-                expInput = ['(?<=' funcFile(1:end-2) '\s*\().*?(?=\))'];
+                funcStr = erase(funcStr(1:end-1), ' '); % remove white spaces and an extra line from the function string.
+                outStr = regexp(funcStr,'.*(?=\=)', 'match', 'once');
+                out_args = regexp(outStr, '\[*(\w*)\,*(\w*)\]*', 'tokens', 'once');
+                idx_empty = cellfun(@isempty, out_args);
+                info(1).argsOut = out_args(~idx_empty);
+                [~,funcName,~] = fileparts(fcnStruct.name);
+                expInput = ['(?<=' funcName '\s*\().*?(?=\))'];
                 str = regexp(funcStr, expInput, 'match', 'once');
-                str = split(str, ',');
-                info.args.Input = strtrim(str{1});
-                info.args.SaveIn = strtrim(str{2});
+                str = strip(split(str, ','));
+                idx_varargin = strcmp(str, 'varargin');
+                info.argsIn = str(~idx_varargin);
                 expOutput = 'default_Output\s*=.*?(?=\n)';
                 str = regexp(txt, expOutput, 'match', 'once');
                 if isempty(str)
@@ -687,12 +724,13 @@ classdef PipelineManager < handle
                 else
                     eval(str)
                 end
-                info.args.Output = default_Output;
+                info.outFileName = default_Output;
                 expOpts = 'default_opts\s*=.*?(?=\n)';
                 str = regexp(txt, expOpts, 'match', 'once');
                 if ~isempty(str)
                     eval(str)
                     info.opts = default_opts;
+                    info.argsIn{end+1} = 'opts';
                 end
             end
         end
@@ -783,6 +821,30 @@ classdef PipelineManager < handle
             end
             funcStr = [funcStr ');'];
             task.funcStr = funcStr;
+        end
+        %%%%%%%%%% NEW METHODS %%%%%%%%
+        
+         function idx_fcn = check_funcName(obj, func)
+            % This function is used by "setOpts" and "addTask" methods to
+            % validate if the input "func" is valid.
+            % Input
+            %   func (numeric OR char) : index OR name of a function from
+            %   obj.funcList.
+            % Output:
+            %   idx_fcn(bool): index of "func" in "obj.funcList". Returns
+            %   empty if the function was not found in the list.
+            idx_fcn = [];
+            if isnumeric(func)
+                idx_fcn = func == 1:length(obj.funcList);
+                msg = ['Function with index # ' num2str(func)];
+            else
+                idx_fcn = strcmp(func, {obj.funcList.name});
+                msg = ['Function "' func '"'];
+            end
+            if ~any(idx_fcn)
+                disp([msg ' not found in the function list!']);
+                idx_fcn = [];
+            end
         end
     end
 end
