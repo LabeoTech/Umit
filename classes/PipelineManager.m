@@ -208,7 +208,7 @@ classdef PipelineManager < handle
             if ~task.b_save2Dat
                 return
             end
-            if ~any(strcmp('data', task.argsOut)) 
+            if ~any(strcmp('outData', task.argsOut)) 
                 warning(['Cannot save output to .DAT file for the function'...
                     ' "%s" \nbecause it doesn''t have any data as output!'], task.name);
                 return
@@ -216,7 +216,12 @@ classdef PipelineManager < handle
             % Save datFileName as default output name from task's function:
             if isempty(task.datFileName)
                 obj.pipe(end).datFileName = obj.pipe(end).outFileName;
-            end                                    
+            % OR update datFileName to add file extension:
+            else
+                obj.pipe(end).datFileName = [obj.pipe(end).datFileName, '.dat'];
+            end
+            
+                
         end
         function varargout = showPipeSummary(obj)
             % This method creates a summary of the current pipeline.
@@ -267,6 +272,7 @@ classdef PipelineManager < handle
                 fprintf('%d : %s\n', i, obj.funcList(i).name);
             end
         end
+        
         
         % TO BE CHANGED... %%
         function run_pipeline(obj)
@@ -332,45 +338,44 @@ classdef PipelineManager < handle
             waitbar(1,f,'Finished!');
             delete(f)
         end
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%
+        
         
         % Pipeline Management methods:       
         function savePipe(obj, filename)
             % SAVEPIPE saves the structure OBJ.PIPE in a .MAT file in the
-            % folder PIPELINECONFIGFiles inside MAINDIR of OBJ.PROTOCOLOBJ.
-            savedir = obj.ProtocolObj.SaveDir;
-            cd(savedir)
-            [~,~] = mkdir('PipeLineConfigFiles');
-            cd('PipeLineConfigFiles');
-            pipeStruct = obj.Pipe;
+            % folder PIPELINECONFIGFiles inside MAINDIR of OBJ.PROTOCOLOBJ.            
+            targetDir = fullfile(obj.ProtocolObj.SaveDir, 'PipeLineConfigFiles');
+            [~,~] = mkdir(targetDir);            
+            pipeStruct = obj.pipe;
             txt = jsonencode(pipeStruct);
-            fid = fopen([filename '.json'], 'w');
+            fid = fopen(fullfile(targetDir,[filename '.json']), 'w');
             fprintf(fid, '%s', txt);
             fclose(fid);
+            disp(['Pipeline saved as "' filename '" in ' targetDir]);               
         end
         function loadPipe(obj, filename)
             % LOADPIPE loads the structure PIPE inside FILENAME and assigns
             % it to OBJ.PIPE property.
-            if ~isfile(filename)
-                path = which([obj.MainDir PipeLineConfigFiles]);
-                filename = fullfile(path, filename);
+            if ~isfile(filename)                
+                filename = fullfile(obj.ProtocolObj.SaveDir, 'PipeLineConfigFiles',...
+                    [filename, '.json']);
             end
             txt = fileread(filename);
-            a = jsondecode(txt);
-            obj.Pipe = a;
-        end
-        
+            obj.pipe = jsondecode(txt);
+            disp('Pipeline Loaded!');
+            obj.showPipeSummary;
+        end        
         function reset_pipe(obj)
             % This function erases the pipe property and resets the funcList
-            % property to default parameter values.
-            
+            % property to default parameter values.            
             obj.pipe = struct();
             obj.funcList = struct.empty;
             obj.createFcnList;
         end
     end
     
-    methods (Access = private)
-        
+    methods (Access = private)        
         
         function subTasks = pipeSplitter(obj)
             % PIPESPLITTER segments the pipeline in sub-pipelines that are run
@@ -396,7 +401,7 @@ classdef PipelineManager < handle
             subTasks = cell(1,numel(uniq_idx));
             for i = 1:numel(uniq_idx)
                 b_idx = ( idx == uniq_idx(i) );
-                subTasks{i} = obj.Pipe(b_idx);
+                subTasks{i} = obj.pipe(b_idx);
             end
         end
         function run_tasksOnBranch(obj, branch)
@@ -405,7 +410,7 @@ classdef PipelineManager < handle
             
             % Split pipeline if there is more than one level.
             ppLine = obj.pipeSplitter;
-            obj.tmp_BranchPipeline = obj.ProtocolObj.createEmptyTable;
+            obj.tmp_Branchpipeline = obj.ProtocolObj.createEmptyTable;
             for i = 1:length(ppLine)
                 subtasks = ppLine{i};
                 obj.current_pipe = subtasks;
@@ -430,7 +435,7 @@ classdef PipelineManager < handle
                             return
                         end
                     end
-                    obj.tmp_BranchPipeline = [obj.tmp_BranchPipeline; obj.tmp_TargetObj.LastLog];
+                    obj.tmp_Branchpipeline = [obj.tmp_Branchpipeline; obj.tmp_TargetObj.LastLog];
                 end
             end
             obj.eraseIntermediateFiles();
@@ -468,7 +473,7 @@ classdef PipelineManager < handle
                 % Run the step:
                 try
                     if strcmp(task.Input, 'missing')
-                        errID = 'MATLAB:Umitoolbox:PipelineManager:FileNotFound';
+                        errID = 'MATLAB:Umitoolbox:pipelineManager:FileNotFound';
                         errmsg = ['Input File for function ' task.Name ' not found!'];
                         error(errID,errmsg);
                     end
@@ -488,7 +493,7 @@ classdef PipelineManager < handle
                 LastLog.Completed = state;
                 LastLog.RunDateTime = datetime('now');
                 obj.tmp_TargetObj.LastLog = [obj.tmp_TargetObj.LastLog; LastLog];
-                obj.PipelineSummary = [obj.PipelineSummary; LastLog];
+                obj.pipelineSummary = [obj.pipelineSummary; LastLog];
                 obj.State = state;
                 if LastLog.Completed
                     disp('Task Completed!')
@@ -597,7 +602,7 @@ classdef PipelineManager < handle
             % object(targetObj):
             FileList = dir(fullfile(targetObj.SaveFolder, '*.dat'));
             if isempty(FileList)
-                warndlg(['No Files found in ' targetObj.SaveFolder], 'Pipeline warning!', 'modal')
+                warndlg(['No Files found in ' targetObj.SaveFolder], 'pipeline warning!', 'modal')
                 return
             else
                 [indx,tf] = listdlg('PromptString', {'Select the File from ' classes{indx},...
@@ -612,58 +617,58 @@ classdef PipelineManager < handle
             
         end
         
-        function readFilePtr(obj)
-            % READFILEPTR loads the content of FILEPTR.JSON in a structure
-            % stored in OBJ.TMP_FILEPTR.
-            txt = fileread(obj.tmp_TargetObj.FilePtr);
-            a = jsondecode(txt);
-            for i = 1:numel(a.Files)
-                a.Files(i).Folder = tokenizePath(a.Files(i).Folder, obj.tmp_TargetObj, 'detokenize');
-                a.Files(i).InputFile_Path = tokenizePath(a.Files(i).InputFile_Path, obj.tmp_TargetObj, 'detokenize');
-            end
-                obj.tmp_FilePtr = a;
-        end
-        function write2FilePtr(obj, task)
-            % WRITE2FILEPTR writes the File information stored in structure FILEINFO
-            % in OBJ.TMP_TARGETOBJ.FILEPTR.
-            
-            %Initialize
-            FileInfo = struct('Name', task.FileName, 'UUID', task.File_UUID, 'Folder', task.SaveIn, 'InputFile_Path', task.Input,...
-                'InputFile_UUID', task.InputFile_UUID, 'creationDateTime', datestr(now), 'FunctionInfo', ...
-                struct('Name', task.Name, 'DateNum', task.DateNum, 'Job', task.funcStr, 'opts', task.opts));
-            
-            FileList = obj.tmp_FilePtr.Files;
-            % Check for Files already logged on FilePtr
-            idx = false(length(FileList),2);
-            for i = 1:length(FileList)
-                idx(i,1) = strcmp(FileInfo.Name, FileList(i).Name);
-                idx(i,2) = strcmp(FileInfo.FunctionInfo.Name, FileList(i).FunctionInfo.Name);
-            end
-            idx = all(idx,2);
-            % If there are no Files 
-            if isempty(FileList)
-                obj.tmp_FilePtr.Files = FileInfo;
-            % If there are files and one identical, replace it.
-            elseif ~isempty(FileList) && any(idx)
-                obj.tmp_FilePtr.Files(idx) = FileInfo;
-            % If there are files and none identical: Append
-            else
-                obj.tmp_FilePtr.Files = [FileList; FileInfo];
-            end
-            for i = 1:numel(obj.tmp_FilePtr.Files)
-                obj.tmp_FilePtr.Files(i).Folder = tokenizePath(obj.tmp_FilePtr.Files(i).Folder, obj.tmp_TargetObj);
-                obj.tmp_FilePtr.Files(i).InputFile_Path = tokenizePath(obj.tmp_FilePtr.Files(i).InputFile_Path, obj.tmp_TargetObj);
-            end
-            txt = jsonencode(obj.tmp_FilePtr);
-            fid = fopen(obj.tmp_TargetObj.FilePtr, 'w');
-            fprintf(fid, '%s', txt);
-            fclose(fid);
-        end
+%         function readFilePtr(obj)
+%             % READFILEPTR loads the content of FILEPTR.JSON in a structure
+%             % stored in OBJ.TMP_FILEPTR.
+%             txt = fileread(obj.tmp_TargetObj.FilePtr);
+%             a = jsondecode(txt);
+%             for i = 1:numel(a.Files)
+%                 a.Files(i).Folder = tokenizePath(a.Files(i).Folder, obj.tmp_TargetObj, 'detokenize');
+%                 a.Files(i).InputFile_Path = tokenizePath(a.Files(i).InputFile_Path, obj.tmp_TargetObj, 'detokenize');
+%             end
+%                 obj.tmp_FilePtr = a;
+%         end
+%         function write2FilePtr(obj, task)
+%             % WRITE2FILEPTR writes the File information stored in structure FILEINFO
+%             % in OBJ.TMP_TARGETOBJ.FILEPTR.
+%             
+%             %Initialize
+%             FileInfo = struct('Name', task.FileName, 'UUID', task.File_UUID, 'Folder', task.SaveIn, 'InputFile_Path', task.Input,...
+%                 'InputFile_UUID', task.InputFile_UUID, 'creationDateTime', datestr(now), 'FunctionInfo', ...
+%                 struct('Name', task.Name, 'DateNum', task.DateNum, 'Job', task.funcStr, 'opts', task.opts));
+%             
+%             FileList = obj.tmp_FilePtr.Files;
+%             % Check for Files already logged on FilePtr
+%             idx = false(length(FileList),2);
+%             for i = 1:length(FileList)
+%                 idx(i,1) = strcmp(FileInfo.Name, FileList(i).Name);
+%                 idx(i,2) = strcmp(FileInfo.FunctionInfo.Name, FileList(i).FunctionInfo.Name);
+%             end
+%             idx = all(idx,2);
+%             % If there are no Files 
+%             if isempty(FileList)
+%                 obj.tmp_FilePtr.Files = FileInfo;
+%             % If there are files and one identical, replace it.
+%             elseif ~isempty(FileList) && any(idx)
+%                 obj.tmp_FilePtr.Files(idx) = FileInfo;
+%             % If there are files and none identical: Append
+%             else
+%                 obj.tmp_FilePtr.Files = [FileList; FileInfo];
+%             end
+%             for i = 1:numel(obj.tmp_FilePtr.Files)
+%                 obj.tmp_FilePtr.Files(i).Folder = tokenizePath(obj.tmp_FilePtr.Files(i).Folder, obj.tmp_TargetObj);
+%                 obj.tmp_FilePtr.Files(i).InputFile_Path = tokenizePath(obj.tmp_FilePtr.Files(i).InputFile_Path, obj.tmp_TargetObj);
+%             end
+%             txt = jsonencode(obj.tmp_FilePtr);
+%             fid = fopen(obj.tmp_TargetObj.FilePtr, 'w');
+%             fprintf(fid, '%s', txt);
+%             fclose(fid);
+%         end
         function createFcnList(obj)
             % This function creates a structure containing all information
             % about the analysis functions inside the "Analysis" folder.
             % This information is stored in the "funcList" property of
-            % PipelineManager.
+            % pipelineManager.
             
             % !!For now, it will read only folders directly below the
             % "Analysis" folder. Subfolders inside these folders will not

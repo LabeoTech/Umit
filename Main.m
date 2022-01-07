@@ -55,8 +55,8 @@ pipe.showFuncList;
 pipe.setOpts(3)
 % Add "run_ImagesClassification" to the pipeline:
 pipe.addTask('FluorescenceImaging', 3);
-pipe.addTask('FluorescenceImaging', 1);
-pipe.addTask('FluorescenceImaging', 7);
+pipe.addTask('FluorescenceImaging', 1,true, 'testout');
+pipe.addTask('FluorescenceImaging', 7, true, 'tempOut');
 
 pipe.addTask('FluorescenceImaging', 'dummyFunc4Testing_2');
 pipe.addTask('FluorescenceImaging', 'dummyFunc4Testing_4');
