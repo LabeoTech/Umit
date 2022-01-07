@@ -5,9 +5,9 @@ classdef DataViewer_pipelineMngr < handle
     %
     
     properties
-        pipe struct
-        fcnDir char
-        funcList struct
+        pipe struct % structure containing the info of each step of the pipeline.
+        fcnDir char % Directory of the analysis functions.
+        funcList struct % structure containing the info about each function in the "fcnDir"
     end
     
     properties (SetAccess = private)
@@ -63,10 +63,10 @@ classdef DataViewer_pipelineMngr < handle
         %%%%%%%%%%%%%%%%%% 
         function setOpts(obj, func)
             % SETOPTS opens an INPUTDLG for entry of optional variables
-            % (OPTS) of methods in the Pipeline. Output: Structure
-            % containing the variables and values.
-            [b_OK, idx] = obj.check_funcName(func);
-            if ~b_OK
+            % (OPTS) of methods in the Pipeline. 
+            
+            idx = obj.check_funcName(func);
+            if isempty(idx)
                 return
             end
             
@@ -115,8 +115,8 @@ classdef DataViewer_pipelineMngr < handle
             parse(p, func, varargin{:});
             
             % Check if the function name is valid:
-            [b_OK, idx] = obj.check_funcName(p.Results.func);
-            if ~b_OK
+            idx = obj.check_funcName(p.Results.func);
+            if isempty(idx)
                 return
             end
             % Create temporary structure with function info:
@@ -311,16 +311,16 @@ classdef DataViewer_pipelineMngr < handle
     
     methods (Access = private)
         
-        function [b_OK, idx_fcn]= check_funcName(obj, func)
+        function idx_fcn = check_funcName(obj, func)
             % This function is used by "setOpts" and "addTask" methods to
             % validate if the input "func" is valid.
             % Input
             %   func (numeric OR char) : index OR name of a function from
             %   obj.funcList.
             % Output:
-            %   b_OK (bool): True if "func" exists in the list.
-            %   idx_fcn(bool): index of "func" in "obj.funcList".
-            b_OK = true;
+            %   idx_fcn(bool): index of "func" in "obj.funcList". Returns
+            %   empty if the function was not found in the list.
+            idx_fcn = [];
             if isnumeric(func)
                 idx_fcn = func == 1:length(obj.funcList);
                 msg = ['Function with index # ' num2str(func)];
@@ -330,9 +330,8 @@ classdef DataViewer_pipelineMngr < handle
             end
             if ~any(idx_fcn)
                 disp([msg ' not found in the function list!']);
-                b_OK = false;
+                idx_fcn = [];
             end
-            
         end
         
         function createFcnList(obj)
