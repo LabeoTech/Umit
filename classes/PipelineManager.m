@@ -12,7 +12,7 @@ classdef PipelineManager < handle
         pipe = struct('className', '','argsIn', {},'argsOut',{},'outFileName','',...
             'inputFileName', '','lvl', [], 'b_save2Dat', logical.empty, 'datFileName',...
             '', 'opts',[],'name','');% !!If the fields are changed, please apply 
-                                        % them to the set method of this property.
+                                        % the same changes to the property's set method.
                                         
         fcnDir char % Directory of the analysis functions.        
         funcList struct % structure containing the info about each function in the "fcnDir".
@@ -74,6 +74,10 @@ classdef PipelineManager < handle
             end
             
             S = obj.funcList(idx).info.opts;
+            if isempty(S)
+                disp(['The function ' obj.funcList(idx).name ' does not have any optional parameters.']);
+                return
+            end
             fields = fieldnames(S);
             b_isNum = structfun(@(x) isnumeric(x), S);
             b_isLogic = structfun(@(x) islogical(x), S);
@@ -155,8 +159,9 @@ classdef PipelineManager < handle
                 otherwise
                     task.lvl = 1;
             end
-            % Control for steps already in the pipeline:
-            if any(strcmp(task.name, {obj.pipe.name}))
+            % Control for steps IDENTICAL to the task that are already in the pipeline:
+            idx_equal = arrayfun(@(x) isequaln(task,x), obj.pipe);
+            if any(idx_equal)
                 warning('Operation cancelled! The function "%s" already exists in the Pipeline!',....
                     task.name);
                 return
@@ -175,31 +180,29 @@ classdef PipelineManager < handle
             % Look from bottom to top of the pipeline for tasks with files
             % as outputs. This is necessary because not all analysis
             % functions have outputs.
-            
-            if any(strcmp(task.argsIn, 'data'))
-                 for idxOutFile = length(obj.pipe):-1:1
-                     if any(strcmp('outFile', obj.pipe(idxOutFile).argsOut))
-                         break
-                     end
-                 end
-                 if iscell(obj.pipe(idxOutFile).outFileName)
-                     % Ask user to select a file:
-                     disp('Controlling for multiple outputs')
-                     w = warndlg({'Previous step has multiple output files!',...
-                         'Please, select one to be analysed!'});
-                     waitfor(w);
-                     [indxFile, tf] = listdlg('ListString', obj.pipe(idxOutFile).outFileName,...
-                         'SelectionMode','single');
-                     if ~tf
-                         disp('Operation cancelled by User')
-                         return
-                     end
-                     task.inputFileName = obj.pipe(idxOutFile).outFileName{indxFile};
-                 else
-                     task.inputFileName = obj.pipe(idxOutFile).outFileName;
-                 end
+                        
+            for i = length(obj.pipe):-1:1
+                if ismember('outData', obj.pipe(i).argsOut)
+                    break
+                elseif any(strcmp(task.argsIn, 'data')) && any(strcmp('outFile', obj.pipe(i).argsOut))                    
+                    if iscell(obj.pipe(i).outFileName)
+                        % Ask user to select a file:
+                        disp('Controlling for multiple outputs')
+                        w = warndlg({'Previous step has multiple output files!',...
+                            'Please, select one to be analysed!'});
+                        waitfor(w);
+                        [indxFile, tf] = listdlg('ListString', obj.pipe(i).outFileName,...
+                            'SelectionMode','single');
+                        if ~tf
+                            disp('Operation cancelled by User')
+                            return
+                        end
+                        task.inputFileName = obj.pipe(i).outFileName{indxFile};
+                    else
+                        task.inputFileName = obj.pipe(i).outFileName;
+                    end
+                end
             end
-            
             % Save to Pipeline:
             obj.pipe = [obj.pipe; task];
             disp(['Added "' task.name '" to pipeline.']);
@@ -382,7 +385,7 @@ classdef PipelineManager < handle
             % at each level of the Hierarchy.
             
             % Find consecutive levels
-            lvls = [obj.Pipe.level];
+            lvls = [obj.pipe.level];
             idx = ones(1,length(lvls));
             a = 1;
             for i = 1:length(lvls)-1
