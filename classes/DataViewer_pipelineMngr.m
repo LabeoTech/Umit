@@ -269,7 +269,7 @@ classdef DataViewer_pipelineMngr < handle
                 waitbar(i/length(obj.pipe), h,...
                     ['Processing ' obj.pipe(i).name '... Step' num2str(i)...
                     '/' num2str(length(obj.pipe))]);
-                opts = obj.pipe(i).opts; %#ok "opts" is used in an "eval" function.
+                
                 try
                     % Check if step was already run:
                     b_skip = obj.checkDataHistory(obj.pipe(i));
@@ -277,6 +277,8 @@ classdef DataViewer_pipelineMngr < handle
                         disp(['Step #' num2str(i) ' skipped!'])
                         continue
                     end
+                    % Load options structure in the workspace.
+                    opts = obj.pipe(i).opts;%#ok the "opts" structure is used in the EVAL function.
                     % Run the function:
                     eval(obj.pipe(i).funcStr);
                     % Update the metaData with the current function info:
@@ -353,8 +355,7 @@ classdef DataViewer_pipelineMngr < handle
                 if all(ismember(out.argsIn, kwrds_args)) && all(ismember(out.argsOut, kwrds_out))
                     disp(list(i).name);
                     [~,list(i).name, ~] = fileparts(list(i).name);
-                    list(i).info = out;
-                    
+                    list(i).info = out;                    
                     obj.funcList = [obj.funcList ; list(i)];
                 end
                 
@@ -363,8 +364,7 @@ classdef DataViewer_pipelineMngr < handle
             function info = parseFuncFile(fcnStruct)
                 info = struct('argsIn', {},'argsOut', {}, 'outFileName', '', 'opts', []);
                 txt = fileread(fullfile(fcnStruct.folder, fcnStruct.name));
-                funcStr = regexp(txt, '(?<=function\s*).*?(?=\n)', 'match', 'once');
-                funcStr = erase(funcStr(1:end-1), ' '); % remove white spaces and an extra line from the function string.
+                funcStr = erase(regexp(txt, '(?<=function\s*).*?(?=\r*\n)', 'match', 'once'),' ');                
                 outStr = regexp(funcStr,'.*(?=\=)', 'match', 'once');
                 out_args = regexp(outStr, '\[*(\w*)\,*(\w*)\]*', 'tokens', 'once');
                 idx_empty = cellfun(@isempty, out_args);
