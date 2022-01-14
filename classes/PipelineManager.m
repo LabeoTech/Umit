@@ -9,7 +9,8 @@ classdef PipelineManager < handle
         % saved to a file when an error occurs.
     end
     properties (SetAccess = private)
-        
+        ClassName char % Name of the class that the pipeline analysis functions will run.
+        ClassLevel int16 % Level of the class in protocol's hierarchy (1 = Modality, 2 = Acquisition, 3= Subject);
         % Structure array containing steps of the pipeline.
         pipe = struct('className', '','argsIn', {},'argsOut',{},'outFileName','',...
             'inputFileName', '','lvl', [], 'b_save2Dat', logical.empty, 'datFileName',...
@@ -24,8 +25,6 @@ classdef PipelineManager < handle
         tmp_BranchPipeline % Temporarily stores LogBook from a Hierarchical branch.
         PipelineSummary % Shows the jobs run in the current Pipeline
         tmp_TargetObj % % Temporarily stores an object (TARGEROBJ).
-    end
-    properties (Access = private)
         current_task % Task structure currently running.
         current_pipe % Pipeline currently running.
         current_data % Data available in the workspace during pipeline.
@@ -36,20 +35,79 @@ classdef PipelineManager < handle
         % It can be the name of an existing file, or
         % "outFile" for a function that creates a file
         % such as "run_ImagesClassification".
+        
+        h_wbItem % Handle of waitbar dialog showing the progress of the pipeline across protocol's objects.
+        h_wbTask % Handle of waitbar dialog showing the progress of the pipeline in the current object.
+        targetObjFullID char % Full ID of the current object. 
+                             % For example, if the current object is a
+                             % modality the full ID is:
+                             % SubjID--AcqID--ModID.
     end
+    
     methods
         % Constructor
-        function obj = PipelineManager(ProtocolObj)
-            % PIPELINEMANAGER Construct an instance of this class
+        function obj = PipelineManager(ProtocolObj, ClassName)
+            % PIPELINEMANAGER Constructs an instance of this class
             %  Input:
             %   ProtocolObj(Protocol): Protocol object. This input is
             %   needed to have access to the protocol's hierarchy of
             %   objects.
+            %   ClassName (str): Name of an existing class from
+            %   ProtocolObj. The pipeline analysis functions will run on objects of
+            %   this class only.
             
             p = inputParser;
             addRequired(p,'ProtocolObj', @(x) isa(x, 'Protocol'));
-            parse(p,ProtocolObj);
+            addRequired(p,'ClassName', @ischar);
+            parse(p,ProtocolObj, ClassName);
             obj.ProtocolObj = p.Results.ProtocolObj;
+            
+            % Set level of selected class:
+            switch p.Results.ClassName
+                case 'Subject'
+                    obj.ClassLevel = 3;
+                case 'Acquisition'
+                    obj.ClassLevel = 2;
+                otherwise
+                    obj.ClassLevel = 1;
+                    % Check if the selected class exists in the Filtered objects
+                    % from Protocol:
+                    
+                    % Find the class from the list of Modality objects from protocol's filtered
+                    % objects:
+                    items = obj.ProtocolObj.extractFilteredObjects(3);
+                    idx_class = cellfun(@(x) isa(x,p.Results.ClassName), items);
+                    % Check if all acquisitions contain the selected class:
+                    idx_acq = ismember(obj.ProtocolObj.Idx_Filtered(:,2),...
+                        unique(obj.ProtocolObj.Idx_Filtered(idx_class,2)));
+                    % Control for missing modalities with the selected class
+                    % name and remode acquisitions that do not have the
+                    % modality.
+                    if ~any(idx_acq)
+                        % Throw error if there are no modalities with the name
+                        % of the selected class.
+                        errID = 'umIToolbox:PipelineManager:MissingInput';
+                        errMsg = ['The protocol object with name "' p.Results.ClassName ...
+                            '" does not exist in the filtered list of objects!'];
+                        error(errID, errMsg)
+                    elseif ~all(idx_acq)
+                        % Remove acquisitions that lack the selected class from
+                        % the protocol "Idx_Filtered" property:
+                        items_errList = items(~idx_acq);
+                        str = {};
+                        for i = 1:length(items_errList)
+                            str{i} = strjoin({items_errList{i}.MyParent.MyParent.ID, ...
+                                items_errList{i}.MyParent.ID, items_errList{i}.ID},' -- ');
+                        end
+                        warn_msg = [{['The following Acquisition(s) lack objects with name "' ...
+                            p.Results.ClassName '" and will be removed from this pipeline session:']}; str];
+                        warndlg(warn_msg, 'Warning! Missing Objects in protocol')
+                        % Update list of selected objects from protocol:
+                        obj.ProtocolObj.Idx_Filtered = obj.ProtocolObj.Idx_Filtered(idx_acq, :);
+                    end
+            end
+            
+            obj.ClassName = p.Results.ClassName;
             root = getenv('Umitoolbox');
             obj.fcnDir = fullfile(root, 'Analysis');
             obj.createFcnList;
@@ -73,7 +131,6 @@ classdef PipelineManager < handle
             end
             obj.pipe = pipe;
         end
-        
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function setOpts(obj, func)
             % SETOPTS opens an INPUTDLG for entry of optional variables
@@ -121,14 +178,13 @@ classdef PipelineManager < handle
             end
             disp(['Optional Parameters set for function : ' obj.funcList(idx).name]);
         end
-        function addTask(obj,className, func, varargin)
+        
+        function addTask(obj,func, varargin)
             % This method adds an analysis function, or task, to the
             % pipeline. Here, we can choose to save the output of a given
             % task as a .DAT file. ADDTASK will create a string containing
             % the task that will be evaluated during pipeline execution.
             % Inputs:
-            %   className (str): name of the object (Subject, Acquitision,
-            %       Modality, etc) that the task will run.
             %   func (str || char):  name or index of the analysis function
             %       contained in obj.funcList property.
             %   b_save2Dat (bool): Optional. True means that the output data
@@ -138,11 +194,10 @@ classdef PipelineManager < handle
             %       filename will be used.
             
             p = inputParser;
-            addRequired(p,'className', @(x) ischar(x) || isstring(x));
             addRequired(p, 'func', @(x) ischar(x) || isnumeric(x));
             addOptional(p, 'b_save2Dat', false, @islogical);
             addOptional(p, 'datFileName', '', @ischar);
-            parse(p,className, func, varargin{:});
+            parse(p,func, varargin{:});
             
             % Check if the function name is valid:
             idx = obj.check_funcName(p.Results.func);
@@ -155,21 +210,12 @@ classdef PipelineManager < handle
             % to the pipeline:
             task = obj.funcList(idx).info;
             task.inputFileName = '';
-            task.className = p.Results.className;
+            task.className = obj.ClassName;
+            task.lvl = obj.ClassLevel;
             task.name = obj.funcList(idx).name;
             task.b_save2Dat = p.Results.b_save2Dat;
             task.datFileName = p.Results.datFileName;
-            % Determine Level of the task in the Protocol's hierarchy.
-            switch p.Results.className
-                %                 case 'Protocol' % Disabled for now.
-                %                     lvl = 4;
-                case 'Subject'
-                    task.lvl = 3;
-                case 'Acquisition'
-                    task.lvl = 2;
-                otherwise
-                    task.lvl = 1;
-            end
+            
             % Control for steps IDENTICAL to the task that are already in the pipeline:
             idx_equal = arrayfun(@(x) isequaln(task,x), obj.pipe);
             if any(idx_equal)
@@ -187,7 +233,6 @@ classdef PipelineManager < handle
                 end
             end
             
-            %             if any(contains('data', task.argsIn)) &
             % Control for multiple outputs from the previous step:
             % Here, we assume that functions with multiple outputs
             % create only "Files" and not "data".
@@ -220,6 +265,7 @@ classdef PipelineManager < handle
                     end
                 end
             end
+            
             % Save to Pipeline:
             obj.pipe = [obj.pipe; task];
             disp(['Added "' task.name '" to pipeline.']);
@@ -242,6 +288,7 @@ classdef PipelineManager < handle
             end
             
         end
+        
         function varargout = showPipeSummary(obj)
             % This method creates a summary of the current pipeline.
             
@@ -283,6 +330,7 @@ classdef PipelineManager < handle
                 varargout{1} = str;
             end
         end
+        
         function showFuncList(obj)
             % Displays a list of analysis function from "obj.funcList" in
             % the command window.
@@ -292,70 +340,85 @@ classdef PipelineManager < handle
             end
         end
         
-        
-        % TO BE CHANGED... %%
         function run_pipeline(obj)
             % RUN_PIPELINE runs the tasks in OBJ.PIPE
             lbf = matfile(obj.ProtocolObj.LogBookFile);
             obj.tmp_LogBook = lbf.LogBook;
             obj.PipelineSummary = obj.ProtocolObj.createEmptyTable;
-            % Identify the maximum level in the hierarchy to run the
-            % pipeline.
-            top_lvl = max([obj.pipe.lvl]);
+            
+            % Clear current data,  metaData and File List before starting the pipeline:
+            obj.current_data = []; obj.current_metaData = [];obj.current_outFile = {};
+            % Initialize waitbars:
+            obj.setWaitBar('Initialize')
+            
             % Get indexes of Filtered Objects from OBJ.PROTOCOLOBJ.QUERYFILTER function.
-            idxList = obj.ProtocolObj.Idx_Filtered;
-            % Identify branches in the hierarchy that will be processed in
-            % a single pipeline run.
-            ppIdx = zeros(size(idxList,1),1);
-            switch top_lvl
-                % The pipeline will run at the modality level.
+            switch obj.ClassLevel
                 case 1
-                    ppIdx = (1:size(idxList,1))';
-                    % The pipeline will run at the acquisition level.
+                    % Modality
+                    targetIdxArr = unique(obj.ProtocolObj.Idx_Filtered,'rows');
                 case 2
-                    a = 1;
-                    uniqA = unique(idxList(:,[1 2]),'rows');
-                    for i = 1:size(uniqA,1)
-                        idx = all(idxList(:,[1 2]) == uniqA(i,:),2);
-                        ppIdx(idx) = a;
-                        a = a+1;
-                    end
-                    % The pipeline will run at the subject level.
+                    % Acquisition
+                    targetIdxArr = unique(obj.ProtocolObj.Idx_Filtered(:,[1 2]), 'rows');
                 case 3
-                    a = 1;
-                    uniqS = unique(idxList(:,1),'rows');
-                    for i = 1:length(uniqS)
-                        idx = all(idxList(:,1) == uniqS(i,:),2);
-                        ppIdx(idx) = a;
-                        a = a+1;
+                    % Subject
+                    targetIdxArr = unique(obj.ProtocolObj.Idx_Filtered(:,1), 'rows');
+            end
+                     
+            for i = 1:size(targetIdxArr,1)
+                obj.b_state = true;
+                obj.getTargetObj(targetIdxArr(i,:));
+                obj.tmp_TargetObj.LastLog = obj.ProtocolObj.createEmptyTable;
+                myParent = obj.tmp_TargetObj.MyParent;
+                myFullName = {obj.tmp_TargetObj.ID};
+                while ~isa(myParent, 'Protocol')
+                    myFullName = [myFullName, {myParent.ID}];
+                    myParent = myParent.MyParent; 
+                end
+                myFullName = fliplr(myFullName);
+                obj.targetObjFullID = strjoin(myFullName, ' -- ');
+                obj.setWaitBar('UpdateItem', i, size(targetIdxArr,1));
+                fprintf([repmat('-',1,50),'\n']);
+                fprintf('Object Name: %s\n\n', obj.targetObjFullID) 
+                % Run pipeline in each target object:
+                for j = 1:length(obj.pipe)                    
+                    obj.current_task = obj.pipe(j);
+                    obj.setWaitBar('UpdateTask', j/length(obj.pipe));
+                    fprintf('Running task # %d/%d ----->>>>>\n',j,length(obj.pipe));
+                    obj.run_taskOnTarget;
+                    
+                    if ~obj.b_state
+                        break
+                    end         
+                    % Control for Pipeline cancelling by User:
+                    if getappdata(obj.h_wbItem, 'b_abortPipe')
+                        delete([obj.h_wbItem, obj.h_wbTask])
+                        break
                     end
-            end
-            f = waitbar(0,'Analysing data...', 'Name', 'Pipeline progress');
-            % run pipeline at each branch of the hierarchy
-            uniq_branch = unique(ppIdx);
-            for i = 1:length(uniq_branch)
-                %                 obj.b_state = true;
-                waitbar(i/length(uniq_branch),f);
-                branch = idxList(ppIdx == uniq_branch(i),:);
-                obj.run_tasksOnBranch(branch);
+                    % This pause is here to allow the WaitBar to update
+                    % during the execution of this method.
+                    pause(.001);
+                end
+                obj.PipelineSummary = [obj.PipelineSummary; obj.tmp_TargetObj.LastLog];
+                fprintf([repmat('-',1,50),'\n']);                              
             end
             
-            obj.PipelineSummary(1,:) = []; % remove dummy row.
-            
-            LogBook = obj.PipelineSummary;
+            % Remove "empty" rows from the Pipeline Summary Log table:
+            idx_emptyRow = all(strcmp('None',table2cell(obj.PipelineSummary(:,1:5))),2);
+            obj.PipelineSummary(idx_emptyRow,:) = [];
+            % Update LogBook with Pipeline Summary table:
+            LogBook = [obj.tmp_LogBook; obj.PipelineSummary];
+            % Save Log Book to file:
             save(obj.ProtocolObj.LogBookFile, 'LogBook');
+            % Show Pipeline Summary in command window:
             disp(obj.PipelineSummary)
             
             % Save Protocol Object:
             protocol = obj.ProtocolObj;
             save([obj.ProtocolObj.SaveDir obj.ProtocolObj.Name '.mat'], 'protocol');
             disp('Protocol object Saved!');
-            waitbar(1,f,'Finished!');
-            delete(f)
+            delete([obj.h_wbItem, obj.h_wbTask]);
+                       
         end
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%
-        
-        
         % Pipeline Management methods:
         function savePipe(obj, filename)
             % SAVEPIPE saves the structure OBJ.PIPE in a .MAT file in the
@@ -369,6 +432,7 @@ classdef PipelineManager < handle
             fclose(fid);
             disp(['Pipeline saved as "' filename '" in ' targetDir]);
         end
+            
         function loadPipe(obj, filename)
             % LOADPIPE loads the structure PIPE inside FILENAME and assigns
             % it to OBJ.PIPE property.
@@ -381,80 +445,21 @@ classdef PipelineManager < handle
             disp('Pipeline Loaded!');
             obj.showPipeSummary;
         end
+        
         function reset_pipe(obj)
             % This function erases the pipe property and resets the funcList
             % property to default parameter values.
             obj.pipe = struct();
             obj.funcList = struct.empty;
             obj.createFcnList;
+            obj.pipeFirstInput = '';
+            % Clear current data,  metaData and File List:
+            obj.current_data = []; obj.current_metaData = [];obj.current_outFile = {};
         end
     end
     
     methods (Access = private)
-        
-        function subTasks = pipeSplitter(obj)
-            % PIPESPLITTER segments the pipeline in sub-pipelines that are run
-            % at each level of the Hierarchy.
-            
-            % Find consecutive levels
-            lvls = [obj.pipe.lvl];
-            idx = ones(1,length(lvls));
-            a = 1;
-            for i = 1:length(lvls)-1
-                lvl = lvls(i);
-                next_lvl = lvls(i+1);
-                if lvl ~= next_lvl
-                    idx(i) = a;
-                    a = a+1;
-                    idx(i+1) = a;
-                else
-                    idx(i) = a;
-                    idx(i+1) = a;
-                end
-            end
-            uniq_idx = unique(idx);
-            subTasks = cell(1,numel(uniq_idx));
-            for i = 1:numel(uniq_idx)
-                b_idx = ( idx == uniq_idx(i) );
-                subTasks{i} = obj.pipe(b_idx);
-            end
-        end
-        function run_tasksOnBranch(obj, branch)
-            % RUN_TASKSONBRANCH finds the object to run the tasks in the
-            % pipeline.
-            
-            % Split pipeline if there is more than one level.
-            ppLine = obj.pipeSplitter;
-            obj.tmp_BranchPipeline = obj.ProtocolObj.createEmptyTable;
-            for i = 1:length(ppLine)
-                subtasks = ppLine{i};
-                obj.current_pipe = subtasks;
-                lvl = subtasks.lvl;
-                switch lvl
-                    case 1
-                        targetIdxArr = unique(branch,'rows');
-                    case 2
-                        targetIdxArr = unique(branch(:,[1 2]), 'rows');
-                    case 3
-                        targetIdxArr = unique(branch(:,1), 'rows');
-                end
-                
-                for j = 1:size(targetIdxArr,1)
-                    obj.getTargetObj(targetIdxArr(j,:));
-                    obj.tmp_TargetObj.LastLog = obj.ProtocolObj.createEmptyTable;
-                    
-                    for k = 1:length(subtasks)
-                        obj.current_task = subtasks(k);
-                        obj.run_taskOnTarget;
-                        if ~obj.b_state
-                            return
-                        end
-                    end
-                    obj.tmp_BranchPipeline = [obj.tmp_BranchPipeline; obj.tmp_TargetObj.LastLog];
-                end
-            end
-            
-        end
+       
         function run_taskOnTarget(obj)
             % RUN_TASKONTARGET runs a task in the pipeline structure array in
             % TASK.
@@ -485,27 +490,26 @@ classdef PipelineManager < handle
             % Create function string and update log table:
             task.funcStr = createFcnString(obj, task);
             LastLog.Job = {task.funcStr};
-            
-            % Check for data already run and skip step if so:
-            b_skipStep = obj.checkDataHistory(task);
-            
-            if b_skipStep & ~obj.b_ignoreLoggedFiles
-                disp(['Skipped function' task.name '!']);
-                LastLog.Messages_short = 'Skipped';
-                LastLog.Completed = true;
-                return
-            end
-            
             %  Execute the task:
             try
                 % Control for missing input files:
                 if task.inputFileName
                     errID = 'MATLAB:Umitoolbox:pipelineManager:FileNotFound';
-                    errmsg = ['Input File for function ' task.Name ' not found!'];
-                    assert(~isfile(fullfile(obj.tmp_TargetObj.SaveFolder, task.inputFileName)),...
+                    errmsg = ['Input File for function ' task.name ' not found!'];
+                    assert(isfile(fullfile(obj.tmp_TargetObj.SaveFolder, task.inputFileName)),...
                         errID,errmsg);
+                    obj.loadInputFile(task);
                 end
-                disp(['Running  function : ' task.name '...']);
+                % Check for data already run and skip step if so:
+                b_skipStep = obj.checkDataHistory(task);
+                
+                if b_skipStep & ~obj.b_ignoreLoggedFiles
+                    disp(['Skipped function : "' task.name '"!']);
+                    LastLog.Messages_short = 'Skipped';
+                    LastLog.Completed = true;
+                    return
+                end                
+                fprintf('\tFunction Name: %s \n\n',task.name);
                 % Load options structure in the workspace.
                 opts = task.opts;%#ok the "opts" structure is used in the EVAL function.
                 % Evaluate function string:
@@ -519,8 +523,7 @@ classdef PipelineManager < handle
                     obj.saveDataToFile(task);
                 end
                 % Update data history of current data with task:
-                obj.updateDataHistory(task);
-                
+                obj.updateDataHistory(task);                
             catch ME
                 obj.b_state = false;
                 LastLog.Messages = {getReport(ME)};
@@ -533,93 +536,11 @@ classdef PipelineManager < handle
             LastLog.Completed = obj.b_state;
             LastLog.RunDateTime = datetime('now');
             obj.tmp_TargetObj.LastLog = [obj.tmp_TargetObj.LastLog; LastLog];
-            
-            
-            
-            
-            
-            
-            %
-            %
-            %
-            %
-            %
-            %             %%%%%%%%% OLD CODE %%%%%%%%%%%%%
-            %             if ~strcmp(task.InputFile_UUID, 'None')
-            %                 LastLog.InputFile_UUID = {task.InputFile_UUID};
-            %                 LastLog.InputFile_Path = {task.Input};
-            %             end
-            %             LastLog.ClassName = {class(obj.tmp_TargetObj)};
-            %             LastLog.Job = {task.funcStr};
-            %             % Check if Job was already performed:
-            %             b_isLogged = obj.checkInFilePtr(task);
-            %             if ~b_isLogged || (b_isLogged && obj.IgnoreLoggedFiles)
-            %                 % Run the step:
-            %                 try
-            %                     if strcmp(task.Input, 'missing')
-            %                         errID = 'MATLAB:Umitoolbox:pipelineManager:FileNotFound';
-            %                         errmsg = ['Input File for function ' task.Name ' not found!'];
-            %                         error(errID,errmsg);
-            %                     end
-            %                     disp(['Running ' task.Name '...']);
-            %                     % Load options structure in the workspace.
-            %                     opts = task.opts;
-            %                     % Evaluate function string:
-            %                     eval(task.funcStr);
-            %                     %
-            %                     state = true;
-            %                     LastLog.Messages = 'No Errors';
-            %                 catch ME
-            %                     state = false;
-            %                     LastLog.Messages = {getReport(ME)};
-            %                     LastLog.Messages_short = {getReport(ME, 'basic','hyperlinks','off')};
-            %                 end
-            %                 LastLog.Completed = state;
-            %                 LastLog.RunDateTime = datetime('now');
-            %                 obj.tmp_TargetObj.LastLog = [obj.tmp_TargetObj.LastLog; LastLog];
-            %                 obj.pipelineSummary = [obj.pipelineSummary; LastLog];
-            %                 obj.b_state = state;
-            %                 if LastLog.Completed
-            %                     disp('Task Completed!')
-            %                     if exist('out', 'var')
-            %                         if ischar(out)
-            %                             out = {out};
-            %                         end
-            %                         for i = 1:length(out)
-            %                             SaveFolder = task.SaveIn;
-            %                             if endsWith(out{i}, '.dat')
-            %                                 mDt_file = matfile(strrep(fullfile(SaveFolder, out{i}), '.dat', '_info.mat'),'Writable', true);
-            %                             else
-            %                                 mDt_file = matfile(out{i},'Writable', true);
-            %                             end
-            %                             % Inheritance of MetaData from last File created (Different ones ONLY by different function).
-            %                             lastFile = task.Input;
-            %                             if isfile(lastFile)
-            %                                 lastMetaData = matfile(strrep(lastFile, '.dat', '_info.mat'));
-            %                                 props = setdiff(properties(lastMetaData), properties(mDt_file));
-            %                                 for k = 1:length(props)
-            %                                     eval(['mDt_file.' props{k} '= lastMetaData.' props{k} ';'])
-            %                                 end
-            %                             end
-            %                             fileUUID = mDt_file.fileUUID;
-            %                             if iscell(fileUUID)
-            %                                 fileUUID = [fileUUID{:}];
-            %                             end
-            %                             task.File_UUID = fileUUID;
-            %                             task.FileName = out{i};
-            %                             obj.current_task = task;
-            %                             obj.write2FilePtr(task);
-            %                         end
-            %                     end
-            %                 else
-            %                     disp('Failed!')
-            %                 end
-            %             else
-            %                 disp([task.Name ' Skipped!'])
-            %                 obj.b_state = true;
-            %                 return
-            %             end
+            % Remove "empty" rows from the target Object Log table:
+            idx_emptyRow = all(strcmp('None',table2cell(obj.tmp_TargetObj.LastLog(:,1:5))),2);
+            obj.tmp_TargetObj.LastLog(idx_emptyRow,:) = [];
         end
+        
         function getTargetObj(obj, targetIdx)
             % GETTARGETOBJ finds the object TARGETOBJ indicated by the
             % index TARGETIDX inside PROTOCOL.
@@ -727,53 +648,6 @@ classdef PipelineManager < handle
             obj.pipeFirstInput = out;
         end
         
-        %         function readFilePtr(obj)
-        %             % READFILEPTR loads the content of FILEPTR.JSON in a structure
-        %             % stored in OBJ.TMP_FILEPTR.
-        %             txt = fileread(obj.tmp_TargetObj.FilePtr);
-        %             a = jsondecode(txt);
-        %             for i = 1:numel(a.Files)
-        %                 a.Files(i).Folder = tokenizePath(a.Files(i).Folder, obj.tmp_TargetObj, 'detokenize');
-        %                 a.Files(i).InputFile_Path = tokenizePath(a.Files(i).InputFile_Path, obj.tmp_TargetObj, 'detokenize');
-        %             end
-        %                 obj.tmp_FilePtr = a;
-        %         end
-        %         function write2FilePtr(obj, task)
-        %             % WRITE2FILEPTR writes the File information stored in structure FILEINFO
-        %             % in OBJ.TMP_TARGETOBJ.FILEPTR.
-        %
-        %             %Initialize
-        %             FileInfo = struct('Name', task.FileName, 'UUID', task.File_UUID, 'Folder', task.SaveIn, 'InputFile_Path', task.Input,...
-        %                 'InputFile_UUID', task.InputFile_UUID, 'creationDateTime', datestr(now), 'FunctionInfo', ...
-        %                 struct('Name', task.Name, 'DateNum', task.DateNum, 'Job', task.funcStr, 'opts', task.opts));
-        %
-        %             FileList = obj.tmp_FilePtr.Files;
-        %             % Check for Files already logged on FilePtr
-        %             idx = false(length(FileList),2);
-        %             for i = 1:length(FileList)
-        %                 idx(i,1) = strcmp(FileInfo.Name, FileList(i).Name);
-        %                 idx(i,2) = strcmp(FileInfo.FunctionInfo.Name, FileList(i).FunctionInfo.Name);
-        %             end
-        %             idx = all(idx,2);
-        %             % If there are no Files
-        %             if isempty(FileList)
-        %                 obj.tmp_FilePtr.Files = FileInfo;
-        %             % If there are files and one identical, replace it.
-        %             elseif ~isempty(FileList) && any(idx)
-        %                 obj.tmp_FilePtr.Files(idx) = FileInfo;
-        %             % If there are files and none identical: Append
-        %             else
-        %                 obj.tmp_FilePtr.Files = [FileList; FileInfo];
-        %             end
-        %             for i = 1:numel(obj.tmp_FilePtr.Files)
-        %                 obj.tmp_FilePtr.Files(i).Folder = tokenizePath(obj.tmp_FilePtr.Files(i).Folder, obj.tmp_TargetObj);
-        %                 obj.tmp_FilePtr.Files(i).InputFile_Path = tokenizePath(obj.tmp_FilePtr.Files(i).InputFile_Path, obj.tmp_TargetObj);
-        %             end
-        %             txt = jsonencode(obj.tmp_FilePtr);
-        %             fid = fopen(obj.tmp_TargetObj.FilePtr, 'w');
-        %             fprintf(fid, '%s', txt);
-        %             fclose(fid);
-        %         end
         function createFcnList(obj)
             % This function creates a structure containing all information
             % about the analysis functions inside the "Analysis" folder.
@@ -837,95 +711,7 @@ classdef PipelineManager < handle
                 end
             end
         end
-        function task = populateFuncStr(obj, task)
-            % POPULATEFUNCSTR replaces keywords in TASK.FUNCSTR with the
-            % info contained in OBJ.TMP_TARGETOBJ. It is used in
-            % OBJ.RUN_TASKONTARGET.
-            
-            % Replace Input string:
-            switch task.Input
-                case 'RawFolder'
-                    folder = obj.tmp_TargetObj.RawFolder;
-                    task.Input = folder;
-                case 'SaveFolder'
-                    folder = obj.tmp_TargetObj.SaveFolder;
-                    task.Input = folder;
-                case 'object'
-                    task.Input = 'obj.tmp_TargetObj';
-                otherwise
-                    % ALL THIS SECTION NEEDS TO BE CHANGED!!
-                    if isempty(obj.tmp_FilePtr.Files)
-                        task.Input = 'missing';
-                        task.funcStr = '';
-                        return
-                    else
-                        idx = strcmp(task.Input, {obj.tmp_FilePtr.Files.Name});
-                        if sum(idx) == 0
-                            try
-                                % Try to find file with name different from
-                                % default:
-                                idx_pipe = strcmp(task.Input, {obj.current_pipe.Output});
-                                prev_task = obj.current_pipe(idx_pipe);
-                                % Find file in FilePtr from function in prev_task:
-                                fcn_info = arrayfun(@(x) x.FunctionInfo, obj.tmp_FilePtr.Files);
-                                idxFcnName = strcmp({fcn_info.Name}, prev_task.Name);
-                                idxFcnDate = [fcn_info.DateNum] == prev_task.DateNum;
-                                idx = idxFcnName & idxFcnDate;
-                                if sum(idx) == 1
-                                    filePath = fullfile(obj.tmp_TargetObj.SaveFolder, obj.tmp_FilePtr.Files(idx).Name);
-                                else
-                                    task.Input = 'missing';
-                                    task.funcStr = '';
-                                    return
-                                end
-                            catch
-                                task.Input = 'missing';
-                                task.funcStr = '';
-                                return
-                            end
-                        end
-                        if strcmp(obj.tmp_FilePtr.Files(idx).Folder, 'RawFolder')
-                            filePath = fullfile(obj.tmp_TargetObj.RawFolder, obj.tmp_FilePtr.Files(idx).Name);
-                        else
-                            filePath = fullfile(obj.tmp_TargetObj.SaveFolder, obj.tmp_FilePtr.Files(idx).Name);
-                        end
-                    end
-                    task.Input = filePath;
-                    inputMetaData = strrep(filePath, '.dat', '_info.mat');
-                    mDt_input = matfile(inputMetaData); fileUUID = mDt_input.fileUUID;
-                    if iscell(fileUUID)
-                        fileUUID = [fileUUID{:}];
-                    end
-                    task.InputFile_UUID = fileUUID;
-            end
-            % Replace SaveFolder string:
-            switch task.SaveIn
-                case 'RawFolder'
-                    folder = obj.tmp_TargetObj.RawFolder;
-                    task.SaveIn = folder;
-                case 'SaveFolder'
-                    folder = obj.tmp_TargetObj.SaveFolder;
-                    task.SaveIn = folder;
-            end
-            if ~strcmp(task.Input, 'obj.tmp_TargetObj')
-                funcStr = [task.Name '(''' task.Input ''',''' task.SaveIn ''''];
-            else
-                funcStr = [task.Name '(' task.Input ',''' task.SaveIn ''''];
-            end
-            % Fix empty input character "~":
-            funcStr = strrep(funcStr, '''~''', '~');
-            
-            % Add optionals:
-            if ~isempty(task.opts)
-                funcStr = [funcStr ', opts'];
-            end
-            if ~isempty(task.Output)
-                funcStr = ['out = ' funcStr];
-            end
-            funcStr = [funcStr ');'];
-            task.funcStr = funcStr;
-        end
-        %%%%%%%%%% NEW METHODS %%%%%%%%
+        
         function idx_fcn = check_funcName(obj, func)
             % This function is used by "setOpts" and "addTask" methods to
             % validate if the input "func" is valid.
@@ -935,7 +721,7 @@ classdef PipelineManager < handle
             % Output:
             %   idx_fcn(bool): index of "func" in "obj.funcList". Returns
             %   empty if the function was not found in the list.
-            idx_fcn = [];
+            
             if isnumeric(func)
                 idx_fcn = func == 1:length(obj.funcList);
                 msg = ['Function with index # ' num2str(func)];
@@ -948,6 +734,7 @@ classdef PipelineManager < handle
                 idx_fcn = [];
             end
         end
+        
         function fcnStr = createFcnString(obj, task)
             % This method creates a string containing the function to be
             % called during the current task of the pipeline by an EVAL
@@ -963,25 +750,22 @@ classdef PipelineManager < handle
             % Output:
             %   fcnStr (char): string containing call to analysis function
             %   in the current task.
-            
-            disp('Creating Function String...')
+                        
+            % Create analysis function string:
             fcnStr = '';
-            
-            % Step 1: add string to load input file:
-            % Here, we assume that all input files are stored in the Save
-            % folder of the target object.
-            if ~isempty(task.inputFileName)
-                fcnStr = ['load(' fullfile(obj.tmp_TargetObj.SaveFolder, task.inputFileName) ');'];
-            end
-            
-            % Step 2: create analysis function string:
             % Replace input argument names:
             argsIn = replace(task.argsIn, {'RawFolder', 'SaveFolder', 'data','metaData', 'object', 'dataStat'},...
                 {['''' obj.tmp_TargetObj.RawFolder ''''],['''' obj.tmp_TargetObj.SaveFolder ''''], 'obj.current_data',...
                 'obj.current_metaData', 'obj.tmp_TargetObj', 'obj.current_data'});
             argsOut = replace(task.argsOut, {'outData', 'metaData', 'outDataStat', 'outFile'},...
                 {'obj.current_data', 'obj.current_metaData', 'obj.current_data', 'obj.current_outFile'});
-            fcnStr = [fcnStr ';' '[' strjoin(argsOut, ',') ']=' task.name '(' strjoin(argsIn,',') ');'];
+            if isempty(argsOut)
+                fcnStr = [fcnStr ';' task.name '(' strjoin(argsIn,',') ');'];
+            else
+                fcnStr = [fcnStr ';' '[' strjoin(argsOut, ',') ']=' task.name '(' strjoin(argsIn,',') ');'];
+            end
+            fcnStr = strip(fcnStr,'left', ';');
+            
         end
         
         function updateDataHistory(obj, step)
@@ -992,8 +776,7 @@ classdef PipelineManager < handle
             %
             % Input:
             %    step(struct) : current step of the pipeline;
-            
-            disp('Building Data History...')
+                        
             funcInfo = obj.funcList(strcmp(step.name, {obj.funcList.name}));
             % Create a local structure with the function's info:
             curr_dtHist = struct('runDatetime', datetime('now'), 'name', {funcInfo.name},...
@@ -1025,10 +808,10 @@ classdef PipelineManager < handle
                 
             else
                 % In case of step output is a data array:
-                if isfield(obj.metaData, 'dataHistory')
-                    obj.metaData.dataHistory = [obj.metaData.dataHistory; curr_dtHist];
+                if isfield(obj.current_metaData, 'dataHistory')
+                    obj.current_metaData.dataHistory = [obj.current_metaData.dataHistory; curr_dtHist];
                 else
-                    obj.metaData.dataHistory = curr_dtHist;
+                    obj.current_metaData.dataHistory = curr_dtHist;
                 end
             end
         end
@@ -1043,8 +826,7 @@ classdef PipelineManager < handle
             % Output:
             %   b_skip (bool): True if the step was already run on the
             %   data and should be skipped.
-            
-            disp('Checking step...');
+                        
             b_skip = false;
             % Find function info in Function List:
             fcnInfo = obj.funcList(strcmp(step.name, {obj.funcList.name}));
@@ -1056,7 +838,8 @@ classdef PipelineManager < handle
                 return
             end
             
-            dH = obj.metaData.dataHistory(strcmp(step.name, {obj.metaData.dataHistory.name}));
+            dH = obj.current_metaData.dataHistory(strcmp(step.name,...
+                {obj.current_metaData.dataHistory.name}));
             % If the function's creation date AND the function string AND optional parameters are
             % the same, we consider that the current step was already run.
             if isempty(dH)
@@ -1067,6 +850,30 @@ classdef PipelineManager < handle
             end
         end
         
+        function loadInputFile(obj,step)
+            % This function loads the data and metaData (if applicable)
+            % from a .DAT or .MAT file indicated by the inputFileName field
+            % in the "step" structure.
+            % Input:
+            %   step (struct): structure containing the info of the current
+            %   task that will be executed inside method
+            %   "run_taskOnTarget".
+            
+            
+            if endsWith(step.inputFileName, '.dat')
+                %If the InputFile is a .DAT file:
+                [obj.current_data, obj.current_metaData] = ...
+                    loadDatFile(fullfile(obj.tmp_TargetObj.SaveFolder, step.inputFileName));
+            else
+                % If the InputFile is a .MAT file
+                obj.current_data = load(fullfile(obj.tmp_TargetObj.SaveFolder,...
+                    step.inputFileName));
+                % Erase current metaData, since it will not be associated
+                % with the curren_data anymore:
+                obj.current_metaData = [];
+            end
+            
+        end
         
         function saveDataToFile(obj, step)
             % This methods manages data saving to .DAT and .MAT files.
@@ -1076,13 +883,63 @@ classdef PipelineManager < handle
             
             disp('Saving File...');
             
-            
-            
-            
-            
-            
+            if endsWith(step.datFileName, '.dat')
+                save2Dat(fullfile(obj.tmp_TargetObj.SaveFolder,step.datFileName),...
+                    obj.current_data, obj.current_metaData);
+            else
+                save(fullfile(obj.tmp_TargetObj.SaveFolder,step.datFileName),...
+                    '-struct', obj.current_data);
+            end
         end
         
+        function setWaitBar(obj, tag, varargin)
+            % This method creates two "waitbar" dialogs.
+            % The first shows the progress of the pipeline runs across objects
+            % while the second one shows the progress of tasks in a given
+            % object.
+            % Inputs:
+            %   tag (char): "Initialize" : creates the 2 waitbars.
+            %               "UpdateItem" : updates bar1.
+            %               "UpdateTask" : updates bar2.
+            %   barVal (float): (Optional) fractional value of the bar.        
+            
+            switch tag
+                case 'Initialize'
+                    obj.h_wbItem = waitbar(0,'Initializing Pipeline...',...
+                        'Name','Pipeline Progress',...
+                        'CreateCancelBtn', @obj.wb_cancelBtn);
+                    setappdata(obj.h_wbItem, 'b_abortPipe', 0);                   
+                    obj.h_wbItem.Children(2).Title.Interpreter = 'none';
+                    
+                    obj.h_wbTask = waitbar(0,'Initializing Task...','Name','',...
+                        'CloseRequestFcn',@DoNothing);
+                    obj.h_wbTask.Children(1).Title.Interpreter = 'none';
+                    
+                case 'UpdateItem'
+                    waitbar(varargin{1}/varargin{2}, obj.h_wbItem, ['Item ' num2str(varargin{1})...
+                         '/' num2str(varargin{2})]);                  
+                    obj.h_wbTask.Name = obj.targetObjFullID;
+                case 'UpdateTask'
+                    waitbar(varargin{1}, obj.h_wbTask, ['Running "' obj.current_task.name '"']);
+            end
+            
+            function DoNothing(~,~)
+                % Empty callback to avoid closing Waitbar #2
+            end
+        end
+        function wb_cancelBtn(obj,src,evnt)
+            % Callback of cancel button in waitbar1 ("h_wbItem").
+            % This callback triggers the cancellation of the current
+            % pipeline when the user clicks on the cancel button.
+            
+            fprintf('>>>>>>>>>>>>>>>>>>Cancelling Pipeline...>>>>>>>>>>>\n');
+            
+            src.String = 'Wait!';          
+            if strcmp(evnt.EventName, 'Action')
+                set(src.Parent.Children(2).Title, 'String', 'Please Wait. Stopping Pipeline...');
+                setappdata(obj.h_wbItem, 'b_abortPipe', 1);
+            end
+        end
     end
+    
 end
-
