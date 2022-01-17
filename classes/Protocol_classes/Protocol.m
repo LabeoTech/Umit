@@ -55,19 +55,18 @@ classdef Protocol < handle
             %   Accepts only existing Folders as input.
             MainDir = checkFolder(MainDir, 'raw');
             obj.validate_path(MainDir); % Checks for existing Path.
-            if isempty(obj.Array.ObjList)
+            if isempty(obj.MainDir)
                 obj.MainDir = MainDir;
             else
                 obj.changeMainDir(MainDir);
                 obj.MainDir = MainDir;
-            end
-            obj.MainDir = MainDir;
+            end            
         end
         function set.SaveDir(obj, SaveDir)
             % Set function for SaveDir property.
             %   Accepts only existing Folders as input. Updates all
             %   SAVEFOLDERS of other Objects contained in OBJ.
-            SaveDir = checkFolder(SaveDir);
+            SaveDir = checkFolder(SaveDir, 'new');
             obj.validate_path(SaveDir); % Checks for existing Path.
             obj.SaveDir = SaveDir;
         end
@@ -76,13 +75,14 @@ classdef Protocol < handle
             %   Accepts only valid function handles. Returns PROTOFUNC if
             %   empty.
             if ~isempty(ProtoFunc)
-                validateattributes(ProtoFunc, {'function_handle'}, {'nonempty'}, 'set.ProtoFunc')% Checks if ProtoFunc is a function handle.
+                % Check if ProtoFunc is a function handle:
+                validateattributes(ProtoFunc, {'function_handle'}, {'nonempty'}, 'set.ProtoFunc');
                 obj.ProtoFunc = ProtoFunc; 
             end
         end
         function set.Array(obj, Array)
             % Set function for Array property.
-            %   Accepts only a "ObjectListManager" object as input. If
+            %   Accepts "ObjectListManager" or "Subject" objects as input. If
             %   empty, creates an default "ObjectListManager" object.
             if isa(Array, 'Subject')
                 obj.Array.addObj(Array);
@@ -94,12 +94,13 @@ classdef Protocol < handle
         end
          %%% Property Get functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function out = get.LogBookFile(obj)
-            % Get function for depentend property SaveFolder.
+            % Get function for getting the full path of Log Book .MAT file.
+            % It is dependent from the property "SaveFolder":
             out = fullfile(obj.SaveDir, 'LogBook.mat');
         end
         %%% Validators %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function validate_path(~, input)
-            msgID = 'umIToolbox:InvalidInput';
+            msgID = 'umIToolbox:Protocol:InvalidInput';
             str = strrep(input, filesep, repmat(filesep,1,2));
             msg = ['The input "' str '" is not a valid folder or it is not in MATLAB''s path:'];
             assert(isfolder(input),msgID, msg)
@@ -118,25 +119,22 @@ classdef Protocol < handle
             % containing folders for Subjects, Acquisitions and modalities.
             subjList = obj.Array.listProp('ID');
             acqList = arrayfun(@(x) x.Array.listProp('ID'), obj.Array.ObjList, 'UniformOutput', false);
-            modList = arrayfun(@(x) arrayfun(@(y) y.Array.listProp('ID'), x.Array.ObjList, 'UniformOutput', false), obj.Array.ObjList, 'UniformOutput', false);
+            modList = arrayfun(@(x) arrayfun(@(y) y.Array.listProp('ID'),...
+                x.Array.ObjList, 'UniformOutput', false), obj.Array.ObjList, 'UniformOutput', false);
+            
             for i = 1:length(subjList)
                 tmpS = subjList{i};
                 indx = obj.Array.findElement('ID', tmpS, 'strcmp');
                 tmpS_obj = obj.Array.ObjList(indx);
                 [~,~] = mkdir(fullfile(obj.SaveDir, tmpS_obj.ID));
-                tmpS_obj.createFilePtr;
                 for j = 1:length(acqList{i})
                     tmpA = acqList{i}{j};
                     indx = tmpS_obj.Array.findElement('ID', tmpA, 'strcmp');
                     tmpA_obj = tmpS_obj.Array.ObjList(indx);
                     [~,~] = mkdir(fullfile(obj.SaveDir, tmpS_obj.ID, tmpA_obj.ID));
-                    tmpA_obj.createFilePtr;
                     for k = 1:length(modList{i}{j})
-                        tmpM = modList{i}{j}{k};
-                        indx = tmpA_obj.Array.findElement('ID', tmpM, 'strcmp');
-                        tmpM_obj = tmpA_obj.Array.ObjList(indx);
+                        tmpM = modList{i}{j}{k};                        
                         [~,~] = mkdir(fullfile(obj.SaveDir, tmpS, tmpA, tmpM));
-                        tmpM_obj.createFilePtr;
                     end
                 end
             end
@@ -145,12 +143,16 @@ classdef Protocol < handle
         function updateList(obj, varargin)
             % This function updates the list of Subjects using
             % obj.ProtoFunc.
-            %   The optional input (boolean) allows the user to not discard
-            %   (FALSE) elements that were not found during the update.
+            % Input:
+            %   b_discardData(bool) : (Optional) If TRUE, discards elements
+            %   that were not found in the raw folder (Default).          
+            %   If FALSE, elements that were not found during the update
+            %   will be kept.
             %       *This is not a wise option since keeping invalid
             %       paths of filenames may cause problems later on the
-            %       analysis pipeline. "A voir..."
-            %   IF discardData == FALSE, a warning message is thrown.
+            %       analysis pipeline. *Consider to eliminate this option in
+            %       a later Release of umIT if not pertinent.
+            
             if nargin < 2
                 discardData = true;
             else
@@ -210,6 +212,11 @@ classdef Protocol < handle
         function manualRemoveObj(obj, SubjectIndex, varargin)
             % This function manually removes one Subject/Acquisition from
             % Protocol.
+            % Inputs:
+            %   SubjectIndex (int): Index of the Subject object in Protocol
+            %   AcqIndex (int): Index of the Acquisition object in Protocol
+            %   b_delFolder(bool): If TRUE, delete SaveFolder of the object
+            %   to be deleted and its contents.
             p = inputParser;
             addOptional(p,'SubjectIndex', 0, @isnumeric);
             addOptional(p,'AcqIndex', 0, @isnumeric);
@@ -222,9 +229,13 @@ classdef Protocol < handle
             else
                 iRem = obj.Array.ObjList(p.Results.SubjectIndex).Array.removeObj(p.Results.AcqIndex);
             end
-%             if p.Results.b_delFolder
-%                 rmdir(iRem(3), 's') % Delete save folder and its contents.
-%             end
+            if p.Results.b_delFolder
+                answer = questdlg(['Delete Folder "' iRem(3) '" and it''s contents?'],...
+                    'Delete Save Folder?', 'Yes', 'No', 'No');
+                if strcmp(answer, 'Yes')
+                    rmdir(iRem(3), 's') % Delete save folder and its contents.
+                end
+            end
             obj.garbageList = [obj.garbageList; iRem];
         end
         function newObj = removeGarbage(obj, newObj)
@@ -270,13 +281,27 @@ classdef Protocol < handle
                         out = arrayfun(@(x) obj.Array.ObjList(x), indx, 'UniformOutput', false);
                     case 2
                         indx = unique(obj.Idx_Filtered(:,[1 2]), 'rows');
-                        out = arrayfun(@(x,y) obj.Array.ObjList(x).Array.ObjList(y), indx(:,1), indx(:,2), 'UniformOutput', false);
+                        out = arrayfun(@(x,y) obj.Array.ObjList(x).Array.ObjList(y),...
+                            indx(:,1), indx(:,2), 'UniformOutput', false);
                     case 3 
                         indx = unique(obj.Idx_Filtered, 'rows');
-                        out = arrayfun(@(x,y,z) obj.Array.ObjList(x).Array.ObjList(y).Array.ObjList(z), indx(:,1), indx(:,2), indx(:,3), 'UniformOutput', false);
+                        out = arrayfun(@(x,y,z) obj.Array.ObjList(x).Array.ObjList(y).Array.ObjList(z),...
+                            indx(:,1), indx(:,2), indx(:,3), 'UniformOutput', false);
                 end
         end
         function addTextEvent(obj, Text, dateAndTime, varargin)
+            % This method adds an event to a "Text_events.mat" file.
+            % This method is a wrapper of the function "create_Text_eventsFile.m".
+            
+            % Inputs:
+            %   Text(char): String that will be added to "Text_events.mat"
+            %       file.
+            %   dateAndTime(datetime): timestamp associated with the Text.
+            %   flag (char): (Optional) {'add', 'overwrite'}. Use 'add'
+            %   (default) to add a Text to the file OR 'overwrite' to
+            %   ovewrite the content of the "Text_events.mat" file with a
+            %   new Text.
+            
             default_flag = 'add';
             p = inputParser;
             validFlag = @(x) ischar(x) && ismember(x, {'add', 'overwrite'});
@@ -349,9 +374,10 @@ classdef Protocol < handle
         function LogBook = createEmptyTable(~)
             % CREATEEMPTYTABLE outputs an empty Table to be filled with the information of pipelines
             % from PIPELINEMANAGER.
-            LogBook = table({'None'}, {'None'}, {'None'}, {'None'}, {'None'},  {'None'}, {'None'}, ...
-                0,datetime('now'),{'None'}, {'None'}, 'VariableNames', {'Subject', 'Acquisition',...
-                'Recording', 'ClassName', 'Job', 'InputFile_UUID', 'InputFile_Path', 'Completed', 'RunDateTime', 'Messages', 'Messages_short'});
+            LogBook = table({'None'}, {'None'}, {'None'}, {'None'}, {'None'},...
+                {'None'}, {'None'}, {'None'}, 0,datetime('now'),{'None'}, {'None'},...
+                'VariableNames', {'Subject', 'Acquisition', 'Recording', 'ClassName','TaskName',...
+                'Job', 'InputFile_UUID', 'InputFile_Path', 'Completed', 'RunDateTime', 'Messages', 'Messages_short'});
         end
         function s = saveobj(obj)
             s.Name = obj.Name;
@@ -384,7 +410,7 @@ classdef Protocol < handle
             % CHANGEMAINDIR changes the main directory where the raw data
             % are located. Paths from raw data inside OBJ will be updated to the new
             % NEWMAINDIR.
-            %   This function must be used after the user manually moves the
+            %   This function must be used only AFTER the user manually moves the
             %   files from OBJ.MAINDIR to NEWMAINDIR. The paths inside
             %   OBJ.MAINDIR must remain unchanged.    
             newMainDir = checkFolder(newMainDir);
@@ -404,6 +430,11 @@ classdef Protocol < handle
         function out = getIndex(obj, targetObj, FilterStruct)
             % GETINDEX applies a filter (OBJ.FILTERSTRUCT) to TARGETOBJ
             % and outputs a list of indices of filtered elements.
+            % Input:
+            %   targetObj : Protocol Object of class Subject, Acquisition
+            %       or Modality.
+            %   FilterStruct(struct): Protocol's filter structure
+            %   containing info for filtering objects inside "targetObj".
             
             ind = cell(1,length(FilterStruct));
             for i = 1:length(FilterStruct)
@@ -450,6 +481,8 @@ classdef Protocol < handle
             else
                 obj = s;
             end
+            % Rebuild handle of "MyParent" property of elements from
+            % Protocol:
             for i = 1:numel(obj.Array.ObjList)
                 obj.Array.ObjList(i).MyParent = obj;
                 for j = 1:numel(obj.Array.ObjList(i).Array.ObjList)

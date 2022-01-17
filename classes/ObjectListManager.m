@@ -69,13 +69,7 @@ classdef ObjectListManager < handle
             obj.ObjList(idx) = [];
             disp(['Object(s) with index(es) ' num2str(idx) ' successfully removed']);
         end
-        
-        %         function eraseObjArray(obj)
-        %             % This function erases the ObjArray property.
-        %             obj.ObjList = [];
-        %             disp('ObjArray successfully erased')
-        %         end
-        
+               
         function out = listProp(obj, propName)%#ok
             % LISTPROP lists all values of PROPNAME from objects inside OBJ.OBJLIST.
             idx = arrayfun(@(x) ismember(propName, properties(x)), obj.ObjList);%#ok

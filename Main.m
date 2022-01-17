@@ -6,10 +6,9 @@ IOI_ANAfolder = 'D:\Academico\PostDoc_UdeM\LabeoTech\ioi_ana';
 addpath(genpath(toolboxFolder));
 addpath(genpath(IOI_ANAfolder));
 %% Create Protocol Object
-addpath(genpath('E:\Solenn_Data'));
-maindir = 'F:\Solenn';
-savedir = 'E:\Solenn_Data\ProjectSaveDir';
-protocol = Protocol('Solenn_backupData_2', maindir, savedir, @SolenDataProtoFunc, []);
+maindir = 'F:\SolennRawData';
+savedir = 'E:\TestSaveDir';
+protocol = Protocol('TestProtocol', maindir, savedir, @TestDataProtoFunc, []);
 protocol.generateList;
 protocol.generateSaveFolders;
 save(fullfile(protocol.SaveDir, [protocol.Name '.mat']), 'protocol');
@@ -48,61 +47,33 @@ idx = protocol.Idx_Filtered
 
 %% Preprocessing Pipeline
 % Create pipeline
-pipe = PipelineManager(protocol);
+pipe = PipelineManager(protocol, 'FluorescenceImaging');
 % Show list of Available analysis functions:
 pipe.showFuncList;
 % Set Optional Parameters for "run_ImagesClassification" function:
 pipe.setOpts(3)
 % Add "run_ImagesClassification" to the pipeline:
-pipe.addTask('FluorescenceImaging', 3);
-pipe.addTask('FluorescenceImaging', 1,true, 'testout');
-pipe.addTask('FluorescenceImaging', 7, true, 'tempOut');
-
-pipe.addTask('FluorescenceImaging', 'dummyFunc4Testing_2');
-pipe.addTask('FluorescenceImaging', 'dummyFunc4Testing_4');
-pipe.addTask('FluorescenceImaging', 'dummyFunc4Testing_5');
-
-    
-pipe.addTask('FluorescenceImaging', 'alignFrames');
-pipe.addTask('FluorescenceImaging', 'calculateDF_F0');
-pipe.addTask('FluorescenceImaging', 'getEventsFromSingleChannel')
-pipe.addTask('FluorescenceImaging', 'SeedPixCorr')
-
-
-opts = pipe.setOpts('run_ImagesClassification');
-pipe.addTask('FluorescenceImaging', 'run_ImagesClassification', opts);
-opts = pipe.setOpts('getEventsFromSingleChannel');
-pipe.addTask('FluorescenceImaging', 'getEventsFromSingleChannel', opts);
-opts = pipe.setOpts('alignFrames');
-pipe.addTask('FluorescenceImaging', 'alignFrames', opts);
-pipe.addTask('FluorescenceImaging', 'calculateDF_F0');
-opts = pipe.setOpts('event_triggered_average');
-pipe.addTask('FluorescenceImaging', 'event_triggered_average', opts);
-% pipe.addTask('FluorescenceImaging', 'tempFiltNormalize');
-% pipe.addTask('FluorescenceImaging', 'GSR')
-pipe.addTask('FluorescenceImaging', 'MV_getCentroidValues');
-pipe.addTask('FluorescenceImaging', 'MVcalculate_SF_TF_average');
-pipe.addTask('FluorescenceImaging', 'SeedPixCorr');
-pipe.addTask('FluorescenceImaging','lookForMetaDataFile');
+% Example of adding tasks to pipeline using functions indices:
+pipe.addTask(3);
+pipe.addTask(7);
+pipe.addTask(4);
+% Example of adding tasks and saving outputs:
+pipe.addTask(1,true, 'testout');
+pipe.addTask(7, true, 'tempOut');
+% Example of pipeline construction with function names as input:
+pipe.addTask('alignFrames');
+pipe.addTask('calculateDF_F0');
+pipe.addTask('getEventsFromSingleChannel')
+pipe.addTask('SeedPixCorr')
 %% Overview of pipeline
 pipe.showPipeSummary
 %% Run pipeline
 pipe.run_pipeline
 %% Save Pipeline
 pipe.savePipe('testPipeline')
-% Save Protocol
-save(fullfile(protocol.SaveDir,[protocol.Name '.mat']), 'protocol')
 %% Load Pipeline and run
-pipe = PipelineManager([], protocol);
-pipe.loadPipe('testPipeline.mat')
+pipe = PipelineManager(protocol, 'FluorescenceImaging');
+pipe.loadPipe('TestPipe1')
+pipe.showPipeSummary
 pipe.run_pipeline
-
-%% Data Visualization
-
-selec = protocol.extractFilteredObjects(3);
-retino_maps(selec,'fChan.dat')
-
-
-
-
 

@@ -9,7 +9,7 @@ classdef Acquisition < handle
     
     properties
         ID % Acquisition ID
-        Start_datetime % Date and time of the beginning of the acquisition.       
+        Start_datetime % Date and time of the beginning of the acquisition.
     end
     properties (SetAccess = {?Protocol, ?PipelineManager, ?Subject, ?ObjectListManager})
         Array % List of Modalities.
@@ -18,8 +18,8 @@ classdef Acquisition < handle
     end
     properties (Dependent)
         SaveFolder % Path of directory containing transformed data.
-        FilePtr % JSON file containing information of files created using PIPELINEMANAGER.
     end
+    
     methods
         
         function obj = Acquisition(ID, Array)
@@ -37,7 +37,6 @@ classdef Acquisition < handle
                 obj.Array = [];
             end
         end
-        
         %%% Property Set Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function set.ID(obj, ID)
             % Set function for ID property.
@@ -85,23 +84,20 @@ classdef Acquisition < handle
         
         function set.MyParent(obj, MyParent)
             % Set function for MyParent property.
-            msgID = 'UMIToolbox:InvalidInput';
+            msgID = 'umIToolbox:Acquisition:InvalidInput';
             msg = 'Error setting Acquisition Parent Object. Parent must be a Subject.';
             assert(isa(MyParent, 'Subject'), msgID, msg);
             obj.MyParent = MyParent;
-        end  
+        end
         %%% Property Get functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function out = get.SaveFolder(obj)
             % Get function for depentend property SaveFolder.
             out = fullfile(obj.MyParent.MyParent.SaveDir,obj.MyParent.ID, obj.ID);
-            msgID = 'UMIToolbox:FolderNotFound';
+            msgID = 'umIToolbox:Acquisition:FolderNotFound';
             msg = 'Acquisition SaveFolder doesnt exist.';
             assert(isfolder(out), msgID,msg);
         end
-        function out = get.FilePtr(obj)
-            % Get function for depentend property FilePtr.
-            out = fullfile(obj.MyParent.MyParent.SaveDir,obj.MyParent.ID, obj.ID, 'FilePtr.json');
-        end
+        
         function out = get.Start_datetime(obj)
             % This function transforms datetime objects in strings for
             % display in the GUI.
@@ -111,30 +107,7 @@ classdef Acquisition < handle
                 out = datestr(obj.Start_datetime, 31);
             end
         end
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-         function createFilePtr(obj)
-             % This function creates a JSON file containing basic information from object.
-             
-             % FilePtr full path:
-             if isfile(obj.FilePtr)
-                 disp(['Skipped FilePtr creation. File pointer already exists in ' obj.SaveFolder ]);
-                 return
-             end
-             A = struct('Type', class(obj), 'ID', obj.ID, 'Files', []);
-             txt = jsonencode(A);
-             fid = fopen(obj.FilePtr, 'w');
-             fprintf(fid, '%s', txt);
-             fclose(fid);
-         end
-        
-        %%%%%%%%%%
-        function dummyMethodForTesting(obj)
-            disp(class(obj))
-            disp(['This is a dummy function for testing of Acquisition ' obj.ID '!'])
-        end
-        
     end
-    
     
     methods (Access = private)
         function delete(obj)
