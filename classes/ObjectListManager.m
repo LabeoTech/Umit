@@ -8,7 +8,7 @@ classdef ObjectListManager < handle
         ObjList(1,:) % Array of objects.
     end
     
-    properties (Access = private)
+    properties (SetAccess = ?Protocol)
         parentObj % Parent object that contains an ObjectListManager object.
     end
     
@@ -25,7 +25,7 @@ classdef ObjectListManager < handle
                 objectList = checkForDuplicates(objectList);
                 obj.ObjList = objectList;
             end
-            obj.parentObj = parentObj;
+                obj.parentObj = parentObj;
         end 
         function addObj(obj, newObj)
             % Adds a new object to the ObjList list.

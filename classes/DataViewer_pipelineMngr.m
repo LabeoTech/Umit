@@ -301,6 +301,42 @@ classdef DataViewer_pipelineMngr < handle
             end
         end
         
+        function savePipe(obj)
+            % SAVEPIPE saves the structure OBJ.PIPE to a .JSON file in the
+            % Input:
+            %   filename (char): Name of the file that will contain the
+            %   pipeline structure "obj.pipe".
+            
+            [file, Path] = uiputfile('*.json', 'Save Pipeline as ...', 'pipeConfigFile');
+            if file == 0
+                disp('Operation Cancelled by User.')
+                return
+            end
+            pipeStruct = obj.pipe;
+            txt = jsonencode(pipeStruct);
+            fid = fopen(fullfile(Path, file), 'w');
+            fprintf(fid, '%s', txt);
+            fclose(fid);
+            disp(['Pipeline saved as "' file '" in ' Path]);
+        end
+        
+         function loadPipe(obj, pipeFile)
+            % LOADPIPE loads the structure PIPE inside FILENAME and assigns
+            % it to OBJ.PIPE property.
+            % Input:
+            %   pipeFile(char): full path to the .JSON file containing the
+            %   pipeline config.
+            
+            try
+                txt = fileread(pipeFile);
+                obj.pipe = jsondecode(txt);
+                disp('Pipeline Loaded!');
+                obj.showPipeSummary;
+            catch
+                error('umIToolbox:DataViewer_pipelineMngr:InvalidInput', 'Failed to load Pipeline Configuration file')
+            end
+        end
+        
         function reset_pipe(obj)
             % This function erases the pipe property and resets the funcList
             % property.

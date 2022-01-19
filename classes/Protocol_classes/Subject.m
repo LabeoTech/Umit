@@ -5,7 +5,7 @@ classdef Subject < handle
     %   ID, GroupID (name of experimental group) and an "ObjectListManager"
     %   object containing an array of "Acquisition" objects.
     
-    properties
+    properties 
         ID % Subject ID (It has it's on set function).
         Gender char {mustBeNonempty} = 'Unknown'% Animal's Gender ID
         Weight_g single {mustBeNonempty}  = 0.0 % Animal's weight in grams.
@@ -16,9 +16,9 @@ classdef Subject < handle
         Array % List of Acquisitions.
         MyParent % Protocol Object.
         GroupID % Experimental Group of Subject.
-        LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
+        LastLog = table.empty % Table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
     end
-    properties (Dependent)
+    properties (Dependent, SetAccess = private)
         SaveFolder % Path of directory containing transformed data.        
     end
     

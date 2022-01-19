@@ -11,12 +11,15 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         RawFiles cell % File(s) containing raw data.
     end
     properties (SetAccess = {?Protocol, ?PipelineManager, ?Acquisition, ?Subject, ?ObjectListManager})
-        LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
+        LastLog = table.empty % Table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
         MyParent % Acquisition object that contains MODALITY object.
     end
     properties (Hidden)
         MetaDataFileName char = '' %File containing other information about the recording session.
-        RawFiles_FP cell % List of full path of Raw filenames.
+        RawFiles_FP cell % List of full path of Raw filenames. This property is set/used only by the Protocol Function.
+                         % This property will be used to generate just the
+                         % list of files (no path) and to create the
+                         % "RawFolder" property.
     end
     properties (Dependent)
         RawFolder char % Path of directory containing raw data.    

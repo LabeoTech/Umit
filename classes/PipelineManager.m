@@ -13,7 +13,7 @@ classdef PipelineManager < handle
         ClassLevel int16 % Level of the class in protocol's hierarchy (1 = Modality, 2 = Acquisition, 3= Subject);
         % Structure array containing steps of the pipeline.
         pipe = struct('className', '','argsIn', {},'argsOut',{},'outFileName','',...
-            'inputFileName', '','lvl', [], 'b_save2Dat', logical.empty, 'datFileName',...
+            'inputFileName', '','lvl', [], 'b_save2File', logical.empty, 'datFileName',...
             '', 'opts',[],'name','');% !!If the fields are changed, please apply
         % the same changes to the property's set method.
         
@@ -72,7 +72,11 @@ classdef PipelineManager < handle
                     obj.ClassLevel = 1;
                     % Check if the selected class exists in the Filtered objects
                     % from Protocol:
-                    
+                    if isempty(obj.ProtocolObj.Idx_Filtered)
+                        obj.ProtocolObj.clearFilterStruct;
+                        obj.ProtocolObj.queryFilter;
+                    end
+                        
                     % Find the class from the list of Modality objects from protocol's filtered
                     % objects:
                     items = obj.ProtocolObj.extractFilteredObjects(3);
@@ -121,7 +125,7 @@ classdef PipelineManager < handle
             
             if isempty(fieldnames(pipe))
                 pipe = struct('className', '','argsIn', {},'argsOut',{},'outFileName','',...
-                    'inputFileName', '','lvl', [], 'b_save2Dat', logical.empty, 'datFileName',...
+                    'inputFileName', '','lvl', [], 'b_save2File', logical.empty, 'datFileName',...
                     '', 'opts',[],'name','');
             end
             % Check if all fields exist:
@@ -187,7 +191,7 @@ classdef PipelineManager < handle
             % Inputs:
             %   func (str || char):  name or index of the analysis function
             %       contained in obj.funcList property.
-            %   b_save2Dat (bool): Optional. True means that the output data
+            %   b_save2File (bool): Optional. True means that the output data
             %       from the function will be saved as a .DAT file.
             %   datFileName(char): Optional. Name of the file to be saved.
             %       If not provided, the analysis function's default
@@ -195,7 +199,7 @@ classdef PipelineManager < handle
             
             p = inputParser;
             addRequired(p, 'func', @(x) ischar(x) || isnumeric(x));
-            addOptional(p, 'b_save2Dat', false, @islogical);
+            addOptional(p, 'b_save2File', false, @islogical);
             addOptional(p, 'datFileName', '', @ischar);
             parse(p,func, varargin{:});
             
@@ -213,7 +217,7 @@ classdef PipelineManager < handle
             task.className = obj.ClassName;
             task.lvl = obj.ClassLevel;
             task.name = obj.funcList(idx).name;
-            task.b_save2Dat = p.Results.b_save2Dat;
+            task.b_save2File = p.Results.b_save2File;
             task.datFileName = p.Results.datFileName;
             
             % Control for steps IDENTICAL to the task that are already in the pipeline:
@@ -271,7 +275,7 @@ classdef PipelineManager < handle
             disp(['Added "' task.name '" to pipeline.']);
             
             % Control for data to be saved as .DAT files for task:
-            if ~task.b_save2Dat
+            if ~task.b_save2File
                 return
             end
             if ~any(strcmp('outData', task.argsOut))
@@ -316,7 +320,7 @@ classdef PipelineManager < handle
                 txt = sprintf('Function name : %s\nOptional Parameters:\n',...
                     obj.pipe(i).name);
                 str = [str, txt, sprintf('\t%s : %s\n', opts{:})];
-                if obj.pipe(i).b_save2Dat
+                if obj.pipe(i).b_save2File
                     str = [str, sprintf('Data to be saved as : "%s"\n', obj.pipe(i).datFileName)];
                 end
                 if ~isempty(obj.pipe(i).inputFileName)
@@ -345,9 +349,7 @@ classdef PipelineManager < handle
             lbf = matfile(obj.ProtocolObj.LogBookFile);
             obj.tmp_LogBook = lbf.LogBook;
             obj.PipelineSummary = obj.ProtocolObj.createEmptyTable;
-            
-            % Clear current data,  metaData and File List before starting the pipeline:
-            obj.current_data = []; obj.current_metaData = [];obj.current_outFile = {};
+                        
             % Initialize waitbars:
             obj.setWaitBar('Initialize')
             
@@ -365,9 +367,14 @@ classdef PipelineManager < handle
             end
                      
             for i = 1:size(targetIdxArr,1)
+                % Clear current data,  metaData and File List before starting the pipeline:
+                obj.current_data = []; obj.current_metaData = [];obj.current_outFile = {};
                 obj.b_state = true;
+                % Get handle of current object:
                 obj.getTargetObj(targetIdxArr(i,:));
+                % Initialize Log table:
                 obj.tmp_TargetObj.LastLog = obj.ProtocolObj.createEmptyTable;
+                % Create Full ID of object:
                 myParent = obj.tmp_TargetObj.MyParent;
                 myFullName = {obj.tmp_TargetObj.ID};
                 while ~isa(myParent, 'Protocol')
@@ -376,6 +383,7 @@ classdef PipelineManager < handle
                 end
                 myFullName = fliplr(myFullName);
                 obj.targetObjFullID = strjoin(myFullName, ' -- ');
+                % Update waitbars:
                 obj.setWaitBar('UpdateItem', i, size(targetIdxArr,1));
                 fprintf([repmat('-',1,50),'\n']);
                 fprintf('Object Name: %s\n\n', obj.targetObjFullID) 
@@ -398,6 +406,12 @@ classdef PipelineManager < handle
                     % during the execution of this method.
                     pause(.001);
                 end
+                % When the pipeline reaches the last step, save the current
+                % data to a file:
+                if j == length(obj.pipe) && ~obj.pipe.b_save2File
+                    obj.saveDataToFile(obj.pipe(end));
+                end
+                % Update Pipeline summary table:
                 obj.PipelineSummary = [obj.PipelineSummary; obj.tmp_TargetObj.LastLog];
                 fprintf([repmat('-',1,50),'\n']);                              
             end
@@ -421,8 +435,9 @@ classdef PipelineManager < handle
         end
         % Pipeline Management methods:
         function savePipe(obj, filename)
-            % SAVEPIPE saves the structure OBJ.PIPE in a .MAT file in the
-            % folder PIPELINECONFIGFiles inside MAINDIR of OBJ.PROTOCOLOBJ.
+            % SAVEPIPE saves the structure OBJ.PIPE in a .JSON file in the
+            % folder PIPELINECONFIGFILES inside the SAVEDIR of OBJ.PROTOCOLOBJ.
+            
             targetDir = fullfile(obj.ProtocolObj.SaveDir, 'PipeLineConfigFiles');
             [~,~] = mkdir(targetDir);
             pipeStruct = obj.pipe;
@@ -433,17 +448,21 @@ classdef PipelineManager < handle
             disp(['Pipeline saved as "' filename '" in ' targetDir]);
         end
             
-        function loadPipe(obj, filename)
+        function loadPipe(obj, pipeFile)
             % LOADPIPE loads the structure PIPE inside FILENAME and assigns
             % it to OBJ.PIPE property.
-            if ~isfile(filename)
-                filename = fullfile(obj.ProtocolObj.SaveDir, 'PipeLineConfigFiles',...
-                    [filename, '.json']);
+            % Input:
+            %   pipeFile(char): full path to the .JSON file containing the
+            %   pipeline config.
+            
+            try
+                txt = fileread(pipeFile);
+                obj.pipe = jsondecode(txt);
+                disp('Pipeline Loaded!');
+                obj.showPipeSummary;
+            catch ME
+                throw(ME)                
             end
-            txt = fileread(filename);
-            obj.pipe = jsondecode(txt);
-            disp('Pipeline Loaded!');
-            obj.showPipeSummary;
         end
         
         function reset_pipe(obj)
@@ -485,6 +504,7 @@ classdef PipelineManager < handle
             clear tmpObj
             % Add class name to table:
             LastLog(:,4) = {task.className};
+            LastLog(:,5) = {task.name};
             %%%
             
             % Create function string and update log table:
@@ -518,8 +538,8 @@ classdef PipelineManager < handle
                 % was successfully run:
                 obj.b_state = true;
                 LastLog.Messages = 'No Errors';
-                % Optionally, save the current Data to a file:
-                if task.b_save2Dat
+                % Save the current Data to a file:
+                if task.b_save2File
                     obj.saveDataToFile(task);
                 end
                 % Update data history of current data with task:

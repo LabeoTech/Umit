@@ -7,9 +7,9 @@ classdef Protocol < handle
     %   class "Modality".
     
     properties
-        Name % Title of Project.
-        MainDir % Folder containing all Raw recordings.
-        SaveDir % Folder to save "Protocol" object and HDF5 files. Default value = current folder.
+        Name char % Title of Project.
+        MainDir char % Folder containing all Raw recordings.
+        SaveDir char % Folder to save "Protocol" object and HDF5 files. Default value = current folder.
         ProtoFunc % Function handle of the user-defined OpenProtocol
         % where the Subjects and Acquisition data are created.
         Array % List of Subjects. Default: empty ObjectListManager.
@@ -21,7 +21,7 @@ classdef Protocol < handle
         LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
     end
     properties (Dependent)
-        LogBookFile % MAT file with a table containing information about the Pipeline Operations run by PIPELINEMANAGER.
+        LogBookFile char % MAT file with a table containing information about the Pipeline Operations run by PIPELINEMANAGER.
     end
     methods
         function obj = Protocol(Name, MainDir, SaveDir, ProtoFunc, Array)
@@ -60,7 +60,8 @@ classdef Protocol < handle
             else
                 obj.changeMainDir(MainDir);
                 obj.MainDir = MainDir;
-            end            
+            end 
+            
         end
         function set.SaveDir(obj, SaveDir)
             % Set function for SaveDir property.
@@ -127,6 +128,7 @@ classdef Protocol < handle
                 indx = obj.Array.findElement('ID', tmpS, 'strcmp');
                 tmpS_obj = obj.Array.ObjList(indx);
                 [~,~] = mkdir(fullfile(obj.SaveDir, tmpS_obj.ID));
+                
                 for j = 1:length(acqList{i})
                     tmpA = acqList{i}{j};
                     indx = tmpS_obj.Array.findElement('ID', tmpA, 'strcmp');
@@ -185,7 +187,7 @@ classdef Protocol < handle
                     newArray(indNwArr(indSubj(i))));
             end
             %   Add new Subjects:
-            if any(iNewSubj)
+            if any(iNewSubj)                
                 obj.Array.addObj(newArray(iNewSubj));
             end
             % Add new Folders to OBJ.SAVEDIR
@@ -483,6 +485,8 @@ classdef Protocol < handle
             end
             % Rebuild handle of "MyParent" property of elements from
             % Protocol:
+            obj.Array.parentObj = obj; % Update handle in ObjectListManager.            
+            % Update handles in Subjects, Acquisitions and Modalities:
             for i = 1:numel(obj.Array.ObjList)
                 obj.Array.ObjList(i).MyParent = obj;
                 for j = 1:numel(obj.Array.ObjList(i).Array.ObjList)
