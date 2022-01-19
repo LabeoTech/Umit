@@ -8,7 +8,7 @@ addpath(genpath(IOI_ANAfolder));
 %% Create Protocol Object
 maindir = 'F:\SolennRawData';
 savedir = 'E:\TestSaveDir';
-protocol = Protocol('TestProtocol', maindir, savedir, @TestDataProtoFunc, []);
+protocol = Protocol('TestProtocol2', maindir, savedir, @TestDataProtoFunc, []);
 protocol.generateList;
 protocol.generateSaveFolders;
 save(fullfile(protocol.SaveDir, [protocol.Name '.mat']), 'protocol');
