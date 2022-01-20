@@ -218,10 +218,10 @@ classdef PipelineManager < handle
             task.lvl = obj.ClassLevel;
             task.name = obj.funcList(idx).name;
             task.b_save2File = p.Results.b_save2File;
-            task.datFileName = p.Results.datFileName;
+            task.datFileName = p.Results.datFileName; 
             
             % Control for steps IDENTICAL to the task that are already in the pipeline:
-            idx_equal = arrayfun(@(x) isequaln(task,x), obj.pipe);
+             idx_equal = arrayfun(@(x) isequaln(task,x), obj.pipe);
             if any(idx_equal)
                 warning('Operation cancelled! The function "%s" already exists in the Pipeline!',....
                     task.name);
@@ -254,7 +254,7 @@ classdef PipelineManager < handle
                     if iscell(obj.pipe(i).outFileName)
                         % Ask user to select a file:
                         disp('Controlling for multiple outputs')
-                        w = warndlg({'Previous step has multiple output files!',...
+                        w = warndlg({[obj.pipe(i).name ' has multiple output files!'],...
                             'Please, select one to be analysed!'});
                         waitfor(w);
                         [indxFile, tf] = listdlg('ListString', obj.pipe(i).outFileName,...
@@ -269,7 +269,7 @@ classdef PipelineManager < handle
                     end
                 end
             end
-            
+                      
             % Save to Pipeline:
             obj.pipe = [obj.pipe; task];
             disp(['Added "' task.name '" to pipeline.']);
@@ -283,14 +283,18 @@ classdef PipelineManager < handle
                     ' "%s" \nbecause it doesn''t have any data as output!'], task.name);
                 return
             end
-            % Save datFileName as default output name from task's function:
-            if isempty(task.datFileName)
-                obj.pipe(end).datFileName = obj.pipe(end).outFileName;
-                % OR update datFileName to add file extension:
-            else
-                obj.pipe(end).datFileName = [obj.pipe(end).datFileName, '.dat'];
-            end
             
+            % Save datFileName as default output name from task's function:            
+            if isempty(task.datFileName)
+                obj.pipe(end).datFileName = obj.pipe(end).outFileName;                
+            else
+                % OR update datFileName to add file extension:
+                [~,~,ext]= fileparts(obj.pipe(end).datFileName);
+                [~,~,ext_def] = fileparts(obj.pipe(end).outFileName);
+                if isempty(ext)
+                    obj.pipe(end).datFileName = [obj.pipe(end).datFileName, ext_def];
+                end
+            end            
         end
         
         function varargout = showPipeSummary(obj)
@@ -454,15 +458,25 @@ classdef PipelineManager < handle
             % Input:
             %   pipeFile(char): full path to the .JSON file containing the
             %   pipeline config.
+            txt = fileread(pipeFile);
+            new_pipe = jsondecode(txt);
             
-            try
-                txt = fileread(pipeFile);
-                obj.pipe = jsondecode(txt);
-                disp('Pipeline Loaded!');
-                obj.showPipeSummary;
-            catch ME
-                throw(ME)                
-            end
+            % erase current pipeline:
+            obj.reset_pipe;
+            
+            % Add new tasks:            
+            for i = 1:length(new_pipe)
+                indx_name = find(strcmp(new_pipe(i).name, {obj.funcList.name}));            
+                if ~isequaln(new_pipe(i).opts,obj.funcList(indx_name).info.opts)
+                    obj.funcList(indx_name).info.opts = new_pipe(i).opts;
+                end
+                
+                if new_pipe(i).b_save2File
+                    obj.addTask(indx_name, true, new_pipe(i).datFileName);
+                else
+                    obj.addTask(indx_name);
+                end
+            end                
         end
         
         function reset_pipe(obj)

@@ -191,7 +191,11 @@ classdef DataViewer_pipelineMngr < handle
                     if isempty(p.Results.datFileName)
                         obj.pipe(end).datFileName = obj.pipe(end).outFileName;
                     else
-                        obj.pipe(end).datFileName = p.Results.datFileName;
+                        [~,~,ext]= fileparts(obj.pipe(end).datFileName);
+                        [~,~,ext_def] = fileparts(obj.pipe(end).outFileName);
+                        if isempty(ext)
+                            obj.pipe(end).datFileName = [obj.pipe(end).datFileName, ext_def];
+                        end
                     end
                 else
                     warning(['Cannot save output to .DAT file for the function'...
@@ -327,15 +331,26 @@ classdef DataViewer_pipelineMngr < handle
             %   pipeFile(char): full path to the .JSON file containing the
             %   pipeline config.
             
-            try
-                txt = fileread(pipeFile);
-                obj.pipe = jsondecode(txt);
-                disp('Pipeline Loaded!');
-                obj.showPipeSummary;
-            catch
-                error('umIToolbox:DataViewer_pipelineMngr:InvalidInput', 'Failed to load Pipeline Configuration file')
+            txt = fileread(pipeFile);
+            new_pipe = jsondecode(txt);
+            
+            % erase current pipeline:
+            obj.reset_pipe;
+            
+            % Add new tasks:
+            for i = 1:length(new_pipe)
+                indx_name = find(strcmp(new_pipe(i).name, {obj.funcList.name}));
+                if ~isequaln(new_pipe(i).opts,obj.funcList(indx_name).info.opts)
+                    obj.funcList(indx_name).info.opts = new_pipe(i).opts;
+                end
+                
+                if new_pipe(i).b_save2File
+                    obj.addTask(indx_name, true, new_pipe(i).datFileName);
+                else
+                    obj.addTask(indx_name);
+                end
             end
-        end
+         end
         
         function reset_pipe(obj)
             % This function erases the pipe property and resets the funcList
