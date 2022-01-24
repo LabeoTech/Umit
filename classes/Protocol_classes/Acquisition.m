@@ -14,9 +14,9 @@ classdef Acquisition < handle
     properties (SetAccess = {?Protocol, ?PipelineManager, ?Subject, ?ObjectListManager})
         Array % List of Modalities.
         MyParent % Subject object that contains ACQUISITION object.
-        LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
+        LastLog = table.empty % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
     end
-    properties (Dependent)
+    properties (Dependent, SetAccess = private)
         SaveFolder % Path of directory containing transformed data.
     end
     

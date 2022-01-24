@@ -14,7 +14,7 @@ classdef Protocol < handle
         % where the Subjects and Acquisition data are created.
         Array % List of Subjects. Default: empty ObjectListManager.
         garbageList % Table with a list of removed elements
-        Idx_Filtered % Structure containing indices of Subject/Acquisition/Modality after using a Query Filter as OBJ.QUERYFILTER
+        Idx_Filtered % Array containing indices of Subject/Acquisition/Modality after using a Query Filter as OBJ.QUERYFILTER
         FilterStruct % Structure containing strings used to filter objects. Used by OBJ.QUERYFILTER.
     end
     properties (SetAccess = {?PipelineManager})
@@ -350,23 +350,33 @@ classdef Protocol < handle
             % of indices of Subject, Acquisition and Modality,
             % respectively. The function uses the property FILTERSTRUCT to
             % filter objects.
-            %Reset Idx_Filtered
-            obj.Idx_Filtered = [];
+            
+            new_Idx_Filtered = [];
             % Filter Subjects
-            indS = getIndex(obj, obj, obj.FilterStruct.Subject);
+            indS = getIndex(obj, obj, obj.FilterStruct.Subject);          
             % Filter Acquisitions
             for i = 1:length(indS)
                 targetObj = obj.Array.ObjList(indS(i));
-                indA = getIndex(obj, targetObj, obj.FilterStruct.Acquisition);
+                indA = getIndex(obj, targetObj, obj.FilterStruct.Acquisition);                
                 % Filter Modality
                 for j = 1:length(indA)
                     targetObj = obj.Array.ObjList(indS(i)).Array.ObjList(indA(j));
                     indM = getIndex(obj, targetObj, obj.FilterStruct.Modality);
                     for k = 1:length(indM)
-                        obj.Idx_Filtered = [obj.Idx_Filtered ;[indS(i) indA(j) indM(k)]];
+                        new_Idx_Filtered = [new_Idx_Filtered ;[indS(i) indA(j) indM(k)]];
                     end
                 end
             end
+            % Remove objects that are not in the pre-filtered array:
+            if ~isempty(obj.Idx_Filtered)
+                new_Idx_Filtered = new_Idx_Filtered(ismember(new_Idx_Filtered,obj.Idx_Filtered,'rows'),:);                
+            end
+            
+            if isempty(new_Idx_Filtered)
+                return
+            end
+            
+            obj.Idx_Filtered = new_Idx_Filtered;
         end
         function clearFilterStruct(obj)
            % CLEARFILTERSTRUCT Resets the Filter Parameters to an empty
@@ -436,28 +446,30 @@ classdef Protocol < handle
             %   targetObj : Protocol Object of class Subject, Acquisition
             %       or Modality.
             %   FilterStruct(struct): Protocol's filter structure
-            %   containing info for filtering objects inside "targetObj".
+            %   containing info for filtering objects inside "targetObj".                                   
             
             ind = cell(1,length(FilterStruct));
             for i = 1:length(FilterStruct)
                 Filt = FilterStruct(i);
                 ind{i} = targetObj.Array.findElement(Filt.PropName, Filt.Expression, obj.FilterStruct.FilterMethod);
             end
+                        
             if length(FilterStruct) > 1
-            for i = 1:length(FilterStruct)-1
-                switch FilterStruct(i).LogicalOperator
-                    case 'AND'
-                        ind{i+1} = intersect(ind{i}, ind{i+1}); % Selects elements common to both arrays.
-                    case 'OR'
-                        ind{i+1} = setxor(ind{i}, ind{i+1}); % Selects elements that are NOT common to both arrays.
-                    case 'NOT'
-                        ind{i+1} = setdiff(ind{i}, ind{i+1}); % Selects elements from 1st array that are not in the 2nd array.
-                    otherwise
-                        ind{i+1} = union(ind{i}, ind{i+1}); % Selects the combined elements from both arrays.
-                end         
-            end
-            end
-            out = ind{end};
+                for i = 1:length(FilterStruct)-1
+                    switch FilterStruct(i).LogicalOperator
+                        case 'AND'
+                            ind{i+1} = intersect(ind{i}, ind{i+1}); % Selects elements common to both arrays.
+                        case 'OR'
+                            ind{i+1} = setxor(ind{i}, ind{i+1}); % Selects elements that are NOT common to both arrays.
+                        case 'NOT'
+                            ind{i+1} = setdiff(ind{i}, ind{i+1}); % Selects elements from 1st array that are not in the 2nd array.
+                        otherwise
+                            ind{i+1} = union(ind{i}, ind{i+1}); % Selects the combined elements from both arrays.
+                    end
+                end
+            end                        
+            
+            out = ind{end};           
         end
     end
     methods (Static)

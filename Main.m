@@ -23,7 +23,7 @@ load(fullfile(savedir, ProjectName));
 protocol.clearFilterStruct
 % Query subjects
 protocol.FilterStruct.Subject.PropName = 'ID';
-protocol.FilterStruct.Subject.Expression = 'M5G';
+protocol.FilterStruct.Subject.Expression = 'M5';
 % protocol.FilterStruct.Subject.LogicalOperator ='NOT';
     % Excludes a subject from query:
 % protocol.FilterStruct.Subject(2).PropName = 'ID';

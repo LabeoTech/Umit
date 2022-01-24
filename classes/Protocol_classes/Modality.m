@@ -21,7 +21,7 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
                          % list of files (no path) and to create the
                          % "RawFolder" property.
     end
-    properties (Dependent)
+    properties (Dependent, SetAccess = private)
         RawFolder char % Path of directory containing raw data.    
         SaveFolder % Path of directory containing transformed data.        
         MetaDataFile % FullPath of file containing other information about the recording session.
