@@ -17,7 +17,7 @@ p = inputParser;
 addRequired(p,'data',@(x) isnumeric(x)); % Validate if the input is a 3-D numerical matrix:
 addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
 % Optional Parameters:
-addOptional(p, 'opts', default_opts,@(x) isstruct(x) &&...
+addOptional(p, 'opts', default_opts,@(x) isstruct(x) && isfile(x.ROI_filename) && ...
     ismember(x.SpatialAggFcn, {'none','mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}));
 addOptional(p, 'object', [], @(x) isempty(x) || isa(x,'Acquisition') || isa(x,'Modality')); 
 
@@ -100,7 +100,8 @@ else
     metaData.Writable = true;
 end
 metaData.ROIfile = opts.ROI_filename;
-outDataStat = save2Mat([], roi_pixVals, roi_names, new_dim_names, 'appendMetaData', metaData);
+outDataStat = save2Mat(opts.ROI_filename, roi_pixVals, roi_names,...
+    new_dim_names, 'appendMetaData', metaData, 'genFile', false);
 end
 
 % Local function:

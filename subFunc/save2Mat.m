@@ -24,6 +24,9 @@ function varargout = save2Mat(MatFileName, data, obsID, dim_names, varargin)
 %   appendMetaData (optional Name-value parameter):
 %       handle to .MAT (matfile) containing metaData that will be added the
 %       output .MAT file.
+%   genFile (bool): If TRUE, this function will save the data to a .MAT,
+%       otherwise it will output it as "out".
+
 % Output (optional):
 %   out = structure containing data and metaData.
 
@@ -38,7 +41,7 @@ addRequired(p, 'obsID', @iscell);
 addRequired(p, 'dim_names', @iscell);
 addParameter(p, 'label', 'val', @(x) (iscell(x) && ischar([x{:}])) || (ischar(x)));
 addParameter(p, 'appendMetaData', [], @(x) isempty(x) || isa(x, 'matlab.io.MatFile') || isstruct(x));
-addParameter(p, 'genFile', false, @islogical)
+addParameter(p, 'genFile', true, @islogical)
 parse(p, MatFileName, data, obsID, dim_names, varargin{:});
 % Instantiate input variables:
 mFile = p.Results.MatFileName;
@@ -104,7 +107,7 @@ errMsg = 'The lenght of Labels is different from the length of data.';
 assert(isequaln(size(s.data{1},2),length(label)), errID, errMsg);
 % Add "label" to s:
 s.label = label;
-if ~b_genFile
+if b_genFile
     % Add file unique identifier:
     s.fileUUID = char(java.util.UUID.randomUUID);
     % Save "s" struct to file:
