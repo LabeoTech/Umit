@@ -312,7 +312,7 @@ classdef PipelineManager < handle
                 return
             end
             
-            str = sprintf('%s\n', 'Pipeline Summary:');
+            str = sprintf('Pipeline Summary:\nRun on object: "%s"\n\n', obj.ClassName);
             for i = 1:length(obj.pipe)
                 str =  [str sprintf('--->> Step # %d <<---\n', i)];
                 if isempty(obj.pipe(i).opts)
@@ -353,7 +353,9 @@ classdef PipelineManager < handle
             lbf = matfile(obj.ProtocolObj.LogBookFile);
             obj.tmp_LogBook = lbf.LogBook;
             obj.PipelineSummary = obj.ProtocolObj.createEmptyTable;
-                        
+           
+            % Check if last data will be saved:
+            obj.saveLastData;
             % Initialize waitbars:
             obj.setWaitBar('Initialize')
             
@@ -412,8 +414,8 @@ classdef PipelineManager < handle
                 end
                 % When the pipeline reaches the last step, save the current
                 % data to a file:
-                if j == length(obj.pipe) && ~obj.pipe.b_save2File
-                    obj.saveDataToFile(obj.pipe(end));
+                if j == length(obj.pipe)
+                    obj.saveDataToFile(obj.pipe(end));                    
                 end
                 % Update Pipeline summary table:
                 obj.PipelineSummary = [obj.PipelineSummary; obj.tmp_TargetObj.LastLog];
@@ -466,11 +468,12 @@ classdef PipelineManager < handle
             
             % Add new tasks:            
             for i = 1:length(new_pipe)
-                indx_name = find(strcmp(new_pipe(i).name, {obj.funcList.name}));            
+                indx_name = find(strcmp(new_pipe(i).name, {obj.funcList.name}));
+                % Update funcList with custom opts settings:
                 if ~isequaln(new_pipe(i).opts,obj.funcList(indx_name).info.opts)
                     obj.funcList(indx_name).info.opts = new_pipe(i).opts;
                 end
-                
+                % add tasks to pipeline:
                 if new_pipe(i).b_save2File
                     obj.addTask(indx_name, true, new_pipe(i).datFileName);
                 else
@@ -479,13 +482,22 @@ classdef PipelineManager < handle
             end                
         end
         
-        function reset_pipe(obj)
+        function reset_pipe(obj, varargin)
             % This function erases the pipe property and resets the funcList
             % property to default parameter values.
+            % Input:
+            %   flag(char): (optional) type 'all' to reset function list in
+            %   addition to the pipeline.
+            flag = '';
+            if nargin > 1
+                flag = varargin{:};
+            end
             obj.pipe = struct();
-            obj.funcList = struct.empty;
-            obj.createFcnList;
             obj.pipeFirstInput = '';
+            if strcmp(flag, 'all')
+                obj.funcList = struct.empty;
+                obj.createFcnList;
+            end
             % Clear current data,  metaData and File List:
             obj.current_data = []; obj.current_metaData = [];obj.current_outFile = {};
         end
@@ -909,6 +921,28 @@ classdef PipelineManager < handle
             
         end
         
+        function saveLastData(obj)
+            % This method ensures that the last step of the pipeline that 
+            % ouputs data ("outData") is saved. This method is called from "run_pipeline".                        
+            
+            % Look for last step that ouputs a "data":
+            for i = length(obj.pipe):-1:1
+                if ~isempty(obj.pipe(i).outFileName)
+                    break
+                end
+            end
+        
+            if obj.pipe(i).b_save2File
+               return 
+            end
+                
+            if isempty(obj.pipe(i).datFileName)
+                obj.pipe(i).datFileName = obj.pipe(i).outFileName;
+                obj.pipe(i).b_save2File = true;
+            end
+            
+        end
+        
         function saveDataToFile(obj, step)
             % This methods manages data saving to .DAT and .MAT files.
             % Input:
@@ -925,7 +959,7 @@ classdef PipelineManager < handle
                     '-struct', obj.current_data);
             end
         end
-        
+        % WAITBAR METHODS:
         function setWaitBar(obj, tag, varargin)
             % This method creates two "waitbar" dialogs.
             % The first shows the progress of the pipeline runs across objects
@@ -936,6 +970,15 @@ classdef PipelineManager < handle
             %               "UpdateItem" : updates bar1.
             %               "UpdateTask" : updates bar2.
             %   barVal (float): (Optional) fractional value of the bar.        
+            
+            % Control for invalid waitbar handles:
+            if ~strcmp(tag, 'Initialize')
+                b_HandleExist = (ishandle(obj.h_wbItem) & ishandle(obj.h_wbTask));
+                if ~b_HandleExist
+                    return
+                end
+            end
+            
             
             switch tag
                 case 'Initialize'

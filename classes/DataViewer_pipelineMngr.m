@@ -5,7 +5,8 @@ classdef DataViewer_pipelineMngr < handle
     %
     
     properties
-        pipe struct % structure containing the info of each step of the pipeline.
+        pipe = struct('argsIn', {},'argsOut',{},'outFileName','','opts',struct.empty,...
+                    'name','','funcStr', '','b_save2Dat', logical.empty, 'datFileName', '');% structure containing the info of each step of the pipeline.
         fcnDir char % Directory of the analysis functions.
         funcList struct % structure containing the info about each function in the "fcnDir"
     end
@@ -60,6 +61,23 @@ classdef DataViewer_pipelineMngr < handle
             end
             
         end
+        
+        function set.pipe(obj, pipe)
+            % Pipeline structure setter. If pipe is empty, create an empty
+            % structure containing tasks fields.
+            
+            if isempty(fieldnames(pipe)) || isempty(pipe)
+                pipe = struct('argsIn', {},'argsOut',{},'outFileName','','opts',struct.empty,...
+                    'name','','funcStr', '','b_save2Dat', logical.empty, 'datFileName', '');                    
+            end
+            % Check if all fields exist:
+            if ~all(ismember(fieldnames(pipe),fieldnames(obj.pipe)))
+                error('umIToolbox:DataViewer_pipelineMngr:InvalidInput',...
+                    'The pipeline structure provided is invalid!');
+            end
+            obj.pipe = pipe;
+        end
+        
         %%%%%%%%%%%%%%%%%% 
         function setOpts(obj, func)
             % SETOPTS opens an INPUTDLG for entry of optional variables
@@ -191,10 +209,12 @@ classdef DataViewer_pipelineMngr < handle
                     if isempty(p.Results.datFileName)
                         obj.pipe(end).datFileName = obj.pipe(end).outFileName;
                     else
-                        [~,~,ext]= fileparts(obj.pipe(end).datFileName);
+                        [~,~,ext]= fileparts(p.Results.datFileName);
                         [~,~,ext_def] = fileparts(obj.pipe(end).outFileName);
                         if isempty(ext)
                             obj.pipe(end).datFileName = [obj.pipe(end).datFileName, ext_def];
+                        else
+                           obj.pipe(end).datFileName = p.Results.datFileName;
                         end
                     end
                 else
@@ -352,12 +372,21 @@ classdef DataViewer_pipelineMngr < handle
             end
          end
         
-        function reset_pipe(obj)
+        function reset_pipe(obj, varargin)
             % This function erases the pipe property and resets the funcList
-            % property.
-            obj.pipe = struct.empty;
-            obj.funcList = struct.empty;
-            obj.createFcnList;
+            % property to default parameter values.
+            % Input:
+            %   flag(char): (optional) type 'all' to reset function list in
+            %   addition to the pipeline.
+            flag = '';
+            if nargin > 1
+                flag = varargin{:};
+            end
+            obj.pipe = struct();            
+            if strcmp(flag, 'all')
+                obj.funcList = struct.empty;
+                obj.createFcnList;
+            end            
         end
         
     end
