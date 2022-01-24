@@ -5,21 +5,23 @@ classdef DataViewer_pipelineMngr < handle
     %
     
     properties
-        pipe = struct('argsIn', {},'argsOut',{},'outFileName','','opts',struct.empty,...
-                    'name','','funcStr', '','b_save2Dat', logical.empty, 'datFileName', '');% structure containing the info of each step of the pipeline.
         fcnDir char % Directory of the analysis functions.
         funcList struct % structure containing the info about each function in the "fcnDir"
     end
     
     properties (SetAccess = private)
+        % structure containing the info of each step of the pipeline:
+        pipe = struct('argsIn', {},'argsOut',{},'outFileName','','opts',struct.empty,...
+            'name','','funcStr', '','b_save2Dat', logical.empty, 'datFileName', '');
+        
         data % numerical array containing imaging data
         metaData % structure or matfile containing meta data associated with "data".
         SaveFolder % folder where data created will be stored (Save Directory).
         RawFolder % folder where the Raw data are stored (Pertinent for Data Import functions only!)
         outFile % list of file names created by some functions that generate .DAT files instead of data as outputs (e.g. run_ImagesClassification)
-        dataHistory % structure containing the History of analysis functions applied to the current data.        
-    end    
-   
+        dataHistory % structure containing the History of analysis functions applied to the current data.
+    end
+    
     methods
         function obj = DataViewer_pipelineMngr(data, metaData, SaveFolder, RawFolder)
             rootDir = getenv('Umitoolbox');
@@ -28,7 +30,7 @@ classdef DataViewer_pipelineMngr < handle
             obj.data = data;
             obj.metaData = metaData;
             obj.SaveFolder = SaveFolder;
-            obj.RawFolder = RawFolder; 
+            obj.RawFolder = RawFolder;
         end
         %%%%% SETTERS %%%%
         function set.metaData(obj, metaData)
@@ -58,8 +60,7 @@ classdef DataViewer_pipelineMngr < handle
                 end
             else
                 obj.metaData = metaData;
-            end
-            
+            end            
         end
         
         function set.pipe(obj, pipe)
@@ -68,7 +69,7 @@ classdef DataViewer_pipelineMngr < handle
             
             if isempty(fieldnames(pipe)) || isempty(pipe)
                 pipe = struct('argsIn', {},'argsOut',{},'outFileName','','opts',struct.empty,...
-                    'name','','funcStr', '','b_save2Dat', logical.empty, 'datFileName', '');                    
+                    'name','','funcStr', '','b_save2Dat', logical.empty, 'datFileName', '');
             end
             % Check if all fields exist:
             if ~all(ismember(fieldnames(pipe),fieldnames(obj.pipe)))
@@ -78,10 +79,10 @@ classdef DataViewer_pipelineMngr < handle
             obj.pipe = pipe;
         end
         
-        %%%%%%%%%%%%%%%%%% 
+        %%%%%%%%%%%%%%%%%%
         function setOpts(obj, func)
             % SETOPTS opens an INPUTDLG for entry of optional variables
-            % (OPTS) of methods in the Pipeline. 
+            % (OPTS) of methods in the Pipeline.
             
             idx = obj.check_funcName(func);
             if isempty(idx)
@@ -143,7 +144,7 @@ classdef DataViewer_pipelineMngr < handle
             
             % Replace Input argument names:
             argsIn = replace(funcInfo.argsIn, {'RawFolder', 'SaveFolder', 'data', 'metaData'}, ...
-                {['''' obj.RawFolder ''''], ['''' obj.SaveFolder ''''], 'obj.data', 'obj.metaData'});            
+                {['''' obj.RawFolder ''''], ['''' obj.SaveFolder ''''], 'obj.data', 'obj.metaData'});
             % Replace output argument names:
             argsOut = replace(funcInfo.argsOut, {'outData', 'metaData', 'outDataStat', 'outFile'},...
                 {'obj.data', 'obj.metaData', 'obj.data', 'obj.outFile'});
@@ -151,7 +152,7 @@ classdef DataViewer_pipelineMngr < handle
             funcInfo.funcStr = ['[' strjoin(argsOut, ',') ']=' funcInfo.name '('...
                 strjoin(argsIn, ',') ');'];
             % Add optional fields to funcInfo structure:
-            funcInfo.b_save2Dat = false; funcInfo.datFileName = '';
+            funcInfo.b_save2Dat = p.Results.b_save2Dat; funcInfo.datFileName = p.Results.datFileName;
             % Add step to pipeline:
             if isempty(obj.pipe)
                 % Check if all input arguments exist. If not, throw an error:
@@ -160,14 +161,14 @@ classdef DataViewer_pipelineMngr < handle
                 for i = 1:length(idx_miss)
                     eval(['idx_miss(' num2str(i) ') = isempty(' props{i} ');'])
                 end
-                if any(idx_miss)                   
+                if any(idx_miss)
                     errID = 'umIToolbox:DataViewer_pipelineMngr:MissingInputs';
                     error(errID, 'Cannot add task! The following inputs are missing:\n"%s"', ...
                         strjoin(erase(props(idx_miss), 'obj.'), ' , '));
-                end
-                obj.pipe = [obj.pipe; funcInfo];
-                
+                end                
             elseif contains(funcInfo.name, {obj.pipe.name})
+                % Abort, if the user tries to add the same function more
+                % than once to the pipeline:
                 warning('The function "%s" already exists in the Pipeline!', funcInfo.name);
                 return
             else
@@ -175,7 +176,7 @@ classdef DataViewer_pipelineMngr < handle
                 % Here, we assume that functions with multiple outputs
                 % create only "Files" and not "data" in the workspace.
                 % Given that, we will update the function string to load
-                % one of the "Files" in the workspace before running the 
+                % one of the "Files" in the workspace before running the
                 % current step.
                 
                 if (numel(obj.pipe(end).outFileName) > 1) && any(strcmp(obj.pipe(end).argsOut, 'outFile'))
@@ -189,42 +190,41 @@ classdef DataViewer_pipelineMngr < handle
                         disp('Operation cancelled by User')
                         return
                     end
-        
+                    
                     % Update function string to load "data" and "metaData"
                     % from the selected file. Here, we assume that the
                     % given file is located in the "SaveFolder".
                     str = ['[obj.data, obj.metaData] = loadDatFile(fullfile(obj.SaveFolder, '''...
                         obj.pipe(end).outFileName{indx} '''));'];
                     funcInfo.funcStr = [str, funcInfo.funcStr];
-                end
-                % Save to Pipeline:
-                obj.pipe = [obj.pipe; funcInfo];
+                end                
             end
-                       
+            
+            % Add step to pipeline:
+            obj.pipe = [obj.pipe; funcInfo];
+            
             % Control for existing data to be saved for the current
             % function:
-            if p.Results.b_save2Dat
-                if any(strcmp('obj.data', argsOut))
-                    obj.pipe(end).b_save2Dat = p.Results.b_save2Dat;
-                    if isempty(p.Results.datFileName)
-                        obj.pipe(end).datFileName = obj.pipe(end).outFileName;
-                    else
-                        [~,~,ext]= fileparts(p.Results.datFileName);
-                        [~,~,ext_def] = fileparts(obj.pipe(end).outFileName);
-                        if isempty(ext)
-                            obj.pipe(end).datFileName = [obj.pipe(end).datFileName, ext_def];
-                        else
-                           obj.pipe(end).datFileName = p.Results.datFileName;
-                        end
-                    end
+            if obj.pipe(end).b_save2Dat && any(strcmp('obj.data', argsOut))
+                %  If a custom filename was not provided, use the
+                %  default one:
+                if isempty(obj.pipe(end).datFileName)
+                    obj.pipe(end).datFileName = obj.pipe(end).outFileName;
                 else
-                    warning(['Cannot save output to .DAT file for the function'...
-                        ' "%s" \nbecause it doesn''t have any data as output!'], funcInfo.name);
+                    % Add .DAT extension, if user just provided the
+                    % filename:
+                    [~,~,ext]= fileparts(obj.pipe(end).datFileName);
+                    [~,~,ext_def] = fileparts(obj.pipe(end).outFileName);
+                    if isempty(ext)
+                        obj.pipe(end).datFileName = [obj.pipe(end).datFileName, ext_def];
+                    end
                 end
-            else
-                
+            elseif obj.pipe(end).b_save2Dat && ~any(strcmp('obj.data', argsOut))
+                warning(['Cannot save output to .DAT file for the function'...
+                    ' "%s" \nbecause it doesn''t have any data as output!'], funcInfo.name);
             end
-            disp(['Added "' obj.funcList(idx).name '" to pipeline.']); 
+            
+            disp(['Added "' obj.funcList(idx).name '" to pipeline.']);
         end
         
         function showFuncList(obj)
@@ -279,14 +279,14 @@ classdef DataViewer_pipelineMngr < handle
             % Very (I mean... very!) simple function to run pipeline.
             % This functions renames the input and output variables
             % contained in the function string and evaluates it
-            % sequentially:            
+            % sequentially:
             % Outputs (optional):
             %   outMsg (str) : Message containing the string "Pipeline
             %   Finished" or an Exception report if errors were found
             %   during execution.
-                       
+            
             disp('Running pipeline on Data...');
-
+            
             h = waitbar(0, 'Initiating pipeline...');
             h.Children.Title.Interpreter = 'none';
             for i = 1:length(obj.pipe)
@@ -344,7 +344,7 @@ classdef DataViewer_pipelineMngr < handle
             disp(['Pipeline saved as "' file '" in ' Path]);
         end
         
-         function loadPipe(obj, pipeFile)
+        function loadPipe(obj, pipeFile)
             % LOADPIPE loads the structure PIPE inside FILENAME and assigns
             % it to OBJ.PIPE property.
             % Input:
@@ -370,7 +370,7 @@ classdef DataViewer_pipelineMngr < handle
                     obj.addTask(indx_name);
                 end
             end
-         end
+        end
         
         function reset_pipe(obj, varargin)
             % This function erases the pipe property and resets the funcList
@@ -382,11 +382,11 @@ classdef DataViewer_pipelineMngr < handle
             if nargin > 1
                 flag = varargin{:};
             end
-            obj.pipe = struct();            
+            obj.pipe = struct();
             if strcmp(flag, 'all')
                 obj.funcList = struct.empty;
                 obj.createFcnList;
-            end            
+            end
         end
         
     end
@@ -435,7 +435,7 @@ classdef DataViewer_pipelineMngr < handle
                 if all(ismember(out.argsIn, kwrds_args)) && all(ismember(out.argsOut, kwrds_out))
                     disp(list(i).name);
                     [~,list(i).name, ~] = fileparts(list(i).name);
-                    list(i).info = out;                    
+                    list(i).info = out;
                     obj.funcList = [obj.funcList ; list(i)];
                 end
                 
@@ -444,7 +444,7 @@ classdef DataViewer_pipelineMngr < handle
             function info = parseFuncFile(fcnStruct)
                 info = struct('argsIn', {},'argsOut', {}, 'outFileName', '', 'opts', []);
                 txt = fileread(fullfile(fcnStruct.folder, fcnStruct.name));
-                funcStr = erase(regexp(txt, '(?<=function\s*).*?(?=\r*\n)', 'match', 'once'),' ');                
+                funcStr = erase(regexp(txt, '(?<=function\s*).*?(?=\r*\n)', 'match', 'once'),' ');
                 outStr = regexp(funcStr,'.*(?=\=)', 'match', 'once');
                 out_args = regexp(outStr, '\[*(\w*)\,*(\w*)\]*', 'tokens', 'once');
                 idx_empty = cellfun(@isempty, out_args);
@@ -474,47 +474,47 @@ classdef DataViewer_pipelineMngr < handle
         end
         
         function updateDataHistory(obj, step)
-           % This function creates or  updates the "dataHistory" structure
-           % and saves the information to the metaData structure/matfile.
-           % The dataHistory contains all information about the functions' 
-           % parameters used to create the current "data" and when it was run.
-           %
-           % Input:
-           %    step(struct) : current step of the pipeline;
-           
-           disp('Building Data History...')
-           timestamp = datetime('now');
-           funcInfo = obj.funcList(strcmp(step.name, {obj.funcList.name}));
-           % Create a local structure with the function's info:
-           curr_dtHist = struct('runDatetime', timestamp, 'name', {funcInfo.name},...
-               'folder', {funcInfo.folder}, 'creationDatetime', datetime(funcInfo.date),...
-               'opts', step.opts, 'funcStr', {step.funcStr}, 'outputFile_list', 'none');
-           % First, we need to know if the output is a "data" or a file:
-           if any(strcmp(step.argsOut, 'outFile'))
-               curr_dtHist.outputFile_list = obj.outFile;
-               for i = 1:length(obj.outFile)
-                   % Map existing metaData file to memory:
-                   mtD = matfile(strrep(obj.outFile{i}, '.dat', '.mat'));
-                   mtD.Properties.Writable = true;
-                   % Create or update "dataHistory" structure:
-                   if isprop(mtD, 'dataHistory')
-                       mtD.dataHistory = [mtD.dataHistory; curr_dtHist];
-                   else
-                       mtD.dataHistory = curr_dtHist;
-                   end
-               end
-           else
-               if isfield(obj.metaData, 'dataHistory')
-                   obj.metaData.dataHistory = [obj.metaData.dataHistory; curr_dtHist];
-               else
-                   obj.metaData.dataHistory = curr_dtHist;
-               end
-           end 
+            % This function creates or  updates the "dataHistory" structure
+            % and saves the information to the metaData structure/matfile.
+            % The dataHistory contains all information about the functions'
+            % parameters used to create the current "data" and when it was run.
+            %
+            % Input:
+            %    step(struct) : current step of the pipeline;
+            
+            disp('Building Data History...')
+            timestamp = datetime('now');
+            funcInfo = obj.funcList(strcmp(step.name, {obj.funcList.name}));
+            % Create a local structure with the function's info:
+            curr_dtHist = struct('runDatetime', timestamp, 'name', {funcInfo.name},...
+                'folder', {funcInfo.folder}, 'creationDatetime', datetime(funcInfo.date),...
+                'opts', step.opts, 'funcStr', {step.funcStr}, 'outputFile_list', 'none');
+            % First, we need to know if the output is a "data" or a file:
+            if any(strcmp(step.argsOut, 'outFile'))
+                curr_dtHist.outputFile_list = obj.outFile;
+                for i = 1:length(obj.outFile)
+                    % Map existing metaData file to memory:
+                    mtD = matfile(strrep(obj.outFile{i}, '.dat', '.mat'));
+                    mtD.Properties.Writable = true;
+                    % Create or update "dataHistory" structure:
+                    if isprop(mtD, 'dataHistory')
+                        mtD.dataHistory = [mtD.dataHistory; curr_dtHist];
+                    else
+                        mtD.dataHistory = curr_dtHist;
+                    end
+                end
+            else
+                if isfield(obj.metaData, 'dataHistory')
+                    obj.metaData.dataHistory = [obj.metaData.dataHistory; curr_dtHist];
+                else
+                    obj.metaData.dataHistory = curr_dtHist;
+                end
+            end
         end
         
         function b_skip = checkDataHistory(obj,step)
             % This method verifies if the function to be run in "step" was
-            % already performed or not on the current data. 
+            % already performed or not on the current data.
             % If so, the pipeline step will be skipped.
             % Input:
             %   step (struct): structure containing the function information that
