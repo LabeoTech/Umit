@@ -38,10 +38,10 @@ classdef PipelineManager < handle
         
         h_wbItem % Handle of waitbar dialog showing the progress of the pipeline across protocol's objects.
         h_wbTask % Handle of waitbar dialog showing the progress of the pipeline in the current object.
-        targetObjFullID char % Full ID of the current object. 
-                             % For example, if the current object is a
-                             % modality the full ID is:
-                             % SubjID--AcqID--ModID.
+        targetObjFullID char % Full ID of the current object.
+        % For example, if the current object is a
+        % modality the full ID is:
+        % SubjID--AcqID--ModID.
     end
     
     methods
@@ -76,7 +76,7 @@ classdef PipelineManager < handle
                         obj.ProtocolObj.clearFilterStruct;
                         obj.ProtocolObj.queryFilter;
                     end
-                        
+                    
                     % Find the class from the list of Modality objects from protocol's filtered
                     % objects:
                     items = obj.ProtocolObj.extractFilteredObjects(3);
@@ -218,10 +218,10 @@ classdef PipelineManager < handle
             task.lvl = obj.ClassLevel;
             task.name = obj.funcList(idx).name;
             task.b_save2File = p.Results.b_save2File;
-            task.datFileName = p.Results.datFileName; 
+            task.datFileName = p.Results.datFileName;
             
             % Control for steps IDENTICAL to the task that are already in the pipeline:
-             idx_equal = arrayfun(@(x) isequaln(task,x), obj.pipe);
+            idx_equal = arrayfun(@(x) isequaln(task,x), obj.pipe);
             if any(idx_equal)
                 warning('Operation cancelled! The function "%s" already exists in the Pipeline!',....
                     task.name);
@@ -269,7 +269,7 @@ classdef PipelineManager < handle
                     end
                 end
             end
-                      
+            
             % Save to Pipeline:
             obj.pipe = [obj.pipe; task];
             disp(['Added "' task.name '" to pipeline.']);
@@ -284,17 +284,18 @@ classdef PipelineManager < handle
                 return
             end
             
-            % Save datFileName as default output name from task's function:            
+            % Save datFileName as default output name from task's function
+            % if it wasn't previously defined by the User:
             if isempty(task.datFileName)
-                obj.pipe(end).datFileName = obj.pipe(end).outFileName;                
+                obj.pipe(end).datFileName = obj.pipe(end).outFileName;
             else
                 % OR update datFileName to add file extension:
                 [~,~,ext]= fileparts(obj.pipe(end).datFileName);
-                [~,~,ext_def] = fileparts(obj.pipe(end).outFileName);
                 if isempty(ext)
+                    [~,~,ext_def] = fileparts(obj.pipe(end).outFileName);
                     obj.pipe(end).datFileName = [obj.pipe(end).datFileName, ext_def];
                 end
-            end            
+            end
         end
         
         function varargout = showPipeSummary(obj)
@@ -353,7 +354,7 @@ classdef PipelineManager < handle
             lbf = matfile(obj.ProtocolObj.LogBookFile);
             obj.tmp_LogBook = lbf.LogBook;
             obj.PipelineSummary = obj.ProtocolObj.createEmptyTable;
-           
+            
             % Check if last data will be saved:
             obj.saveLastData;
             % Initialize waitbars:
@@ -371,7 +372,7 @@ classdef PipelineManager < handle
                     % Subject
                     targetIdxArr = unique(obj.ProtocolObj.Idx_Filtered(:,1), 'rows');
             end
-                     
+            
             for i = 1:size(targetIdxArr,1)
                 % Clear current data,  metaData and File List before starting the pipeline:
                 obj.current_data = []; obj.current_metaData = [];obj.current_outFile = {};
@@ -385,16 +386,16 @@ classdef PipelineManager < handle
                 myFullName = {obj.tmp_TargetObj.ID};
                 while ~isa(myParent, 'Protocol')
                     myFullName = [myFullName, {myParent.ID}];
-                    myParent = myParent.MyParent; 
+                    myParent = myParent.MyParent;
                 end
                 myFullName = fliplr(myFullName);
                 obj.targetObjFullID = strjoin(myFullName, ' -- ');
                 % Update waitbars:
                 obj.setWaitBar('UpdateItem', i, size(targetIdxArr,1));
                 fprintf([repmat('-',1,50),'\n']);
-                fprintf('Object Name: %s\n\n', obj.targetObjFullID) 
+                fprintf('Object Name: %s\n\n', obj.targetObjFullID)
                 % Run pipeline in each target object:
-                for j = 1:length(obj.pipe)                    
+                for j = 1:length(obj.pipe)
                     obj.current_task = obj.pipe(j);
                     obj.setWaitBar('UpdateTask', j/length(obj.pipe));
                     fprintf('Running task # %d/%d ----->>>>>\n',j,length(obj.pipe));
@@ -402,7 +403,7 @@ classdef PipelineManager < handle
                     
                     if ~obj.b_state
                         break
-                    end         
+                    end
                     % Control for Pipeline cancelling by User:
                     if getappdata(obj.h_wbItem, 'b_abortPipe')
                         delete([obj.h_wbItem, obj.h_wbTask])
@@ -412,14 +413,14 @@ classdef PipelineManager < handle
                     % during the execution of this method.
                     pause(.001);
                 end
-                % When the pipeline reaches the last step, save the current
-                % data to a file:
-                if j == length(obj.pipe)
-                    obj.saveDataToFile(obj.pipe(end));                    
-                end
+                %                 % When the pipeline reaches the last step, force to save the current
+                %                 % data to a file:
+                %                 if j == length(obj.pipe)
+                %                     obj.saveDataToFile(obj.pipe(end));
+                %                 end
                 % Update Pipeline summary table:
                 obj.PipelineSummary = [obj.PipelineSummary; obj.tmp_TargetObj.LastLog];
-                fprintf([repmat('-',1,50),'\n']);                              
+                fprintf([repmat('-',1,50),'\n']);
             end
             
             % Remove "empty" rows from the Pipeline Summary Log table:
@@ -437,7 +438,7 @@ classdef PipelineManager < handle
             save([obj.ProtocolObj.SaveDir obj.ProtocolObj.Name '.mat'], 'protocol');
             disp('Protocol object Saved!');
             delete([obj.h_wbItem, obj.h_wbTask]);
-                       
+            
         end
         % Pipeline Management methods:
         function savePipe(obj, filename)
@@ -453,7 +454,7 @@ classdef PipelineManager < handle
             fclose(fid);
             disp(['Pipeline saved as "' filename '" in ' targetDir]);
         end
-            
+        
         function loadPipe(obj, pipeFile)
             % LOADPIPE loads the structure PIPE inside FILENAME and assigns
             % it to OBJ.PIPE property.
@@ -466,7 +467,7 @@ classdef PipelineManager < handle
             % erase current pipeline:
             obj.reset_pipe;
             
-            % Add new tasks:            
+            % Add new tasks:
             for i = 1:length(new_pipe)
                 indx_name = find(strcmp(new_pipe(i).name, {obj.funcList.name}));
                 % Update funcList with custom opts settings:
@@ -479,7 +480,7 @@ classdef PipelineManager < handle
                 else
                     obj.addTask(indx_name);
                 end
-            end                
+            end
         end
         
         function reset_pipe(obj, varargin)
@@ -504,7 +505,7 @@ classdef PipelineManager < handle
     end
     
     methods (Access = private)
-       
+        
         function run_taskOnTarget(obj)
             % RUN_TASKONTARGET runs a task in the pipeline structure array in
             % TASK.
@@ -540,7 +541,7 @@ classdef PipelineManager < handle
             try
                 % Control for missing input files:
                 if task.inputFileName
-                    errID = 'MATLAB:Umitoolbox:pipelineManager:FileNotFound';
+                    errID = 'MATLAB:Umitoolbox:PipelineManager:FileNotFound';
                     errmsg = ['Input File for function ' task.name ' not found!'];
                     assert(isfile(fullfile(obj.tmp_TargetObj.SaveFolder, task.inputFileName)),...
                         errID,errmsg);
@@ -549,35 +550,33 @@ classdef PipelineManager < handle
                 % Check for data already run and skip step if so:
                 b_skipStep = obj.checkDataHistory(task);
                 
-                if b_skipStep & ~obj.b_ignoreLoggedFiles
+                if b_skipStep && ~obj.b_ignoreLoggedFiles
                     disp(['Skipped function : "' task.name '"!']);
                     LastLog.Messages_short = 'Skipped';
                     LastLog.Completed = true;
                     return
-                end                
+                end
                 fprintf('\tFunction Name: %s \n\n',task.name);
                 % Load options structure in the workspace.
-                opts = task.opts;%#ok the "opts" structure is used in the EVAL function.
+                opts = task.opts; %#ok the "opts" structure is used in the EVAL function.
                 % Evaluate function string:
                 eval(task.funcStr);
                 % Update log table and tell other methods that the function
                 % was successfully run:
                 obj.b_state = true;
                 LastLog.Messages = 'No Errors';
-                % Save the current Data to a file:
-                if task.b_save2File
-                    obj.saveDataToFile(task);
-                end
                 % Update data history of current data with task:
-                obj.updateDataHistory(task);                
+                obj.updateDataHistory(task);
             catch ME
                 obj.b_state = false;
                 LastLog.Messages = {getReport(ME)};
                 LastLog.Messages_short = {getReport(ME, 'basic','hyperlinks','off')};
-                if obj.b_saveDataBeforeFail
-                    obj.saveDataToFile(task);
-                end
             end
+            % Save data to file:
+            if (task.b_save2File && obj.b_state) || (obj.b_saveDataBeforeFail && ~obj.b_state)
+                obj.saveDataToFile(task)
+            end
+            
             % Update log table of target object:
             LastLog.Completed = obj.b_state;
             LastLog.RunDateTime = datetime('now');
@@ -796,7 +795,7 @@ classdef PipelineManager < handle
             % Output:
             %   fcnStr (char): string containing call to analysis function
             %   in the current task.
-                        
+            
             % Create analysis function string:
             fcnStr = '';
             % Replace input argument names:
@@ -822,7 +821,7 @@ classdef PipelineManager < handle
             %
             % Input:
             %    step(struct) : current step of the pipeline;
-                        
+            
             funcInfo = obj.funcList(strcmp(step.name, {obj.funcList.name}));
             % Create a local structure with the function's info:
             curr_dtHist = struct('runDatetime', datetime('now'), 'name', {funcInfo.name},...
@@ -872,7 +871,7 @@ classdef PipelineManager < handle
             % Output:
             %   b_skip (bool): True if the step was already run on the
             %   data and should be skipped.
-                        
+            
             b_skip = false;
             % Find function info in Function List:
             fcnInfo = obj.funcList(strcmp(step.name, {obj.funcList.name}));
@@ -922,8 +921,11 @@ classdef PipelineManager < handle
         end
         
         function saveLastData(obj)
-            % This method ensures that the last step of the pipeline that 
-            % ouputs data ("outData") is saved. This method is called from "run_pipeline".                        
+            % This method ensures that the last step of the pipeline that
+            % ouputs data ("outData") is saved. It is called from "run_pipeline".
+            % This method updates the "datFileName" and "b_save2File" variables
+            % from the last "saveble" step of the pipeline.
+            %
             
             % Look for last step that ouputs a "data":
             for i = length(obj.pipe):-1:1
@@ -931,11 +933,11 @@ classdef PipelineManager < handle
                     break
                 end
             end
-        
+            
             if obj.pipe(i).b_save2File
-               return 
+                return
             end
-                
+            
             if isempty(obj.pipe(i).datFileName)
                 obj.pipe(i).datFileName = obj.pipe(i).outFileName;
                 obj.pipe(i).b_save2File = true;
@@ -944,22 +946,31 @@ classdef PipelineManager < handle
         end
         
         function saveDataToFile(obj, step)
-            % This methods manages data saving to .DAT and .MAT files.
+            % This methods looks back in the pipeline from "step" for tasks
+            % with "data" or "stats data" as output and saves the current data to a
+            % .DAT or .MAT file.
             % Input:
             %    step(struct) : info of the current task in the pipeline.
             
-            
-            disp('Saving File...');
-            
-            if endsWith(step.datFileName, '.dat')
-                save2Dat(fullfile(obj.tmp_TargetObj.SaveFolder,step.datFileName),...
-                    obj.current_data, obj.current_metaData);
-            else
-                save(fullfile(obj.tmp_TargetObj.SaveFolder,step.datFileName),...
-                    '-struct', obj.current_data);
+            % Get the pipeline until the task before "step":
+            indx = find(strcmp(step.name, {obj.pipe.name}));
+            subPipe = obj.pipe(1:indx-1);
+            % Look back in pipeline for steps with "data" or "stats data"
+            % as output and save the current data using the task's info:
+            for i = length(subPipe):-1:1
+                task = subPipe(i);
+                if endsWith(task.datFileName, '.dat')
+                    save2Dat(fullfile(obj.tmp_TargetObj.SaveFolder,task.datFileName),...
+                        obj.current_data, obj.current_metaData);
+                    return
+                elseif endsWith(task.datFileName, '.mat')
+                    save(fullfile(obj.tmp_TargetObj.SaveFolder,task.datFileName),...
+                        '-struct', obj.current_data);
+                    return
+                end
             end
         end
-        % WAITBAR METHODS:
+        %%%%%%%%%%% WAITBAR METHODS: %%%%%%%%%%%%%%%
         function setWaitBar(obj, tag, varargin)
             % This method creates two "waitbar" dialogs.
             % The first shows the progress of the pipeline runs across objects
@@ -969,7 +980,7 @@ classdef PipelineManager < handle
             %   tag (char): "Initialize" : creates the 2 waitbars.
             %               "UpdateItem" : updates bar1.
             %               "UpdateTask" : updates bar2.
-            %   barVal (float): (Optional) fractional value of the bar.        
+            %   barVal (float): (Optional) fractional value of the bar.
             
             % Control for invalid waitbar handles:
             if ~strcmp(tag, 'Initialize')
@@ -985,7 +996,7 @@ classdef PipelineManager < handle
                     obj.h_wbItem = waitbar(0,'Initializing Pipeline...',...
                         'Name','Pipeline Progress',...
                         'CreateCancelBtn', @obj.wb_cancelBtn);
-                    setappdata(obj.h_wbItem, 'b_abortPipe', 0);                   
+                    setappdata(obj.h_wbItem, 'b_abortPipe', 0);
                     obj.h_wbItem.Children(2).Title.Interpreter = 'none';
                     
                     obj.h_wbTask = waitbar(0,'Initializing Task...','Name','',...
@@ -994,7 +1005,7 @@ classdef PipelineManager < handle
                     
                 case 'UpdateItem'
                     waitbar(varargin{1}/varargin{2}, obj.h_wbItem, ['Item ' num2str(varargin{1})...
-                         '/' num2str(varargin{2})]);                  
+                        '/' num2str(varargin{2})]);
                     obj.h_wbTask.Name = obj.targetObjFullID;
                 case 'UpdateTask'
                     waitbar(varargin{1}, obj.h_wbTask, ['Running "' obj.current_task.name '"']);
@@ -1004,6 +1015,7 @@ classdef PipelineManager < handle
                 % Empty callback to avoid closing Waitbar #2
             end
         end
+        
         function wb_cancelBtn(obj,src,evnt)
             % Callback of cancel button in waitbar1 ("h_wbItem").
             % This callback triggers the cancellation of the current
@@ -1011,12 +1023,13 @@ classdef PipelineManager < handle
             
             fprintf('>>>>>>>>>>>>>>>>>>Cancelling Pipeline...>>>>>>>>>>>\n');
             
-            src.String = 'Wait!';          
+            src.String = 'Wait!';
             if strcmp(evnt.EventName, 'Action')
                 set(src.Parent.Children(2).Title, 'String', 'Please Wait. Stopping Pipeline...');
                 setappdata(obj.h_wbItem, 'b_abortPipe', 1);
             end
         end
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     end
     
 end
