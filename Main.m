@@ -51,7 +51,7 @@ pipe = PipelineManager(protocol, 'FluorescenceImaging');
 % Show list of Available analysis functions:
 pipe.showFuncList;
 % Set Optional Parameters for "run_ImagesClassification" function:
-pipe.setOpts(3)
+pipe.setOpts(15)
 % Add "run_ImagesClassification" to the pipeline:
 % Example of adding tasks to pipeline using functions indices:
 pipe.addTask(3);
