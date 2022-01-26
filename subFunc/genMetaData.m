@@ -1,5 +1,5 @@
 function metaData = genMetaData(data, dim_names, varargin)
-% This function creates a strucure containing the metadata of "data" in
+% This function creates a structure containing the metadata of "data" in
 % order to work with PipelineManager class.
 % Inputs:
 %   data (numerical array) : Data which we want to retrieve the metaData.
@@ -12,7 +12,8 @@ function metaData = genMetaData(data, dim_names, varargin)
 %       "T" = time;
 %       "E" = events; 
 %   extraParams(struct) Optional: structure containing extra fields to add
-%       to "metaData" or existing fields that you wish to overwrite. 
+%       to "metaData". Fields from extraParams that already exist in data's
+%       metaData will be ignored!
     
 %   Here are the default fields and values for a metaData file:
 %       datName(str) : 'data';
@@ -48,8 +49,11 @@ metaData.datSize = ds([1 2]);
 metaData.datLength = ds(3:end); % Accounts for 3+ dimensions.
 metaData.Datatype = class(p.Results.data);
 
-% Merge extrParams struct with metaData struct:
-fNames = fieldnames(p.Results.extraParams);
+% Merge extrParams struct with metaData struct
+
+% Here, we exclude the fields from extraParams that already exist in
+% metaData:
+fNames = setdiff(fieldnames(p.Results.extraParams), fieldnames(metaData));
 for i = 1:numel(fNames)
     metaData.(fNames{i}) = p.Results.extraParams.(fNames{i});
 end
