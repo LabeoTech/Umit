@@ -68,16 +68,17 @@ errID = 'Umitoolbox:save2Mat:InvalidName';
 errMsg = 'List of dimension names contain invalid values.';
 assert(all(ismember(dim_names, dim_names_info.dims_dict)), errID, errMsg);
 
-
-
 % Create structure with data and metadata:
-if ~isempty(metaData)
-    % If a metadata file is provided, load it and overwrite variables:
+if isa(metaData, 'matlab.io.MatFile')
+    % If a metadata file is provided as a matfile, load it and overwrite variables:
     s = load(metaData.Properties.Source);
+elseif isstruct(metaData)
+    s = metaData;
 end
 s.data = data;
 s.obsID = obsID;
 s.dim_names = dim_names;
+
 % Check if "E" exists in dim_names and verify if event info exists in "s"
 % struct:
 if ismember('E', dim_names)
@@ -109,7 +110,7 @@ assert(isequaln(size(s.data{1},2),length(label)), errID, errMsg);
 s.label = label;
 if b_genFile
     % Add file unique identifier:
-    s.fileUUID = char(java.util.UUID.randomUUID);
+%     s.fileUUID = char(java.util.UUID.randomUUID); Not necessary anymore.
     % Save "s" struct to file:
     save(mFile, '-struct', 's', '-v7.3');
     [p,n,ext] = fileparts(mFile);

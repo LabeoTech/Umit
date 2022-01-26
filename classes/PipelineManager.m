@@ -278,7 +278,7 @@ classdef PipelineManager < handle
             if ~task.b_save2File
                 return
             end
-            if ~any(strcmp('outData', task.argsOut))
+            if ~any(ismember({'outData', 'outDataStat'}, task.argsOut))
                 warning(['Cannot save output to .DAT file for the function'...
                     ' "%s" \nbecause it doesn''t have any data as output!'], task.name);
                 return
@@ -406,6 +406,7 @@ classdef PipelineManager < handle
                     end
                     % Control for Pipeline cancelling by User:
                     if getappdata(obj.h_wbItem, 'b_abortPipe')
+                        % Delete waitbars and abort inner loop:
                         delete([obj.h_wbItem, obj.h_wbTask])
                         break
                     end
@@ -421,6 +422,10 @@ classdef PipelineManager < handle
                 % Update Pipeline summary table:
                 obj.PipelineSummary = [obj.PipelineSummary; obj.tmp_TargetObj.LastLog];
                 fprintf([repmat('-',1,50),'\n']);
+                % Abort outer loop if user cancels pipeline:
+                if ~ishandle(obj.h_wbItem)
+                    break
+                end
             end
             
             % Remove "empty" rows from the Pipeline Summary Log table:
@@ -559,6 +564,7 @@ classdef PipelineManager < handle
                 fprintf('\tFunction Name: %s \n\n',task.name);
                 % Load options structure in the workspace.
                 opts = task.opts; %#ok the "opts" structure is used in the EVAL function.
+                
                 % Evaluate function string:
                 eval(task.funcStr);
                 % Update log table and tell other methods that the function
@@ -582,7 +588,7 @@ classdef PipelineManager < handle
                 % Look for tasks from the previous steps given that the
                 % current one failed and save it to a file:
                 indx = find(strcmp(task.name, {obj.pipe.name}));
-                if indx>1
+                if indx > 1
                     obj.saveDataToFile(obj.pipe(indx-1));
                 end
             end
@@ -613,7 +619,7 @@ classdef PipelineManager < handle
         end
         
         function out = getFirstInputFile(obj, funcInfo)
-            % This method verifies is the function has any data as input.
+            % This method verifies if the function has any data as input.
             % If yes, then a creates an dialog box containing a list of .DAT files
             % to choose as input. This method is called by ADDTASK only
             % when the first task of a pipeline is created.
@@ -626,6 +632,10 @@ classdef PipelineManager < handle
             % Control for function that creates the first input:
             if any(strcmp('outFile', funcInfo.argsOut))
                 obj.pipeFirstInput = 'outFile';
+                return            
+            elseif any(strcmp('outData', funcInfo.argsOut)) && ...
+                    ~any(ismember({'data', 'dataStat'}, funcInfo.argsIn))
+                obj.pipeFirstInput = 'outData';
                 return
             end
             
@@ -668,7 +678,7 @@ classdef PipelineManager < handle
             % Display a list of files from the selected
             % object(targetObj):
             datFileList = dir(fullfile(targetObj.SaveFolder, '*.dat'));
-            if any(strcmp('outDataStat', funcInfo.argsOut))
+            if any(strcmp('dataStat', funcInfo.argsIn))
                 % Select only .MAT files containing "dataHistory" variable.
                 % This was a way to exclude other .MAT files in the folder
                 % that are not Stats files.
@@ -764,6 +774,13 @@ classdef PipelineManager < handle
                     info.opts = default_opts;
                     info.argsIn{end+1} = 'opts';
                 end
+                % SPECIAL CASE. Look for "object"s as optional arguments in
+                % function first lines:
+                expObj = 'default_object\s*=';
+                str = regexp(txt, expObj, 'match', 'once');
+                if ~isempty(str)                    
+                    info.argsIn{end+1} = 'object';
+                end
             end
         end
         
@@ -809,11 +826,13 @@ classdef PipelineManager < handle
             % Create analysis function string:
             fcnStr = '';
             % Replace input argument names:
-            argsIn = replace(task.argsIn, {'RawFolder', 'SaveFolder', 'data','metaData', 'object', 'dataStat'},...
+            argsIn = replace(task.argsIn, ["RawFolder", "SaveFolder", "data","metaData", "object", "dataStat"],...
                 {['''' obj.tmp_TargetObj.RawFolder ''''],['''' obj.tmp_TargetObj.SaveFolder ''''], 'obj.current_data',...
                 'obj.current_metaData', 'obj.tmp_TargetObj', 'obj.current_data'});
-            argsOut = replace(task.argsOut, {'outData', 'metaData', 'outDataStat', 'outFile'},...
-                {'obj.current_data', 'obj.current_metaData', 'obj.current_data', 'obj.current_outFile'});
+            % Important! Put "outDataStat" first in the string list, otherwise 
+            % the replace function will create a non-existant property name:
+            argsOut = replace(task.argsOut, ["outDataStat", "metaData", "outData", "outFile"],...
+                {'obj.current_data', 'obj.current_metaData', 'obj.current_data', 'obj.current_outFile'}); 
             if isempty(argsOut)
                 fcnStr = [fcnStr ';' task.name '(' strjoin(argsIn,',') ');'];
             else
@@ -974,8 +993,9 @@ classdef PipelineManager < handle
                         obj.current_data, obj.current_metaData);
                     return
                 elseif endsWith(task.datFileName, '.mat')
+                    S = obj.current_data;
                     save(fullfile(obj.tmp_TargetObj.SaveFolder,task.datFileName),...
-                        '-struct', obj.current_data);
+                        '-struct', 'S');
                     return
                 end
             end

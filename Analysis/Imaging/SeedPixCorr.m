@@ -27,17 +27,19 @@ clear p
 % data(idx_nan) = 0;
 % Check if data is a 3-D matrix with dimensions 'X', 'Y' and 'T':
 [idx, locB] = ismember({'Y', 'X', 'T'}, metaData.dim_names);
-if ~all(idx)
+if ~all(idx) || any(locB(1:2)>2)
     error('Umitoolbox:SeedPixCorr:WrongInput', ...
         'Input Data must be a a 3-D matrix with dimensions "Y", "X" and "T".');
 end
-% Permute data to have 'Y', 'Y', 'T' dimensions:
-data = permute(data, locB);
+    
+% Permute data to have 'Y', 'X', 'T' dimensions:
+% data = permute(data, locB); % disable for now until ImagesClassification outputs data as {"Y","X","T"}. BrunoO 26/01/2022
+
 % Calculate SeedPixel Correlation:
 % Preserve data Aspect Ratio:
 data_size = size(data);
 if opts.imageResizeTo == -1
-    dataAspectRatio = 1;
+%     dataAspectRatio = 1;
     xy_size = data_size([1 2]);
     A = data;
 else

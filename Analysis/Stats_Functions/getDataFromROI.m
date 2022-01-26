@@ -12,12 +12,13 @@ function outDataStat = getDataFromROI(data, metaData, varargin)
 % Defaults:
 default_Output = 'ROI_data.mat'; %#ok This line is here just for Pipeline management.
 default_opts = struct('ROI_filename', 'ROI_data.mat', 'SpatialAggFcn', 'mean');
+default_object = ''; %#ok This line is here just for Pipeline management to be able to detect this input.
 %%% Arguments parsing and validation %%%
 p = inputParser;
 addRequired(p,'data',@(x) isnumeric(x)); % Validate if the input is a 3-D numerical matrix:
 addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
 % Optional Parameters:
-addOptional(p, 'opts', default_opts,@(x) isstruct(x) && isfile(x.ROI_filename) && ...
+addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ...
     ismember(x.SpatialAggFcn, {'none','mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}));
 addOptional(p, 'object', [], @(x) isempty(x) || isa(x,'Acquisition') || isa(x,'Modality')); 
 
@@ -45,18 +46,22 @@ if ~isempty(object)
     % If a umIT's valid object is provided, it means that the function is being run by 
     % PipelineManager. In this case, find the subject's folder an try to
     % find the ROI file there: 
-    idx = false;
-    while ~idx
-        ParentObj = object.MyParent;
-        idx = isa(ParentObj, 'Subject');
-    end  
-    if ~isfile(fullfile(ParentObj.SaveFolder, opts.ROI_filename))
+    idx = false;   
+    while ~idx        
+        object = object.MyParent;
+        idx = isa(object, 'Subject');        
+    end
+    opts.ROI_filename = fullfile(object.SaveFolder, opts.ROI_filename);
+    % Append extension to filename, if not already provided:
+    if ~endsWith(opts.ROI_filename, '.mat')
+        opts.ROI_filename = [opts.ROI_filename '.mat'];
+    end
+    % Throw error if the file does not exist in Subject's folder:
+    if ~isfile(opts.ROI_filename)
         errID = 'Umitoolbox:getDataFromROI:FileNotFound';
-        subjFolder = strrep(ParentObj.SaveFolder, '\', '\\');
+        subjFolder = strrep(object.SaveFolder, '\', '\\');
         errMsg = ['ROI file not found in ' subjFolder];
-        error(errID, errMsg);
-    else
-        opts.ROI_filename = fullfile(ParentObj.SaveFolder, opts.ROI_filename);
+        error(errID, errMsg);    
     end
 end
 
@@ -68,8 +73,8 @@ yLoc = find(strcmp(dim_names, 'Y'));
 % Check if frame size is the same as the one in ROI file:
 data_sz = size(data);
 errID = 'Umitoolbox:getDataFromROI:IncompatibleSizes';
-errMsg = 'Data file frame size is different from the one in ROI file';
-assert(isequal([data_sz(yLoc) data_sz(xLoc)], size(roi_data.img_info.data)), errID, errMsg)
+errMsg = 'Data file frame size is different from the one in ROI file.';
+assert(isequal([data_sz(yLoc) data_sz(xLoc)], size(roi_data.img_info.imageData)), errID, errMsg)
 % permute matrix:
 orig_dim = 1:ndims(data);
 new_dim = [yLoc xLoc setdiff(orig_dim, [xLoc yLoc])];
@@ -81,6 +86,7 @@ data = reshape(data, prod(data_sz([1 2])),[]);
 % extract ROI pixel values from data:
 roi_names = {roi_data.ROI_info.Name}';
 roi_pixVals = cell(size(roi_names));
+disp(['Extracting ' opts.SpatialAggFcn ' values from ROIs...'])
 for i = 1:length(roi_pixVals)
     roi_msk = roi_data.ROI_info(i).Stats.ROI_binary_mask;
     pixVals = data(roi_msk(:),:);
@@ -92,12 +98,10 @@ for i = 1:length(roi_pixVals)
     end
     roi_pixVals{i} = pixVals;
 end
-
+disp('Done');
 new_dim_names ={'O', dim_names{3:end}};
 if isa(metaData, 'matlab.io.MatFile')
     metaData.Properties.Writable = true;
-else
-    metaData.Writable = true;
 end
 metaData.ROIfile = opts.ROI_filename;
 outDataStat = save2Mat(opts.ROI_filename, roi_pixVals, roi_names,...
