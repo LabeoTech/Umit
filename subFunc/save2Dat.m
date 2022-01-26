@@ -38,9 +38,9 @@ save(strrep(DatFileName, '.dat', '.mat'), '-struct', 'metaData', '-v7.3');
 if exist(DatFileName, 'file') % Delete existing files if "-w" option is chosen.
     delete(DatFileName);
 end
-disp('Writing data to .DAT file...');
+disp('Writing data to .DAT file ...');
 fid = fopen(DatFileName, 'w');
 fwrite(fid, data, class(data));
 fclose(fid);
-disp('Finished saving .DAT file.');
+disp(['Data saved in : "' DatFileName '"']);
 end
