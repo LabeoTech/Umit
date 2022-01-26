@@ -13,11 +13,11 @@ function [outData, metaData] = alignFrames(data, metaData, object, varargin)
 
 % Defaults:
 default_Output = 'mov_aligned.dat'; %#ok This line is here just for Pipeline management.
-default_opts = struct('UseFile', 'self');
+default_opts = struct('UseFile', 'auto');
 
 %%% Arguments parsing and validation %%%
 p = inputParser;
-addRequired(p,'data',@(x) isnumeric(x) & ndims(3) == 3); % Validate if the input is a 3-D numerical matrix:
+addRequired(p,'data',@(x) isnumeric(x) & ndims(x) == 3); % Validate if the input is a 3-D numerical matrix:
 addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
 addRequired(p,'object', @(x) isa(x,'Modality') || isa(x,'Acquisition'));
 addOptional(p,'opts', default_opts,@(x) isstruct(x) && ~isempty(x) && ischar(x.UseFile));
@@ -34,7 +34,7 @@ clear p
 errID = 'MATLAB:UMIToolbox:InvalidInput';
 errMsg = 'Invalid entry for "UseFile" field. Input must be "self", "auto" or a name of a .dat file';
 validFcn = @(x) ismember(x, {'self','auto'}) || endsWith(x, '.dat');
-assert(validFcn(opts.UseFile, errID, errMsg));
+assert(validFcn(opts.UseFile), errID, errMsg);
 %%%%
 
 % Look for reference image in Subject's folder:
@@ -49,7 +49,8 @@ try
     end
     ref_frame_info = matfile(fullfile(ParentObj.SaveFolder, 'ImagingReferenceFrame.mat'));
 catch ME
-    causeException = MException('MATLAB:UMIToolbox:FileNotFound', 'Imaging Reference Frame file not found.');
+    causeException = MException('MATLAB:UMIToolbox:alignFrame:FileNotFound',...
+        'Imaging Reference Frame file not found.');
     addCause(ME, causeException);
     rethrow(ME)
 end
@@ -58,29 +59,33 @@ switch opts.UseFile
     case 'self'
         % Use first frame from "data"
         targetFr = data(:,:,1);
+        targetMetaData = metaData;
     case 'auto'
         % Look for a file with the same name as the one used to create the
         % "ImagingReferenceFrame.mat" file:
         [~,filename,ext] = fileparts(ref_frame_info.datFile);
         try
-            targetDat = mapDatFile(fullfile(object.SaveFolder, [filename,ext]));
-            targetFr = targetDat.Data.data(:,:,1);
+            [targetDat, targetMetaData]= mapDatFile(fullfile(object.SaveFolder, [filename,ext]));
+            targetFr = targetDat.Data.data(:,:,1);           
         catch ME
-            causeException = MException('MATLAB:UMIToolbox:FileNotFound', ['Cannot find "' filename '" in object''s SaveFolder']);
+            causeException = MException('MATLAB:UMIToolbox:alignFrame:FileNotFound',...
+                ['Cannot find "' filename '" in object''s SaveFolder']);
             addCause(ME, causeException);
             rethrow(ME)
         end
     otherwise
         % Load the filename in "opts.UseFile"
         try
-            targetDat = mapDatFile(fullfile(object.SaveFolder, opts.UseFile));
+            [targetDat, targetMetaData] = mapDatFile(fullfile(object.SaveFolder, opts.UseFile));
             targetFr = targetDat.Data.data(:,:,1);
         catch ME
-            causeException = MException('MATLAB:UMIToolbox:FileNotFound', ['Cannot find "' opts.UseFile '" in object''s SaveFolder']);
+            causeException = MException('MATLAB:UMIToolbox:alignFrame:FileNotFound',...
+                ['Cannot find "' opts.UseFile '" in object''s SaveFolder']);
             addCause(ME, causeException);
             rethrow(ME)
         end
 end
+targetMetaData.dim_names;
 
 % Load Reference Frame;
 refFr = ref_frame_info.reference_frame;
@@ -94,36 +99,64 @@ refFr_mask = imgaussfilt(refFr, .5) - imgaussfilt(refFr, 8);
 
 targetFr_mask = imgaussfilt(targetFr, .5) - imgaussfilt(targetFr, 8);
 
-% Preprocessing:
-% Normalize images:
-% refFr_mask = (refFr_mask - min(refFr_mask(:)))./(max(refFr_mask(:)) - min(refFr_mask(:)));
-% targetFr_mask = (targetFr_mask - min(targetFr_mask(:)))./(max(targetFr_mask(:)) - min(targetFr_mask(:)));
-% Aling images' centers:
-% refFr_center(1) = size(refFr,1)/2;
-% refFr_center(2) = size(refFr,2)/2;
-% targetFr_center(1) = size(targetFr,1)/2;
-% targetFr_center(2) = size(targetFr,2)/2;
-% translation = refFr_center - targetFr_center;
-% targetFr_mask = imtranslate(targetFr_mask, fliplr(translation), 'FillValues', 0, 'OutputView','same');
 % Perform image registration:
 try
 [tform, peak] = imregcorr(targetFr_mask,refFr_mask, 'similarity', 'Window', true);
 Rfixed = imref2d(size(refFr));
 catch ME
-    causeException = MException('MATLAB:UMIToolbox:MissingOutput',...
+    causeException = MException('MATLAB:UMIToolbox:alignFrame:MissingOutput',...
         'your version of the built-in MATLAB function "imregcorr" does not provide "peak" as output. You need to add it to the function and try again.');
     addCause(ME, causeException);
     rethrow(ME)
 end
 
-if peak < 0.05
-    disp('Phase correlation yielded a weak peak correlation value. Trying to apply intensity-based image registration instead ...')
-    [optimizer,metric] = imregconfig('multimodal');
-    optimizer.InitialRadius = 0.000000625;
-    optimizer.MaximumIterations = 80000;
-    tform = imregtform(targetFr_mask, imref2d(size(targetFr_mask)),refFr_mask, imref2d(size(refFr_mask)),'similarity',optimizer,metric);
+% Make initial geometric transformation of target image if phase
+% correlation was satisfactory. If not, try intensity-based registration
+% directly:
+if peak > 0.05
+    targetFr_mask = imwarp(targetFr_mask ,tform,'cubic', 'OutputView',Rfixed); % Chose "cubic" because "nearest" was showing stripes when rotating the target.
+else
+    disp('Phase correlation yielded a weak peak correlation value. Applying intensity-based image registration directly...')
 end
-targetFr_mask = imwarp(targetFr_mask ,tform,'cubic', 'OutputView',Rfixed); % Chose "cubic" because "nearest" was showing stripes when rotating the target.
+
+% Set of HyperParameters for image registration:
+GF = [1.10, 1.05, 1.02, 1.01];
+Eps = [1e-10, 1e-15, 1e-20,1e-25];
+IR = [6.25e-3, 6.25e-5, 6.25e-8, 6.25e-10];
+MaxIter = 10000;
+MI = -1000;
+[optimizer,metric] = imregconfig('multimodal');
+optimizer.MaximumIterations = MaxIter;
+% Iterate over optimization parameters to obtain highest mutual
+% information:
+disp('Optimizing image registration parameters...')
+for i = 1:4
+    
+    optimizer.GrowthFactor = GF(i);
+    optimizer.Epsilon = Eps(i);
+    optimizer.InitialRadius = IR(i);
+    tmpFr = imregister(targetFr_mask, imref2d(size(targetFr_mask)),refFr_mask,...
+    imref2d(size(refFr_mask)),'similarity',optimizer,metric, 'DisplayOptimization', false);    
+    counts = histcounts2(refFr_mask(:), tmpFr(:),metric.NumberOfHistogramBins);
+    tmpMI = mutual_information(counts)
+    if tmpMI<=MI         
+        idx = i-1;
+        break
+    else
+        MI = tmpMI;
+        idx = i;
+    end
+end
+fprintf('Maximum Mutual Information :%.4f\n',MI)        
+% Re-calculate tform from best optimizer params:
+optimizer.GrowthFactor = GF(idx);
+optimizer.Epsilon = Eps(idx);
+optimizer.InitialRadius = IR(idx);
+disp('Calculating geometric transformation...')
+tform = imregtform(targetFr_mask, imref2d(size(targetFr_mask)),refFr_mask,...
+    imref2d(size(refFr_mask)),'similarity',optimizer,metric);    
+targetFr_mask = imwarp(targetFr_mask ,tform,'nearest', 'OutputView',Rfixed);
+disp('Done.')
 %%%%%
 % For Visual quality control of alignment:
 figure('Name', strjoin({object.MyParent.MyParent.ID object.MyParent.ID object.ID}, '-'));
@@ -135,12 +168,10 @@ subplot(212);imshowpair(refFr_mask, targetFr_mask, 'montage');drawnow;
 h = waitbar(0,'Initiating alignment...');
 outData = zeros(size(refFr_mask,1),size(refFr_mask,2), size(data,3), 'single');
 for i = 1:size(outData,3)
-    waitbar(h, i/size(outData,3), 'Performing alignment...')
-    frame = data(:,:,i);
-    frame = imwarp(frame, tform, 'nearest', 'OutputView', Rfixed); 
-    outData(:,:,i) = frame;
+    waitbar(i/size(outData,3), h, 'Performing alignment...')    
+    outData(:,:,i) = imwarp(data(:,:,i), tform, 'nearest', 'OutputView', Rfixed);
 end
-waitbar(h, 1, 'Alignment finished!'); 
+waitbar(1,h, 'Alignment finished!'); pause(.5);
 close(h);
 %%%%%
 % Create new metaData and add image parameters from "ImagingReferenceFrame.mat" file:
