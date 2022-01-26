@@ -571,10 +571,20 @@ classdef PipelineManager < handle
                 obj.b_state = false;
                 LastLog.Messages = {getReport(ME)};
                 LastLog.Messages_short = {getReport(ME, 'basic','hyperlinks','off')};
+                disp('FAILED!');                
             end
             % Save data to file:
-            if (task.b_save2File && obj.b_state) || (obj.b_saveDataBeforeFail && ~obj.b_state)
+            if task.b_save2File && obj.b_state                
+                % Look for tasks with output data from the current step and
+                % save the data to a .DAT or .MAT file:
                 obj.saveDataToFile(task)
+            elseif obj.b_saveDataBeforeFail && ~obj.b_state
+                % Look for tasks from the previous steps given that the
+                % current one failed and save it to a file:
+                indx = find(strcmp(task.name, {obj.pipe.name}));
+                if indx>1
+                    obj.saveDataToFile(obj.pipe(indx-1));
+                end
             end
             
             % Update log table of target object:
@@ -701,7 +711,7 @@ classdef PipelineManager < handle
             
             % !!For now, it will read only folders directly below the
             % "Analysis" folder. Subfolders inside these folders will not
-            % be read.
+            % be read!
             
             % Set Defaults:
             default_Output = '';
@@ -952,9 +962,9 @@ classdef PipelineManager < handle
             % Input:
             %    step(struct) : info of the current task in the pipeline.
             
-            % Get the pipeline until the task before "step":
+            % Get the pipeline until the task in "step":
             indx = find(strcmp(step.name, {obj.pipe.name}));
-            subPipe = obj.pipe(1:indx-1);
+            subPipe = obj.pipe(1:indx);
             % Look back in pipeline for steps with "data" or "stats data"
             % as output and save the current data using the task's info:
             for i = length(subPipe):-1:1
