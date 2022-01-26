@@ -98,7 +98,7 @@ singletonDims = singletonDims([2:numel(dims) 1]);
 new_dim_names = dims(~singletonDims);
 
 % Create new metaData:
-metaData = genMetaData(outData, new_dim_names);
+metaData = genMetaData(outData, new_dim_names, metaData);
 
 end
 

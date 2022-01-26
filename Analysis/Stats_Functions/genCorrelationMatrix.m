@@ -37,5 +37,6 @@ centroid_px = centroid_px(lb);
 corrMat = cellfun(@(x) single(x(centroid_px)),data.data, 'UniformOutput',0);
 % Create new dimension names as {'O', 'O'}:
 dim_names = {'O','O'};
-outDataStat = save2Mat([], corrMat,data.obsID, dim_names, 'label',data.obsID , 'appendMetaData', data,'genFile', true);
+outDataStat = save2Mat([], corrMat,data.obsID, dim_names, 'label',data.obsID ,...
+    'appendMetaData', data,'genFile', false);
 end

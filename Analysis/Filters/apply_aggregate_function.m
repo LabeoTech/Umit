@@ -71,14 +71,12 @@ singDims = singDims(locB);
 data_dim_names (singDims) = [];
 
 % Create metaData structure based on aggregated data:
+extraParams = metaData;
 if exist('new_eventID', 'var')
     % IF "E"vent dimension was processed, update eventID variable in metaData file:
-    s = struct('eventID', new_eventID);
-    metaData = genMetaData(outData, data_dim_names,s);
-else
-    metaData = genMetaData(outData, data_dim_names);
+    extraParams.eventID = new_eventID;    
 end
-
+metaData = genMetaData(outData, data_dim_names,extraParams);
 end
 
 % Local function:

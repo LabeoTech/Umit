@@ -86,7 +86,7 @@ for i = 1:n_trial
     outData(i,:,:,startFr:stopFr) = snippet;
 end
 % Add variables to metaData.
-extraParams.Freq = metaData.Freq;
+extraParams = metaData;
 extraParams.preEventTime_sec = opts.preEventTime_sec;
 extraParams.preEventTime_sec = opts.preEventTime_sec;
 extraParams.postEventTime_sec = opts.postEventTime_sec;

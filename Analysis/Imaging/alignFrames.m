@@ -138,7 +138,7 @@ for i = 1:4
     tmpFr = imregister(targetFr_mask, imref2d(size(targetFr_mask)),refFr_mask,...
     imref2d(size(refFr_mask)),'similarity',optimizer,metric, 'DisplayOptimization', false);    
     counts = histcounts2(refFr_mask(:), tmpFr(:),metric.NumberOfHistogramBins);
-    tmpMI = mutual_information(counts)
+    tmpMI = mutual_information(counts);
     if tmpMI<=MI         
         idx = i-1;
         break
@@ -147,7 +147,7 @@ for i = 1:4
         idx = i;
     end
 end
-fprintf('Maximum Mutual Information :%.4f\n',MI)        
+fprintf('Maximum Mutual Information obtained: %.4f\n',MI)        
 % Re-calculate tform from best optimizer params:
 optimizer.GrowthFactor = GF(idx);
 optimizer.Epsilon = Eps(idx);
@@ -158,6 +158,7 @@ tform = imregtform(targetFr_mask, imref2d(size(targetFr_mask)),refFr_mask,...
 targetFr_mask = imwarp(targetFr_mask ,tform,'nearest', 'OutputView',Rfixed);
 disp('Done.')
 %%%%%
+disp('Check figure to validate alignment.')
 % For Visual quality control of alignment:
 figure('Name', strjoin({object.MyParent.MyParent.ID object.MyParent.ID object.ID}, '-'));
 subplot(211);imshowpair(refFr_mask, targetFr_mask);
@@ -174,8 +175,10 @@ end
 waitbar(1,h, 'Alignment finished!'); pause(.5);
 close(h);
 %%%%%
-% Create new metaData and add image parameters from "ImagingReferenceFrame.mat" file:
+% Create new metaData and add image parameters from "ImagingReferenceFrame.mat" file
+% as well as the previous metaData fields:
+extraParams = metaData;
 extraParams.refPt = ref_frame_info.refPt;
 extraParams.pxPermm = ref_frame_info.pxPermm;
-metaData = genMetaData(outData, metaData.dim_names, extraParams);
+metaData = genMetaData(outData, extraParams.dim_names, extraParams);
 end

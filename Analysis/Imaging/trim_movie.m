@@ -67,6 +67,6 @@ outData = reshape(outData,new_sz);
 
 outData = permute(outData,[2:numel(dim_names) 1]);
 % Create metaData: 
-metaData = genMetaData(outData, dim_names);
+metaData = genMetaData(outData, dim_names, metaData);
 
 end

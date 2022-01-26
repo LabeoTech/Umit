@@ -63,6 +63,6 @@ outData = reshape(outData, [xy_size(1) xy_size(2) xy_size(1)*xy_size(2)]);
 
 % Create MetaData structure:
 dim_names = {'Y', 'X', 'S'};
-metaData = genMetaData(outData,dim_names);
+metaData = genMetaData(outData,dim_names, metaData);
 disp('Finished SPCM');
 end
