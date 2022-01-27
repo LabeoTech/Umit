@@ -151,10 +151,7 @@ classdef StatsManager < handle
             % Input:
             % filename (char): valid path for a .CSV file.
             
-            [table_arr, labels] = obj.createTable; table_arr = table_arr';
-%             obsID_col = cellfun(@(x,y) repmat({x},1,height(y)), obj.obs_list', table_arr,...
-%                 'UniformOutput',0); obsID_col = [obsID_col{:}]';
-            data = vertcat(table_arr{:});
+            [data, labels] = obj.createTable;             
             data.Properties.VariableNames(7:end) = labels;
             writetable(data,filename);
             msgbox(['Data saved to file : ' filename], 'to CSV');
