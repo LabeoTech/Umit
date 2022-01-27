@@ -105,15 +105,17 @@ classdef StatsManager < handle
         end
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         
-        function [tableArr, condNames] = createTable(obj, varargin)
+        function [out,uniqLabels] = createTable(obj, varargin)
             % This function creates a table or an array of tables
             % containing ROI data from each observation.
             % Input:
             % tableType (char) =  ['raw' (default), 'summary']
             % Output:
-            % tableArr (cell array of tables) = tables containing data and
-            % metadata from all observations in obj.stats_data structure.
-            % condNames (cell array of chat) = output of genRawTable fcn.            
+            %   out (table): table containing data and
+            %       metadata from all observations in obj.stats_data structure.
+            %   uniqLabels(cell array of char): list of all labels found in 
+            %       the "stats_data" structure.
+          
             
             p = inputParser;
             addRequired(p, 'obj');
@@ -121,17 +123,25 @@ classdef StatsManager < handle
             parse(p,obj, varargin{:});
             obj = p.Results.obj;
             tableType = p.Results.tableType;
+            %
             disp('Creating table...')
-            % Create tables:
-            if strcmp(tableType, 'raw')
-                tableArr = cell(1,numel(obj.obs_list));
-                [tableArr{1}, condNames] = obj.genRawTable(obj.obs_list{1});    
-                for i = 2:numel(obj.obs_list)
-                    [tableArr{i}, ~] = obj.genRawTable(obj.obs_list{i});    
-                end
+            
+            % Get all unique labels from "stats_data" structure. This will
+            % be used by "getObsData" method to put NaNs on missing
+            % data (i.e. labels that are missing for a given recording).
+            
+            labels = arrayfun(@(x) x.MatFile.label, obj.stats_data, 'UniformOutput',false);
+            labels = labels'; 
+            uniqLabels = unique(vertcat(labels{:})); % Sort unique labels in alphabetical order.
+                        
+            % Get observations's labels from the stats_data structure:
+                
+            if strcmp(tableType, 'raw')                                
+                tableArr = cellfun(@(x) obj.getObsData(x, uniqLabels), obj.obs_list,'UniformOutput',false);
+                out = vertcat(tableArr{:});
             else
                 disp('No!')
-            end
+            end            
             disp('Table created!')
         end
         
@@ -179,9 +189,9 @@ classdef StatsManager < handle
         %%% Validator Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         
         function validateStatsInputs(obj)
-            % VALIDATESTATSINPUTSchecks if all objects in obj.list_of_objs
-            % have obj.stats_filename in their respective FilePtr.json
-            % files and if the sizes of list_of_objs and list_of_groups are equal.
+            % VALIDATESTATSINPUTS checks if all objects in obj.list_of_objs
+            % have obj.stats_filename in their respective SaveFolders.
+            % Also, it checks if the sizes of list_of_objs and list_of_groups are equal.
             
             % If True, it creates an array of MAT-file objects and
             % saves to obj.MatFileList. 
@@ -199,24 +209,14 @@ classdef StatsManager < handle
             b_remObj = false(1,length(obj.list_of_objs));
             matHandleArr = cell(size(b_remObj));
             for i = 1:length(obj.list_of_objs)
-                elem = obj.list_of_objs{i};
-                filePtr = elem.FilePtr;
-                txt = fileread(filePtr);
-                a = jsondecode(txt);
-                if isempty(a.Files)
+                elem = obj.list_of_objs{i};                
+                try 
+                    matHandleArr{i} = matfile(fullfile(elem.SaveFolder, obj.stats_filename));
+                catch
+                    warning(['Cannot find file "' obj.stats_filename '" in ' elem.SaveFolder ... 
+                        '. This object will be removed from the statistical group.'])
                     b_remObj(i) = true;
-                else
-                    filenames = {a.Files.Name};
-                    idx_file = strcmp(filenames, obj.stats_filename);
-                    if sum(idx_file)== 0
-                        b_remObj(i) = true;
-                    else
-                        filePath = fullfile(a.Files(idx_file).Folder, a.Files(idx_file).Name);
-                        filePath = tokenizePath(filePath, elem, 'detokenize');
-                        h = matfile(filePath);
-                        matHandleArr{i} = h;
-                    end
-                end
+                end                               
             end
             
             % Save MatFile handles:
@@ -259,6 +259,7 @@ classdef StatsManager < handle
                     end
                     obj.stats_data(i).observations(j).ID = obj.obs_list{j};
                     obj.stats_data(i).observations(j).data = data{idx};
+                    obj.stats_data(i).observations(j).label = obj.stats_data(i).MatFile.label;
                     obj.stats_data(i).observations(j).dataSize = ...
                         size(obj.stats_data(i).observations(j).data);
                     
@@ -298,43 +299,54 @@ classdef StatsManager < handle
             end
         end
         
-        function [tab, all_eventNames] = genRawTable(obj, obs_ID)
-            % This function creates a table containing all "raw" data of
-            % the observation "obs_ID" from the .MAT files.
+        function out = getObsData(obj, obs_ID, labelList)
+            % This function retrieves the observation data from all
+            % recordings containing the observation "obs_ID".
             % Input
-            % obs_ID (char) = Name of observation
+            %   obs_ID (char) = Name of observation.
+            %   labelList(cell array of char): list of all possible labels in
+            %       "stats_data".
             % Outputs:
-            % tab (table)  = table containing observation data and metadata
-            % all_eventNames (cell array of char) = array of names for
-            % conditions/repetitions.
+            %   out (table) : table containing the recording
+            %       information and numerical data of the observation
+            %       "obs_ID" for all recordings.
                         
-            indx = find(arrayfun(@(x) any(strcmp(obs_ID, {x.observations.ID})), obj.stats_data));
-            subj_list = {obj.stats_data(indx).subjID};
-            acq_list = {obj.stats_data(indx).acqID};
-            mod_list = {obj.stats_data(indx).modID};
-            Groups = {obj.stats_data(indx).groupName};
-            acqTime = cellfun(@(x) datetime(x),{obj.stats_data(indx).acqTimeStamp});
-            obsIDs = repmat({obs_ID},size(acqTime));
-            tab = table(subj_list', acq_list', mod_list',Groups',acqTime', obsIDs');
-            tab.Properties.VariableNames = {'Subject', 'Acquisition', 'Modality',...
-                'Group', 'TimeStamp', 'obsID'};
-            obs_indx = arrayfun(@(x) find(strcmp(obs_ID, {x.observations.ID})),...
-                obj.stats_data(indx));
-            data = arrayfun(@(x,y) obj.stats_data(x).observations(y).data,...
-                indx, obs_indx, 'UniformOutput',false);
-            data = data';
-            all_eventNames = arrayfun(@(x) obj.stats_data(x).MatFile.label,...
-                indx, 'UniformOutput', 0)';
-            all_eventNames = unique(vertcat(all_eventNames{:}));
-            for i = 1:numel(all_eventNames)
-                evnt_name = all_eventNames{i};
-                idx_lab = arrayfun(@(x) strcmp(evnt_name, obj.stats_data(x).MatFile.label),...
-                    indx, 'UniformOutput',0)';
-                idx_tmp = cellfun(@(x) any(x), idx_lab);
-                tmp = nan(length(data),1);
-                tmp(idx_tmp) = cellfun(@(x,y) x(y),data(idx_tmp), idx_lab(idx_tmp), 'UniformOutput',1);
-                tab.(['Val' num2str(i)]) = tmp;
+            % Filter out recordings without the observation:
+            idx = arrayfun(@(x) any(strcmp(obs_ID, {x.observations.ID})), obj.stats_data);            
+            statsStruct = obj.stats_data(idx);
+            
+            indx_obs = arrayfun(@(x) find(strcmp(obs_ID, {x.observations.ID})), statsStruct);            
+                        
+            % Retrieve recordings' info and store in a cell array:            
+            info = arrayfun(@(x,y) {x.subjID, x.acqID, x.modID,...
+            x.groupName, datetime(x.acqTimeStamp), obs_ID},...
+            statsStruct,indx_obs, 'UniformOutput', false);           
+            info = info'; 
+            info = vertcat(info{:});
+            
+            % Get observation's data:
+            
+            % Preallocate data with NaNs based on the length of unique
+            % labels:
+            data = nan(size(info,1),length(labelList));
+            for i = 1:length(statsStruct)                
+                [~,locB] = ismember(statsStruct(i).observations(indx_obs(i)).label,labelList);
+                data(i,locB) = statsStruct(i).observations(indx_obs(i)).data;
             end
+            % Prepare data to be added to "out" table:
+            data = num2cell(data);
+            
+            % build table:
+            out = table('Size', [size(info,1) size(info,2) + size(data,2)],...
+                'VariableTypes',...
+                [{'cellstr', 'cellstr', 'cellstr', 'cellstr', 'datetime', 'cellstr'}...
+                 repmat({'single'},1,size(data,2))]);
+            out(:,1:6) = info;
+            out(:,7:end) = data;
+            % Set table header:
+            generic_label = arrayfun(@(x) ['Val_' num2str(x)], 1:size(data,2), 'UniformOutput',false);
+            out.Properties.VariableNames = [{'Subject', 'Acquisition', 'Modality', 'GroupName',...
+                    'RecordingTime', 'ObsID'}, generic_label];            
         end
         %%%%%%%%%%%%%%%%%%
         
