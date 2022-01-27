@@ -379,8 +379,9 @@ classdef Protocol < handle
             obj.Idx_Filtered = new_Idx_Filtered;
         end
         function clearFilterStruct(obj)
-           % CLEARFILTERSTRUCT Resets the Filter Parameters to an empty
-           % Structure.
+           % CLEARFILTERSTRUCT erases the list of filtered objects and 
+           % resets the Filter Parameters to an empty structure.
+            obj.Idx_Filtered = [];
             obj.createFilterStruct;
         end
         function LogBook = createEmptyTable(~)

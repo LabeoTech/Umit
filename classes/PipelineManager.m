@@ -8,7 +8,7 @@ classdef PipelineManager < handle
         b_saveDataBeforeFail = false %(bool) If true, the more recent data ("current_data") in the pipeline will be...
         % saved to a file when an error occurs.
     end
-    properties (SetAccess = private)
+        properties (SetAccess = private)
         ClassName char % Name of the class that the pipeline analysis functions will run.
         ClassLevel int16 % Level of the class in protocol's hierarchy (1 = Modality, 2 = Acquisition, 3= Subject);
         % Structure array containing steps of the pipeline.
@@ -826,11 +826,13 @@ classdef PipelineManager < handle
             % Create analysis function string:
             fcnStr = '';
             % Replace input argument names:
-            argsIn = replace(task.argsIn, ["RawFolder", "SaveFolder", "data","metaData", "object", "dataStat"],...
+            % Important! Put "dataStat" and "outDataStat" first in the string list, otherwise 
+            % the replace function will create a non-existant property name:
+            
+            argsIn = replace(task.argsIn, ["RawFolder", "SaveFolder", "dataStat","metaData", "object", "data"],...
                 {['''' obj.tmp_TargetObj.RawFolder ''''],['''' obj.tmp_TargetObj.SaveFolder ''''], 'obj.current_data',...
                 'obj.current_metaData', 'obj.tmp_TargetObj', 'obj.current_data'});
-            % Important! Put "outDataStat" first in the string list, otherwise 
-            % the replace function will create a non-existant property name:
+            
             argsOut = replace(task.argsOut, ["outDataStat", "metaData", "outData", "outFile"],...
                 {'obj.current_data', 'obj.current_metaData', 'obj.current_data', 'obj.current_outFile'}); 
             if isempty(argsOut)
