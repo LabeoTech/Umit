@@ -20,18 +20,19 @@ parse(p,dataStat);
 data = p.Results.dataStat;
 clear p
 %%%%
-
+% load ROIfile:
+ROIfile = load(data.ROIfile);
 % Select observations in data.ROIfile:
-idx_obs = ismember({data.ROIfile.ROI_info.Name}, data.obsID);
-data.ROIfile.ROI_info(~idx_obs)= [];
+idx_obs = ismember({ROIfile.ROI_info.Name}, data.obsID);
+ROIfile.ROI_info(~idx_obs)= [];
 % Find seed frames in data.ROIfile masks:
 centroid_px = arrayfun(@(x) find(bwmorph(x.Stats.ROI_binary_mask,'shrink', Inf),...
-    1, 'last'), data.ROIfile.ROI_info, 'UniformOutput', true);
+    1, 'last'), ROIfile.ROI_info, 'UniformOutput', true);
 if size(data.obsID,1)~= size(centroid_px,1)
     centroid_px = centroid_px';
 end
 % Rearrange centroid_px to match data.obsID list
-[~,lb] = ismember({data.ROIfile.ROI_info.Name}, data.obsID);
+[~,lb] = ismember({ROIfile.ROI_info.Name}, data.obsID);
 centroid_px = centroid_px(lb);
 % Fill the correlation matrix with values:
 corrMat = cellfun(@(x) single(x(centroid_px)),data.data, 'UniformOutput',0);
