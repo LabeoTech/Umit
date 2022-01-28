@@ -37,6 +37,16 @@ idxName = ismember({chanList.name}, {existing_ChanList.name});
 idxDate = ismember([chanList.datenum], [existing_ChanList.datenum]);
 idxNew = ~all([idxName; idxDate],1);
 chanList = {chanList(idxNew).name};
+%%%%%% TEMPORARY FIX UNTIL CHANGES TO IMAGESCLASSIFICATION ARE APPLIED %%%%
+for i = 1:numel(chanList)
+    disp(['Flipping X and Y dimensions of ' chanList{i}])
+    [dataMap, metaMap]= mapDatFile(fullfile(SaveFolder,chanList{i}));
+    dataMap.Writable = true;
+    dataMap.Data.data = permute(dataMap.Data.data,[2 1 3]);
+    metaMap.Properties.Writable = true;
+    metaMap.dim_names = {'Y','X','T'};
+end
+
 % If there is Stimulation, add "eventID" and "eventNameList" to the output
 % files of ImagesClassification.
 if ~opts.b_IgnoreStim
