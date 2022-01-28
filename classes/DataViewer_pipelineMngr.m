@@ -146,8 +146,8 @@ classdef DataViewer_pipelineMngr < handle
             argsIn = replace(funcInfo.argsIn, {'RawFolder', 'SaveFolder', 'data', 'metaData'}, ...
                 {['''' obj.RawFolder ''''], ['''' obj.SaveFolder ''''], 'obj.data', 'obj.metaData'});
             % Replace output argument names:
-            argsOut = replace(funcInfo.argsOut, {'outData', 'metaData', 'outDataStat', 'outFile'},...
-                {'obj.data', 'obj.metaData', 'obj.data', 'obj.outFile'});
+            argsOut = replace(funcInfo.argsOut, {'metaData', 'outData', 'outFile'},...
+                {'obj.metaData', 'obj.data', 'obj.outFile'});
             % Build function string:
             funcInfo.funcStr = ['[' strjoin(argsOut, ',') ']=' funcInfo.name '('...
                 strjoin(argsIn, ',') ');'];
@@ -303,7 +303,7 @@ classdef DataViewer_pipelineMngr < handle
                     end
                     % Load options structure in the workspace.
                     opts = obj.pipe(i).opts;%#ok the "opts" structure is used in the EVAL function.
-                    % Run the function:
+                    % Run the function: 
                     eval(obj.pipe(i).funcStr);
                     % Update the metaData with the current function info:
                     obj.updateDataHistory(obj.pipe(i));
@@ -431,7 +431,7 @@ classdef DataViewer_pipelineMngr < handle
                 % Validate if all input arguments from the function are
                 % "valid" inputs keywords:
                 kwrds_args = {'data', 'metaData', 'SaveFolder', 'RawFolder', 'opts'};
-                kwrds_out = {'outFile', 'outData', 'metaData', 'outDataStat'};
+                kwrds_out = {'outFile', 'outData', 'metaData'};
                 if all(ismember(out.argsIn, kwrds_args)) && all(ismember(out.argsOut, kwrds_out))
                     disp(list(i).name);
                     [~,list(i).name, ~] = fileparts(list(i).name);
@@ -502,7 +502,7 @@ classdef DataViewer_pipelineMngr < handle
                     else
                         mtD.dataHistory = curr_dtHist;
                     end
-                end
+                end                           
             else
                 if isfield(obj.metaData, 'dataHistory')
                     obj.metaData.dataHistory = [obj.metaData.dataHistory; curr_dtHist];
