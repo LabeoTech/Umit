@@ -880,7 +880,11 @@ classdef PipelineManager < handle
                 end
             elseif any(strcmp(step.argsOut, 'outDataStat'))
                 % In case of step output is .MAT file(s):
-                disp('SAVING .MAT FILE>>>')
+                if isfield(obj.current_data, 'dataHistory')
+                    obj.current_data.dataHistory = [obj.current_data.dataHistory; curr_dtHist];
+                else
+                    obj.current_data.dataHistory = curr_dtHist;
+                end
                 
             else
                 % In case of step output is a data array:
