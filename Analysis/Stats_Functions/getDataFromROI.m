@@ -68,16 +68,16 @@ end
 % Load ROI file:
 roi_data = load(opts.ROI_filename);
 % locate "X" and "Y" dimensions in metaData and in ROI info:
-xLoc = find(strcmp(dim_names, 'X'));
-yLoc = find(strcmp(dim_names, 'Y'));
+[~,yxLoc] = ismember({'Y','X'}, dim_names);
+
 % Check if frame size is the same as the one in ROI file:
 data_sz = size(data);
 errID = 'Umitoolbox:getDataFromROI:IncompatibleSizes';
 errMsg = 'Data file frame size is different from the one in ROI file.';
-assert(isequal([data_sz(yLoc) data_sz(xLoc)], size(roi_data.img_info.imageData)), errID, errMsg)
+assert(isequal(data_sz(yxLoc), size(roi_data.img_info.imageData)), errID, errMsg)
 % permute matrix:
 orig_dim = 1:ndims(data);
-new_dim = [yLoc xLoc setdiff(orig_dim, [xLoc yLoc])];
+new_dim = [yxLoc setdiff(orig_dim, yxLoc)];
 data = permute(data, new_dim);
 dim_names = dim_names(new_dim);
 % reshape matrix:
