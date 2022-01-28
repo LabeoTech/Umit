@@ -63,6 +63,15 @@ if ~isempty(object)
         errMsg = ['ROI file not found in ' subjFolder];
         error(errID, errMsg);    
     end
+else
+    % Append .mat:
+    if ~endsWith(opts.ROI_filename, '.mat')
+        opts.ROI_filename = [opts.ROI_filename '.mat'];
+    end
+    % Prepend current directory path:
+    if isempty(fileparts(opts.ROI_filename))
+        opts.ROI_filename = fullfile(pwd,opts.ROI_filename);
+    end
 end
 
 % Load ROI file:
