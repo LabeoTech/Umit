@@ -100,7 +100,7 @@ switch answer
     case 'Yes, proceed'
         [~,outFileName,ext] = fileparts(applyToFile);
         outFileName = inputdlg('Save File as...', 'Type file name to save aligned data',...
-            [1 35], {[outFileName '_aligned' ext]});        
+            [1 35], {[outFileName '_aligned' ext]});
         
         if isempty(outFileName)
             disp('Operation Cancelled by User')
@@ -110,7 +110,7 @@ switch answer
         if ~endsWith(outFileName,ext)
             outFileName = [outFileName, ext];
         end
-        warpData(tform,refFr,ref_frame_info,Rfixed,SaveFolder,applyToFile, outFileName)       
+        warpData(tform,refFr,ref_frame_info,Rfixed,SaveFolder,applyToFile, outFileName)
     case 'No, redo'
         b_redo = true;
         disp('Operation cancellec by User')
@@ -130,7 +130,7 @@ end
 % This section may be too greedy on RAM and not efficient...
 warp_data = zeros(size(refFr,1),size(refFr,2), size(mData.Data.data,3), 'single');
 h = waitbar(0,['Performing alignment in data from ' applyToFile ' ...']);
-for i = 1:size(warp_data,3)        
+for i = 1:size(warp_data,3)
     warp_data(:,:,i) = imwarp(mData.Data.data(:,:,i), tform, 'nearest', 'OutputView', Rfixed);
     waitbar(i/size(warp_data,3),h);
 end
@@ -151,9 +151,9 @@ fcnInfo.name = fcnInfo.name(1:end-2); % remove .m;
 dtHist = genDataHistory(fcnInfo,['out = manual_alignFrames(object,''' applyToFile ''');'],...
     [],'none');
 if isfield(metaData,'dataHistory')
-    metaData.dataHistory = [metaData.dataHistory; dtHist];    
+    metaData.dataHistory = [metaData.dataHistory; dtHist];
 else
-    metaData.dataHistory = dtHist; 
+    metaData.dataHistory = dtHist;
 end
 % Save Data to file:
 disp('Saving aligned data to file...')
