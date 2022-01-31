@@ -483,12 +483,10 @@ classdef DataViewer_pipelineMngr < handle
             %    step(struct) : current step of the pipeline;
             
             disp('Building Data History...')
-            timestamp = datetime('now');
             funcInfo = obj.funcList(strcmp(step.name, {obj.funcList.name}));
             % Create a local structure with the function's info:
-            curr_dtHist = struct('runDatetime', timestamp, 'name', {funcInfo.name},...
-                'folder', {funcInfo.folder}, 'creationDatetime', datetime(funcInfo.date),...
-                'opts', step.opts, 'funcStr', {step.funcStr}, 'outputFile_list', 'none');
+            curr_dtHist = genDataHistory(funcInfo, step.funcStr, step.opts,'none');
+            
             % First, we need to know if the output is a "data" or a file:
             if any(strcmp(step.argsOut, 'outFile'))
                 curr_dtHist.outputFile_list = obj.outFile;

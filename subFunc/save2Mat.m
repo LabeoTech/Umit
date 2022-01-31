@@ -110,7 +110,6 @@ assert(isequaln(size(s.data{1},2),length(label)), errID, errMsg);
 s.label = label;
 if b_genFile
     % Add file unique identifier:
-%     s.fileUUID = char(java.util.UUID.randomUUID); Not necessary anymore.
     % Save "s" struct to file:
     save(mFile, '-struct', 's', '-v7.3');
     [p,n,ext] = fileparts(mFile);

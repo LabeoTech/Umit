@@ -26,12 +26,7 @@ classdef test_runImagesClassification < matlab.unittest.TestCase
             mat_files = dir([fullfile(root,outFolder) '*.mat']);
             for i = 1:length(mat_files)
                 Exp = load(fullfile(root, expOutFolder, mat_files(i).name));
-                Out = load(fullfile(mat_files(i).folder, mat_files(i).name));
-                try
-                    Exp = rmfield(Exp,'fileUUID');
-                    Out = rmfield(Out, 'fileUUID');
-                catch
-                end
+                Out = load(fullfile(mat_files(i).folder, mat_files(i).name));               
                 testCase.verifyEqual(Exp, Out);
             end
             % Remove created files from outFolder:

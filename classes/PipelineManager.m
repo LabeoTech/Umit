@@ -854,10 +854,8 @@ classdef PipelineManager < handle
             %    step(struct) : current step of the pipeline;
             
             funcInfo = obj.funcList(strcmp(step.name, {obj.funcList.name}));
-            % Create a local structure with the function's info:
-            curr_dtHist = struct('runDatetime', datetime('now'), 'name', {funcInfo.name},...
-                'folder', {funcInfo.folder}, 'creationDatetime', datetime(funcInfo.date),...
-                'opts', step.opts, 'funcStr', {step.funcStr}, 'outputFile_list', 'none');
+            % Create a local structure with the function's info:            
+            curr_dtHist = genDataHistory(funcInfo, step.funcStr, step.opts,'none');           
             % First, we need to know if the output is a "data", a .DAT file or a .MAT file:
             if any(strcmp(step.argsOut, 'outFile'))
                 % In case the step ouput is .DAT file(s):

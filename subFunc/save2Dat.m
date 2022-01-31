@@ -28,8 +28,6 @@ assert(all(ismember(metaData.dim_names, dim_names_info.dims_dict)), errID, errMs
 errID = 'Umitoolbox:save2Dat:IncompatibleSize';
 errMsg = 'The number of dimensions of data is different from the number of dimension names.';
 assert(isequaln(ndims(data),numel(metaData.dim_names)), errID, errMsg);
-% Create an unique file identifier. To be used by class PIPELINEMANAGER.
-metaData(1).fileUUID = char(java.util.UUID.randomUUID);
 % Update datFile variable in metaData:
 metaData.datFile = DatFileName;
 % Save meta data file:
