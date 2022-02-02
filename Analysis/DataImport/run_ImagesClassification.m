@@ -12,7 +12,7 @@ addRequired(p, 'RawFolder', @isfolder);
 addRequired(p, 'SaveFolder', @isfolder);
 % Optional Parameters:
 % opts structure:
-default_opts = struct('BinningSpatial', 1, 'BinningTemp', 1, 'b_SubROI', false, 'b_IgnoreStim', true);
+default_opts = struct('BinningSpatial', 1, 'BinningTemp', 1, 'b_IgnoreStim', true);
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
 
 parse(p, RawFolder, SaveFolder, varargin{:});
@@ -28,7 +28,7 @@ idxName = ismember({existing_ChanList.name}, default_Output);
 existing_ChanList = existing_ChanList(idxName);
 % Calls function from IOI library. Temporary for now.
 ImagesClassification(RawFolder, SaveFolder, opts.BinningSpatial, opts.BinningTemp,...
-    opts.b_IgnoreStim, opts.b_SubROI);
+    opts.b_IgnoreStim, 0);
 % Get only new files created during ImagesClassification:
 chanList = dir(fullfile(SaveFolder,'*.dat'));
 idx = ismember({chanList.name}, default_Output);
