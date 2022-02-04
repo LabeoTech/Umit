@@ -76,4 +76,4 @@ Following the previous example, for the raw data consisting of 3 channels with f
 
 
 
-[**<< Home**](/index.md)
+[**<< Home**](../../index.md)
