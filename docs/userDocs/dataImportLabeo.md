@@ -71,7 +71,7 @@ There are 2 ways of importing the raw data:
 
 ##### Function(s) documentation
 ___
-[run_ImagesClassification](/run_ImagesClassification.md)
+[run_ImagesClassification](../../devDocs/run_ImagesClassification.md)
 
 
 
