@@ -32,19 +32,22 @@ Regarding the analog input files (`ai_xxxx.bin`), the organization of the data i
   <em>Organization of analog input data in ai_xxxx.bin files.</em>
 </p><br>
 
-##### How the imported data is organized
-___
-
-
-
-
-
 ##### Importing the raw data
 ___
 
+There are different ways to import the raw data from LabeoTech systems.   
 
-##### Customizing parameters
-___
+1- Through the standalone version of [DataViewer](../../dataviewer.md):
+
+
+
+
+
+###### Customizing parameters
+
+
+###### How the imported data is organized
+
 
 
 ##### Further documentation
