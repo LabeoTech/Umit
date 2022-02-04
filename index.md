@@ -10,19 +10,19 @@ ___
 ### Getting started with ***umIT***
 Here, you will find the minimal information to get started with the toolbox.
 * [An overview](#an-overview)
-* [umIT installation](/umit_install.md) 
-* [The main user interface](/mainGUI.md) 
+* [umIT installation](/umit_install.md)
+* [The main user interface](/mainGUI.md)
 * [Creating a new project](/ht_create_new_project.md) (in construction)
 * [Running an analysis pipeline](/ht_run_pipeline.md) (in construction)
 * [Visualizing results](/ht_viz_data.md)  (in construction)
 
-___ 
+___
 
 ### Documentation
 
 Here you will find more information on the features of each **app** from the toolbox and the documentation of the built-in **analysis functions**.   
 
-Some of the apps work as standalone, meaning that they can operate without using the main interface (i.e., the experiment management system). This is particularly useful if you want to quickly analyse and visualize a small number of imaging recording sessions before running it through the experiment management system. 
+Some of the apps work as standalone, meaning that they can operate without using the main interface (i.e., the experiment management system). This is particularly useful if you want to quickly analyse and visualize a small number of imaging recording sessions before running it through the experiment management system.
 ##### Apps
 * [DataViewer](/dataviewer.md) : Basic exploration of imaging data. Works as standalone.
 * [ROImanager](/roimanager.md) : Creation and management of Regions of interest. Works as standalone.
@@ -35,6 +35,7 @@ ___
 ### How To's
 * [Build a data processing pipeline](/ht_buildpipeline.md)
 * [Extract data from ROI](/ht_getdatafromroi.md) using the standalone version of [*DataViewer*](/dataviewer.md) (link not functional)
+* [Import Data from LabeoTech Systems](/docs/userDocs/dataImportLabeo.md)
 
 ___
 ## An overview
@@ -49,6 +50,3 @@ In addition to the experiment management tool, the toolbox provides a series of 
 
 ![fig2](/assets/img/umIT_4axis.png)
 ###### Fig 2. The 4 main roles of **umIT**.  
-
-
-
