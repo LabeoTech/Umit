@@ -6,9 +6,9 @@ First, an explanation about the structure of the raw and the imported data.
 ##### How the raw data is organized
 ___
 <p align="center">
-  <img alt="rawDataInFolder" src="../../assets/img/dataImport_fig1.png" width = 400/> <br>
+  <img alt="rawDataInFolder" src="../../assets/img/dataImport_fig1.png" width = 500/> <br>
   <em>Organization of raw data in experiment folder.</em>
-</p> 
+</p>
 <br>
 
 Each recording is saved in its own folder. Inside the folder, you will find three types of files:   
@@ -20,10 +20,9 @@ Each recording is saved in its own folder. Inside the folder, you will find thre
 ###### Organization of .bin files
 The image files images (i.e. `img_xxxx.bin` files) contain the interleaved frames of one or more channels (i.e. illumination colors). For example, for a simultaneous recording of calcium and intrinsic signals of the brain one could use up to 4 channels (**R**ed, **G**reen and **Y**ellow for the intrinsic signals and a **F**luorescence channel for the calcium signal). For this particular example, the image frames are arranged as R-G-Y-F- R-G-Y-F- R-G-Y-F- ... R-G-Y-F in each binary file (see figure below).
 <p align="center">
-  <img alt="binImagFileOrg" src="../../assets/img/dataImport_fig2.png" width=250/><br>
+  <img alt="binImagFileOrg" src="../../assets/img/dataImport_fig2.png" width=200/><br>
   <em>Frames of color channels are interlaced in img_xxxx.bin files.</em>
-</p>
-<br> 
+</p><br>
 
 The number of images contained in one binary file varies depending on the size of the frame captured during the recording. However, a maximum of 500Mb of data is allowed per file. Once a file is full, a new `img_xxxx.bin` file is created to store the next frames.   
 
@@ -31,11 +30,12 @@ Regarding the analog input files (`ai_xxxx.bin`), the organization of the data i
 <p align="center">
   <img alt="aiFileOrg" src="../../assets/img/dataImport_fig3.png" width=750><br>
   <em>Organization of analog input data in ai_xxxx.bin files.</em>
-</p>
-<br>
+</p><br>
 
 ##### How the imported data is organized
 ___
+
+
 
 
 
