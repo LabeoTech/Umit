@@ -18,6 +18,13 @@ Here, you will find the minimal information to get started with the toolbox.
 
 ___
 
+### User Guides
+* [Build a data processing pipeline](/ht_buildpipeline.md)
+* [Extract data from ROI](/ht_getdatafromroi.md) using the standalone version of [*DataViewer*](/dataviewer.md) (link not functional)
+* [Import Data from LabeoTech Systems](/docs/userDocs/dataImportLabeo.md)
+
+___
+
 ### Documentation
 
 Here you will find more information on the features of each **app** from the toolbox and the documentation of the built-in **analysis functions**.   
@@ -28,14 +35,7 @@ Some of the apps work as standalone, meaning that they can operate without using
 * [ROImanager](/roimanager.md) : Creation and management of Regions of interest. Works as standalone.
 
 ##### Analysis functions
-*
-*
-___
-
-### How To's
-* [Build a data processing pipeline](/ht_buildpipeline.md)
-* [Extract data from ROI](/ht_getdatafromroi.md) using the standalone version of [*DataViewer*](/dataviewer.md) (link not functional)
-* [Import Data from LabeoTech Systems](/docs/userDocs/dataImportLabeo.md)
+* [run_ImagesClassification](/docs/devDocs/run_ImagesClassification.md)
 
 ___
 ## An overview
