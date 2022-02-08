@@ -35,7 +35,7 @@ Some of the apps work as standalone, meaning that they can operate without using
 * [ROImanager](/roimanager.md) : Creation and management of Regions of interest. Works as standalone.
 
 ##### Analysis functions
-* [run_ImagesClassification](/docs/devDocs/run_ImagesClassification.md)
+* [run_ImagesClassification](/docs/devDocs/run_imagesclassification.md)
 
 ___
 ## An overview
