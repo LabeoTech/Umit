@@ -21,7 +21,7 @@ ___
 ### User Guides
 * [Build a data processing pipeline](/ht_buildpipeline.md)
 * [Extract data from ROI](/ht_getdatafromroi.md) using the standalone version of [*DataViewer*](/dataviewer.md) (link not functional)
-* [Import Data from LabeoTech Systems](/docs/userDocs/dataImportLabeo.md)
+* [Import Data from LabeoTech Systems](/docs/userDocs/dataimportlabeo.md)
 
 ___
 
@@ -36,6 +36,7 @@ Some of the apps work as standalone, meaning that they can operate without using
 
 ##### Analysis functions
 * [run_ImagesClassification](/docs/devDocs/run_imagesclassification.md)
+* [loadDatFile](/docs/devDocs/loaddatfile.md)
 
 ___
 ## An overview
