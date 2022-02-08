@@ -96,13 +96,13 @@ As mentioned above, the function `run_ImagesClassification` saves the interleave
 * red.dat, green.dat and yellow.dat: reflectance signals (i.e. intrinsic signals).
 * speckle.dat: data from [*Laser Speckle Contrast Imaging*](https://en.wikipedia.org/wiki/Laser_speckle_contrast_imaging).
 
-The imported files are stored in a `.dat` file (a generic data file storage format). A `.mat` file with the same name is also created containing the meta data associated with the data stored in the `.dat` file. The `.mat` meta data file contains information necessary to open the data in the `.dat` file and to work properly with *uMIT*.
+The imported files are stored in a `.dat` file (a generic data file storage format). A `.mat` file with the same name is also created containing the meta data associated with the data stored in the `.dat` file. The `.mat` meta data file contains information necessary to open the data in the `.dat` file and to work properly with *umIT*.
 
 > Note:\
 The `.dat` file and the associated `.mat` file **must** be located in the same folder in order to work with the toolbox functions.
 
 The imaging data inside the `.dat` files created by `run_ImagesClassification` can be accessed automatically by the toolbox visualization apps and can be accessed through the analysis functions.\
-However, the `.dat` files can be manually accessed using one of the following functions:\
+However, the `.dat` files can be manually accessed using one of the following functions:
 * [loadDatFile](../../docs/devDocs/loaddatfile.md): loads the data (and optionally the meta data) to Matlab's workspace as a numerical array.
 * [mapDatFile](../../doc/devDocs/mapdatfile.md): maps the data (and optionally the meta data) to the memory using Matlab's built-in [*memmapfile*](https://www.mathworks.com/help/matlab/ref/memmapfile.html?s_tid=doc_ta) and [*matfile*](https://www.mathworks.com/help/matlab/ref/matlab.io.matfile.html?s_tid=doc_ta), respectively. Click [here](https://www.mathworks.com/help/matlab/import_export/overview-of-memory-mapping.html) for more information on memory mapping in Matlab.
 
