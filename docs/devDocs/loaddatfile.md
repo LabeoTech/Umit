@@ -44,7 +44,7 @@ ___
 
 ###### Load data to workspace
 To load the data from a `fluo.dat` file in Matlab's current workspace:\
-`data = loadDatFile('C:\ROOT\SAVEDIR\fluo.dat')`
+`data = loadDatFile('C:\ROOT\SAVEDIR\fluo.dat')`\
 Here, the function looks for the meta data file `fluo.mat` in the folder `C:\ROOT\SAVEDIR\` to load `data`.
 
 ###### Load data and meta data to worskpace
