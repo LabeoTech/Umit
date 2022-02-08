@@ -1,5 +1,5 @@
 ### mapDatFile
-Creates memory map of data to a `.dat` file.
+Creates memory map to a `.dat` file.
 
 ##### Description
 ___
@@ -11,7 +11,7 @@ ___
 
 `mmFile = mapDatFile(DatFileName)`: maps the data to `DatFileName`.
 
-`mmFIle = mapDatFile(DatFileName,metaDatFileName)`: maps the data to `DatFileName` using the meta data stored in `metaDatFileName`.
+`mmFile = mapDatFile(DatFileName,metaDatFileName)`: maps the data to `DatFileName` using the meta data stored in `metaDatFileName`.
 
 `[mmFile, metaData] = mapDatFile(__)`: also returns the content of the meta data file (`.mat` file) associated with `DatFileName` as a Matlab's [*MAT-file object*](https://www.mathworks.com/help/matlab/ref/matlab.io.matfile.html?searchHighlight=MAT-file&s_tid=srchtitle_MAT-file_2) `metaData`.
 ##### Inputs
