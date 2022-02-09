@@ -7,8 +7,7 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
     properties
         ID % Unique Identifier of the object.
         RecordingSystem char {mustBeNonempty, isscalar} = 'default' % Name of the system used to record the data.
-        SampleRateHz double {mustBeNonempty} = 0.0 % Sampling rate of the recording in Hz.
-        RawFiles cell % File(s) containing raw data.
+        SampleRateHz double {mustBeNonempty} = 0.0 % Sampling rate of the recording in Hz.        
     end
     properties (SetAccess = {?Protocol, ?PipelineManager, ?Acquisition, ?Subject, ?ObjectListManager})
         LastLog = table.empty % Table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
@@ -22,6 +21,7 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
                          % "RawFolder" property.
     end
     properties (Dependent, SetAccess = private)
+        RawFiles cell % File(s) containing raw data.
         RawFolder char % Path of directory containing raw data.    
         SaveFolder % Path of directory containing transformed data.        
         MetaDataFile % FullPath of file containing other information about the recording session.
@@ -29,16 +29,15 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
     
     methods
         
-        function obj = Modality(ID, RawFolder, RawFiles, RecordingSystem, SampleRate)
+        function obj = Modality(ID, RawFiles_FP, RecordingSystem, SampleRate)
             % Construct an instance of this class.
             %   The Folder and FileName are defined here.
             %   Folder must be a valid Directory while FileName has to be a
             %   string or a cell array of strings containing valid filenames
             %   that exist in the "Folder" directory.
             if nargin > 0
-                obj.ID = ID;
-                obj.RawFolder = RawFolder;
-                obj.RawFiles = RawFiles;
+                obj.ID = ID;                
+                obj.RawFiles_FP = RawFiles_FP;
                 obj.RecordingSystem = RecordingSystem;
                 obj.SampleRate = SampleRate;
             else
@@ -117,13 +116,13 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         
         function out = get.RawFolder(obj)
             % Get function of RAWFOLDER property.
-            %   This function accepts only existing folders.
+            
             [out,~,~]  = fileparts(obj.RawFiles_FP{1});
         end
         
         function out = get.RawFiles(obj)
             % Get function of RAWFILES property.
-            %   This function accepts only existing folders.
+            
             [~,out,~]  = cellfun(@(x) fileparts(x), obj.RawFiles_FP, 'UniformOutput',false);
         end
         
