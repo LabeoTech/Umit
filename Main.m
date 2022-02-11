@@ -6,9 +6,9 @@ IOI_ANAfolder = 'D:\Academico\PostDoc_UdeM\LabeoTech\ioi_ana';
 addpath(genpath(toolboxFolder));
 addpath(genpath(IOI_ANAfolder));
 %% Create Protocol Object
-maindir = 'F:\SolennRawData';
-savedir = 'E:\TestSaveDir';
-protocol = Protocol('TestProtocol2', maindir, savedir, @TestDataProtoFunc, []);
+maindir = 'G:\DummyDataSet_4_testing';
+savedir = 'G:\DummyDataSet_4_testing\SaveDir';
+protocol = Protocol('TestProtocol', maindir, savedir, @protocolFcn_template, []);
 protocol.generateList;
 protocol.generateSaveFolders;
 save(fullfile(protocol.SaveDir, [protocol.Name '.mat']), 'protocol');
