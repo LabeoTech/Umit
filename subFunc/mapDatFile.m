@@ -51,7 +51,7 @@ end
 % Validation function
 function mustBeDatFile(datFileName)
 if ~isfile(datFileName) && ~strcmp(datFileName(end-3:end), '.dat')
-    errID = 'IsaToolbox:InvalidFile';
+    errID = 'umIToolbox:mapDatFile:InvalidFile';
     msg = [datFileName ' is not a .DAT file!'];
     throwAsCaller(MException(errID,msg))
 end

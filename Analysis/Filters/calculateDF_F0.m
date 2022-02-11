@@ -1,46 +1,29 @@
-function outFile = calculateDF_F0(File, SaveFolder, varargin)
+function outData = calculateDF_F0(data, metaData)
 % CALCULATEDF_F0 generates DeltaF/F0 movie from FILE.
 % Inputs:
-%   File: fullpath of functional imaging .DAT file.
-%   SaveFolder: path to save the output file.
-%   Output (optional) : Name of outFile.
+%   data: numerical matrix containing imaging data with a "T"ime dimension.
+%   metaData: .mat file with meta data associated with "data".
 % Output:
-%   outFile: name of Output file.
+%   outData: numerical matrix containing aggregated imaging data.   
+%   metaData: .mat file with meta data associated with "outData".
 % Defaults:
-default_Output = 'deltaF_F0.dat'; % This is here only as a reference for PIPELINEMANAGER.m. 
+default_Output = 'deltaF_F0.dat'; %#ok This is here only as a reference for PIPELINEMANAGER.m. 
 %%% Arguments parsing and validation %%%
 p = inputParser;
-% The input of the function must be a File , RawFolder or SaveFolder
-addRequired(p,'File',@isfile)% For a file as input.
-% Save folder:
-addRequired(p, 'SaveFolder', @isfolder);
-% Output file:
-addOptional(p, 'Output', default_Output, @(x) ischar(x) || isstring(x));
+addRequired(p,'data',@(x) isnumeric(x)); % Validate if the input is a 3-D numerical matrix:
+addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
 % Parse inputs:
-parse(p,File, SaveFolder, varargin{:});
+parse(p,data, metaData);
 %Initialize Variables:
-File = p.Results.File; 
-SaveFolder = p.Results.SaveFolder;
+data = p.Results.data; 
+metaData = p.Results.metaData;
+clear p
 %%%%
 
-% Load Data:
-[mData, metaData] = mapDatFile(File);
-data = mData.Data.data;
 % Find "T"ime dimension:
 indxT = find(strcmp('T', metaData.dim_names));
 % Calculate baseline over time
 bsln = mean(data,indxT);
 % Calculate DeltaF/F0:
-data = (data - bsln)./ bsln;
-% % Replace NaNs with zeros:
-% idx = isnan(data);
-% data(idx) = 0;
-% SAVING DATA :
-% Generate .DAT and .MAT file Paths:
-[~,filename,ext] = fileparts(File);
-outFile = ['deltaF_F0_' filename ext];
-save2Dat(fullfile(SaveFolder, outFile), data, metaData.dim_names);
+outData = (data - bsln)./ bsln;
 end
-
-
-

@@ -1,12 +1,21 @@
-function outFile = run_HemoCorrection(File, SaveFolder,varargin)
+function [outData, metaData] = run_HemoCorrection(SaveFolder, varargin)
 % RUN_HEMOCORRECTION calls the function
 % HEMOCORRECTION from the IOI library (LabeoTech).
+% In brief, this function removes hemodynamic fluctuations from any
+% fluorescence signal using the information of two or more channels.
 
-default_Output = 'hemoCorr_fChan.dat';
+% The algorithm used here is described in:
+% Valley, Matthew & Moore, Michael & Zhuang, Jun & Mesa, Natalia & Castelli, Dan & Sullivan,
+% David & Reimers, Mark & Waters, Jack. (2019). Separation of hemodynamic signals from
+% GCaMP fluorescence measured with widefield imaging. Journal of Neurophysiology. 123.
+% 10.1152/jn.00304.2019.
+
+
+% Defaults:
+default_Output = 'hemoCorr_fluo.dat'; %#ok. This line is here just for Pipeline management.
+
 %%% Arguments parsing and validation %%%
 p = inputParser;
-% Input File
-addRequired(p,'File',@isfile)% For a file as input.
 % Save folder:
 addRequired(p, 'SaveFolder', @isfolder);
 % Optional Parameters:
@@ -14,49 +23,18 @@ addRequired(p, 'SaveFolder', @isfolder);
 default_opts = struct('Red', true, 'Green', true, 'Amber', true);
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
 % Parse inputs:
-parse(p,File, SaveFolder, varargin{:});
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%Initialize Variables:
-File = p.Results.File;
-SaveFolder = p.Results.SaveFolder;
-opts = p.Results.opts;
-%%%%
-% Calls function from IOI library. 
-cd(SaveFolder)
-[~,fluoMetaData]= mapDatFile(File);
-if isempty(fluoMetaData)
-    errID = 'MATLAB:UMIToolbox:run_HemoCorrection:FileNotFound';
-    errMsg = ['Meta data file of fluo channel not found in ' SaveFolder];
-    error(errID, errMsg);
-else
-    % Create temporary MAT file for compatibility with IOI function:
-    [Path,filename,ext] = fileparts(fluoMetaData.Properties.Source);
-    newFile = fullfile(Path, [erase(filename, '_info') ext]);
-    copyfile(fluoMetaData.Properties.Source, newFile);
-end
+parse(p,SaveFolder, varargin{:});
+
 % Translate opts to char cell array:
-fields = fieldnames(opts);
-idx = cellfun(@(x) opts.(x), fields);
+fields = fieldnames(p.Results.opts);
+idx = cellfun(@(x) p.Results.opts.(x), fields);
 list = fields(idx)';
+
 % Run HemoCorrection function from IOI library:
 disp('Performing hemodynamic correction in fluo channel...')
-data = HemoCorrection(SaveFolder, list);
+outData = HemoCorrection(p.Results.SaveFolder, list);
+tmp = dir(fullfile(p.Results.SaveFolder, 'fluo*.dat'));
+fluoMetaData = load(fullfile(tmp(1).folder, strrep(tmp(1).name, '.dat','.mat')));
+metaData = genMetaData(outData, fluoMetaData.dim_names, fluoMetaData);
 disp('Finished hemodynamic correction.')
-% delete temporary MAT file:
-delete(newFile);
-
-% Save to .DAT file and create .MAT file with metaData:
-[~,filename,~] = fileparts(newFile);
-outFile = ['hemoCorr_' filename '.dat'];
-datFile = fullfile(SaveFolder, outFile);
-save2Dat(datFile, data, fluoMetaData.dim_names);
-
-% Add fluo channel metaData info to new file metadata:
-% [~,metaData] = mapDatFile(datFile);
-% metaData.Properties.Writable = true;
-% props = setdiff(properties(fluoMetaData), properties(metaData));
-% for k = 1:length(props)
-%     eval(['metaData.' props{k} '= fluoMetaData.' props{k} ';'])
-% end
-
 end

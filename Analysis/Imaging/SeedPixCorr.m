@@ -1,48 +1,45 @@
-function outFile = SeedPixCorr(File, SaveFolder, varargin)
-% This function reduces the matrix DATA in DATFILENAME to a 64 x 64, calculates
-% a pixel-wise temporal correlation.
+function [outData, metaData] = SeedPixCorr(data, metaData, varargin)
+% This function calculates a pixel-wise temporal correlation. 
+
+
+
+% Defaults:
+default_Output = 'SeedPixCorr.dat'; %#ok. This line is here just for Pipeline management.
+default_opts = struct('imageResizeTo', -1, 'FisherZ_transform', false);
 
 %%% Arguments parsing and validation %%%
 p = inputParser;
-% The input of the function must be a File , RawFolder or SaveFolder
-addRequired(p,'File',@isfile)% For a file as input.
-% Save folder:
-addRequired(p, 'SaveFolder', @isfolder);
+addRequired(p,'data',@(x) isnumeric(x) & ndims(x) == 3); % Validate if the input is a 3-D numerical matrix:
+addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
 % Optional Parameters:
-% opts structure:
-default_opts = struct('imageResizeTo', -1, 'FisherZ_transform', false);
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
-% Output File:
-default_Output = 'SeedPixCorr.dat';
-addOptional(p, 'Output', default_Output, @(x) ischar(x) || isstring(x) || iscell(x));
 % Parse inputs:
-parse(p,File, SaveFolder, varargin{:});
+parse(p,data, metaData, varargin{:});
 %Initialize Variables:
-File = p.Results.File;
-SaveFolder = p.Results.SaveFolder;
+data = p.Results.data;
+metaData = p.Results.metaData;
 opts = p.Results.opts;
-Output = p.Results.Output;
+clear p
 %%%%
-% Open memMapfile:
-[mData, metaData] = mapDatFile(File);
-% Load data:
-data = mData.Data.data;
+
 % Find NaNs and replace them with zeros:
-idx_nan = isnan(data);
-data(idx_nan) = 0;
+% idx_nan = isnan(data);
+% data(idx_nan) = 0;
 % Check if data is a 3-D matrix with dimensions 'X', 'Y' and 'T':
 [idx, locB] = ismember({'Y', 'X', 'T'}, metaData.dim_names);
-if ~all(idx)
+if ~all(idx) || any(locB(1:2)>2)
     error('Umitoolbox:SeedPixCorr:WrongInput', ...
         'Input Data must be a a 3-D matrix with dimensions "Y", "X" and "T".');
 end
-% Permute data to have 'X', 'Y', 'T' dimensions:
-data = permute(data, locB);
+    
+% Permute data to have 'Y', 'X', 'T' dimensions:
+% data = permute(data, locB); % disable for now until ImagesClassification outputs data as {"Y","X","T"}. BrunoO 26/01/2022
+
 % Calculate SeedPixel Correlation:
 % Preserve data Aspect Ratio:
 data_size = size(data);
 if opts.imageResizeTo == -1
-    dataAspectRatio = 1;
+%     dataAspectRatio = 1;
     xy_size = data_size([1 2]);
     A = data;
 else
@@ -50,35 +47,24 @@ else
     xy_size = round(data_size([1 2]).*dataAspectRatio);
     A = imresize3(data, [xy_size(1), xy_size(2), size(data,3)], 'nearest');
 end
+clear data;
 B = reshape(A, [], size(A,3))';
+clear A
 % % Put NaNs back to data:
 % B(idx_nan) = NaN;
-[CM, P] = corr(B);
+% [CM, P] = corr(B); % Removed P-Value matrix for now...
+disp('Calculating correlation...');
+outData = corr(B);
+clear B
 % Apply Z Fisher transformation to corr Data:
 if opts.FisherZ_transform
-    CM = atanh(CM);
+    outData = atanh(outData);
 end
-CM = reshape(CM, [xy_size(1) xy_size(2) xy_size(1)*xy_size(2)]);
-P = single(reshape(P, [xy_size(1) xy_size(2) xy_size(1)*xy_size(2)]));
-% SAVING DATA :
-% Generate .DAT and .MAT file Paths:
-datFile = fullfile(SaveFolder, Output);
+outData = reshape(outData, [xy_size(1) xy_size(2) xy_size(1)*xy_size(2)]);
+% P = single(reshape(P, [xy_size(1) xy_size(2) xy_size(1)*xy_size(2)]));% Removed P-Value matrix for now...
+
 % Create MetaData structure:
 dim_names = {'Y', 'X', 'S'};
-szCM = size(CM);
-metaDat = struct('datName', {'CM', 'P'}, 'datSize', {szCM([1 2]), szCM([1 2])},...
-    'datLength', {szCM(3) szCM(3)}, 'Datatype', {'single', 'single'}, 'datFile', datFile);
-% Save CM and METADAT to DATFILE:
-save2Dat(datFile, CM, dim_names,'-w', metaDat)
-% Append "P" to DATFILE:
-save2Dat(datFile, P, dim_names, '-a')
-outFile = Output;
-if ~isprop(metaData, 'BregmaXY')
-    warning('MATLAB:UMIToolbox:MissingInfo', 'Anatomical landmarks not found in input File metaData!')
-else
-    [~, metaData_out] = mapDatFile(datFile);
-    metaData_out.Properties.Writable = true;
-    metaData_out.BregmaXY = metaData.BregmaXY*dataAspectRatio;
-    metaData_out.LambdaXY = metaData.LambdaXY*dataAspectRatio;
-end
+metaData = genMetaData(outData,dim_names, metaData);
+disp('Finished SPCM');
 end

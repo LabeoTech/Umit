@@ -8,7 +8,7 @@ classdef ObjectListManager < handle
         ObjList(1,:) % Array of objects.
     end
     
-    properties (Access = private)
+    properties (SetAccess = ?Protocol)
         parentObj % Parent object that contains an ObjectListManager object.
     end
     
@@ -25,7 +25,7 @@ classdef ObjectListManager < handle
                 objectList = checkForDuplicates(objectList);
                 obj.ObjList = objectList;
             end
-            obj.parentObj = parentObj;
+                obj.parentObj = parentObj;
         end 
         function addObj(obj, newObj)
             % Adds a new object to the ObjList list.
@@ -69,13 +69,7 @@ classdef ObjectListManager < handle
             obj.ObjList(idx) = [];
             disp(['Object(s) with index(es) ' num2str(idx) ' successfully removed']);
         end
-        
-        %         function eraseObjArray(obj)
-        %             % This function erases the ObjArray property.
-        %             obj.ObjList = [];
-        %             disp('ObjArray successfully erased')
-        %         end
-        
+               
         function out = listProp(obj, propName)%#ok
             % LISTPROP lists all values of PROPNAME from objects inside OBJ.OBJLIST.
             idx = arrayfun(@(x) ismember(propName, properties(x)), obj.ObjList);%#ok

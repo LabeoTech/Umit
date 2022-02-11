@@ -37,9 +37,7 @@ classdef test_run_HemoCorrection < matlab.unittest.TestCase
             fclose(fid_out);
             % Test .MAT files:
             Exp = load(fullfile(root, expOutFolder, 'hemoCorr_fluo_info.mat'));
-            Out = load(fullfile(root, outFolder, 'hemoCorr_fluo_info.mat'));
-            Exp = rmfield(Exp,{'fileUUID', 'datFile'});
-            Out = rmfield(Out, {'fileUUID', 'datFile'});
+            Out = load(fullfile(root, outFolder, 'hemoCorr_fluo_info.mat'));            
             testCase.verifyEqual(Exp, Out);
             % Remove created files from outFolder:
             files = dir(fullfile(root, outFolder));

@@ -5,24 +5,26 @@ classdef Subject < handle
     %   ID, GroupID (name of experimental group) and an "ObjectListManager"
     %   object containing an array of "Acquisition" objects.
     
-    properties
-        ID % Subject ID
-        Calcium_indicator % Name of the calcium indicator.
-        
+    properties 
+        ID % Subject ID (It has it's on set function).
+        Gender char {mustBeNonempty} = 'Unknown'% Animal's Gender ID
+        Weight_g single {mustBeNonempty}  = 0.0 % Animal's weight in grams.
+        Strain char {mustBeNonempty} = 'Unknown' % Animal's strain (Ex. Mouse strain "C57BL/6J").
+        Calcium_indicator char {mustBeNonempty} = 'Unknown'% Name of the calcium indicator.        
     end
     properties (SetAccess = {?Protocol, ?PipelineManager, ?ObjectListManager})
         Array % List of Acquisitions.
         MyParent % Protocol Object.
         GroupID % Experimental Group of Subject.
-        LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
+        LastLog = table.empty % Table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
     end
-    properties (Dependent)
-        SaveFolder % Path of directory containing transformed data.
-        FilePtr % JSON file containing information of files created using PIPELINEMANAGER.
+    properties (Dependent, SetAccess = private)
+        SaveFolder % Path of directory containing transformed data.        
     end
+    
     methods
         
-        function obj = Subject(ID, GroupID, Array, Calcium_indicator)
+        function obj = Subject(ID, GroupID, Array)
             % Class Constructor.
             %   This function initiates the Subject class with the
             %   animal's basic information and an Array. Subject's ID
@@ -32,8 +34,7 @@ classdef Subject < handle
             if nargin > 0
                 obj.ID = ID;
                 obj.GroupID = GroupID;
-                obj.Array = Array;
-                obj.Calcium_indicator = Calcium_indicator;
+                obj.Array = Array;                
             else
                 obj.ID = 'def';
                 obj.GroupID = 'def';
@@ -67,17 +68,7 @@ classdef Subject < handle
                 obj.Array = ObjectListManager([],obj);
             end
         end
-        
-%         function set.SaveFolder(obj, SaveFolder)
-%             % Set function for SaveFolder property.
-%             obj.SaveFolder = checkFolder(SaveFolder);
-%         end
-        
-        function set.Calcium_indicator(obj, GECI)
-            % Set function for CALCIUM_INDICATOR property.
-            validateattributes(GECI, {'char', 'string'}, {'scalartext'}); % Validates if GECI is a non-empty text.
-            obj.Calcium_indicator = GECI;
-        end
+
         function set.MyParent(obj, Parent)
             % Set function for MYPARENT property.
             msgID = 'UMIToolbox:InvalidInput';
@@ -92,32 +83,7 @@ classdef Subject < handle
             msgID = 'umIToolbox:FolderNotFound';
             msg = 'Subject SaveFolder doesnt exist.';
             assert(isfolder(out), msgID,msg);
-        end
-        function out = get.FilePtr(obj)
-            % Get function for depentend property FilePtr.
-            out = fullfile(obj.MyParent.SaveDir, obj.ID, 'FilePtr.json');
-        end
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        function createFilePtr(obj)
-            % This function creates a JSON file containing basic information from object.
-            
-            % FilePtr full path:
-%             obj.FilePtr = fullfile(obj.SaveFolder, 'FilePtr.json');
-            if isfile(obj.FilePtr)
-                disp(['Skipped FilePtr creation. File pointer already exists in ' obj.SaveFolder ]);
-                return
-            end
-            A = struct('Type', class(obj), 'ID', obj.ID, 'Files', []);
-            txt = jsonencode(A);
-            fid = fopen(obj.FilePtr, 'w');
-            fprintf(fid, '%s', txt);
-            fclose(fid);
-        end
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        function dummyMethodForTesting(obj)
-            disp(class(obj))
-            disp(['This is a dummy function for testing of SUBJECT ' obj.ID '!'])
-        end
+        end               
     end
     methods (Access = private)
         function delete(obj)

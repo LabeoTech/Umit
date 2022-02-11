@@ -3,20 +3,23 @@ function Umitoolbox_setupEnv
 % For now, it creates an environment variable with the folder where the
 % toolbox is located. This is used by the GUI scripts to find folders and
 % files in the computer.
+
 saveDir = uigetdir(pwd, 'Select Toolbox Folder');
 sys = computer;
 myenv = getenv('Umitoolbox');
 if isfolder(myenv)
     disp('Environment Variable Umitoolbox already exists!')
-    return
+else
+    switch sys
+        case 'PCWIN64'
+            system(['SETX Umitoolbox ' saveDir]);
+            disp('done!');
+            disp('Restart MATLAB to apply the changes!');
+        otherwise
+            disp('For this computer, you have to set manually the environment variable "Umitoolbox"');
+    end
 end
-switch sys
-    case 'PCWIN64'
-        system(['SETX Umitoolbox ' saveDir]);
-        disp('done!');
-        disp('Restart MATLAB to apply the changes!');
-    otherwise
-        disp('For this computer, you have to set manually the environment variable "Umitoolbox"');
-end
-
+% Add toolbox to savePath:
+root = getenv('Umitoolbox');
+addpath(genpath(root)); savepath
 end
