@@ -217,8 +217,10 @@ classdef PipelineManager < handle
             task.className = obj.ClassName;
             task.lvl = obj.ClassLevel;
             task.name = obj.funcList(idx).name;
-            task.b_save2File = p.Results.b_save2File;
-            task.datFileName = p.Results.datFileName;
+            % Add default values for fields used to save the data: These
+            % values will be updated later:
+            task.b_save2File = false;
+            task.datFileName = '';
             
             % Control for steps IDENTICAL to the task that are already in the pipeline:
             idx_equal = arrayfun(@(x) isequaln(task,x), obj.pipe);
@@ -275,18 +277,19 @@ classdef PipelineManager < handle
             disp(['Added "' task.name '" to pipeline.']);
             
             % Control for data to be saved as .DAT files for task:
-            if ~task.b_save2File
+            if ~p.Results.b_save2File
                 return
-            end
-            if ~any(ismember({'outData', 'outDataStat'}, task.argsOut))
+            elseif ~any(ismember({'outData', 'outDataStat'}, task.argsOut))
                 warning(['Cannot save output to .DAT file for the function'...
                     ' "%s" \nbecause it doesn''t have any data as output!'], task.name);
+                obj.pipe(end).b_save2File = false;
+                obj.pipe(end).datFileName = '';      
                 return
             end
             
             % Save datFileName as default output name from task's function
             % if it wasn't previously defined by the User:
-            if isempty(task.datFileName)
+            if isempty(p.Results.datFileName)
                 obj.pipe(end).datFileName = obj.pipe(end).outFileName;
             else
                 % OR update datFileName to add file extension:
@@ -971,7 +974,10 @@ classdef PipelineManager < handle
                 return
             end
             
-            if isempty(obj.pipe(i).datFileName)
+            % Save file of last step if the function outputs Data or
+            % StatsData:
+            if isempty(obj.pipe(i).datFileName) & any(ismember({'outData', 'outDataStats'},...
+                    obj.pipe(i).argsOut))
                 obj.pipe(i).datFileName = obj.pipe(i).outFileName;
                 obj.pipe(i).b_save2File = true;
             end
