@@ -285,6 +285,9 @@ classdef PipelineManager < handle
                 obj.pipe(end).b_save2File = false;
                 obj.pipe(end).datFileName = '';      
                 return
+            else
+                % switch the b_save2File variable to TRUE:
+                obj.pipe(end).b_save2File = true;
             end
             
             % Save datFileName as default output name from task's function
@@ -293,11 +296,11 @@ classdef PipelineManager < handle
                 obj.pipe(end).datFileName = obj.pipe(end).outFileName;
             else
                 % OR update datFileName to add file extension:
-                [~,~,ext]= fileparts(obj.pipe(end).datFileName);
+                [~,~,ext]= fileparts(p.Results.datFileName);
                 if isempty(ext)
                     [~,~,ext_def] = fileparts(obj.pipe(end).outFileName);
-                    obj.pipe(end).datFileName = [obj.pipe(end).datFileName, ext_def];
-                end
+                    obj.pipe(end).datFileName = [p.Results.datFileName, ext_def];
+                end                
             end
         end
         
