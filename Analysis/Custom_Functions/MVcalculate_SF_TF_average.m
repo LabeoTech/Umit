@@ -44,7 +44,7 @@ for i = 1:size(a,1)
     idx = find(all(eventNameList(:,1:3) == a(i,:),2));
     indx_trials = arrayfun(@(x) metaDat.eventID == x, idx, 'UniformOutput', false); indx_trials = any(cell2mat(indx_trials'),2);
     raw_data_subset = mData.Data.data(indx_trials,:,:,:);
-    AVG(i,:,:,:)= nanmean(raw_data_subset,1);
+    AVG(i,:,:,:)= mean(raw_data_subset,1, 'omitnan');
     STD(i,:,:,:)= std(raw_data_subset,0,1,'omitnan');
 end
 datFile = fullfile(SaveFolder, Output);

@@ -120,7 +120,7 @@ end
     function out = calcAgg(vals,idxDim)
         switch aggfcn
             case 'mean'
-                out = nanmean(vals, idxDim);
+                out = mean(vals, idxDim,'omitnan');
             case 'median'
                 out = median(vals, idxDim, 'omitnan');
             case 'mode'

@@ -109,7 +109,7 @@ function out = applyAggFcn(vals, aggfcn)
 
 switch aggfcn
     case 'mean'
-        out = nanmean(vals, 1);
+        out = mean(vals, 1, 'omitnan');
     case 'median'
         out = median(vals, 1, 'omitnan');
 %     case 'mode'

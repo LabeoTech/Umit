@@ -74,7 +74,7 @@ for i = 1:n_trial
             ' Missing data points will be replaced with ' opts.PadWith]);
         switch opts.PadWith
             case 'mean'
-                avg = nanmean(snippet, 3);
+                avg = mean(snippet, 3, 'omitnan');
                 avg = repmat(avg,1,1,size(outData,4));
                 outData(i,:,:,:) = avg;
             case 'NaN'
