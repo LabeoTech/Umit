@@ -33,7 +33,7 @@ metaData = load(metaDatFileName);
 % Read binary file:
 fid = fopen(DatFileName);
 outFile = fread(fid, inf, '*single');
-outFile = reshape(outFile, metaData.datSize(1,1), metaData.datSize(1,2), []);
+outFile = reshape(outFile, [metaData.datSize metaData.datLength]);
 end
 
 % Validation function
