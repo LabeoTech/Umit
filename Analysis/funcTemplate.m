@@ -1,4 +1,4 @@
-function outFile = funcTemplate({File, RawFolder}, SaveFolder, opts)
+function outFile = funcTemplate(File, SaveFolder, opts)
 % FUNCTEMPLATE is a dummy function that serves as a template for creating
 % functions compatible with the toolbox.
 %

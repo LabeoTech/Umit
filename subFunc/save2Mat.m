@@ -54,7 +54,7 @@ b_genFile = p.Results.genFile;
 clear p
 % Further validate data:
 errID = 'Umitoolbox:save2Mat:IncompatibleSize';
-errMsg = 'The lenght of data is different from the number of observations.';
+errMsg = 'The length of data is different from the number of observations.';
 assert(isequaln(length(data),length(obsID)), errID, errMsg);
 errID = 'Umitoolbox:save2Mat:IncompatibleSize';
 errMsg = 'The number of dimensions of data is different from the number of dimension names.';
