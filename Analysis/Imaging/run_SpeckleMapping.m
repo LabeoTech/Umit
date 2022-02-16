@@ -8,8 +8,7 @@ function [outData, metaData] = run_SpeckleMapping(SaveFolder, varargin)
 
 % Defaults:
 default_Output = 'std_speckle.dat'; %#ok. This line is here just for Pipeline management.
-default_opts = struct('sType', 'Temporal', 'channel', 'speckle', 'bSaveMap', false,...
-    'bLogScale', false);
+default_opts = struct('sType', 'Temporal', 'channel', 'speckle', 'bSaveMap', false,'bLogScale', false);
 
 %%% Arguments parsing and validation %%%
 p = inputParser;
@@ -25,10 +24,14 @@ clear p
 % Run SpeckleMapping function from IOI library:
 disp(['Calculating ' opts.sType ' standard deviation in ' opts.channel '...'])
 outData = SpeckleMapping(SaveFolder, opts.sType, opts.channel, opts.bSaveMap, opts.bLogScale);
-origMetaData= load(fullfile(SaveFolder, [opts.channel '.mat']));
-%%%%% Check the shape of data depending on the type of STD calculation:
-% Create new meta data file based on function's input metaData:
+origMetaData = load(fullfile(SaveFolder, [opts.channel '.mat']));
+
+% Create meta data:
+% Change "Freq" property to zero:
+origMetaData.Freq = 0;
 % Use first and second input's dimensions:
-metaData = genMetaData(outData, origMetaData.dim_names(1:2), speckleMetaData);
+new_dims = origMetaData.dim_names(1:2);
+% Create new meta data file based on function's input metaData:
+metaData = genMetaData(outData, new_dims, origMetaData);
 disp('Finished Speckle Mapping.')
 end
