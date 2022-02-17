@@ -1,6 +1,6 @@
 ### run_SpeckleMapping
 
-Calculates the average speckle contrast map from Laser Speckle Contrast Imaging(LSCI) raw data.
+Calculates the average speckle contrast map from Laser Speckle Contrast Imaging (LSCI) raw data.
 
 ##### Description
 ___
@@ -70,6 +70,8 @@ Then, add the `opts` structure as input to the function:\
 In this case, the function will calculate the speckle contrast map on the spatial dimension of the raw LSCI data in `speckle.dat` and output the data in a negative logarithmic scale.
 
 ##### References
+___
+
 1. Boas, David A., and Andrew K. Dunn. ‘Laser Speckle Contrast Imaging in Biomedical Optics’. Journal of Biomedical Optics 15, no. 1 (February 2010): 011109. https://doi.org/10.1117/1.3285504.
 
 ##### Links to related functions
