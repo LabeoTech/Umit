@@ -36,6 +36,7 @@ Some of the apps work as standalone, meaning that they can operate without using
 
 ##### Analysis functions
 * [run_ImagesClassification](/docs/devDocs/run_imagesclassification.md)
+* [run_SpeckleMapping](/docs/devDocs/run_specklemapping.md)
 
 ##### *umIT*'s built-in functions and classes
 * [loadDatFile](/docs/devDocs/loaddatfile.md)
