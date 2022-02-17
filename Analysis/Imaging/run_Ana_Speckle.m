@@ -5,7 +5,7 @@ function outFile = run_Ana_Speckle(SaveFolder)
 
 % Defaults:
 default_Output = {'Flow.dat'}; % This line is here just for Pipeline management...
-                               % In this case, the string must be inside a
+                               % In this case, the string must be inside a cell
                                % in order to PipelineManager to work.
 
 %%% Arguments parsing and validation %%%
