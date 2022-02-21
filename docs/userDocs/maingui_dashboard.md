@@ -14,10 +14,10 @@ ___
 Panel that shows if the project file was successfully loaded. In addition, it shows if there are any changes in the raw folder (i.e. added or deleted recording files) when looking for new data (*Utilities >> Project >> Look for new data*) or when the project is updated (*Utilities >> Project >> Update Project*).
 
 ##### 2. Object/file history
-Table with the last operations executed on the selected object from the *object tree* OR on the selected file (i.e. *data history*) listed in [file list](#file-list).
+Table with the last operations executed on the selected object from the *object tree* OR on the selected file (i.e. *data history*) listed in [file list](#4.-file-list).
 
 ##### 3. Object/file info
-Panel showing the properties of the selected object in the *object tree* OR the meta Data associated with the selected file in [file list](#file-list).
+Panel showing the properties of the selected object in the *object tree* OR the meta Data associated with the selected file in [file list](#4.-file-list).
 
 <p align="center">
   <img alt="DashboardObjSelect" src="../../assets/img/mainGUI_dashboard_objSelect.png"/> <br>
@@ -25,7 +25,7 @@ Panel showing the properties of the selected object in the *object tree* OR the 
 </p><br>
 
 ##### 4. File list
-List box with `.dat` and `.mat ` files created using *umIT* located the save folder of the selected object. Select one of the files to show the data history and meta data info.
+List box with `.dat` and `.mat ` files created using *umIT* located the save folder of the selected object. Select one of the files to show the data history and meta data info:
 
 <p align="center">
   <img alt="DashboardFileSelect" src="../../assets/img/mainGUI_dashboard_fileSelect.png"/> <br>
@@ -42,7 +42,7 @@ Some of the properties of the project objects (i.e. Subjects, Acquisitions and M
 
 <p align="center">
   <img alt="DashboardObjEdit1" src="../../assets/img/mainGUI_dashboard_objEdit1.png"/> <br>
-  <em>Read-only properties <strong>(!)</strong> of the <strong>Subject</strong> object.</em>
+  <em>Read-only properties (<strong>(!)</strong>) of the <strong>Subject</strong> object.</em>
 </p><br>
 
 In the case of the figure above, one can edit the *Gender*, *Weight*, *Strain* and *Calcium Indicator* properties of the subject **M4G**:
@@ -53,19 +53,19 @@ In the case of the figure above, one can edit the *Gender*, *Weight*, *Strain* a
 <em>Click on <strong>Edit</strong> to edit the properties of the selected object.</em>
 </p><br>
 >Tip:\
-It is always faster to set as many properties as possible during the object's creation inside the protocol function and leave the rest to be set manually in the **Dashboard** tab.
+It is always faster to set as many properties as possible during the object's creation inside the protocol function and leave the rest to be set manually in the **Dashboard** tab!
 
 ##### Delete an object
 One can manually delete an object from the project. Only Subjects and Acquisitions can be deleted.\
 Here, the deleted objects are erased from the project file and send to the *Garbage List*. The objects listed in the *Garbarge List* are blacklisted from the project and will be ignored next time the project is updated.
 > Note:\
-No raw files are deleted during this process. It is only possible to delete transformed files inside the object's Save folder.
+No raw files are deleted during this process. It is only possible to delete transformed files inside the object's Save folder. If you wish to delete the raw data, you have to do it manually outside **umIT** and update the project.
 
 There are two options: to delete the object only OR to delete the object and all files inside the object's save folder:
 
 <p align="center">
   <img alt="DashboardObjEdit2" src="../../assets/img/mainGUI_dashboard_objDelete.png"/> <br>
-  <em>Click on <strong>Delete</strong> to delete the selected object.</em>
+  <em>Click on <strong>Delete</strong> to delete the selected object and select the delete option.</em>
 </p><br>
 
 \
