@@ -1,16 +1,32 @@
 ### The main user interface
+___
 
-The *umIToolbox Main* graphical user interface allows one to create and manage a project and its datasets, configure and run analysis pipelines and launch visualization apps.
-#### Main elements
-The interface is constituted of a menu bar and four tabs. Here are the main components of the interface:
+The *Umitoolbox* main graphical user interface (GUI) allows one to create and manage a project and its datasets, configure and run analysis pipelines and launch visualization apps.
+
+##### Syntax
+___
+
+`Umitoolbox`: Opens an empty interface. Create or load a [project file](/creating_a_new_project.md).
+
+`Umitoolbox(ProjFile)`: Opens the interface and automatically loads the project stored in `ProjFile` .mat file. The .mat file `ProjFile` is a string with the full path to the project file.
+
+##### Sections
+___   
+
+* [The interface](#the-interface)
+* [Advanced Search](#advanced-Search)
+
+#### The interface
+___
 
 <p align="center">
-  <img alt="guiMainComponents" src="../../assets/img/mainGUI_mainComp.png" width = 500/> <br>
+  <img alt="guiMainComponents" src="../../assets/img/mainGUI_mainComp.png"/> <br>
   <em>Main graphical user interface.</em>
 </p><br>
-##### 1. Menu Bar
+
+##### 1. Menu bar
 **Project**
-* ***New:*** Creates a new *project file*. Here, the user will be asked to create a project name and to select the save and the raw data folders as well as to select the protocol function associated with the raw folder structure. For more info, see [How to create a new project](/ht_create_new_project.md).
+* ***New:*** Creates a new *project file*. Here, the user will be asked to create a project name and to select the save and the raw data folders as well as to select the protocol function associated with the raw folder structure. For more info, see [*Creating a new project*](/creating_a_new_project.md).
 * ***Open:*** Opens dialog to load previously saved *project file*.
 * ***Save:*** Saves the currently opened *project file*.
 * ***Save as...:*** Opens dialog to save currently opened *project file*.   
@@ -23,25 +39,30 @@ The interface is constituted of a menu bar and four tabs. Here are the main comp
     * ***Reset LogBook:*** Erases the LogBook table.
     * ***Restore garbage list:*** Erases all objects listed in the *garbage list*. For more info, see [Managing experiment info](/ht_manage_exp.md).
 
-##### 2. Tabs
-Each tab deals with a one specific role of the toolbox (i.e., experiment management, data analysis, visualisation and statistical analysis). See links in section 5 ([Tab content](#tab-content)) for details.
-##### 3. Search Panel
-Provides options for filtering the data shown in the *folder tree*.
-!Currently, each tab as its own *search panel* and *folder tree*.
-* ***Advanced Search:*** Launches an interface to filter the project items (Subjects/Acquistions/Modalities). For more info see [Advanced Search](/ht_use_advanced_search.md).
-* ***Reset Search:*** Resets the *folder tree* to show all project items.
+##### 2. Search tool panel
+Provides options for filtering the data shown in the *object tree*.
 
-##### 4. Folder Tree
-Shows a tree contaning the file structure of the project's save folder.
-##### 5. Tab content
+* ***Advanced Search:*** Launches an interface to filter the project items (Subjects/Acquisitions/Modalities). For more info see [Advanced Search](#advanced-search).
+* ***Reset Search:*** Resets the *object tree* to show all items of the project.
+
+##### 3. Tabs' options panel
+This panel displays options for each tab. The content of the options panel changes depending on which tab is selected. For details on each tab's options, read the respective tab documentation in [section 5](#tabs).
+
+##### 4. Project's object tree
+Shows a tree containing the file structure of the project's save folder. The tree behaviour changes depending on the selected tab. *Dashboard* and *Visualization* tabs allow single-item selection while the *Pipeline control panel* tab allows multi-selection. The object tree is disables for the *Analysis* tab.
+
+##### 5. Tabs
 The content of each tab.
 Here are more detailed information on the components of each tab:
-* [Dashboard](/dashboard_tab.md) (Experiment Management)
-* [Pipeline control panel](/pipeline_tab.md) (Data processing)
-* [Visualization](/visualization_tab.md) (Data visualization)
-* [Analysis](/analysis_tab.md) (Results visualisation and analysis)
+* [Dashboard](/maingui_dashboard.md) (Experiment Management)
+* [Pipeline control panel_LINKNOTFUNCTIONAL](/maingui_pipeline.md) (Data processing)
+* [Visualization_LINKNOTFUNCTIONAL](/maingui_visualization.md) (Data visualization)
+* [Analysis_LINKNOTFUNCTIONAL](/maingui_analysis.md) (Results visualisation and analysis)
 
+#### Advanced search
+___
 
+Content available soon!
 
-
-[**<< Home**](/index.md)                                                                   
+\
+[**<< Home**](../../index.md)                                                                   

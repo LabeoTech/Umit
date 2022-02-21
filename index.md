@@ -10,17 +10,17 @@ ___
 ### Getting started with ***umIT***
 Here, you will find the minimal information to get started with the toolbox.
 * [An overview](#an-overview)
-* [umIT installation](/umit_install.md)
-* [The main user interface](/mainGUI.md)
-* [Creating a new project](/ht_create_new_project.md) (in construction)
-* [Running an analysis pipeline](/ht_run_pipeline.md) (in construction)
-* [Visualizing results](/ht_viz_data.md)  (in construction)
+* [umIT installation](/docs/userDocs/umit_install.md)
+* [The main user interface](/docs/userDocs/maingui.md)
+* [Creating a new project](/docs/userDocs/creating_a_new_project.md) (in construction)
+* [Running an analysis pipeline](/docs/userDocs/ht_run_pipeline.md) (in construction)
+* [Visualizing results](/docs/userDocs/ht_viz_data.md)  (in construction)
 
 ___
 
 ### User Guides
-* [Build a data processing pipeline](/ht_buildpipeline.md)
-* [Extract data from ROI](/ht_getdatafromroi.md) using the standalone version of [*DataViewer*](/docs/devDocs/dataviewer.md) (link not functional)
+* [Build a data processing pipeline](/docs/devDocs/ht_buildpipeline.md)
+* [Extract data from ROI](/docs/userDocs/ht_getdatafromroi.md) using the standalone version of [*DataViewer*](/docs/devDocs/dataviewer.md) (link not functional)
 * [Import Data from LabeoTech Systems](/docs/userDocs/dataimportlabeo.md)
 
 ___

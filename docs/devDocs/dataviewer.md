@@ -2,7 +2,7 @@
 Visualization of imaging data
 ##### Description
 ___
-```DataViewer``` is a graphical interface to visualize functional imaging recordings. The app provides basic tools to explore distinct types of recordings such as image time series, event-triggered time series and correlation maps. ```DataViewer``` can be called from the [Visualization](/visualization_tab.md) tab or as **standalone**. 
+```DataViewer``` is a graphical interface to visualize functional imaging recordings. The app provides basic tools to explore distinct types of recordings such as image time series, event-triggered time series and correlation maps. ```DataViewer``` can be called from the [Visualization](/visualization_tab.md) tab or as **standalone**.
 The app opens the following data (dimension names):
 * Image time series (Y,X,T)
 * Event-triggered image time series (E,Y,X,T)
@@ -34,7 +34,7 @@ The graphical interface is composed of a main window, containing file and data c
     * ***Image Options:*** Opens dialog to set image colormap and clipping values.
     * ***Playback speed:*** Sets movie speed for playback button (3. Controls). If the selected speed is too high, the app will reduce it to avoid lag.
 * ***Utilities >>***
-    * ***Data processing:*** **(Standalone only)** Tool to setup image processing pipeline on the data using the [analysis functions](/index.md/#analysisfunctions) from the toolbox. 
+    * ***Data processing:*** **(Standalone only)** Tool to setup image processing pipeline on the data using the [analysis functions](/index.md/#analysisfunctions) from the toolbox.
     * ***View Data History:*** Opens a table showing information about the analysis functions run for the opened data file.
     * ***Extract data from ROI:*** **(Standalone only)** Tool to create a .MAT file containing data from the displayed ROIs.
 * ***Add-ons >>***
@@ -43,7 +43,7 @@ The graphical interface is composed of a main window, containing file and data c
 ##### 2. File info
 Displays the current file path and the experiment type.
 ##### 3. Controls
-The main window has some control options for image time series: 
+The main window has some control options for image time series:
 * ***Slider:*** interactive selection of frames.
 * ***Play button:*** plays a movie.   
 
@@ -76,5 +76,4 @@ As for the *Image Window*, use the figure's *Data Tips* button to add data tips 
 
 
 
-[**<< Home**](/index.md)
-
+[**<< Home**](../../index.md)
