@@ -20,7 +20,7 @@ ___
 
 ### User Guides
 * [Build a data processing pipeline](/ht_buildpipeline.md)
-* [Extract data from ROI](/ht_getdatafromroi.md) using the standalone version of [*DataViewer*](/dataviewer.md) (link not functional)
+* [Extract data from ROI](/ht_getdatafromroi.md) using the standalone version of [*DataViewer*](/docs/devDocs/dataviewer.md) (link not functional)
 * [Import Data from LabeoTech Systems](/docs/userDocs/dataimportlabeo.md)
 
 ___
@@ -31,8 +31,8 @@ Here you will find more information on the features of each **app** from the too
 
 Some of the apps work as standalone, meaning that they can operate without using the main interface (i.e., the experiment management system). This is particularly useful if you want to quickly analyse and visualize a small number of imaging recording sessions before running it through the experiment management system.
 ##### Apps
-* [DataViewer](/dataviewer.md) : Basic exploration of imaging data. Works as standalone.
-* [ROImanager](/roimanager.md) : Creation and management of Regions of interest. Works as standalone.
+* [DataViewer](/docs/devDocs/dataviewer.md) : Basic exploration of imaging data. Works as standalone.
+* [ROImanager](/docs/devDocs/roimanager.md) : Creation and management of Regions of interest. Works as standalone.
 
 ##### Analysis functions
 * [run_ImagesClassification](/docs/devDocs/run_imagesclassification.md)
@@ -47,12 +47,16 @@ ___
 ## An overview
 A typical imaging **project** consists of one or more cohorts of **subject**s (e.g. mice) that undergo one or more **acquisition** (i.e. recording) sessions. Frequently, other recording **modalities** are associated with the imaging data such as behavioral responses, eye/body tracking, etc. The toolbox follows the same organization principle where one can manage subjects, acquisitions and recording modalities for a given project.   
 
-![fig1](/assets/img/umIT_concept_org_img_exp.png)
-###### Fig 1. Conceptual organization of a typical imaging project.
+<p align="center">
+  <img alt="fig1" src="/assets/img/umIT_concept_org_img_exp.png"/> <br>
+  <em>Conceptual organization of a typical imaging project.</em>
+</p><br>
 
 The management of the project datasets is done through a set of *objects* that control the project (class Protocol), subjects (class Subject), acquisitions (class Acquisition) and modalities (abstract class modality and sub classes such as *FluorescenceImaging* class, for imaging data). Once the project file is created, the toolbox can automatically detect new subjects or acquisitions and update the file.   
 
 In addition to the experiment management tool, the toolbox provides a series of **analysis functions** and a **pipeline** engine that allows the automation of several steps of the data processing. These two modules (experiment management and data analysis) were created to be adaptable and easily extensible in order to fulfill the needs of different neuroimaging experiment designs. Finally, ***umIT*** provides tools to visualize imaging data and to perform statistical comparisons between groups.
 
-![fig2](/assets/img/umIT_4axis.png)
-###### Fig 2. The 4 main roles of **umIT**.  
+<p align="center">
+  <img alt="fig2" src="/assets/img/umIT_4axis.png"/> <br>
+  <em>The 4 main roles of <strong>umIT</strong>.</em>
+</p><br>

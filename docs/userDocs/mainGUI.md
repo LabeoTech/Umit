@@ -1,11 +1,13 @@
 ### The main user interface
 
-The *umIToolbox Main* graphical user interface allows one to create and manage a project and its datasets, configure and run analysis pipelines and launch visualization apps. 
+The *umIToolbox Main* graphical user interface allows one to create and manage a project and its datasets, configure and run analysis pipelines and launch visualization apps.
 #### Main elements
 The interface is constituted of a menu bar and four tabs. Here are the main components of the interface:
-![fig1](/assets/img/umIT_mainGUI_mainComp.png)
-###### Fig 1. Main GUI components.   
 
+<p align="center">
+  <img alt="guiMainComponents" src="../../assets/img/mainGUI_mainComp.png" width = 500/> <br>
+  <em>Main graphical user interface.</em>
+</p><br>
 ##### 1. Menu Bar
 **Project**
 * ***New:*** Creates a new *project file*. Here, the user will be asked to create a project name and to select the save and the raw data folders as well as to select the protocol function associated with the raw folder structure. For more info, see [How to create a new project](/ht_create_new_project.md).
@@ -32,7 +34,7 @@ Provides options for filtering the data shown in the *folder tree*.
 ##### 4. Folder Tree
 Shows a tree contaning the file structure of the project's save folder.
 ##### 5. Tab content
-The content of each tab. 
+The content of each tab.
 Here are more detailed information on the components of each tab:
 * [Dashboard](/dashboard_tab.md) (Experiment Management)
 * [Pipeline control panel](/pipeline_tab.md) (Data processing)
