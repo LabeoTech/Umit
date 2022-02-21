@@ -5,9 +5,8 @@ This is the first tab of the main GUI. Here, one can visualize the project's obj
 
 #### Tab's components
 ___
-
 <p align="center">
-  <img alt="DashboardMainComponents" src="../../assets/img/maingui_dashboard_fig1.png"/> <br>
+  <img alt="DashboardMainComponents" src="../../assets/img/mainGUI_dashboard_fig1.png"/> <br>
   <em>Main components of <strong>Dashboard</strong> tab.</em>
 </p><br>
 
@@ -21,7 +20,7 @@ Table with the last operations executed on the selected object from the *object 
 Panel showing the properties of the selected object in the *object tree* OR the meta Data associated with the selected file in [file list](#file-list).
 
 <p align="center">
-  <img alt="DashboardObjSelect" src="../../assets/img/maingui_dashboard_objSelect.png"/> <br>
+  <img alt="DashboardObjSelect" src="../../assets/img/mainGUI_dashboard_objSelect.png"/> <br>
   <em>Properties of the Subject <strong>M4G</strong> selected in from the object tree.</em>
 </p><br>
 
@@ -29,7 +28,7 @@ Panel showing the properties of the selected object in the *object tree* OR the 
 List box with `.dat` and `.mat ` files created using *umIT* located the save folder of the selected object. Select one of the files to show the data history and meta data info.
 
 <p align="center">
-  <img alt="DashboardFileSelect" src="../../assets/img/maingui_dashboard_fileSelect.png"/> <br>
+  <img alt="DashboardFileSelect" src="../../assets/img/mainGUI_dashboard_fileSelect.png"/> <br>
   <em>Meta data and data history of the file <strong>fluo.dat</strong> selected in the file list.</em>
 </p><br>
 
@@ -42,7 +41,7 @@ The options available in the Dashboard tab are to **edit** the properties of the
 Some of the properties of the project objects (i.e. Subjects, Acquisitions and Modalities) can be changed in the Dashboard tab. However, properties such as **ID**, are set during the object's creation - using the [protocol function](/creating_a_new_project.md) and are read-only (see figure below).
 
 <p align="center">
-  <img alt="DashboardObjEdit1" src="../../assets/img/maingui_dashboard_objEdit1.png"/> <br>
+  <img alt="DashboardObjEdit1" src="../../assets/img/mainGUI_dashboard_objEdit1.png"/> <br>
   <em>Read-only properties <strong>(!)</strong> of the <strong>Subject</strong> object.</em>
 </p><br>
 
@@ -50,7 +49,7 @@ In the case of the figure above, one can edit the *Gender*, *Weight*, *Strain* a
 
 
 <p align="center">
-<img alt="DashboardObjEdit2" src="../../assets/img/maingui_dashboard_objEdit2.png"/> <br>
+<img alt="DashboardObjEdit2" src="../../assets/img/mainGUI_dashboard_objEdit2.png"/> <br>
 <em>Click on <strong>Edit</strong> to edit the properties of the selected object.</em>
 </p><br>
 >Tip:\
@@ -65,7 +64,7 @@ No raw files are deleted during this process. It is only possible to delete tran
 There are two options: to delete the object only OR to delete the object and all files inside the object's save folder:
 
 <p align="center">
-  <img alt="DashboardObjEdit2" src="../../assets/img/maingui_dashboard_objDelete.png"/> <br>
+  <img alt="DashboardObjEdit2" src="../../assets/img/mainGUI_dashboard_objDelete.png"/> <br>
   <em>Click on <strong>Delete</strong> to delete the selected object.</em>
 </p><br>
 
