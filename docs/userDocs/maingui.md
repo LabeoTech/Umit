@@ -89,16 +89,16 @@ The query summary field is editable. So if you made a mistake in the query input
 ##### Search method panel
 
 There are three options for the search query:
-* Contains term: searches for the term anywhere inside the field.
-* Whole word: searches for the field corresponding to the exact query term.
-* Use regexp: the search term is interpreted as a [regular expression](https://www.mathworks.com/help/matlab/ref/regexp.html).
+* *Contains term*: searches for the term anywhere inside the field.
+* *Whole word*: searches for the field corresponding to the exact query term.
+* *Use regexp*: the search term is interpreted as a [regular expression](https://www.mathworks.com/help/matlab/ref/regexp.html).
 
 Note that the *Contains term* and *Whole word* options are case sensitive!
 
-In order to create a search query, follow these steps:
-1- First of all, select the object's property to query from the *Field selector*.
-2- Type the query term and press **Enter**. Type one term at a time and use the logical operators to add new terms.
-3- Once the query is completed (it should appear in the *query summary* box), click on **Search** button to filter the object tree in the main GUI.
+In order to create a search query, follow these steps:   
+  1 - First of all, select the object's property to query from the *Field selector*.\
+  2 - Type the query term and press **Enter**. Type one term at a time and use the logical operators to add new terms.\
+  3- Once the query is completed (it should appear in the *query summary* box), click on **Search** button to filter the object tree in the main GUI.
 
 <p align="center">
   <img alt="advanced_searchExample" src="../../assets/gifs/advanced_search_example.gif"/> <br>
