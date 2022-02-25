@@ -62,7 +62,41 @@ Here are the documentation regarding each tab:
 #### Advanced search
 ___
 
-Content available soon!
+The Advanced Search GUI allows one to filter the object tree elements using query terms on the object's properties such as **ID**.
+
+<p align="center">
+  <img alt="advanced_searchGUIComp" src="../../assets/img/advanced_search_fig1.png"/> <br>
+  <em>Advanced Search graphical user interface.</em>
+</p><br>
+
+The Advanced Search interface is comprised of one search panel per object type (i.e. Subject, Acquisition and Modality) and a search method selector panel.
+##### 1. Field selector
+List of the object's properties to perform the search on.
+
+##### 2. Logical operator
+Logical operator that will be used with a second query term. Includes **AND**, **OR** and **NOT**.
+
+##### 3. Query input box
+Input box for the query terms. Type the term and press **Enter** to confirm.
+
+##### 4. Query summary
+Shows the final query term that will be used to filter the objects. The syntax works as follows:   
+`(Term1[Field1]) OPERATOR (Term2[Field2])`\
+For example, to search for the terms "OD" and "ST" in the ID field, the final query will be:\
+`(OD[ID]) AND (ST[ID])`\
+The query summary field is editable. So if you made a mistake in the query input box, it can be fixes in the Query summary box given that the syntax is maintained.
+
+##### Search method panel
+
+There are three options 
+
+
+
+
+
+In order to create a search query, follow these steps:
+1- S
+
 
 \
 [**<< Home**](../../index.md)                                                                   
