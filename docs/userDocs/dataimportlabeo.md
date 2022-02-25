@@ -48,28 +48,28 @@ There are 2 ways of importing the raw data:
 
 - Using the standalone version of [DataViewer](../../dataviewer.md):
 
-  1- In the main figure, click on *File* and *Import Raw data*.\
-  2- Select one (it doesn't matter which one) of the `img_xxxx.bin` files from the recording that you want to import.\
-  3- Select a folder to **save** the imported data.\
-  4- A window will appear containing the function's parameters. Change or keep the default values and click *Ok*.\
-  5- Another window will appear with the summary of the operation. Click on *Run!* to execute the function.\
-  6- At the end of the processing, a window will show the imported data in the save folder. Click on one of them to visualize.
+  1. In the main figure, click on *File* and *Import Raw data*.\
+  2. Select one (it doesn't matter which one) of the `img_xxxx.bin` files from the recording that you want to import.\
+  3. Select a folder to **save** the imported data.\
+  4. A window will appear containing the function's parameters. Change or keep the default values and click *Ok*.\
+  5. Another window will appear with the summary of the operation. Click on *Run!* to execute the function.\
+  6. At the end of the processing, a window will show the imported data in the save folder. Click on one of them to visualize.
 
 - Using the [main interface](../../maingui.md) of *umIT*:
 
   Here, we assume that a ***project file*** was created. For more info on how to create a project file, click [here_LinkNotFunctionalYet](/how_to_create_project.md). Also, check the documentation on the [*umIToolbox app*](../../maingui.md) to familiarize with the interface functionalities.
 
-  1- Open the project file in the main GUI `umIToolbox`.\
-  2- Navigate to the *Pipeline Control Panel* tab.\
-  3- Highlight the recordings to be analysed.\
-  4- Click on the green *Select* button.\
-  5- Click on *Launch Pipeline Config.* to open the *Pipeline Builder App*. For details on how to use the app, click [here_LinkNotFunctionalYet](/LINK.md).\
-  6- Select the object to run the analysis. For example, *FluorescenceImaging* for calcium imaging datasets.\
-  7- In the *Pipeline Builder App*, select the function *run_ImagesClassification* from the list of available functions and add it to the *Selected functions* column.\
-  8- To change the default parameters of *run_ImagesClassification*, click on the function in the *Selected functions* column and click on *Set Options* button.\
-  9- Click on the green *Save config.* button.\
-  10- On the main interface, click on *Run Pipeline* to execute the function across the selected objects.\
-  11- The imported data will be saved in the save folder of each object. In our example, the files will be saved in the *FluorescenceImaging* folder inside the folder of its corresponding *Acquisition* folder.
+  1. Open the project file in the main GUI `umIToolbox`.\
+  2. Navigate to the *Pipeline Control Panel* tab.\
+  3. Highlight the recordings to be analysed.\
+  4. Click on the green *Select* button.\
+  5. Click on *Launch Pipeline Config.* to open the *Pipeline Builder App*. For details on how to use the app, click [here_LinkNotFunctionalYet](/LINK.md).\
+  6. Select the object to run the analysis. For example, *FluorescenceImaging* for calcium imaging datasets.\
+  7. In the *Pipeline Builder App*, select the function *run_ImagesClassification* from the list of available functions and add it to the *Selected functions* column.\
+  8. To change the default parameters of *run_ImagesClassification*, click on the function in the *Selected functions* column and click on *Set Options* button.\
+  9. Click on the green *Save config.* button.\
+  10. On the main interface, click on *Run Pipeline* to execute the function across the selected objects.\
+  11. The imported data will be saved in the save folder of each object. In our example, the files will be saved in the *FluorescenceImaging* folder inside the folder of its corresponding *Acquisition* folder.
 
 ###### Customizing parameters
 
