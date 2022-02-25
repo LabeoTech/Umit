@@ -12,7 +12,8 @@ classdef RetinotopicMapping
         splitMov   % cell array containing the movies split by direction.
         splitMovInfo % Structure array containing  eventID, state and shifted timestamps values.
         sr          % (num. scalar) Sample rate of the recording in Hz.
-        FFTdata     % Structure containing the Phase and Amplitude movies for each direction.
+        powData % cell array containing the FFT amplitude movies split by direction.
+        phiData % cell array containing the FFT phase movies split by direction.
         AzimuthMap  % Structure containing the Azimuth Phase and Amplitude maps.
         ElevationMap % Structure containing the Elevation Phase and Amplitude maps.
         VSM         % Image of the Visual Sign Map calculated from the retinotopy data.
@@ -30,6 +31,7 @@ classdef RetinotopicMapping
             obj.splitMovInfo = repmat(struct('eventID',[],'state',[],'timestamps',[]),1,4);
             dirList = 0:90:270; % We assume that there are 4 directions recorded in ascending order!
             for i = 1:4
+                obj.splitMovInfo(i).eventID = dirList(i);
                 % Splits the rawMovie for each direction.
                 % get interstim time:
                 dirIdx = eventInfo.eventID == dirList(i);
@@ -50,12 +52,12 @@ classdef RetinotopicMapping
                 obj.splitMov{i} = rawData(:,:,frStart:frStop);
                 % Update "state" and "timestamps" arrays:
                 obj.splitMovInfo(i).state = eventInfo.state(idxStart:idxStop);
-                obj.splitMovInfo(i).timestamps = eventInfo.timestamps(idxStart:idxStop) -...
+                obj.splitMovInfo(i).timestamps = interTm + eventInfo.timestamps(idxStart:idxStop) -...
                     eventInfo.timestamps(idxStart); % Shift timestamps.
             end
         end
         
-        function calculateFFT(method)
+        function calculateFFT(obj,varargin)
            % CALCULATEFFT will generate the FFT power and phase spectra of
            % each direction of the retinotopy data.
            % The calculation can be made using the FFT from the whole movie
@@ -69,67 +71,83 @@ classdef RetinotopicMapping
            % Input:
            % method (str) : "classic" (default) OR "AllenBrain".
 
-           
-            
-        end
-        
-        
+           p = inputParser;
+           addRequired(p, 'obj')
+           addOptional(p,'method', 'classic', @(x) ismember(x, {'classic', 'AllenBrain'}))
+           parse(p, obj, varargin{:});
+           method = p.Results.method;
+           clear p
+           for i = 1:4               
+               if strcmp(method,'classic')
+                   % Remove interstim sections of the movies:
+                   onFr = [];
+                   frIndx = round(obj.splitMovInfo(i).timestamps*obj.sr);
+                   for j = 1:2:length(frIndx)-1
+                       onFr = [onFr frIndx(j):frIndx(j+1)];
+                   end
+                   mov = obj.splitMov{i}(:,:,onFr);
+%                     mov = obj.splitMov{i};
+               else 
+                   % Allen Brain Method
+                   mov = obj.averageData(i);                   
+               end
+               
+               % Calculate FFT:
+               disp(['Calculating FFT for direction ' num2str(obj.splitMovInfo(i).eventID) ' deg...'])
+               fftData = fft(mov,[],3); 
+               clear mov
+               app.powData{i} = abs(fftData);
+               app.phiData{i} = mod(angle(fftData),2*pi); % From Zhuang et al., 2017
+               clear fftData
+           end
+           disp('Done!')
+        end                
         
     end
     
     methods (Access = private)
-        function dataPerTrial = splitTrial(obj, idx)
-            % This method splits the data in "splitMov" and reshapes it in a
-            % 4D array. Missing data are imputed with the average trial
-            % value.
-            disp('Splitting data...')
+        
+        function avg = averageData(obj, indx_mov)
+            % This function averages the movies in "splitMov"
+            % divided by the median interstim value to get a DeltaR movie:                        
+            %       "x - median(x_interstim)"
+            % Input:
+            %   indx_mov (num. scalar) : index of the movie stored in
+            % "splitMovInfo"
+            % Output:
+            %   avg: (3D movie) : average DeltaR movie.
+            
+             disp('Splitting data...')
             
             % Get the data:
-            data = obj.splitMov{idx};
-            % Infer the trial size in frames:
-            trial_length = round((mean(diff(obj.splitMovInfo(idx).timestamps(~obj.splitMovInfo(idx).state)))) * obj.sr);
-            
-            
-            
-            
-            preFr = round(sr*opts.preEventTime_sec);
-            postFr = round(sr*opts.postEventTime_sec);
-            centralFr = preFr + 1;
-            len_trial = preFr + postFr;
-            n_trial = sum(evDat.state == 1);
-            timestamps = evDat.timestamps(evDat.state == 1);
-            new_dims = {'E', 'Y', 'X','T'};
-            [~, locB]= ismember(new_dims([2,3]), metaData.dim_names);
-            % Create empty matrix:
-            outData = nan([n_trial, szdat(locB), len_trial], 'single');
-            
-            
-            
-            
-        end
-        function averageData(obj, varargin)
-            % This function averages the movies in "splitMov".
-            % One can also normalize the data to obtain DeltaF/F.
-            % The normalization is calculated by :
-            %       "x - median(x_interstim) ./ median(x_interstim)"
-            % Input:
-            % normalize (bool) : Keyword argument to normalize or not the
-            % averaged data.
-            
-            p = inputParser;
-            addRequired(p, 'obj')
-            addParameter(p,'normalize', false, @islogical)
-            parse(p, obj, varargin{:});
-            flag = p.Results.normalize;
-            clear p
-            
-            for i = 1:4
-                dat = obj.splitTrial(i)
-                
+            data = obj.splitMov{indx_mov};            
+            % Infer the trial size from first sweep:            
+            lenTrial = round(obj.splitMovInfo(indx_mov).timestamps(2)*obj.sr);       
+            indx_template = (1:lenTrial) - round(obj.splitMovInfo(indx_mov).timestamps(1)*obj.sr);
+            % Get the onset frame of each stimulus:
+            frOnList = round(obj.splitMovInfo(indx_mov).timestamps(obj.splitMovInfo(indx_mov).state)...
+                *obj.sr);
+            avg = zeros([size(data,1),size(data,2), lenTrial], 'single');
+            % Sum all trials
+            for i = 1:length(frOnList)
+                frames = indx_template + frOnList(i);
+                % control for first sweep shorter than the Trial size:
+                if min(frames) < 1
+                    disp(['Missing frames found in first sweep of direction '...
+                        num2str(obj.splitMovInfo(indx_mov).eventID)]);
+                    disp('Padding missing frames with the average trial values...')
+                    % Pad missing frames with the average of the trial                    
+                    tmp_trial = data(:,:,frames(frames>0));
+                    tmp_avg = mean(tmp_trial,3);
+                    tmp_avg = cat(3,repmat(tmp_avg,1,1,sum(frames<1)),tmp_avg);
+                    avg = avg + tmp_avg;
+                else                    
+                avg = avg + data(:,:,frames);
+                end
             end
-            
-            
-            
+            avg = avg/sum(obj.splitMovInfo(indx_mov).state);
+            % Calculate the DeltaR
+            avg = avg - median(avg(:,:,indx_template<0), 3);            
         end
     end
 end
