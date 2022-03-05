@@ -11,9 +11,7 @@ classdef RetinotopicMapping
     properties (SetAccess = private)
         splitMov   % cell array containing the movies split by direction.
         splitMovInfo % Structure array containing  eventID, state and shifted timestamps values.
-        sr          % (num. scalar) Sample rate of the recording in Hz.
-        powData % cell array containing the FFT amplitude movies split by direction.
-        phiData % cell array containing the FFT phase movies split by direction.
+        sr          % (num. scalar) Sample rate of the recording in Hz.    
         AzimuthMap  % Structure containing the Azimuth Phase and Amplitude maps.
         ElevationMap % Structure containing the Elevation Phase and Amplitude maps.
         VSM         % Image of the Visual Sign Map calculated from the retinotopy data.
@@ -57,59 +55,93 @@ classdef RetinotopicMapping
             end
         end
         
-        function calculateFFT(obj,varargin)
-           % CALCULATEFFT will generate the FFT power and phase spectra of
-           % each direction of the retinotopy data.
-           % The calculation can be made using the FFT from the whole movie
-           % excluding the interstim data ("classic" method) or from the normalized 
-           % average movie ("AllenBrain" method). 
-           % The "AllenBrain" method follows the procedures described in :
-           %
-           % Zhuang et al.‘An Extended Retinotopic Map of Mouse Cortex’.
-           % ELife 6 (6 January 2017): e18372. https://doi.org/10.7554/eLife.18372.
-           % 
-           % Input:
-           % method (str) : "classic" (default) OR "AllenBrain".
-
-           p = inputParser;
-           addRequired(p, 'obj')
-           addOptional(p,'method', 'classic', @(x) ismember(x, {'classic', 'AllenBrain'}))
-           parse(p, obj, varargin{:});
-           method = p.Results.method;
-           clear p
-           for i = 1:4               
-               if strcmp(method,'classic')
-                   % Remove interstim sections of the movies:
-                   onFr = [];
-                   frIndx = round(obj.splitMovInfo(i).timestamps*obj.sr);
-                   for j = 1:2:length(frIndx)-1
-                       onFr = [onFr frIndx(j):frIndx(j+1)];
-                   end
-                   mov = obj.splitMov{i}(:,:,onFr);
-%                     mov = obj.splitMov{i};
-               else 
-                   % Allen Brain Method
-                   mov = obj.averageData(i);                   
-               end
-               
-               % Calculate FFT:
-               disp(['Calculating FFT for direction ' num2str(obj.splitMovInfo(i).eventID) ' deg...'])
-               fftData = fft(mov,[],3); 
-               clear mov
-               app.powData{i} = abs(fftData);
-               app.phiData{i} = mod(angle(fftData),2*pi); % From Zhuang et al., 2017
-               clear fftData
-           end
-           disp('Done!')
-        end                
-        
+        function out = calculateFFT(obj,movIndx,varargin)
+            % CALCULATEFFT will generate the FFT power and phase maps OR
+            % the FFT power spectrum of a given pixel from a sweep direction 
+            % of the retinotopy data. 
+            % The calculation can be made using the FFT from the whole movie
+            % excluding the interstim data ("classic" method) or from the normalized
+            % average movie ("AllenBrain" method).
+            % The "AllenBrain" method follows the procedures described in :
+            % Zhuang et al.‘An Extended Retinotopic Map of Mouse Cortex’.
+            % ELife 6 (6 January 2017): e18372. https://doi.org/10.7554/eLife.18372.
+            %
+            % Inputs:
+            % movIndx(int) : Index of the movie to be analysed.
+            % pixel_coords(1x2 int) : X and Y coordinates of the pixel to
+            %   calculate the FFT power spectrum.            
+            % FFT_frequency(int) : Stimulation frequency (e.g. number of
+            %   sweeps) + 1 to get the spatial maps of the FFT amplitude and
+            %   phase. By default, it gives the 1st Harmonic.
+            % method (str) : "classic" (default) OR "AllenBrain". The
+            %   "classic" method removes the interstim frames of the movie
+            %   and calculates the FFT from the whole movie. The "AllenBrain"
+            %   method, calculates the FFT from the averaged movie normalized 
+            %   as DeltaR (data - median(interstim).  
+            %
+            % Output:
+            % out(1D or 3D num. matrix) : If the pixel_coordinates is provided,
+            %   the output consists of the FFT power spectrum of the pixel.
+            %   Otherwise, the output is a 3-D matrix containing the
+            %   amplitude and phase 2-D maps of the given FFT frequency
+            %   concatenated in the 3rd dimension.
+            
+            p = inputParser;
+            addRequired(p, 'obj')
+            addRequired(p, 'movIndx', @(x) isscalar(x) && ismember(x, 1:4));
+            addParameter(p, 'pixel_coords', [], @(x) length(x)== 2 || isempty(x));
+            addParameter(p, 'FFT_frequency', 0,...
+                @(x) isscalar(x) & x > 0);
+            addParameter(p,'method', 'classic', @(x) ismember(x, {'classic', 'AllenBrain'}))
+            parse(p, obj, movIndx, varargin{:});
+            movIndx = p.Results.movIndx;
+            px_XY = round(p.Results.pixel_coords); % Round to integer.
+            freqFr = round(p.Results.FFT_frequency); % Round to integer.
+            method = p.Results.method;            
+            clear p
+            % Default FreqFr to the 1st Harmonic:
+            if freqFr == 0
+                if strcmp(method, 'classic')
+                    freqFr = 1 + sum(obj.splitMovInfo(movIndx).state);
+                else
+                    freqFr = 2;
+                end
+            end                                
+            %            
+            if strcmp(method,'classic')
+                % Remove interstim sections of the movies:
+                onFr = [];
+                frIndx = round(obj.splitMovInfo(movIndx).timestamps*obj.sr);
+                for j = 1:2:length(frIndx)-1
+                    onFr = [onFr frIndx(j):frIndx(j+1)];%#ok
+                end
+                mov = obj.splitMov{movIndx}(:,:,onFr);                
+            else
+                % Allen Brain Method
+                mov = obj.averageData(movIndx);                
+            end            
+            % Calculate FFT:
+            disp(['Calculating FFT for direction ' num2str(obj.splitMovInfo(movIndx).eventID) ' deg...'])                       
+            if isempty(px_XY)
+                fftData = fft(mov,[],3);
+                % Generate Amplitude/Phase maps for a given Frequency "freqFr":
+                out = (abs(fftData(:,:,freqFr)) * 2) / size(mov,3); % From Zhuang et al., 2017
+                out = cat(3,out,mod(-1*angle(fftData(:,:,freqFr)),2*pi)); % From Zhuang et al., 2017                
+            else
+                fftData = fft(mov(px_XY(1), px_XY(2),:),[],3);
+                % Generate the Power FFT plot for a given pixel
+                out = squeeze(abs(fftData) * 2); % From Zhuang et al., 2017
+            end  
+            disp('Done!');
+        end
+                  
     end
     
     methods (Access = private)
         
         function avg = averageData(obj, indx_mov)
             % This function averages the movies in "splitMov"
-            % divided by the median interstim value to get a DeltaR movie:                        
+            % divided by the median interstim value to get a DeltaR movie:
             %       "x - median(x_interstim)"
             % Input:
             %   indx_mov (num. scalar) : index of the movie stored in
@@ -117,12 +149,12 @@ classdef RetinotopicMapping
             % Output:
             %   avg: (3D movie) : average DeltaR movie.
             
-             disp('Splitting data...')
+            disp('Averaging movie...')
             
             % Get the data:
-            data = obj.splitMov{indx_mov};            
-            % Infer the trial size from first sweep:            
-            lenTrial = round(obj.splitMovInfo(indx_mov).timestamps(2)*obj.sr);       
+            data = obj.splitMov{indx_mov};
+            % Infer the trial size from first sweep:
+            lenTrial = round(obj.splitMovInfo(indx_mov).timestamps(2)*obj.sr);
             indx_template = (1:lenTrial) - round(obj.splitMovInfo(indx_mov).timestamps(1)*obj.sr);
             % Get the onset frame of each stimulus:
             frOnList = round(obj.splitMovInfo(indx_mov).timestamps(obj.splitMovInfo(indx_mov).state)...
@@ -136,19 +168,23 @@ classdef RetinotopicMapping
                     disp(['Missing frames found in first sweep of direction '...
                         num2str(obj.splitMovInfo(indx_mov).eventID)]);
                     disp('Padding missing frames with the average trial values...')
-                    % Pad missing frames with the average of the trial                    
+                    % Pad missing frames with the average of the trial
                     tmp_trial = data(:,:,frames(frames>0));
                     tmp_avg = mean(tmp_trial,3);
                     tmp_avg = cat(3,repmat(tmp_avg,1,1,sum(frames<1)),tmp_avg);
                     avg = avg + tmp_avg;
-                else                    
-                avg = avg + data(:,:,frames);
+                else
+                    avg = avg + data(:,:,frames);
                 end
             end
             avg = avg/sum(obj.splitMovInfo(indx_mov).state);
             % Calculate the DeltaR
-            avg = avg - median(avg(:,:,indx_template<0), 3);            
+            avg = avg - median(avg(:,:,indx_template < 0), 3);
         end
+        
+        
+        
+        
     end
 end
 
