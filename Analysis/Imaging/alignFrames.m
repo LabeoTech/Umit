@@ -1,5 +1,5 @@
 function [outData, metaData] = alignFrames(data, metaData, object, varargin)
-% ALIGNFRAMES uses phase correlation to align images 
+% ALIGNFRAMES uses phase correlation to align images
 % to a reference frame created using the ROImanager app.
 
 % Inputs:
@@ -8,7 +8,7 @@ function [outData, metaData] = alignFrames(data, metaData, object, varargin)
 %   object: umIT's imaging object handle.
 %   opts (optional): structure containing extra parameters.
 % Outputs:
-%   outData: 3D numerical matrix with dimensions {Y,X,T} containing aligned frames.   
+%   outData: 3D numerical matrix with dimensions {Y,X,T} containing aligned frames.
 %   metaData: .mat file with meta data associated with "outData".
 
 % Defaults:
@@ -66,7 +66,7 @@ switch opts.UseFile
         [~,filename,ext] = fileparts(ref_frame_info.datFile);
         try
             [targetDat, targetMetaData]= mapDatFile(fullfile(object.SaveFolder, [filename,ext]));
-            targetFr = targetDat.Data.data(:,:,1);           
+            targetFr = targetDat.Data.data(:,:,1);
         catch ME
             causeException = MException('MATLAB:UMIToolbox:alignFrame:FileNotFound',...
                 ['Cannot find "' filename '" in object''s SaveFolder']);
@@ -92,17 +92,18 @@ refFr = ref_frame_info.reference_frame;
 % refFr_mask = imsharpen(refFr ,'Radius', 1.5, 'Amount', 1);
 
 % MV method (use the unsharp mask to do the registration:)
-refFr_mask = imgaussfilt(refFr, .5) - imgaussfilt(refFr, 8);
+radius = 0.05*max(size(refFr));
+refFr_mask = imgaussfilt(refFr, .5) - imgaussfilt(refFr, radius);
 
 % Apply unsharp mask to data:
 % targetFr_mask = imsharpen(targetFr,'Radius', 1.5, 'Amount', 1);
 
-targetFr_mask = imgaussfilt(targetFr, .5) - imgaussfilt(targetFr, 8);
+targetFr_mask = imgaussfilt(targetFr, .5) - imgaussfilt(targetFr, radius);
 
 % Perform image registration:
 try
-[tform, peak] = imregcorr(targetFr_mask,refFr_mask, 'similarity', 'Window', true);
-Rfixed = imref2d(size(refFr));
+    [tform_init, peak] = imregcorr(targetFr_mask,refFr_mask, 'similarity', 'Window', true);
+    Rfixed = imref2d(size(refFr));
 catch ME
     causeException = MException('MATLAB:UMIToolbox:alignFrame:MissingOutput',...
         'your version of the built-in MATLAB function "imregcorr" does not provide "peak" as output. You need to add it to the function and try again.');
@@ -113,9 +114,9 @@ end
 % Make initial geometric transformation of target image if phase
 % correlation was satisfactory. If not, try intensity-based registration
 % directly:
-if peak > 0.05
-    targetFr_mask = imwarp(targetFr_mask ,tform,'cubic', 'OutputView',Rfixed); % Chose "cubic" because "nearest" was showing stripes when rotating the target.
-else
+if peak < 0.05
+%     targetFr_mask = imwarp(targetFr_mask ,tform_init,'cubic', 'OutputView',Rfixed); % Chose "cubic" because "nearest" was showing stripes when rotating the target.\    
+% else
     disp('Phase correlation yielded a weak peak correlation value. Applying intensity-based image registration directly...')
 end
 
@@ -135,11 +136,17 @@ for i = 1:4
     optimizer.GrowthFactor = GF(i);
     optimizer.Epsilon = Eps(i);
     optimizer.InitialRadius = IR(i);
-    tmpFr = imregister(targetFr_mask, imref2d(size(targetFr_mask)),refFr_mask,...
-    imref2d(size(refFr_mask)),'similarity',optimizer,metric, 'DisplayOptimization', false);    
+    if peak > 0.05
+        tmpFr = imregister(targetFr_mask, imref2d(size(targetFr_mask)),refFr_mask,...
+            imref2d(size(refFr_mask)),'similarity',optimizer,metric,...
+            'DisplayOptimization', false, 'InitialTransformation', tform_init);
+    else
+        tmpFr = imregister(targetFr_mask, imref2d(size(targetFr_mask)),refFr_mask,...
+            imref2d(size(refFr_mask)),'similarity',optimizer,metric, 'DisplayOptimization', false);
+    end
     counts = histcounts2(refFr_mask(:), tmpFr(:),metric.NumberOfHistogramBins);
     tmpMI = mutual_information(counts);
-    if tmpMI<=MI         
+    if tmpMI<=MI
         idx = i-1;
         break
     else
@@ -147,14 +154,19 @@ for i = 1:4
         idx = i;
     end
 end
-fprintf('Maximum Mutual Information obtained: %.4f\n',MI)        
+fprintf('Maximum Mutual Information obtained: %.4f\n',MI)
 % Re-calculate tform from best optimizer params:
 optimizer.GrowthFactor = GF(idx);
 optimizer.Epsilon = Eps(idx);
 optimizer.InitialRadius = IR(idx);
 disp('Calculating geometric transformation...')
-tform = imregtform(targetFr_mask, imref2d(size(targetFr_mask)),refFr_mask,...
-    imref2d(size(refFr_mask)),'similarity',optimizer,metric);    
+if peak > 0.05
+    tform = imregtform(targetFr_mask, imref2d(size(targetFr_mask)),refFr_mask,...
+        imref2d(size(refFr_mask)),'similarity',optimizer,metric, 'InitialTransformation', tform_init);
+else
+    tform = imregtform(targetFr_mask, imref2d(size(targetFr_mask)),refFr_mask,...
+        imref2d(size(refFr_mask)),'similarity',optimizer,metric);
+end
 targetFr_mask = imwarp(targetFr_mask ,tform,'nearest', 'OutputView',Rfixed);
 disp('Done.')
 %%%%%
@@ -163,13 +175,14 @@ disp('Check figure to validate alignment.')
 figure('Name', strjoin({object.MyParent.MyParent.ID object.MyParent.ID object.ID}, '-'));
 subplot(211);imshowpair(refFr_mask, targetFr_mask);
 subplot(212);imshowpair(refFr_mask, targetFr_mask, 'montage');drawnow;
+title(['Mutual Information = ' num2str(MI)]);
 %%%%%%
 
 % Apply mask to data file:
 h = waitbar(0,'Initiating alignment...');
 outData = zeros(size(refFr_mask,1),size(refFr_mask,2), size(data,3), 'single');
 for i = 1:size(outData,3)
-    waitbar(i/size(outData,3), h, 'Performing alignment...')    
+    waitbar(i/size(outData,3), h, 'Performing alignment...')
     outData(:,:,i) = imwarp(data(:,:,i), tform, 'nearest', 'OutputView', Rfixed);
 end
 waitbar(1,h, 'Alignment finished!'); pause(.5);
