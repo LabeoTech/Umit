@@ -36,6 +36,7 @@ Some of the apps work as standalone, meaning that they can operate without using
 
 ##### Analysis functions
 * [run_ImagesClassification](/docs/devDocs/run_imagesclassification.md)
+* [run_HemoCorrection](/docs/devDocs/run_hemocorrection.md)
 * [run_SpeckleMapping](/docs/devDocs/run_specklemapping.md)
 * [run_Ana_Speckle](/docs/devDocs/run_ana_speckle.md)
 
