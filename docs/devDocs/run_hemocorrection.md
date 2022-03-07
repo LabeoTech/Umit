@@ -3,7 +3,7 @@ Performs hemodynamic correction of the fluorescence signal.
 
 ##### Description
 ___
-This function removes the hemodynamic fluctuations from a fluorescence signal obtained using data acquired with the LabeoTech's optical imaging systems.\
+This function removes the hemodynamic fluctuations from a fluorescence signal using data acquired with the LabeoTech's optical imaging systems.\
 The function uses multi-channel recordings to measure the light absorption of the hemoglobin in order to remove it from the fluorescence channel. The algorithm used in this function is described by [Valley et al., 2020](#references).
 
 ##### Syntax
@@ -22,12 +22,12 @@ This function assumes that all `.dat` files containing the fluorescence and hemo
 ___
 ###### SaveFolder - save folder path
 *character vector*   
-Full path to the folder where the imaging channel data `.dat` files are stored.
+Full path to the folder where the imaging data `.dat` files are stored.
 
 ###### opts - optional parameters
 *structure*   
 Structure containing the optional parameters of the function.   
-The `opts` structure contains the list of channels to be used by the function:
+The `opts` structure contains the list of possible channels to be used in the hemodynamic correction:
 * *Red* (bool) default = `true`: If **true**, uses the data from the *Red* channel stored in the `red.dat` file.
 * *Green* (bool) default = `true`: If **true**, uses the data from the *Green* channel stored in the `green.dat` file.
 * *Amber* (bool) default = `true`: If **true**, uses the data from the *Amber* channel stored in the `yellow.dat` file.
@@ -36,8 +36,8 @@ The `opts` structure contains the list of channels to be used by the function:
 ___
 
 ###### outData - output array
-*2D numerical matrix*   
-Matrix with dimensions *Y,X* containing the corrected fluorescence data.
+*3D numerical matrix*   
+Matrix with dimensions *Y,X,T* containing the corrected fluorescence data.
 
 ###### metaData - data's meta data
 *structure*   
@@ -47,13 +47,13 @@ Structure containing meta data associated with `outData`. For details, read the 
 ___
 
 ###### Perform hemodynamic correction using all 3 channels
-To perform the hemodynamic correction using the *Red*, *Green* and *Amber* channels:
+To perform the hemodynamic correction using the *Red*, *Green* and *Amber* channels:\
 `outData = run_HemoCorrection('C:\ROOT\SAVEFOLDER');`   
 
 ###### Perform hemodynamic correction using the Red and Green channels only:
-First, create the *opts* structure:
+First, create the *opts* structure:\
 `opts = struct('Red',true, 'Green',true, 'Amber',false);`   
-Now, the `opts` structure is passed as an input argument to the *run_HemoCorrection* function:   
+Now, the `opts` structure is passed as an input argument to the *run_HemoCorrection* function:\
 `outData = run_HemoCorrection('C:\ROOT\SAVEFOLDER',opts);`   
 
 Here, the function will use only the data stored in `red.dat` and `green.dat` to perform the hemodynamic correction in the fluorescence data.
