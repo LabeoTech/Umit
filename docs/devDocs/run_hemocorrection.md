@@ -16,7 +16,7 @@ ___
 `[outData, metaData] = run_HemoCorrection(__)`: Outputs the meta data `metaData` associated with the data stored in `outData`.
 
 >Important!\
-This function assumes that all `.dat` files containing the fluorescence and hemodynamic data already exist in the Save Folder. Please refer to the documentation on [*run_ImagesClassification*](\run_imagesclassification.md) for details on how to create the `.dat` files.
+This function assumes that all `.dat` files containing the fluorescence and hemodynamic data already exist in the Save Folder. Please refer to the documentation on [*run_ImagesClassification*](../../docs/devDocs/run_imagesclassification.md) for details on how to create the `.dat` files.
 
 ##### Inputs
 ___
@@ -67,7 +67,7 @@ ___
 ##### Links to related functions
 ___
 
-[run_ImagesClassification]((../../docs/devDocs/run_imagesclassification.md))
+[run_ImagesClassification](../../docs/devDocs/run_imagesclassification.md)
 
 
 
