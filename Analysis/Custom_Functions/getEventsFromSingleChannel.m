@@ -39,7 +39,7 @@ if ~isfile(object.MetaDataFile)
     errMsg = strrep(errMsg, '\' , '\\');
     error(errID, errMsg);
 end
-cd(object.RawFolder)
+
 txt = fileread(fullfile(object.RawFolder, 'info.txt'));
 sr = regexp(txt, '(?<=AISampleRate:\s*)\d+', 'match', 'once'); sr = str2double(sr);
 tAIChan = regexp(txt, '(?<=AINChannels:\s*)\d+', 'match', 'once'); tAIChan = str2double(tAIChan);
@@ -68,8 +68,26 @@ else
 end
 signal = downsample(AnalogIN(:,sigChan),100); % I did this to try to eliminate fast artifacts due to the photodiode voltage fluctuations(BrunoO 23/03/2021).
 sr = sr/100;
-a = load(object.MetaDataFile);
-
+% For data created in PsychToolbox:
+if endsWith(object.MetaDataFile, '.mat')
+    a = load(object.MetaDataFile);
+elseif endsWith(object.MetaDataFile, '.csv')
+    % For data created in PsychoPy:
+    a = readtable(object.MetaDataFile);
+    a = a(~isnan(a.SF),:);
+    condList = cell(1,height(a));
+    colNames = a.Properties.VariableNames;
+    indx = find(strcmp(colNames,'trials_thisRepN'));
+    colNames = colNames(1:indx-1);
+    for i = 1:height(a)
+        str = {};
+        for j = 1:numel(colNames)
+            str = [str,{[colNames{j} num2str(a.(colNames{j})(i))]}];
+        end
+        condList{i} = strjoin(str,'-');
+    end
+end
+%
 if isfield(a, 'BarSize')
     Direction = a.DriftDirection;
     nSweeps = a.nTrials;
@@ -83,6 +101,12 @@ if isfield(a, 'BarSize')
     [~, state, timestamps] = getEventsFromTTL(signal, sr, opts.threshold);
 elseif isfield(a,'TrialList')
     [condList, ~, eventID] = unique(a.TrialList, 'rows');
+    condList = num2cell(condList,2);
+    % duplicate event ID to account for ON/OFF states:
+    eventID = repelem(eventID,2);
+    [~, state, timestamps] = getEventsFromTTL(signal, sr, opts.threshold);
+elseif exist('condList', 'var')
+    [condList, ~, eventID] = unique(condList, 'rows');
     condList = num2cell(condList,2);
     % duplicate event ID to account for ON/OFF states:
     eventID = repelem(eventID,2);
