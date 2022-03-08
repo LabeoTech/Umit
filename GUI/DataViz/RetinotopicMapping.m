@@ -91,7 +91,7 @@ classdef RetinotopicMapping
             addRequired(p, 'movIndx', @(x) isscalar(x) && ismember(x, 1:4));
             addParameter(p, 'pixel_coords', [], @(x) length(x)== 2 || isempty(x));
             addParameter(p, 'FFT_frequency', 0,...
-                @(x) isscalar(x) & x > 0);
+                @(x) isscalar(x) & x >= 0);
             addParameter(p,'method', 'classic', @(x) ismember(x, {'classic', 'AllenBrain'}))
             parse(p, obj, movIndx, varargin{:});
             movIndx = p.Results.movIndx;
@@ -134,7 +134,45 @@ classdef RetinotopicMapping
             end  
             disp('Done!');
         end
-                  
+        
+        function out = averageCardinalMaps(obj, varargin)
+           % This method averages the FFT data from Top-Down and Left-Right
+           % to generate the Azimuth and Elevation amplitude and phase
+           % maps. Here, we calculate the average of the amplitude and
+           % subtract the phase maps.
+           % Input:
+           % method(str): "classic" (default) OR "AllenBrain". See
+           % docstring of method "calculateFFT" for details.
+           % Output:
+           % out (3D numerical matrix): Matrix containing the azimuth and
+           % elevation amplitude and phase maps concatenated in the 3rd
+           % dimension in the following order:
+           %    ampAzim, phaseAzim, ampElev, phaseElev.
+           p = inputParser;
+           addRequired(p, 'obj');
+           addParameter(p,'method', 'classic', @(x) ismember(x, {'classic', 'AllenBrain'}))
+           addParameter(p, 'FFT_frequency', 0,@(x) isscalar(x) & x >= 0);
+           parse(p, obj, varargin{:});
+           method = p.Results.method;
+           freqFr = round(p.Results.FFT_frequency); % Round to integer.
+           clear p
+           
+           % Average azimuth:
+           disp('Averaging azimuth maps...')
+           map_0 = obj.calculateFFT(1,'method',method, 'FFT_frequency', freqFr);
+           map_180 = obj.calculateFFT(3,'method',method, 'FFT_frequency', freqFr);
+           out = zeros(size(map_0,1), size(map_0,2), 4);
+           out(:,:,1) = mean(cat(3,map_0(:,:,1), map_180(:,:,1)),3); % Average amplitude;
+           out(:,:,2) = (map_0(:,:,2) - map_180(:,:,2))/2; % Subtraction of the phase;
+           disp('Done!')
+           % Average elevation:
+           disp('Averaging elevation maps...')
+           map_90 = obj.calculateFFT(2,'method',method, 'FFT_frequency', freqFr);
+           map_270 = obj.calculateFFT(4,'method',method, 'FFT_frequency', freqFr);
+           out(:,:,3) = mean(cat(3,map_90(:,:,1), map_270(:,:,1)),3); % Average amplitude;
+           out(:,:,4) = (map_90(:,:,2) - map_270(:,:,2))/2; % Subtraction of the phase; 
+           disp('Done!')
+        end
     end
     
     methods (Access = private)
