@@ -101,25 +101,18 @@ refFr_mask = imgaussfilt(refFr, .5) - imgaussfilt(refFr, radius);
 targetFr_mask = imgaussfilt(targetFr, .5) - imgaussfilt(targetFr, radius);
 
 % Perform image registration:
-try
-    [tform_init, peak] = imregcorr(targetFr_mask,refFr_mask, 'similarity', 'Window', true);
-    Rfixed = imref2d(size(refFr));
-catch ME
-    causeException = MException('MATLAB:UMIToolbox:alignFrame:MissingOutput',...
-        'your version of the built-in MATLAB function "imregcorr" does not provide "peak" as output. You need to add it to the function and try again.');
-    addCause(ME, causeException);
-    rethrow(ME)
+tform_init = imregcorr(targetFr_mask,refFr_mask, 'similarity', 'Window', true);
+Rfixed = imref2d(size(refFr));
+% Check if the first approximation is better than no registration at all:
+counts = histcounts2(refFr_mask(:), targetFr_mask(:),50);
+MIbefore = mutual_information(counts);
+tmpFr = imwarp(targetFr_mask, tform_init, 'nearest', 'OutputView', Rfixed);
+counts = histcounts2(refFr_mask(:), tmpFr(:),50);
+MIafter = mutual_information(counts);
+if MIafter < MIbefore
+    disp('Phase correlation yielded a poor registration. Applying intensity-based image registration directly...')
+    clear tform_init
 end
-
-% Make initial geometric transformation of target image if phase
-% correlation was satisfactory. If not, try intensity-based registration
-% directly:
-if peak < 0.05
-%     targetFr_mask = imwarp(targetFr_mask ,tform_init,'cubic', 'OutputView',Rfixed); % Chose "cubic" because "nearest" was showing stripes when rotating the target.\    
-% else
-    disp('Phase correlation yielded a weak peak correlation value. Applying intensity-based image registration directly...')
-end
-
 % Set of HyperParameters for image registration:
 GF = [1.10, 1.05, 1.02, 1.01];
 Eps = [1e-10, 1e-15, 1e-20,1e-25];
@@ -136,7 +129,7 @@ for i = 1:4
     optimizer.GrowthFactor = GF(i);
     optimizer.Epsilon = Eps(i);
     optimizer.InitialRadius = IR(i);
-    if peak > 0.05
+    if exist('tform_init', 'var')
         tmpFr = imregister(targetFr_mask, imref2d(size(targetFr_mask)),refFr_mask,...
             imref2d(size(refFr_mask)),'similarity',optimizer,metric,...
             'DisplayOptimization', false, 'InitialTransformation', tform_init);
@@ -160,7 +153,7 @@ optimizer.GrowthFactor = GF(idx);
 optimizer.Epsilon = Eps(idx);
 optimizer.InitialRadius = IR(idx);
 disp('Calculating geometric transformation...')
-if peak > 0.05
+if exist('tform_init','var')
     tform = imregtform(targetFr_mask, imref2d(size(targetFr_mask)),refFr_mask,...
         imref2d(size(refFr_mask)),'similarity',optimizer,metric, 'InitialTransformation', tform_init);
 else
@@ -170,12 +163,24 @@ end
 targetFr_mask = imwarp(targetFr_mask ,tform,'nearest', 'OutputView',Rfixed);
 disp('Done.')
 %%%%%
-disp('Check figure to validate alignment.')
+
 % For Visual quality control of alignment:
-figure('Name', strjoin({object.MyParent.MyParent.ID object.MyParent.ID object.ID}, '-'));
-subplot(211);imshowpair(refFr_mask, targetFr_mask);
-subplot(212);imshowpair(refFr_mask, targetFr_mask, 'montage');drawnow;
-title(['Mutual Information = ' num2str(MI)]);
+fig = figure('Name', strjoin({object.MyParent.MyParent.ID object.MyParent.ID object.ID}, '-'),...
+    'WindowButtonMotionFcn', @moveDot, 'Visible', 'off');
+s1=subplot(2,2,(1:2));imshowpair(refFr_mask, targetFr_mask);
+s2=subplot(223); imagesc(s2,refFr_mask); colormap(s2,'gray');axis(s2,'off')
+s3=subplot(224); imagesc(s3,targetFr_mask); colormap(s3,'gray');axis(s3,'off')
+set(s2, 'DataAspectRatio', [1 1 1], 'DataAspectRatioMode', 'manual');
+set(s3, 'DataAspectRatio', [1 1 1], 'DataAspectRatioMode', 'manual');
+title(s1,['Mutual Information = ' num2str(MI)]);
+title(s2, 'Reference');
+title(s3, 'Registered');
+% draw dots
+hold(s2,'on');
+plot(s2,1,1,'g+', 'Tag', 'gDot'); hold(s2,'off');
+hold(s3,'on');
+plot(s3,1,1,'rx', 'Tag', 'rDot'); hold(s3,'off');
+
 %%%%%%
 
 % Apply mask to data file:
@@ -186,6 +191,8 @@ for i = 1:size(outData,3)
     outData(:,:,i) = imwarp(data(:,:,i), tform, 'nearest', 'OutputView', Rfixed);
 end
 waitbar(1,h, 'Alignment finished!'); pause(.5);
+disp('Check figure to validate alignment.')
+waitbar(1,h, 'Check the Figure!'); pause(.5);
 close(h);
 %%%%%
 % Create new metaData and add image parameters from "ImagingReferenceFrame.mat" file
@@ -194,4 +201,49 @@ extraParams = metaData;
 extraParams.refPt = ref_frame_info.refPt;
 extraParams.pxPermm = ref_frame_info.pxPermm;
 metaData = genMetaData(outData, extraParams.dim_names, extraParams);
+% Show Figure
+fig.Visible = 'on';
 end
+
+
+% Figure callbacks:
+
+function moveDot(src,~)
+% 
+% disp('moving...')
+for i = 1:length(src.Children)
+    coords = get(src.Children(i), 'CurrentPoint');
+    coords = round(coords(1,1:2));
+    b_in = getBounds(coords, src.Children(i));
+    if b_in
+        break        
+    end    
+end
+if ~b_in
+    return
+end
+% Update dot positions:
+dot1 = findall(src, 'Tag', 'gDot');
+dot2 = findall(src, 'Tag', 'rDot');
+
+dot1.XData = coords(1);
+dot2.XData = coords(1);
+
+dot1.YData = coords(2);
+dot2.YData = coords(2);
+end
+
+function [b_in_bounds,ax] = getBounds(pt,ax)
+% GETBOUNDS verifies if the current position of the mouse
+% Output:
+% get axis limits:
+x_lims = get(ax, 'XLim');
+y_lims = get(ax, 'YLim');
+
+% Check if cursor is inside the axis limits:
+b_in_bounds = (pt(1) >= x_lims(1)) && ...
+    (pt(1) <= x_lims(2)) && ...
+    (pt(2) >= y_lims(1)) && ...
+    (pt(2) <= y_lims(2));
+end
+
