@@ -11,7 +11,7 @@ function outDataStat = getDataFromROI(data, metaData, varargin)
 
 % Defaults:
 default_Output = 'ROI_data.mat'; %#ok This line is here just for Pipeline management.
-default_opts = struct('ROI_filename', 'ROI_data.mat', 'SpatialAggFcn', 'mean');
+default_opts = struct('ROImasks_filename', 'ROImasks_data.mat', 'SpatialAggFcn', 'mean');
 default_object = ''; %#ok This line is here just for Pipeline management to be able to detect this input.
 %%% Arguments parsing and validation %%%
 p = inputParser;
@@ -51,13 +51,13 @@ if ~isempty(object)
         object = object.MyParent;
         idx = isa(object, 'Subject');        
     end
-    opts.ROI_filename = fullfile(object.SaveFolder, opts.ROI_filename);
+    opts.ROImasks_filename = fullfile(object.SaveFolder, opts.ROImasks_filename);
     % Append extension to filename, if not already provided:
-    if ~endsWith(opts.ROI_filename, '.mat')
-        opts.ROI_filename = [opts.ROI_filename '.mat'];
+    if ~endsWith(opts.ROImasks_filename, '.mat')
+        opts.ROImasks_filename = [opts.ROImasks_filename '.mat'];
     end
     % Throw error if the file does not exist in Subject's folder:
-    if ~isfile(opts.ROI_filename)
+    if ~isfile(opts.ROImasks_filename)
         errID = 'Umitoolbox:getDataFromROI:FileNotFound';
         subjFolder = strrep(object.SaveFolder, '\', '\\');
         errMsg = ['ROI file not found in ' subjFolder];
@@ -65,17 +65,17 @@ if ~isempty(object)
     end
 else
     % Append .mat:
-    if ~endsWith(opts.ROI_filename, '.mat')
-        opts.ROI_filename = [opts.ROI_filename '.mat'];
+    if ~endsWith(opts.ROImasks_filename, '.mat')
+        opts.ROImasks_filename = [opts.ROImasks_filename '.mat'];
     end
     % Prepend current directory path:
-    if isempty(fileparts(opts.ROI_filename))
-        opts.ROI_filename = fullfile(pwd,opts.ROI_filename);
+    if isempty(fileparts(opts.ROImasks_filename))
+        opts.ROImasks_filename = fullfile(pwd,opts.ROImasks_filename);
     end
 end
 
 % Load ROI file:
-roi_data = load(opts.ROI_filename);
+roi_data = load(opts.ROImasks_filename);
 % locate "X" and "Y" dimensions in metaData and in ROI info:
 [~,yxLoc] = ismember({'Y','X'}, dim_names);
 
@@ -112,8 +112,8 @@ new_dim_names ={'O', dim_names{3:end}};
 if isa(metaData, 'matlab.io.MatFile')
     metaData.Properties.Writable = true;
 end
-metaData.ROIfile = opts.ROI_filename;
-outDataStat = save2Mat(opts.ROI_filename, roi_pixVals, roi_names,...
+metaData.ROIfile = opts.ROImasks_filename;
+outDataStat = save2Mat(opts.ROImasks_filename, roi_pixVals, roi_names,...
     new_dim_names, 'appendMetaData', metaData, 'genFile', false);
 end
 
