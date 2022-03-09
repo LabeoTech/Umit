@@ -979,7 +979,7 @@ classdef PipelineManager < handle
             
             % Save file of last step if the function outputs Data or
             % StatsData:
-            if isempty(obj.pipe(i).datFileName) & any(ismember({'outData', 'outDataStats'},...
+            if isempty(obj.pipe(i).datFileName) && any(ismember({'outData', 'outDataStat'},...
                     obj.pipe(i).argsOut))
                 obj.pipe(i).datFileName = obj.pipe(i).outFileName;
                 obj.pipe(i).b_save2File = true;
