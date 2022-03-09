@@ -39,14 +39,14 @@ if ~isfile(object.MetaDataFile)
     errMsg = strrep(errMsg, '\' , '\\');
     error(errID, errMsg);
 end
-
+disp('Reading Analog inputs...')
 txt = fileread(fullfile(object.RawFolder, 'info.txt'));
 sr = regexp(txt, '(?<=AISampleRate:\s*)\d+', 'match', 'once'); sr = str2double(sr);
 tAIChan = regexp(txt, '(?<=AINChannels:\s*)\d+', 'match', 'once'); tAIChan = str2double(tAIChan);
-aiFilesList = dir('ai_*.bin');
+aiFilesList = dir(fullfile(object.RawFolder,'ai_*.bin'));
 AnalogIN = [];
 for ind = 1:size(aiFilesList,1)
-    data = memmapfile(aiFilesList(ind).name, 'Offset', 5*4, 'Format', 'double', 'repeat', inf);
+    data = memmapfile(fullfile(aiFilesList(ind).folder, aiFilesList(ind).name), 'Offset', 5*4, 'Format', 'double', 'repeat', inf);
     tmp = data.Data;
     tmp = reshape(tmp, sr, tAIChan, []);
     tmp = permute(tmp,[1 3 2]);
@@ -68,6 +68,7 @@ else
 end
 signal = downsample(AnalogIN(:,sigChan),100); % I did this to try to eliminate fast artifacts due to the photodiode voltage fluctuations(BrunoO 23/03/2021).
 sr = sr/100;
+disp('Finding events...')
 % For data created in PsychToolbox:
 if endsWith(object.MetaDataFile, '.mat')
     a = load(object.MetaDataFile);
@@ -106,8 +107,7 @@ elseif isfield(a,'TrialList')
     eventID = repelem(eventID,2);
     [~, state, timestamps] = getEventsFromTTL(signal, sr, opts.threshold);
 elseif exist('condList', 'var')
-    [condList, ~, eventID] = unique(condList, 'rows');
-    condList = num2cell(condList,2);
+    [condList, ~, eventID] = unique(condList, 'rows');    
     % duplicate event ID to account for ON/OFF states:
     eventID = repelem(eventID,2);
     [~, state, timestamps] = getEventsFromTTL(signal, sr, opts.threshold);
@@ -128,7 +128,7 @@ stateOff = find(state(~idx) == 0, 1, 'last');
 state = state(stateOn:stateOff);
 timestamps = timestamps(stateOn:stateOff);
 %%%
-
 % Save to EVENTS.MAT file:
 saveEventsFile(SaveFolder, eventID, timestamps, state, condList)
+disp('Done.')
 end
