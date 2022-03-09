@@ -55,6 +55,8 @@ orig_dim_indx = 1:numel(dims);
 new_dim_indx = [idxT setdiff(orig_dim_indx, idxT)];
 data = permute(data, new_dim_indx);
 
+disp('Calculating response amplitude...')
+
 % Store data size:
 data_sz = size(data);
 
@@ -99,7 +101,7 @@ new_dim_names = dims(~singletonDims);
 
 % Create new metaData:
 metaData = genMetaData(outData, new_dim_names, metaData);
-
+disp('Done!')
 end
 
 % Local function:
