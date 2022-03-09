@@ -53,6 +53,7 @@ new_dims = {'E', 'Y', 'X','T'};
 [~, locB]= ismember(new_dims([2,3]), metaData.dim_names);
 % Create empty matrix:
 outData = nan([n_trial, szdat(locB), len_trial], 'single');
+disp('Splitting data by events...')
 % Fill empty matrix with data segments
 fix_snippet = false;
 for i = 1:n_trial
@@ -85,6 +86,7 @@ for i = 1:n_trial
     end
     outData(i,:,:,startFr:stopFr) = snippet;
 end
+disp('Done!');
 % Add variables to metaData.
 extraParams = metaData;
 extraParams.preEventTime_sec = opts.preEventTime_sec;
