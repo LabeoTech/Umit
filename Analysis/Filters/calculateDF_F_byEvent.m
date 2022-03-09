@@ -25,17 +25,17 @@ clear p
 errMsg = 'Input Data must be an Image time series separated by events with dimensions {"E","Y","X",T"}.';
 errID = 'umIToolbox:calculateDF_F0_byEvent:WrongInput';
 assert(isequal(metaData.dim_names, {'E','Y','X','T'}), errID, errMsg)
-% Find pre-event frames:
-preEvFr = 1:round((metaData.preEventTime_sec*metaData.Freq));
-szdat = size(outData);
-% Calculate DeltaF/F from median of the pre-event period
-disp('Calculating DeltaF/F ...');
-outData = (outData - median(outData(:,:,:,preEvFr),4, 'omitnan'))./median(outData(:,:,:,preEvFr),4, 'omitnan');
+% Calculate baseline:
+bsln = median(outData(:,:,:,1:round(metaData.preEventTime_sec*metaData.Freq)), ...
+    4,'omitnan');
 % Perform linear detrending on data:
+szdat = size(outData);
 outData = reshape(outData,prod(szdat(1:3)),[])';
 disp('Detrending...');
 outData = detrend(outData,1, 'Continuous', false); % Here, we remove linear trends from each trial.
-outData = outData + 1;  % Shift the baseline from zero to one.
 outData = reshape(outData',szdat);
+% Normalize data to get DeltaF/F values
+disp('Calculating DeltaF/F ...');
+outData = bsxfun(@rdivide,outData,bsln);
 disp('Done!')
 end
