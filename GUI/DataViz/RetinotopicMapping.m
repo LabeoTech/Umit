@@ -1,11 +1,25 @@
-classdef RetinotopicMapping
+classdef RetinotopicMapping < handle
     % RETINOTOPICMAPPING calculates the retinotopic maps and Visual Sign Maps
     % widefield imaging data with a visual stimulus characterize by a
     % bar that drifts over the 4 cartesian directions (0,90 180 and 270
     % deg) N times.
     
     properties
-        VSM_params  % Structure containig the parameters for Visual Sign Map calculation.
+        % Structure containig the parameters for Visual Sign Map calculation.
+        VSM_params = struct('phaseMapFilterSigma', 0.5,...
+                            'signMapFilterSigma', 8.0,....
+                            'signMapThr', 0.4,...
+                            'eccMapFilterSigma', 15.0,....
+                            'splitLocalMinCutStep', 5.,...
+                            'closeIter', 3,...
+                            'openIter', 3,...
+                            'dilationIter', 15,...
+                            'borderWidth', 1,...
+                            'smallPatchThr', 100,...
+                            'visualSpacePixelSize', 0.5,...
+                            'visualSpaceCloseIter', 15,...
+                            'splitOverlapThr', 1.1,...
+                            'mergeOverlapThr', 0.1);                               
     end
     
     properties (SetAccess = private)
@@ -135,7 +149,7 @@ classdef RetinotopicMapping
             disp('Done!');
         end
         
-        function out = averageCardinalMaps(obj, varargin)
+        function averageCardinalMaps(obj, varargin)
            % This method averages the FFT data from Top-Down and Left-Right
            % to generate the Azimuth and Elevation amplitude and phase
            % maps. Here, we calculate the average of the amplitude and
@@ -143,11 +157,7 @@ classdef RetinotopicMapping
            % Input:
            % method(str): "classic" (default) OR "AllenBrain". See
            % docstring of method "calculateFFT" for details.
-           % Output:
-           % out (3D numerical matrix): Matrix containing the azimuth and
-           % elevation amplitude and phase maps concatenated in the 3rd
-           % dimension in the following order:
-           %    ampAzim, phaseAzim, ampElev, phaseElev.
+           
            p = inputParser;
            addRequired(p, 'obj');
            addParameter(p,'method', 'classic', @(x) ismember(x, {'classic', 'AllenBrain'}))
@@ -172,7 +182,30 @@ classdef RetinotopicMapping
            out(:,:,3) = mean(cat(3,map_90(:,:,1), map_270(:,:,1)),3); % Average amplitude;
            out(:,:,4) = (map_90(:,:,2) - map_270(:,:,2))/2; % Subtraction of the phase; 
            disp('Done!')
+           
+           obj.AzimuthMap = out(:,:,[1 2]);
+           obj.ElevationMap = out(:,:,[3 4]);
         end
+        
+        function out = genVSM(obj,varargin)
+            
+            
+            
+            if isempty(obj.AzimuthMap)
+                disp('Run "averageCardinalMaps" to create Azimuth and Elevation maps first!')
+                return
+            end
+            % Filter Maps spatially:
+            obj.applyGaussFilt;
+            % Calculate visual sign map:
+            obj.calc_visualSign(obj.AzimuthMap(:,:,2), obj.ElevationMap(:,:,2));
+            
+        end
+        
+        function drawROI(obj);
+            
+        end
+        
     end
     
     methods (Access = private)
@@ -220,7 +253,44 @@ classdef RetinotopicMapping
             avg = avg - median(avg(:,:,indx_template < 0), 3);
         end
         
+        function applyGaussFilt(obj)
+           % This method applies spatial gaussian filter to the amplitude
+           % and phase components of the Azimuth and Elevation maps.
+           disp('Filtering maps...')
+           for i = 1:2
+            obj.AzimuthMap(:,:,i) = imgaussfilt(obj.AzimuthMap(:,:,i),...
+                obj.VSM_params.phaseMapFilterSigma);
+            obj.ElevationMap(:,:,i) = imgaussfilt(obj.ElevationMap(:,:,i),...
+                obj.VSM_params.phaseMapFilterSigma);
+           end
+           disp('Gaussian filter applied to Azimuth and Elevation maps');
+                      
+        end
         
+        function calc_visualSign(obj, phaseAz,phaseEl)
+            % This method calculates the visual sign maps of the Azimuth
+            % and Elevation maps.
+            disp('Calculating visual sign map...');
+            
+            % Calculate phase map gradients
+            [gradAz1, gradAz2] = gradient(phaseAz);
+            [gradEl1, gradEl2] = gradient(phaseEl);
+            %
+            gradDirAz = zeros(size(gradAz1));
+            gradDirEl = zeros(size(gradEl1));
+            %
+            for i = 1:size(phaseAz,1)
+                for j = 1:size(phaseAz,2)
+                    gradDirAz(i,j) = atan2(gradAz2(i,j),gradAz1(i,j));
+                    gradDirEl(i,j) = atan2(gradEl2(i,j),gradEl1(i,j));
+                end
+            end
+            clear i j
+            vsm = sin(angle(exp(1j.*gradDirAz).*exp(-1j.*gradDirEl)));
+            % Filter map
+            obj.VSM = imgaussfilt(vsm, obj.VSM_params.signMapFilterSigma);
+                        
+        end
         
         
     end
