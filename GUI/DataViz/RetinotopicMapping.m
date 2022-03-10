@@ -29,6 +29,11 @@ classdef RetinotopicMapping < handle
         AzimuthMap  % Structure containing the Azimuth Phase and Amplitude maps.
         ElevationMap % Structure containing the Elevation Phase and Amplitude maps.
         VSM         % Image of the Visual Sign Map calculated from the retinotopy data.
+        RawPatchMap % Raw binary mask obtained from the VSM.
+        Patch_masks % Structure containing the binary masks from the automated ...
+                    % segmentation of the Visual Sign Map.
+        detMap      % Determinant map. Used in the automatic area segmentation.
+        eccMap      % Eccentricity map. Idem.
     end
     
     methods
@@ -173,36 +178,185 @@ classdef RetinotopicMapping < handle
            map_180 = obj.calculateFFT(3,'method',method, 'FFT_frequency', freqFr);
            out = zeros(size(map_0,1), size(map_0,2), 4);
            out(:,:,1) = mean(cat(3,map_0(:,:,1), map_180(:,:,1)),3); % Average amplitude;
-           out(:,:,2) = (map_0(:,:,2) - map_180(:,:,2))/2; % Subtraction of the phase;
-           disp('Done!')
+           out(:,:,2) = (map_0(:,:,2) - map_180(:,:,2))/2; % Subtraction of the phase;           
            % Average elevation:
            disp('Averaging elevation maps...')
            map_90 = obj.calculateFFT(2,'method',method, 'FFT_frequency', freqFr);
            map_270 = obj.calculateFFT(4,'method',method, 'FFT_frequency', freqFr);
            out(:,:,3) = mean(cat(3,map_90(:,:,1), map_270(:,:,1)),3); % Average amplitude;
-           out(:,:,4) = (map_90(:,:,2) - map_270(:,:,2))/2; % Subtraction of the phase; 
-           disp('Done!')
+           out(:,:,4) = (map_90(:,:,2) - map_270(:,:,2))/2; % Subtraction of the phase;            
            
            obj.AzimuthMap = out(:,:,[1 2]);
            obj.ElevationMap = out(:,:,[3 4]);
+           
+           % Filter Maps spatially:
+            obj.applyGaussFilt;
+            disp('Done!');            
         end
         
-        function out = genVSM(obj,varargin)
-            
-            
-            
+        function genVSM(obj,varargin)
+            % This method creates the Visual Sign Map (VSM) based on the
+            % azimuth and elevation phase maps. The algorithm used here was
+            % based on the Python code from Zhuang et al., 2017 and
+            % partly from Juavinett et al., 2017.
+                        
             if isempty(obj.AzimuthMap)
                 disp('Run "averageCardinalMaps" to create Azimuth and Elevation maps first!')
                 return
             end
-            % Filter Maps spatially:
-            obj.applyGaussFilt;
+            
             % Calculate visual sign map:
             obj.calc_visualSign(obj.AzimuthMap(:,:,2), obj.ElevationMap(:,:,2));
+            disp('Visual Sign Map created!')
             
         end
         
-        function drawROI(obj);
+        function binarizeVSM(obj)
+            % This method creates binary masks for the thresholded VSM.
+            % Code from Zhuang et al., 2017
+            
+            if isempty(obj.VSM)
+                disp('Run "genVSM" to create a Visual Sign Map first!')
+                return
+            end
+            % Set threshold as 1 STD of the VSM:
+            thr = std(obj.VSM(:));
+            
+            % First, binarize the VSM:
+            
+            rawMap = imbinarize(abs(obj.VSM), thr);
+            % Perform opening of Binary Image
+            rawMap = bwmorph(rawMap,'open',obj.VSM_params.openIter);
+            [rawMap,nPatch] = bwlabel(rawMap);
+            % Close patches:
+            patchMap = zeros(size(rawMap),'uint8');
+            for i = 1:nPatch                               
+                currPatch = uint8(bwmorph(rawMap == i, 'close', obj.VSM_params.closeIter));
+                patchMap = patchMap + uint8(currPatch);
+            end
+            obj.RawPatchMap = patchMap;
+        end
+        
+        function genPatchMap(obj)
+           % This method creates a patch map based on the binarized VSM
+           % (RawPatchMap).
+           % Code from Zhuang et al., 2017
+           
+           % Dilate raw patch map:
+           patchMap = obj.dilatePatches;
+           % Create Labels for each patch:
+           [patches,N] = bwlabel(patchMap,4);
+           disp(['A total of ' num2str(N) ' patches were retrieved!']);
+           patch_info = obj.summarizePatch(patches);
+           
+           % Remove small patches:
+           idx = false(2,length(patch_info));
+           for i = 1:length(patch_info)
+               patch_area = sum(patch_info(i).patch(:) ~= 0);
+               if patch_area < obj.VSM_params.smallPatchThr
+                   idx(1,i) = true;
+               end
+           end
+           if any(idx(1,:))
+               disp(['A total of ' num2str(sum(idx(1,:))) ' patches have less than '...
+                   num2str(obj.VSM_params.smallPatchThr) ' pixels and will be removed!']);                              
+           end
+           
+           % Remove isolated patches:
+           msk = cat(3,patch_info.patch);
+           msk = msk~=0;
+           for i = 1:size(msk,3)
+               dilated_msk = imdilate(msk(:,:,i),strel('diamond',2));
+               union_msk = dilated_msk & any(msk,3) & ~msk(:,:,i);
+               if ~any(union_msk(:))
+                   idx(2,i) = true;
+               end
+           end           
+           if sum(idx(2,:)) == 1
+               disp(['A total of ' num2str(sum(idx(2,:)))...
+                   ' patch is isolated and will be removed!']);
+           elseif sum(idx(2,:))>1
+               disp(['A total of ' num2str(sum(idx(2,:)))...
+                   ' patches are isolated and will be removed!']);
+           end 
+        
+            % Update patch_info structure:
+            patch_info(any(idx,1)) = [];
+            % 
+            obj.Patch_masks = patch_info;
+            disp('Patch Map generated!');
+            
+        end
+        
+        function genDeterminantMap(obj)
+            % This method creates a determinant map based on the Azim/Elev
+            % phase maps
+            % Code from Zhuang et al., 2017
+            
+            % Calculate phase map gradients:
+            [gradAzx, gradAzy] = gradient(obj.AzimuthMap(:,:,2));
+            [gradElx, gradEly] = gradient(obj.ElevationMap(:,:,2));
+            % Concatenate gradient data:
+            merge = cat(4,cat(3,gradElx, gradEly),cat(3,gradAzx,gradAzy));
+            obj.detMap = zeros(size(gradAzx));
+            for i = 1:size(gradAzx,1)
+                for j = 1:size(gradAzx,2)
+                    obj.detMap(j,i) = abs(det(squeeze(merge(j,i,:,:))));
+                end
+            end
+            disp('Determinant map generated!');            
+        end
+        
+        function genEccentricityMap(obj)
+            % This method creates an eccentricity map based on the Azim/Elev
+            % phase maps and the patch masks.
+            % Code from Zhuang et al., 2017
+            
+            % Phase Maps:
+            Azim_phi = obj.AzimuthMap(:,:,2);
+            Elev_phi = obj.ElevationMap(:,:,2);
+            % Instantiate empty eccentricity map:
+            obj.eccMap = nan(size(obj.ElevationMap(:,:,2)));
+            
+            % 
+            
+            for i = 1:length(obj.Patch_masks)
+                patch = logical(obj.Patch_masks(i).patch);
+                avgElev = mean(Elev_phi(patch));
+                avgAzim = mean(Azim_phi(patch));
+                patch_eccMap = getEccMap(Elev_phi, Azim_phi,avgElev,avgAzim);
+                obj.eccMap(patch) = patch_eccMap(patch);
+                
+            end
+            disp('Eccentricity map created!')
+            
+            
+            % Local function
+            function map = getEccMap(elMap,azMap, elCtr, azCtr)
+                % Creates an eccentricity map for each patch with centers
+                % elCtr and azCtr.
+                
+                elMap = deg2rad(elMap);
+                azMap = deg2rad(azMap);
+                elCtr = deg2rad(elCtr);
+                azCtr = deg2rad(azCtr);
+               
+                map = atan(sqrt(...
+                    (tan(elMap - elCtr)).^2 + (tan(azMap-azCtr)).^2 ./...
+                    (cos(elMap - elCtr)).^2));
+                map = rad2deg(map);                              
+                % Filter map using a convolution with an uniform kernel: %
+                % Not sure about this. Ask Sam!
+                map = imfilter(map, ones(obj.VSM_params.eccMapFilterSigma,...
+                    obj.VSM_params.eccMapFilterSigma), 'symmetric');                
+            end
+            
+            
+            
+            
+            
+        end
+        function drawROI(obj)
             
         end
         
@@ -273,26 +427,55 @@ classdef RetinotopicMapping < handle
             disp('Calculating visual sign map...');
             
             % Calculate phase map gradients
-            [gradAz1, gradAz2] = gradient(phaseAz);
-            [gradEl1, gradEl2] = gradient(phaseEl);
+            [gradAzx, gradAzy] = gradient(phaseAz);
+            [gradElx, gradEly] = gradient(phaseEl);
             %
-            gradDirAz = zeros(size(gradAz1));
-            gradDirEl = zeros(size(gradEl1));
+            gradDirAz = atan2(gradAzy, gradAzx);
+            gradDirEl = atan2(gradEly, gradElx);
             %
-            for i = 1:size(phaseAz,1)
-                for j = 1:size(phaseAz,2)
-                    gradDirAz(i,j) = atan2(gradAz2(i,j),gradAz1(i,j));
-                    gradDirEl(i,j) = atan2(gradEl2(i,j),gradEl1(i,j));
-                end
-            end
-            clear i j
-            vsm = sin(angle(exp(1j.*gradDirAz).*exp(-1j.*gradDirEl)));
+            vsm = sin(angle(exp(1i.*gradDirAz).*exp(-1i.*gradDirEl)));            
+            vsm(isnan(vsm)) = 0;
             % Filter map
             obj.VSM = imgaussfilt(vsm, obj.VSM_params.signMapFilterSigma);
-                        
+                                 
         end
         
+        function patches = dilatePatches(obj)
+            % This method dilates the patches stored in obj.RawPatchMap
+            % until a give border defined by obj.VSM_params.borderWidth.
+            % Code based on Zhuang et al., 2017
+            
+            %
+            total_area = bwmorph(obj.RawPatchMap, 'thicken', Inf);
+            total_area = bwmorph(imfill(~imerode(~obj.RawPatchMap, strel('diamond',15)),...
+                'holes'), 'majority', Inf);
+            patchBorder = uint8(total_area)- obj.RawPatchMap;
+            patchBorder = bwmorph(patchBorder, 'skel', Inf);
+            patchBorder = bwmorph(patchBorder, 'spur',Inf); % Remove small edges from the border.
+            patches = imfill(patchBorder,'holes') & ~patchBorder;
+            
+        end
         
+        function out = summarizePatch(obj, patches)
+            % This method creates a structure containing the individual
+            % int8 masks as well as dummy labels in "patches".
+            
+            out = struct('name','','patch',[]);
+            for i = 1:max(patches(:))
+                patch = patches == i;
+                if sum(obj.VSM(patch))>0
+                    out(i).name = ['Patch_' num2str(i) '_pos'];
+                    out(i).patch = int8(patch);
+                elseif sum(obj.VSM(patch))<0
+                    out(i).name = ['Patch_' num2str(i) '_neg'];
+                    out(i).patch = int8(patch)*-1;
+                else
+                    error(['The patch number ' num2str(i) ' has no Visual sign!'])
+                end                
+            end
+        end
+        
+            
     end
 end
 
