@@ -43,11 +43,11 @@ if opts.b_applyDetrend
     outData = reshape(outData',szdat);
     % Normalize data to get DeltaF/F values
     disp('Calculating DeltaF/F ...');
-    outData = 1 + bsxfun(@rdivide,outData,bsln);
+    outData = bsxfun(@rdivide,outData,bsln);
 else
     % Normalize data to get DeltaF/F values
     disp('Calculating DeltaF/F ...');
-    outData = 1 + bsxfun(@rdivide,bsxfun(@minus,outData,bsln),bsln);
+    outData = bsxfun(@rdivide,bsxfun(@minus,outData,bsln),bsln);
 end
 disp('Done!')
 end
