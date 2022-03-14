@@ -31,20 +31,24 @@ clear p
 errMsg = 'Input Data must be an Image time series separated by events with dimensions {"E","Y","X",T"}.';
 errID = 'umIToolbox:calculateDF_F0_byEvent:WrongInput';
 assert(isequal(metaData.dim_names, {'E','Y','X','T'}), errID, errMsg)
-% Calculate baseline:
-bsln = median(outData(:,:,:,1:round(metaData.preEventTime_sec*metaData.Freq)), ...
-    4,'omitnan');
+
 % Perform linear detrending on data:
-if opts.b_applyDetrend
-    szdat = size(outData);
-    outData = reshape(outData,prod(szdat(1:3)),[])';
-    disp('Detrending...');
-    outData = detrend(outData,1, 'Continuous', false); % Here, we remove linear trends from each trial.
-    outData = reshape(outData',szdat);
+if opts.b_applyDetrend    
+    medFr = 7;
+    disp('Detrending...');    
+    delta_y = median(outData(:,:,:,end-medFr:end),4, 'omitnan') - median(outData(:,:,:,1:medFr),4,'omitnan');
+    delta_x =(size(outData,4)- medFr);
+    M = delta_y./delta_x; clear delta_*    
+    trend = bsxfun(@times,M,permute(linspace(-2,size(outData,4)-medFr+4,...
+        size(outData,4)),[4 3 1 2])) + outData(:,:,:,3);
+    outData = bsxfun(@minus,outData,trend);    
     % Normalize data to get DeltaF/F values
     disp('Calculating DeltaF/F ...');
-    outData = bsxfun(@rdivide,outData,bsln);
+    outData = bsxfun(@rdivide,outData,trend);
 else
+    % Calculate baseline:
+    bsln = median(outData(:,:,:,1:round(metaData.preEventTime_sec*metaData.Freq)), ...
+        4,'omitnan');
     % Normalize data to get DeltaF/F values
     disp('Calculating DeltaF/F ...');
     outData = bsxfun(@rdivide,bsxfun(@minus,outData,bsln),bsln);
