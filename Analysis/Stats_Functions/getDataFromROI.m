@@ -45,13 +45,14 @@ end
 if ~isempty(object)
     % If a umIT's valid object is provided, it means that the function is being run by 
     % PipelineManager. In this case, find the subject's folder an try to
-    % find the ROI file there: 
+    % find the ROI file there:
+    tmp_obj = object;
     idx = false;   
     while ~idx        
-        object = object.MyParent;
-        idx = isa(object, 'Subject');        
+        tmp_obj = tmp_obj.MyParent;
+        idx = isa(tmp_obj, 'Subject');        
     end
-    opts.ROImasks_filename = fullfile(object.SaveFolder, opts.ROImasks_filename);
+    opts.ROImasks_filename = fullfile(tmp_obj.SaveFolder, opts.ROImasks_filename);
     % Append extension to filename, if not already provided:
     if ~endsWith(opts.ROImasks_filename, '.mat')
         opts.ROImasks_filename = [opts.ROImasks_filename '.mat'];
@@ -59,7 +60,7 @@ if ~isempty(object)
     % Throw error if the file does not exist in Subject's folder:
     if ~isfile(opts.ROImasks_filename)
         errID = 'Umitoolbox:getDataFromROI:FileNotFound';
-        subjFolder = strrep(object.SaveFolder, '\', '\\');
+        subjFolder = strrep(tmp_obj.SaveFolder, '\', '\\');
         errMsg = ['ROI file not found in ' subjFolder];
         error(errID, errMsg);    
     end
@@ -113,8 +114,15 @@ if isa(metaData, 'matlab.io.MatFile')
     metaData.Properties.Writable = true;
 end
 metaData.ROIfile = opts.ROImasks_filename;
-outDataStat = save2Mat(opts.ROImasks_filename, roi_pixVals, roi_names,...
-    new_dim_names, 'appendMetaData', metaData, 'genFile', false);
+if isempty(object)
+    outDataStat = save2Mat(opts.ROImasks_filename, roi_pixVals, roi_names,...
+        new_dim_names, 'appendMetaData', metaData, 'genFile', false);
+else
+    outDataStat = save2Mat(opts.ROImasks_filename, roi_pixVals, roi_names,...
+        new_dim_names, 'appendMetaData', metaData, 'genFile', false,...
+        'appendObjectInfo',object);
+end
+
 end
 
 % Local function:

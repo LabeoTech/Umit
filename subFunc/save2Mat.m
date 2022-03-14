@@ -40,8 +40,11 @@ addRequired(p, 'data');
 addRequired(p, 'obsID', @iscell);
 addRequired(p, 'dim_names', @iscell);
 addParameter(p, 'label', 'val', @(x) (iscell(x) && ischar([x{:}])) || (ischar(x)));
-addParameter(p, 'appendMetaData', [], @(x) isempty(x) || isa(x, 'matlab.io.MatFile') || isstruct(x));
+addParameter(p, 'appendMetaData', [], @(x) isempty(x) || isa(x, 'matlab.io.MatFile') ||...
+    isstruct(x));
 addParameter(p, 'genFile', true, @islogical)
+addParameter(p,'appendObjectInfo',[], @(x) isempty(x) || isa(x,'Subject') ||....
+    isa(x,'Acquisition') || isa(x,'Modality'));
 parse(p, MatFileName, data, obsID, dim_names, varargin{:});
 % Instantiate input variables:
 mFile = p.Results.MatFileName;
@@ -51,6 +54,7 @@ label = p.Results.label;
 dim_names = upper(p.Results.dim_names);
 metaData = p.Results.appendMetaData;
 b_genFile = p.Results.genFile;
+objHandle = p.Results.appendObjectInfo;
 clear p
 % Further validate data:
 errID = 'Umitoolbox:save2Mat:IncompatibleSize';
@@ -108,6 +112,22 @@ errMsg = 'The lenght of Labels is different from the length of data.';
 assert(isequaln(size(s.data{1},2),length(label)), errID, errMsg);
 % Add "label" to s:
 s.label = label;
+
+if ~isempty(objHandle)
+    % Add experiment metaData:
+    objectInfo = struct();
+    while isprop(objHandle, 'MyParent')
+        Field = class(objHandle);
+        Props = properties(objHandle);
+        for i=1:numel(Props)
+            objectInfo.(Field).(Props{i}) = objHandle.(Props{i});
+        end
+        objHandle = objHandle.MyParent;
+    end
+    s.experimentMetaData = objectInfo;
+end
+
+% Save data to file
 if b_genFile
     % Add file unique identifier:
     % Save "s" struct to file:
