@@ -7,7 +7,7 @@ function varargout = save2Mat(MatFileName, data, obsID, dim_names, varargin)
 %   MatFileName = full path of .MAT filename or an empty array. If empty,
 %       the function will generate a structure as output, otherwise it will
 %       save the variables to a .MAT file "MatFileName".
-%   data = 1D cell array with length equal to the number of elements of 
+%   data = 1D cell array with length equal to the number of elements of
 %       observations "O".
 %   obsID = 1D cell array of characters containing the description of each
 %       observation.
@@ -100,7 +100,7 @@ if ismember('E', dim_names)
         end
     end
 end
-% 
+%
 disp('Prepping label...');
 % Prepare "label" to save:
 if ischar(label)

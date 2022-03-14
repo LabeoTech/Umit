@@ -20,7 +20,7 @@ addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % Meta
 % Optional Parameters:
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ...
     ismember(x.SpatialAggFcn, {'none','mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}));
-addOptional(p, 'object', [], @(x) isempty(x) || isa(x,'Acquisition') || isa(x,'Modality')); 
+addOptional(p, 'object', [], @(x) isempty(x) || isa(x,'Acquisition') || isa(x,'Modality'));
 
 % Parse inputs:
 parse(p,data, metaData, varargin{:});
@@ -32,7 +32,7 @@ object = p.Results.object;
 clear p
 %%%%%%%%%%%%%%%%
 
-% For backward compatibility with previous versions of umIT when .DAT files contained 
+% For backward compatibility with previous versions of umIT when .DAT files contained
 % more than one matrix:
 datName = metaData.datName;
 dim_names = metaData.dim_names;
@@ -43,14 +43,14 @@ end
 
 % Parse File path to find subject folder:
 if ~isempty(object)
-    % If a umIT's valid object is provided, it means that the function is being run by 
+    % If a umIT's valid object is provided, it means that the function is being run by
     % PipelineManager. In this case, find the subject's folder an try to
     % find the ROI file there:
     tmp_obj = object;
-    idx = false;   
-    while ~idx        
+    idx = false;
+    while ~idx
         tmp_obj = tmp_obj.MyParent;
-        idx = isa(tmp_obj, 'Subject');        
+        idx = isa(tmp_obj, 'Subject');
     end
     opts.ROImasks_filename = fullfile(tmp_obj.SaveFolder, opts.ROImasks_filename);
     % Append extension to filename, if not already provided:
@@ -62,7 +62,7 @@ if ~isempty(object)
         errID = 'Umitoolbox:getDataFromROI:FileNotFound';
         subjFolder = strrep(tmp_obj.SaveFolder, '\', '\\');
         errMsg = ['ROI file not found in ' subjFolder];
-        error(errID, errMsg);    
+        error(errID, errMsg);
     end
 else
     % Append .mat:
@@ -149,13 +149,3 @@ switch fcn_name
         out = vals;
 end
 end
-
-
-
-
-
-
-
-
-
-
