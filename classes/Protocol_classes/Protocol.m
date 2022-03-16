@@ -367,15 +367,14 @@ classdef Protocol < handle
                     end
                 end
             end
-            % Remove objects that are not in the pre-filtered array:
-            if ~isempty(obj.Idx_Filtered)
-                new_Idx_Filtered = new_Idx_Filtered(ismember(new_Idx_Filtered,obj.Idx_Filtered,'rows'),:);                
-            end
             
             if isempty(new_Idx_Filtered)
                 return
             end
-            
+            % Remove objects that are not in the pre-filtered array:
+            if ~isempty(obj.Idx_Filtered)
+                new_Idx_Filtered = new_Idx_Filtered(ismember(new_Idx_Filtered,obj.Idx_Filtered,'rows'),:);                
+            end
             obj.Idx_Filtered = new_Idx_Filtered;
         end
         function clearFilterStruct(obj)
