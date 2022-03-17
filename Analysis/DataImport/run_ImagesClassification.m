@@ -49,7 +49,7 @@ if ~opts.b_IgnoreStim
     if isempty(eventID)
         warning('Stim signal not found! Skipped Event file creation.')
     else 
-        saveEventsFile(SaveFolder, eventID, timestamps, state, eventNameList)
+        saveEventsFile(SaveFolder, eventID, timestamps, state, eventNameList)   
     end
 end
 outFile = fullfile(SaveFolder, chanList);

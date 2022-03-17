@@ -12,7 +12,7 @@ function [outData, metaData] = split_data_by_event(data, metaData, SaveFolder, v
 
 % Defaults:
 default_Output = 'data_splitByEvent.dat';  %#ok. This line is here just for Pipeline management.
-default_opts = struct('preEventTime_sec',2, 'postEventTime_sec',4, 'PadWith', 'mean');
+default_opts = struct('preEventTime_sec','auto', 'postEventTime_sec','auto', 'PadWith', 'mean');
 %%% Arguments parsing and validation %%%
 p = inputParser;
 addRequired(p,'data',@(x) isnumeric(x) & ndims(x) == 3); % Validate if the input is a 3-D numerical matrix:
@@ -40,6 +40,27 @@ if ~isfile(evFile)
 else
     evDat = load(fullfile(folder, 'events.mat'));
 end
+% Get pre/post event times from metaData or try to find the best timing
+% based on the timestamps of events:
+if strcmp(opts.preEventTime_sec, 'auto') | strcmp(opts.postEventTime_sec, 'auto')
+    if isfield(metaData, 'preEventTime_sec')
+        % Grab info from file's metaData:        
+        fprintf('Using info from data''s metadata:\n\tPre event time: %d seconds.\n\tPost event time: %d seconds.\n',...
+            [metaData.preEventTime_sec, metaData.postEventTime_sec]);
+        opts.preEventTime_sec = metaData.preEventTime_sec;
+        opts.postEventTime_sec = metaData.postEventTime_sec;
+    else        
+       % Calculate pre/post times from "events" file:
+       disp('Calculating from events...')       
+       tmTrial= round(mean(diff(evDat.timestamps(evDat.state == 1)), 'omitnan'));
+       % Use 20% of the time as pre and 80 % as post:
+       opts.preEventTime_sec = round(.2*tmTrial);
+       opts.postEventTime_sec = tmTrial - opts.preEventTime_sec;
+       fprintf('Pre and post-event times calculated from "events" file:\n\tPre event time: %d seconds.\n\tPost event time: %d seconds.\n',...
+            [opts.preEventTime_sec, opts.postEventTime_sec]);
+    end
+end
+    
 %%%%%%%%%%%
 szdat = size(data);
 sr = metaData.Freq;
