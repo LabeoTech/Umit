@@ -21,7 +21,7 @@ classdef StatsManager < handle
     properties (SetAccess = private)
         timestamp_list % List of timestamps associated with each object in list_of_objs.
 %         stats_data     = struct() % Structure containing all data and metadata created.
-        stats_data  = {} %
+        stats_data  = {} % cell array containing all data and metaData created.
     end
     
     methods
@@ -154,17 +154,26 @@ classdef StatsManager < handle
             %   in obj.stats_data.
             
             % Get metaData from Matfile:
-            out = obj.stats_data;
+            fields = {'groupID', 'SubjectID', 'AcquisitionID', 'ModalityID',...
+                'RecStartDateTime', 'MatFile', 'dataFile','labels','observationID',...
+                'data','AcquisitionIndx'};
+            out = cell2struct(obj.stats_data, fields,2);
             out(1).metaData = [];
-            for i = 1:length(out)                             
+            for i = 1:length(out)
                 metaData_fn = properties(out(i).MatFile);
                 metaData_fn = setdiff(metaData_fn, {'Properties','data',...
                     'obsID','label', 'datFile','datLength','datSize'});
                 for j = 1:numel(metaData_fn)
                     out(i).metaData.(metaData_fn{j}) = out(i).MatFile.(metaData_fn{j});
                 end
+                % Pack observation info:
+                out(i).observations = struct('ID','', 'data',[]);
+                for j = 1:numel(out(i).observationID)
+                    out(i).observations(j).ID = out(i).observationID{j};
+                    out(i).observations(j).data = out(i).data{j};
+                end
             end
-            out = rmfield(out, 'MatFile');            
+            out = rmfield(out, {'MatFile', 'observationID', 'data'});            
         end
         function exportToCSV(obj, filename)
             % This function creates a .CSV file containing all data created
@@ -264,10 +273,10 @@ classdef StatsManager < handle
             for i = 1:numel(obj.list_of_objs)                
                 obj.stats_data{i,1} = obj.list_of_groups{i}; % Group ID 
                 obj.stats_data{i,2} = obj.getElementInfo(obj.list_of_objs{i},'Subject', 'ID'); % Subject ID
-                obj.stats_data{i,3} = obj.getElementInfo(obj.list_of_objs{i},'Acquisition', 'ID'); % Acquisition ID
-                obj.stats_data{i,4} = obj.getElementInfo(obj.list_of_objs{i},...
+                obj.stats_data{i,3} = obj.getElementInfo(obj.list_of_objs{i},'Acquisition', 'ID'); % Acquisition ID                
+                obj.stats_data{i,4} = obj.getElementInfo(obj.list_of_objs{i},'Modality', 'ID'); % modality ID
+                obj.stats_data{i,5} = obj.getElementInfo(obj.list_of_objs{i},...
                     'Acquisition', 'Start_datetime'); % Acquisition start timestamp
-                obj.stats_data{i,5} = obj.getElementInfo(obj.list_of_objs{i},'Modality', 'ID'); % modality ID
                 obj.stats_data{i,6} = obj.MfileArr{i}; % matfile handle
                 obj.stats_data{i,7} = obj.MfileArr{i}.Properties.Source; % data file path
                 obj.stats_data{i,8} = obj.MfileArr{i}.label; % data labels                                
@@ -279,7 +288,7 @@ classdef StatsManager < handle
             subjs = unique(obj.stats_data(:,2));
             for i = 1:numel(subjs)
                 indx = find(strcmp(subjs{i}, obj.stats_data(:,2)));
-                acq_time_list = datetime(vertcat(obj.stats_data{indx,4}));
+                acq_time_list = datetime(vertcat(obj.stats_data{indx,5}));
                 [~,tm_idx] = sort(acq_time_list);
                 [~,rel_time]= sort(tm_idx);
                obj.stats_data(indx,11) = arrayfun(@(x) x, rel_time, 'UniformOutput', false);
