@@ -5,6 +5,10 @@ function Umitoolbox_setupEnv
 % files in the computer.
 
 saveDir = uigetdir(pwd, 'Select Toolbox Folder');
+if saveDir == 0
+    disp('Operation cancelled by User')
+    return
+end
 sys = computer;
 myenv = getenv('Umitoolbox');
 if isfolder(myenv)
@@ -20,6 +24,5 @@ else
     end
 end
 % Add toolbox to savePath:
-root = getenv('Umitoolbox');
-addpath(genpath(root)); savepath
+addpath(genpath(saveDir)); savepath
 end
