@@ -145,6 +145,26 @@ classdef StatsManager < handle
             disp('Table created!')
         end
         
+        function out = packageData(obj)
+            % This function creates a structure with all
+            % "raw" stats data.
+            % Output:
+            %   out(struct): structure containing all data and metadata stored
+            %   in obj.stats_data.
+            
+            % Get metaData from Matfile:
+            out = obj.stats_data;
+            out(1).metaData = [];
+            for i = 1:length(out)                             
+                metaData_fn = properties(out(i).MatFile);
+                metaData_fn = setdiff(metaData_fn, {'Properties','data',...
+                    'obsID','label', 'datFile','datLength','datSize'});
+                for j = 1:numel(metaData_fn)
+                    out(i).metaData.(metaData_fn{j}) = out(i).MatFile.(metaData_fn{j});
+                end
+            end
+            out = rmfield(out, 'MatFile');            
+        end
         function exportToCSV(obj, filename)
             % This function creates a .CSV file containing all data created
             % by the method "createTable".
@@ -246,6 +266,8 @@ classdef StatsManager < handle
                     'Acquisition', 'Start_datetime');
                 obj.stats_data(i).modID = obj.getElementInfo(obj.list_of_objs{i},'Modality', 'ID');
                 obj.stats_data(i).MatFile = obj.MfileArr{i};
+                obj.stats_data(i).dataFile = obj.MfileArr{i}.Properties.Source;
+                obj.stats_data(i).labels = obj.stats_data(i).MatFile.label;
 %                 obj.stats_data(i).observations = struct('ID', '', 'data', []);
                 for j = 1:numel(obj.obs_list)
                     data = obj.stats_data(i).MatFile.data;
@@ -255,8 +277,7 @@ classdef StatsManager < handle
                         continue
                     end
                     obj.stats_data(i).observations(j).ID = obj.obs_list{j};
-                    obj.stats_data(i).observations(j).data = data{idx};
-                    obj.stats_data(i).observations(j).label = obj.stats_data(i).MatFile.label;
+                    obj.stats_data(i).observations(j).data = data{idx};                    
                     obj.stats_data(i).observations(j).dataSize = ...
                         size(obj.stats_data(i).observations(j).data);
                     
