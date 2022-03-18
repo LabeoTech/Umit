@@ -12,7 +12,7 @@ classdef DataViewer_pipelineMngr < handle
     properties (SetAccess = private)
         % structure containing the info of each step of the pipeline:
         pipe = struct('argsIn', {},'argsOut',{},'outFileName','','opts',struct.empty,...
-            'name','','funcStr', '','b_save2Dat', logical.empty, 'datFileName', '');
+            'name','','funcStr', '','b_save2File', logical.empty, 'datFileName', '');
         
         data % numerical array containing imaging data
         metaData % structure or matfile containing meta data associated with "data".
@@ -69,7 +69,7 @@ classdef DataViewer_pipelineMngr < handle
             
             if isempty(fieldnames(pipe)) || isempty(pipe)
                 pipe = struct('argsIn', {},'argsOut',{},'outFileName','','opts',struct.empty,...
-                    'name','','funcStr', '','b_save2Dat', logical.empty, 'datFileName', '');
+                    'name','','funcStr', '','b_save2File', logical.empty, 'datFileName', '');
             end
             % Check if all fields exist:
             if ~all(ismember(fieldnames(pipe),fieldnames(obj.pipe)))
@@ -129,7 +129,7 @@ classdef DataViewer_pipelineMngr < handle
             % Parse Inputs:
             p = inputParser;
             addRequired(p, 'func', @(x) ischar(x) || isnumeric(x));
-            addOptional(p, 'b_save2Dat', false, @islogical);
+            addOptional(p, 'b_save2File', false, @islogical);
             addOptional(p, 'datFileName', '', @ischar);
             parse(p, func, varargin{:});
             
@@ -152,7 +152,7 @@ classdef DataViewer_pipelineMngr < handle
             funcInfo.funcStr = ['[' strjoin(argsOut, ',') ']=' funcInfo.name '('...
                 strjoin(argsIn, ',') ');'];
             % Add optional fields to funcInfo structure:
-            funcInfo.b_save2Dat = p.Results.b_save2Dat; funcInfo.datFileName = p.Results.datFileName;
+            funcInfo.b_save2File = p.Results.b_save2File; funcInfo.datFileName = p.Results.datFileName;
             % Add step to pipeline:
             if isempty(obj.pipe)
                 % Check if all input arguments exist. If not, throw an error:
@@ -205,7 +205,7 @@ classdef DataViewer_pipelineMngr < handle
             
             % Control for existing data to be saved for the current
             % function:
-            if obj.pipe(end).b_save2Dat && any(strcmp('obj.data', argsOut))
+            if obj.pipe(end).b_save2File && any(strcmp('obj.data', argsOut))
                 %  If a custom filename was not provided, use the
                 %  default one:
                 if isempty(obj.pipe(end).datFileName)
@@ -219,7 +219,7 @@ classdef DataViewer_pipelineMngr < handle
                         obj.pipe(end).datFileName = [obj.pipe(end).datFileName, ext_def];
                     end
                 end
-            elseif obj.pipe(end).b_save2Dat && ~any(strcmp('obj.data', argsOut))
+            elseif obj.pipe(end).b_save2File && ~any(strcmp('obj.data', argsOut))
                 warning(['Cannot save output to .DAT file for the function'...
                     ' "%s" \nbecause it doesn''t have any data as output!'], funcInfo.name);
             end
@@ -263,7 +263,7 @@ classdef DataViewer_pipelineMngr < handle
                 txt = sprintf('Function name : %s\nOptional Parameters:\n',...
                     obj.pipe(i).name);
                 str = [str, txt, sprintf('\t%s : %s\n', opts{:})];
-                if obj.pipe(i).b_save2Dat
+                if obj.pipe(i).b_save2File
                     str = [str, sprintf('Save to file: "%s"\n', fullfile(obj.SaveFolder, obj.pipe(i).datFileName))];
                 end
                 str = [str, sprintf('--------------------\n')];
@@ -289,6 +289,7 @@ classdef DataViewer_pipelineMngr < handle
             
             h = waitbar(0, 'Initiating pipeline...');
             h.Children.Title.Interpreter = 'none';
+            outMsg = '';
             for i = 1:length(obj.pipe)
                 waitbar(i/length(obj.pipe), h,...
                     ['Processing ' obj.pipe(i).name '... Step' num2str(i)...
@@ -308,7 +309,7 @@ classdef DataViewer_pipelineMngr < handle
                     % Update the metaData with the current function info:
                     obj.updateDataHistory(obj.pipe(i));
                     % If user wants, save the output to a file:
-                    if obj.pipe(i).b_save2Dat
+                    if obj.pipe(i).b_save2File
                         save2Dat(fullfile(obj.SaveFolder, obj.pipe(i).datFileName), obj.data, obj.metaData);
                     end
                     outMsg = 'Pipeline Finished.';
