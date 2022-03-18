@@ -20,7 +20,8 @@ classdef StatsManager < handle
     end
     properties (SetAccess = private)
         timestamp_list % List of timestamps associated with each object in list_of_objs.
-        stats_data     = struct() % Structure containing all data and metadata created.
+%         stats_data     = struct() % Structure containing all data and metadata created.
+        stats_data  = {} %
     end
     
     methods
@@ -34,9 +35,9 @@ classdef StatsManager < handle
             obj.list_of_groups = list_of_groups;
             obj.stats_filename = stats_filename;
             % Check if inputs are correct and Generate list of MatFile
-            % handles:
-            obj.validateStatsInputs;
-            obj.createDataStruct;
+            % handles:           
+            obj.validateStatsInputs;            
+            obj.createDataArray;
         end
         %%% Property Set Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function set.list_of_objs(obj, list_of_objs)
@@ -225,6 +226,7 @@ classdef StatsManager < handle
            % Find Stats file of each object in list_of_objs:
             b_remObj = false(1,length(obj.list_of_objs));
             matHandleArr = cell(size(b_remObj));
+            disp('Opening stats files...')
             for i = 1:length(obj.list_of_objs)
                 elem = obj.list_of_objs{i};                
                 try 
@@ -235,7 +237,7 @@ classdef StatsManager < handle
                     b_remObj(i) = true;
                 end                               
             end
-            
+            disp('Done.')
             % Save MatFile handles:
             if all(b_remObj)
                 % If none of the objects have the stats file, throw an
@@ -252,48 +254,37 @@ classdef StatsManager < handle
         end
                
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        function createDataStruct(obj)
-            % CREATEDATASTRUCT generates a structure containing all
+        function createDataArray(obj)
+            % CREATEDATAArray generates a cell array containing all
             % data and metadata provided as inputs to STATSMANAGER class.
-            obj.stats_data = struct('groupName','', 'subjID', '', 'acqID', '',...
-                'acqTimeStamp', '', 'acqIdx', [],'modID','','MatFile',[],'observations',...
-                struct('ID', '','data',[]));
-            for i = 1:numel(obj.list_of_objs)
-                obj.stats_data(i).groupName = obj.list_of_groups{i};
-                obj.stats_data(i).subjID = obj.getElementInfo(obj.list_of_objs{i},'Subject', 'ID');
-                obj.stats_data(i).acqID = obj.getElementInfo(obj.list_of_objs{i},'Acquisition', 'ID');
-                obj.stats_data(i).acqTimeStamp = obj.getElementInfo(obj.list_of_objs{i},...
-                    'Acquisition', 'Start_datetime');
-                obj.stats_data(i).modID = obj.getElementInfo(obj.list_of_objs{i},'Modality', 'ID');
-                obj.stats_data(i).MatFile = obj.MfileArr{i};
-                obj.stats_data(i).dataFile = obj.MfileArr{i}.Properties.Source;
-                obj.stats_data(i).labels = obj.stats_data(i).MatFile.label;
-%                 obj.stats_data(i).observations = struct('ID', '', 'data', []);
-                for j = 1:numel(obj.obs_list)
-                    data = obj.stats_data(i).MatFile.data;
-                    idx = strcmp(obj.obs_list{j}, obj.stats_data(i).MatFile.obsID);
-                    % If the observation is missing, skip.
-                    if sum(idx) == 0
-                        continue
-                    end
-                    obj.stats_data(i).observations(j).ID = obj.obs_list{j};
-                    obj.stats_data(i).observations(j).data = data{idx};                    
-                    obj.stats_data(i).observations(j).dataSize = ...
-                        size(obj.stats_data(i).observations(j).data);
-                    
-                end
+            
+            disp('Creating Data array. Please wait...')
+            
+            obj.stats_data = cell(numel(obj.list_of_objs),11);
+            for i = 1:numel(obj.list_of_objs)                
+                obj.stats_data{i,1} = obj.list_of_groups{i}; % Group ID 
+                obj.stats_data{i,2} = obj.getElementInfo(obj.list_of_objs{i},'Subject', 'ID'); % Subject ID
+                obj.stats_data{i,3} = obj.getElementInfo(obj.list_of_objs{i},'Acquisition', 'ID'); % Acquisition ID
+                obj.stats_data{i,4} = obj.getElementInfo(obj.list_of_objs{i},...
+                    'Acquisition', 'Start_datetime'); % Acquisition start timestamp
+                obj.stats_data{i,5} = obj.getElementInfo(obj.list_of_objs{i},'Modality', 'ID'); % modality ID
+                obj.stats_data{i,6} = obj.MfileArr{i}; % matfile handle
+                obj.stats_data{i,7} = obj.MfileArr{i}.Properties.Source; % data file path
+                obj.stats_data{i,8} = obj.MfileArr{i}.label; % data labels                                
+                obj.stats_data{i,9} = obj.stats_data{i,6}.obsID; % observation ID
+                obj.stats_data{i,10}= obj.stats_data{i,6}.data; % observation data
             end
-            disp('OK!')
+            
             % Create Relative time per subject's acquisitions:
-            subjs = unique({obj.stats_data.subjID});
+            subjs = unique(obj.stats_data(:,2));
             for i = 1:numel(subjs)
-                indx = find(strcmp(subjs{i}, {obj.stats_data.subjID}));
-                acq_time_list = datetime(vertcat(obj.stats_data(indx).acqTimeStamp));
+                indx = find(strcmp(subjs{i}, obj.stats_data(:,2)));
+                acq_time_list = datetime(vertcat(obj.stats_data{indx,4}));
                 [~,tm_idx] = sort(acq_time_list);
                 [~,rel_time]= sort(tm_idx);
-               obj.stats_data(indx) = arrayfun(@(x,y) setfield(obj.stats_data(x),'acqIdx',y),...
-                    indx, rel_time');
+               obj.stats_data(indx,11) = arrayfun(@(x) x, rel_time, 'UniformOutput', false);
             end
+             disp('Done!')
         end
         
         function out = getElementInfo(~,elem,className, propName)
