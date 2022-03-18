@@ -355,6 +355,35 @@ classdef PipelineManager < handle
             end
         end
         
+        function saveLastData(obj)
+            % This method ensures that the last step of the pipeline that
+            % ouputs data ("outData") is saved. It is called from "run_pipeline".
+            % This method updates the "datFileName" and "b_save2File" variables
+            % from the last "saveble" step of the pipeline.
+            %
+            
+            % Look for last step that ouputs a "data":
+            for i = length(obj.pipe):-1:1
+                if ~isempty(obj.pipe(i).outFileName)
+                    break
+                end
+            end
+            
+            if obj.pipe(i).b_save2File & ~isempty(obj.pipe(i).datFileName)
+                return
+            end
+            
+            
+            % Save file of last step if the function outputs Data or
+            % StatsData:
+            if isempty(obj.pipe(i).datFileName) && any(ismember({'outData', 'outDataStat'},...
+                    obj.pipe(i).argsOut))
+                obj.pipe(i).datFileName = obj.pipe(i).outFileName;
+                obj.pipe(i).b_save2File = true;
+            end
+            
+        end
+                
         function run_pipeline(obj)
             % RUN_PIPELINE runs the tasks in OBJ.PIPE
             lbf = matfile(obj.ProtocolObj.LogBookFile);
@@ -958,35 +987,7 @@ classdef PipelineManager < handle
             end
             
         end
-        
-        function saveLastData(obj)
-            % This method ensures that the last step of the pipeline that
-            % ouputs data ("outData") is saved. It is called from "run_pipeline".
-            % This method updates the "datFileName" and "b_save2File" variables
-            % from the last "saveble" step of the pipeline.
-            %
-            
-            % Look for last step that ouputs a "data":
-            for i = length(obj.pipe):-1:1
-                if ~isempty(obj.pipe(i).outFileName)
-                    break
-                end
-            end
-            
-            if obj.pipe(i).b_save2File
-                return
-            end
-            
-            % Save file of last step if the function outputs Data or
-            % StatsData:
-            if isempty(obj.pipe(i).datFileName) && any(ismember({'outData', 'outDataStat'},...
-                    obj.pipe(i).argsOut))
-                obj.pipe(i).datFileName = obj.pipe(i).outFileName;
-                obj.pipe(i).b_save2File = true;
-            end
-            
-        end
-        
+               
         function saveDataToFile(obj, step)
             % This methods looks back in the pipeline from "step" for tasks
             % with "data" or "stats data" as output and saves the current data to a
@@ -1001,6 +1002,7 @@ classdef PipelineManager < handle
             % as output and save the current data using the task's info:
             for i = length(subPipe):-1:1
                 task = subPipe(i);
+                                
                 if endsWith(task.datFileName, '.dat')
                     save2Dat(fullfile(obj.tmp_TargetObj.SaveFolder,task.datFileName),...
                         obj.current_data, obj.current_metaData);

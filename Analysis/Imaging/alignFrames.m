@@ -63,12 +63,18 @@ switch opts.UseFile
     case 'auto'
         % Look for a file with the same name as the one used to create the
         % "ImagingReferenceFrame.mat" file:
+        if isempty(ref_frame_info.datFile)
+            error('MATLAB:UMIToolbox:alignFrames:MissingInput',...
+                ['Failed to locate reference file.' ...
+                'The path to dat file in ImagingReferenceFrame.mat file is empty.' ...
+                'Try again without the "auto" option.']);
+        end
         [~,filename,ext] = fileparts(ref_frame_info.datFile);
         try
             [targetDat, targetMetaData]= mapDatFile(fullfile(object.SaveFolder, [filename,ext]));
             targetFr = targetDat.Data.data(:,:,1);
         catch ME
-            causeException = MException('MATLAB:UMIToolbox:alignFrame:FileNotFound',...
+            causeException = MException('MATLAB:UMIToolbox:alignFrames:FileNotFound',...
                 ['Cannot find "' filename '" in object''s SaveFolder']);
             addCause(ME, causeException);
             rethrow(ME)
