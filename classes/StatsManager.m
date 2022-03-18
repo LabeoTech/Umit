@@ -159,6 +159,7 @@ classdef StatsManager < handle
                 'data','AcquisitionIndx'};
             out = cell2struct(obj.stats_data, fields,2);
             out(1).metaData = [];
+            h = waitbar(0,'Compiling stats data...');
             for i = 1:length(out)
                 metaData_fn = properties(out(i).MatFile);
                 metaData_fn = setdiff(metaData_fn, {'Properties','data',...
@@ -172,8 +173,12 @@ classdef StatsManager < handle
                     out(i).observations(j).ID = out(i).observationID{j};
                     out(i).observations(j).data = out(i).data{j};
                 end
+                waitbar(i/length(out),h);
             end
             out = rmfield(out, {'MatFile', 'observationID', 'data'});            
+            waitbar(1,'Done!');
+            pause(1);
+            close(h);
         end
         function exportToCSV(obj, filename)
             % This function creates a .CSV file containing all data created
