@@ -38,6 +38,11 @@ classdef StatsManager < handle
             % handles:           
             obj.validateStatsInputs;            
             obj.createDataArray;
+            obj.checkDataDims; %Checks if the number of dimensions of each observation data.
+                               % This info will be used to lock/unlock the
+                               % options to export the data as CSV or to
+                               % create a table in umit's main GUI. 
+                               % In these cases, only 1D data are allowed. 
         end
         %%% Property Set Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function set.list_of_objs(obj, list_of_objs)
@@ -123,7 +128,7 @@ classdef StatsManager < handle
             addOptional(p,'tableType', 'raw', @(x) ismember(x, {'raw', 'summary'}));
             parse(p,obj, varargin{:});
             obj = p.Results.obj;
-            tableType = p.Results.tableType;
+            tableType = p.Results.tableType;                        
             %
             disp('Creating table...')
             
@@ -131,19 +136,18 @@ classdef StatsManager < handle
             % be used by "getObsData" method to put NaNs on missing
             % data (i.e. labels that are missing for a given recording).
             
-            labels = arrayfun(@(x) x.MatFile.label, obj.stats_data, 'UniformOutput',false);
-            labels = labels'; 
-            uniqLabels = unique(vertcat(labels{:})); % Sort unique labels in alphabetical order.
-                        
+            uniqLabels = unique(horzcat(obj.stats_data{:,8})); % Sort unique labels in alphabetical order.
+           
             % Get observations's labels from the stats_data structure:
-                
+            tic;    
             if strcmp(tableType, 'raw')                                
                 tableArr = cellfun(@(x) obj.getObsData(x, uniqLabels), obj.obs_list,'UniformOutput',false);
                 out = vertcat(tableArr{:});
             else
                 disp('No!')
-            end            
+            end                        
             disp('Table created!')
+            toc
         end
         
         function out = packageData(obj)
@@ -156,7 +160,7 @@ classdef StatsManager < handle
             % Get metaData from Matfile:
             fields = {'groupID', 'SubjectID', 'AcquisitionID', 'ModalityID',...
                 'RecStartDateTime', 'MatFile', 'dataFile','labels','observationID',...
-                'data','AcquisitionIndx'};
+                'data', 'dataSize','AcquisitionIndx'};
             out = cell2struct(obj.stats_data, fields,2);
             out(1).metaData = [];
             h = waitbar(0,'Compiling stats data...');
@@ -168,15 +172,16 @@ classdef StatsManager < handle
                     out(i).metaData.(metaData_fn{j}) = out(i).MatFile.(metaData_fn{j});
                 end
                 % Pack observation info:
-                out(i).observations = struct('ID','', 'data',[]);
+                out(i).observations = struct('ID','', 'data',[], 'dataSize',[]);
                 for j = 1:numel(out(i).observationID)
                     out(i).observations(j).ID = out(i).observationID{j};
                     out(i).observations(j).data = out(i).data{j};
+                    out(i).observations(j).dataSize = out(i).dataSize{j};
                 end
                 waitbar(i/length(out),h);
             end
-            out = rmfield(out, {'MatFile', 'observationID', 'data'});            
-            waitbar(1,'Done!');
+            out = rmfield(out, {'MatFile', 'observationID', 'data', 'dataSize'});            
+            waitbar(1,h,'Done!');
             pause(1);
             close(h);
         end
@@ -191,6 +196,22 @@ classdef StatsManager < handle
             writetable(data,filename);
             msgbox(['Data saved to file : ' filename], 'to CSV');
         end
+        
+        function b_isExportable = checkDataDims(obj)
+            % This method checks if the number of dimensions of each observation data.
+            % This info will be used to lock/unlock the options to export
+            % the data as CSV or to create a table. In these cases, only 1D
+            % data are allowed.
+            % Output:
+            % b_isExportable (bool): True, if the data is either 1-D.
+                                               
+            idx = false(1,size(obj.stats_data,1));
+            for i = 1:length(idx)                
+                idx(i) = sum(obj.stats_data{i,11}{1}~=1) == 1;                
+            end
+            b_isExportable = all(idx);
+        end                              
+        
     end
    
     methods(Access = private)
@@ -285,8 +306,10 @@ classdef StatsManager < handle
                 obj.stats_data{i,6} = obj.MfileArr{i}; % matfile handle
                 obj.stats_data{i,7} = obj.MfileArr{i}.Properties.Source; % data file path
                 obj.stats_data{i,8} = obj.MfileArr{i}.label; % data labels                                
-                obj.stats_data{i,9} = obj.stats_data{i,6}.obsID; % observation ID
-                obj.stats_data{i,10}= obj.stats_data{i,6}.data; % observation data
+                obj.stats_data{i,9} = obj.MfileArr{i}.obsID; % observation ID
+                obj.stats_data{i,10}= obj.MfileArr{i}.data; % observation data
+                obj.stats_data{i,11}= cellfun(@(x) size(squeeze(x)), ...
+                    obj.MfileArr{i}.data, 'UniformOutput', false);% size of observation data
             end
             
             % Create Relative time per subject's acquisitions:
@@ -296,7 +319,7 @@ classdef StatsManager < handle
                 acq_time_list = datetime(vertcat(obj.stats_data{indx,5}));
                 [~,tm_idx] = sort(acq_time_list);
                 [~,rel_time]= sort(tm_idx);
-               obj.stats_data(indx,11) = arrayfun(@(x) x, rel_time, 'UniformOutput', false);
+               obj.stats_data(indx,12) = arrayfun(@(x) x, rel_time, 'UniformOutput', false);
             end
              disp('Done!')
         end
@@ -334,60 +357,44 @@ classdef StatsManager < handle
             %       information and numerical data of the observation
             %       "obs_ID" for all recordings.
                         
-            % Filter out recordings without the observation:
-            idx = arrayfun(@(x) any(strcmp(obs_ID, {x.observations.ID})), obj.stats_data);            
-            statsStruct = obj.stats_data(idx);
-            
-            indx_obs = arrayfun(@(x) find(strcmp(obs_ID, {x.observations.ID})), statsStruct);            
-                        
-            % Retrieve recordings' info and store in a cell array:            
-            info = arrayfun(@(x,y) {x.subjID, x.acqID, x.modID,...
-            x.groupName, datetime(x.acqTimeStamp), obs_ID},...
-            statsStruct,indx_obs, 'UniformOutput', false);           
-            info = info'; 
-            info = vertcat(info{:});
-            
+            % Find indexes of the observation inside stats_data:
+            indx_obs = zeros(1,size(obj.stats_data,1));
+            for i = 1:size(obj.stats_data,1)
+                indx_obs(i) = find(strcmp(obs_ID, obj.stats_data{i,9}));            
+            end
+            % Get info only from data containing the observation:
+            stats_info = obj.stats_data(indx_obs~=0,:);
+            indx_obs = indx_obs(indx_obs~=0);
             % Get observation's data:
             
             % Preallocate data with NaNs based on the length of unique
             % labels:
-            data = nan(size(info,1),length(labelList));
-            for i = 1:length(statsStruct)                
-                [~,locB] = ismember(statsStruct(i).observations(indx_obs(i)).label,labelList);
-                data(i,locB) = statsStruct(i).observations(indx_obs(i)).data;
+            data = nan(size(stats_info,1),length(labelList));            
+            for i = 1:size(stats_info,1)                
+                [~,locB] = ismember(stats_info{i,8},labelList);
+                data(i,locB) = stats_info{i,10}{indx_obs(i)};
             end
             % Prepare data to be added to "out" table:
             data = num2cell(data);
-            
-            % build table:
-            out = table('Size', [size(info,1) size(info,2) + size(data,2)],...
+            % Prepare metaData to be added to "out" table:
+            stats_info(:,5) = cellfun(@(x) datetime(x), stats_info(:,5), 'UniformOutput',false);
+            % Build table:
+            out = table('Size', [size(stats_info,1) 6 + size(data,2)],...
                 'VariableTypes',...
                 [{'cellstr', 'cellstr', 'cellstr', 'cellstr', 'datetime', 'cellstr'}...
                  repmat({'single'},1,size(data,2))]);
-            out(:,1:6) = info;
+            out(:,1:5) = stats_info(:,1:5);
+            out(:,6) = repmat({obs_ID},size(stats_info,1),1);
             out(:,7:end) = data;
             % Set table header:
             generic_label = arrayfun(@(x) ['Val_' num2str(x)], 1:size(data,2), 'UniformOutput',false);
-            out.Properties.VariableNames = [{'Subject', 'Acquisition', 'Modality', 'GroupName',...
-                    'RecordingTime', 'ObsID'}, generic_label];            
+            out.Properties.VariableNames = [{'GroupName','Subject', 'Acquisition', 'Modality',...
+                'RecordingTime', 'ObsID'}, generic_label];            
         end
+               
         %%%%%%%%%%%%%%%%%%
         
     end
-            
-            
-        
-        
-        
-        
-        
-   
-    
-    
-    
-    
-    
-    
-    
+           
     
 end
