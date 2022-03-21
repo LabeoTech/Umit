@@ -139,7 +139,7 @@ classdef StatsManager < handle
             uniqLabels = unique(horzcat(obj.stats_data{:,8})); % Sort unique labels in alphabetical order.
            
             % Get observations's labels from the stats_data structure:
-            tic;    
+            
             if strcmp(tableType, 'raw')                                
                 tableArr = cellfun(@(x) obj.getObsData(x, uniqLabels), obj.obs_list,'UniformOutput',false);
                 out = vertcat(tableArr{:});
@@ -147,7 +147,6 @@ classdef StatsManager < handle
                 disp('No!')
             end                        
             disp('Table created!')
-            toc
         end
         
         function out = packageData(obj)
