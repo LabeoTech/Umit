@@ -11,7 +11,7 @@ The following steps show how to extract the ROI data using the main GUI. If you 
 1. Open the main GUI (```umIToolbox```) and load the the project file.
 2. In the *Visualization* tab, choose the file to be used to create the ROIs and click on *ROImanager* button.
 3. In the *ROImanager* interface, create the ROIs and save the ROI file. For more information, click [here](../../docs/devDocs/roimanager.md).
-  >Note: You can also launch the *ROImanager* from the *DataViewer* app (for details, click [here]((../../docs/devDocs/dataviewer.md))). In this case, note that you will have to manually save the ROI file to the subject's folder. This is important because the function used to extract the ROI data will look for the ROI file inside the subject's folder only.   
+  >Note: You can also launch the *ROImanager* from the *DataViewer* app (for details, click [here](../../docs/devDocs/dataviewer.md)). In this case, note that you will have to manually save the ROI file to the subject's folder. This is important because the function used to extract the ROI data will look for the ROI file inside the subject's folder only.   
 
 4. Close the *ROImanager* app.
 5. In the *Pipeline control panel* tab, select the recordings to extract the data launch the *Pipeline Builder* interface.
@@ -37,7 +37,7 @@ ___
 
 ##### Links to functions' documentation
 ___
-[run_ImagesClassification](../../docs/devDocs/run_imagesclassification.md) | [loadDatFile](../../docs/devDocs/loaddatfile.md) | [mapDatFile](../../doc/devDocs/mapdatfile.md)
+[umIToolbox (main GUI)](../../docs/userDocs/maingui.md) | [DataViewer](../../docs/devDocs/dataviewer.md) | [ROImanager](../../doc/devDocs/roimanager.md)
 
 
 
