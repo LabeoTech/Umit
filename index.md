@@ -20,7 +20,7 @@ ___
 
 ### User Guides
 * [Build a data processing pipeline](/docs/devDocs/ht_buildpipeline.md)
-* [Extract data from ROI](/docs/userDocs/ht_getdatafromroi.md) using the standalone version of [*DataViewer*](/docs/devDocs/dataviewer.md) (link not functional)
+* [Extract data from ROIs](/docs/userDocs/extractdatafromroi.md)
 * [Import Data from LabeoTech Systems](/docs/userDocs/dataimportlabeo.md)
 
 ___
