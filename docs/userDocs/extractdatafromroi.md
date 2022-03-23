@@ -34,7 +34,8 @@ The following steps show how to extract the ROI data using the main GUI. If you 
 </p><br>
 
 11. In the *Analysis* tab,  select one or multiple objects containing the *ROI_data* files. Then, in the file list box, select the *ROI_data* file created in the previous step. Select the observations (i.e. ROIs) exported and click on *Select*.
-12. In the *Apps* panel, the *Utilities* section one has the option to visualize the data as a table in *TableView* and has the option to save the data to a .mat file (*Save to MAT*) or to export the data to a .csv file (*Export to CSV*). Note that for data with more than one dimension, the *TableView* and *Export to CSV* options are not available.   
+12. In the *Apps* panel, the *Utilities* section one has the option to visualize the data as a table in *TableView* and has the option to save the data to a .mat file (*Save to MAT*) or to export the data to a .csv file (*Export to CSV*).
+>Note: The *TableView* and *Export to CSV* options are available only for unidimensional data (with size 1 x N)!   
 
 <p align="center">
   <img src="../../assets/gifs/extractdatafromroi_steps11to12.gif" alt="ROImanager_ROIShapeCreationGif" width = "1200"/>
