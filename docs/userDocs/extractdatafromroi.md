@@ -45,16 +45,16 @@ The following steps show how to extract the ROI data using the main GUI. If you 
 ##### Extracting ROI data using the standalone version of *DataViewer* app.
 ___
 
-
+Info available soon.
 
 ##### How the ROI data is organized in .mat files
 ___
 
-
+Info available soon.
 
 ##### Links to functions' documentation
 ___
-[umIToolbox (main GUI)](../../docs/userDocs/maingui.md) | [DataViewer](../../docs/devDocs/dataviewer.md) | [ROImanager](../../doc/devDocs/roimanager.md)
+[umIToolbox (main GUI)](../../docs/userDocs/maingui.md) | [DataViewer](../../docs/devDocs/dataviewer.md) | [ROImanager](../../docs/devDocs/roimanager.md)
 
 
 
