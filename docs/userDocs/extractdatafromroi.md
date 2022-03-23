@@ -1,16 +1,7 @@
 ### Extracting data from ROIs
 
 Here we show how to extract the imaging data from regions of interest (ROIs) created using the *ROImanager* app.   
-There are two ways to extract the ROI data: using the main gui (*umIToolbox*) or through the standalone version of *DataViewer* app. The sections below describe the steps to retrieve the ROI data using an event-triggered calcium imaging data as example. The data consists on responses to visual stimulation that was preprocessed using a band-pass temporal filter, split by trials and normalized to obtain the calcium signal values as &#916;F/F. In addition, response amplitude maps were generated from the data by subtracting the maximum response from the baseline (pre-event time). These two datasets will be used to illustrate two situations:   
-1. Normalized data: used to extract the ROIs data in order to obtain the temporal profile of calcium responses per trial.
-2. Amplitude maps: used to extract the response amplitude per trial.   
-
-In the former case, the output data will have 2 dimensions (trial vs time) while in the latter, the data as only one dimension (i.e. one value per trial).
-
-<p align:"center">
-  <img alt:"rawDataInFolder" src:"../../assets/img/dataImportLabeo_fig1.png" width : 500/> <br>
-  <em>caption.</em>
-</p><br>
+There are two ways to extract the ROI data: using the main gui (*umIToolbox*) or through the standalone version of *DataViewer* app. The sections below describe the steps to retrieve the ROI data using an event-triggered calcium imaging data as example. The data consists on visual responses to drifting gratings. The data was preprocessed using a band-pass temporal filter, split by trials and normalized to obtain the calcium signal values as &#916;F/F.
 
 ##### Extracting ROI data using the *umIToolbox* main GUI
 ___
@@ -19,8 +10,7 @@ The following steps show how to extract the ROI data using the main GUI. If you 
 
 1. Open the main GUI (```umIToolbox```) and load the the project file.
 2. In the *Visualization* tab, choose the file to be used to create the ROIs and click on *ROImanager* button.
-3. In the *ROImanager* interface, create the ROIs and save the ROI file. For more information, click [here](../../docs/devDocs/roimanager.md).   
-
+3. In the *ROImanager* interface, create the ROIs and save the ROI file. For more information, click [here](../../docs/devDocs/roimanager.md).
   >Note: You can also launch the *ROImanager* from the *DataViewer* app (for details, click [here]((../../docs/devDocs/dataviewer.md))). In this case, note that you will have to manually save the ROI file to the subject's folder. This is important because the function used to extract the ROI data will look for the ROI file inside the subject's folder only.   
 
 4. Close the *ROImanager* app.
