@@ -59,6 +59,12 @@ if strcmp(opts.preEventTime_sec, 'auto') | strcmp(opts.postEventTime_sec, 'auto'
        fprintf('Pre and post-event times calculated from "events" file:\n\tPre event time: %d seconds.\n\tPost event time: %d seconds.\n',...
             [opts.preEventTime_sec, opts.postEventTime_sec]);
     end
+else
+    % Given that the variables of pre and post event times accept the
+    % string "auto" as input, numbers is also interpreted as strings and 
+    % need to be transformed back to numerical data types:
+    opts.preEventTime_sec = str2double(opts.preEventTime_sec);
+    opts.postEventTime_sec = str2double(opts.postEventTime_sec);
 end
     
 %%%%%%%%%%%
