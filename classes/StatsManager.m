@@ -191,8 +191,13 @@ classdef StatsManager < handle
             % filename (char): valid path for a .CSV file.
             
             [data, labels] = obj.createTable;             
-            data.Properties.VariableNames(7:end) = labels;
-            writetable(data,filename);
+            % Transform data table to cell array to avoid invalid variable names from labels:            
+            varNames = data.Properties.VariableNames;
+            varNames(7:end) = labels;
+            data = table2cell(data);
+            data = vertcat(varNames, data);          
+            % Write to .csv file:
+            writecell(data,filename);
             msgbox(['Data saved to file : ' filename], 'to CSV');
         end
         
