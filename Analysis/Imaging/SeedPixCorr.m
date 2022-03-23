@@ -33,7 +33,7 @@ if ~all(idx) || any(locB(1:2)>2)
 end
     
 % Permute data to have 'Y', 'X', 'T' dimensions:
-% data = permute(data, locB); % disable for now until ImagesClassification outputs data as {"Y","X","T"}. BrunoO 26/01/2022
+data = permute(data, locB); 
 
 % Calculate SeedPixel Correlation:
 % Preserve data Aspect Ratio:
