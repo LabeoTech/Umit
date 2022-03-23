@@ -13,10 +13,7 @@ The following steps show how to extract the ROI data using the main GUI. If you 
 3. In the *ROImanager* interface, create the ROIs and save the ROI file. For more information, click [here](../../docs/devDocs/roimanager.md).
   >Note: You can also launch the *ROImanager* from the *DataViewer* app (for details, click [here](../../docs/devDocs/dataviewer.md)). In this case, note that you will have to manually save the ROI file to the subject's folder. This is important because the function used to extract the ROI data will look for the ROI file inside the subject's folder only.   
 
-  <p align="center">
-    <img alt="extractDataFromROI_steps2to3" src="../../assets/gif/extractdatafromroi_steps2to3.gif"/><br>
-    <em>Steps 2 and 3.</em>
-  </p><br>
+  <img src="https://s-belanger.github.io/Umit/assets/gif/dataviewer_timeFig_clicking.gif" alt="extractDataFromROI_steps2to3" />
 
 4. Close the *ROImanager* app.
 5. In the *Pipeline control panel* tab, select the recordings to extract the data launch the *Pipeline Builder* interface.
