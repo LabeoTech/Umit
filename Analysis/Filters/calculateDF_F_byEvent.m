@@ -36,15 +36,13 @@ assert(isequal(metaData.dim_names, {'E','Y','X','T'}), errID, errMsg)
 if opts.b_applyDetrend    
     medFr = 7;
     disp('Detrending...');    
-    delta_y = median(outData(:,:,:,end-medFr:end),4, 'omitnan') - median(outData(:,:,:,1:medFr),4,'omitnan');
+    delta_y = mean(outData(:,:,:,end-medFr:end),4, 'omitnan') - mean(outData(:,:,:,1:medFr),4,'omitnan');
     delta_x =(size(outData,4)- medFr);
     M = delta_y./delta_x; clear delta_*    
     trend = bsxfun(@times,M,permute(linspace(-2,size(outData,4)-medFr+4,...
-        size(outData,4)),[4 3 1 2])) + outData(:,:,:,3);
-    outData = bsxfun(@minus,outData,trend);    
-    % Normalize data to get DeltaF/F values
+        size(outData,4)),[4 3 1 2])) + outData(:,:,:,3);       
     disp('Calculating DeltaF/F ...');
-    outData = bsxfun(@rdivide,outData,trend);
+    outData = bsxfun(@rdivide,bsxfun(@minus,outData,trend),trend);
 else
     % Calculate baseline:
     bsln = median(outData(:,:,:,1:round(metaData.preEventTime_sec*metaData.Freq)), ...
