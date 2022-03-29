@@ -110,7 +110,13 @@ targetFr_mask = imgaussfilt(targetFr, .5) - imgaussfilt(targetFr, radius);
 tform_init = imregcorr(targetFr_mask,refFr_mask, 'similarity', 'Window', true);
 Rfixed = imref2d(size(refFr));
 % Check if the first approximation is better than no registration at all:
-counts = histcounts2(refFr_mask(:), targetFr_mask(:),50);
+if any(size(refFr_mask) ~= size(targetFr_mask))
+    tmp = imresize(targetFr_mask, size(refFr_mask));
+    counts = histcounts2(refFr_mask(:), tmp(:),50);
+    clear tmp
+else
+    counts = histcounts2(refFr_mask(:), targetFr_mask(:),50);
+end
 MIbefore = mutual_information(counts);
 tmpFr = imwarp(targetFr_mask, tform_init, 'nearest', 'OutputView', Rfixed);
 counts = histcounts2(refFr_mask(:), tmpFr(:),50);
