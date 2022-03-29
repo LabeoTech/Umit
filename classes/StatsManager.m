@@ -22,6 +22,7 @@ classdef StatsManager < handle
         timestamp_list % List of timestamps associated with each object in list_of_objs.
 %         stats_data     = struct() % Structure containing all data and metadata created.
         stats_data  = {} % cell array containing all data and metaData created.
+        stats_data_headers = {} % cell array containing the headers of the cell array stats_data.
     end
     
     methods
@@ -156,11 +157,8 @@ classdef StatsManager < handle
             %   out(struct): structure containing all data and metadata stored
             %   in obj.stats_data.
             
-            % Get metaData from Matfile:
-            fields = {'groupID', 'SubjectID', 'AcquisitionID', 'ModalityID',...
-                'RecStartDateTime', 'MatFile', 'dataFile','labels','observationID',...
-                'data', 'dataSize','AcquisitionIndx'};
-            out = cell2struct(obj.stats_data, fields,2);
+            % Get metaData from Matfile:           
+            out = cell2struct(obj.stats_data, obj.stats_data_headers,2);
             out(1).metaData = [];
             h = waitbar(0,'Compiling stats data...');
             for i = 1:length(out)
@@ -210,8 +208,10 @@ classdef StatsManager < handle
             % b_isExportable (bool): True, if the data is either 1-D.
                                                
             idx = false(1,size(obj.stats_data,1));
-            for i = 1:length(idx)                
-                idx(i) = sum(obj.stats_data{i,11}{1}~=1) == 1;                
+            for i = 1:length(idx)
+                if prod(obj.stats_data{i,11}{1}) == max(obj.stats_data{i,11}{1})
+                    idx(i) = true;
+                end
             end
             b_isExportable = all(idx);
         end                              
@@ -298,7 +298,9 @@ classdef StatsManager < handle
             % data and metadata provided as inputs to STATSMANAGER class.
             
             disp('Creating Data array. Please wait...')
-            
+            obj.stats_data_headers = {'groupID', 'SubjectID', 'AcquisitionID', 'ModalityID',...
+                'RecStartDateTime', 'MatFile', 'dataFile','labels','observationID',...
+                'data', 'dataSize','AcquisitionIndx'};
             obj.stats_data = cell(numel(obj.list_of_objs),11);
             for i = 1:numel(obj.list_of_objs)                
                 obj.stats_data{i,1} = obj.list_of_groups{i}; % Group ID 

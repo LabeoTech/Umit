@@ -62,7 +62,7 @@ errMsg = 'The length of data is different from the number of observations.';
 assert(isequaln(length(data),length(obsID)), errID, errMsg);
 errID = 'Umitoolbox:save2Mat:IncompatibleSize';
 errMsg = 'The number of dimensions of data is different from the number of dimension names.';
-assert(isequaln(ndims(data{1}),numel(dim_names)), errID, errMsg);
+assert(isequaln(size(data{1}),size(dim_names)), errID, errMsg);
 
 % Further validate dim_names:
 root = getenv('Umitoolbox');

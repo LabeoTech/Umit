@@ -51,6 +51,7 @@ idx_evnt = strcmp('E',data_dim_names(dimVec));
 % Permute data to bring "dimVec" to firsts dimensions:
 orig_sz = size(data);
 data = permute(data,[dimVec, setdiff(1:ndims(data), dimVec)]);
+perm_dim_names = metaData.dim_names([dimVec, setdiff(1:ndims(data), dimVec)]); 
 perm_sz = size(data);
 % Apply aggregate function in each dimension:
 for i = 1:length(dimVec)
@@ -63,7 +64,7 @@ end
 % Find singleton dimensions:
 singDims = ( size(data) == 1 );
 % Permute data back and remove singleton dimensions:
-[~,locB] = ismember(orig_sz, perm_sz);
+[~,locB] = ismember(metaData.dim_names,perm_dim_names);
 outData = squeeze(permute(data, locB));
 % Update dim_names:
 singDims = singDims(locB);
