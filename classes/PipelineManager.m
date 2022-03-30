@@ -618,13 +618,13 @@ classdef PipelineManager < handle
             if task.b_save2File && obj.b_state                
                 % Look for tasks with output data from the current step and
                 % save the data to a .DAT or .MAT file:
-                obj.saveDataToFile(task)
+                obj.saveDataToFile(task,false)
             elseif obj.b_saveDataBeforeFail && ~obj.b_state
                 % Look for tasks from the previous steps given that the
                 % current one failed and save it to a file:
                 indx = find(strcmp(task.name, {obj.pipe.name}));
                 if indx > 1
-                    obj.saveDataToFile(obj.pipe(indx-1));
+                    obj.saveDataToFile(obj.pipe(indx-1),true);
                 end
             end
             
@@ -988,21 +988,27 @@ classdef PipelineManager < handle
             
         end
                
-        function saveDataToFile(obj, step)
+        function saveDataToFile(obj, step, b_failed)
             % This methods looks back in the pipeline from "step" for tasks
             % with "data" or "stats data" as output and saves the current data to a
             % .DAT or .MAT file.
             % Input:
             %    step(struct) : info of the current task in the pipeline.
-            
+            %    b_failed (bool): If TRUE, this function will ignore the
+            %    "b_save2File" from "step" and save the data.
             % Get the pipeline until the task in "step":
             indx = find(strcmp(step.name, {obj.pipe.name}));
             subPipe = obj.pipe(1:indx);
             % Look back in pipeline for steps with "data" or "stats data"
-            % as output and save the current data using the task's info:
+            % as output and save the current data using the task's info:            
             for i = length(subPipe):-1:1
-                task = subPipe(i);
-                                
+                task = subPipe(i);                   
+                % If the pipeline failed, and the datFileName was not set,
+                % use the default file name to save the data:
+                if b_failed & isempty(task.datFileName) & ischar(task.outFileName)
+                    task.datFileName = task.outFileName;
+                end
+                
                 if endsWith(task.datFileName, '.dat')
                     save2Dat(fullfile(obj.tmp_TargetObj.SaveFolder,task.datFileName),...
                         obj.current_data, obj.current_metaData);
