@@ -62,7 +62,13 @@ errMsg = 'The length of data is different from the number of observations.';
 assert(isequaln(length(data),length(obsID)), errID, errMsg);
 errID = 'Umitoolbox:save2Mat:IncompatibleSize';
 errMsg = 'The number of dimensions of data is different from the number of dimension names.';
-assert(isequaln(size(data{1}),size(dim_names)), errID, errMsg);
+% Get the size of the largest dataset from "data":
+max_data_size = cellfun(@(x) size(x), data, 'UniformOutput',false);
+max_data_size = vertcat(max_data_size{:});
+max_data_size = max(max_data_size,[],1);
+% Verify if the number of non-singleton dimensions in data match the
+% number of dimensions names, exept "O":
+assert(isequaln(sum(max_data_size~=1),sum(~strcmp(dim_names, 'O'))), errID, errMsg);
 
 % Further validate dim_names:
 root = getenv('Umitoolbox');
@@ -118,7 +124,8 @@ if ~isempty(objHandle)
     objectInfo = struct();
     while isprop(objHandle, 'MyParent')
         Field = class(objHandle);
-        Props = properties(objHandle);
+        % Remove object's handles from structure:        
+        Props = setdiff(properties(objHandle), {'MyParent', 'Array'});
         for i=1:numel(Props)
             objectInfo.(Field).(Props{i}) = objHandle.(Props{i});
         end

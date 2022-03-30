@@ -109,7 +109,15 @@ for i = 1:length(roi_pixVals)
     roi_pixVals{i} = pixVals;
 end
 disp('Done');
-new_dim_names ={'O', dim_names{3:end}};
+% Create new dimension names:
+if strcmp(opts.SpatialAggFcn, 'none')
+    % This is an special case where the User wants to keep all individual
+    % pixels from the ROI. In this case, the dimension "P" (for pixel) is
+    % created after the "O" (observation).
+    new_dim_names = {'O', 'P', dim_names{3:end}};
+else
+    new_dim_names ={'O', dim_names{3:end}};
+end
 if isa(metaData, 'matlab.io.MatFile')
     metaData.Properties.Writable = true;
 end
