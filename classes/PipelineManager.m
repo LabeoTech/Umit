@@ -8,7 +8,7 @@ classdef PipelineManager < handle
         b_saveDataBeforeFail = false %(bool) If true, the more recent data ("current_data") in the pipeline will be...
         % saved to a file when an error occurs.
     end
-        properties (SetAccess = private)
+    properties (SetAccess = private)
         ClassName char % Name of the class that the pipeline analysis functions will run.
         ClassLevel int16 % Level of the class in protocol's hierarchy (1 = Modality, 2 = Acquisition, 3= Subject);
         % Structure array containing steps of the pipeline.
@@ -1010,7 +1010,7 @@ classdef PipelineManager < handle
                 elseif endsWith(task.datFileName, '.mat')
                     S = obj.current_data;
                     save(fullfile(obj.tmp_TargetObj.SaveFolder,task.datFileName),...
-                        '-struct', 'S');
+                        '-struct', 'S', '-v7.3');
                     return
                 end
             end
