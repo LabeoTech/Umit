@@ -44,7 +44,7 @@ if ~opts.b_IgnoreStim
     % Here the first channel fom "chanList" is chosen to retrieve the
     % "Stim" data:
     chan = matfile(fullfile(SaveFolder, strrep(chanList{1}, '.dat', '.mat'))); 
-    [eventID, state, timestamps] = getEventsFromTTL(chan.Stim, chan.Freq, .5);    
+    [eventID, state, timestamps] = getEventsFromTTL(chan.Stim, chan.Freq, 2.5);    
     eventNameList = {num2str(unique(eventID))};    
     if isempty(eventID)
         warning('Stim signal not found! Skipped Event file creation.')
