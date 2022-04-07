@@ -160,7 +160,7 @@ classdef StatsManager < handle
             % Get metaData from Matfile:           
             out = cell2struct(obj.stats_data, obj.stats_data_headers,2);
             out(1).metaData = [];
-            h = waitbar(0,'Compiling stats data...');
+            h = waitbar(0,'Packaging stats data into structure array...');
             for i = 1:length(out)
                 metaData_fn = properties(out(i).MatFile);
                 metaData_fn = setdiff(metaData_fn, {'Properties','data',...
@@ -312,10 +312,14 @@ classdef StatsManager < handle
                 obj.stats_data{i,6} = obj.MfileArr{i}; % matfile handle
                 obj.stats_data{i,7} = obj.MfileArr{i}.Properties.Source; % data file path
                 obj.stats_data{i,8} = obj.MfileArr{i}.label; % data labels                                
-                obj.stats_data{i,9} = obj.MfileArr{i}.obsID; % observation ID
-                obj.stats_data{i,10}= obj.MfileArr{i}.data; % observation data
+                indx = find(ismember(obj.MfileArr{i}.obsID, obj.obs_list)); % Get observations listed in "obs_list" prop.
+                obsID = obj.MfileArr{i}.obsID;
+                data = obj.MfileArr{i}.data;
+                obj.stats_data{i,9} = obsID(indx,:); % observation ID
+                obj.stats_data{i,10}= data(indx,:); % observation data
+                
                 obj.stats_data{i,11}= cellfun(@(x) size(squeeze(x)), ...
-                    obj.MfileArr{i}.data, 'UniformOutput', false);% size of observation data
+                    obj.stats_data{i,10}, 'UniformOutput', false);% size of observation data
             end
             
             % Create Relative time per subject's acquisitions:
