@@ -51,7 +51,7 @@ outData(idx_nan) = 0;
 % Run Temporal filter function
 disp('Filtering data...')
 outData = NormalisationFiltering(pwd, outData, opts.LowCutOffHz, opts.HighCutOffHz, ...
-    opts.Normalize, metaData.Freq);
+    opts.Normalize,0, metaData.Freq);
 disp('Finished with temporal filter.')
 % Put NaNs back to data:
 outData(idx_nan) = NaN;
