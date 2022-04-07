@@ -20,7 +20,6 @@ classdef StatsManager < handle
     end
     properties (SetAccess = private)
         timestamp_list % List of timestamps associated with each object in list_of_objs.
-%         stats_data     = struct() % Structure containing all data and metadata created.
         stats_data  = {} % cell array containing all data and metaData created.
         stats_data_headers = {} % cell array containing the headers of the cell array stats_data.
     end
@@ -370,7 +369,11 @@ classdef StatsManager < handle
             % Find indexes of the observation inside stats_data:
             indx_obs = zeros(1,size(obj.stats_data,1));
             for i = 1:size(obj.stats_data,1)
-                indx_obs(i) = find(strcmp(obs_ID, obj.stats_data{i,9}));            
+                indx = find(strcmp(obs_ID, obj.stats_data{i,9}));
+                if isempty(indx)
+                    continue
+                end
+                indx_obs(i) = indx;                
             end
             % Get info only from data containing the observation:
             stats_info = obj.stats_data(indx_obs~=0,:);
