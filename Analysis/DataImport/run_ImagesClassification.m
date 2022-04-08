@@ -44,12 +44,29 @@ if ~opts.b_IgnoreStim
     % Here the first channel fom "chanList" is chosen to retrieve the
     % "Stim" data:
     chan = matfile(fullfile(SaveFolder, strrep(chanList{1}, '.dat', '.mat'))); 
-    [eventID, state, timestamps] = getEventsFromTTL(chan.Stim, chan.Freq, 2.5);    
-    eventNameList = {num2str(unique(eventID))};    
-    if isempty(eventID)
+    
+    if ~any(chan.Stim)
         warning('Stim signal not found! Skipped Event file creation.')
-    else 
-        saveEventsFile(SaveFolder, eventID, timestamps, state, eventNameList)   
+    else
+       % Create events.mat from StimParameters.mat file:
+       disp('Creating events file...');
+       % Get experiment info from AcqInfos.mat file:
+       exp_info = load(fullfile(SaveFolder, 'AcqInfos.mat'));
+       stim_info = load(fullfile(SaveFolder, 'StimParameters.mat'));
+       % Get On and off timestamps of stims:
+       on_indx = find(stim_info.Stim(1:end-1)<.5 & stim_info.Stim(2:end)>.5);
+       off_indx = find(stim_info.Stim(1:end-1)>.5 & stim_info.Stim(2:end)<.5);
+       timestamps = (sort([on_indx;off_indx]))./exp_info.AcqInfoStream.FrameRateHz;
+       state = repelem([1;0], numel(on_indx),1);
+       % Look for events:
+       if any(startsWith('event', fieldnames(exp_info.AcqInfoStream)))
+           disp('Digital stimulation data found!')
+           %%%% TO DO %%%%%
+       else
+           eventID = ones(size(state));
+           eventNameList = {'1'};       
+       end        
+       saveEventsFile(SaveFolder, eventID, timestamps, state, eventNameList)   
     end
 end
 outFile = fullfile(SaveFolder, chanList);
