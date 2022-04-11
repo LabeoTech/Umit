@@ -57,11 +57,16 @@ if ~opts.b_IgnoreStim
        on_indx = find(stim_info.Stim(1:end-1)<.5 & stim_info.Stim(2:end)>.5);
        off_indx = find(stim_info.Stim(1:end-1)>.5 & stim_info.Stim(2:end)<.5);
        timestamps = (sort([on_indx;off_indx]))./exp_info.AcqInfoStream.FrameRateHz;
-       state = repelem([1;0], numel(on_indx),1);
+       state = repmat([true;false], numel(on_indx),1);
        % Look for events:
        if any(startsWith('event', fieldnames(exp_info.AcqInfoStream)))
            disp('Digital stimulation data found!')
-           %%%% TO DO %%%%%
+           eventID = repelem(exp_info.AcqInfoStream.Events_Order,1,2);
+           uniqID = unique(eventID);
+           eventNameList = cell(1,numel(uniqID));
+           for i = uniqID
+              eventNameList{i} = exp_info.AcqInfoStream.(['Stim' num2str(i)]).name;
+           end
        else
            eventID = ones(size(state));
            eventNameList = {'1'};       
