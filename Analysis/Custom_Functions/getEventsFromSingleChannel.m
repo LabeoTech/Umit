@@ -23,7 +23,7 @@ addRequired(p, 'object', @(x) isa(x,'Modality'));
 addRequired(p, 'SaveFolder', @isfolder);
 % Optional Parameters:
 % opts structure
-default_opts = struct('channel', -1, 'threshold', 2.5);
+default_opts = struct('channel', -1, 'threshold', 'auto');
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(fieldnames(x)));
 % Parse inputs:
 parse(p,object, SaveFolder, varargin{:});
@@ -68,6 +68,14 @@ else
 end
 signal = downsample(AnalogIN(:,sigChan),100); % I did this to try to eliminate fast artifacts due to the photodiode voltage fluctuations(BrunoO 23/03/2021).
 sr = sr/100;
+% 
+if strcmp(opts.threshold, 'auto')
+    opts.threshold =  min(signal) + ((max(signal) - min(signal))/2);
+  fprintf('Automatic threshold selected!\n\tMin signal: %0.2f\n\tMax signal: %0.2f\n\tThreshold: %0.2f\n',...
+      [min(signal), max(signal), opts.threshold])
+else
+    opts.threshold = str2double(opts.threshold);
+end
 disp('Finding events...')
 % For data created in PsychToolbox:
 if endsWith(object.MetaDataFile, '.mat')
