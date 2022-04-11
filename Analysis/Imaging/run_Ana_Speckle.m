@@ -1,4 +1,4 @@
-function outFile = run_Ana_Speckle(SaveFolder)
+function [outData, metaData]= run_Ana_Speckle(SaveFolder)
 % RUN_ANA_SPECKLE calls the function ANA_SPECKLE from the IOI library (LabeoTech).
 % In brief, this function calculates blood flow (in arbitrary units) from 
 % a Laser Speckle Contrast Imaging data
@@ -16,10 +16,8 @@ addRequired(p, 'SaveFolder', @isfolder);
 parse(p,SaveFolder);
 SaveFolder = p.Results.SaveFolder;
 clear p
-
 % Run Ana_Speckle function from IOI library:
 disp('Calculating  blood flow...')
-Ana_Speckle(SaveFolder);
-outFile = default_Output;
+[outData, metaData] = Ana_Speckle(SaveFolder);
 disp('Finished Speckle Mapping.')
 end
