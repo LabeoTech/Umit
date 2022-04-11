@@ -4,7 +4,7 @@ function [outData, metaData]= run_Ana_Speckle(SaveFolder)
 % a Laser Speckle Contrast Imaging data
 
 % Defaults:
-default_Output = {'Flow.dat'}; % This line is here just for Pipeline management...
+default_Output = 'Flow.dat'; % This line is here just for Pipeline management...
                                % In this case, the string must be inside a cell
                                % in order to PipelineManager to work.
 
