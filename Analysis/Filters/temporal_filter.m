@@ -19,7 +19,7 @@ function outData = temporal_filter(data, metaData, varargin)
 
 % Defaults:
 default_Output = 'BPtemporalFilter.dat';  %#ok. This line is here just for Pipeline management.
-default_opts = struct('LowCutOffHz', .0033, 'HighCutOffHz', 0, 'Normalize', true);
+default_opts = struct('LowCutOffHz', '1/120', 'HighCutOffHz', '0', 'Normalize', true);
 % Some notes on the CutOff values:
 % 1) The HighCutOffHz value of 0 will be translated as the Nyquist of the sample rate
 % 2) For the LowCutOff, values equal or less than zero will give a low-passed signal at "HighCutOff".
@@ -39,7 +39,9 @@ metaData = p.Results.metaData;
 opts = p.Results.opts;
 clear p
 %%%%
-
+% Transform strings in opts to numbers:
+eval(['opts.LowCutOffHz = ' opts.LowCutOffHz, ';'])
+eval(['opts.HighCutOffHz= ' opts.HighCutOffHz, ';'])
 % Validate if "data" is an Image Time Series:
 errID = 'umIToolbox:temporal_filter:InvalidInput';
 errMsg = 'Wrong Input Data type. Data must be an Image time series with dimensions "X", "Y" and "T".';
