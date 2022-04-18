@@ -9,7 +9,6 @@ function outData = GSR(data, metaData)
 
 % Defaults:
 default_Output = 'GSR.dat'; %#ok. This line is here just for Pipeline management.
-
 %%% Arguments parsing and validation %%%
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder

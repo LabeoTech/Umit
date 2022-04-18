@@ -1,6 +1,7 @@
 function getEventsFromSingleChannel(object, SaveFolder, varargin)
 % GET_EVENTSFROMSINGLECHANNEL creates an event .MAT file in SAVEFOLDER
-% from Analog signals recorded from ONE CHANNEL of LabeoTech Imaging systems.
+% from Analog signals recorded from ONE CHANNEL of LabeoTech Imaging
+% systems. This function won't work with more than one channel!
 % Inputs:
 %   RawFolder: directory containing ai_xxxx.bin files.
 %   SaveFolder: directory to save .MAT eventsfile.
@@ -8,7 +9,7 @@ function getEventsFromSingleChannel(object, SaveFolder, varargin)
 %       opts.Channel = Analog channel index with the TTL signal. If not
 %       provided, the function will try to find the one with the largest Standard
 %       Deviation value.
-%       opts.threshold = Threshold  to be used in the signal detection.
+%       opts.threshold = Threshold to be used in the signal detection.
 %       Default = 2.5 (v).
 % Output:
 %   TTL_events.mat file containing channel ID, state and timestamps.

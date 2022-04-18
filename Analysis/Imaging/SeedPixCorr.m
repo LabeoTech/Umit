@@ -58,7 +58,11 @@ outData = corr(B);
 clear B
 % Apply Z Fisher transformation to corr Data:
 if opts.FisherZ_transform
-    outData = atanh(outData);
+%     outData = atanh(outData)./sqrt(std(outData(~isinf(outData)),0,'all','omitnan');
+    % Fisher Transform:    
+    outData = atanh(outData); 
+    % Z-score:
+    outData = outData./std(outData,0,1,'omitnan');
 end
 outData = reshape(outData, [xy_size(1) xy_size(2) xy_size(1)*xy_size(2)]);
 % P = single(reshape(P, [xy_size(1) xy_size(2) xy_size(1)*xy_size(2)]));% Removed P-Value matrix for now...
