@@ -49,18 +49,8 @@ clear data
 % Apply Z Fisher transformation to corr Data:
 if opts.FisherZ_transform
     disp('Applying Fisher''s Z transform...');    
-    % Fisher Transform:
-    outData = atanh(outData);
-    % Calculate the standard deviation of the data using the bottom half of
-    % the correlation matrix;
-    idx = true(size(outData));
-    for i = 1:size(idx,1)
-        idx(1:i,i) = false;        
-    end
-    % Exclude Infs before calculating the STD, otherwise it will return NaNs:
-    idx = idx & ~isinf(outData);
-    % Calculate Z-scored Fisher tranformed data:
-    outData = outData./std(outData(idx),0,'all','omitnan');
+    % Z-Fisher Transform:
+    outData = atanh(outData);   
 end
 outData = reshape(outData, [sz_dat(1) sz_dat(2) sz_dat(1)*sz_dat(2)]);
 
