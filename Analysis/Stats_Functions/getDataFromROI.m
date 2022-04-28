@@ -12,7 +12,7 @@ function outDataStat = getDataFromROI(data, metaData, varargin)
 % Defaults:
 default_Output = 'ROI_data.mat'; %#ok This line is here just for Pipeline management.
 default_opts = struct('ROImasks_filename', 'ROImasks_data.mat', 'SpatialAggFcn', 'mean');
-default_object = ''; %#ok This line is here just for Pipeline management to be able to detect this input.
+default_object = ''; % This line is here just for Pipeline management to be able to detect this input.
 %%% Arguments parsing and validation %%%
 p = inputParser;
 addRequired(p,'data',@(x) isnumeric(x)); % Validate if the input is a 3-D numerical matrix:
@@ -20,7 +20,7 @@ addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % Meta
 % Optional Parameters:
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ...
     ismember(x.SpatialAggFcn, {'none','mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}));
-addOptional(p, 'object', [], @(x) isempty(x) || isa(x,'Acquisition') || isa(x,'Modality'));
+addOptional(p, 'object', default_object, @(x) isempty(x) || isa(x,'Acquisition') || isa(x,'Modality'));
 
 % Parse inputs:
 parse(p,data, metaData, varargin{:});
@@ -32,52 +32,13 @@ object = p.Results.object;
 clear p
 %%%%%%%%%%%%%%%%
 
-% For backward compatibility with previous versions of umIT when .DAT files contained
-% more than one matrix:
-datName = metaData.datName;
-dim_names = metaData.dim_names;
-if iscell(datName)
-    dim_names = dim_names{1};
-end
-%%%%%%%%%%%%%%%
-
 % Parse File path to find subject folder:
-if ~isempty(object)
-    % If a umIT's valid object is provided, it means that the function is being run by
-    % PipelineManager. In this case, find the subject's folder an try to
-    % find the ROI file there:
-    tmp_obj = object;
-    idx = false;
-    while ~idx
-        tmp_obj = tmp_obj.MyParent;
-        idx = isa(tmp_obj, 'Subject');
-    end
-    opts.ROImasks_filename = fullfile(tmp_obj.SaveFolder, opts.ROImasks_filename);
-    % Append extension to filename, if not already provided:
-    if ~endsWith(opts.ROImasks_filename, '.mat')
-        opts.ROImasks_filename = [opts.ROImasks_filename '.mat'];
-    end
-    % Throw error if the file does not exist in Subject's folder:
-    if ~isfile(opts.ROImasks_filename)
-        errID = 'Umitoolbox:getDataFromROI:FileNotFound';
-        subjFolder = strrep(tmp_obj.SaveFolder, '\', '\\');
-        errMsg = ['ROI file not found in ' subjFolder];
-        error(errID, errMsg);
-    end
-else
-    % Append .mat:
-    if ~endsWith(opts.ROImasks_filename, '.mat')
-        opts.ROImasks_filename = [opts.ROImasks_filename '.mat'];
-    end
-    % Prepend current directory path:
-    if isempty(fileparts(opts.ROImasks_filename))
-        opts.ROImasks_filename = fullfile(pwd,opts.ROImasks_filename);
-    end
-end
+opts.ROImasks_filename = findMyROIfile(opts.ROImasks_filename,object);
 
 % Load ROI file:
 roi_data = load(opts.ROImasks_filename);
 % locate "X" and "Y" dimensions in metaData and in ROI info:
+dim_names = metaData.dim_names;
 [~,yxLoc] = ismember({'Y','X'}, dim_names);
 
 % Check if frame size is the same as the one in ROI file:
@@ -86,6 +47,7 @@ errID = 'Umitoolbox:getDataFromROI:IncompatibleSizes';
 errMsg = 'Data file frame size is different from the one in ROI file.';
 assert(isequal(data_sz(yxLoc), size(roi_data.img_info.imageData)), errID, errMsg)
 % permute matrix:
+
 orig_dim = 1:ndims(data);
 new_dim = [yxLoc setdiff(orig_dim, yxLoc)];
 data = permute(data, new_dim);

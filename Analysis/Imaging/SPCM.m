@@ -15,7 +15,7 @@ function [outData, metaData] = SPCM(data, metaData, varargin)
 
 % Defaults:
 default_Output = 'SPCMap.dat'; %#ok. This line is here just for Pipeline management.
-default_opts = struct('FisherZ_transform', false);
+default_opts = struct('b_FisherZ_transform', false);
 
 %%% Arguments parsing and validation %%%
 p = inputParser;

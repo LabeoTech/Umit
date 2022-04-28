@@ -68,7 +68,7 @@ max_data_size = vertcat(max_data_size{:});
 max_data_size = max(max_data_size,[],1);
 % Verify if the number of non-singleton dimensions in data match the
 % number of dimensions names, exept "O":
-assert(isequaln(sum(max_data_size~=1),sum(~strcmp(dim_names, 'O'))), errID, errMsg);
+assert(isequaln(sum(max_data_size~=1),length(dim_names(2:end))), errID, errMsg);
 
 % Further validate dim_names:
 root = getenv('Umitoolbox');
