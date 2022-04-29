@@ -56,7 +56,7 @@ The tree behaviour changes depending on the selected tab. *Dashboard* and *Visua
 Here are the documentation regarding each tab:
 * [Dashboard](/maingui_dashboard.md) (Experiment Management)
 * [Pipeline control panel](/maingui_pipeline.md) (Automatic data processing)
-* [Visualization_LINKNOTFUNCTIONAL](/maingui_visualization.md) (Data visualization)
+* [Visualization](/maingui_viz.md) (Data visualization)
 * [Analysis_LINKNOTFUNCTIONAL](/maingui_analysis.md) (Results visualisation and analysis)
 
 #### Advanced search
