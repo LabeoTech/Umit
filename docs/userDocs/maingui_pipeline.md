@@ -21,7 +21,7 @@ Here, one can create/edit an analysis pipeline and apply it to the selected obje
 ##### 2. Status panel
 This panel shows a summary of the pipeline steps and its parameters as well as the start and end timestamps of pipeline execution.
 <p align="center">
-  <img alt="PipelineCtlStatusPanelExample" src="../../assets/img/mainGUI_pipeline_statuspanel.png"/> <br>
+  <img alt="PipelineCtlStatusPanelExample" src="../../assets/img/mainGUI_pipeline_status.png"/> <br>
   <em>Example of information displayed in the <strong>Status panel</strong> tab.</em>
 </p><br>
 
@@ -29,7 +29,7 @@ This panel shows a summary of the pipeline steps and its parameters as well as t
 Once the pipeline execution is completed, a table is displayed with a summary of the steps performed in each object. Here, eventual errors are flagged and error messages are displayed.
 
 <p align="center">
-  <img alt="PipelineCtlSummaryTabExample" src="../../assets/img/mainGUI_pipeline_summary.png"/> <br>
+  <img alt="PipelineCtlSummaryTabExample" src="../../assets/img/mainGUI_pipeline_summarytab.png"/> <br>
   <em>Example of <strong>summary table</strong> after a pipeline execution.</em>
 </p><br>
 
