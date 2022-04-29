@@ -8,7 +8,7 @@ ___
 
 The following steps show how to extract the ROI data using the main GUI. If you already created the  ROI file (```ROImasks_xxxx.mat```), skip steps 2 to 4.
 
-1- Open the main GUI (```umIToolbox```) and load the the project file.   
+1- Open the main GUI (```umIToolbox```) and load the project file.   
 
 2- In the *Visualization* tab, choose the file to be used to create the ROIs and click on *ROImanager* button.   
 

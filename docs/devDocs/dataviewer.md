@@ -2,7 +2,7 @@
 Visualization of imaging data
 ##### Description
 ___
-```DataViewer``` is a graphical interface to visualize functional imaging recordings. The app provides basic tools to explore distinct types of recordings such as image time series, event-triggered time series and correlation maps. ```DataViewer``` can be called from the [Visualization](/visualization_tab.md) tab or as **standalone**.
+`DataViewer` is a graphical interface to visualize functional imaging recordings. The app provides basic tools to explore distinct types of recordings such as image time series, event-triggered time series and correlation maps. ```DataViewer``` can be called from the [Visualization](/visualization_tab.md) tab or as **standalone**.
 The app opens the following data (dimension names):
 * Image time series (Y,X,T)
 * Event-triggered image time series (E,Y,X,T)
@@ -12,9 +12,9 @@ The app opens the following data (dimension names):
 ##### Syntax
 ___
 
-```DataViewer()```: Opens the main GUI.   
+`DataViewer()`: Opens the main GUI.   
 
-```DataViewer(datFile)```: Opens the app with the imaging data from ```datFile```. The input ```datFile``` is a string with the name of a .DAT file located in the current directory or the full path of a .DAT file created by one of the [analysis functions](/index.md/#analysisfunctions) of ***umIT***.
+`DataViewer(datFile)`: Opens the app with the imaging data from ```datFile```. The input ```datFile``` is a string with the name of a .DAT file located in the current directory or the full path of a .DAT file created by one of the [analysis functions](/index.md/#analysisfunctions) of ***umIT***.
 
 ##### The interface
 ___   

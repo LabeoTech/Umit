@@ -1,7 +1,7 @@
 ### How to build an analysis pipeline
 
 One can build an analysis pipeline through the main GUI [Pipeline control panel](/pipeline_tab.md) tab or using the standalone version of the [DataViewer](/dataviewer.md) app.
-##### The Pipeline Bulder interface
+##### The Pipeline Builder interface
 ___   
 
 ![pipelineBuilderGUI](/assets/img/pipelinebuilder_mainFig.png)
@@ -30,9 +30,9 @@ To execute an analysis pipeline in the standalone version of the ```DataViewer``
 1. Open the imaging file to be processed.
 2. Click on *Utilities >> Data Processing* to open the pipeline builder interface.
 3. In the pipeline builder interface, select the analysis functions to run on the file.
-4. Click on *Create Pipeline*. 
+4. Click on *Create Pipeline*.
 5. A window will appear containing a summary of the pipeline steps. Click on *Run* to run the pipeline.
-6. Once finished, the final processed file will be displayed. If the last step of the pipeline was not saved during the pipeline creation in the Pipeline Builder interface, the file will be saved with a temporary file name with prefix ```tmpFile_```. You can save the processed imaging by clicking on *File >> Save as...*. 
+6. Once finished, the final processed file will be displayed. If the last step of the pipeline was not saved during the pipeline creation in the Pipeline Builder interface, the file will be saved with a temporary file name with prefix ```tmpFile_```. You can save the processed imaging by clicking on *File >> Save as...*.
 
 
 > Note: All temporary files (```tmpFile_xxxx.dat```) contained in the save directory will be deleted by closing the app. Be sure to save the displayed imaging data before closing.
@@ -47,7 +47,7 @@ To execute an analysis pipeline from the main GUI of **umIT**:
 2. Save selection by clicking on *Select* button.
 3. Click on *Configure New Pipeline* to open the pipeline builder interface.
 2. In the pipeline builder interface, select the analysis functions to run on the file.
-3. Click on *Create Pipeline*. 
+3. Click on *Create Pipeline*.
 4. In the *pipeline control panel* tab, a summary of the pipeline will be displayed on the *Pipeline status* panel.
 5. Click on *Run Pipeline* to execute the pipeline over the selected objects.
 6. Once finished, a table containing a summary of the pipeline will be displayed in the *Pipeline Summary* panel.
