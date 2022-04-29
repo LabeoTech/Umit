@@ -67,5 +67,4 @@ To execute an analysis pipeline from the main GUI of **umIT**:
 5. Click on *Run Pipeline* to execute the pipeline over the selected objects.
 6. Once finished, a table containing a summary of the pipeline will be displayed in the *Pipeline Summary* panel.
 
-
 [**<< Home**](/../../index.md)
