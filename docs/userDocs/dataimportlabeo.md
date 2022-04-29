@@ -35,7 +35,7 @@ Regarding the analog input files (`ai_xxxx.bin`), the organization of the data i
 ___
 
 The function used to import LabeoTech's raw data is called `run_ImagesClassification`.\
-In brief, *run_ImagesClassification* will read the `img_xxxx.bin` files and save the images from each channel in a separate file with extension `.dat` (see [ this section](#about-the-imported-files) for details on how the imported files are structured).
+In brief, *run_ImagesClassification* will read the `img_xxxx.bin` files and save the images from each channel in a separate file with extension `.dat` (see [this section](#about-the-imported-files) for details on how the imported files are structured).
 
 <p align="center">
   <img alt="importFiles" src="../../assets/img/dataImportLabeo_fig4.png"><br>
@@ -46,7 +46,7 @@ This function has optional parameters that allows one to apply spatial and tempo
 
 There are 2 ways of importing the raw data:
 
-- Using the standalone version of [DataViewer](../../dataviewer.md):
+- Using the standalone version of [DataViewer](/../../docs/devDocs/dataviewer.md):
 
   1. In the main figure, click on *File* and *Import Raw data*.
   2. Select one (it doesn't matter which one) of the `img_xxxx.bin` files from the recording that you want to import.
@@ -55,15 +55,15 @@ There are 2 ways of importing the raw data:
   5. Another window will appear with the summary of the operation. Click on *Run!* to execute the function.
   6. At the end of the processing, a window will show the imported data in the save folder. Click on one of them to visualize.
 
-- Using the [main interface](../../maingui.md) of *umIT*:
+- Using the [main interface](/maingui.md) of *umIT*:
 
-  Here, we assume that a ***project file*** was created. For more info on how to create a project file, click [here_LinkNotFunctionalYet](/how_to_create_project.md). Also, check the documentation on the [*umIToolbox app*](../../maingui.md) to familiarize with the interface functionalities.
+  Here, we assume that a ***project file*** was created. For more info on how to create a project file, click [here_LinkNotFunctionalYet](/how_to_create_project.md). Also, check the documentation on the [*umIToolbox app*](/maingui.md) to familiarize with the interface functionalities.
 
   1. Open the project file in the main GUI `umIToolbox`.
   2. Navigate to the *Pipeline Control Panel* tab.
   3. Highlight the recordings to be analysed.
   4. Click on the green *Select* button.
-  5. Click on *Launch Pipeline Config.* to open the *Pipeline Builder App*. For details on how to use the app, click [here_LinkNotFunctionalYet](/LINK.md).
+  5. Click on *Launch Pipeline Config.* to open the *Pipeline Builder App*. For details on how to use the app, click [here](/../../docs/devDocs/pipelinegui.md).
   6. Select the object to run the analysis. For example, *FluorescenceImaging* for calcium imaging datasets.
   7. In the *Pipeline Builder App*, select the function *run_ImagesClassification* from the list of available functions and add it to the *Selected functions* column.
   8. To change the default parameters of *run_ImagesClassification*, click on the function in the *Selected functions* column and click on *Set Options* button.
