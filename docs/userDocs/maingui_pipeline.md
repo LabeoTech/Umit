@@ -2,7 +2,7 @@
 ___
 
 Here, one can select objects to automatically run analysis pipelines.
-Check the [user guide](../../docs/userDocs/ht_buildpipeline.md) for details on how to run pipelines!
+Check the [user guide](../../docs/userDocs/ht_runpipelines.md) for details on how to run pipelines!
 
 #### Tab's components
 ___
@@ -13,7 +13,7 @@ ___
 
 ##### 1. Control panel
 Here, one can create/edit an analysis pipeline and apply it to the selected objects.
-* ***Launch Pipeline Config:*** opens the [pipeline configuration interface](/pipeline_config_gui.md).
+* ***Launch Pipeline Config:*** opens the [pipeline configuration interface](/../../docs/devDocs/pipelinegui.md).
 * ***Run Pipeline:*** Applies the analysis pipeline on the selected objects.
 * ***Ignore Logged Tasks:*** Check this box to rerun a pipeline over the selected objects. By default, this option is disabled. Thus, analysis functions that were already applied to a file will be skipped.
 * ***Save Data before error:*** This option automatically saves the last data created when an error occurs during the pipeline execution. This option is enabled by default.
