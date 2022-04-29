@@ -19,7 +19,7 @@ Here, you will find the minimal information to get started with the toolbox.
 ___
 
 ### User Guides
-* [Build a data processing pipeline](/docs/devDocs/ht_buildpipeline.md)
+* [Build a data processing pipeline_LINK_NOT_FUNCTIONAL](/docs/devDocs/ht_buildpipeline.md)
 * [Extract data from ROIs](/docs/userDocs/extractdatafromroi.md)
 * [Import Data from LabeoTech Systems](/docs/userDocs/dataimportlabeo.md)
 
