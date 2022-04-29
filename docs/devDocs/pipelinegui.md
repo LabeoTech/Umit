@@ -1,7 +1,7 @@
 ### Pipeline Configuration Interface
 
 The pipeline configuration interface allows one to create, edit, save and load analysis pipelines.
-This interface can be accessed both through the main GUI [Pipeline control panel](/../..docs/userDocs/maingui_pipeline.md) tab or using the standalone version of the [DataViewer](/dataviewer.md) app.
+This interface can be accessed both through the main GUI [Pipeline control panel](/../../docs/userDocs/maingui_pipeline.md) tab or using the standalone version of the [DataViewer](/dataviewer.md) app.
 ##### Interface components
 ___
 <p align="center">
@@ -22,14 +22,17 @@ List of functions (steps) from the pipeline. The pipeline will run as the order 
 * ***Set Options:*** Opens a dialog box containing extra parameters for the selected function. Check the documentation of each function in the [analysis functions](/../../index.md/#analysisfunctions) section for details on optional parameters.
 * ***Remove item:*** Removes the selected function from the pipeline.
 * ***Save step:*** Saves the selected step to a  `.dat` file. Opens a dialog box to type the name of the .DAT file. Some functions do not provide imaging data as outputs and will not allow saving the step. Please, refer to the [analysis functions](/../../index.md/#analysisfunctions) section for details.
-___
+
 ##### Saving/loading pipelines to/from a file
+___
+
 ###### Saving a pipeline
 One can *save* a pipeline by clicking on the **Save to file...** button. This will generate a **.JSON** file containing the list of functions and their respective custom parameters. If the configuration interface is called from main GUI (`umiToolbox`), the pipeline configuration files will be saved in the folder `PipeLineConfigFiles` inside the *save directory* of the project.
 ###### Loading a pipeline
 To load a previously saved pipeline, simply click on **Load from file...** button and the pipeline will be loaded to the *Pipeline* list.
-___
+
 ##### Executing the Pipeline
+___
 
 Once the pipeline list is completed, click on the green button **Save Config.** to send the pipeline for execution.
 
