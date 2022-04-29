@@ -68,4 +68,4 @@ To execute an analysis pipeline from the main GUI of **umIT**:
 6. Once finished, a table containing a summary of the pipeline will be displayed in the *Pipeline Summary* panel.
 
 
-[**<< Home**](/index.md)
+[**<< Home**](/../../index.md)
