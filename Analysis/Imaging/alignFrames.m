@@ -217,7 +217,6 @@ metaData = genMetaData(outData, extraParams.dim_names, extraParams);
 fig.Visible = 'on';
 end
 
-
 % Figure callbacks:
 
 function moveDot(src,~)

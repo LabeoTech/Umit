@@ -69,15 +69,19 @@ targetFr = mData.Data.data(:,:,1);
 
 % Preprocessing:
 % Create unsharp mask for each image:
-refFr = imgaussfilt(refFr, .5) - imgaussfilt(refFr, 8);
-targetFr = imgaussfilt(targetFr, .5) - imgaussfilt(targetFr, 8);
+radius = 0.05*max(size(refFr));
+refFr = imgaussfilt(refFr, .5) - imgaussfilt(refFr, radius);
+targetFr = imgaussfilt(targetFr, .5) - imgaussfilt(targetFr, radius);
 % Normalize:
 refFr = (refFr - min(refFr(:))) ./ (max(refFr(:)) - min(refFr(:)));
 targetFr = (targetFr - min(targetFr(:))) ./ (max(targetFr(:)) - min(targetFr(:)));
-% Lauch control points selector
+% Launch control points selector
 [movPts, fxPts] = cpselect(targetFr, refFr,'Wait', true);
 if isempty(movPts)
     disp('Operation cancelled by User')
+    return
+elseif numel(movPts) == 2
+    warndlg('Select at least 2 points for Image registration!');
     return
 end
 % Adjust moving points:
@@ -89,9 +93,22 @@ targetFr = imwarp(targetFr, tform,'nearest', 'OutputView', Rfixed);
 % Show results:
 str = split(object.SaveFolder, filesep);
 str = str(2:end); % Remove root folder.
-fig = figure('Name', strjoin(str, '-'), 'WindowState', 'maximized');
-subplot(211);imshowpair(refFr, targetFr);
-subplot(212);imshowpair(refFr, targetFr, 'montage');
+fig = figure('Name', strjoin(str, '-'), 'WindowState', 'maximized', ...
+    'WindowButtonMotionFcn', @moveDot);
+s1=subplot(2,2,(1:2));imshowpair(refFr, targetFr);
+s2=subplot(223); imagesc(s2,refFr); colormap(s2,'gray');axis(s2,'off')
+s3=subplot(224); imagesc(s3,targetFr); colormap(s3,'gray');axis(s3,'off')
+set(s2, 'DataAspectRatio', [1 1 1], 'DataAspectRatioMode', 'manual');
+set(s3, 'DataAspectRatio', [1 1 1], 'DataAspectRatioMode', 'manual');
+title(s1,'Merge - (Close figure to continue...)');
+title(s2, 'Reference');
+title(s3, 'Registered');
+% draw dots
+hold(s2,'on');
+plot(s2,1,1,'g+', 'Tag', 'gDot'); hold(s2,'off');
+hold(s3,'on');
+plot(s3,1,1,'rx', 'Tag', 'rDot'); hold(s3,'off');
+
 waitfor(fig)
 %%%%%%
 answer = questdlg('Are you satisfied with the registration?',...
@@ -118,7 +135,7 @@ end
 disp('Done!');
 close all;
 end
-
+% Local functions:
 function warpData(tform,refFr,ref_frame_info, Rfixed,SaveFolder, applyToFile, SaveFileName)
 try
     [mData, metaData_source] = mapDatFile(fullfile(SaveFolder, applyToFile));
@@ -160,4 +177,43 @@ disp('Saving aligned data to file...')
 datFile = fullfile(SaveFolder, SaveFileName);
 save2Dat(datFile, warp_data, metaData);
 uiwait(msgbox(['Data saved in: ' datFile],'Data Saved', 'help'));
+end
+% Figure callbacks:
+function moveDot(src,~)
+%
+% disp('moving...')
+for i = 1:length(src.Children)
+    coords = get(src.Children(i), 'CurrentPoint');
+    coords = round(coords(1,1:2));
+    b_in = getBounds(coords, src.Children(i));
+    if b_in
+        break
+    end
+end
+if ~b_in
+    return
+end
+% Update dot positions:
+dot1 = findall(src, 'Tag', 'gDot');
+dot2 = findall(src, 'Tag', 'rDot');
+
+dot1.XData = coords(1);
+dot2.XData = coords(1);
+
+dot1.YData = coords(2);
+dot2.YData = coords(2);
+end
+
+function [b_in_bounds,ax] = getBounds(pt,ax)
+% GETBOUNDS verifies if the current position of the mouse
+% Output:
+% get axis limits:
+x_lims = get(ax, 'XLim');
+y_lims = get(ax, 'YLim');
+
+% Check if cursor is inside the axis limits:
+b_in_bounds = (pt(1) >= x_lims(1)) && ...
+    (pt(1) <= x_lims(2)) && ...
+    (pt(2) >= y_lims(1)) && ...
+    (pt(2) <= y_lims(2));
 end
