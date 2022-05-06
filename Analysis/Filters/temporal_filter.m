@@ -7,15 +7,21 @@ function outData = temporal_filter(data, metaData, varargin)
 % In this case, the signal(R) is expressed as DeltaR.
 % Optionally, the subtracted signals can be normalized to the low cut-off signal
 % to express the signal as DeltaR/R.
-
+% This function is a wrapper of the IOI library function "NormalisationFiltering.m".
+% For more information on the algorithm, refer to the function's documentation.
+% 
 % Limitations:
 % The data must be an Image time series with dimensions
 % {Y,X,T}.
-% This function is a wrapper of the IOI library function "NormalisationFiltering.m".
-% For more information on the algorithm, refer to the function's documentation.
-
-% Output:
-% outData (3D numerical array) : filtered data from "File".
+%
+% Inputs:
+%   data: numerical matrix containing image time series (with dimensions "Y", "X", "T").
+%   metaData: .mat file with meta data associated with "data".
+%   opts (optional): structure containing extra parameters. See "default_opts" variable below for details!
+%
+% Outputs: 
+%   outData: numerical matrix with dimensions {Y,X,T}.   
+%   metaData: .mat file with meta data associated with "outData".
 
 % Defaults:
 default_Output = 'BPtemporalFilter.dat';  %#ok. This line is here just for Pipeline management.
