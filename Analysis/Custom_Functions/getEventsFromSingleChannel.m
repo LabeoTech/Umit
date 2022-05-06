@@ -1,7 +1,11 @@
 function getEventsFromSingleChannel(object, SaveFolder, varargin)
 % GET_EVENTSFROMSINGLECHANNEL creates an event .MAT file in SAVEFOLDER
 % from Analog signals recorded from ONE CHANNEL of LabeoTech Imaging
-% systems. This function won't work with more than one channel!
+% systems. 
+% 
+% Important!
+% This function won't work when event signals exist in more than one channel!
+%
 % Inputs:
 %   RawFolder: directory containing ai_xxxx.bin files.
 %   SaveFolder: directory to save .MAT eventsfile.
@@ -24,7 +28,13 @@ addRequired(p, 'object', @(x) isa(x,'Modality'));
 addRequired(p, 'SaveFolder', @isfolder);
 % Optional Parameters:
 % opts structure
-default_opts = struct('channel', -1, 'threshold', 'auto');
+default_opts = struct('channel', -1, 'threshold', 'auto', 'TriggerType','EdgeSet');
+% Notes on TriggerType:
+% Two possible modes:
+% 1 - "EdgeSet": The signal stays on for the duration of the trial.
+% 2 - "EdgeToggle": The signal turns on and off at the beginning and at the
+% end of the trial.
+% h = 
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(fieldnames(x)));
 % Parse inputs:
 parse(p,object, SaveFolder, varargin{:});
@@ -41,9 +51,9 @@ if ~isfile(object.MetaDataFile)
     error(errID, errMsg);
 end
 disp('Reading Analog inputs...')
-txt = fileread(fullfile(object.RawFolder, 'info.txt'));
-sr = regexp(txt, '(?<=AISampleRate:\s*)\d+', 'match', 'once'); sr = str2double(sr);
-tAIChan = regexp(txt, '(?<=AINChannels:\s*)\d+', 'match', 'once'); tAIChan = str2double(tAIChan);
+a = fileread(fullfile(object.RawFolder, 'info.txt'));
+sr = regexp(a, '(?<=AISampleRate:\s*)\d+', 'match', 'once'); sr = str2double(sr);
+tAIChan = regexp(a, '(?<=AINChannels:\s*)\d+', 'match', 'once'); tAIChan = str2double(tAIChan);
 aiFilesList = dir(fullfile(object.RawFolder,'ai_*.bin'));
 AnalogIN = [];
 for ind = 1:size(aiFilesList,1)
@@ -78,8 +88,9 @@ else
     opts.threshold = str2double(opts.threshold);
 end
 disp('Finding events...')
-% For data created in PsychToolbox:
+% Loading meta data file:
 if endsWith(object.MetaDataFile, '.mat')
+    % For data created in PsychToolbox:
     a = load(object.MetaDataFile);
 elseif endsWith(object.MetaDataFile, '.csv')
     % For data created in PsychoPy:
@@ -96,8 +107,28 @@ elseif endsWith(object.MetaDataFile, '.csv')
         end
         condList{i} = strjoin(str,'-');
     end
+elseif endsWith(object.MetaDataFile, '.txt')
+    % For data created in DMD system
+    disp('CREATING SECTION ...');
+    a = fileread(object.MetaDataFile);
+    % Get Events Description table:
+    idx_start = regexpi(a, 'ID\t\LP\t\Duration\tImage');
+    a(idx_start:end);
+    % Create event Name list:
+    out = textscan(a(idx_start:end), '%s %s %s %s', 'Delimiter', '\t', ...
+        'HeaderLines', 1); 
+    out = horzcat(out{:});
+    evntNameList = cell(size(out,1),1);    
+    for i = 1:size(out,1)
+        evntNameList{i} = ['LP_', out{i,2}, '-Dur_' out{i,3}, '-Img_' out{i,4}];
+    end
+    % Get list of event order:
+    evntOrd = regexpi(a, '(?<=Events Order:).*', 'match','once','dotexceptnewline');
+    evntOrd = strip(evntOrd);
+    evntOrd = str2num(evntOrd);    
 end
-%
+% Here, we identify the type of recording based on the variables in the
+% meta data file (from PsychToolbox scripts!)
 if isfield(a, 'BarSize')
     Direction = a.DriftDirection;
     nSweeps = a.nTrials;
@@ -108,20 +139,25 @@ if isfield(a, 'BarSize')
         eventID = repmat(Direction, nSweeps*2,1);
     end
     condList = num2cell(unique(eventID),2);
-    [~, state, timestamps] = getEventsFromTTL(signal, sr, opts.threshold);
+    [~, state, timestamps] = getEventsFromTTL(signal, sr, opts.threshold, opts.TriggerType);
 elseif isfield(a,'TrialList')
     [condList, ~, eventID] = unique(a.TrialList, 'rows');
     condList = num2cell(condList,2);
     % duplicate event ID to account for ON/OFF states:
     eventID = repelem(eventID,2);
-    [~, state, timestamps] = getEventsFromTTL(signal, sr, opts.threshold);
+    [~, state, timestamps] = getEventsFromTTL(signal, sr, opts.threshold, opts.TriggerType);
 elseif exist('condList', 'var')
     [condList, ~, eventID] = unique(condList, 'rows');    
     % duplicate event ID to account for ON/OFF states:
     eventID = repelem(eventID,2);
-    [~, state, timestamps] = getEventsFromTTL(signal, sr, opts.threshold);
+    [~, state, timestamps] = getEventsFromTTL(signal, sr, opts.threshold, opts.TriggerType);
+elseif exist('evntOrd', 'var')
+    % For DMD system data
+    [~, state, timestamps] = getEventsFromTTL(signal, sr, opts.threshold, opts.TriggerType);
+    eventID = evntOrd;
+    condList = evntNameList;
 else
-    [eventID, state, timestamps] = getEventsFromTTL(signal, sr, opts.threshold);
+    [eventID, state, timestamps] = getEventsFromTTL(signal, sr, opts.threshold, opts.TriggerType);
     condList = unique(eventID);
     condList = num2cell(condList,2);
 end

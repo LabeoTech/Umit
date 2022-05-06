@@ -1,5 +1,5 @@
 function [eventID, state, timestamps] = getEventsFromTTL(TTLsignal, sample_rate, varargin)
-% GETEVENTSFROMTTL gets the channel, state and time stamps of a 
+% GETEVENTSFROMTTL gets the channel, state and time stamps of a
 % TTL signal(TTLSIGNAL) passing a given threshold(THRESHOLD).
 % Inputs:
 % TTLsignal: a nChannel x Signal matrix containing the analog TTL signal.
@@ -19,12 +19,14 @@ validNumScal = @(x) isnumeric(x) && isscalar(x);
 addRequired(p, 'TTLsignal', validAnalogData);
 addRequired(p, 'sample_rate', validNumScal);
 addOptional(p,'threshold', default_threshold, validNumScal);
+addOptional(p, 'trigType', 'EdgeSet', @(x) ismember(x, {'EdgeSet','EdgeToggle'}));
 parse(p,TTLsignal, sample_rate, varargin{:});
-
+% Initialize variables:
 data = p.Results.TTLsignal;
 sr = p.Results.sample_rate;
 thr = p.Results.threshold;
-
+trigType = p.Results.trigType;
+clear p
 % Flips the matrix to have nChannels x nSamples: assuming that
 % there are more samples than channels.
 if size(data,1) > size(data,2)
@@ -47,4 +49,14 @@ state = [ones(1,numel(tmRise), 'uint8') zeros(1,numel(tmFall), 'uint8')];
 timestamps = timestamps';
 eventID = eventID(idx)';
 state = state(idx)';
+% For Toggle type triggers:
+if strcmpi(trigType, 'edgetoggle')
+    disp('Setting toggle...');
+    % Use 2nd signal onset as the trial "OFF" state:
+    eventID = eventID(state==1);
+    timestamps = timestamps(state==1);
+    % Overwite state:
+    state = ones(sum(state),1,'uint8');
+    state(2:2:end) = 0;
+end
 end
