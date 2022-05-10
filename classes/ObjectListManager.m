@@ -79,7 +79,7 @@ classdef ObjectListManager < handle
         function iElem = findElement(obj, PropName, str, varargin)
             % This function looks for an specific object inside
             % ObjList.
-            %   INDELEM = findElement(PROPERTY_NAME, STRING, QUERYMETHOD)
+            %   IELEM = findElement(PROPERTY_NAME, STRING, QUERYMETHOD)
             %   returns the index(es) of the ObjectList with 'PROPERTY_NAME'
             %   equals to the STRING. Output is the index of the element in OBJ.OBJLIST
             %   Three query methods are accepted: 'strcmp', 'contains' and
@@ -93,16 +93,25 @@ classdef ObjectListManager < handle
             if isempty(PropName)
                 iElem = 1:length(obj.ObjList);
             else
-                
+                source = {obj.ObjList.(PropName)};
+                % If the property is a number, change it to a string:
+                if any(cellfun(@isnumeric, source))
+                    source = cellfun(@num2str, source, 'UniformOutput', false);
+                    str = num2str(str);
+                end
+                    
+                    
                 switch queryMethod
                     case 'strcmp'
-                        eval(['iElem = find(strcmp(''' str ''', {obj.ObjList.' PropName '}));'])
+%                         eval(['iElem = find(strcmp(''' str ''', {obj.ObjList.' PropName '}));'])
+                        iElem = find(strcmp(str, source));                        
                     case 'contains'
-                        eval(['iElem = find(contains({obj.ObjList.' PropName '}, ''' str '''));'])
+%                         eval(['iElem = find(contains({obj.ObjList.' PropName '}, ''' str '''));'])
+                        iElem = find(contains(source, str));                        
                     case 'regexp'
-                        eval(['iElem = regexp({obj.ObjList.' PropName '}, ''' str ''');'])
-                        iElem = cellfun(@(x) ~isempty(x), iElem); %#ok
-                        iElem = find(iElem);
+%                         eval(['iElem = regexp({obj.ObjList.' PropName '}, ''' str ''');'])
+                        iElem = regexp(source, str);                        
+                        iElem = find(cellfun(@(x) ~isempty(x), iElem));                        
                 end
             end
         end
