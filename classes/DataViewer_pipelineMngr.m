@@ -150,7 +150,7 @@ classdef DataViewer_pipelineMngr < handle
                 {'obj.metaData', 'obj.data', 'obj.outFile'});
             % Build function string:
             funcInfo.funcStr = ['[' strjoin(argsOut, ',') ']=' funcInfo.name '('...
-                strjoin(argsIn, ',') ');'];
+                strjoin(argsIn, ',') ');']; funcInfo.funcStr = erase(funcInfo.funcStr, '[]=');
             % Add optional fields to funcInfo structure:
             funcInfo.b_save2File = p.Results.b_save2File; funcInfo.datFileName = p.Results.datFileName;
             % Add step to pipeline:

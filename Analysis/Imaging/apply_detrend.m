@@ -8,6 +8,9 @@ function outData = apply_detrend(data, metaData)
 %   "data".
 % Output:
 %   outData: Detrended "data".
+
+% Defaults:
+default_Output = 'data_detrended.dat'; %#ok This line is here just for Pipeline management.
 %%% Arguments parsing and validation %%%
 p = inputParser;
 addRequired(p,'data',@(x) isnumeric(x)); % Validate if the input is a numerical matrix:
