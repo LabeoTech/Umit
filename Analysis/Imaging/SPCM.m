@@ -47,7 +47,7 @@ disp('Calculating Pearson''s correlation...');
 outData = corr(data);
 clear data
 % Apply Z Fisher transformation to corr Data:
-if opts.FisherZ_transform
+if opts.b_FisherZ_transform
     disp('Applying Fisher''s Z transform...');    
     % Z-Fisher Transform:
     outData = atanh(outData);   
