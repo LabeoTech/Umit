@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <title>umit_main_index</title>
+  </head>
+
+  <body>
+    <h1>Welcome to the umIToolbox (<i><b>U</b></i>niversal <i><b>M</b></i>esoscale <i><b>I</b></i>maging <i><b>T</b></i>oolbox)</h1>
+    <hr>
+    <h2>A brief introduction</h2>
+    <p>Recent advances in genetic tools, such as fast-responding calcium indicators (e.g., GCaMP6f) as well as the increasingly accessible high-speed, high-resolution and high throughput longitudinal recording systems allowed the acquisition of faster and more detailed images at mesoscale level for months on large cohorts of animals. This generates large amounts of data that need to be stored, pre-processed and analyzed in a timely manner which can become a limiting factor as experiments become larger and more complex.</p>
+    <p>The <b><i>umIToolbox</i></b>, or <b><i>umIT</i></b> for short is a toolbox written in <b>MATLAB</b> created to help researchers manage and automate critical steps of processing large-scale imaging datasets. The toolbox is currently in active development and new features are added periodically. The toolbox can be found in our <a href="https://github.com/S-Belanger/Umit">GitHub repository</a>. If you encounter any bugs or have suggestions on how to improve the toolbox, let us know by opening an issue in the <a href="https://github.com/S-Belanger/Umit/issues">GitHub Issue Tracker</a>. You can also use the project's <a href="https://github.com/S-Belanger/Umit/discussions">discussion forum</a> to share ideas and questions with the developers and other users of the toolbox.</p>
+    <hr>
+    <h2>An overview</h2>
+    <p>A typical imaging <b>project</b> consists of one or more cohorts of <b>subject</b>s (e.g. mice) that undergo one or more <b>acquisition</b> (i.e. recording) sessions. Frequently, other recording <b>modalities</b> are associated with the imaging data such as behavioral responses, eye/body tracking, etc. The toolbox follows the same organization principle where one can manage subjects, acquisitions and recording modalities for a given project.</p>
+
+    <p align="center">
+      <img alt="fig1" src="./assets/img/umIT_concept_org_img_exp.png"/> <br>
+      <em>Conceptual organization of a typical imaging project.</em>
+    </p><br>
+
+    <p>The management of the project datasets is done by creating a database and saving it to a <b><i>project</i></b> <samp>.mat</samp> file. Once the project file is created, the toolbox can automatically detect new subjects or acquisitions and update the file.</p>
+
+    <p>In addition to the experiment management tool, the toolbox provides a series of <b>analysis functions</b> and a <b>pipeline</b> engine that allows the automation of several steps of the data processing. These two modules (experiment management and data analysis) were created to be adaptable and easily extensible in order to fulfill the needs of different neuroimaging experiment designs. Finally, <b><i>umIT</i></b> provides tools to visualize imaging data and to perform statistical comparisons between groups.</p>
+        <p align="center">
+      <img alt="fig2" src="./assets/img/umIT_4axis.png"/> <br>
+      <em>The 4 main roles of <strong>umIT</strong>.</em>
+    </p><br></p>
+  </body>
+</html>
