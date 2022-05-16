@@ -77,8 +77,9 @@ if opts.channel == -1
 else
     sigChan = opts.channel;
 end
-signal = downsample(AnalogIN(:,sigChan),100); % I did this to try to eliminate fast artifacts due to the photodiode voltage fluctuations(BrunoO 23/03/2021).
-sr = sr/100;
+f = fdesign.lowpass('N,F3dB', 4, 30, sr); % Apply low-pass filter @30Hz to remove high-frequency noise.
+lpass = design(f,'butter');
+signal = filtfilt(lpass.sosMatrix, lpass.ScaleValues, AnalogIN(:,sigChan)')';
 % 
 if strcmp(opts.threshold, 'auto')
     opts.threshold =  min(signal) + ((max(signal) - min(signal))/2);
