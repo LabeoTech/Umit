@@ -32,6 +32,7 @@ classdef PipelineManager < handle
         current_outFile cell % List of file names created as output from some of the analysis functions.
         b_state logical % True if a task of a pipeline was successfully executed.
         pipeFirstInput = '' % Name of the first data to be used by the Pipeline.
+        pipeFirstInputClass = '' % Name of the class from the first input.
         % It can be the name of an existing file, or
         % "outFile" for a function that creates a file
         % such as "run_ImagesClassification".
@@ -196,11 +197,12 @@ classdef PipelineManager < handle
             %   datFileName(char): Optional. Name of the file to be saved.
             %       If not provided, the analysis function's default
             %       filename will be used.
-            
+                        
             p = inputParser;
             addRequired(p, 'func', @(x) ischar(x) || isnumeric(x));
             addOptional(p, 'b_save2File', false, @islogical);
-            addOptional(p, 'datFileName', '', @ischar);
+            addOptional(p, 'datFileName', '', @ischar);            
+            
             parse(p,func, varargin{:});
             
             % Check if the function name is valid:
@@ -231,14 +233,15 @@ classdef PipelineManager < handle
             end
             
             % Look for first input file to the pipeline;
-            if isempty(obj.pipeFirstInput)
+%             if isempty(obj.pipeFirstInput)
                 task.inputFileName = obj.getFirstInputFile(task);
                 if task.inputFileName == 0
                     disp('Operation Cancelled by User')
                     return
                 end
-            end
-            
+%             else
+% %                 task.inputFileName = obj.pipeFirstInput;
+%             end
             % Control for multiple outputs from the previous step:
             % Here, we assume that functions with multiple outputs
             % create only "Files" and not "data".
@@ -490,6 +493,7 @@ classdef PipelineManager < handle
             targetDir = fullfile(obj.ProtocolObj.SaveDir, 'PipeLineConfigFiles');
             [~,~] = mkdir(targetDir);
             pipeStruct = obj.pipe;
+            pipeStruct.firstInputClassName = obj.pipeFirstInputClass;
             txt = jsonencode(pipeStruct);
             fid = fopen(fullfile(targetDir,[filename '.json']), 'w');
             fprintf(fid, '%s', txt);
@@ -516,6 +520,12 @@ classdef PipelineManager < handle
                 if ~isequaln(new_pipe(i).opts,obj.funcList(indx_name).info.opts)
                     obj.funcList(indx_name).info.opts = new_pipe(i).opts;
                 end
+                % Add first input file name, if applicable:
+                if ~isempty(new_pipe(i).inputFileName)                                        
+                    obj.pipeFirstInput = new_pipe(i).inputFileName;
+                    obj.pipeFirstInputClass = new_pipe(i).firstInputClassName;
+                end
+                
                 % add tasks to pipeline:
                 if new_pipe(i).b_save2File
                     obj.addTask(indx_name, true, new_pipe(i).datFileName);
@@ -680,38 +690,17 @@ classdef PipelineManager < handle
             if ~any(ismember({'data', 'dataStat'}, funcInfo.argsIn))
                 return
             end
-            
-            
-            % Get all existing objects from the selected items in Protocol
-            % object:
-            idx = unique(obj.ProtocolObj.Idx_Filtered,'rows');
-            classes = {};
-            for i = 1:size(idx,1)
-                classes{i} = class(obj.ProtocolObj.Array.ObjList(idx(i,1)).Array.ObjList(idx(i,2)).Array.ObjList(idx(i,3)));
+            % Get target object:
+            targetObj = getTargetObj(obj,funcInfo.name);
+            % Chechk if first input is already set:
+            if ~isempty(obj.pipeFirstInput) && ~isempty(obj.pipeFirstInputClass)
+                out = obj.pipeFirstInput;                
+                if exist(fullfile(targetObj.SaveFolder,out), 'file')
+                    return
+                end
             end
-            classes = [{'Subject', 'Acquisition'}  classes]; classes = unique(classes);
-            % Select Object containing input file:
-            [indx,tf] = listdlg('PromptString', {'Select the Object containing', 'the input for the function :',...
-                funcInfo.name},'ListString',classes, 'SelectionMode', 'single');
-            if ~tf
-                out = 0;
-                return
-            end
-            switch classes{indx}
-                case 'Subject'
-                    targetObj = obj.ProtocolObj.Array.ObjList(idx(1,1));
-                case 'Acquisition'
-                    targetObj = obj.ProtocolObj.Array.ObjList(idx(1,1)).Array.ObjList(idx(1,2));
-                otherwise
-                    for i = 1:size(idx,1)
-                        b_isMod = strcmp(class(obj.ProtocolObj.Array.ObjList(idx(i,1)).Array.ObjList(idx(i,2)).Array.ObjList(idx(i,3))), classes{indx});
-                        if b_isMod
-                            break
-                        end
-                    end
-                    targetObj = obj.ProtocolObj.Array.ObjList(idx(i,1)).Array.ObjList(idx(i,2)).Array.ObjList(idx(i,3));
-            end
-            
+           
+               
             % Display a list of files from the selected
             % object(targetObj):
             datFileList = dir(fullfile(targetObj.SaveFolder, '*.dat'));
@@ -736,18 +725,58 @@ classdef PipelineManager < handle
                 out = 0;
                 return
             else
-                [indx,tf] = listdlg('PromptString', {'Select the File from ' classes{indx},...
+                [jndx,b_sel] = listdlg('PromptString', {'Select the File from ' class(targetObj),...
                     'as input for the function :',  funcInfo.name},'ListString',{FileList.name}, 'SelectionMode',...
                     'single');
-                if ~tf
+                if ~b_sel
                     out = 0;
                     return
                 end
             end
             
             % Save first input
-            out = FileList(indx).name;
+            out = FileList(jndx).name;
             obj.pipeFirstInput = out;
+            obj.pipeFirstInputClass = class(targetObj);
+            
+            % Local function
+            function trgtObj = getTargetObj(obj, fcnName)
+                % Get all existing objects from the selected items in Protocol
+                % object:
+                trgtObj = [];
+                idx = unique(obj.ProtocolObj.Idx_Filtered,'rows');
+                if isempty(obj.pipeFirstInputClass)
+                    classes = {};
+                    for i = 1:size(idx,1)
+                        classes{i} = class(obj.ProtocolObj.Array.ObjList(idx(i,1)).Array.ObjList(idx(i,2)).Array.ObjList(idx(i,3)));
+                    end
+                    classes = [{'Subject', 'Acquisition'}  classes]; classes = unique(classes);
+                    % Select Object containing input file:
+                    [indx,tf] = listdlg('PromptString', {'Select the Object containing', 'the input for the function :',...
+                        fcnName},'ListString',classes, 'SelectionMode', 'single');
+                    if ~tf                        
+                        return
+                    end
+                    selClass = classes{indx};
+                else
+                    selClass = obj.pipeFirstInputClass;
+                end
+                
+                switch selClass
+                    case 'Subject'
+                        trgtObj = obj.ProtocolObj.Array.ObjList(idx(1,1));
+                    case 'Acquisition'
+                        trgtObj = obj.ProtocolObj.Array.ObjList(idx(1,1)).Array.ObjList(idx(1,2));
+                    otherwise
+                        for i = 1:size(idx,1)
+                            b_isMod = strcmp(class(obj.ProtocolObj.Array.ObjList(idx(i,1)).Array.ObjList(idx(i,2)).Array.ObjList(idx(i,3))), selClass);
+                            if b_isMod
+                                break
+                            end
+                        end
+                        trgtObj = obj.ProtocolObj.Array.ObjList(idx(i,1)).Array.ObjList(idx(i,2)).Array.ObjList(idx(i,3));
+                end
+            end
         end
         
         function createFcnList(obj)
