@@ -3,12 +3,12 @@ function [outData, metaData] = alignFrames(data, metaData, object, varargin)
 % to a reference frame created using the ROImanager app.
 
 % Inputs:
-%   data: 3D numerical matrix containing image time series with dimensions {Y, X, T}.
+%   data: 2D or 3D numerical matrix containing image time series with dimensions {Y, X} or {Y, X, T}.
 %   metaData: .mat file with meta data associated with "data".
 %   object: umIT's imaging object handle.
 %   opts (optional): structure containing extra parameters.
 % Outputs:
-%   outData: 3D numerical matrix with dimensions {Y,X,T} containing aligned frames.
+%   outData: "data" aligned.
 %   metaData: .mat file with meta data associated with "outData".
 
 % Defaults:
@@ -17,7 +17,7 @@ default_opts = struct('UseFile', 'auto');
 
 %%% Arguments parsing and validation %%%
 p = inputParser;
-addRequired(p,'data',@(x) isnumeric(x) & ndims(x) == 3); % Validate if the input is a 3-D numerical matrix:
+addRequired(p,'data',@(x) isnumeric(x) & ismember(ndims(x),[2 3])); % Validate if the input is a 3-D numerical matrix:
 addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
 addRequired(p,'object', @(x) isa(x,'Modality') || isa(x,'Acquisition'));
 addOptional(p,'opts', default_opts,@(x) isstruct(x) && ~isempty(x) && ischar(x.UseFile));
@@ -29,7 +29,10 @@ metaData = p.Results.metaData;
 object = p.Results.object;
 opts = p.Results.opts;
 clear p
-
+% Further validation of input data dimensions:
+errID = 'umIToolbox:alignFrames:InvalidInput';
+errMsg = 'Data must be have dimensions X,Y or X,Y,T';
+assert(all(ismember(metaData.dim_names, {'X','Y','T'})),errID,errMsg);
 % Further validation of optional parameter "opts.UseFile":
 errID = 'MATLAB:UMIToolbox:InvalidInput';
 errMsg = 'Invalid entry for "UseFile" field. Input must be "self", "auto" or a name of a .dat file';
@@ -129,15 +132,15 @@ end
 GF = [1.10, 1.05, 1.02, 1.01];
 Eps = [1e-10, 1e-15, 1e-20,1e-25];
 IR = [6.25e-3, 6.25e-5, 6.25e-8, 6.25e-10];
-MaxIter = 10000;
+MaxIter = 1000;
 MI = -1000;
 [optimizer,metric] = imregconfig('multimodal');
 optimizer.MaximumIterations = MaxIter;
 % Iterate over optimization parameters to obtain highest mutual
 % information:
 disp('Optimizing image registration parameters...')
-for i = 1:4
-    
+for i = 1:4 
+    disp(['Iteration ' num2str(i) '/4']);        
     optimizer.GrowthFactor = GF(i);
     optimizer.Epsilon = Eps(i);
     optimizer.InitialRadius = IR(i);
@@ -153,7 +156,8 @@ for i = 1:4
     tmpMI = mutual_information(counts);
     if tmpMI<=MI
         idx = i-1;
-        break
+        disp('Optimization stopped here!');
+        break        
     else
         MI = tmpMI;
         idx = i;
@@ -164,7 +168,7 @@ fprintf('Maximum Mutual Information obtained: %.4f\n',MI)
 optimizer.GrowthFactor = GF(idx);
 optimizer.Epsilon = Eps(idx);
 optimizer.InitialRadius = IR(idx);
-disp('Calculating geometric transformation...')
+disp('Calculating geometric transformation using optimal parameters...')
 if exist('tform_init','var')
     tform = imregtform(targetFr_mask, imref2d(size(targetFr_mask)),refFr_mask,...
         imref2d(size(refFr_mask)),'similarity',optimizer,metric, 'InitialTransformation', tform_init);
@@ -192,7 +196,8 @@ hold(s2,'on');
 plot(s2,1,1,'g+', 'Tag', 'gDot'); hold(s2,'off');
 hold(s3,'on');
 plot(s3,1,1,'rx', 'Tag', 'rDot'); hold(s3,'off');
-
+% Link axes
+linkaxes([s1,s2,s3], 'xy');
 %%%%%%
 
 % Apply mask to data file:
