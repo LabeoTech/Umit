@@ -300,7 +300,9 @@ classdef PipelineManager < handle
                 if isempty(ext)
                     [~,~,ext_def] = fileparts(obj.pipe(end).outFileName);
                     obj.pipe(end).datFileName = [p.Results.datFileName, ext_def];
-                end                
+                else
+                    obj.pipe(end).datFileName = p.Results.datFileName;
+                end
             end
         end
         
