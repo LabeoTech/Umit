@@ -1,16 +1,84 @@
 <!DOCTYPE html>
 <html lang="en" dir="ltr">
   <head>
+    <link rel="stylesheet" href="../../css/master.css">
     <meta charset="utf-8">
     <title>CreatingAnewProject</title>
   </head>
   <body>
-    <h2>Creating a new project</h2>
+    <h2>Creating a new project file</h2>
     <hr>
-    <p>This is the first step in order to start using the toolbox.<br>
-
-
-      
+    <p>This is the first step in order to use all the resources from <b><i>umIT</i></b>. The project file is a <samp>.mat</samp> file that contains a <samp>Protocol</samp> object. This object contains a database with the list of subjects and aquisitions as well as the recordings' meta data.
     </p>
+    <p>The <samp>Protocol</samp> object uses a function (named <i>protocol function</i>) that scans the content of the raw directory containing the imaging recordings to create and update the database. The function <samp>protocolFcn_template.m</samp> is an example of <i>protocol function</i> that can be used as a starting point to create your own.
+    </p>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        The project file can only handle experiment files that inside <b>one</b> folder. For instance, if you have data across multiple hard drives, you will need to create one project file per location.
+       </p>
+    </div>
+    <h3>The example dataset</h3>
+    <p>
+      The data used in our tutorials consists of widefield imaging of calcium signals from the mouse cortex acquired with <a href="https://www.labeotech.com/">LabeoTech</a>'s modular optical imaging system. The project consists of longitudinal recordings of a cohort of mice expressing <i>GCaMP6</i> in cortical excitatory neurons<a href="https://www.spiedigitallibrary.org/journals/neurophotonics/volume-6/issue-02/025014/Comparison-between-transgenic-and-AAV-PHPeB-mediated-expression-of-GCaMP6s/10.1117/1.NPh.6.2.025014.full?SSO=1"><sup>1</sup></a>  under distinct experimental protocols. Thus, the project file will contain a series of subjects (i.e. mice) with each mouse having a series of different acquisitions over time.
+    </p>
+    <p>
+      The raw data of each recording consists of a series of binary files located in a folder. The folder name contains the identifiers of the mouse and the acquisition as:
+    </p>
+    <p align="center">
+      <img src="../assets/img/recFolderNameParsing.png" alt="folderParsingEx", width="200">
+    </p>
+    <p>
+      In our example, all recording folders are located under one <i>main folder</i> as:
+    </p>
+    <p align="center">
+      <img src="../assets/img/mainFolderOrganization.png" alt="folderOrg", width="200">
+    </p>
+    <p>
+       In the section below, we will show you how to create a project file using the <samp>protocolFcn_template</samp> function that was designed to read the data organized as mentioned above.
+    </p>
+    <h3>Create a project from the main graphical interface</h3>
+    <div class="warnnote">
+      <p><strong>Important</strong><br>
+        If you are using the <samp>protocolFcn_template</samp> function it is advisable to move it to <i>main folder</i> where the raw data is and rename it (the file and the function name in the code) so when you update the toolbox it doesn't overwrite any changes that you could have made in the <i>protocol function</i>.
+       </p>
+    </div>
+    <p>
+      To open the main graphical user interface (GUI) type in Matlab's command window:
+    </p>
+    <div class="codeinput">
+      <pre>
+        umIToolbox;
+      </pre>
+    </div>
+    <p>
+      The GUI content will be hidden and the following message is displayed:
+    </p>
+    <img src="../assets/img/mainGUI_firstMessage.png" alt="mainGUI_firstMessage", width="400">
+    <p>
+    On the main menu, select <i>Project >> New</i>:
+    </p>
+    <img src="../assets/img/mainGUI_newProject.png" alt="mainGUI_newProject", width="200">
+    <p>Type the name of the project. The project <samp>.mat</samp> file will have the same name.</p>
+    <img src="../assets/img/mainGUI_typeProjectName.png" alt="mainGUI_typeProjectName", width="400">
+    <p>
+      Select the <i>main folder</i>. This is the folder where the raw data are stored.
+    </p>
+    <img src="../assets/img/mainGUI_selectRawDir.png" alt="mainGUI_selectRawDir", width="500">
+    <p>
+      Create and select the <i>save folder</i> where all imported and transformed data will be stored.
+    </p>
+    <img src="../assets/img/mainGUI_selectSaveDir.png" alt="mainGUI_selectSaveDir", width="500">
+    <p>
+      Select the protocol function that will read the data in the <i>main folder</i>.
+    </p>
+    <img src="../assets/img/mainGUI_selectProtFcn.png" alt="mainGUI_selectProtFcn", width="500">
+
+
+
+
+
+
+
+
   </body>
 </html>
