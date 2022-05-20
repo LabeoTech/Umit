@@ -1,9 +1,12 @@
+.subtitle1 {
+  font-size: 1.5em;
+  color: #C45400;
+}
 .infonote {
   background-color: #e7f3fe;
   border-left: 6px solid #2196F3;
   padding-left: 6px;
 }
-
 .warnnote {
   background-color: #ffdddd;
   border-left: 6px solid #f44336;
@@ -16,7 +19,7 @@
   background: #f6f6f6;
   display: table;
 }
-pre, code {
+pre, code, samp{
   font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
 }
 pre {
