@@ -35,8 +35,7 @@ classdef PipelineManager < handle
         pipeFirstInputClass = '' % Name of the class from the first input.
         % It can be the name of an existing file, or
         % "outFile" for a function that creates a file
-        % such as "run_ImagesClassification".
-        
+        % such as "run_ImagesClassification".        
         h_wbItem % Handle of waitbar dialog showing the progress of the pipeline across protocol's objects.
         h_wbTask % Handle of waitbar dialog showing the progress of the pipeline in the current object.
         targetObjFullID char % Full ID of the current object.
@@ -233,15 +232,12 @@ classdef PipelineManager < handle
             end
             
             % Look for first input file to the pipeline;
-%             if isempty(obj.pipeFirstInput)
-                task.inputFileName = obj.getFirstInputFile(task);
-                if task.inputFileName == 0
-                    disp('Operation Cancelled by User')
-                    return
-                end
-%             else
-% %                 task.inputFileName = obj.pipeFirstInput;
-%             end
+            task.inputFileName = obj.getFirstInputFile(task);
+            if task.inputFileName == 0
+                disp('Operation Cancelled by User')
+                return
+            end
+
             % Control for multiple outputs from the previous step:
             % Here, we assume that functions with multiple outputs
             % create only "Files" and not "data".
@@ -493,7 +489,7 @@ classdef PipelineManager < handle
             targetDir = fullfile(obj.ProtocolObj.SaveDir, 'PipeLineConfigFiles');
             [~,~] = mkdir(targetDir);
             pipeStruct = obj.pipe;
-            pipeStruct.firstInputClassName = obj.pipeFirstInputClass;
+            pipeStruct.firstInputClassName = obj.pipeFirstInputClass; % Do we need this info??
             txt = jsonencode(pipeStruct);
             fid = fopen(fullfile(targetDir,[filename '.json']), 'w');
             fprintf(fid, '%s', txt);
@@ -684,15 +680,17 @@ classdef PipelineManager < handle
                     ~any(ismember({'data', 'dataStat'}, funcInfo.argsIn))
                 obj.pipeFirstInput = 'outData';
                 return
-            end
-            
+            end            
             % Control for tasks that do not have any data as input:
             if ~any(ismember({'data', 'dataStat'}, funcInfo.argsIn))
                 return
             end
+            if strcmp(obj.pipeFirstInput, 'outFile')
+                return
+            end           
             % Get target object:
             targetObj = getTargetObj(obj,funcInfo.name);
-            % Chechk if first input is already set:
+            % Check if first input is already set:
             if ~isempty(obj.pipeFirstInput) && ~isempty(obj.pipeFirstInputClass)
                 out = obj.pipeFirstInput;                
                 if exist(fullfile(targetObj.SaveFolder,out), 'file')
