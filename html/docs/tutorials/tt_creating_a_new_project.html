@@ -39,7 +39,9 @@
     <h3>Create a project from the main graphical interface</h3>
     <div class="warnnote">
       <p><strong>Important</strong><br>
-        If you are using the <samp>protocolFcn_template</samp> function it is advisable to move it to <i>main folder</i> where the raw data is and rename it (the file and the function name in the code) so when you update the toolbox it doesn't overwrite any changes that you could have made in the <i>protocol function</i>.
+        Regardless if you are using the function <samp>protocolFcn_template</samp> or your own, it is advisable to move it to <i>main folder</i> where the raw data is. The toolbox will automatically add this folder to Matlab's path when using the <samp>umIToolbox</samp> app. Otherwise, be sure to have it in Matlab's path before using the toolbox.</p>
+        <p>
+          Also, if you are using the <samp>protocolFcn_template</samp>, don't forget to rename it (the file and the function name in the code) to avoid duplicates in Matlab's path.
        </p>
     </div>
     <p>
