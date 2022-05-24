@@ -42,7 +42,7 @@ else
 end
 % Get pre/post event times from metaData or try to find the best timing
 % based on the timestamps of events:
-if strcmp(opts.preEventTime_sec, 'auto') | strcmp(opts.postEventTime_sec, 'auto')
+if strcmp(opts.preEventTime_sec, 'auto') || strcmp(opts.postEventTime_sec, 'auto')
     if isfield(metaData, 'preEventTime_sec')
         % Grab info from file's metaData:        
         fprintf('Using info from data''s metadata:\n\tPre event time: %d seconds.\n\tPost event time: %d seconds.\n',...
@@ -54,9 +54,9 @@ if strcmp(opts.preEventTime_sec, 'auto') | strcmp(opts.postEventTime_sec, 'auto'
        disp('Calculating from events...')       
        tmTrial= round(mean(diff(evDat.timestamps(evDat.state == 1)), 'omitnan'));
        % Use 20% of the time as pre and 80 % as post:
-       opts.preEventTime_sec = round(.2*tmTrial);
+       opts.preEventTime_sec = round(.2*tmTrial,2);
        opts.postEventTime_sec = tmTrial - opts.preEventTime_sec;
-       fprintf('Pre and post-event times calculated from "events" file:\n\tPre event time: %d seconds.\n\tPost event time: %d seconds.\n',...
+       fprintf('Pre and post-event times calculated from "events" file:\n\tPre event time: %0.2f seconds.\n\tPost event time: %0.2f seconds.\n',...
             [opts.preEventTime_sec, opts.postEventTime_sec]);
     end
 else
