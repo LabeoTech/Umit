@@ -9,12 +9,72 @@
     <h2>Experiment data management</h2>
     <hr>
     <p>
+      In this section, we show how to explore and manage the project data. In this context, the project data refers to all the information about the subjects (e.g. mice), recordings of a given project.
+    </p>
+    <h3>Sections</h3>
+    <ul>
+      <li><a href="#exploring-the-project-data"> Exploring the project data</a>: Visualize the project data for each item and the information about the files created in <b><i>umIT</i></b></li>
+
+    </ul>
+    <p>
+      First, open the main GUI by typing Matlab's command window:
+    </p>
+    <div class="codeinput">
+      <pre>
+        umIToolbox;
+      </pre>
+    </div>
+    <p>
+      On the main menu, select <i>Project >> Open</i>:
+    </p>
+    <img src="../assets/img/mainGUI_dashboard_OpenProject.png" alt="mainGUI_dashboard_OpenProject", width="160">
+    <p>
+      Select the <samp>.mat</samp> project file to load on the app:
+    </p>
+    <img src="../assets/img/mainGUI_selectProjFile.png" alt="mainGUI_selectProjFile", width="460">
+    <p>
+      The project is loaded:
+    </p>
+    <img src="../assets/img/mainGUI_ProjFileOpen.png" alt="mainGUI_ProjFileOpen", width="660">
+    <h3 id='exploring-the-project-data'>Exploring the project data</h3>
+    <p>
+      All the information regarding the project items (i.e subjects, acquisitions, modalities) and files created inside <i><b>umIT</b></i> are accessible in the <i>Dashboard</i> tab. The project items are listed in the <i>tree</i> located in the bottom left of the GUI. Select an item from the <i>tree</i> to show it's information:
+    </p>
+    <img src="../assets/img/mainGUI_dashboard_uitree.png" alt="mainGUI_dashboard_uitree", width = 200>
+    <p>
+      The item's properties are displayed on the panel in the top right of the GUI (1). Any files created are listed in the <i>List of files</i> panel (2) as well as the last operations performed in the item are displayed in the table (3) at the bottom-right corner of the GUI:
+    </p>
+    <img src="../assets/img/mainGUI_dashboard_objSelect.png" alt="mainGUI_dashboard_objSelect", width = 660>
+
+    <p>
+      Click on an item from the <i>List of files</i> to display its properties on the top-right panel as well as the <i>History of file</i> (i.e, the operations that gave rise to the file) in the table at the bottom-right:
+    </p>
+    <img src="../assets/img/mainGUI_dashboard_fileSelect.png" alt="mainGUI_dashboard_fileSelect", width = 660>
+    <h3 id='how-to-update-the-project'>How to update the project</h3>
+    <p>
+      Here, we show how to update your project file. A project file needs to be updated when subjects/acquisitions are added to or deleted from the <i>main folder</i>. For example, a new acquisition was added during the project:
+    </p>
+    <img src="../assets/img/mainGUI_dashboard_newAcqAdded.png" alt="mainGUI_dashboard_newAcqAdded", width= 200>
+    <p>
+      First, in the main GUI go to <i>Utilities >> Project >> Look for new data</i>. The app will scan the <i>main folder</i> for new elements and a summary is displayed in the <i>Project status</i> panel showing the new/missing elements:
+    </p>
+    <img src="../assets/img/mainGUI_dashboard_newAcqDetected.png" alt="mainGUI_dashboard_newAcqDetected", width=250>
+    <p>
+      At this point, no changes are applied to the project file. To add the new acquisition to the project, go to <i>Utilities >> Project >> Update project</i>. The project item's <i>tree</i> is reloaded with the new element:
+    </p>
+    <img src="../assets/img/mainGUI_dashboard_newAcqShown.png" alt="mainGUI_dashboard_newAcqShown", width = 180>
+    
+
+
+
+
+
+    <br>
+    <hr>
+    <h4>Brouillon</h4>
+
+    <p>
       <ul>
-        <li>Exploring the Experiment meta data</li>
-          <ul>
-            <li>Reading experiment metaData</li>
-            <li>Reading file metaData</li>
-          </ul>
         <li>How to update the project</li>
         <li>The logbook</li>
         <li>How to edit some properties of the Protocol`s objects</li>
