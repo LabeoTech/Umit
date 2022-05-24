@@ -13,9 +13,13 @@
     </p>
     <h3>Sections</h3>
     <ul>
-      <li><a href="#exploring-the-project-data"> Exploring the project data</a>: Visualize the project data for each item and the information about the files created in <b><i>umIT</i></b></li>
+      <li><a href="#open-project"> Open your project file</a>: load the content of the <samp>.mat</samp> project file in the GUI.</li>
+      <li><a href="#exploring-the-project-data"> Exploring the project data</a>: visualize the project data for each item and the information about the files created in <b><i>umIT</i></b>.</li>
+      <li><a href="#how-to-update-the-project">How to update the project</a>: update the project file when new raw data are obtained.</li>
 
     </ul>
+    <hr>
+    <h3 id="open-project">Open the project file</h3>
     <p>
       First, open the main GUI by typing Matlab's command window:
     </p>
@@ -52,22 +56,18 @@
     <img src="../assets/img/mainGUI_dashboard_fileSelect.png" alt="mainGUI_dashboard_fileSelect", width = 660>
     <h3 id='how-to-update-the-project'>How to update the project</h3>
     <p>
-      Here, we show how to update your project file. A project file needs to be updated when subjects/acquisitions are added to or deleted from the <i>main folder</i>. For example, a new acquisition was added during the project:
+      Here, we show how to update your project file. A project file needs to be updated when subjects/acquisitions are added to or deleted from the <i>main folder</i>. For example, a new acquisition (<i>NewRec</i>) was added during the project:
     </p>
     <img src="../assets/img/mainGUI_dashboard_newAcqAdded.png" alt="mainGUI_dashboard_newAcqAdded", width= 200>
     <p>
       First, in the main GUI go to <i>Utilities >> Project >> Look for new data</i>. The app will scan the <i>main folder</i> for new elements and a summary is displayed in the <i>Project status</i> panel showing the new/missing elements:
     </p>
-    <img src="../assets/img/mainGUI_dashboard_newAcqDetected.png" alt="mainGUI_dashboard_newAcqDetected", width=250>
+    <img src="../assets/img/mainGUI_dashboard_newAcqDetected.png" alt="mainGUI_dashboard_newAcqDetected", width=220>
     <p>
-      At this point, no changes are applied to the project file. To add the new acquisition to the project, go to <i>Utilities >> Project >> Update project</i>. The project item's <i>tree</i> is reloaded with the new element:
+      At this point, no changes are applied to the project file. To add the new acquisition to the project, go to <i>Utilities >> Project >> Update project</i>. The project item's <i>tree</i> is reloaded with the new element and the changes are applied automatically to the project's <samp>.mat</samp> file.
     </p>
     <img src="../assets/img/mainGUI_dashboard_newAcqShown.png" alt="mainGUI_dashboard_newAcqShown", width = 180>
     
-
-
-
-
 
     <br>
     <hr>
@@ -75,8 +75,6 @@
 
     <p>
       <ul>
-        <li>How to update the project</li>
-        <li>The logbook</li>
         <li>How to edit some properties of the Protocol`s objects</li>
         <li>How to "delete" bad recordings</li>
         <li>How to recover "deleted" objects</li>
