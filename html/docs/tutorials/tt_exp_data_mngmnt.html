@@ -16,6 +16,7 @@
       <li><a href="#open-project"> Open your project file</a>: load the content of the <samp>.mat</samp> project file in the GUI.</li>
       <li><a href="#exploring-the-project-data"> Exploring the project data</a>: visualize the project data for each item and the information about the files created in <b><i>umIT</i></b>.</li>
       <li><a href="#how-to-update-the-project">How to update the project</a>: update the project file when new raw data are obtained.</li>
+      <li><a href="#managing-the-project-data">Managing the project data</a>: edit elements' propeties, delete and recover deleted elements.</li>
 
     </ul>
     <hr>
@@ -56,7 +57,7 @@
     <img src="../assets/img/mainGUI_dashboard_fileSelect.png" alt="mainGUI_dashboard_fileSelect", width = 660>
     <h3 id='how-to-update-the-project'>How to update the project</h3>
     <p>
-      Here, we show how to update your project file. A project file needs to be updated when subjects/acquisitions are added to or deleted from the <i>main folder</i>. For example, a new acquisition (<i>NewRec</i>) was added during the project:
+      Here, we show how to update your project file. A project file needs to be updated when subjects/acquisitions are added to or deleted from the <i>main folder</i>. For example, a new acquisition (<i>NewRec</i>) was added to the <i>main folder</i>during the project:
     </p>
     <img src="../assets/img/mainGUI_dashboard_newAcqAdded.png" alt="mainGUI_dashboard_newAcqAdded", width= 200>
     <p>
@@ -67,18 +68,35 @@
       At this point, no changes are applied to the project file. To add the new acquisition to the project, go to <i>Utilities >> Project >> Update project</i>. The project item's <i>tree</i> is reloaded with the new element and the changes are applied automatically to the project's <samp>.mat</samp> file.
     </p>
     <img src="../assets/img/mainGUI_dashboard_newAcqShown.png" alt="mainGUI_dashboard_newAcqShown", width = 180>
-
-
-    <br>
-    <hr>
-    <h4>Brouillon</h4>
-
+    <h3 id="managing-the-project-data">Managing the project data</h3>
+    <h4>Deleting and recovering deleted elements</h4>
     <p>
-      <ul>
-        <li>How to edit some properties of the Protocol`s objects</li>
-        <li>How to "delete" bad recordings</li>
-        <li>How to recover "deleted" objects</li>
-      </ul>
+      In the <i>Dashboard</i> tab, you can delete elements from the <i>tree</i> by clicking on the <i>delete</i> button in the <i>optionsl</i> panel. You have the option to delete the element only or the element and the files created. Here, we will delete the acquisition <i>NewRec</i> from the mouse <i>M5G</i>:
     </p>
+    <img src="../assets/img/mainGUI_dashboard_deleteItem.png" alt="mainGUI_dashboard_deleteItem", width= 660>
+    <div class="warnnote">
+      <p><strong>Important</strong><br>
+        The toolbox does not delete any raw data! Only files created by the toolbox can be deleted through the main GUI.<br>
+      </p>
+    </div>
+    <p>
+      When deleting an element from the project file, the path to the raw data associated is added to a list (<i>garbage list</i>) and is ignored next time the project is updated. This is particularly advantageous when the <i>main folder</i> containing the raw data is shared by different Users.
+    </p>
+    <p>
+      In order to recover a deleted item, go to <i>Utilities >> Project >> Restore garbage list</i>. All deleted elements will be put back to the project's <i>tree</i> with the condition that the elements' raw data are located in the <i>main folder</i>.
+    </p>
+    <h4>Editing elements' propeties</h4>
+    <p>
+      Some of the propeties of an element can be edited by clicking on the <i>Edit</i> button in the <i>options</i> panel.
+    </p>
+    <p>
+      Here is an example of the editable properties of a subject:
+    </p>
+    <img src="../assets/img/mainGUI_dashboard_objEdit2.png" alt="mainGUI_dashboard_objEdit2", width = "600">
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        It is always faster to set as many properties as possible during the object’s creation inside the <i>protocol function</i> and leave the rest to be set manually in the <i>Dashboard</i> tab!
+      </p>
+    </div>
   </body>
 </html>
