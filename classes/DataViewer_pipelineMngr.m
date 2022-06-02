@@ -24,8 +24,15 @@ classdef DataViewer_pipelineMngr < handle
     
     methods
         function obj = DataViewer_pipelineMngr(data, metaData, SaveFolder, RawFolder)
-            rootDir = getenv('Umitoolbox');
-            obj.fcnDir = fullfile(rootDir, 'Analysis');
+            if isdeployed
+                obj.fcnDir = 'Analysis';
+            else
+                rootDir = getenv('Umitoolbox');
+                if isempty(rootDir)
+                    error('Umitoolbox environment variable not found!')
+                end
+                obj.fcnDir = fullfile(rootDir, 'Analysis');
+            end
             obj.createFcnList;
             obj.data = data;
             obj.metaData = metaData;

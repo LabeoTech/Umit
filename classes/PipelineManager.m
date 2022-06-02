@@ -112,8 +112,15 @@ classdef PipelineManager < handle
             end
             
             obj.ClassName = p.Results.ClassName;
-            root = getenv('Umitoolbox');
-            obj.fcnDir = fullfile(root, 'Analysis');
+            if isdeployed
+                obj.fcnDir = 'Analysis';
+            else
+                rootDir = getenv('Umitoolbox');
+                if isempty(rootDir)
+                    error('Umitoolbox environment variable not found!')
+                end
+                obj.fcnDir = fullfile(rootDir, 'Analysis');
+            end
             obj.createFcnList;
             obj.b_ignoreLoggedFiles = false;
             obj.b_saveDataBeforeFail = false;
