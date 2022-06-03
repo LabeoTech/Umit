@@ -25,15 +25,18 @@ classdef DataViewer_pipelineMngr < handle
     methods
         function obj = DataViewer_pipelineMngr(data, metaData, SaveFolder, RawFolder)
             if isdeployed
-                obj.fcnDir = 'Analysis';
+                [obj.fcnDir,~,~] = fileparts(which('funcTemplate.m'));                                
+                a = load(fullfile(obj.fcnDir,'deployFcnList.mat'));
+                obj.funcList = a.out; % Get the structure "out" created inside the function "umitFcnReader".
             else
                 rootDir = getenv('Umitoolbox');
                 if isempty(rootDir)
                     error('Umitoolbox environment variable not found!')
                 end
                 obj.fcnDir = fullfile(rootDir, 'Analysis');
+                obj.createFcnList;
             end
-            obj.createFcnList;
+            
             obj.data = data;
             obj.metaData = metaData;
             obj.SaveFolder = SaveFolder;
@@ -430,10 +433,8 @@ classdef DataViewer_pipelineMngr < handle
             
             % Set Defaults:
             default_Output = '';
-            default_opts = struct();
-            
-            disp('Creating Fcn list...');
-            list = dir(fullfile(obj.fcnDir, '\*\*.m'));
+            default_opts = struct();                        
+            list = dir(fullfile(obj.fcnDir, '\*\*.m'));            
             for i = 1:length(list)
                 out = parseFuncFile(list(i));
                 % Validate if all input arguments from the function are
@@ -448,10 +449,10 @@ classdef DataViewer_pipelineMngr < handle
                 end
                 
             end
-            disp('Function list created!');
+            disp('Function list created!');            
             function info = parseFuncFile(fcnStruct)
                 info = struct('argsIn', {},'argsOut', {}, 'outFileName', '', 'opts', []);
-                txt = fileread(fullfile(fcnStruct.folder, fcnStruct.name));
+                txt = fileread(fullfile(fcnStruct.folder, fcnStruct.name));                
                 funcStr = erase(regexp(txt, '(?<=function\s*).*?(?=\r*\n)', 'match', 'once'),' ');
                 outStr = regexp(funcStr,'.*(?=\=)', 'match', 'once');
                 out_args = regexp(outStr, '\[*(\w*)\,*(\w*)\]*', 'tokens', 'once');

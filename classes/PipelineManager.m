@@ -113,15 +113,17 @@ classdef PipelineManager < handle
             
             obj.ClassName = p.Results.ClassName;
             if isdeployed
-                obj.fcnDir = 'Analysis';
+                [obj.fcnDir,~,~] = fileparts(which('funcTemplate.m'));                                
+                a = load(fullfile(obj.fcnDir,'deployFcnList.mat'));
+                obj.funcList = a.out; % Get the structure "out" created inside the function "umitFcnReader".
             else
                 rootDir = getenv('Umitoolbox');
                 if isempty(rootDir)
                     error('Umitoolbox environment variable not found!')
                 end
                 obj.fcnDir = fullfile(rootDir, 'Analysis');
-            end
-            obj.createFcnList;
+                obj.createFcnList;
+            end            
             obj.b_ignoreLoggedFiles = false;
             obj.b_saveDataBeforeFail = false;
         end
@@ -806,14 +808,11 @@ classdef PipelineManager < handle
                 % "valid" inputs keywords:
                 kwrds_args = {'data', 'metaData', 'SaveFolder', 'RawFolder', 'opts', 'object', 'dataStat'};
                 kwrds_out = {'outFile', 'outData', 'metaData', 'outDataStat'};
-                if all(ismember(out.argsIn, kwrds_args)) && all(ismember(out.argsOut, kwrds_out))
-                    %                     disp(list(i).name);
+                if all(ismember(out.argsIn, kwrds_args)) && all(ismember(out.argsOut, kwrds_out))                    
                     [~,list(i).name, ~] = fileparts(list(i).name);
-                    list(i).info = out;
-                    
+                    list(i).info = out;                    
                     obj.funcList = [obj.funcList ; list(i)];
-                end
-                
+                end                
             end
             disp('Function list created!');
             function info = parseFuncFile(fcnStruct)
