@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <link rel="stylesheet" href="../../css/master.css">
+    <meta charset="utf-8">
+    <title>How to create functional maps</title>
+  </head>
+  <body>
+    <h2>Generating functional connectivity cortical maps</h2>
+    <hr>
+    <p>
+      Here, we describe the steps to preprocess calcium imaging data to generate functional connectivity maps of a mouse cortex. In this example, you will learn:
+      <ul>
+        <li>How to create a pipeline to process resting-state data.</li>
+        <li>How to customize the parameters of analysis functions.</li>
+        <li>How to save, load and run pipeline files. </li>
+      </ul>
+      This example is a good place to start using <i><b>umIT</b></i>'s automatic processing pipeline and its portfolio of functions given that resting-state experiments are fairly simple (a short recording of a mouse at rest).
+    </p>
+    <p>
+      The raw data used here consists of ~5 min multi-channel (fluorescence and reflectance) recordings of an awake mouse expressing GCaMP6 calcium indicator in cortical neurons.
+      Here is the analysis workflow that we will create and apply to this data:
+    </p>
+    <p align="center"><i>Functional connectivity pipeline workflow</i></p>
+    <p align="center">
+      <img src="../assets/img/tt_creating_connectivity_maps_ppline_workflow.png" alt="tt_creating_connectivity_maps_ppline_workflow.png">
+    </p>
+    <h3>Sections</h3>
+    <ul>
+      <li><a href="#open-project"> Open your project file</a>: load the content of the <samp>.mat</samp> project file in the GUI.</li>
+      <li><a href="#exploring-the-project-data"> Exploring the project data</a>: visualize the project data for each item and the information about the files created in <b><i>umIT</i></b>.</li>
+      <li><a href="#how-to-update-the-project">How to update the project</a>: update the project file when new raw data are obtained.</li>
+      <li><a href="#managing-the-project-data">Managing the project data</a>: edit elements' propeties, delete and recover deleted elements.</li>
+
+    </ul>
+    <hr>
+    <h3 id="open-project">Open the project file</h3>
+    <p>
+      First, open the main GUI by typing Matlab's command window:
+    </p>
+    <div class="codeinput">
+      <pre>
+        umIToolbox;
+      </pre>
+    </div>
+  </body>
+</html>
