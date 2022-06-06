@@ -9,7 +9,7 @@
     <h2>Generating functional connectivity cortical maps</h2>
     <hr>
     <p>
-      Here, we describe the steps to preprocess calcium imaging data to generate functional connectivity maps of a mouse cortex. In this example, you will learn:
+      Here, we describe the steps to preprocess calcium imaging data to generate functional connectivity maps from a mouse cortex. In this example, you will learn:
       <ul>
         <li>How to create a pipeline to process resting-state data.</li>
         <li>How to customize the parameters of analysis functions.</li>
@@ -26,22 +26,81 @@
       <img src="../assets/img/tt_creating_connectivity_maps_ppline_workflow.png" alt="tt_creating_connectivity_maps_ppline_workflow.png">
     </p>
     <h3>Sections</h3>
-    <ul>
-      <li><a href="#open-project"> Open your project file</a>: load the content of the <samp>.mat</samp> project file in the GUI.</li>
-      <li><a href="#exploring-the-project-data"> Exploring the project data</a>: visualize the project data for each item and the information about the files created in <b><i>umIT</i></b>.</li>
-      <li><a href="#how-to-update-the-project">How to update the project</a>: update the project file when new raw data are obtained.</li>
-      <li><a href="#managing-the-project-data">Managing the project data</a>: edit elements' propeties, delete and recover deleted elements.</li>
-
-    </ul>
     <hr>
-    <h3 id="open-project">Open the project file</h3>
+    <ul>
+      <li><a href="#select-data"> Select the data</a>: select the data to be processed.</li>
+      <li><a href="#create-pipeline"> Create the analysis pipeline</a>: build the analysis pipeline to be applied to the selected data.</li>
+    </ul>
+    <h3 id="select-data">Select the data to be processed</h3>
+    <hr>
     <p>
-      First, open the main GUI by typing Matlab's command window:
+      Here, we assume that the project file was created. For more info on how to create a project file click <a href="/tt_creating_a_new_project.html">here</a>.
+      To open a project file, call the <samp>umIToolbox</samp> app with the full path to your project file as input as:
     </p>
     <div class="codeinput">
       <pre>
-        umIToolbox;
+        umIToolbox(<font class="stringformat">'C:/FOLDER/projectfile.mat'</font>);
       </pre>
     </div>
+    <div class="infonote">
+      <p> <strong>Note</strong><br>
+        Here, we show how to create an analysis pipeline using <i><b>umIT</b></i>'s main GUI. However, the same process can be applied to a single experiment using the <i><b>DataViewer</b></i> app as standalone. For more info on how to use <i><b>DataViewer</b></i>, read the app's <a href="#">documentation</a>,.
+      </p>
+    </div>
+    <p>
+    In the GUI, go to the <i>Pipeline control panel</i> tab:</p>
+    <img src="../assets/img/mainGUI_pipeline_firstpage.png" alt="mainGUI_pipeline_firstpage", width="660">
+    <p>
+      Now, we need to select the recordings to be processed. Here, you can select multiple recordings and apply the analysis pipeline to all of them. In this example, we will process all <i>resting state</i> recordings from the mouse <i>M4D</i>. In the object <i>tree</i>, click on the subject node to select all recordings:
+    </p>
+    <img src="../assets/img/mainGUI_pipeline_recordingselection.png" alt="mainGUI_pipeline_recordingselection", width="200">
+    <p>
+      Then, click on the <i>Select</i> green button to confirm the selection:
+    </p>
+    <img src="../assets/img/mainGUI_pipeline_doneselection.png" alt="mainGUI_pipeline_doneselection", width="660">
+    <p>
+      Now, the <i>Launch Pipeline Config.</i> button is enabled and you are ready to create the pipeline.
+    </p>
+    <h3 id="create-pipeline">Create the analysis pipeline</h3>
+    <hr>
+    <p>
+      The analysis pipeline is created using the <i>Pipeline Configuration</i> app. To launch the app, click on <i>Launch Pipeline Config</i>. A dialog box will appear so you can select which object type you want to run the pipeline. In this example, the imaging data is associated with the object <i>FluorescenceImaging</i>:
+    </p>
+    <img src="../assets/img/mainGUI_pipeline_selectclass.png" alt="mainGUI_pipeline_selectclass", width = "300">
+    <div class="infonote">
+      <p> <strong>Note</strong><br>
+        This step exists only when the pipeline is run through the <samp>umIToolbox</samp> app. This step doesn't apply to data analysed using the <b><i>DataViewer</i></b> app as standalone.
+      </p>
+    </div>
+    <p>
+      In the <i>Pipeline Configuration</i> app, select the functions to generate the pipeline to create <i>Seed-pixel correlation maps</i>:
+    </p>
+    <img src="../assets/img/mainGUI_pipeline_selectfcns.png" alt="mainGUI_pipeline_selectfcns", width ="660">
+    <p>
+      For more details on how to use the <i>Pipeline Configuration</i> app, click <a href="#">here</a>.
+    </p>
+    <p>
+      The exclamation point <samp>(!)</samp> shown before the function's name, indicate that the given function has optional parameters that can be customized. In this case, we will change the frequency cut-off values for the <samp>temporal_filter</samp> function to filter our data between <b>0.3</b> and <b>3Hz</b>:
+    </p>
+    <img src="../assets/img/mainGUI_pipeline_setopts.png" alt="mainGUI_pipeline_setopts">
+    <p>
+      Now that the analysis pipeline is built,it can be saved by clicking on the button <i>Save to file...</i>. In this case, since the data consists of multi-channel recordings, the app will ask for the channel name (<i>fluo.dat</i>) to be the input for the function <samp>GSR</samp>:
+    </p>
+    <img src="../assets/img/mainGUI_pipeline_selectfirstinput.png" alt="mainGUI_pipeline_selectfirstinput", height="500">
+    <p>
+      Type the name of the file to save the pipeline:
+    </p>
+    <img src="../assets/img/mainGUI_pipeline_pipename.png" alt="mainGUI_pipeline_pipename">
+    <p>
+      A <i>.JSON</i> file will be saved in the folder <i>PipelineConfigFiles</i> inside the project's <i>save directory</i>.
+    </p>
+
+
+
+
+
+
+
+
   </body>
 </html>
