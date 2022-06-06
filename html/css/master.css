@@ -19,6 +19,10 @@
   background: #f6f6f6;
   display: table;
 }
+
+.stringformat{
+  color: #A020F0
+}
 pre, code, samp{
   font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
 }
