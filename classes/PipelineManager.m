@@ -498,7 +498,8 @@ classdef PipelineManager < handle
             targetDir = fullfile(obj.ProtocolObj.SaveDir, 'PipeLineConfigFiles');
             [~,~] = mkdir(targetDir);
             pipeStruct = obj.pipe;
-            pipeStruct.firstInputClassName = obj.pipeFirstInputClass; % Do we need this info??
+            pipeStruct(1).firstInput = obj.pipeFirstInput;
+            pipeStruct(1).firstInputClassName = obj.pipeFirstInputClass; % Do we need this info??
             txt = jsonencode(pipeStruct);
             fid = fopen(fullfile(targetDir,[filename '.json']), 'w');
             fprintf(fid, '%s', txt);
@@ -517,20 +518,18 @@ classdef PipelineManager < handle
             
             % erase current pipeline:
             obj.reset_pipe;
-            
+            % Add first input file name, if applicable:
+            if ~isempty(new_pipe(1).firstInput)
+                obj.pipeFirstInput = new_pipe(1).firstInput;
+                obj.pipeFirstInputClass = new_pipe(1).firstInputClassName;
+            end
             % Add new tasks:
             for i = 1:length(new_pipe)
                 indx_name = find(strcmp(new_pipe(i).name, {obj.funcList.name}));
                 % Update funcList with custom opts settings:
                 if ~isequaln(new_pipe(i).opts,obj.funcList(indx_name).info.opts)
                     obj.funcList(indx_name).info.opts = new_pipe(i).opts;
-                end
-                % Add first input file name, if applicable:
-                if ~isempty(new_pipe(i).inputFileName)                                        
-                    obj.pipeFirstInput = new_pipe(i).inputFileName;
-                    obj.pipeFirstInputClass = new_pipe(i).firstInputClassName;
-                end
-                
+                end                               
                 % add tasks to pipeline:
                 if new_pipe(i).b_save2File
                     obj.addTask(indx_name, true, new_pipe(i).datFileName);
