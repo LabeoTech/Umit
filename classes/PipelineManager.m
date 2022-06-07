@@ -241,7 +241,9 @@ classdef PipelineManager < handle
             end
             
             % Look for first input file to the pipeline;
-            task.inputFileName = obj.getFirstInputFile(task);
+            if isempty(obj.pipeFirstInput)
+                task.inputFileName = obj.getFirstInputFile(task);
+            end
             if task.inputFileName == 0
                 disp('Operation Cancelled by User')
                 return
@@ -682,11 +684,11 @@ classdef PipelineManager < handle
             out = '';
             % Control for function that creates the first input:
             if any(strcmp('outFile', funcInfo.argsOut))
-                obj.pipeFirstInput = 'outFile';
+%                 out = 'outFile';
                 return            
             elseif any(strcmp('outData', funcInfo.argsOut)) && ...
                     ~any(ismember({'data', 'dataStat'}, funcInfo.argsIn))
-                obj.pipeFirstInput = 'outData';
+%                 out = 'outData';
                 return
             end            
             % Control for tasks that do not have any data as input:
@@ -1006,6 +1008,7 @@ classdef PipelineManager < handle
             %   task that will be executed inside method
             %   "run_taskOnTarget".
             
+            disp(['Loading input file : ' step.inputFileName])
             
             if endsWith(step.inputFileName, '.dat')
                 %If the InputFile is a .DAT file:
