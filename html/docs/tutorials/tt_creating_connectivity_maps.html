@@ -29,7 +29,7 @@
     <hr>
     <ul>
       <li><a href="#select-data"> Select the data</a>: select the data to be processed.</li>
-      <li><a href="#create-pipeline"> Create the analysis pipeline</a>: build the analysis pipeline to be applied to the selected data.</li>
+      <li><a href="#create-pipeline"> Create and run the analysis pipeline</a>: build the analysis pipeline to be applied to the selected data.</li>
     </ul>
     <h3 id="select-data">Select the data to be processed</h3>
     <hr>
@@ -80,11 +80,15 @@
       For more details on how to use the <i>Pipeline Configuration</i> app, click <a href="#">here</a>.
     </p>
     <p>
-      The exclamation point <samp>(!)</samp> shown before the function's name, indicate that the given function has optional parameters that can be customized. In this case, we will change the frequency cut-off values for the <samp>temporal_filter</samp> function to filter our data between <b>0.3</b> and <b>3Hz</b>:
+      The exclamation point <samp>(!)</samp> shown before the function's name, indicate that the given function has optional parameters that can be customized. In this case, we will change the parameters of two functions: <i>temporal_filter</i> and <i>SPCM</i>. For the <i>temporal_filter</i> function, we will change the frequency cut-off values for the <samp>temporal_filter</samp> function to filter our data between <b>0.3</b> and <b>3Hz</b> and we set the <i>Normalize</i> parameter to <b>1</b> to normalize the data as &#916;F/F:
     </p>
     <img src="../assets/img/mainGUI_pipeline_setopts.png" alt="mainGUI_pipeline_setopts">
     <p>
-      Now that the analysis pipeline is built,it can be saved by clicking on the button <i>Save to file...</i>. In this case, since the data consists of multi-channel recordings, the app will ask for the channel name (<i>fluo.dat</i>) to be the input for the function <samp>GSR</samp>:
+      As for the <i>SPCM</i> function, we will apply the Z-Fisher transformation of the correlation data as:
+    </p>
+    <img src="../assets/img/mainGUI_pipeline_setoptsSPCM.png" alt="mainGUI_pipeline_setoptsSPCM">
+    <p>
+      Now that the analysis pipeline is built, we can save it by clicking on the button <i>Save to file...</i>. In this case, since the data consists of multi-channel recordings, the app will ask for the channel name (<i>fluo.dat</i>) to be the input for the function <samp>GSR</samp>:
     </p>
     <img src="../assets/img/mainGUI_pipeline_selectfirstinput.png" alt="mainGUI_pipeline_selectfirstinput", height="500">
     <p>
@@ -95,12 +99,34 @@
       A <i>.JSON</i> file will be saved in the folder <i>PipelineConfigFiles</i> inside the project's <i>save directory</i>:
     </p>
     <img src="../assets/img/mainGUI_pipeline_pipelinesavemsg.png" alt="mainGUI_pipeline_pipelinesavemsg">
-
-
-
-
-
-
-
+    <p>
+      The pipeline is ready to be applied! Here is a summary of the steps:
+    </p>
+    <ol>
+      <li><i>run_ImagesClassification</i>: imports the binary data and saves each recording channel in a separate .dat file.</li>
+      <li><i>run_HemoCorrection</i>: uses all reflectance channels (i.e. red, green and amber) to subtract the hemodynamic signal from the fluorescence data.</li>
+      <li><i>GSR</i>: performs a global signal regression of the fluorescence data to remove global signal variance.</li>
+      <li><i>temporal_filter</i>: performs a temporal band-pass filter between 0.3 and 3Hz and normalizes the data as &#916;F/F. </li>
+      <li><i>SPCM</i>: Calculates a pixel-based correlation (<b>S</b>eed<b> P</b>ixel <b>C</b>orrelation <b>M</b>ap and applies the Z-Fisher transformation to the correlation values.</li>
+    </ol>
+    <p>
+      Finally, click on the green button <i>Save Config</i> to confirm:
+    </p>
+    <img src="../assets/img/mainGUI_pipeline_clickonsave.png" alt="mainGUI_pipeline_clickonsave", width = "660">
+    <p>
+      In the main GUI, a summary of the pipeline is displayed in the <i>Pipeline status</i> panel. To run the pipeline on the selected data, simply click on the green button <i>Run Pipeline</i>.
+    </p>
+    <img src="../assets/img/mainGUI_pipeline_pipeisready.png" alt="mainGUI_pipeline_pipeisready", width="660">
+    <p>
+      Two progress bars are displayed showing the progress of the pipeline across the selected objects:
+    </p>
+    <img src="../assets/img/mainGUI_pipeline_progressbar.png" alt="mainGUI_pipeline_progressbar", width = "660">
+    <p>
+      At the end of the execution of the pipeline, a summary table is displayed showing the information of each step of the pipeline. Use this table to spot failed steps and to retrieve error messages for later troubleshooting:
+    </p>
+    <img src="../assets/img/mainGUI_pipeline_summarytab.png" alt="mainGUI_pipeline_summarytab", width="660">
+    <p>
+      The seed-pixel correlation maps created by the pipeline are stored in the file <samp>SPCMap.dat</samp>. Click <a href="#">here</a> to learn how to explore the data!
+    </p>
   </body>
 </html>
