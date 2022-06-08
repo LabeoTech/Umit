@@ -15,9 +15,7 @@ classdef PipelineManager < handle
         pipe = struct('className', '','argsIn', {},'argsOut',{},'outFileName','',...
             'inputFileName', '','lvl', [], 'b_save2File', logical.empty, 'datFileName',...
             '', 'opts',[],'name','');% !!If the fields are changed, please apply
-        % the same changes to the property's set method.
-        %test
-        z
+        % the same changes to the property's set method.        
         fcnDir char % Directory of the analysis functions.
         funcList struct % structure containing the info about each function in the "fcnDir".
         ProtocolObj Protocol % Protocol Object.
@@ -32,8 +30,7 @@ classdef PipelineManager < handle
         current_metaData % MetaData associated with "current_data".
         current_outFile cell % List of file names created as output from some of the analysis functions.
         b_state logical % True if a task of a pipeline was successfully executed.
-        pipeFirstInput = '' % Name of the first data to be used by the Pipeline.
-        pipeFirstInputClass = '' % Name of the class from the first input.
+        pipeFirstInput = '' % Name of the first data to be used by the Pipeline.        
         % It can be the name of an existing file, or
         % "outFile" for a function that creates a file
         % such as "run_ImagesClassification".        
@@ -240,49 +237,50 @@ classdef PipelineManager < handle
                     task.name);
                 return
             end
-            
+           
             % Look for first input file to the pipeline;
             if isempty(obj.pipeFirstInput)
-                task.inputFileName = obj.getFirstInputFile(task);
-            end
-            if task.inputFileName == 0
-                disp('Operation Cancelled by User')
-                return
-            end
-
-            % Control for multiple outputs from the previous step:
-            % Here, we assume that functions with multiple outputs
-            % create only "Files" and not "data".
-            % Therefore, we will update the function string to load
-            % one of the "Files" before running the task.
-            
-            % Look from bottom to top of the pipeline for tasks with files
-            % as outputs. This is necessary because not all analysis
-            % functions have outputs.
-            
-            for i = length(obj.pipe):-1:1
-                if ismember('outData', obj.pipe(i).argsOut)
-                    break
-                elseif any(strcmp(task.argsIn, 'data')) && any(strcmp('outFile', obj.pipe(i).argsOut))
-                    if iscell(obj.pipe(i).outFileName)
-                        % Ask user to select a file:
-                        disp('Controlling for multiple outputs')
-                        w = warndlg({[obj.pipe(i).name ' has multiple output files!'],...
-                            'Please, select one to be analysed!'});
-                        waitfor(w);
-                        [indxFile, tf] = listdlg('ListString', obj.pipe(i).outFileName,...
-                            'SelectionMode','single');
-                        if ~tf
-                            disp('Operation cancelled by User')
+                % Control for multiple outputs from the previous step:
+                % Here, we assume that functions with multiple outputs
+                % create only "Files" and not "data".
+                % Therefore, we will update the function string to load
+                % one of the "Files" before running the task.
+                
+                % Look from bottom to top of the pipeline for tasks with files
+                % as outputs. This is necessary because not all analysis
+                % functions have outputs.
+                
+                for i = length(obj.pipe):-1:1
+                    if ismember('outData', obj.pipe(i).argsOut)
+                        obj.pipeFirstInput = 'outData';
+                        break
+                    elseif any(strcmp(task.argsIn, 'data')) && any(strcmp('outFile', obj.pipe(i).argsOut))
+                        if iscell(obj.pipe(i).outFileName)
+                            % Ask user to select a file:
+                            disp('Controlling for multiple outputs')
+                            w = warndlg({[obj.pipe(i).name ' has multiple output files!'],...
+                                'Please, select one to be analysed!'});
+                            waitfor(w);
+                            [indxFile, tf] = listdlg('ListString', obj.pipe(i).outFileName,...
+                                'SelectionMode','single');
+                            if ~tf
+                                disp('Operation cancelled by User')
+                                return
+                            end
+                            task.inputFileName = obj.pipe(i).outFileName{indxFile};
+                        else
+                            task.inputFileName = obj.pipe(i).outFileName;
+                        end
+                        obj.pipeFirstInput = task.inputFileName;
+                    else
+                        task.inputFileName = obj.getFirstInputFile(task);
+                        if task.inputFileName == 0
+                            disp('Operation Cancelled by User')
                             return
                         end
-                        task.inputFileName = obj.pipe(i).outFileName{indxFile};
-                    else
-                        task.inputFileName = obj.pipe(i).outFileName;
                     end
                 end
             end
-            
             % Save to Pipeline:
             obj.pipe = [obj.pipe; task];
             disp(['Added "' task.name '" to pipeline.']);
@@ -501,8 +499,7 @@ classdef PipelineManager < handle
             targetDir = fullfile(obj.ProtocolObj.SaveDir, 'PipeLineConfigFiles');
             [~,~] = mkdir(targetDir);
             pipeStruct = obj.pipe;
-            pipeStruct(1).firstInput = obj.pipeFirstInput;
-            pipeStruct(1).firstInputClassName = obj.pipeFirstInputClass; % Do we need this info??
+            pipeStruct(1).firstInput = obj.pipeFirstInput;         
             txt = jsonencode(pipeStruct);
             fid = fopen(fullfile(targetDir,[filename '.json']), 'w');
             fprintf(fid, '%s', txt);
@@ -524,20 +521,17 @@ classdef PipelineManager < handle
             % Add first input file name, if applicable:
             if ~isempty(new_pipe(1).firstInput)
                 obj.pipeFirstInput = new_pipe(1).firstInput;
-                obj.pipeFirstInputClass = new_pipe(1).firstInputClassName;
             end
             % Add new tasks:
+            fn = fieldnames(obj.pipe);
             for i = 1:length(new_pipe)
                 indx_name = find(strcmp(new_pipe(i).name, {obj.funcList.name}));
                 % Update funcList with custom opts settings:
                 if ~isequaln(new_pipe(i).opts,obj.funcList(indx_name).info.opts)
                     obj.funcList(indx_name).info.opts = new_pipe(i).opts;
-                end                               
-                % add tasks to pipeline:
-                if new_pipe(i).b_save2File
-                    obj.addTask(indx_name, true, new_pipe(i).datFileName);
-                else
-                    obj.addTask(indx_name);
+                end
+                for k = 1:numel(fn)
+                    obj.pipe(i).(fn{k}) = new_pipe(i).(fn{k});
                 end
             end
         end
@@ -683,33 +677,19 @@ classdef PipelineManager < handle
             %   out (char): name of input file. Empty if file does not exist.
             
             out = '';
-            % Control for function that creates the first input:
-            if any(strcmp('outFile', funcInfo.argsOut))
-%                 out = 'outFile';
-                return            
-            elseif any(strcmp('outData', funcInfo.argsOut)) && ...
-                    ~any(ismember({'data', 'dataStat'}, funcInfo.argsIn))
-%                 out = 'outData';
-                return
-            end            
+            % If the first input was already set, abort:
+            if ~isempty(obj.pipeFirstInput)
+                    return
+            end                        
+            
             % Control for tasks that do not have any data as input:
             if ~any(ismember({'data', 'dataStat'}, funcInfo.argsIn))
                 return
             end
-            if strcmp(obj.pipeFirstInput, 'outFile')
-                return
-            end           
+                       
+            
             % Get target object:
-            targetObj = getTargetObj(obj,funcInfo.name);
-            % Check if first input is already set:
-            if ~isempty(obj.pipeFirstInput) && ~isempty(obj.pipeFirstInputClass)
-                out = obj.pipeFirstInput;                
-                if exist(fullfile(targetObj.SaveFolder,out), 'file')
-                    return
-                end
-            end
-           
-               
+            targetObj = getTargetObj(obj,funcInfo.name);            
             % Display a list of files from the selected
             % object(targetObj):
             datFileList = dir(fullfile(targetObj.SaveFolder, '*.dat'));
@@ -746,30 +726,25 @@ classdef PipelineManager < handle
             % Save first input
             out = FileList(jndx).name;
             obj.pipeFirstInput = out;
-            obj.pipeFirstInputClass = class(targetObj);
-            
+                        
             % Local function
             function trgtObj = getTargetObj(obj, fcnName)
                 % Get all existing objects from the selected items in Protocol
                 % object:
                 trgtObj = [];
                 idx = unique(obj.ProtocolObj.Idx_Filtered,'rows');
-                if isempty(obj.pipeFirstInputClass)
-                    classes = {};
-                    for i = 1:size(idx,1)
-                        classes{i} = class(obj.ProtocolObj.Array.ObjList(idx(i,1)).Array.ObjList(idx(i,2)).Array.ObjList(idx(i,3)));
-                    end
-                    classes = [{'Subject', 'Acquisition'}  classes]; classes = unique(classes);
-                    % Select Object containing input file:
-                    [indx,tf] = listdlg('PromptString', {'Select the Object containing', 'the input for the function :',...
-                        fcnName},'ListString',classes, 'SelectionMode', 'single');
-                    if ~tf                        
-                        return
-                    end
-                    selClass = classes{indx};
-                else
-                    selClass = obj.pipeFirstInputClass;
+                classes = {};
+                for i = 1:size(idx,1)
+                    classes{i} = class(obj.ProtocolObj.Array.ObjList(idx(i,1)).Array.ObjList(idx(i,2)).Array.ObjList(idx(i,3)));
                 end
+                classes = [{'Subject', 'Acquisition'}  classes]; classes = unique(classes);
+                % Select Object containing input file:
+                [indx,tf] = listdlg('PromptString', {'Select the Object containing', 'the input for the function :',...
+                    fcnName},'ListString',classes, 'SelectionMode', 'single');
+                if ~tf
+                    return
+                end
+                selClass = classes{indx};
                 
                 switch selClass
                     case 'Subject'
