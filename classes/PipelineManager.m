@@ -16,7 +16,8 @@ classdef PipelineManager < handle
             'inputFileName', '','lvl', [], 'b_save2File', logical.empty, 'datFileName',...
             '', 'opts',[],'name','');% !!If the fields are changed, please apply
         % the same changes to the property's set method.
-        
+        %test
+        z
         fcnDir char % Directory of the analysis functions.
         funcList struct % structure containing the info about each function in the "fcnDir".
         ProtocolObj Protocol % Protocol Object.
