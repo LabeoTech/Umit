@@ -1161,7 +1161,7 @@ g.ColumnWidth = {'1x','1x'};
 g.ColumnSpacing = 5;
 g.RowHeight = [repmat({30},1,length(fields)), {60}];
 % Update figure height:
-dlg.InnerPosition(4) = sum([g.RowHeight{:}, g.RowSpacing]);
+dlg.InnerPosition(4) = sum([g.RowHeight{:}, 2*g.RowSpacing]);
 for i = 1:length(fields)
     lb = uilabel(g,'Text', [fields{i} ': ']);
     lb.FontSize = myFontSize;

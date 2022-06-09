@@ -21,7 +21,7 @@ function getEventsFromSingleChannel(object, SaveFolder, varargin)
 %
 
 % opts structure
-default_opts = struct('channel', -1, 'threshold', 'auto', 'TriggerType','EdgeSet');
+default_opts = struct('channel', 'auto', 'threshold', 'auto', 'TriggerType','EdgeSet');
 opts_values = struct('channel', {{'auto',Inf}}, 'threshold',{{'auto',Inf}}, 'TriggerType', {{'EdgeSet', 'EdgeToggle'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 
 %%% Arguments parsing and validation %%%
