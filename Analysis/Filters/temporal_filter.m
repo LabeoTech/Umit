@@ -25,11 +25,11 @@ function outData = temporal_filter(data, metaData, varargin)
 
 % Defaults:
 default_Output = 'BPtemporalFilter.dat';  %#ok. This line is here just for Pipeline management.
-default_opts = struct('LowCutOffHz', 0.0083, 'HighCutOffHz', 0, 'Normalize', true);
-opts_values = struct('LowCutOffHz', [0,Inf], 'HighCutOffHz',[0,Inf],'Normalize',[false, true]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
+default_opts = struct('LowCutOffHz', 0.0083, 'HighCutOffHz', 0, 'Normalize', true, 'bApplyExpFit', false);
+opts_values = struct('LowCutOffHz', [0,Inf], 'HighCutOffHz',[0,Inf],'Normalize',[false, true],'bApplyExpFit', [true,false]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 % Some notes on the CutOff values:
 % 1) The HighCutOffHz value of 0 will be translated as the Nyquist of the sample rate
-% 2) For the LowCutOff, values equal or less than zero will give a low-passed signal at "HighCutOff".
+% 2) For the LowCutOff, values equal to zero will give a low-passed signal at "HighCutOff".
 
 
 %%% Arguments parsing and validation %%%
@@ -46,9 +46,7 @@ metaData = p.Results.metaData;
 opts = p.Results.opts;
 clear p
 %%%%
-% Transform strings in opts to numbers:
-eval(['opts.LowCutOffHz = ' opts.LowCutOffHz, ';'])
-eval(['opts.HighCutOffHz= ' opts.HighCutOffHz, ';'])
+
 % Validate if "data" is an Image Time Series:
 errID = 'umIToolbox:temporal_filter:InvalidInput';
 errMsg = 'Wrong Input Data type. Data must be an Image time series with dimensions "X", "Y" and "T".';
@@ -58,9 +56,22 @@ assert(all(ismember(metaData.dim_names,{'Y', 'X', 'T'})), errID, errMsg);
 idx_nan = isnan(outData);
 outData(idx_nan) = 0;
 % Run Temporal filter function
+disp('Checking Frequency cut-offs...')
+% Check if cut-off frequencies are in the acceptable range:
+% Check Low cut-off frequency
+if opts.LowCutOffHz < 0 || opts.LowCutOffHz > metaData.Freq
+    error(['Invalid cut off value! LowCutOffHz must be between 0 and ' num2str(metaData.Freq) '!'], ...
+        'umIToolbox:temporal_filter:InvalidInput');
+end
+% Check High cut-off frequency
+if opts.HighCutOffHz < 0 || opts.HighCutOffHz > metaData.Freq
+    error(['Invalid cut off value! HighCutOffHz must be between 0 and ' num2str(metaData.Freq) '!'], ...
+        'umIToolbox:temporal_filter:InvalidInput');
+end
+
 disp('Filtering data...')
 outData = NormalisationFiltering(pwd, outData, opts.LowCutOffHz, opts.HighCutOffHz, ...
-    opts.Normalize,0, metaData.Freq);
+    opts.Normalize,opts.bApplyExpFit, metaData.Freq);
 disp('Finished with temporal filter.')
 % Put NaNs back to data:
 outData(idx_nan) = NaN;
