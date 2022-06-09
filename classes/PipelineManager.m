@@ -14,7 +14,8 @@ classdef PipelineManager < handle
         % Structure array containing steps of the pipeline.
         pipe = struct('className', '','argsIn', {},'argsOut',{},'outFileName','',...
             'inputFileName', '','lvl', [], 'b_save2File', logical.empty, 'datFileName',...
-            '', 'opts',[],'name','');% !!If the fields are changed, please apply
+            '', 'opts',struct.empty,'opts_vals',struct.empty,...
+            'opts_def',struct.empty ,'name','');% !!If the fields are changed, please apply
         % the same changes to the property's set method.
         fcnDir char % Directory of the analysis functions.
         funcList struct % structure containing the info about each function in the "fcnDir".
@@ -133,7 +134,7 @@ classdef PipelineManager < handle
             if isempty(fieldnames(pipe))
                 pipe = struct('className', '','argsIn', {},'argsOut',{},'outFileName','',...
                     'inputFileName', '','lvl', [], 'b_save2File', logical.empty, 'datFileName',...
-                    '', 'opts',[],'name','');
+                    '', 'opts',struct.empty,'opts_vals',struct.empty,'opts_def',struct.empty,'name','');
             end
             % Check if all fields exist:
             if ~all(ismember(fieldnames(pipe),fieldnames(obj.pipe)))
