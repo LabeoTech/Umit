@@ -19,6 +19,8 @@ end
 % Set Defaults:
 default_Output = '';
 default_opts = struct();
+opts_values = struct();
+
 disp('Creating Fcn list...');
 list = dir(fullfile(root, '\*\*.m'));
 out = [];
@@ -38,6 +40,7 @@ for i = 1:length(list)
     if all(ismember(fcn_info.argsIn, kwrds_args)) && all(ismember(fcn_info.argsOut, kwrds_out))
         [~,list(i).name, ~] = fileparts(list(i).name);
         list(i).info = fcn_info;
+        list(i).info.opts_def = list(i).info.opts; % Duplicate default params.
         out = [out;list(i)];
     end
 end
@@ -74,6 +77,13 @@ disp('Function list Saved to .MAT file!');
             eval(str)
             info.opts = default_opts;
             info.argsIn{end+1} = 'opts';
+            % Parse optional params values struct:
+            optsVals = 'opts_values\s*=.*?(?=\n)';
+            str_opts = regexp(txt, optsVals, 'match', 'once');
+            if ~isempty(str_opts)
+                eval(str_opts)
+                info.opts_vals = opts_values;
+            end
         end
     end
 
