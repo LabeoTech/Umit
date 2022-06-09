@@ -19,7 +19,6 @@ opts_values = struct('Red',[false, true], 'Green',[false, true],'Amber',[false, 
 p = inputParser;
 % Save folder:
 addRequired(p, 'SaveFolder', @isfolder);
-
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
 % Parse inputs:
 parse(p,SaveFolder, varargin{:});
