@@ -56,19 +56,17 @@ assert(all(ismember(metaData.dim_names,{'Y', 'X', 'T'})), errID, errMsg);
 idx_nan = isnan(outData);
 outData(idx_nan) = 0;
 % Run Temporal filter function
-disp('Checking Frequency cut-offs...')
 % Check if cut-off frequencies are in the acceptable range:
-% Check Low cut-off frequency
+% Check Low cut-off frequency:
 if opts.LowCutOffHz < 0 || opts.LowCutOffHz > metaData.Freq
     error(['Invalid cut off value! LowCutOffHz must be between 0 and ' num2str(metaData.Freq) '!'], ...
         'umIToolbox:temporal_filter:InvalidInput');
 end
-% Check High cut-off frequency
+% Check High cut-off frequency:
 if opts.HighCutOffHz < 0 || opts.HighCutOffHz > metaData.Freq
     error(['Invalid cut off value! HighCutOffHz must be between 0 and ' num2str(metaData.Freq) '!'], ...
         'umIToolbox:temporal_filter:InvalidInput');
 end
-
 disp('Filtering data...')
 outData = NormalisationFiltering(pwd, outData, opts.LowCutOffHz, opts.HighCutOffHz, ...
     opts.Normalize,opts.bApplyExpFit, metaData.Freq);
