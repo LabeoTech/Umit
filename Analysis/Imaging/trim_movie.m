@@ -11,8 +11,10 @@ function [outData, metaData] = trim_movie(data, metaData, varargin)
 %   metaData: .mat file with meta data associated with "outData".
 
 % Defaults:
-default_opts = struct('crop_start_sec', 0, 'crop_end_sec',0);
 default_Output = 'cropped_mov.dat'; %#ok
+default_opts = struct('crop_start_sec', 0, 'crop_end_sec',0);
+opts_values = struct('crop_start_sec', [0 Inf], 'crop_end_sec', [0 Inf]);%#ok. This is here only as a reference for PIPELINEMANAGER.m. 
+
 %%% Arguments parsing and validation %%%
 % Parse inputs:
 p = inputParser;

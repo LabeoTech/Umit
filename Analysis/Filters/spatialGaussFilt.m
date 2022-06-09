@@ -10,6 +10,7 @@ function outData = spatialGaussFilt(data, metaData, varargin)
 % Defaults:
 default_Output = 'spatFilt.dat'; %#ok. This line is here just for Pipeline management.
 default_opts = struct('KernelSize', 5,'Sigma',1);
+opts_values = struct('KernelSize', [1:2:51], 'Sigma',[0,Inf]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 %%% Arguments parsing and validation %%%
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder

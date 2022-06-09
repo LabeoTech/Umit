@@ -13,14 +13,13 @@ function [outData, metaData] = run_HemoCorrection(SaveFolder, varargin)
 
 % Defaults:
 default_Output = 'hemoCorr_fluo.dat'; %#ok. This line is here just for Pipeline management.
-
+default_opts = struct('Red', true, 'Green', true, 'Amber', true);
+opts_values = struct('Red',[false, true], 'Green',[false, true],'Amber',[false, true]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 %%% Arguments parsing and validation %%%
 p = inputParser;
 % Save folder:
 addRequired(p, 'SaveFolder', @isfolder);
-% Optional Parameters:
-% opts structure:
-default_opts = struct('Red', true, 'Green', true, 'Amber', true);
+
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
 % Parse inputs:
 parse(p,SaveFolder, varargin{:});

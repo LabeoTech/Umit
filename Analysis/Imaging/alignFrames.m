@@ -14,7 +14,7 @@ function [outData, metaData] = alignFrames(data, metaData, object, varargin)
 % Defaults:
 default_Output = 'mov_aligned.dat'; %#ok This line is here just for Pipeline management.
 default_opts = struct('UseFile', 'auto');
-
+opts_values = struct('UseFile',{{'auto','self'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 %%% Arguments parsing and validation %%%
 p = inputParser;
 addRequired(p,'data',@(x) isnumeric(x) & ismember(ndims(x),[2 3])); % Validate if the input is a 3-D numerical matrix:
@@ -84,15 +84,16 @@ switch opts.UseFile
         end
     otherwise
         % Load the filename in "opts.UseFile"
-        try
-            [targetDat, targetMetaData] = mapDatFile(fullfile(object.SaveFolder, opts.UseFile));
-            targetFr = targetDat.Data.data(:,:,1);
-        catch ME
-            causeException = MException('MATLAB:UMIToolbox:alignFrame:FileNotFound',...
-                ['Cannot find "' opts.UseFile '" in object''s SaveFolder']);
-            addCause(ME, causeException);
-            rethrow(ME)
-        end
+        % Disabled option to type file name. (BrunoO, 09/06/2022).
+%         try
+%             [targetDat, targetMetaData] = mapDatFile(fullfile(object.SaveFolder, opts.UseFile));
+%             targetFr = targetDat.Data.data(:,:,1);
+%         catch ME
+%             causeException = MException('MATLAB:UMIToolbox:alignFrame:FileNotFound',...
+%                 ['Cannot find "' opts.UseFile '" in object''s SaveFolder']);
+%             addCause(ME, causeException);
+%             rethrow(ME)
+%         end
 end
 targetMetaData.dim_names;
 

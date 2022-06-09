@@ -12,6 +12,7 @@ function outDataStat = getDataFromROI(data, metaData, varargin)
 % Defaults:
 default_Output = 'ROI_data.mat'; %#ok This line is here just for Pipeline management.
 default_opts = struct('ROImasks_filename', 'ROImasks_data.mat', 'SpatialAggFcn', 'mean');
+opts_values = struct('ROImasks_filename', {{'ROImasks_data.mat'}}, 'SpatialAggFcn',{{'none','mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 default_object = ''; % This line is here just for Pipeline management to be able to detect this input.
 %%% Arguments parsing and validation %%%
 p = inputParser;
@@ -19,7 +20,7 @@ addRequired(p,'data',@(x) isnumeric(x)); % Validate if the input is a 3-D numeri
 addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
 % Optional Parameters:
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ...
-    ismember(x.SpatialAggFcn, {'none','mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}));
+    ismember(x.SpatialAggFcn, opts_values.SpatialAggFcn));
 addOptional(p, 'object', default_object, @(x) isempty(x) || isa(x,'Acquisition') || isa(x,'Modality'));
 
 % Parse inputs:

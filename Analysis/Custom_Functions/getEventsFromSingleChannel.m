@@ -19,6 +19,11 @@ function getEventsFromSingleChannel(object, SaveFolder, varargin)
 %   TTL_events.mat file containing channel ID, state and timestamps.
 %   For details, see function CREATE_TTL_EVENTSFILE.m.
 %
+
+% opts structure
+default_opts = struct('channel', -1, 'threshold', 'auto', 'TriggerType','EdgeSet');
+opts_values = struct('channel', {{'auto',Inf}}, 'threshold',{{'auto',Inf}}, 'TriggerType', {{'EdgeSet', 'EdgeToggle'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
+
 %%% Arguments parsing and validation %%%
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder
@@ -27,8 +32,7 @@ addRequired(p, 'object', @(x) isa(x,'Modality'));
 % Save folder:
 addRequired(p, 'SaveFolder', @isfolder);
 % Optional Parameters:
-% opts structure
-default_opts = struct('channel', -1, 'threshold', 'auto', 'TriggerType','EdgeSet');
+
 % Notes on TriggerType:
 % Two possible modes:
 % 1 - "EdgeSet": The signal stays on for the duration of the trial.
@@ -70,7 +74,7 @@ camTOn = find(camT == 1,1,'first');
 camTOff = find(camT == -1,1,'last');
 AnalogIN = AnalogIN(camTOn:camTOff,:);
 
-if opts.channel == -1
+if strcmp(opts.channel, 'auto')
     STDev = std(AnalogIN(:,2:end), 0, 1);% exclude Cam triggers from search.
     sigChan = find(STDev == max(STDev)) + 1;
     sigChan = sigChan(1); % if find more than one, pick the first (arbitrary choice here...)

@@ -16,6 +16,7 @@ function outData = GSR(data, metaData, varargin)
 % Defaults:
 default_Output = 'GSR.dat'; %#ok. This line is here just for Pipeline management.
 default_opts = struct('b_UseMask', false, 'MaskFile','ImagingReferenceFrame.mat');
+opts_values = struct('b_UseMask', [true,false], 'MaskFile',{{'ImagingReferenceFrame.mat'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 default_object = ''; % This line is here just for Pipeline management to be able to detect this input.
 %%% Arguments parsing and validation %%%
 p = inputParser;

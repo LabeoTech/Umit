@@ -3,24 +3,21 @@ function outFile = run_ImagesClassification(RawFolder, SaveFolder, varargin)
 % IMAGESCLASSIFICATION from the IOI library (LabeoTech).
 
 % Defaults:
-default_Output = {'fluo_475.dat','fluo.dat', 'red.dat', 'green.dat', 'yellow.dat', 'speckle.dat'}; % This is here only as a reference for PIPELINEMANAGER.m . The real outputs will be stored in OUTFILE.
-%%% Arguments parsing and validation %%%
-p = inputParser;
-% Raw folder:
-addRequired(p, 'RawFolder', @isfolder);
-% Save folder:
-addRequired(p, 'SaveFolder', @isfolder);
-% Optional Parameters:
-% opts structure:
+default_Output = {'fluo_475.dat','fluo.dat', 'red.dat', 'green.dat', 'yellow.dat', 'speckle.dat'}; % This is here only as a reference for PIPELINEMANAGER.m. The real outputs will be stored in OUTFILE.
 default_opts = struct('BinningSpatial', 1, 'BinningTemp', 1, 'b_IgnoreStim', true);
+opts_values = struct('BinningSpatial', 2.^[0:6], 'BinningTemp',2.^[0:6],'b_IgnoreStim',[false, true]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
+% Arguments validation:
+p = inputParser;
+addRequired(p, 'RawFolder', @isfolder);
+addRequired(p, 'SaveFolder', @isfolder);
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
-
 parse(p, RawFolder, SaveFolder, varargin{:});
 %Initialize Variables:
 RawFolder = p.Results.RawFolder;
 SaveFolder = p.Results.SaveFolder;
 opts = p.Results.opts;
 outFile = {};
+clear p
 %%%%
 % Get existing ImagesClassification files in directory:
 existing_ChanList  = dir(fullfile(SaveFolder,'*.dat'));

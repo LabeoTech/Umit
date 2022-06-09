@@ -20,8 +20,9 @@ function outDataStat = genCorrelationMatrix(data, metaData, varargin)
 % Defaults: IMPORTANT, keep all default statements in one line each so the
 % Pipeline Managers will be able to read it!
 default_Output = 'corrMatrix.mat'; %#ok This line is here just for Pipeline management.
-
 default_opts = struct('ROImasks_filename', 'ROImasks_data.mat', 'CorrAlgorithm', 'centroid_vs_centroid', 'SpatialAggFcn', 'mean','b_FisherZ_transform', false);
+opts_values = struct('ROImasks_filename', {{'ROImasks_data.mat'}}, 'CorrAlgorithm',{{'centroid_vs_centroid','centroid_vs_agg', 'avg_vs_avg'}}, 'SpatialAggFcn', {'none','mean', 'max', 'min', 'median'},'b_FisherZ_transform',[true,false]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
+
 default_object = ''; % This line is here just for Pipeline management to be able to detect this input.
 %%% Arguments parsing and validation %%%
 p = inputParser;
@@ -29,8 +30,8 @@ addRequired(p,'data',@(x) isnumeric(x)); % Validate if the input is a 3-D numeri
 addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
 % Optional Parameters:
 % Validation criteria for optinal params:
-valid_spatAgg = @(x) ismember(x.SpatialAggFcn, {'none','mean', 'max', 'min', 'median'});
-valid_corrAlg = @(x) ismember(x.CorrAlgorithm, {'centroid_vs_centroid','centroid_vs_agg', 'avg_vs_avg'});
+valid_spatAgg = @(x) ismember(x.SpatialAggFcn, opts_values.SpatialAggFcn);
+valid_corrAlg = @(x) ismember(x.CorrAlgorithm, opts_values.CorrAlgorithm);
 % Add optional params:
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && valid_spatAgg(x) && valid_corrAlg(x));
 addOptional(p, 'object', default_object, @(x) isempty(x) || isa(x,'Acquisition') || isa(x,'Modality'));

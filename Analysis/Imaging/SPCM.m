@@ -16,7 +16,7 @@ function [outData, metaData] = SPCM(data, metaData, varargin)
 % Defaults:
 default_Output = 'SPCMap.dat'; %#ok. This line is here just for Pipeline management.
 default_opts = struct('b_FisherZ_transform', false);
-
+opts_values = struct('b_FisherZ_transform',[false, true]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 %%% Arguments parsing and validation %%%
 p = inputParser;
 addRequired(p,'data',@(x) isnumeric(x) & ndims(x) == 3); % Validate if the input is a 3-D numerical matrix:

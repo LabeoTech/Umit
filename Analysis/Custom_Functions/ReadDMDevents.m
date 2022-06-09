@@ -9,6 +9,8 @@ function ReadDMDevents(object,SaveFolder, varargin)
 
 %  Defaults:
 default_opts = struct('channel', 3, 'threshold', 'auto', 'TriggerType','EdgeSet');
+opts_values = struct('channel', [2:11], 'threshold',{{'auto', Inf}}, 'TriggerType', {{'EdgeSet', 'EdgeToggle'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
+
 % Notes on TriggerType:
 % Two possible modes:
 % 1 - "EdgeSet": The signal stays on for the duration of the trial.

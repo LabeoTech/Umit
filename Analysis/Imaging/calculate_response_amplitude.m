@@ -16,9 +16,10 @@ function [outData, metaData] = calculate_response_amplitude(data, metaData, vara
 %   outData: numerical matrix with dimensions {E,Y,X}.   
 %   metaData: .mat file with meta data associated with "outData".
 
-% Defaults:
+% Defaults: !Instantiate one default per line!
 default_Output = 'amplitude_Map.dat'; %#ok This line is here just for Pipeline management.
-default_opts = struct('preEvent_value', 'median', 'postEvent_value', 'max', 'timeWindow', -1);
+default_opts = struct('preEvent_value', 'median', 'postEvent_value', 'max', 'postEvnt_timeWindow_sec', 'all');
+opts_values = struct('preEvent_value', {{'mean', 'median', 'min','max'}}, 'postEvent_value',{{'mean', 'median', 'min','max'}},'postEvnt_timeWindow_sec',{{'all',Inf}});% This is here only as a reference for PIPELINEMANAGER.m. 
 
 %%% Arguments parsing and validation %%%
 % Parse inputs:
@@ -37,11 +38,11 @@ clear p
 % Further validation of optional arguments:
 errID = 'Umitoolbox:calculate_respose_amplitude:InvalidDataType';
 errMsg = 'Invalid Input. Input must be member of {"mean", "median", "min","max"} or a numeric scalar';
-valid_Opts1 = @(x) (ismember(char(x), {'mean', 'median', 'min','max'}) || (isscalar(x) && isnumeric(x)));
-valid_Opts2 = @(x) (isscalar(x) && (x == -1 || x>0));
+valid_Opts1 = @(x) (ismember(char(x), opts_values.preEvent_value) || (isscalar(x) && isnumeric(x)));
+valid_Opts2 = @(x) ( (~isempty(str2num(x)) && isscalar(x) && x>0) )  || strcmp(x, 'all');%#ok
 assert(valid_Opts1(opts.preEvent_value), errID, errMsg);
 assert(valid_Opts1(opts.postEvent_value), errID, errMsg);
-assert(valid_Opts2(opts.timeWindow), errID, 'Input must be a scalar positive numeric value or "-1".');
+assert(valid_Opts2(opts.postEvnt_timeWindow_sec), errID, 'Input must be a scalar positive numeric value or "all".');
 % Get dimension names:
 dims = metaData.dim_names;
 % Validate if data has the following dimension names "E" and "T":
@@ -65,11 +66,12 @@ data = reshape(data,data_sz(1), []);
 
 % Perform amplitude calculation:
 trigFrame = round(metaData.preEventTime_sec * metaData.Freq);
-switch opts.timeWindow
-    case -1
+switch opts.postEvnt_timeWindow_sec
+    case "all"
         endFrame  = size(data,1);
     otherwise
-        endFrame  = trigFrame + round(metaData.Freq * opts.timeWindow);
+%         opts.postEvnt_timeWindow_sec = str2double(opts.postEvnt_timeWindow_sec);
+        endFrame  = trigFrame + round(metaData.Freq * opts.postEvnt_timeWindow_sec);
         if endFrame > size(data,1)
             endFrame = size(data,1);
         end

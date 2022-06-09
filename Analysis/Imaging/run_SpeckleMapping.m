@@ -9,7 +9,7 @@ function [outData, metaData] = run_SpeckleMapping(SaveFolder, varargin)
 % Defaults:
 default_Output = 'std_speckle.dat'; %#ok. This line is here just for Pipeline management.
 default_opts = struct('sType', 'Temporal', 'channel', 'speckle', 'bSaveMap', false,'bLogScale', false);
-
+opts_values = struct('sType',{{'Spatial', 'Temporal'}},'channel', {{'fluo_475','fluo', 'red', 'green', 'yellow', 'speckle'}}, 'bSaveMap', [true,false], 'bLogScale', [true,false]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 %%% Arguments parsing and validation %%%
 p = inputParser;
 % Save folder:

@@ -1,6 +1,8 @@
 function [outData, metaData] = apply_aggregate_function(data, metaData, varargin)
-% APPLY_AGGREGATE_FUNCTION applies an aggregate function to one or more
+% APPLY_AGGREGATE_FUNCTION applies an aggregate function to one
 % dimensions of a .DAT file. 
+% !! Removed option to perform aggregation over multiple dimensions. BrunoO
+% (09-06-2022).
 
 % Inputs:
 %   data: numerical matrix containing imaging data.
@@ -14,18 +16,17 @@ function [outData, metaData] = apply_aggregate_function(data, metaData, varargin
 %   metaData: .mat file with meta data associated with "outData".
 
 % Defaults:
-default_opts = struct('aggregateFcn', 'mean', 'dimensionName', 'T');
 default_Output = 'aggFcn_applied.dat'; 
-
+default_opts = struct('aggregateFcn', 'mean', 'dimensionName', 'T');
+opts_values = struct('aggregateFcn', {{'mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}}, 'dimensionName',{{'X','Y','Z','T','E'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 %%% Arguments parsing and validation %%%
 % Parse inputs:
 p = inputParser;
 addRequired(p,'data',@(x) isnumeric(x)); % Validate if the input is a 3-D numerical matrix:
 addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x) && ...
-    ismember(x.aggregateFcn, {'mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}) && ...
-    ~isempty(x.dimensionName) && (iscell(x.dimensionName) && ischar(x.dimenqsionName{:}) || ...
-    ischar(x.dimensionName)));
+    ismember(x.aggregateFcn, opts_values.aggregateFcn) && ...
+    ismember(x.dimensionName, opts_values.dimensionNames));
 % Parse inputs:
 parse(p,data, metaData, varargin{:});
 %Initialize Variables:

@@ -15,7 +15,7 @@ classdef PipelineManager < handle
         pipe = struct('className', '','argsIn', {},'argsOut',{},'outFileName','',...
             'inputFileName', '','lvl', [], 'b_save2File', logical.empty, 'datFileName',...
             '', 'opts',[],'name','');% !!If the fields are changed, please apply
-        % the same changes to the property's set method.        
+        % the same changes to the property's set method.
         fcnDir char % Directory of the analysis functions.
         funcList struct % structure containing the info about each function in the "fcnDir".
         ProtocolObj Protocol % Protocol Object.
@@ -30,10 +30,10 @@ classdef PipelineManager < handle
         current_metaData % MetaData associated with "current_data".
         current_outFile cell % List of file names created as output from some of the analysis functions.
         b_state logical % True if a task of a pipeline was successfully executed.
-        pipeFirstInput = '' % Name of the first data to be used by the Pipeline.        
+        pipeFirstInput = '' % Name of the first data to be used by the Pipeline.
         % It can be the name of an existing file, or
         % "outFile" for a function that creates a file
-        % such as "run_ImagesClassification".        
+        % such as "run_ImagesClassification".
         h_wbItem % Handle of waitbar dialog showing the progress of the pipeline across protocol's objects.
         h_wbTask % Handle of waitbar dialog showing the progress of the pipeline in the current object.
         targetObjFullID char % Full ID of the current object.
@@ -111,7 +111,7 @@ classdef PipelineManager < handle
             
             obj.ClassName = p.Results.ClassName;
             if isdeployed
-                [obj.fcnDir,~,~] = fileparts(which('funcTemplate.m'));                                
+                [obj.fcnDir,~,~] = fileparts(which('funcTemplate.m'));
                 a = load(fullfile(obj.fcnDir,'deployFcnList.mat'));
                 obj.funcList = a.out; % Get the structure "out" created inside the function "umitFcnReader".
             else
@@ -121,7 +121,7 @@ classdef PipelineManager < handle
                 end
                 obj.fcnDir = fullfile(rootDir, 'Analysis');
                 obj.createFcnList;
-            end            
+            end
             obj.b_ignoreLoggedFiles = false;
             obj.b_saveDataBeforeFail = false;
         end
@@ -147,45 +147,73 @@ classdef PipelineManager < handle
             % SETOPTS opens an INPUTDLG for entry of optional variables
             % (OPTS) of methods in the Pipeline.
             
+            % Check if the function exists:
             idx = obj.check_funcName(func);
             if isempty(idx)
                 return
             end
-            
-            S = obj.funcList(idx).info.opts;
-            if isempty(S)
+            % Check if the function has optional parameters:
+            S = obj.funcList(idx).info;
+            if isempty(S.opts)
                 disp(['The function ' obj.funcList(idx).name ' does not have any optional parameters.']);
                 return
             end
-            fields = fieldnames(S);
-            b_isNum = structfun(@(x) isnumeric(x), S);
-            b_isLogic = structfun(@(x) islogical(x), S);
-            for i = 1:length(fields)
-                if b_isNum(i)
-                    fields{i} = [fields{i} ' (numeric)'];
-                elseif b_isLogic(i)
-                    fields{i} = [fields{i} ' (logical: 0 or 1)'];
+            
+            % Check for the existence of "opts_values" structure:
+            if isfield(S, 'opts_vals')
+                disp('Optional parameter values found!')
+                currVals = cellfun(@(x) S.opts.(x),fieldnames(S.opts), 'UniformOutput',false);
+                defVals = cellfun(@(x) S.opts_def.(x),fieldnames(S.opts_def), 'UniformOutput',false);
+                listVals = cellfun(@(x) S.opts_vals.(x),fieldnames(S.opts_vals), 'UniformOutput',false);
+                typeVals = {};
+                for i = 1:length(listVals)
+                    if isnumeric(listVals{i}) && numel(listVals{i}) > 2
+                        typeVals{i} = 'numericArray'; % Array of numerical values.
+                    elseif isnumeric(listVals{i}) && numel(listVals{i}) == 2 
+                        typeVals{i} = 'numericRange'; % 1x2 array of numerical values indicating lower and upper bounds.
+                    elseif islogical(listVals{i})
+                        typeVals{i} = 'logical'; % 1x2 array of logical values = [true;false];
+                    elseif all(cellfun(@ischar, listVals{i})) && numel(listVals{i}) > 1
+                        typeVals{i} = 'charArray'; % Cell array of strings.
+                    else
+                        typeVals{i} = 'mixArray'; % Cell array of strings and numbers.
+                    end
                 end
-            end
-            prompt = fields;
-            dlgtitle = ['Set optional parameters for ' obj.funcList(idx).name];
-            dims = [1 35];
-            definput = structfun(@(x) {num2str(x)}, S);
-            opts.Resize = 'on';
-            answer = inputdlg(prompt,dlgtitle,dims,definput,opts);
-            if isempty(answer)
-                disp('Operation cancelled by User');
-                return
-            end
-            fields = fieldnames(S);
-            for i = 1:length(answer)
-                if b_isNum(i)
-                    obj.funcList(idx).info.opts.(fields{i}) = str2double(answer{i});
-                elseif b_isLogic(i)
-                    obj.funcList(idx).info.opts.(fields{i}) = logical(str2double(answer{i}));
-                else
-                    obj.funcList(idx).info.opts.(fields{i}) = answer{i};
+                out = buildInputDlg(obj.funcList(idx).name,fieldnames(S.opts),currVals,defVals,listVals,typeVals);
+            else
+                % Older version of fcn params input dialog:  
+                fields = fieldnames(S.opts);                             
+                b_isNum = structfun(@(x) isnumeric(x), S.opts);
+                b_isLogic = structfun(@(x) islogical(x), S.opts);
+                for i = 1:length(fields)
+                    if b_isNum(i)
+                        fields{i} = [fields{i} ' (numeric)'];
+                    elseif b_isLogic(i)
+                        fields{i} = [fields{i} ' (logical: 0 or 1)'];
+                    end
                 end
+                prompt = fields;
+                dlgtitle = ['Set optional parameters for ' obj.funcList(idx).name];
+                dims = [1 35];
+                definput = structfun(@(x) {num2str(x)}, S.opts);
+                opts.Resize = 'on';
+                out = inputdlg(prompt,dlgtitle,dims,definput,opts);
+                if isempty(out)
+                    disp('Operation cancelled by User');
+                    return
+                end                 
+                for i = 1:length(out)
+                    if b_isNum(i)
+                        out{i} = str2double(out{i});
+                    elseif b_isLogic(i)
+                        out{i} = logical(str2double(out{i}));                    
+                    end
+                end 
+                out = horzcat(fieldnames(S.opts),out);
+            end
+            % Save parameters to 'opts' structure:
+            for i = 1:numel(fieldnames(obj.funcList(idx).info.opts))
+                obj.funcList(idx).info.opts.(out{i,1}) = out{i,2};
             end
             disp(['Optional Parameters set for function : ' obj.funcList(idx).name]);
         end
@@ -203,11 +231,11 @@ classdef PipelineManager < handle
             %   datFileName(char): Optional. Name of the file to be saved.
             %       If not provided, the analysis function's default
             %       filename will be used.
-                        
+            
             p = inputParser;
             addRequired(p, 'func', @(x) ischar(x) || isnumeric(x));
             addOptional(p, 'b_save2File', false, @islogical);
-            addOptional(p, 'datFileName', '', @ischar);            
+            addOptional(p, 'datFileName', '', @ischar);
             
             parse(p,func, varargin{:});
             
@@ -237,7 +265,7 @@ classdef PipelineManager < handle
                     task.name);
                 return
             end
-           
+            
             % Look for first input file to the pipeline;
             if isempty(obj.pipeFirstInput)
                 % Control for multiple outputs from the previous step:
@@ -292,7 +320,7 @@ classdef PipelineManager < handle
                 warning(['Cannot save output to .DAT file for the function'...
                     ' "%s" \nbecause it doesn''t have any data as output!'], task.name);
                 obj.pipe(end).b_save2File = false;
-                obj.pipe(end).datFileName = '';      
+                obj.pipe(end).datFileName = '';
                 return
             else
                 % switch the b_save2File variable to TRUE:
@@ -394,7 +422,7 @@ classdef PipelineManager < handle
             end
             
         end
-                
+        
         function run_pipeline(obj)
             % RUN_PIPELINE runs the tasks in OBJ.PIPE
             lbf = matfile(obj.ProtocolObj.LogBookFile);
@@ -499,7 +527,7 @@ classdef PipelineManager < handle
             targetDir = fullfile(obj.ProtocolObj.SaveDir, 'PipeLineConfigFiles');
             [~,~] = mkdir(targetDir);
             pipeStruct = obj.pipe;
-            pipeStruct(1).firstInput = obj.pipeFirstInput;         
+            pipeStruct(1).firstInput = obj.pipeFirstInput;
             txt = jsonencode(pipeStruct);
             fid = fopen(fullfile(targetDir,[filename '.json']), 'w');
             fprintf(fid, '%s', txt);
@@ -625,10 +653,10 @@ classdef PipelineManager < handle
                 obj.b_state = false;
                 LastLog.Messages = {getReport(ME)};
                 LastLog.Messages_short = {getReport(ME, 'basic','hyperlinks','off')};
-                disp('FAILED!');                
+                disp('FAILED!');
             end
             % Save data to file:
-            if task.b_save2File && obj.b_state                
+            if task.b_save2File && obj.b_state
                 % Look for tasks with output data from the current step and
                 % save the data to a .DAT or .MAT file:
                 obj.saveDataToFile(task,false)
@@ -679,17 +707,17 @@ classdef PipelineManager < handle
             out = '';
             % If the first input was already set, abort:
             if ~isempty(obj.pipeFirstInput)
-                    return
-            end                        
+                return
+            end
             
             % Control for tasks that do not have any data as input:
             if ~any(ismember({'data', 'dataStat'}, funcInfo.argsIn))
                 return
             end
-                       
+            
             
             % Get target object:
-            targetObj = getTargetObj(obj,funcInfo.name);            
+            targetObj = getTargetObj(obj,funcInfo.name);
             % Display a list of files from the selected
             % object(targetObj):
             datFileList = dir(fullfile(targetObj.SaveFolder, '*.dat'));
@@ -726,7 +754,7 @@ classdef PipelineManager < handle
             % Save first input
             out = FileList(jndx).name;
             obj.pipeFirstInput = out;
-                        
+            
             % Local function
             function trgtObj = getTargetObj(obj, fcnName)
                 % Get all existing objects from the selected items in Protocol
@@ -776,6 +804,7 @@ classdef PipelineManager < handle
             % Set Defaults:
             default_Output = '';
             default_opts = struct();
+            opts_values = struct();
             
             disp('Creating Fcn list...');
             list = dir(fullfile(obj.fcnDir, '\*\*.m'));
@@ -785,11 +814,12 @@ classdef PipelineManager < handle
                 % "valid" inputs keywords:
                 kwrds_args = {'data', 'metaData', 'SaveFolder', 'RawFolder', 'opts', 'object', 'dataStat'};
                 kwrds_out = {'outFile', 'outData', 'metaData', 'outDataStat'};
-                if all(ismember(out.argsIn, kwrds_args)) && all(ismember(out.argsOut, kwrds_out))                    
+                if all(ismember(out.argsIn, kwrds_args)) && all(ismember(out.argsOut, kwrds_out))
                     [~,list(i).name, ~] = fileparts(list(i).name);
-                    list(i).info = out;                    
+                    list(i).info = out;
+                    list(i).info.opts_def = list(i).info.opts; % Duplicate default params.
                     obj.funcList = [obj.funcList ; list(i)];
-                end                
+                end
             end
             disp('Function list created!');
             function info = parseFuncFile(fcnStruct)
@@ -814,18 +844,26 @@ classdef PipelineManager < handle
                     eval(str)
                 end
                 info.outFileName = default_Output;
+                % Parse default optional params struct:
                 expOpts = 'default_opts\s*=.*?(?=\n)';
                 str = regexp(txt, expOpts, 'match', 'once');
                 if ~isempty(str)
                     eval(str)
                     info.opts = default_opts;
                     info.argsIn{end+1} = 'opts';
+                    % Parse optional params values struct:
+                    optsVals = 'opts_values\s*=.*?(?=\n)';
+                    str_opts = regexp(txt, optsVals, 'match', 'once');
+                    if ~isempty(str_opts)
+                        eval(str_opts)
+                        info.opts_vals = opts_values;
+                    end
                 end
                 % SPECIAL CASE. Look for "object"s as optional arguments in
                 % function first lines:
                 expObj = 'default_object\s*=';
                 str = regexp(txt, expObj, 'match', 'once');
-                if ~isempty(str)                    
+                if ~isempty(str)
                     info.argsIn{end+1} = 'object';
                 end
             end
@@ -873,7 +911,7 @@ classdef PipelineManager < handle
             % Create analysis function string:
             fcnStr = '';
             % Replace input argument names:
-            % Important! Put "dataStat" and "outDataStat" first in the string list, otherwise 
+            % Important! Put "dataStat" and "outDataStat" first in the string list, otherwise
             % the replace function will create a non-existant property name:
             
             argsIn = replace(task.argsIn, ["RawFolder", "SaveFolder", "dataStat","metaData", "object", "data"],...
@@ -881,7 +919,7 @@ classdef PipelineManager < handle
                 'obj.current_metaData', 'obj.tmp_TargetObj', 'obj.current_data'});
             
             argsOut = replace(task.argsOut, ["outDataStat", "metaData", "outData", "outFile"],...
-                {'obj.current_data', 'obj.current_metaData', 'obj.current_data', 'obj.current_outFile'}); 
+                {'obj.current_data', 'obj.current_metaData', 'obj.current_data', 'obj.current_outFile'});
             if isempty(argsOut)
                 fcnStr = [fcnStr ';' task.name '(' strjoin(argsIn,',') ');'];
             else
@@ -901,8 +939,8 @@ classdef PipelineManager < handle
             %    step(struct) : current step of the pipeline;
             
             funcInfo = obj.funcList(strcmp(step.name, {obj.funcList.name}));
-            % Create a local structure with the function's info:            
-            curr_dtHist = genDataHistory(funcInfo, step.funcStr, step.opts,'none');           
+            % Create a local structure with the function's info:
+            curr_dtHist = genDataHistory(funcInfo, step.funcStr, step.opts,'none');
             % First, we need to know if the output is a "data", a .DAT file or a .MAT file:
             if any(strcmp(step.argsOut, 'outFile'))
                 % In case the step ouput is .DAT file(s):
@@ -1000,7 +1038,7 @@ classdef PipelineManager < handle
             end
             
         end
-               
+        
         function saveDataToFile(obj, step, b_failed)
             % This methods looks back in the pipeline from "step" for tasks
             % with "data" or "stats data" as output and saves the current data to a
@@ -1013,9 +1051,9 @@ classdef PipelineManager < handle
             indx = find(strcmp(step.name, {obj.pipe.name}));
             subPipe = obj.pipe(1:indx);
             % Look back in pipeline for steps with "data" or "stats data"
-            % as output and save the current data using the task's info:            
+            % as output and save the current data using the task's info:
             for i = length(subPipe):-1:1
-                task = subPipe(i);                   
+                task = subPipe(i);
                 % If the pipeline failed, and the datFileName was not set,
                 % use the default file name to save the data:
                 if b_failed & isempty(task.datFileName) & ischar(task.outFileName)
@@ -1095,5 +1133,168 @@ classdef PipelineManager < handle
         end
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     end
-    
+end
+
+% Local functions
+% These functions work with the "setOpts" method to create an input dialog
+% box to set the optional parameters for a given function.
+
+function out = buildInputDlg(fcnName,fields,currVals,defVals,listVals,typeVals)
+% This function creates an input dialog for user data entry.
+
+% Create output variable with current values:
+out = {};
+currOpts = {};
+for i = 1:length(fields)
+    currOpts(i,1) = fields(i);
+    currOpts(i,2) = currVals(i);
+end
+dlg = uifigure('Name',['Set Parameters for: ' fcnName], 'NumberTitle','off','Position',[0,0,310,240],...
+    'MenuBar','none', 'ToolBar', 'none','Visible','off', 'CloseRequestFcn', @figCloseRequest);
+movegui(dlg, 'center');
+myFontSize = 12;
+
+% Create grid layout:
+g = uigridlayout(dlg);
+g.ColumnWidth = {max(cellfun(@(x) length(x), fields))*myFontSize,'1x'};
+g.ColumnWidth = {'1x','1x'};
+g.ColumnSpacing = 5;
+g.RowHeight = [repmat({30},1,length(fields)), {60}];
+% Update figure height:
+dlg.InnerPosition(4) = sum([g.RowHeight{:}, g.RowSpacing]);
+for i = 1:length(fields)
+    lb = uilabel(g,'Text', [fields{i} ': ']);
+    lb.FontSize = myFontSize;
+    lb.HorizontalAlignment = 'center';
+    lb.Layout.Row = i;
+    lb.Layout.Column = 1;
+    % Create Value entry objects:
+    switch typeVals{i}
+        case{'numericArray','logical', 'charArray'}
+            vo = uidropdown(g);                        
+        case {'numericRange'}
+            vo = uieditfield(g, 'numeric');
+        otherwise
+            vo = uieditfield(g);
+    end
+    % Set position of element in uigrid:
+    vo.Layout.Row = i;
+    vo.Layout.Column = 2;
+            
+    % Populate elements with current values:
+    switch typeVals{i}
+        case 'numericArray'                   
+            vo.Items = arrayfun(@(x) num2str(x), listVals{i}, 'UniformOutput',false);
+            vo.Value = vo.Items(listVals{i} == currVals{i});
+        case 'charArray'
+            vo.Items = listVals{i};
+            vo.Value = vo.Items(strcmp(listVals{i},currVals{i}));
+        case 'logical'            
+            keys = {'Yes','No'};
+            [~,locB] = ismember([true, false], listVals{i});
+            vo.Items = keys(locB);
+            vo.Value = vo.Items(listVals{i} == currVals{i});
+        case 'numericRange'
+            vo.Value = currVals{i};
+            % Set min and max range:
+            vo.Limits = [listVals{i}];
+        otherwise
+            vo.Value = num2str(currVals{i});
+            idx_char = cellfun(@ischar, listVals{i});
+            name = strjoin(cellfun(@(x) ['"', x, '"'],listVals{i}(idx_char), 'UniformOutput', false),', ');
+            if ~all(idx_char)
+                vo.Tooltip = ['Type ' name ' or a number.'];
+            else
+                vo.Tooltip = 'Type a string';
+            end
+    end      
+end
+% Add "Save button"
+g2 = uigridlayout(g);
+g2.Padding = [15 0 15 0];
+btnSave = uibutton(g2, 'Text', 'Ok', 'BackgroundColor', [0 .7 0], 'ButtonPushedFcn',@saveParams);
+btnSave.Layout.Row = 1;
+btnSave.Layout.Column = 1;
+btnReset = uibutton(g2, 'Text', 'Reset', 'BackgroundColor', [.7 .7 .7],...
+    'ButtonPushedFcn',@change2Defs);
+btnReset.Layout.Row = 1;
+btnReset.Layout.Column = 2;
+btnReset.Tooltip = 'Reset current values to function''s default';
+dlg.Visible = 'on';
+waitfor(dlg);
+% Return current values if user closes the figure:
+if isempty(out)
+    out = currOpts;
+    return
+end
+% Clean "out" before completion:
+for i = 1:size(out,1)
+    out{i,1} = currOpts{i,1};   
+    switch typeVals{i}
+        case 'numericArray'
+            out{i,2} = str2double(out{i,2});
+        case 'charArray'            
+            %Do Nothing%
+        case 'numericRange'
+            %Do Nothing%
+        case 'logical'
+            if strcmp(out{i,2},'Yes')
+                out{i,2} = true;
+            else
+                out{i,2} = false;
+            end
+        case 'mixArray'
+            % Transform string digits into double:
+            tmp = str2num(out{i,2});
+            if ~isempty(tmp)
+                out{i,2} = tmp;
+            end
+        otherwise
+            % This should not be reached.
+            error('Unknown data type')
+    end
+end
+% Callbacks for pushbutton and uifigure:
+    function change2Defs(src,~)
+        % This function changes all fields back to the default values.
+        disp('Changing to default...');
+        gl = src.Parent.Parent;
+        nRows = length(gl.RowHeight)-1;
+        layout_info = arrayfun(@(x) get(x, 'Layout'),gl.Children);
+        for ii = 1:nRows
+            valueObj = gl.Children([layout_info.Row] == ii & [layout_info.Column] == 2);
+            if isa(valueObj, 'matlab.ui.control.DropDown')
+                switch typeVals{ii}
+                    case {'numericArray', 'logical'}
+                        idx_def = listVals{ii} == defVals{ii};
+                    case 'charArray'
+                        idx_def = strcmp(listVals{ii}, defVals{ii});
+                end
+                valueObj.Value = valueObj.Items(idx_def);
+%             elseif isa(valueObj,'matlab.ui.control.NumericEditField')
+            else
+                valueObj.Value = defVals{ii};
+            end
+        end        
+    end
+
+
+    function saveParams(src,~)
+        % This callback saves the parameters selected by the user in the
+        % GUI to the "out" variable and closes the figure;        
+        gl = src.Parent.Parent;
+        nRows = length(gl.RowHeight)-1;
+        layout_info = arrayfun(@(x) get(x, 'Layout'),gl.Children);
+        for ii = 1:nRows
+            valueObj = gl.Children([layout_info.Row] == ii & [layout_info.Column] == 2);
+            out{ii,2} = valueObj.Value;
+        end
+        delete(src.Parent.Parent.Parent); % Close figure.
+    end
+
+    function figCloseRequest(src,~)
+        % Just displays a message to user.
+        warndlg('Operation cancelled by User! Changes won''t be applied!', 'Set options Cancelled!');
+        delete(src);
+    end
 end
