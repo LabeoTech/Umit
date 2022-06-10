@@ -4,25 +4,32 @@ function Umitoolbox_setupEnv
 % toolbox is located. This is used by the GUI scripts to find folders and
 % files in the computer.
 
+% Get UMIT's env variable:
 myenv = getenv('Umitoolbox');
+b_OK = false;
+b_finish = false;
 if isfolder(myenv)
-    disp('Environment Variable Umitoolbox already exists!')
-else
-    saveDir = uigetdir(pwd, 'Select Toolbox Folder');
-    if saveDir == 0
-        disp('Operation cancelled by User')
-        return
-    end
-    sys = computer;
-    switch sys
-        case 'PCWIN64'
-            system(['SETX Umitoolbox ' saveDir]);
-            disp('done!');
-            disp('Restart MATLAB to apply the changes and rerun this function!');
+    answer = questdlg('Environment Variable Umitoolbox already exists. Choose an option',...
+        'Env. variable exists!', 'Finish Setup', 'Redo Setup', 'Cancel', 'Finish Setup');
+    switch answer
+        case 'Finish Setup'
+            b_finish = checkEnvVar;
+        case 'Redo Setup'
+            b_OK = setEnvVar;
+            return
         otherwise
-            disp('For this computer, you have to set manually the environment variable "Umitoolbox"');
+            disp('Operation cancelled by User')
+            return
     end
+else
+    b_OK = setEnvVar;
+    return
 end
+
+if ~b_finish
+    error('Failed to complete Umit Setup!')
+end
+
 % Edit info.xml file to be able to access the documentation through Matlab "doc":
 info_file = fileread(fullfile(myenv,'html','info.xml'));
 path_str = regexp(info_file,'(?<=<help_location>)(\S+)(?=</help_location>)', 'match');
@@ -32,6 +39,45 @@ info_file = strrep(info_file,path_str{:}, fullfile(myenv,'html'));
 fid = fopen(fullfile(myenv,'html','info.xml'),'w');
 fprintf(fid,'%s',info_file);
 fclose(fid);
-% Add toolbox to Path:
-addpath(genpath(saveDir)); 
+% Add toolbox to Path for the current Matlab session:
+addpath(genpath(getenv('Umitoolbox')));
+disp('Everything is set! You can start using the toolbox now!');
 end
+% Local functions:
+function b_isSet = setEnvVar
+% This function automatically sets an environment variable named
+% "Umitoolbox" for a windows user account.
+b_isSet = false;
+saveDir = uigetdir(pwd, 'Select Toolbox Folder');
+if saveDir == 0
+    disp('Operation cancelled by User')
+    return
+end
+switch computer
+    case 'PCWIN64'
+        [~, cmdOut] = system(['SETX Umitoolbox ' saveDir]);
+        if contains(cmdOut, 'success','IgnoreCase',true)
+            b_isSet = true;
+            disp('done!');
+            disp('Restart MATLAB to apply the changes and rerun this function!');
+        else
+            error('Failed to create environment variable! Try to do it manually.')
+        end
+    otherwise
+        disp('For this computer, you have to set manually the environment variable "Umitoolbox"');
+end
+end
+
+function b_isOk = checkEnvVar
+% This function checks if the current Matlab sessions "sees" UMIT's env.
+% variable.
+b_isOk = false;
+if isempty(getenv('Umitoolbox'))
+    return
+end
+[~,cmdOut] = system(['echo %Umitoolbox%']);
+if contains(cmdOut, getenv('Umitoolbox'))
+    b_isOk = true;
+end
+end
+
