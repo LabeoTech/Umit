@@ -39,7 +39,7 @@ clear p
 errID = 'Umitoolbox:calculate_respose_amplitude:InvalidDataType';
 errMsg = 'Invalid Input. Input must be member of {"mean", "median", "min","max"} or a numeric scalar';
 valid_Opts1 = @(x) (ismember(char(x), opts_values.preEvent_value) || (isscalar(x) && isnumeric(x)));
-valid_Opts2 = @(x) ( (~isempty(str2num(x)) && isscalar(x) && x>0) )  || strcmp(x, 'all');%#ok
+valid_Opts2 = @(x) ( (~isempty(x) && isscalar(x) && x>0) )  || strcmp(x, 'all');
 assert(valid_Opts1(opts.preEvent_value), errID, errMsg);
 assert(valid_Opts1(opts.postEvent_value), errID, errMsg);
 assert(valid_Opts2(opts.postEvnt_timeWindow_sec), errID, 'Input must be a scalar positive numeric value or "all".');
@@ -66,15 +66,15 @@ data = reshape(data,data_sz(1), []);
 
 % Perform amplitude calculation:
 trigFrame = round(metaData.preEventTime_sec * metaData.Freq);
-switch opts.postEvnt_timeWindow_sec
-    case "all"
-        endFrame  = size(data,1);
-    otherwise
-%         opts.postEvnt_timeWindow_sec = str2double(opts.postEvnt_timeWindow_sec);
-        endFrame  = trigFrame + round(metaData.Freq * opts.postEvnt_timeWindow_sec);
-        if endFrame > size(data,1)
-            endFrame = size(data,1);
-        end
+if ischar(opts.postEvnt_timeWindow_sec)
+    % Use all post-event time when the user selected "all":
+    endFrame  = size(data,1);
+else
+    % Otherwise, select the post-event time window of choice in "opts":
+    endFrame  = trigFrame + round(metaData.Freq * opts.postEvnt_timeWindow_sec);
+    if endFrame > size(data,1)
+        endFrame = size(data,1);
+    end
 end
 
 % Get baseline (pre_trigger) and postTrigger data:

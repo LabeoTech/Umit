@@ -18,7 +18,7 @@ function [outData, metaData] = apply_aggregate_function(data, metaData, varargin
 % Defaults:
 default_Output = 'aggFcn_applied.dat'; 
 default_opts = struct('aggregateFcn', 'mean', 'dimensionName', 'T');
-opts_values = struct('aggregateFcn', {{'mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}}, 'dimensionName',{{'X','Y','Z','T','E'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
+opts_values = struct('aggregateFcn', {{'mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}}, 'dimensionName',{{'X','Y','Z','T','E'}});% This is here only as a reference for PIPELINEMANAGER.m.
 %%% Arguments parsing and validation %%%
 % Parse inputs:
 p = inputParser;
@@ -26,7 +26,7 @@ addRequired(p,'data',@(x) isnumeric(x)); % Validate if the input is a 3-D numeri
 addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x) && ...
     ismember(x.aggregateFcn, opts_values.aggregateFcn) && ...
-    ismember(x.dimensionName, opts_values.dimensionNames));
+    ismember(x.dimensionName, opts_values.dimensionName));
 % Parse inputs:
 parse(p,data, metaData, varargin{:});
 %Initialize Variables:

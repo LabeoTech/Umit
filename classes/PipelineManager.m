@@ -824,7 +824,8 @@ classdef PipelineManager < handle
             end
             disp('Function list created!');
             function info = parseFuncFile(fcnStruct)
-                info = struct('argsIn', {},'argsOut', {}, 'outFileName', '', 'opts', []);
+                info = struct('argsIn', {},'argsOut', {}, 'outFileName', '', 'opts', [],...
+                    'opts_def',[],'opts_vals',[]);
                 txt = fileread(fullfile(fcnStruct.folder, fcnStruct.name));
                 funcStr = erase(regexp(txt, '(?<=function\s*).*?(?=\r*\n)', 'match', 'once'),' ');
                 outStr = regexp(funcStr,'.*(?=\=)', 'match', 'once');
@@ -1246,7 +1247,7 @@ for i = 1:size(out,1)
             end
         case 'mixArray'
             % Transform string digits into double:
-            tmp = str2num(out{i,2});
+            tmp = str2num(erase(out{i,2},' '));
             if ~isempty(tmp)
                 out{i,2} = tmp;
             end

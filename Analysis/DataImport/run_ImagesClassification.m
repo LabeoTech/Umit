@@ -36,12 +36,10 @@ idxNew = ~all([idxName; idxDate],1);
 chanList = {chanList(idxNew).name};
 % If there is Stimulation, add "eventID" and "eventNameList" to the output
 % files of ImagesClassification.
-if ~opts.b_IgnoreStim
-    disp('Creating events file.');    
+if ~opts.b_IgnoreStim    
     % Here the first channel fom "chanList" is chosen to retrieve the
     % "Stim" data:
-    chan = matfile(fullfile(SaveFolder, strrep(chanList{1}, '.dat', '.mat'))); 
-    
+    chan = matfile(fullfile(SaveFolder, strrep(chanList{1}, '.dat', '.mat')));     
     if ~any(chan.Stim)
         warning('Stim signal not found! Skipped Event file creation.')
     else

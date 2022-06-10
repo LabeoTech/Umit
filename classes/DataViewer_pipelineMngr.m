@@ -486,7 +486,8 @@ classdef DataViewer_pipelineMngr < handle
             end
             disp('Function list created!');            
             function info = parseFuncFile(fcnStruct)
-                info = struct('argsIn', {},'argsOut', {}, 'outFileName', '', 'opts', []);
+                info = struct('argsIn', {},'argsOut', {}, 'outFileName', '', 'opts', [],...
+                    'opts_def',[],'opts_vals',[]);
                 txt = fileread(fullfile(fcnStruct.folder, fcnStruct.name));                
                 funcStr = erase(regexp(txt, '(?<=function\s*).*?(?=\r*\n)', 'match', 'once'),' ');
                 outStr = regexp(funcStr,'.*(?=\=)', 'match', 'once');
@@ -685,6 +686,8 @@ btnReset.Layout.Column = 2;
 btnReset.Tooltip = 'Reset current values to function''s default';
 dlg.Visible = 'on';
 waitfor(dlg);
+% TESTING:
+disp(out);
 % Return current values if user closes the figure:
 if isempty(out)
     out = currOpts;
@@ -708,7 +711,7 @@ for i = 1:size(out,1)
             end
         case 'mixArray'
             % Transform string digits into double:
-            tmp = str2num(out{i,2});
+            tmp = str2num(erase(out{i,2},' '));
             if ~isempty(tmp)
                 out{i,2} = tmp;
             end
@@ -717,6 +720,9 @@ for i = 1:size(out,1)
             error('Unknown data type')
     end
 end
+% TESTING:
+disp(out);
+
 % Callbacks for pushbutton and uifigure:
     function change2Defs(src,~)
         % This function changes all fields back to the default values.
