@@ -50,7 +50,8 @@ disp('Function list Saved to .MAT file!');
 
 % Helper function:
     function info = parseFuncFile(fcnStruct)
-        info = struct('argsIn', {},'argsOut', {}, 'outFileName', '', 'opts', []);
+        info = struct('argsIn', {},'argsOut', {}, 'outFileName', '', 'opts', [],...
+                    'opts_def',[],'opts_vals',[]);
         txt = fileread(fullfile(fcnStruct.folder, fcnStruct.name));
         funcStr = erase(regexp(txt, '(?<=function\s*).*?(?=\r*\n)', 'match', 'once'),' ');
         outStr = regexp(funcStr,'.*(?=\=)', 'match', 'once');
