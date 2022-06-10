@@ -686,8 +686,6 @@ btnReset.Layout.Column = 2;
 btnReset.Tooltip = 'Reset current values to function''s default';
 dlg.Visible = 'on';
 waitfor(dlg);
-% TESTING:
-disp(out);
 % Return current values if user closes the figure:
 if isempty(out)
     out = currOpts;
@@ -720,9 +718,6 @@ for i = 1:size(out,1)
             error('Unknown data type')
     end
 end
-% TESTING:
-disp(out);
-
 % Callbacks for pushbutton and uifigure:
     function change2Defs(src,~)
         % This function changes all fields back to the default values.
