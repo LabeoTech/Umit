@@ -170,11 +170,12 @@ classdef Protocol < handle
             
             % 2nd, control for new or deleted Acquisitions from each Subject:
             indNwArr = find(~iNewSubj);
-            indObj = arrayfun(@(a) find(strcmp({newArray(indNwArr).ID}, a)),...
-                {obj.Array.ObjList.ID}, 'UniformOutput', false); indObj = [indObj{:}];
-            
+            % Locate the sujects from "newArray" in "obj":
+            [~,indObj] = ismember({newArray(indNwArr).ID},{obj.Array.ObjList.ID}); 
+            % Get new Acquisitions from existing Subjects:
             iNewAcq = arrayfun(@(a,b) ~ismember({a.Array.ObjList.ID}, {b.Array.ObjList.ID}),...
                 newArray(indNwArr), obj.Array.ObjList(indObj), 'UniformOutput', false);
+            % Get missing Acquisitions from existing Subjects:
             iMissAcq = arrayfun(@(a,b) ~ismember({b.Array.ObjList.ID}, {a.Array.ObjList.ID}),...
                 newArray(indNwArr), obj.Array.ObjList(indObj), 'UniformOutput', false);
             
@@ -248,14 +249,21 @@ classdef Protocol < handle
                 type = gbList(i,1);
                 switch type
                     case 'Subject'
-                        newObj(strcmp(gbList(i,2),{newObj.ID})) = [];
+                        idxS = strcmp(gbList(i,2),{newObj.ID});
+                        if isempty(idxS)
+                            continue
+                        end
+                        newObj(idxS) = [];
                     case 'Acquisition'
                         str = erase(gbList(i,3), obj.SaveDir);
                         str = split(str, filesep);
                         subjID = str{1};
-                        idxS = find(strcmp(subjID, {newObj.ID}));
-                        idx = find(strcmp(gbList(i,2), {newObj(idxS).Array.ObjList.ID}));
-                        newObj(idxS).Array.ObjList(idx) = [];
+                        idxS = strcmp(subjID, {newObj.ID});
+                        if isempty(idxS)
+                            continue
+                        end
+                        idxAcq = strcmp(gbList(i,2), {newObj(idxS).Array.ObjList.ID});
+                        newObj(idxS).Array.ObjList(idxAcq) = [];
                 end
             end
         end
