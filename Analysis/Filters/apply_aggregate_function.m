@@ -16,7 +16,7 @@ function [outData, metaData] = apply_aggregate_function(data, metaData, varargin
 %   metaData: .mat file with meta data associated with "outData".
 
 % Defaults:
-default_Output = 'aggFcn_applied.dat'; 
+default_Output = 'aggFcn_applied.dat'; %ok This is here for PIPELINEMANAGER.M.
 default_opts = struct('aggregateFcn', 'mean', 'dimensionName', 'T');
 opts_values = struct('aggregateFcn', {{'mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}}, 'dimensionName',{{'X','Y','Z','T','E'}});% This is here only as a reference for PIPELINEMANAGER.m.
 %%% Arguments parsing and validation %%%
@@ -97,7 +97,8 @@ if ~isempty(evntList)
     % force to have 2 dimensions:
     orig_sz = size(vals);
     % permute:
-    vals = permute(vals, [idxDim,setdiff(1:ndims(vals), idxDim)]);
+    dimorder = [idxDim,setdiff(1:ndims(vals), idxDim)];
+    vals = permute(vals,dimorder);
     perm_sz = size(vals);
     % reshape:
     vals = reshape(vals, size(vals,1), []);
@@ -112,8 +113,7 @@ if ~isempty(evntList)
     % Reshape data to match permuted "vals":
     out = reshape(out,[size(out,1), perm_sz(2:end)]);
     % Permute data to original size of vals:
-    [~,locB] = ismember(orig_sz, perm_sz);
-    out = permute(out, locB);
+    out = ipermute(out,dimorder);    
     evntID_out = ID_list;
 else
     out = calcAgg(vals,idxDim);
