@@ -9,7 +9,7 @@ myenv = getenv('Umitoolbox');
 b_OK = false;
 b_finish = false;
 if isfolder(myenv)
-    answer = questdlg('Environment Variable Umitoolbox already exists. Choose an option',...
+    answer = questdlg('Environment Variable Umitoolbox already exists. Choose an option:',...
         'Env. variable exists!', 'Finish Setup', 'Redo Setup', 'Cancel', 'Finish Setup');
     switch answer
         case 'Finish Setup'
@@ -39,6 +39,8 @@ info_file = strrep(info_file,path_str{:}, fullfile(myenv,'html'));
 fid = fopen(fullfile(myenv,'html','info.xml'),'w');
 fprintf(fid,'%s',info_file);
 fclose(fid);
+% Build serch database:
+builddocsearchdb(fullfile(myenv,'html'))
 % Add toolbox to Path for the current Matlab session:
 addpath(genpath(getenv('Umitoolbox')));
 disp('Everything is set! You can start using the toolbox now!');
