@@ -29,18 +29,18 @@
     <h3>Sections</h3>
     <hr>
     <ul>
-      <li><a href="#import-raw-data">Import the raw data</a>: Import the data to be processed.</li>
-      <li><a href="#create-img-reference">Create imaging reference frame</a>: use the <i>ROImanager</i> app to create the image to be used as reference for the alignment.</li>
+      <li><a href="#import-and-preprocess-data">Import and preprocess the data</a>: Import the raw data and perform the hemodynamic correction on the fluorescence signal.</li>
+      <li><a href="#create-img-reference">Create the imaging reference frame</a>: use the <i>ROImanager</i> app to create the image to be used as reference for the alignment.</li>
       <li><a href="#automatic-alignment">Perform automatic alignment</a>: run automatic alignment over several recordings.</li>
       <li><a href="#manual-alignment">Perform manual alignment</a>: alternatively, perform a manual alignment of a given recording using Matlab's control point selection tool.</li>
     </ul>
     <div class="warnnote">
       <p><strong>Important</strong><br>
-        The automatic and manual alignemnt tools are currently available only in the main GUI (<samp>umIToolbox</samp>)!
+        The automatic and manual alignemnt tools are currently available <b>only</b> in the main GUI (<samp>umIToolbox</samp>)!
       </p>
     </div>
 
-    <h3 id='import-raw-data'>Import the raw data</h3>
+    <h3 id='import-and-preprocess-data'>Import and preprocess the data</h3>
     <hr>
     <p>
       Here, we assume that the project file was created. For more info on how to create a project file click <a href="/tt_creating_a_new_project.html">here</a>.
@@ -53,10 +53,45 @@
     </div>
 
     <p>
-      In the main GUI,
-
+      In the main GUI, go to the <i>Pipeline control panel tab</i> and select the recordings to be processed (steps 1 and 2) and launch the <i>Pipeline Configuration</i> app (step 3). Here, we will align all four recordings from the mouse <b>M4D</b>:
     </p>
+    <img src="../assets/img/align_tt_selectdata.png" alt="align_tt_selectdata", width = "660">
+    <p>
+      Select the <i>FluorescenceImaging</i> object from the list of available objects:
+    </p>
+    <img src="../assets/img/align_tt_select_objtype.png" alt="align_tt_select_objtype", width = "220">
+    <p>
+      In the <i>Pipeline Configuration</i> app, add the data import function <samp>run_ImagesClassification</samp> and the hemodynamic correction function <samp>run_HemoCorrection</samp>. In this case, we will use the default parameters from both of them. Finally, click on the green button "Save Config" to finish creating the pipeline:
+    </p>
+    <img src="../assets/img/align_tt_dataimport_ppline.png" alt="align_tt_dataimport_ppline", width = "660">
+    <p>
+      Back in the main GUI, click on <i>Run Pipeline</i> to import the raw data from the selected recordings. Once the data import is finished, we move on to the creation of the reference frame.
+    </p>
+    <h3 id='create-img-reference'>Create the imaging reference frame</h3>
+    <hr>
+    <p>
+      In the previous section, we imported the fluorescence and reflectance data, and used the latter to separate the hemodynamic signal from the fluorescence one. The corrected fluorescence data is stored in the file <samp>hemoCorr_fluo.dat</samp>. Now, we will choose one of the four recordings to create the reference frame for the alignment.
+    </p>
+    <div class="tipnote">
+      <p><strong>Tip</strong><br>
+        Any channel (fluorescence or any of the reflectance channels) can be used as reference frame for the alignment process. However, the automatic alignment algorithm works better with images having a good contrast between the brain tissue and the blood vessels such as the green(reflectance) and fluorescence channels. In the present case, we will use the <i>fluorescence</i> channel to create the reference frame.
+      </p>
+    </div>
+    <p>
+      In the main GUI, go to the <i>Visualization</i> tab and select the recording to be the reference. In our case, we selected the recording <b>RS_21ST1803</b> to be the reference. Then, in the <i>Select a file</i> list box, click on the <samp>fluo.dat</samp> file. The reference frame is created using the <i>ROImanager</i> app. Click on the app's button to open it:
+    </p>
+    <img src="../assets/img/align_tt_refFrame_dataselect.png" alt="align_tt_refFrame_dataselect", width = "660">
+    <p>
+      Below is a snapshot of the <i>ROImanager</i> interface with a sample frame of the fluorescence data file <samp>fluo.dat</samp>. For more information on how to use the <i>ROImanager</i> app, check the app's <a href="#">documentation</a>.
+    </p>
+    <img src="../assets/img/align_tt_roimanager_fig1.png" alt="align_tt_roimanager_fig1", width = "660">
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        A brief note on the features of the imaging reference frame: it is not only a frame but also it stores other metadata from the image.
 
+      </p>
+
+    </div>
 
 
 
