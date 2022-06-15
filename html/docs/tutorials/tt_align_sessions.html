@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <link rel="stylesheet" href="../../css/master.css">
+    <meta charset="utf-8">
+    <title>How to perform align imaging sessions</title>
+  </head>
+  <body>
+    <h2>Align imaging recording sessions</h2>
+    <hr>
+    <p>
+      Here, we show how to perform automatic and manual image registration in order to align different recording sessions from a given subject. This process is useful for longitudinal studies where different animals are imaged several times over the course of the experiment.
+    </p>
+    <p>
+      In this example you will learn:
+    </p>
+    <ul>
+      <li>How to create a reference frame for image registration.</li>
+      <li>How to run automatic image registration over several recordings.</li>
+      <li>How to perform manual image registration of a given recording session.</li>
+    </ul>
+    <p>
+      The raw data consists of multi-channel (fluorescence and reflectance) recordings of an anesthetized mouse expressing GCaMP6 calcium indicator in cortical neurons. The data that we will align consists of four resting state recordings (see <a href="./tt_creating_connectivity_maps.html">this tutorial</a> to learn how to process resting state data) of one mouse acquired over a period of 2 months. Here is the processing workflow of this example:
+    </p>
+    <p align="center"><i>Recording alignment workflow</i></p>
+    <p align="center">
+      <img src="../assets/img/tt_align_recordings_workflow.png" alt="tt_align_recordings_workflow">
+    </p>
+    <h3>Sections</h3>
+    <hr>
+    <ul>
+      <li><a href="#import-raw-data">Import the raw data</a>: Import the data to be processed.</li>
+      <li><a href="#create-img-reference">Create imaging reference frame</a>: use the <i>ROImanager</i> app to create the image to be used as reference for the alignment.</li>
+      <li><a href="#automatic-alignment">Perform automatic alignment</a>: run automatic alignment over several recordings.</li>
+      <li><a href="#manual-alignment">Perform manual alignment</a>: alternatively, perform a manual alignment of a given recording using Matlab's control point selection tool.</li>
+    </ul>
+    <div class="warnnote">
+      <p><strong>Important</strong><br>
+        The automatic and manual alignemnt tools are currently available only in the main GUI (<samp>umIToolbox</samp>)!
+      </p>
+    </div>
+
+    <h3 id='import-raw-data'>Import the raw data</h3>
+    <hr>
+    <p>
+      Here, we assume that the project file was created. For more info on how to create a project file click <a href="/tt_creating_a_new_project.html">here</a>.
+      To open a project file, call the <samp>umIToolbox</samp> app with the full path to your project file as input as:
+    </p>
+    <div class="codeinput">
+      <pre>
+        umIToolbox(<font class="stringformat">'C:/FOLDER/projectfile.mat'</font>);
+      </pre>
+    </div>
+
+    <p>
+      In the main GUI,
+
+    </p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  </body>
+</html>

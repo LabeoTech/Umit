@@ -5,11 +5,16 @@
 .infonote {
   background-color: #e7f3fe;
   border-left: 6px solid #2196F3;
-  padding-left: 6px;  
+  padding-left: 6px;
 }
 .warnnote {
   background-color: #ffdddd;
   border-left: 6px solid #f44336;
+  padding-left: 6px;
+}
+.tipnote {
+  background-color: #f6f6c9;
+  border-left: 6px solid #fbfb30;
   padding-left: 6px;
 }
 .codeinput {
