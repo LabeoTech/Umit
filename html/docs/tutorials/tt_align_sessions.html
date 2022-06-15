@@ -82,19 +82,81 @@
     </p>
     <img src="../assets/img/align_tt_refFrame_dataselect.png" alt="align_tt_refFrame_dataselect", width = "660">
     <p>
-      Below is a snapshot of the <i>ROImanager</i> interface with a sample frame of the fluorescence data file <samp>fluo.dat</samp>. For more information on how to use the <i>ROImanager</i> app, check the app's <a href="#">documentation</a>.
+      Below is a snapshot of the <i>ROImanager</i> interface with a sample frame of the fluorescence data file <samp>fluo.dat</samp>:
     </p>
     <img src="../assets/img/align_tt_roimanager_fig1.png" alt="align_tt_roimanager_fig1", width = "660">
     <div class="infonote">
       <p><strong>Note</strong><br>
-        A brief note on the features of the imaging reference frame: it is not only a frame but also it stores other metadata from the image.
-
+        The <i>Imaging Reference Frame</i> file carries more than a simple image frame used for alignment. For instance, one can use this file to store information such as the image's pixel ratio (in px/mm), the coordinantes of a reference point (e.g. in mice, generally the <i>Bregma</i> is used as reference point). In addition, one can also create and store a logical mask used in other analysis functions when one needs to exclude pixels that lie outside the brain. In this example, we will go through the steps to create and store the abovementioned information in our <i>Imaging Reference Frame</i> file.
       </p>
-
+      <p>
+        Creating an image reference frame for alignment is only one of the features of the <i>ROImanager</i> app. For more in-depth information on the app, check it's documentation <a href="#">here</a>!
+      </p>
     </div>
+    <p>Here are the next steps that will be performed to create the <i>Imaging Reference Frame</i> file:</p>
+    <ol>
+      <li>Set the reference point.</li>
+      <li>Align image to the reference point.</li>
+      <li>Set the pixel ratio.</li>
+      <li>Create a logical mask.</li>
+      <li>Export the data to the <i>Imaging Reference Frame</i> file</li>
+    </ol>
+    <h4>1. Set the reference Point</h4>
+    <p>
+      To draw a new reference point, go to <i>Image >> Set origin >> New</i>. Follow the instructions to select the point. Here, we selected the Bregma as our reference point:
+    </p>
+    <img src="../assets/img/align_tt_refpt_selected.png" alt="align_tt_refpt_selected", width = "660">
+    <h4>2. Align image to the reference point</h4>
+    <p>
+      Now, notice that the mouse's cortical surface is not properly aligned (it is slightly rotated to the right). To fix this go to <i>Image >> Set origin >> Align image to origin</i>. Click the highlighted point and place it over a point where it should be vertically aligned with the reference point:
+    </p>
+    <img src="../assets/img/align_tt_click_and_drag_pt.png" alt="align_tt_click_and_drag_pt", width = "660">
+    <p>
+      Right-click over the point to and confirm the image rotation. Below we can see the rotated frame:
+    </p>
+    <img src="../assets/img/align_tt_result_refpt_alignment.png" alt="align_tt_result_refpt_alignment", width = "800">
+    <h4>3. Set the pixel ratio</h4>
+    <p>
+      To set the pixel ratio, go to <i>Image >> Set pixel size</i>. In the dialog box, type the pixel ratio:
+    </p>
+    <img src="../assets/img/align_tt_set_px_size.png" alt="align_tt_set_px_size">
+    <p>
+      When the pixel size is set, the axis is automatically rescaled to millimeters:
+    </p>
+    <img src="../assets/img/align_tt_px_size_set.png" alt="align_tt_px_size_set">
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+      The pixel ratio is not strictly essential to perform the alignment ot to run the currently available analysis functions. However, if you have this information, it is a good practice to include it in the <i>Imaging Reference Frame</i> file.
+    </p>
+    </div>
+    <h4>4. Create a logical mask</h4>
+    <p>
+      A logical mask can be created when there are regions of the image that you want to exclude in the analysis. For instance, in our case, the periphery of the image consists of pixels that lie outside the mouse cortex. Thus, we can draw a mask to delimit the cortex and exclude everything else.
+    </p>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        Please, note that the logical mask creation and use is not a destructive process. This means that the imaging data is not deleted or transformed when the mask is created. Instead, the mask is used by some analysis functions to indicate which pixels will be considered in the analysis.
+      </p>
+    </div>
+    <p>
+      To draw a new logical mask go to <i>Image >> Mask >> Draw new</i>. You can set up to 10 regions as a mask. In our case, we will create one region delimiting the visible cortex:
+    </p>
+    <img src="../assets/img/align_tt_draw_logicmsk.png" alt="align_tt_draw_logicmsk", width = "660">
+    <p>
+      Once finished drawing the region, double-click inside it to save. The saved mask will appear as a highlighted region over the image:
+    </p>
+    <img src="../assets/img/align_tt_final_logicmsk.png" alt="align_tt_final_logicmsk", width = "660">
+    <h4>5. Export the data to the <i>Imaging Reference Frame</i> file</h4>
+    <p>
+      Now that the frame was aligned, all it's information was set and the logical mask was created, we can save everything to the <i>Imaging Reference Frame </i>file. To do so, go to <i>Image >> Image Reference file... >> Export</i>. A file named <samp>ImagingReferenceFrame.mat</samp> will be automatically created in the subject's save folder:
+    </p>
+    <img src="../assets/img/align_tt_refFrameFile_saved.png" alt="align_tt_refFrameFile_saved.png">
+    
+    <h3 id="automatic-alignment">Perform automatic alignment</h3>
+    <hr>
+    <p>
 
-
-
+    </p>
 
 
 
