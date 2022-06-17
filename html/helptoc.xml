@@ -21,9 +21,9 @@
         <tocitem target="./docs/rec_sys_requirements.html">
           Software and hardware requirements
         </tocitem>
-        <tocitem target="#">Apps and functions</tocitem>            
+        <tocitem target="#">Documentation on Apps and functions</tocitem>
+        <tocitem target="#">Documentation for advanced users</tocitem>
         <!-- Optional link or links to your or other Web sites -->
         <tocitem target="https://s-belanger.github.io/Umit/">visit umIT's Wiki Page!</tocitem>
     </tocitem>
-
 </toc>
