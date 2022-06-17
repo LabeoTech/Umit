@@ -1,0 +1,5 @@
+Scan info
+DateTime: yyyymmdd_HHMMSS
+FrameRateHz: 30.000000
+ExposureMsec: 0.100000
+Illumination1: CHANNEL_NAME
