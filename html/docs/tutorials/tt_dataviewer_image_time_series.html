@@ -62,28 +62,28 @@
       In this tutorial, we will explore an intermediate step from the preproceesing of a resting state experiment. The data stored in the file <samp>HP_tempFilt.dat</samp> consists of the fluorescence signal that was corrected for the hemodynamic artifacts, followed by the removal of the global signal variance and temporally filtered and normalized (check the tutorial on <a href="./tt_creating_connectivity_maps.html">preprocessing data for resting state</a> for details).
     </p>
     <p>
-      Below is a screenshot of the app when the data is loaded. It consists of three windows: the main window (1), where all the options and controls are located, the image window (2) where the current frame of the data is shown, and the temporal signal window (3) where the temporal profile of the selected pixel is displayed.
+      Below is a screenshot of the app with the data loaded. It consists of three windows: the main window (1), where all the options and controls are located, the image window (2) where the current frame of the data is shown, and the temporal signal window (3) where the temporal profile of the selected pixel is displayed.
     </p>
-    <img src="../assets/img/tt_dataviewer_app_overview.png" alt="tt_dataviewer_app_overview", width="660">
+    <img src="../assets/img/tt_dataviewer_app_overview.png" alt="tt_dataviewer_app_overview", width="880">
     <p>
-      
+      Click on a pixel to get it's temporal profile:
     </p>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    <img src="../assets/gifs/tt_dataviewer_select_px.gif" alt="tt_dataviewer_select_px", width = "880">
+    <p>
+      To change frames, either <b>move the slider</b> in the main window or <b>double-click</b> on the plot from the temporal signal window:
+    </p>
+    <img src="../assets/gifs/tt_dataviewer_select_frame.gif" alt="tt_dataviewer_select_frame", width = "880">
+    <p>
+      Now, let's adjust the color scale limits to better visualize the fluctuations of the fluorescence signal across the mouse cortex. To do so you can simply use the vertical zoom option on the temporal signal window as so:
+    </p>
+    <img src="../assets/gifs/tt_dataviewer_set_clims_by_zoom.gif" alt="tt_dataviewer_set_clims_by_zoom", width = "880">
+    <p>
+      If you want to give a precise number, go to <i>Settings >> Image Options</i> and change the values of <b>min</b> and <b>max</b>. In addition, we can also change the default colormap through the <i>Image Options</i>:
+    </p>
+    <img src="../assets/gifs/tt_dataviewer_set_clims_and_colormap_in_imagOpts.gif" alt="tt_dataviewer_set_clims_and_colormap_in_imagOpts", width = "880">
+    <p>
+      Finally, we can use the playback button to display the "movie" of the fluorescence signal. This recording was obtained with a frame rate of 5Hz (default playback speed). We can change the playback speed in <i>Settings >> Playback speed</i>. Below, we can observe the fluctuations of the fluorescence signal across the mouse cortical areas (playback speed at 3 times the real frame rate):
+    </p>
+    <img src="../assets/gifs/tt_dataviewer_playback.gif" alt="tt_dataviewer_playback", width = "880">
   </body>
 </html>
