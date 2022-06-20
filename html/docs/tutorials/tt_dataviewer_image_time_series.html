@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <link rel="stylesheet" href="../../css/master.css">
+    <meta charset="utf-8">
+    <title>Visualize image time series</title>
+  </head>
+  <body>
+    <h2>Visualize image time series</h2>
+    <hr>
+    <p>
+      In this tutorial you will learn the basics of the <i>DataViewer</i> app to visualize and explore imaging data. Here, we will an intermediate step from one of the recordings created in a previous tutorial (<a href="tt_creating_connectivity_maps.html">"Generate functional connectivity maps of cortical areas"</a>) as an example. To read the full documentation of the <i>DataViewer</i> app, click <a href="#">here</a>.
+    </p>
+    <h3>Sections</h3>
+    <hr>
+    <ul>
+      <li><a href="#open-data">Open imaging data</a>: open imaging data in <i>DataViewer</i> through the main GUI or as a standalone</li>
+      <li><a href="#data-exploration">Basic data exploration</a>: use the app's resources to explore the imaging data.</li>
+    </ul>
+    <h3 id='open-data'>Open imaging data</h3>
+    <hr>
+    <p>
+      You can launch <i>DataViewer</i> from the main GUI or as a standalone from Matlab's command window.
+    </p>
+    <h4>Launch <i>DataViewer</i> from the main GUI</h4>
+    <p>
+      In Matlab's command window, launch the main GUI:
+    </p>
+    <div class="codeinput">
+      <pre>
+        umIToolbox(<font class="stringformat">'C:/FOLDER/projectfile.mat'</font>);
+      </pre>
+    </div>
+    <p>
+      Go to the <i>Visualization</i> tab. Then select the object containing the file to be opened (step 1). In the <i>Select a file:</i> list box, select the file (step 2) - in this example, <samp>HP_tempFilt.dat</samp>. Finally, click on the app's button (step 3) to launch <i>DataViewer</i>:
+    </p>
+    <img src="../assets/img/tt_dataviewer_open_data_from_mainGUI.png" alt="tt_dataviewer_open_data_from_mainGUI", width="660">
+    <h4>Launch <i>DataViewer</i> as standalone</h4>
+    <p>
+      To open an imaging file in <i>DataViewer</i> directly from Matlab's command window,launch <i>DataViewer</i> with the full path of the file as input:
+    </p>
+    <div class="codeinput">
+      <pre>
+        DataViewer(<font class="stringformat">'C:/FOLDER/PROJECT_SAVEFOLDER/HP_tempFilt.dat'</font>);
+      </pre>
+    </div>
+    <p>
+      Alternatively, launch the <i>DataViewer</i> app:
+    </p>
+    <div class="codeinput">
+      <pre>
+        DataViewer
+      </pre>
+    </div>
+    <p>
+      In <i>DataViewer</i>'s main window, go to <i>File >> Open</i> and select the <samp>.dat</samp> file to open:
+    </p>
+    <img src="../assets/img/tt_dataviewer_open_data_from_standalone.png" alt="tt_dataviewer_open_data_from_standalone", width = "660">
+    <h3 id="data-exploration">Basic data exploration</h3>
+    <hr>
+    <p>
+      In this tutorial, we will explore an intermediate step from the preproceesing of a resting state experiment. The data stored in the file <samp>HP_tempFilt.dat</samp> consists of the fluorescence signal that was corrected for the hemodynamic artifacts, followed by the removal of the global signal variance and temporally filtered and normalized (check the tutorial on <a href="./tt_creating_connectivity_maps.html">preprocessing data for resting state</a> for details).
+    </p>
+    <p>
+      Below is a screenshot of the app when the data is loaded. It consists of three windows: the main window (1), where all the options and controls are located, the image window (2) where the current frame of the data is shown, and the temporal signal window (3) where the temporal profile of the selected pixel is displayed.
+    </p>
+    <img src="../assets/img/tt_dataviewer_app_overview.png" alt="tt_dataviewer_app_overview", width="660">
+    <p>
+      
+    </p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  </body>
+</html>
