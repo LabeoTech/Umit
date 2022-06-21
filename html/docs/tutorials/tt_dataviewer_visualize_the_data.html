@@ -3,19 +3,28 @@
   <head>
     <link rel="stylesheet" href="../../css/master.css">
     <meta charset="utf-8">
-    <title>Visualize image time series</title>
+    <title>Visualize imaging data</title>
   </head>
   <body>
-    <h2>Visualize image time series</h2>
+    <h2>Visualize imaging data</h2>
     <hr>
     <p>
-      In this tutorial you will learn the basics of the <i>DataViewer</i> app to visualize and explore imaging data. Here, we will an intermediate step from one of the recordings created in a previous tutorial (<a href="tt_creating_connectivity_maps.html">"Generate functional connectivity maps of cortical areas"</a>) as an example. To read the full documentation of the <i>DataViewer</i> app, click <a href="#">here</a>.
+      In this tutorial you will learn the basics of the <i>DataViewer</i> app to visualize and explore different types of imaging data. The <i>DataViewer</i> app open the following types of imaging data:
+      <ul>
+        <li><i>Images</i>: 2D arrays with dimensions Y,X.</li>
+        <li><i>Image time series</i>: 3D arrays with dimensions Y,X,T(ime).</li>
+        <li><i>Event-triggered image time series</i>: 4D arrays with dimensions Y,X,T,E(vent).</li>
+        <li><i>Correlation Maps</i>: 3D arrays with dimensions Y,X,S(eed).</li>
+      </ul>
+      Here, we will explore some of the data created in the previous tutorials on how to <i>Preprocess imaging data</i>. This tutorial focuses on the basic use of the <i>DataViewer</i> app to explore individual imaging dataset. To learn about all the functionalities of the app, read it's full documentation <a href="#">here</a>.
     </p>
     <h3>Sections</h3>
     <hr>
     <ul>
-      <li><a href="#open-data">Open imaging data</a>: open imaging data in <i>DataViewer</i> through the main GUI or as a standalone</li>
-      <li><a href="#data-exploration">Basic data exploration</a>: use the app's resources to explore the imaging data.</li>
+      <li><a href="#open-data">Open imaging data</a>: open imaging data in <i>DataViewer</i> through the main GUI or as a standalone.</li>
+      <li><a href="#viz-image-time-series">Basic data exploration</a>: explore an image time series data to learn the basics of <i>DataViewer</i>.</li>
+      <li><a href="#viz-spcm">Visualize functional maps</a>: explore a Seed-pixel correlation map.</li>
+      <li><a href="#viz-event-triggered-data">Visualize event-triggered data</a>: explore event-triggered image time series.</li>
     </ul>
     <h3 id='open-data'>Open imaging data</h3>
     <hr>
@@ -56,7 +65,7 @@
       In <i>DataViewer</i>'s main window, go to <i>File >> Open</i> and select the <samp>.dat</samp> file to open:
     </p>
     <img src="../assets/img/tt_dataviewer_open_data_from_standalone.png" alt="tt_dataviewer_open_data_from_standalone", width = "660">
-    <h3 id="data-exploration">Basic data exploration</h3>
+    <h3 id="viz-image-time-series">Basic data exploration</h3>
     <hr>
     <p>
       In this tutorial, we will explore an intermediate step from the preproceesing of a resting state experiment. The data stored in the file <samp>HP_tempFilt.dat</samp> consists of the fluorescence signal that was corrected for the hemodynamic artifacts, followed by the removal of the global signal variance and temporally filtered and normalized (check the tutorial on <a href="./tt_creating_connectivity_maps.html">preprocessing data for resting state</a> for details).
@@ -74,6 +83,15 @@
     </p>
     <img src="../assets/gifs/tt_dataviewer_select_frame.gif" alt="tt_dataviewer_select_frame", width = "880">
     <p>
+      Also, use the figure's <i>datatip</i> tool <img src="../assets/img/tt_dataviewer_datatip_icon.png" alt="tt_dataviewer_datatip_icon"> to add fixed data tips over the image or the temporal profile to show the pixel values as so:
+    </p>
+    <img src="../assets/img/tt_dataviewer_datatips_example.png" alt="tt_dataviewer_datatips_example", width = "880">
+    <div class="warnnote">
+      <p><strong>Important</strong><br>
+        Don't forget to <b>deactivate</b> the datatip button before interacting with the figure. Some of the figure's interactions are suspended when the datatip mode is active.
+      </p>
+    </div>
+    <p>
       Now, let's adjust the color scale limits to better visualize the fluctuations of the fluorescence signal across the mouse cortex. To do so you can simply use the vertical zoom option on the temporal signal window as so:
     </p>
     <img src="../assets/gifs/tt_dataviewer_set_clims_by_zoom.gif" alt="tt_dataviewer_set_clims_by_zoom", width = "880">
@@ -85,5 +103,15 @@
       Finally, we can use the playback button to display the "movie" of the fluorescence signal. This recording was obtained with a frame rate of 5Hz (default playback speed). We can change the playback speed in <i>Settings >> Playback speed</i>. Below, we can observe the fluctuations of the fluorescence signal across the mouse cortical areas (playback speed at 3 times the real frame rate):
     </p>
     <img src="../assets/gifs/tt_dataviewer_playback.gif" alt="tt_dataviewer_playback", width = "880">
+    <h3 id="viz-spcm">Visualize functional maps</h3>
+    <hr>
+    <p>
+      
+    </p>
+    <h3 id="viz-event-triggered-data">Visualize event-triggered data</h3>
+    <hr>
+    <p>
+
+    </p>
   </body>
 </html>
