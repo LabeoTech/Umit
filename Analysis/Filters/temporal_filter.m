@@ -25,7 +25,7 @@ function outData = temporal_filter(data, metaData, varargin)
 
 % Defaults:
 default_Output = 'BPtemporalFilter.dat';  %#ok. This line is here just for Pipeline management.
-default_opts = struct('LowCutOffHz', 0.0083, 'HighCutOffHz', 0, 'Normalize', true, 'bApplyExpFit', false);
+default_opts = struct('LowCutOffHz', 0.0083, 'HighCutOffHz', 0, 'Normalize', false, 'bApplyExpFit', false);
 opts_values = struct('LowCutOffHz', [0,Inf], 'HighCutOffHz',[0,Inf],'Normalize',[false, true],'bApplyExpFit', [true,false]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 % Some notes on the CutOff values:
 % 1) The HighCutOffHz value of 0 will be translated as the Nyquist of the sample rate

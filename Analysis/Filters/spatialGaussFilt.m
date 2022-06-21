@@ -4,8 +4,8 @@ function outData = spatialGaussFilt(data, metaData, varargin)
 
 
 % Limitations:
-% The data must be an Image time series with dimensions
-% {Y,X,T}.
+% The data must be an Image time series OR a Correlation map with
+% dimensions: {Y,X,T or S}.
 
 % Defaults:
 default_Output = 'spatFilt.dat'; %#ok. This line is here just for Pipeline management.
@@ -27,14 +27,19 @@ clear p
 %%%%
 % Validate if "data" is an Image Time Series:
 errID = 'umIToolbox:GSR:InvalidInput';
-errMsg = 'Wrong Input Data type. Data must be an Image time series with dimensions "X", "Y" and "T".';
-assert(all(ismember(metaData.dim_names,{'Y', 'X', 'T'})), errID, errMsg);
+errMsg = ['Wrong Input Data type. Data must be an Image time series with ' ...
+    'dimensions "X", "Y", "T" or  a correlation map  with dimensions "X","Y","S".'];
+assert(all(ismember(metaData.dim_names,{'Y', 'X', 'T'})) || ...
+    all(ismember(metaData.dim_names,{'Y', 'X', 'S'})), errID, errMsg);
 
 % Apply gaussian filter:
 disp('Filtering frames...')
+w = waitbar(0,'Filtering frames...');
 for i = 1:size(outData,3)
+    waitbar(i/size(outData,3),w);
     outData(:,:,i) = imgaussfilt(outData(:,:,i), opts.Sigma,'FilterSize', opts.KernelSize);
 end
+close(w)
 disp('Finished with Spatial Gaussian filter.')      
 end
 
