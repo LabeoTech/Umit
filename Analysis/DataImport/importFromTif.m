@@ -40,36 +40,46 @@ tif_list = tif_list(idx);
 txt_list = txt_list(locB(locB~=0));
 % Read TIF files and each TXT file:
 disp('Importing data from TIFF files...')
+w = waitbar(0, 'Importing frames from TIFF files...');
+w.Children(1).Title.Interpreter = 'none';
 for i = 1:length(tif_list)
+    waitbar(0,w,['Importing frames from file: ' tif_list(i).name '...']);
     tif_file = fullfile(tif_list(i).folder, tif_list(i).name);
     info_tif = imfinfo(tif_file);        
     % Check if data has a valid format:
-    tmp = imread(tif_file, 'Info', info(1));
+    tmp = imread(tif_file, 'Info', info_tif(1));
     if ~ismember(class(tmp),{'uint8', 'uint16', 'uint32'})
         error('umIToolbox:importFromTif:InvalidFile',...
             ['Invalid data format: This function accepts only unsigned integer data '...
             'with 8, 16 or 32 Bits.'])
     end
-    % Import frames:
-    disp(['[Started] Data import from file: ' tif_list(i).name])
-    data = zeros([size(tmp),length(info_tif)],class(tmp));
-    for j = 1:length(info_tif)
-        data(:,:,j) = imread(tif_file, 'Info', info(j));
-    end
-    disp(['[Completed] Data import from file: ' tif_list(i).name])
     % Read TXT file:
-    disp(['[Started] Reading meta data from file: ' tif_list(i).name])
+    disp(['Reading meta data from file: ' tif_list(i).name])
+    acq_info = ReadInfoFile(txt_list(i).folder, txt_list(i).name);    
+    % Import frames:    
+    data = zeros([size(tmp),length(info_tif)],class(tmp));    
+    for j = 1:length(info_tif)
+        data(:,:,j) = imread(tif_file, 'Info', info_tif(j));
+        waitbar(j/length(info_tif),w);
+    end
     
-    %%% TO BE CONTINUED..%%%
-    
+    % Transform data format to "single":
+    data = single(data);             
     % Perform spatial and/or temporal binning:
     
     %%% TO BE CONTINUED..%%%
     
     % Save everything to a .dat file in SaveFolder:
-    
-    %%% TO BE CONTINUED..%%%
-    
+    datFileName = [acq_info.Illumination1.Color, '.dat'];    
+    % Generate meta data:
+    metaData = genMetaData(data,{'Y','X','T'});
+    % Update datFile:
+    metaData.datFile = fullfile(SaveFolder, datFileName);
+    % Save data to .dat file:
+    save2Dat(metaData.datFile, data, metaData); 
+    % Update "outFile" list:
+    outFile = [outFile, {datFileName}];
 end
-    
+    close(w);
+    disp('Finished importFromTif.')
 end
