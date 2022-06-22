@@ -65,14 +65,24 @@ for i = 1:length(tif_list)
     
     % Transform data format to "single":
     data = single(data);             
-    % Perform spatial and/or temporal binning:
-    
-    %%% TO BE CONTINUED..%%%
-    
+    % Perform spatial and/or temporal binning:    
+    % Temporal Binning
+    if( opts.BinningTemp > 1 )
+        data = imresize3(data, [size(data,1), size(data,2),...
+            size(data,3)/opts.BinningTemp], 'linear');
+        % Update Temporal frequency:
+        acq_info.FrameRateHz = acq_info.FrameRateHz/opts.BinningTemp;
+    end
+    % Spatial Binning
+    if( opts.BinningSpatial > 1 )
+        data = imresize(data,1/opts.BinningSpatial);
+    end    
     % Save everything to a .dat file in SaveFolder:
     datFileName = [acq_info.Illumination1.Color, '.dat'];    
     % Generate meta data:
-    metaData = genMetaData(data,{'Y','X','T'});
+    extraParams.tExposure = acq_info.ExposureMsec;
+    extraParams.Freq = acq_info.FrameRateHz;
+    metaData = genMetaData(data,{'Y','X','T'}, extraParams);
     % Update datFile:
     metaData.datFile = fullfile(SaveFolder, datFileName);
     % Save data to .dat file:
