@@ -6,8 +6,6 @@ function Umitoolbox_setupEnv
 
 % Get UMIT's env variable:
 myenv = getenv('Umitoolbox');
-b_OK = false;
-b_finish = false;
 if isfolder(myenv)
     answer = questdlg('Environment Variable Umitoolbox already exists. Choose an option:',...
         'Env. variable exists!', 'Finish Setup', 'Redo Setup', 'Cancel', 'Finish Setup');
@@ -15,14 +13,14 @@ if isfolder(myenv)
         case 'Finish Setup'
             b_finish = checkEnvVar;
         case 'Redo Setup'
-            b_OK = setEnvVar;
+            setEnvVar;
             return
         otherwise
             disp('Operation cancelled by User')
             return
     end
 else
-    b_OK = setEnvVar;
+    setEnvVar;
     return
 end
 
@@ -32,7 +30,7 @@ end
 
 % Edit info.xml file to be able to access the documentation through Matlab "doc":
 info_file = fileread(fullfile(myenv,'html','info.xml'));
-path_str = regexp(info_file,'(?<=<help_location>)(\S+)(?=</help_location>)', 'match');
+path_str = regexp(info_file,'(?<=<help_location>).*(?=</help_location>)', 'match');
 % Replace default path string with user's path:
 info_file = strrep(info_file,path_str{:}, fullfile(myenv,'html'));
 % Save info_file:
@@ -46,10 +44,9 @@ addpath(genpath(getenv('Umitoolbox')));
 disp('Everything is set! You can start using the toolbox now!');
 end
 % Local functions:
-function b_isSet = setEnvVar
+function setEnvVar
 % This function automatically sets an environment variable named
 % "Umitoolbox" for a windows user account.
-b_isSet = false;
 saveDir = uigetdir(pwd, 'Select Toolbox Folder');
 if saveDir == 0
     disp('Operation cancelled by User')
@@ -58,8 +55,7 @@ end
 switch computer
     case 'PCWIN64'
         [~, cmdOut] = system(['SETX Umitoolbox ' saveDir]);
-        if contains(cmdOut, 'success','IgnoreCase',true)
-            b_isSet = true;
+        if contains(cmdOut, 'success','IgnoreCase',true)            
             disp('done!');
             disp('Restart MATLAB to apply the changes and rerun this function!');
         else
