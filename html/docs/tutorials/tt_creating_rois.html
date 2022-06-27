@@ -76,11 +76,25 @@
       <img src="../assets/gifs/roimanager_create_new_pt_roi_XYcoords.gif" alt="roimanager_create_new_pt_roi_XYcoords", width="660">
     </p>
     <p align="center"><i>How to select (using X,Y coordinates) a single pixel as ROI</i></p>
+
     <h3 id="allen-atlas">Use preset ROIs for mouse cortex</h3>
     <hr>
     <p>
-      
+      The <i>ROImanager</i> app provides a preset ROI mask composed by the top view of the  <i>Mouse Allen Brain Atlas</i>:
     </p>
+    <p align="center">
+      <img src="../assets/img/roimanager_mouse-areas.png" alt="roimanager_mouse-areas.png", width="660">
+    </p>
+    <p align="center"><i>Preset ROIs from the Mouse Allen Brain Atlas showing the Bregma estimated position</i></p>
+    <div class="warnnote">
+      <p><strong>Important</strong><br>
+        The position of the Bregma is provided here as a rough estimate. The data from the Mouse Brain atlas does not provide any anatomical landmark coordinates from the mouse skull. For more info on this, see this <a href="https://community.brain-map.org/t/why-doesnt-the-3d-mouse-brain-atlas-have-bregma-coordinates/158">discussion</a> from the Allen Brain Map Community Forum.
+      </p>
+    </div>
+    <div class="tipnote">
+      <p><strong>Tip</strong><br>
+         For a more accurate result, it is advisable to set <i>Bregma</i> as the image’s reference point and to set the image’s <i>pixel size</i> before applying the ROIs from the Mouse Brain Atlas. Once these parameters are set, the ROI mask will be automatically place the mask’s estimated Bregma position over the reference point and resize it to approximate the mask’s real size.
+    </div>
 
 
 
