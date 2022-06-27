@@ -19,24 +19,68 @@
     <hr>
     <ul>
       <li><a href="#basic-roi-creation">Basic ROI creation</a>: create ROIs by drawing polygons and selecting single pixels.</li>
-      <li><a href="#allen-atlas">Use preset ROIs for mouse cortex</a>: create ROIs to delimit areas from the mouse cortex using the <i>Allen Brain Atlas</i>.</li>
-      <li><a href="#roi-by-threshold">Create ROIs by thresholding</a>: create ROIs based on the pixel values of an image.</li>
+      <li><a href="#allen-atlas">Use preset ROIs for mouse cortex</a>: create ROIs to delimit areas from the mouse cortex using the <i>Allen Brain Atlas</i>.</li>      <li><a href="#roi-by-threshold">Create ROIs by thresholding</a>: create ROIs based on pixel values of an image.</li>
     </ul>
     <h3 id="basic-roi-creation">Basic ROI creation</h3>
     <hr>
     <p>
-      
-
-
+      In the examples below, we show how to create a polygonal ROI and a <i>Point</i> ROI. Here, we already opened a frame from a recording in <i>ROImanager</i> app and set the <i>reference point</i>, <i>pixel size</i>, <i>colormap</i> and <i>logical mask</i>.
+    </p>
+    <h4>Polygonal ROIs</h4>
+    <p>
+      To create a polygonal ROI:
+      <ol>
+        <li>Go to <i>Create >> Polygon </i></li>
+        <li>Enter the name of the new ROI.</li>
+        <li>Draw the polygon.</li>
+        <li>Once the drawing is finished, one can edit the shape by adding/deleting vertices or translating the polygon across the image.</li>
+        <li>Finally, double-click inside the ROI to save.</li>
+      </ol>
+    </p>
+    <p align="center">
+      <img src="../assets/gifs/roimanager_create_new_poly_roi.gif" alt="roimanager_create_new_poly_roi", width = "660">
+    </p>
+    <p align="center"><i>How to draw a new polygonal ROI</i></p>
+    <h4>Point ROIs (single-pixel)</h4>
+    <p>
+      Point ROIs are simply ROIs consisted of a single pixel from the image. This type of ROI does not allow any type of editing. Thus, if you want to change the location of the ROI, you can simply create a new point with the same name of the one that you want to change.
+    </p>
+    <p>
+      There are two ways to create a point ROI: interactively or using the X,Y coordinates.
+    </p>
+    <p>
+      To create an ROI for a single pixel (interactively):
+      <ol>
+        <li>Go to <i>Create >> Point </i></li>
+        <li>Enter the name of the new ROI.</li>
+        <li>Click on <i>Interactively</i>.</li>
+        <li>Double-click to select the pixel.</li>
+      </ol>
     </p>
 
-
-
-
-
-
-
-
+    <p align="center">
+      <img src="../assets/gifs/roimanager_create_new_pt_roi_interactive.gif" alt="roimanager_create_new_pt_roi_interactive", width="660">
+    </p>
+    <p align="center"><i>How to select (interactively) a single pixel as ROI</i></p>
+    <p>
+      Alternatively, you can select a pixel by it's X,Y coordinates as so:
+      <ol>
+        <li>Go to <i>Create >> Point </i></li>
+        <li>Enter the name of the new ROI.</li>
+        <li>Click on <i>Type Coordinates</i>.</li>
+        <li>Type the X and Y coordinates and click <i>Ok</i>.</li>
+      </ol>
+      *In the example below, we use Matlab's datatip tool <img src="../assets/img/tt_dataviewer_datatip_icon.png" alt="tt_dataviewer_datatip_icon"> just to show the X and Y coordinates of the pixel to be selected.
+    </p>
+    <p align="center">
+      <img src="../assets/gifs/roimanager_create_new_pt_roi_XYcoords.gif" alt="roimanager_create_new_pt_roi_XYcoords", width="660">
+    </p>
+    <p align="center"><i>How to select (using X,Y coordinates) a single pixel as ROI</i></p>
+    <h3 id="allen-atlas">Use preset ROIs for mouse cortex</h3>
+    <hr>
+    <p>
+      
+    </p>
 
 
 
