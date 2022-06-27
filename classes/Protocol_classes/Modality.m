@@ -74,16 +74,16 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
             [~,idx] = ismember(unique(RawFiles), RawFiles); % Keeps the first of the list;
             RawFiles = RawFiles(idx);
             % Removes non-existent file names from the list "FileName"
-            b_exist = isfile(RawFiles);            
-            if ~all(b_exist)
+            b_exist = isfile(RawFiles);
+            if ( sum(b_exist) < length(b_exist) && sum(b_exist) > 0 )
                 disp('The following files were not found and will be ignored:')
                 disp(RawFiles(~b_exist)')
                 RawFiles(~b_exist)= [];
-            elseif ~any(b_exist)
-                errID = 'umIToolbox:Modality:FileNotFound';
-                errMsg = ['No Files were found in folder "' fileparts(RawFiles{1}) '".'];
-                error(errID, errMsg);                        
-            end                        
+            elseif ( sum(b_exist) == 0 )
+                % If no files exist, Keep only the folder of the first file
+                % So the "RawFolder" property can be set.
+                RawFiles = {fullfile(fileparts(RawFiles{1}), 'MISSING_FILES')};
+            end
             % Set RawFiles property:
             obj.RawFiles_FP = RawFiles;
         end

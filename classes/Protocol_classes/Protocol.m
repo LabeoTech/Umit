@@ -207,8 +207,8 @@ classdef Protocol < handle
                     remInfo = obj.Array.removeObj(find(iMissSubj));
                     obj.garbageList = [obj.garbageList; remInfo];
                 end
-            else
-                uiwait(warndlg('Keeping invalid Paths and/or files may cause problems later on during the analysis', 'Warning!', 'modal'));
+%             else
+%                 uiwait(warndlg('Keeping invalid Paths and/or files may cause problems later on during the analysis', 'Warning!', 'modal'));
             end
             uiwait(msgbox('Project update completed!'));
         end
