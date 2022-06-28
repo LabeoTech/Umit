@@ -118,7 +118,13 @@ switch answer
         [~,outFileName,ext] = fileparts(applyToFile);
         outFileName = inputdlg('Save File as...', 'Type file name to save aligned data',...
             [1 35], {[outFileName '_aligned' ext]});
-        
+        % If the user tried to pass an empty string:
+        if isempty(outFileName{:})
+            warndlg('Cannot pass an empty string as file name! Try again!');
+            disp('Operation cancelled')
+            return
+        end
+        % If the user cancelled:
         if isempty(outFileName)
             disp('Operation Cancelled by User')
             return
@@ -131,6 +137,9 @@ switch answer
     case 'No, redo'
         b_redo = true;
         disp('Operation cancellec by User')
+    otherwise
+        disp('Operation cancelled!')
+        return
 end
 disp('Done!');
 close all;
