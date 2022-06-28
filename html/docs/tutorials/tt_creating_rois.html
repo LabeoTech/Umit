@@ -9,27 +9,127 @@
     <h2>Create Regions of interest</h2>
     <hr>
     <p>
-      TO BE CHANGED
-
-
-      In this tutorial you will learn the basics of the <i>DataViewer</i> app to visualize and explore different types of imaging data. The <i>DataViewer</i> app open the following types of imaging data:
-      <ul>
-        <li><i>Images</i>: 2D arrays with dimensions Y,X.</li>
-        <li><i>Image time series</i>: 3D arrays with dimensions Y,X,T(ime).</li>
-        <li><i>Event-triggered image time series</i>: 4D arrays with dimensions Y,X,T,E(vent).</li>
-        <li><i>Correlation Maps</i>: 3D arrays with dimensions Y,X,S(eed).</li>
-      </ul>
-      Here, we will explore some of the data created in the previous tutorials on how to <i>Preprocess imaging data</i>. This tutorial focuses on the basic use of the <i>DataViewer</i> app to explore individual imaging dataset. To learn about all the functionalities of the app, read it's full documentation <a href="#">here</a>.
+      In this tutorial, you will learn how to create regions of interest (ROIs) from imaging data. ROIs are frequently used in imaging projects to delimit areas of interest such as anatomical landmarks or brain functional modules identified by neuronal activation such as in the example used in our tutorial on <a href="./tt_creating_event_triggered_avg_maps.html"> creating event-triggered maps</a>.
+    </p>
+    <p>
+      The <b><i>umIToolbox</i></b> has a dedicated app that creates, edits and
+      manages ROIs called <i>ROImanager</i>. The app was briefly introduced in the tutorial on <a href="./tt_align_sessions.html">recording alignment</a> where it was used to create an <i>Imaging Reference Frame</i> file. There, we showed how to create a new <i>reference point</i>, how to set the image's <i>pixel size</i> and how to create a <i>logical mask</i>. These steps won't be covered here. For further details on the <i>ROImanager</i>, please refer to the app's <a href="#">documentation</a>. In this tutorial, we will focus on the different ways to create ROIs and how to save them for later use on the toolbox.
     </p>
     <h3>Sections</h3>
     <hr>
-
-     TO BE CHANGED (BELOW)
     <ul>
-      <li><a href="#open-data">Open imaging data</a>: open imaging data in <i>DataViewer</i> through the main GUI or as a standalone.</li>
-      <li><a href="#viz-image-time-series">Basic data exploration</a>: explore an image time series data to learn the basics of <i>DataViewer</i>.</li>
-      <li><a href="#viz-spcm">Visualize functional maps</a>: explore a Seed-pixel correlation map.</li>
-      <li><a href="#viz-event-triggered-data">Visualize event-triggered data</a>: explore event-triggered image time series.</li>
+      <li><a href="#basic-roi-creation">Basic ROI creation</a>: create ROIs by drawing polygons and selecting single pixels.</li>
+      <li><a href="#allen-atlas">Use preset ROIs for mouse cortex</a>: create ROIs to delimit areas from the mouse cortex using the <i>Allen Brain Atlas</i>.</li>      <li><a href="#roi-by-threshold">Create ROIs by thresholding</a>: create ROIs based on pixel values of an image.</li>
     </ul>
+    <h3 id="basic-roi-creation">Basic ROI creation</h3>
+    <hr>
+    <p>
+      In the examples below, we show how to create a polygonal ROI and a <i>Point</i> ROI. Here, we already opened a frame from a recording in <i>ROImanager</i> app and set the <i>reference point</i>, <i>pixel size</i>, <i>colormap</i> and <i>logical mask</i>.
+    </p>
+    <h4>Polygonal ROIs</h4>
+    <p>
+      To create a polygonal ROI:
+      <ol>
+        <li>Go to <i>Create >> Polygon </i></li>
+        <li>Enter the name of the new ROI.</li>
+        <li>Draw the polygon.</li>
+        <li>Once the drawing is finished, one can edit the shape by adding/deleting vertices or translating the polygon across the image.</li>
+        <li>Finally, double-click inside the ROI to save.</li>
+      </ol>
+    </p>
+    <p align="center">
+      <img src="../assets/gifs/roimanager_create_new_poly_roi.gif" alt="roimanager_create_new_poly_roi", width = "660">
+    </p>
+    <p align="center"><i>How to draw a new polygonal ROI</i></p>
+    <h4>Point ROIs (single-pixel)</h4>
+    <p>
+      Point ROIs are simply ROIs consisted of a single pixel from the image. This type of ROI does not allow any type of editing. Thus, if you want to change the location of the ROI, you can simply create a new point with the same name of the one that you want to change.
+    </p>
+    <p>
+      There are two ways to create a point ROI: interactively or using the X,Y coordinates.
+    </p>
+    <p>
+      To create an ROI for a single pixel (interactively):
+      <ol>
+        <li>Go to <i>Create >> Point </i></li>
+        <li>Enter the name of the new ROI.</li>
+        <li>Click on <i>Interactively</i>.</li>
+        <li>Double-click to select the pixel.</li>
+      </ol>
+    </p>
+
+    <p align="center">
+      <img src="../assets/gifs/roimanager_create_new_pt_roi_interactive.gif" alt="roimanager_create_new_pt_roi_interactive", width="660">
+    </p>
+    <p align="center"><i>How to select (interactively) a single pixel as ROI</i></p>
+    <p>
+      Alternatively, you can select a pixel by it's X,Y coordinates as so:
+      <ol>
+        <li>Go to <i>Create >> Point </i></li>
+        <li>Enter the name of the new ROI.</li>
+        <li>Click on <i>Type Coordinates</i>.</li>
+        <li>Type the X and Y coordinates and click <i>Ok</i>.</li>
+      </ol>
+      *In the example below, we use Matlab's datatip tool <img src="../assets/img/tt_dataviewer_datatip_icon.png" alt="tt_dataviewer_datatip_icon"> just to show the X and Y coordinates of the pixel to be selected.
+    </p>
+    <p align="center">
+      <img src="../assets/gifs/roimanager_create_new_pt_roi_XYcoords.gif" alt="roimanager_create_new_pt_roi_XYcoords", width="660">
+    </p>
+    <p align="center"><i>How to select (using X,Y coordinates) a single pixel as ROI</i></p>
+
+    <h3 id="allen-atlas">Use preset ROIs for mouse cortex</h3>
+    <hr>
+    <p>
+      The <i>ROImanager</i> app provides a preset ROI mask composed by the top view of the  <i>Mouse Allen Brain Atlas</i>:
+    </p>
+    <p align="center">
+      <img src="../assets/img/roimanager_mouse-areas.png" alt="roimanager_mouse-areas.png", width="660">
+    </p>
+    <p align="center"><i>Preset ROIs from the Mouse Allen Brain Atlas showing the Bregma estimated position</i></p>
+    <div class="warnnote">
+      <p><strong>Important</strong><br>
+        The position of the Bregma is provided here as a rough estimate. The data from the Mouse Brain atlas does not provide any anatomical landmark coordinates from the mouse skull. For more info on this, see this <a href="https://community.brain-map.org/t/why-doesnt-the-3d-mouse-brain-atlas-have-bregma-coordinates/158">discussion</a> from the Allen Brain Map Community Forum.
+      </p>
+    </div>
+    <div class="tipnote">
+      <p><strong>Tip</strong><br>
+         For a more accurate result, it is advisable to set <i>Bregma</i> as the image’s reference point and to set the image’s <i>pixel size</i> before applying the ROIs from the Mouse Brain Atlas. Once these parameters are set, the ROI mask will be automatically place the mask’s estimated Bregma position over the reference point and resize it to approximate the mask’s real size.
+    </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   </body>
 </html>
