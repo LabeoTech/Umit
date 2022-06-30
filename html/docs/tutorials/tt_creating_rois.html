@@ -85,7 +85,8 @@
     <p align="center">
       <img src="../assets/img/roimanager_mouse-areas.png" alt="roimanager_mouse-areas.png", width="660">
     </p>
-    <p align="center"><i>Preset ROIs from the Mouse Allen Brain Atlas showing the Bregma estimated position</i></p>
+    <p align="center"><i>Preset ROIs from the Mouse Allen Brain Atlas showing the Bregma estimated position.</i></p>
+
     <div class="warnnote">
       <p><strong>Important</strong><br>
         The position of the Bregma is provided here as a rough estimate. The data from the Mouse Brain atlas does not provide any anatomical landmark coordinates from the mouse skull. For more info on this, see this <a href="https://community.brain-map.org/t/why-doesnt-the-3d-mouse-brain-atlas-have-bregma-coordinates/158">discussion</a> from the Allen Brain Map Community Forum.
@@ -95,8 +96,35 @@
       <p><strong>Tip</strong><br>
          For a more accurate result, it is advisable to set <i>Bregma</i> as the image’s reference point and to set the image’s <i>pixel size</i> before applying the ROIs from the Mouse Brain Atlas. Once these parameters are set, the ROI mask will be automatically place the mask’s estimated Bregma position over the reference point and resize it to approximate the mask’s real size.
     </div>
+    <p>
+      Here is how to apply the ROIs from the Mouse Allen Brain Atlas:
+      <ol>
+        <li>Go to <i>Create >> Mouse Allen Brain Atlas >> Areas >> Select.</i></li>
+        <li>Select the Regions using the "Select" tab (All regions are selected by default).</li>
+        <li>Close the ROI table window.</li>
+        <li>The ROI mask will be resized to match the image's pixel size and it will be automatically translated so the estimated Bregma is put over the reference point.</li>
+        <li>Optionally, you can interactively adjust the ROI mask position and shape to fit the image landmarks.</li>
+        <li>Double-click inside the ROI mask to apply.</li>
+      </ol>
+    </p>
+    <p align="center">
+      <img src="../assets/gifs/roimanager_apply_Allen_rois.gif" alt="roimanager_apply_Allen_rois", width = "660">
+    </p>
+    <p align="center"><i>How to use the Mouse Allen Brain Atlas to generate ROIs</i></p>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        In the example above, the ROIs that overlayed with the logical mask are redrawn to remove the areas outside the cortex.
+      </p>
+    </div>
+    <p>
+      This example shows how to create the full surface of all cortical areas from the Mouse Allen Brain Atlas. The <i>ROImanager</i> offers the option to customize the size of the ROIs and to generate only the regions' centroids. For further details, please refer to the app's <a href="#">documentation</a>.
+    </p>
 
-
+    <h3 id="roi-by-threshold">Create ROIs by thresholding</h3>
+    <hr>
+    <p>
+      
+    </p>
 
 
 
