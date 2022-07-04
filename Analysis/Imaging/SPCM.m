@@ -44,7 +44,7 @@ sz_dat = size(data);
 data = reshape(data, [], size(data,3))';
 disp('Calculating Pearson''s correlation...');
 % Calculate Pearson's correlation:
-outData = corr(data);
+outData = corrcoef(data);
 clear data
 % Apply Z Fisher transformation to corr Data:
 if opts.b_FisherZ_transform
