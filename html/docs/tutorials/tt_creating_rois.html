@@ -19,7 +19,9 @@
     <hr>
     <ul>
       <li><a href="#basic-roi-creation">Basic ROI creation</a>: create ROIs by drawing polygons and selecting single pixels.</li>
-      <li><a href="#allen-atlas">Use preset ROIs for mouse cortex</a>: create ROIs to delimit areas from the mouse cortex using the <i>Allen Brain Atlas</i>.</li>      <li><a href="#roi-by-threshold">Create ROIs by thresholding</a>: create ROIs based on pixel values of an image.</li>
+      <li><a href="#allen-atlas">Use preset ROIs for mouse cortex</a>: create ROIs to delimit areas from the mouse cortex using the <i>Allen Brain Atlas</i>.</li>
+      <li><a href="#roi-by-threshold">Create ROIs by thresholding</a>: create ROIs based on pixel values of an image.</li>
+      <li><a href="#save-rois">Saving ROIs</a>: save the ROIs to a file to use them later in the toolbox.</li>
     </ul>
     <h3 id="basic-roi-creation">Basic ROI creation</h3>
     <hr>
@@ -123,41 +125,83 @@
     <h3 id="roi-by-threshold">Create ROIs by thresholding</h3>
     <hr>
     <p>
-      
+      Another way to create ROIs is to use the image's pixel values to select a region with values above or below a threshold. This feature is particularly useful to delimit regions based on the amplitude of a signal. For instance, you can create ROIs to select a region of the cortex activated by a sensory stimulation. In the example below, we show how to create an ROI to select the cortical area activated after a whisker stimulation in a mouse expressing <i>GCaMP6</i>.
     </p>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    <div class="tipnote">
+      <p><strong>Tip</strong><br>
+        When creating ROIs by threshold, it is useful to work with the <i>ROImanager</i> app as a add-on from the <i>DataViewer</i> app because you can use the <i>DataViewer</i> to easily navigate through the recording to find the best frames to be thresholded. This is the case of the example below.
+      </p>
+    </div>
+    <p>
+      The data used in this example is an image time series that was preprocessed and split by trials to show the normalized response amplitude (&Delta;F/F) to a vibro-tactile stimulation of the left whiskers. The data was loaded in <i>DataViewer</i> to show the average of 10 trials. The colormap and color scale were adjusted to better visualize the activated region.
+    </p>
+    <p>
+      Here is a snapshot of the input data:
+    </p>
+    <img src="../assets/img/roimanager_thresholdapp_data_overview.png" alt="roimanager_thresholdapp_data_overview", width = "880">
+    <p>
+      The first thing to do is to navigate through the data to find the frame to be thresholded. Here, we will select the frame with the peak response (around 800 ms after the stimulation):
+    </p>
+    <img src="../assets/img/roimanager_thresholdapp_data_overview2.png" alt="roimanager_thresholdapp_data_overview2", width="880">
+    <p>
+      To launch the thresholding tool:
+    </p>
+    <ol>
+      <li>Go to <i>Add-ons >> ROImanager</i> to open the <i>ROImanager</i> app.</li>
+      <li>In the <i>ROImanager</i> app, go to <i>Create >> From threshold...</i>.</li>
+    </ol>
+    <p>
+      Below is an overview of the thresholding tool. The main GUI contains the control options to create the ROIs and the <i>Image window</i> shows the selected frame on the left in grayscale and on the right, a binary image showing the ROIs. For further details on how to use the app, read the documentation of the <a href="#">ROImanager</a> app.
+    </p>
+    <p align="center">
+    <img src="../assets/img/roimanager_roimask_creator_overview.png"  alt="roimanager_roimask_creator_overview", width = "660">
+    </p>
+    <p align="center"><i>Overview of the ROIMask Creator app</i></p>
+    <p>
+      You can use the slider in the main GUI to interactively set the threshold:
+    </p>
+    <img src="../assets/gifs/roimanager_roimask_creator_interactive_thr_set.gif" alt="roimanager_roimask_creator_interactive_thr_set", width = "660">
+    <p>
+      Or, you can set the exact threshold value in the <i>threshold level</i> edit field in the main GUI.<br>
+      Now, to select the region activate by the whisker stimulation, we will set the following parameters:
+    </p>
+    <ul>
+      <li> Set the threshold to <b>0.03</b>.</li>
+      <li> Exclude ROIs with less than <b>4</b> pixels.</li>
+      <li> Check the <b>Smooth borders</b> options.</li>
+    </ul>
+    <p>
+      Here is the preview of the ROI with the abovementioned parameters set:
+    </p>
+    <img src="../assets/img/roimanager_roimask_creator_roi_preview.png" alt="roimanager_roimask_creator_roi_preview", width = "660">
+    <p>
+      Finally, click on <i>Create ROIs</i> to generate the ROI based on the thresholded image. The ROI will be created and listed in the <i>ROImanager</i> app with a generic name (<i>newROI_1</i>):
+    </p>
+    <img src="../assets/img/roimanager_roimask_creator_resultROI.png" alt="roimanager_roimask_creator_resultROI", width = "660">
+    <p>
+      To change the name of the ROI, click on the ROI name listed in the table in <i>ROImanager</i>, type the new name and press Enter:
+    </p>
+    <img src="../assets/gifs/roimanager_changeROI_name.gif" alt="roimanager_changeROI_name", width="440">
+    <h3 id="save-rois">Saving ROIs</h3>
+    <hr>
+    <p>
+      After creating the ROIs, you can save the ROIs to a <samp>ROImasks_&lt;NAME&gt;.mat</samp> file. The file will contain all the statistical measurements shown in the <i>ROImanager</i> table and the individual ROI masks. As you will see in the following tutorials, the ROI files will be used to extract and aggregate the data from each ROI.
+    </p>
+    <p>
+      In the <i>ROImanager</i> app:<br>
+      To save the current ROIs to a new file:
+    </p>
+    <ol>
+      <li>Go to <i>File Save as...</i>.</li>
+      <li>Type the file name (default = ROImasks_data.mat)</li>
+      <li>Click on <i>Save</i></li>
+      <li>Select a folder to save the ROI file (see note below!)</li>
+    </ol>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        This note concerns users of the main GUI (not <i>DataViewer</i> as standalone)!<br>
+        If the <i>ROImanager</i> app was called from the toolbox main GUI (<samp>umIToolbox</samp>) the ROI file will automatically be saved in the subject's save folder. However, if the app was opened as an <i>Add-on</i> from <i>DataViewer</i> you should manually select the subject's folder to save the ROI file in. It advisable to save the ROI file inside the subject's save directory because some of the toolbox functions using the ROI file will look for it there!
+      </p>
+    </div>
   </body>
 </html>
