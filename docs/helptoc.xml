@@ -3,7 +3,7 @@
 <toc version="2.0">
 <!-- First tocitem specifies top level in Help browser Contents pane -->
 <!-- This can be a roadmap page, as shown below, or a content page -->
-    <tocitem target="./docs/main_index.html">umIToolbox
+    <tocitem target="./documentation/main_index.html">umIToolbox
         <!-- Nest tocitems to create hierarchical entries in  Contents-->
         <!-- To include icons, use the following syntax for tocitems: -->
         <!-- <tocitem target="foo.html" hr
@@ -15,10 +15,10 @@
         <!-- Icon images used for these entries are also stored in -->
         <!-- matlabroot/toolbox/matlab/icons -->
         <!-- A Getting Started Guide usually comes first -->
-        <tocitem target="./docs/gs_index.html">
+        <tocitem target="./documentation/gs_index.html">
             Getting Started with umIToolbox
         </tocitem>
-        <tocitem target="./docs/rec_sys_requirements.html">
+        <tocitem target="./documentation/rec_sys_requirements.html">
           Software and hardware requirements
         </tocitem>
         <tocitem target="#">Documentation on Apps and functions</tocitem>

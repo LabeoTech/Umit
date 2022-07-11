@@ -29,16 +29,16 @@ if ~b_finish
 end
 
 % Edit info.xml file to be able to access the documentation through Matlab "doc":
-info_file = fileread(fullfile(myenv,'html','info.xml'));
+info_file = fileread(fullfile(myenv,'docs','info.xml'));
 path_str = regexp(info_file,'(?<=<help_location>).*(?=</help_location>)', 'match');
 % Replace default path string with user's path:
-info_file = strrep(info_file,path_str{:}, fullfile(myenv,'html'));
+info_file = strrep(info_file,path_str{:}, fullfile(myenv,'docs'));
 % Save info_file:
-fid = fopen(fullfile(myenv,'html','info.xml'),'w');
+fid = fopen(fullfile(myenv,'docs','info.xml'),'w');
 fprintf(fid,'%s',info_file);
 fclose(fid);
 % Build serch database:
-builddocsearchdb(fullfile(myenv,'html'))
+builddocsearchdb(fullfile(myenv,'docs'))
 % Add toolbox to Path for the current Matlab session:
 addpath(genpath(getenv('Umitoolbox')));
 disp('Everything is set! You can start using the toolbox now!');
@@ -55,7 +55,7 @@ end
 switch computer
     case 'PCWIN64'
         [~, cmdOut] = system(['SETX Umitoolbox ' saveDir]);
-        if contains(cmdOut, 'success','IgnoreCase',true)            
+        if contains(cmdOut, 'success','IgnoreCase',true)
             disp('done!');
             disp('Restart MATLAB to apply the changes and rerun this function!');
         else
@@ -78,4 +78,3 @@ if contains(cmdOut, getenv('Umitoolbox'))
     b_isOk = true;
 end
 end
-
