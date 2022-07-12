@@ -39,8 +39,10 @@ for i = 1:length(list)
     end
     if all(ismember(fcn_info.argsIn, kwrds_args)) && all(ismember(fcn_info.argsOut, kwrds_out))
         [~,list(i).name, ~] = fileparts(list(i).name);
+        [~,list(i).folder,~] = fileparts(list(i).folder);
         list(i).info = fcn_info;
         list(i).info.opts_def = list(i).info.opts; % Duplicate default params.
+        
         out = [out;list(i)];
     end
 end
