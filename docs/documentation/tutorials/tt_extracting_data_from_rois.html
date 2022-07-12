@@ -14,36 +14,69 @@
     <p align="center">
       <img src="../assets/img/tt_extracting_data_from_rois_concept_fig.png" alt="tt_extracting_data_from_rois_concept_fig.png">
     </p>
-    <p align="center"><i>Main steps of a typical imaging project to underscore the role of ROI extraction and aggregation. a) Processing steps for a single experiment where the extraction and aggregation of ROI data yields ROI values. b) The ROI values of each recording session is grouped for comparisons.</i></p>
+    <p align="center"><i>Main steps of a typical imaging project to underscore the role of ROI extraction and aggregation.<br>a) Processing steps for a single experiment where the extraction and aggregation of ROI data yields ROI values.<br>b) The ROI values of each recording session is grouped for comparisons.</i></p>
     <p>
       Before extracting the data from the ROIs, we assume that the following procedures were previously executed:
       <ul>
         <li>The data from single recordings were properly preprocessed.</li>
-        <li>The preprocessed data is aligned to a <i>reference frame</i>.</li>
+        <li>All preprocessed data are aligned to a <i>reference frame</i>.</li>
         <li>ROIs were created and saved to a <samp>ROImasks_&lt;NAME&gt;.mat</samp> file. </li>
       </ul>
-
     </p>
     <h3>Sections</h3>
     <hr>
-    Here we will show how to:
     <ul>
       <li><a href="#main-gui">Extract ROI data from the main GUI</a>: extract ROIs from different recordings using the <i>Pipeline Control</i> of <samp>umIToolbox</samp>.</li>
       <li><a href="#dataviewer">Extract ROI data from DataViewer</a>: extract ROIs from a single recording using the standalone version of <i>DataViewer</i>.</li>
     </ul>
     <h3 id="main-gui">Extract ROI data from the main GUI</h3>
     <hr>
-    <p>
-
+      First open your project file in the main GUI. In Matlab's command window, type:
     </p>
-
-
-
-
-
-
-
-
+    <div class="codeinput">
+      <pre>
+        umIToolbox(<font class="stringformat">'C:/FOLDER/projectfile.mat'</font>);
+      </pre>
+    </div>
+    <p>
+      Then, go to the <i>Pipeline control panel</i> tab and highlight the recordings to extract. Here, we will extract the data from all Resting State recordings from the mouse <b>M4D</b>:
+    </p>
+    <img src="../assets/img/tt_extracting_data_from_rois_mainGUI_data_selection.png" alt="tt_extracting_data_from_rois_mainGUI_data_selection", width="660">
+    <p>
+      Click on <i>Select</i> to confirm selection and on <i>Launch Pipeline Config</i> to open the pipeline configuration app.
+    </p>
+    <p>
+      Select the <i>FluorescenceImaging</i> object:
+    </p>
+    <img src="../assets/img/align_tt_select_objtype.png" alt="align_tt_select_objtype", width = "240">
+    <p>
+      In the Pipeline Configuration app, select the function <i>getDataFromROI</i> (step 1), add it to the pipeline (step 2), select the function (step 3) and click on <i>Set Options</i> button (step 4):
+    </p>
+    <img src="../assets/img/tt_extracting_data_from_rois_mainGUI_fcn_selection.png" alt="tt_extracting_data_from_rois_mainGUI_fcn_selection", width="660">
+    <p>
+      The function <i>getDataFromROI</i> has two parameters: the file name containing the ROI information (i.e. the <samp>ROImasks_&lt;NAME&gt;.mat</samp> file) and the spatial aggregation function to be applied (<samp>SpatialAggFcn</samp>). Here we will use the ROIs stored in <samp>ROImasks_data.mat</samp> file and the ROI pixel values will be averaged using the <samp>mean</samp> for the <samp>SpatialAggFcn</samp> parameter:
+    </p>
+    <img src="../assets/img/tt_extracting_data_from_rois_fcn_setOpts.png" alt="tt_extracting_data_from_rois_fcn_setOpts">
+    <p>
+      Now, select the <i>FluorescenceImaging</i> object:
+    </p>
+    <img src="../assets/img/tt_extracting_data_from_rois_fcn_sel_input_obj.png" alt="tt_extracting_data_from_rois_fcn_sel_input_obj", height="440">
+    <p>
+      And, finally, select the data to be extracted. Here, we will extract the ROI data from functional connectivity data stored in <samp>SPCMap.dat</samp> file:
+    </p>
+    <img src="../assets/img/tt_extracting_data_from_rois_fcn_sel_input_file.png" alt="tt_extracting_data_from_rois_fcn_sel_input_file", height="440">
+    <p>
+      Finally, back in the main GUI, in the <i>Pipeline control panel</i> tab, click on <i>Run Pipeline</i> to extract the ROI data. The extracted and aggregated data from the ROIs are stored in the file <samp>ROI_data.mat</samp>:
+    </p>
+    <img src="../assets/img/tt_extracting_data_from_rois_mainGUI_ppln_result.png" alt="tt_extracting_data_from_rois_mainGUI_ppln_result", width="880">
+    <p>
+      A
+    </p>
+    <h3 id="dataviewer">Extract ROI data from DataViewer</h3>
+    <hr>
+    <p>
+      A
+    </p>
 
 
 
