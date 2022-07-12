@@ -78,31 +78,41 @@
     <h3 id="dataviewer">Extract ROI data from <i>DataViewer</i> app</h3>
     <hr>
     <p>
-      The ROI data can also be extracted and aggregated in a single recording using the <i>DataViewer</i> app as standalone.
+      The ROI data can also be extracted and aggregated in a single recording using the <i>DataViewer</i> app as standalone. Here are the steps to extract the data from <i>DataViewer</i>:
     </p>
     <p>
-      
+      1. First, open <i>DataViewer</i> with the imaging file that you want to extract. Here, we will extract the Resting state data stored in the file <samp>SPCMap.dat</samp>. To do so, in Matlab's command window, type:
     </p>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    <div class="codeinput">
+      <pre>
+        DataViewer(<font class="stringformat">'C:/FULLPATH_TO_SAVEFOLDER/SPCMap.dat'</font>)
+      </pre>
+    </div>
+    <p>
+      2. In <i>DataViewer</i>, create or load the ROIs to be used to extract the data:
+    </p>
+    <img src="../assets/img/tt_extracting_data_from_rois_dataviewer_spcm_with_rois.png" alt="tt_extracting_data_from_rois_dataviewer_spcm_with_rois", width="880">
+    <p>
+      3. In <i>DataViewer</i>'s main window, go to <i>Utilities >> ROI options >> Extract data from ROI</i>
+    </p>
+    <p>
+      4. Select the folder and filename to save the ROI data.
+    </p>
+    <p>
+      5. Finally, choose the aggregation function to be used and click <i>Save</i>. Here, we chose the average (<samp>mean</samp>):
+    </p>
+    <img src="../assets/img/tt_extracting_data_from_rois_dataviewer_choose_aggFcn.png" alt="tt_extracting_data_from_rois_dataviewer_choose_aggFcn", width="220">
+    <p>
+      Now, the data is saved as a <samp>.mat</samp> file in the folder of your choosing!
+    </p>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        This is as far as it goes when using the standalone version of <i>DataViewer</i>. If you are running an experiment with several animals or if it is a longitudinal study, we suggest to use the full version of the toolbox (i.e. by creating a project file and using the main GUI, <samp>umIToolbox</samp>) in order to be able to use the other analysis features available.
+      </p>
+      <p>
+        However, if you wish to analyse the extracted data outside the toolbox, please read the documentation of the function <a href="#"><i>getDataFromROI</i></a> for details on how the output <samp>.mat</samp> file is organized.
+      </p>
+    </div>
 
   </body>
 </html>
