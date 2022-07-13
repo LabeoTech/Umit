@@ -441,7 +441,7 @@ classdef Protocol < handle
                         tmpA = tmpS.Array.ObjList(j);
                         for k = 1:length(tmpA.Array.ObjList)
                             tmpM = tmpA.Array.ObjList(k);
-                            tmpM.RawFolder = strrep(tmpM.RawFolder, obj.MainDir, newMainDir);
+                            tmpM.RawFiles_FP = strrep(tmpM.RawFiles_FP, obj.MainDir, newMainDir);
                         end
                     end
                 end
