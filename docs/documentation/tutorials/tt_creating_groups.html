@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../css/master.css">
+    <title>Creating groups</title>
+  </head>
+  <body>
+    <h2>Create groups</h2>
+    <hr>
+    <p>
+      In this tutorial, you will learn how to segregate the subjects and acquisitions into one or more groups for data visualization. This is particularly useful for projects containing different experimental protocols with a large number of subjects. The <b><i>umIToolbox</i></b> uses the groups to put together the data extracted from the ROIs to facilitate the data exploration, visualization and statistical analysis.
+    </p>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        This feature is available only through the <samp>umIToolbox</samp> main GUI and not in the standalone version of <i>DataViewer</i>.
+      </p>
+    </div>
+    <h3>Steps to create groups</h3>
+    <hr>
+    <p>
+      First, open your project file in the main GUI:
+    </p>
+    <div class="codeinput">
+      <pre>
+        umIToolbox(<font class='stringformat'>'C:/FOLDER/projectfile.mat'</font>)
+      </pre>
+    </div>
+    <p>
+      Navigate to the <i>Analysis</i> tab. The data that we will group consists of four recordings of Resting state on four mice:
+    </p>
+    <img src="../assets/img/tt_creating_groups_fig1.png" alt="tt_creating_groups_fig1", width="660">
+    <p>
+      Here, we will create two groups: one with mice <b>M4D</b> and <b>M4X</b> an the second with the mice <b>M5D</b> and <b>M5DG</b>. To do so, launch the <i>Grouping tool</i> by clicking on its button in the options panel.
+    </p>
+    <p align="center">
+      <img src="../assets/img/dataGroupingTool_fig1.png" alt="dataGroupingTool_fig1", width="660">
+    </p>
+    <p align="center"><i>Grouping tool interface.</i></p>
+    <p>
+      By default, a single group is created with the objects currently displayed in the <i>Analysis</i> tab from the main GUI. Now to create the two abovementioned groups, follow these steps:
+    </p>
+    <ol>
+      <li>To create a new group, go to <i>Group options >> add new group</i>.</li>
+      <li>Rename the groups to <b>M4s</b> and <b>M5s</b> respectively.</li>
+      <li>Move the objects to their respective groups by selecting the acquisitions and using the controls below the tree.</li>
+    </ol>
+    <p align='center'>
+      <img src="../assets/gifs/dataGroupingTool_group_creation_example1.gif" alt="dataGroupingTool_group_creation_example1", width="660">
+    </p>
+    <p align='center'><i>Group creation and object segregation. Steps 1-3.</i></p>
+    <ol start="4">
+      <li>To save the groups go to <i>File >> Save Groups </i> to save the groups to a <samp>StatsGroupInfo_&lt;NAME&gt;.mat</samp></li>
+      <li>Finally, click on <i>Apply</i> button.</li>
+    </ol>
+    <p>
+      Now, you can see the two groups in the main GUI:
+    </p>
+    <img src="../assets/img/tt_creating_groups_fig2.png" alt="tt_creating_groups_fig2", width="660">
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        This is just a basic explanation on the features of the Grouping tool. For more information, read the documentation of the <a href="#">umIToolbox</a> app.
+      </p>
+    </div>
+  </body>
+</html>
