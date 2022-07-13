@@ -71,7 +71,7 @@ if startsWith(opts.CorrAlgorithm, 'centroid', 'IgnoreCase', true)
             roiVals = data(centroid_list,:);            
             clear data;
             % Calculate Pearson's correlation:
-            B = corr(roiVals');                    
+            B = corrcoef(roiVals');                    
         case 'centroid_vs_agg'
             B = zeros(length(centroid_list),length(centroid_list), 'single');
             target = arrayfun(@(x) data(x.Stats.ROI_binary_mask(:),:), roi_data.ROI_info,...
@@ -106,7 +106,7 @@ else
     end
     clear data;
     % Calculate Pearson's correlation:
-    B = corr(roiVals');    
+    B = corrcoef(roiVals');    
 end
 % Apply Z-Fisher transformation to the correlation matrix:
 if opts.b_FisherZ_transform
