@@ -136,7 +136,7 @@ classdef StatsManager < handle
             % be used by "getObsData" method to put NaNs on missing
             % data (i.e. labels that are missing for a given recording).
             
-            uniqLabels = unique(horzcat(obj.stats_data{:,8})); % Sort unique labels in alphabetical order.
+            uniqLabels = unique(vertcat(obj.stats_data{:,8})); % Sort unique labels in alphabetical order.
            
             % Get observations's labels from the stats_data structure:
             
