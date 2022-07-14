@@ -38,6 +38,9 @@ fid = fopen(fullfile(myenv,'docs','info.xml'),'w');
 fprintf(fid,'%s',info_file);
 fclose(fid);
 % Build serch database:
+folders = dir(fullfile(myenv, 'docs'))
+help_dir = folders([folders.isdir] & startsWith({folders.name}, 'helpsearch-v'));
+status = rmdir(fullfile(help_dir.folder, help_dir.name), 's');
 builddocsearchdb(fullfile(myenv,'docs'))
 % Add toolbox to Path for the current Matlab session:
 addpath(genpath(getenv('Umitoolbox')));
