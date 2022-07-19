@@ -142,7 +142,6 @@ switch answer
         return
 end
 disp('Done!');
-close all;
 end
 % Local functions:
 function warpData(tform,refFr,ref_frame_info, Rfixed,SaveFolder, applyToFile, SaveFileName)
