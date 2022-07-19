@@ -16,6 +16,9 @@
     </p>
     <p align="center"><i>Main steps of a typical imaging project to underscore the role of ROI extraction and aggregation.<br>a) Processing steps for a single experiment where the extraction and aggregation of ROI data yields ROI values.<br>b) The ROI values of each recording session is grouped for comparisons.</i></p>
     <p>
+      In this tutorial, we use two distinct imaging datasets to illustrate the ROI data extraction. The first one consists of visual responses to drifting gratings (event-triggered data) while the second one is a resting state recording. For the former, we will show how to extract the response amplitude of visual areas using the function <i>getDataFromROI</i>. Whereas for the latter, we will use the function <i>genCorrelationMatrix</i> to create a matrix with the Pearson's correlation values between the different visual cortical areas of the mouse.
+    </p>
+    <p>
       Before extracting the data from the ROIs, we assume that the following procedures were previously executed:
       <ul>
         <li>The data from single recordings were properly preprocessed.</li>
@@ -26,12 +29,31 @@
     <h3>Sections</h3>
     <hr>
     <ul>
-      <li><a href="#main-gui">Extract ROI data from the main GUI</a>: extract ROIs from different recordings using the <i>Pipeline Control</i> of <samp>umIToolbox</samp>.</li>
-      <li><a href="#dataviewer">Extract ROI data from <i>DataViewer</i> app</a>: extract ROIs from a single recording using the standalone version of <i>DataViewer</i>.</li>
+      <li><b>Event-triggered dataset:</b> extract response amplitude values of ROIs from event-triggered data.
+        <ul>
+          <li><a href="#evnt-trig-data-main-gui">Extract ROI data from the main GUI</a>: extract ROIs from different recordings using the <i>Pipeline Control</i> of <samp>umIToolbox</samp> app.</li>
+          <li><a href="#evnt-trig-data-dataviewer">Extract ROI data from <i>DataViewer</i> app</a>: extract ROIs from a single recording using the standalone version of <i>DataViewer</i>.</li>
+        </ul>
+      </li>
+      <li><b>Resting state dataset:</b> create correlation matrices from resting state data.
+        <ul>
+          <li><a href="#corr-mat-main-gui">Create correlation matrix from the main GUI</a>: generate correlation matrices from the ROIs of different recordings using the <i>Pipeline Control</i> of <samp>umIToolbox</samp> app.</li>
+          <li><a href="#corr-mat-dataviewer">Create correlation matrix from <i>DataViewer</i> app</a>: generate and export a correlation matrix from a single recording using the standalone version of <i>DataViewer</i>.</li>
+        </ul>
+      </li>
     </ul>
-    <h3 id="main-gui">Extract ROI data from the main GUI</h3>
+    <h3 id="evnt-trig-intro">Event-triggered dataset</h3>
     <hr>
-      First open your project file in the main GUI. In Matlab's command window, type:
+    <p>
+      As introduced above, the event-triggered dataset consists of the visual responses to drifting gratings. The data used as input for the extraction and aggregation function consists of <i>cortical activation maps</i> containing the response amplitude of the fluorescence signal to the gratings. The preprocessing workflow of the amplitude maps is shown below:
+    </p>
+    <img src="../assets/img/tt_creating_evnt_triggered_avg_maps_ppline_workflow.png" alt="tt_creating_evnt_triggered_avg_maps_ppline_workflow", width="660">
+    <p>
+    </p>
+      In this part of the tutorial, you will learn how to extract and calculate the average response amplitude of each ROI from cortical activation maps.
+    <h4 id="evnt-trig-data-main-gui">Extract ROI data from the main GUI</h4>
+    <p>
+      1. First open your project file in the main GUI. In Matlab's command window, type:
     </p>
     <div class="codeinput">
       <pre>
@@ -39,59 +61,65 @@
       </pre>
     </div>
     <p>
-      Then, go to the <i>Pipeline control panel</i> tab and highlight the recordings to extract. Here, we will extract the data from all Resting State recordings from the mouse <b>M4D</b>:
+      2. Then, go to the <i>Pipeline control panel</i> tab and highlight the recordings to extract. Here, we will extract the data from all cortical amplitude maps from the mouse <b>M4D</b>:
     </p>
     <img src="../assets/img/tt_extracting_data_from_rois_mainGUI_data_selection.png" alt="tt_extracting_data_from_rois_mainGUI_data_selection", width="660">
     <p>
-      Click on <i>Select</i> to confirm selection and on <i>Launch Pipeline Config</i> to open the pipeline configuration app.
+      3. Click on <i>Select</i> to confirm selection and on <i>Launch Pipeline Config</i> to open the pipeline configuration app.
     </p>
     <p>
-      Select the <i>FluorescenceImaging</i> object:
+      4. Select the <i>FluorescenceImaging</i> object:
     </p>
     <img src="../assets/img/align_tt_select_objtype.png" alt="align_tt_select_objtype", width = "240">
     <p>
-      In the Pipeline Configuration app, select the function <i>getDataFromROI</i> (step 1), add it to the pipeline (step 2), select the function (step 3) and click on <i>Set Options</i> button (step 4):
+      5. In the Pipeline Configuration app, select the function <i>getDataFromROI</i> (step 1), add it to the pipeline (step 2), select the function (step 3) and click on <i>Set Options</i> button (step 4):
     </p>
     <img src="../assets/img/tt_extracting_data_from_rois_mainGUI_fcn_selection.png" alt="tt_extracting_data_from_rois_mainGUI_fcn_selection", width="660">
     <p>
-      The function <i>getDataFromROI</i> has two parameters: the file name containing the ROI information (i.e. the <samp>ROImasks_&lt;NAME&gt;.mat</samp> file) and the spatial aggregation function to be applied (<samp>SpatialAggFcn</samp>). Here we will use the ROIs stored in <samp>ROImasks_data.mat</samp> file and the ROI pixel values will be averaged using the <samp>mean</samp> for the <samp>SpatialAggFcn</samp> parameter:
+      The function <i>getDataFromROI</i> has two parameters: the file name containing the ROI information (i.e. the <samp>ROImasks_&lt;NAME&gt;.mat</samp> file) and the spatial aggregation function to be applied (<samp>SpatialAggFcn</samp>). Here we will use the ROIs stored in <samp>ROImasks_data.mat</samp> file and the ROI pixel values will be averaged using the <samp>mean</samp> option for the <samp>SpatialAggFcn</samp> parameter:
     </p>
     <img src="../assets/img/tt_extracting_data_from_rois_fcn_setOpts.png" alt="tt_extracting_data_from_rois_fcn_setOpts">
     <p>
-      Now, select the <i>FluorescenceImaging</i> object:
+      6. You can also rename the output file. To do so, click on <i>Save step</i> button and rename the file. Here the output file is renamed to <samp>ROI_dataSF</samp>:
+    </p>
+    <img src="../assets/img/tt_extracting_data_from_rois_output_data_renaming.png" alt="tt_extracting_data_from_rois_output_data_renaming.png", width="330">
+    <p>
+      7. Next, click on <i>Save config.</i> button to apply the pipeline.
+    </p>
+    <p>
+      8. Now, select the <i>FluorescenceImaging</i> object:
     </p>
     <img src="../assets/img/tt_extracting_data_from_rois_fcn_sel_input_obj.png" alt="tt_extracting_data_from_rois_fcn_sel_input_obj", height="440">
     <p>
-      And, finally, select the data to be extracted. Here, we will extract the ROI data from functional connectivity data stored in <samp>SPCMap.dat</samp> file:
+      9. Then, select the data to be extracted. Here, we will extract the ROI data from functional connectivity data stored in <samp>amplitude_Map.dat</samp> file:
     </p>
     <img src="../assets/img/tt_extracting_data_from_rois_fcn_sel_input_file.png" alt="tt_extracting_data_from_rois_fcn_sel_input_file", height="440">
     <p>
-      Finally, back in the main GUI, in the <i>Pipeline control panel</i> tab, click on <i>Run Pipeline</i> to extract the ROI data. The extracted and aggregated data from the ROIs are stored in the file <samp>ROI_data.mat</samp>:
+      10. Finally, back in the main GUI, in the <i>Pipeline control panel</i> tab, click on <i>Run Pipeline</i> to extract the ROI data. The extracted and aggregated data from the ROIs are stored in the file <samp>ROI_dataSF.mat</samp>:
     </p>
     <img src="../assets/img/tt_extracting_data_from_rois_mainGUI_ppln_result.png" alt="tt_extracting_data_from_rois_mainGUI_ppln_result", width="880">
     <div class="infonote">
       <p><strong>Note</strong><br>
-        Once the data from ROIs were extracted from all recordings of your project, you can now use the <samp>ROI_data.mat</samp> files to perform group analysis. Check the next tutorials on how to <a href="#">create groups</a> and <a href="#">visualize grouped data</a> to see how the data created in this tutorial is used!
+        Once the data from ROIs were extracted from all recordings of your project, you can now use the <samp>ROI_dataSF.mat</samp> files to visualize the grouped data. Check the next tutorials on how to <a href="#">create groups</a> and <a href="#">visualize grouped data</a> to see how the data created in this tutorial is used!
       </p>
     </div>
-
-    <h3 id="dataviewer">Extract ROI data from <i>DataViewer</i> app</h3>
-    <hr>
+    <br>
+    <h4 id="evnt-trig-data-dataviewer">Extract ROI data from <i>DataViewer</i> app</h4>
     <p>
-      The ROI data can also be extracted and aggregated in a single recording using the <i>DataViewer</i> app as standalone. Here are the steps to extract the data from <i>DataViewer</i>:
+      The ROI data can also be extracted and aggregated in a single recording using the <i>DataViewer</i> app as standalone. The data was preprocessed as the workflow shown in the section <a href="#evnt-trig-intro">introduction</a>. Here are the steps to extract the data from <i>DataViewer</i>:
     </p>
     <p>
-      1. First, open <i>DataViewer</i> with the imaging file that you want to extract. Here, we will extract the Resting state data stored in the file <samp>SPCMap.dat</samp>. To do so, in Matlab's command window, type:
+      1. First, open <i>DataViewer</i> with the imaging file that you want to extract. Here, we will extract the Resting state data stored in the file <samp>amplitude_Map.dat</samp>. To do so, in Matlab's command window, type:
     </p>
     <div class="codeinput">
       <pre>
-        DataViewer(<font class="stringformat">'C:/FULLPATH_TO_SAVEFOLDER/SPCMap.dat'</font>)
+        DataViewer(<font class="stringformat">'C:/FULLPATH_TO_SAVEFOLDER/amplitude_Map.dat'</font>)
       </pre>
     </div>
     <p>
-      2. In <i>DataViewer</i>, create or load the ROIs to be used to extract the data:
+      2. In <i>DataViewer</i>, create or load the ROIs to be used to extract the data using the <i>ROImanager</i> app (<i>Add-ons >> ROImanager</i>):
     </p>
-    <img src="../assets/img/tt_extracting_data_from_rois_dataviewer_spcm_with_rois.png" alt="tt_extracting_data_from_rois_dataviewer_spcm_with_rois", width="880">
+    <img src="../assets/img/tt_extracting_data_from_rois_dataviewer_SFTF_with_rois.png" alt="tt_extracting_data_from_rois_dataviewer_SFTF_with_rois", width="880">
     <p>
       3. In <i>DataViewer</i>'s main window, go to <i>Utilities >> ROI options >> Extract data from ROI</i>
     </p>
@@ -113,6 +141,63 @@
         However, if you wish to analyse the extracted data outside the toolbox, please read the documentation of the function <a href="#"><i>getDataFromROI</i></a> for details on how the output <samp>.mat</samp> file is organized.
       </p>
     </div>
-
+    <h3 id="evnt-trig-intro">Resting state dataset</h3>
+    <hr>
+    <p>
+      The Resting state dataset used in this part of the tutorial was preprocessed as follows:
+    </p>
+    <img src="../assets/img/tt_extracting_data_from_rois_RS_preprocess_workflow.png" alt="tt_extracting_data_from_rois_RS_preprocess_workflow", width="660">
+    <p>
+      Here, the normalized image time series will be used to extract and aggregate the ROI data as a correlation matrix. The function used to generate the matrices is named <i>genCorrelationMatrix</i>. It will extract and aggregate the ROI pixel values and calculate the Pearson's correlation between the ROIs creating a N x N matrix from the N ROIs. For more details on the function, please read its <a href="#">documentation</a>.
+    </p>
+    <h4 id="corr-mat-main-gui">Create correlation matrix from the main GUI</h4>
+    <p>
+      1. To open and select the data to be extracte, follow the steps 1-4 from the <a href="#evnt-trig-data-main-gui">previous section</a> on ROI data extraction using the main GUI.
+    </p>
+    <p>
+      2. In the <i>Pipeline Configuration</i> app, add the function <i>genCorrelationMatrix</i> to the pipeline (step 2) and open the optional parameters window:
+    </p>
+    <img src="../assets/img/tt_extracting_data_from_rois_genCorrMat_opts_params.png" alt="tt_extracting_data_from_rois_genCorrMat_opts_params", width="330">
+    <p>
+      Here, we will use the default parameters. This setting will create a matrix based on the correlation between the ROIs' centroids. For more info on the different settings for this function, please read its <a href="#">documentation</a>.
+    </p>
+    <p>
+      3. Next, click on <i>Save config</i>. button to apply the pipeline and select the <i>FluorescenceImaging</i> object (see steps 7-8 from the <a href="#evnt-trig-data-main-gui">previous section</a>).
+    </p>
+    <p>
+      4. Select the input file for the function. Here, the file is named <samp>BPtemporalFilter</samp>:
+    </p>
+    <img src="../assets/img/tt_extracting_data_from_rois_fcn_sel_input_file2.png" alt="tt_extracting_data_from_rois_fcn_sel_input_file2", height="440">
+    <p>
+      5. Back in the main GUI, in the <i>Pipeline control panel</i> tab, click on <i>Run Pipeline</i> to generate the correlation matrix. The matrices are stored in the file <samp>corrMatrix.mat</samp>.
+    </p>
+    <img src="../assets/img/tt_extracting_data_from_rois_mainGUI_ppln_result_RS.png" alt="tt_extracting_data_from_rois_mainGUI_ppln_result_RS", width="660">
+    <br>
+    <h4 id="corr-mat-dataviewer">Create correlation matrix from DataViewer app</h4>
+    <p>
+      1. First, open <i>DataViewer</i> with the imaging file that you want to extract. Here, we will extract the Resting state data stored in the file <samp>BPtemporalFilter.dat</samp>. To do so, in Matlab's command window, type:
+    </p>
+    <div class="codeinput">
+      <pre>
+        DataViewer(<font class="stringformat">'C:/FULLPATH_TO_SAVEFOLDER/BPtemporalFilter.dat'</font>)
+      </pre>
+    </div>
+    <p>
+      2. In <i>DataViewer</i>, create or load the ROIs to be used to extract the data using the <i>ROImanager</i> app (<i>Add-ons >> ROImanager</i>):
+    </p>
+    <img src="../assets/img/tt_extracting_data_from_rois_dataviewer_tempFilt_with_rois.png" alt="tt_extracting_data_from_rois_dataviewer_tempFilt_with_rois", width="880">
+    <p>
+      3. In <i>DataViewer</i>'s main window, go to <i>Utilities >> ROI options >> Generate Correlation Matrix</i>
+    </p>
+    <p>
+      4. Select the folder and filename to save the ROI data.
+    </p>
+    <p>
+      5. Finally, set the parameters for the <i>genCorrelationMatrix</i> function (see full documentation <a href="#">here</a>) and click <i>Save</i>. Here, we chose the centroid vs centroid algorithm to generate the correlation matrix:
+    </p>
+    <img src="..\assets\img\tt_extracting_data_from_rois_dataviewer_genCorrMat_opts_gui.png" alt="tt_extracting_data_from_rois_dataviewer_genCorrMat_opts_gui", width="330">
+    <p>
+      Now, the data is saved as a <samp>.mat</samp> file in the folder of your choosing!
+    </p>
   </body>
 </html>
