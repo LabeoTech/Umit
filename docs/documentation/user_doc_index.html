@@ -14,10 +14,13 @@
         border-collapse: collapse;
         width: 100%;
       }
-      td, th {
+      td, th{
         border: 1px solid #dddddd;
         text-align: left;
         padding: 8px;
+      }
+      th{
+        background-color: #ccc;
       }
       tr:hover {
         background-color: #ccc;
@@ -30,44 +33,51 @@
     <p>
       This section contains the full documentation of all apps (GUIs) and analysis functions of the <b><i>umIToolbox</i></b>.
     </p>
-    <h3>Apps</h3>
+    <h3>Apps & tools</h3>
     <hr>
     <table>
       <tr>
-        <th align="left">Apps & tools</th>
-        <th align="left">description</th>
+        <th style="width:30%", align="left">Apps</th>
+        <th align="left"> </th>
       </tr>
       <tr>
-        <td><a href="#">umIToolbox</a></td>
+        <td class="add_font_monospace"><a href="./userDocs/umIToolbox.html">umIToolbox</a></td>
         <td>the main user interface</td>
       </tr>
       <tr>
-        <td><a href="#">DataViewer</a></td>
-        <td>visualization of imaging data <b>(works as standalone)</b></td>
+        <td class="add_font_monospace"><a href="#">DataViewer</a></td>
+        <td>use to visualize imaging recordings <b>(works as standalone)</b></td>
       </tr>
       <tr>
-        <td><a href="#">ROImanager</a></td>
-        <td>creation and management of Regions of Interest (ROIs) <b>(works as standalone)</b></td>
+        <td class="add_font_monospace"><a href="#">ROImanager</a></td>
+        <td>creates and manages of Regions of Interest (ROIs) <b>(works as standalone)</b></td>
+      </tr>
+    </table>
+    <br>
+    <table>
+      <tr>
+        <th style="width:30%", align="left">Tools</th>
+        <th align="left"> </th>
       </tr>
       <tr>
         <td><a href="#">Manual Image Registration</a></td>
-        <td>tool to align imaging data using control point selection.</td>
+        <td>aligns imaging data using control point selection</td>
       </tr>
       <tr>
         <td><a href="#">Line/Box plotter</a></td>
-        <td>analysis tool to plot grouped longitudinal data.</td>
+        <td>plots grouped longitudinal data</td>
       </tr>
       <tr>
         <td><a href="#">Correlation matrix plotter</a></td>
-        <td>analysis tool to plot correlation matrices.</td>
+        <td>plots correlation matrices</td>
       </tr>
     </table>
     <h3>Analysis functions</h3>
     <hr>
     <table>
       <tr>
-        <th align="left">Data Import</th>
-        <th align="left">description</th>
+        <th style="width:30%", align="left">Data Import</th>
+        <th align="left"> </th>
       </tr>
       <tr>
         <td class="add_font_monospace"><a href="#">importFromTif</a></td>
@@ -81,8 +91,8 @@
     <br>
     <table>
       <tr>
-        <th align="left">Filters</th>
-        <th align="left">description</th>
+        <th style="width:30%", align="left">Filters</th>
+        <th align="left"> </th>
       </tr>
       <tr>
         <td class="add_font_monospace"><a href="#">GSR</a></td>
@@ -112,8 +122,8 @@
     <br>
     <table>
       <tr>
-        <th align="left">Imaging</th>
-        <th align="left">description</th>
+        <th style="width:30%", align="left">Imaging</th>
+        <th align="left"> </th>
       </tr>
       <tr>
         <td class="add_font_monospace"><a href="#">SPCM</a></td>
@@ -159,8 +169,8 @@
     <br>
     <table>
       <tr>
-        <th align="left">Stats functions</th>
-        <th align="left">description</th>
+        <th style="width:30%", align="left">Stats functions</th>
+        <th align="left"> </th>
       </tr>
       <tr>
         <td class="add_font_monospace"><a href="#">genCorrelationMatrix</a></td>
