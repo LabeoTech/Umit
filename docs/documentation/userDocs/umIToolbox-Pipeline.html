@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../css/master.css">
+    <title>umIToolbox-Pipeline</title>
+  </head>
+  <body>
+    <h2>Pipeline control tab</h2>
+    <hr>
+    <p>
+      This tab is dedicated to the creation and management of processing pipelines applied to a project's data.
+    </p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  </body>
+</html>
+
+
+<hr><hr>
+
+
+<p>Here, one can select objects to automatically run analysis pipelines.
+Check the <a href="../../docs/userDocs/ht_runpipelines.md">user guide</a> for details on how to run pipelines!</p>
+<h4 id="tab-s-components">Tab&#39;s components</h4>
+<hr>
+<p><p align="center">
+  <img alt="PipelineCtlMainComponents" src="../../assets/img/mainGUI_pipeline_fig1.png"/> <br>
+  <em>Main components of <strong>Pipeline Control</strong> tab.</em>
+</p><br></p>
+<h5 id="1-control-panel">1. Control panel</h5>
+<p>Here, one can create/edit an analysis pipeline and apply it to the selected objects.</p>
+<ul>
+<li><strong><em>Launch Pipeline Config:</em></strong> opens the <a href="/../../docs/devDocs/pipelinegui.md">pipeline configuration interface</a>.</li>
+<li><strong><em>Run Pipeline:</em></strong> Applies the analysis pipeline on the selected objects.</li>
+<li><strong><em>Ignore Logged Tasks:</em></strong> Check this box to rerun a pipeline over the selected objects. By default, this option is disabled. Thus, analysis functions that were already applied to a file will be skipped.</li>
+<li><strong><em>Save Data before error:</em></strong> This option automatically saves the last data created when an error occurs during the pipeline execution. This option is enabled by default.</li>
+</ul>
+<h5 id="2-status-panel">2. Status panel</h5>
+<p>This panel shows a summary of the pipeline steps and its parameters as well as the start and end timestamps of pipeline execution.</p>
+<p><p align="center">
+  <img alt="PipelineCtlStatusPanelExample" src="../../assets/img/mainGUI_pipeline_status.png"/> <br>
+  <em>Example of information displayed in the <strong>Status panel</strong> tab.</em>
+</p><br></p>
+<h5 id="3-summary-table">3. Summary table</h5>
+<p>Once the pipeline execution is completed, a table is displayed with a summary of the steps performed in each object. Here, eventual errors are flagged and error messages are displayed.</p>
+<p><p align="center">
+  <img alt="PipelineCtlSummaryTabExample" src="../../assets/img/mainGUI_pipeline_summarytab.png"/> <br>
+  <em>Example of <strong>summary table</strong> after a pipeline execution.</em>
+</p><br></p>
+<h4 id="options-panel">Options Panel</h4>
+<hr>
+<p>Here, the available buttons are used to <strong>select</strong> and <strong>undo selection</strong> of the highlighted objects from the <em>object tree</em>.</p>
+<p><a href="../../index.md"><strong>&lt;&lt; Home</strong></a></p>
