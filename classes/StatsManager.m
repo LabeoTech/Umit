@@ -328,7 +328,7 @@ classdef StatsManager < handle
                 acq_time_list = datetime(vertcat(obj.stats_data{indx,5}));
                 [~,tm_idx] = sort(acq_time_list);
                 [~,rel_time]= sort(tm_idx);
-               obj.stats_data(indx,12) = arrayfun(@(x) x, rel_time, 'UniformOutput', false);
+                obj.stats_data(indx,12) = arrayfun(@(x) x, rel_time, 'UniformOutput', false);
             end
              disp('Done!')
         end
