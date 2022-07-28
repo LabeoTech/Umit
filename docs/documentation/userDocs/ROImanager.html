@@ -37,7 +37,7 @@
       <li><a href="#draw-and-edit-polygonal-rois">Draw and edit polygonal ROIs</a>: create and edit polygonal ROIs interactively</li>
       <li><a href="#create-point-rois">Create point ROIs</a>: select single pixels as ROIs</li>
       <li><a href="#mouse-brain-atlas-preset-rois">Mouse Brain Atlas preset ROIs</a>:generate ROIs with the mouse cortical areas</li>
-      <li><a href="#rois-by-threshold">Create ROIs using threshold</a>: generate ROIs by setting a threshold on your image</li>
+      <li><a href="#create-rois-using-threshold">Create ROIs using threshold</a>: generate ROIs by setting a threshold on your image</li>
       <li><a href="draw-a-mask">Draw a mask</a>: create a logical mask to exclude unwanted regions of the image</li>
       <li><a href="#roi-math">ROI math</a>: perform boolean operations between ROIs</li>
       <li><a href="#gen-img-ref-frame">Create an imaging reference frame</a>: create and save to a file a reference frame for further use in <b><i>umIT</i></b></li>
@@ -77,7 +77,6 @@
           <li><b><i>Export table to CSV</i></b>: export the content of the ROI table (4) to a <samp>.csv</samp> file</li>
         </ul>
       </li>
-
       <li><b>Create</b> >>
         <ul>
           <li><b><i><a href="#draw-and-edit-polygonal-rois">Polygon</a></i></b>: creates a new customizable polygonal ROI.</li>
@@ -86,21 +85,20 @@
              <ul>
               <li><b><a href="#allen-atlas-areas">Areas</a></b> >>
                 <ul>
-                  <li><b><i>Select areas</i></b>: opens a dialog box to select the ROIs to be created</li>
-                  <li><b><i>Options...</i></b>: opens optional parameters window</li>
+                  <li><b><i><a href="#roi-selection">Select areas</a></i></b>: opens a dialog box to select the ROIs to be created</li>
+                  <li><b><i><a href="#area-options">Options...</a></i></b>: opens optional parameters window</li>
                 </ul>
               <li><b><a href="#allen-atlas-centroids">Centroids</a></b> >>
                 <ul>
-                  <li><b><i>Select areas</i></b>: opens a dialog box to select the ROIs to be created</li>
-                  <li><b><i>Options...</i></b>: opens optional parameters window</li>
+                  <li><b><i><a href="#roi-selection">Select areas</a></i></b>: opens a dialog box to select the ROIs to be created</li>
+                  <li><b><i><a href="#centroid-options">Options...</a></i></b>: opens optional parameters window</li>
                 </ul>
             </ul>
           </li>
-          <li><b><i><a href="#rois-by-threshold">From threshold...</a></i></b>: launches atool to create ROIs from threshold</li>
+          <li><b><i><a href="#create-rois-using-threshold">From threshold...</a></i></b>: launches a tool to create ROIs from threshold</li>
           <li><b><i>Delete all ROIs</i></b>: deletes existing ROIs and clears the ROI table</li>
         </ul>
       </li>
-
       <li><b>Selection</b> >>
         <div class="infonote">
           <p><strong>Note</strong><br>
@@ -138,14 +136,14 @@
       </li>
       <li><b>Image</b> >>
         <ul>
-          <li><b>Set Origin</b> >> Sets the axis origin (0,0) of the image
+          <li id="set-origin"><b>Set Origin</b> >> Sets the axis origin (0,0) of the image
             <ul>
               <li><b><i>New:</i></b> interactive selection of a new origin.</li>
               <li><b><i>Import from file:</i></b> Import the origin coordinates stored in a variable from a <samp>.mat</samp> file. The coordinates must be inside the image’s limits.</li>
               <li><b><i>Align image to origin:</i></b> Allows the rotation of the image around the origin. This option is disabled when <samp>ROImanager</samp> is used as <i>Add-on</i> in <a href="./DataViewer.html">DataViewer</a> app.</li>
             </ul>
           </li>
-          <li><b><i>Set pixel size:</i></b> Sets the pixel ratio in pixel per millimeter.</li>
+          <li id="set-pixel-size"><b><i>Set pixel size:</i></b> Sets the pixel ratio in pixel per millimeter.</li>
           <li><b><i>Set colormap:</i></b> Sets image colormap and clipping values.</li>
           <li><b>Mask</b> >> Creates a logical mask to exclude non-pertinent regions of the image
             <ul>
@@ -197,16 +195,208 @@
     <p>
       A table containing the ROI name, type (Shape or point), date of creation, centroid coordinates as well as descriptive statistics of the ROIs and selected pixels.
     </p>
+    <p align="center">
+      <img src="../assets/img/roimanager_roitable.png" alt="ROImanager_Table", width="660"><br>
+      <i>ROI table components and interactions</i>
+    </p>
     <div class="warnnote">
       <p><strong>Important</strong><br>
-        The descriptive statistics of the ROIs (min/max, median, mean(+-STD)) refer to the ROI pixels from the frame used to create the ROI. This information is not automatically updated when the frame is changed!
+        The descriptive statistics of the ROIs (min/max, median, mean(+-STD)) refer to the ROI pixels from the frame used at the moment of the ROI creation. This information is not automatically updated when the frame is changed!
       </p>
     </div>
     <h4 id="5-image-window">5. Image window</h4>
     <p>
       Figure containing the image (frame) used to plot the ROIs. This figure is absent when ROImanager is called as an <i>Add-on</i> from the <samp>DataViewer</samp> app.
     </p>
+    <h3 id="draw-and-edit-polygonal-rois">Draw and edit polygonal ROIs</h3>
+    <hr>
+    <p>To draw a new polygonal ROI:</p>
+    <ol>
+      <li>Click on Create >> <i>Polygon</i></li>
+      <li>Enter the name of the new ROI</li>
+      <li>Draw the polygon.</li>
+      <li>Once the drawing is finished, one can edit the shape by adding/deleting vertices or translating the polygon across the image.</li>
+      <li>Finally, double-click inside the ROI to save.</li>
+    </ol>
+    <p align="center">
+      <img src="../assets/gifs/roimanager_drawPolygon.gif" alt="roimanager_drawPolygon", width="880"><br>
+      <i>Steps to create a polygonal ROI</i>
+    </p>
+    <p>Now, to edit the ROI:</p>
+    <ol>
+      <li>Select the ROI by checking the correspondent box in the <i>Selection</i> column of the ROI table.</li>
+      <li>Click on Selection >> Edit >> <i>Constrained Edit/ Unconstrained Edit</i></li>
+      <li>Edit the ROI shape.</li>
+      <li>Double-click inside the ROI to save.</li>
+    </ol>
+    <h4 id="example-of-constrained-edit-">Example of constrained edit:</h4>
+    <p align="center">
+      <img src="../assets/gifs/roimanager_constrainedPolyEdit.gif" alt="roimanager_constrainedPolyEdit", width="880"><br>
+      <i>Example of constrained edit of a polygonal ROI</i>
+    </p>
+    <h4 id="example-of-uconstrained-edit-">Example of uconstrained edit:</h4>
+    <p align="center">
+      <img src="../assets/gifs/roimanager_unconstrainedPolyEdit.gif" alt="roimanager_unconstrainedPolyEdit", width="880"><br>
+      <i>Example of unconstrained edit of a polygonal ROI</i>
+    </p>
+    <h3 id="create-point-rois">Create point ROIs</h3>
+    <hr>
+    <p>
+      Point ROIs consist of a single pixel. This type of ROI does not allow any type of editing. Thus, if you want to change the location of the ROI, you can simply create a new point with the same name of the one that you want to change.
+    </p>
+    <p>
+      Here, you can select a pixel from the image interactively OR type the pixel's X,Y coordinates.
+    </p>
+    <p>To create a point ROI:</p>
+    <ol>
+      <li>Click on Create >> <i>Point</i> </li>
+      <li>Enter the name of the new ROI</li>
+      <li>Choose pixel selection method and confirm:
+        <ol type="a">
+          <li>Interactively:
+            <ul>
+              <li>Select pixel from image and double-click to save</li>
+            </ul>
+          </li>
+          <li>Type coordinates</li>
+            <ul>
+              <li>Type X and Y coordinates and click <i>Ok</i></li>
+            </ul>
+        </ol>
+      </li>
+    </ol>
+    <p align="center">
+      <img src="../assets/gifs/roimanager_createPtroi_interactively.gif" alt="roimanager_createPtroi_interactively", width="880"><br>
+      <i>Example of interactive selection of point ROI</i>
+    </p>
+    <p align="center">
+      <img src="../assets/gifs/roimanager_createPtroi_XYcoords.gif" alt="roimanager_createPtroi_XYcoords", width="880"><br>
+      <i>Example of selection of point ROI using X,Y coordinates</i>
+    </p>
+    <h3 id="mouse-brain-atlas-preset-rois">Mouse Brain Atlas preset ROIs</h3>
+    <hr>
+    <p>
+      The preset ROIs were created from the top projection of the mouse cortical areas (see image below) obtained from the <i>Mouse Allen Brain Atlas</i>.
+    </p>
+    <p align="center">
+      <img src="../assets/img/roimanager_mouse-areas.png" alt="ROImanager_MouseAreas", width="660"><br>
+      <i>ROI template from top view of the Allen Mouse Brain Atlas</i>
+    </p>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        Note: The position of the <b>Bregma</b> is provided here as a rough estimate. The data from the Allen Mouse Brain Atlas does not provide any anatomical landmark coordinates from the mouse skull. For more info on this, see this <a href="https://community.brain-map.org/t/why-doesnt-the-3d-mouse-brain-atlas-have-bregma-coordinates/158">discussion</a> from the Allen Brain Map Community Forum.
+      </p>
+    </div>
+    <div class="tipnote">
+      <p><strong>Tip</strong><br>
+        For a more accurate result, it is advisable to set <b>Bregma</b> as the image <a href="#set-origin">origin</a> and to set the image <a href="#set-pixel-size">pixel size</a> before drawing the ROIs from the Mouse Brain Atlas. Once these parameters are set, the ROI mask will be automatically place the atlas mask estimated Bregma over the origin point and resize it to fit the image's pixel ratio.
+      </p>
+    </div>
+    <p>
+      There are two modes for the Mouse Brain Atlas preset ROIs: <i>Areas</i> and <i>Centroids</i>. The <i>Areas</i> option draws the full surface of each cortical area while the <i>Centroids</i> option creates a circle around the region's centroid. Optional parameters for each mode can be set by clicking on Create >> Mouse Allen Brain Atlas >> (Areas/Centroids) >> <i>Options...</i>.
+    </p>
+    <h4 id="area-options">Area options</h4>
+    <p>
+      One can choose to use the full surface of each ROI (default) or to shrink it by N pixels. This only affects the selected pixels inside the ROIs and not the shape themselves.
+    </p>
+    <p align="center">
+      <img src="../assets/img/roimanager_area-options.png" alt="ROImanager_AreaOptions" height = "300"/><br>
+      <i>Area Options</i>
+    </p>
+    <p>
+      The shrinking algorithm removes pixels from the ROI border:
+    </p>
+    <p align="center">
+      <img src="../assets/img/roimanager_area-shrink-example.png" alt="ROImanager_AreaShrinkEx" width = "400"/><br>
+      <i>Example of shrinking of the Left primary visual cortex ROI by removing 15 pixels from the ROI border</i>
+    </p>
+    <h4 id="centroid-options">Centroid options</h4>
+    <p>
+      One can choose the radius of the circles in pixels (default = 1 px) and in millimeters. The latter is only available if the image <a href="#set-pixel-size">pixel size</a> is already set.
+    </p>
+    <p align="center">
+      <img src="../assets/img/roimanager_centroid-options.png" alt="ROImanager_CentroidOptions" height="290"/><br>
+      <i>Centroid options</i>
+    </p>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        If the ROIs are larger than the cortical areas themselves, the circles will automatically intersect with the region's borders to avoid selecting pixels outside the selected ROIs.
+      </p>
+    </div>
+    <h4 id="roi-selection">ROI selection</h4>
+    <p>
+      Once the options are set (either for Areas or Centroids), click on Select (Areas/Centroids) button. A table containing the columns acronyms, names, functional modality and Selection will appear.
+    </p>
+    <p align="center">
+      <img src="../assets/img/roimanager_area-selection-fig.png" alt="ROImanager_MouseAreasSelectionBox", width="660"><br>
+      <i>Table of available ROIs from the Mouse Allen Brain Atlas</i>
+    </p>
+    <div class="tipnote">
+      <p><strong>Tip</strong><br>
+        For checking/uncheking multiple chekboxes from the <i>Selected</i> column, first highlight the cells, then click outside the table and press <i>Enter</i>.
+      </p>
+    </div>
+    <p>After checking the areas, close the window to confirm.</p>
+    <h4 id="fitting-the-mask">Fitting the mask</h4>
+    <p>After areas selection, a mask is plotted over the image and can be fitted using a constrained edit method:</p>
+    <p align="center">
+      <img src="../assets/gifs/roimanager_fittingMouseAreas.gif" alt="ROImanager_MouseAreasFitGif", width="880"><br>
+      <i>How to create ROIs from the Mouse Brain Atlas</i>
+    </p>
+    <h3 id="create-rois-using-threshold">Create ROIs using threshold</h3>
+    <p>
+      This option creates ROIs based on pixel values above or below a certain threshold. Go to Create >> <i>From threshold...</i> to launch the tool (<i>ROImask Creator</i>).
+    </p>
+    <p align="center">
+      <img src="../assets/img/roimanager_roimask_creator_overview_annot.png" alt="roimanager_roimask_creator_overview_annot", width="660"><br>
+      <i>Main components of ROImask Creator tool</i>
+    </p>
+    <h4 id="1-control-panel">1. Control panel</h4>
+    <ul>
+      <li><b><i>Normalize</i></b>: normalizes the threshold scale from 0 to 1</li>
+      <li><b><i>Excl. ROIs</i></b>: excludes ROIs with a number less than <b>N</b> pixels</li>
+      <li><b><i>Remove small holes</i></b>: performs morphological closing (dilation followed by erosion)</li>
+      <li><b><i>Smooth borders</i></b>: performs morphological opening (erosion followed by dilation)</li>
+      <div class="infonote">
+        <p><strong>Note</strong><br>
+          When both <i>Remove small holes</i> and <i>Smooth borders</i> are selected, the app performs a morphological closing followed by an opening.
 
+      </div>
+      <li><b>Threshold level</b> >>
+        <ul>
+          <li><b><i>Edit field</i></b>: type the threshold value and press <i>Enter</i></li>
+          <li><b><i>Slider</i></b>: alternatively, move the slider to set a threshold</li>
+        </ul>
+      </li>
+      <li><b>Sel. direction panel</b> >>
+        <ul>
+          <li><b><i>above thr.</i></b>: chooses the pixels with values <b>greater</b> than the threshold</li>
+          <li><b><i>below thr.</i></b>: chooses the pixels with values <b>smaller</b> than the threshold</li>
+        </ul>
+      </li>
+    </ul>
+    <h4 id="2-image-window">2. Image window</h4>
+    <p>
+      Window containing the grayscaled image (left) and the binary mask (right). The ROIs created by the threshold are overlayed on both images and numbered on the binary mask.
+    </p>
+    <h4> Generating ROIs</h4>
+    <p>
+      Once all parameters are set in the control panel(1), simply click on the green button (<i>Create ROIs</i>) to generate the ROIs. The new ROIs will be added to the ROI table in <samp>ROImanager</samp> app with the notation : <samp>new_ROI_&lt;NUMBER&gt;</samp>
+    </p>
+    <p align="center">
+      <img src="../assets/img/roimanager_roimask_creator_roi_preview.png" alt="roimanager_roimask_creator_roi_preview", width="660"><br>
+      <i>Example of ROI delimiting an area with pixel values above 0.03</i>
+    </p>
+    <p align="center">
+      <img src="..\assets\img\roimanager_roimask_creator_resultROI.png" alt="roimanager_roimask_creator_resultROI", width="660"><br>
+      <i>Resulting ROI added to the ROI table and shown in the <a href="./DataViewer.html">DataViewer</a> interface.</i>
+    </p>
+    <div class="tipnote">
+      <p><strong>Tip</strong><br>
+
+      </p>
+
+    </div>
 
 
 
@@ -228,75 +418,8 @@
 
 
 
-<h5 id="3-roi-table-">3. ROI table.</h5>
-<p><img src="/assets/img/roimanager_roitable.png" alt="ROImanager_Table"></p>
-<h5 id="drawing-and-editing-polygonal-rois">Drawing and editing polygonal ROIs</h5>
-<hr>
-<p>To create a new polygonal ROI:</p>
-<ol>
-<li>Click on Draw&gt;&gt;Polygon.</li>
-<li>Enter the name of the new ROI</li>
-<li>Draw the polygon.</li>
-<li>Once the drawing is finished, one can edit the shape by adding/deleting vertices or translating the polygon across the image.</li>
-<li>Finally, double-click inside the ROI to save.</li>
-</ol>
-<p><img src="https://s-belanger.github.io/Umit/assets/gifs/roimanager_creatingShapeROI.gif" alt="ROImanager_ROIShapeCreationGif"/></p>
-<p>Now, to edit the ROI:</p>
-<ol>
-<li>Select the ROI by checking the correspondent box in the <i>Selection</i> column of the ROI table.</li>
-<li>Click on Selection&gt;&gt;Edit&gt;&gt; (Constrained Edit/ Unconstrained Edit).</li>
-<li>Edit the ROI shape.</li>
-<li>Double-click inside the ROI to save.</li>
-</ol>
-<h6 id="example-of-constrained-edit-">Example of constrained edit:</h6>
-<p><img src="https://s-belanger.github.io/Umit/assets/gifs/roimanager_constEditShapeROI.gif" alt="ROImanager_ROIShapeEdit1Gif"/></p>
-<h6 id="example-of-unconstrained-edit-">Example of unconstrained edit:</h6>
-<p><img src="https://s-belanger.github.io/Umit/assets/gifs/roimanager_UnconstEditShapeROI.gif" alt="ROImanager_ROIShapeEdit2Gif"/></p>
-<h5 id="creating-point-rois">Creating point ROIs</h5>
-<hr>
-<p>Point ROIs are simply ROIs consisted of a single pixel from the image. This type of ROI does not allow any type of editing. Thus, if you want to change the location of the ROI, you can simply create a new point with the same name of the one that you want to change.</p>
-<p>To create a point ROI:</p>
-<ol>
-<li>Click on Draw&gt;&gt;Point</li>
-<li>Enter the name of the new ROI</li>
-<li>Select the point on the image.</li>
-<li>Double-click to save.</li>
-</ol>
-<p><img src="https://s-belanger.github.io/Umit/assets/gifs/roimanager_creatingPointROI.gif" alt="ROImanager_ROIShapeEdit2Gif"/></p>
-<h5 id="using-the-mouse-brain-atlas-preset-rois">Using the Mouse Brain Atlas preset ROIs</h5>
-<hr>
-<p>The preset ROIs were created from the top projection of the mouse cortical areas (see image below) obtained from the <i>Mouse Allen Brain Atlas</i>.</p>
-<blockquote>
-<p>Tip: For a more accurate result, it is advisable to set <b>Bregma</b> as the image&#39;s <b>origin</b> and to set the image&#39;s <b>pixel size</b> before drawing the ROIs from the Mouse Brain Atlas. Once these parameters are set, the ROI mask will be automatically place the mask&#39;s Bregma over the origin point and resize it to approximate the mask&#39;s real size.</p>
-</blockquote>
-<p><img src="/assets/img/roimanager_mouse-areas.png" alt="ROImanager_MouseAreas"></p>
-<blockquote>
-<p>Note: The position of the <b>Bregma</b> is provided here as a rough estimate. The data from the Mouse Brain atlas does not provide any anatomical landmark coordinates from the mouse skull. For more info on this, see this <a href="https://community.brain-map.org/t/why-doesnt-the-3d-mouse-brain-atlas-have-bregma-coordinates/158">discussion</a> from the Allen Brain Map Community Forum.</p>
-</blockquote>
-<p>There are two modes for the Mouse Brain Atlas preset ROIs: <i>Areas</i> and <i>Centroids</i>. The <i>Areas</i> option draws the full surface of each cortical area while the <i>Centroids</i> option creates a circle around the area&#39;s centroid.
-Optional parameters for each mode can be set by clicking on <i>Draw &gt;&gt; Mouse Allen Brain Atlas &gt;&gt; (Areas/Centroids) &gt;&gt; Options...</i>.</p>
-<h5 id="area-options">Area options</h5>
-<p>One can choose to use the full surface of each ROI (default) or to shrink it by N pixels. This only affects the selected pixels inside the ROIs and not the shape themselves. The shrinking algorithm removes pixels from the ROI border.</p>
-<p><img src="https://s-belanger.github.io/Umit/assets/img/roimanager_area-options.png" alt="ROImanager_AreaOptions" width = "400"/></p>
-<h6 id="example-of-shrinking-of-the-left-primary-visual-cortex-roi-by-removing-15-pixels-from-the-roi-border-">Example of shrinking of the Left primary visual cortex ROI by removing 15 pixels from the ROI border:</h6>
-<p><img src="https://s-belanger.github.io/Umit/assets/img/roimanager_area-shrink-example.png" alt="ROImanager_AreaShrinkEx" width = "400"/></p>
-<h5 id="centroid-options">Centroid options</h5>
-<p>One can choose the radius of the circles in pixels (default = 1 px) and in millimeters. The latter is only available if the image&#39;s <i>pixel size</i> is already set.</p>
-<p><img src="https://s-belanger.github.io/Umit/assets/img/roimanager_centroid-options.png" alt="ROImanager_CentroidOptions" width = "400"/></p>
-<blockquote>
-<p>Note: If the ROIs are larger than the cortical areas themselves, the circles will automatically intersect with the areas&#39; borders to avoid selecting pixels outside the areas.</p>
-</blockquote>
-<h5 id="area-selection">Area selection</h5>
-<p>Once the options are set (either for Areas or Centroids), click on Select (Areas/Centroids) button.
-A table containing the columns acronyms, names, functional modality and Selection will appear.</p>
-<p><img src="/assets/img/roimanager_area-selection-fig.png" alt="ROImanager_MouseAreasSelectionBox"></p>
-<blockquote>
-<p>Tip: For checking/uncheking multiple chekboxes from the <i>Selected</i> column, first highlight the cells, then click outside the table and press <i>Enter</i>.</p>
-</blockquote>
-<p>After checking the areas, close the window to save.</p>
-<h5 id="fitting-the-mask">Fitting the mask</h5>
-<p>After areas selection, a mask is plotted over the image and can be fitted using a constrained edit method.
-<img src="https://s-belanger.github.io/Umit/assets/gifs/roimanager_fittingMouseAreas.gif" alt="ROImanager_MouseAreasFitGif"/></p>
+
+<!--
 <h5 id="rules-for-roi-fitting">Rules for ROI fitting</h5>
 <hr>
 <p>The <samp>ROImanager</samp> app will automatically detect if the ROIs are over an invalid region of the image.
@@ -314,3 +437,4 @@ If <i>try to fix</i> is selected, <samp>ROImanager</samp> will redraw the ROI sh
 <p>If <i>ignore</i> is selected, some of the ROI shape statistics, such as the centroid coordinates or area, may be wrong. Regarding the selected pixels inside the ROIs, the pixels located outside the image will be removed, however the ones in regions with <samp>NaN</samp>s or outside the logical mask areas will be kept.</p>
 <h6 id="example-of-roi-fix-partially-outside-the-logical-mask">Example of ROI fix partially outside the logical mask</h6>
 <p><img src="https://s-belanger.github.io/Umit/assets/gifs/roimanager_fixingROIs.gif" alt="ROImanager_FixingROIGif"/></p>
+ -->
