@@ -38,7 +38,7 @@
       <li><a href="#create-point-rois">Create point ROIs</a>: select single pixels as ROIs</li>
       <li><a href="#mouse-brain-atlas-preset-rois">Mouse Brain Atlas preset ROIs</a>:generate ROIs with the mouse cortical areas</li>
       <li><a href="#create-rois-using-threshold">Create ROIs using threshold</a>: generate ROIs by setting a threshold on your image</li>
-      <li><a href="draw-a-mask">Draw a mask</a>: create a logical mask to exclude unwanted regions of the image</li>
+      <li><a href="#draw-a-mask">Draw a mask</a>: create a logical mask to exclude unwanted regions of the image</li>
       <li><a href="#roi-math">ROI math</a>: perform boolean operations between ROIs</li>
       <li><a href="#gen-img-ref-frame">Create an imaging reference frame</a>: create and save to a file a reference frame for further use in <b><i>umIT</i></b></li>
       <li><a href="#rules-for-roi-fitting">Rules for ROI fitting</a>: how <samp>ROImanager</samp> manages ROI fitting</li>
@@ -344,6 +344,7 @@
       <i>How to create ROIs from the Mouse Brain Atlas</i>
     </p>
     <h3 id="create-rois-using-threshold">Create ROIs using threshold</h3>
+    <hr>
     <p>
       This option creates ROIs based on pixel values above or below a certain threshold. Go to Create >> <i>From threshold...</i> to launch the tool (<i>ROImask Creator</i>).
     </p>
@@ -381,7 +382,7 @@
     </p>
     <h4> Generating ROIs</h4>
     <p>
-      Once all parameters are set in the control panel(1), simply click on the green button (<i>Create ROIs</i>) to generate the ROIs. The new ROIs will be added to the ROI table in <samp>ROImanager</samp> app with the notation : <samp>new_ROI_&lt;NUMBER&gt;</samp>
+      Once all parameters are set in the control panel(1), simply click on the green button (<i>Create ROIs</i>) to generate the ROIs. The new ROIs will be added to the ROI table in <samp>ROImanager</samp> app with the notation : <samp>newROI_&lt;NUMBER&gt;</samp>
     </p>
     <p align="center">
       <img src="../assets/img/roimanager_roimask_creator_roi_preview.png" alt="roimanager_roimask_creator_roi_preview", width="660"><br>
@@ -393,10 +394,43 @@
     </p>
     <div class="tipnote">
       <p><strong>Tip</strong><br>
-
+        It is advisable to create a <a href="#draw-a-mask">logical mask</a> before loading the <i>ROImasks Creator</i> tool. The tool will use the mask to exclude unwanted regions of the image and thus, i will consider <b>only</b> the pixels inside the mask in the threshold calculation.
       </p>
-
     </div>
+    <h3 id="draw-a-mask">Draw a mask</h3>
+    <hr>
+    <p>
+      Applies a logical mask to the image. The logical mask is used by the <samp>ROImanager</samp> app to exclude areas of the image during ROI creation (for details, see the <a href="#rules-for-roi-fitting"> rules for ROI fitting</a>). In addition the logical mask is used by some of <b><i>umIT</i></b>'s <a href="../user_doc_index.html">analysis functions</a> as a variable in a <i>Imaging reference frame</i> file (for details see <a href="#create-an-imaging-reference-frame">this section</a>).
+    </p>
+    <p>
+      To draw a new mask:
+      <ol>
+        <li>Go to Image >> Mask >> <i>Draw new</i></li>
+        <li>Select the number of regions to draw</li>
+        <li>Draw each region (the same way as a polygonal ROI)</li>
+      </ol>
+    </p>
+    <p align="center">
+      <img src="../assets/gifs/roimanager_draw_logical_mask.gif" alt="roimanager_draw_logical_mask", width="660"><br>
+      <i>Steps to create/draw a logical mask using 2 regions.</i>
+    </p>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        When drawing more than one region, the final mask will contain the <b>union</b> of all regions drawn (as the example above).
+      </p>
+    </div>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        A note on importing logical masks: the <samp>ROImanager</samp> app accepts masks stored in a variable as a logical 2D array (i.e. matrix) in a <samp>.mat</samp> file.
+      </p>
+    </div>
+    <h3 id="roi-math">ROI math</h3>
+    <hr>
+    <p>
+
+    </p>
+
+
 
 
 
