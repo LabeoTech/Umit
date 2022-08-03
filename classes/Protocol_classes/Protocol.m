@@ -54,7 +54,7 @@ classdef Protocol < handle
             % Set function for MainDir property.
             %   Accepts only existing Folders as input.
             MainDir = checkFolder(MainDir, 'raw');
-            obj.validate_path(MainDir); % Checks for existing Path.
+%             obj.validate_path(MainDir); % Checks for existing Path.
             if isempty(obj.MainDir)
                 obj.MainDir = MainDir;
             else
@@ -488,7 +488,7 @@ classdef Protocol < handle
                 % Check MainDir and SaveDir existance:
                 errID = 'umIToolbox:Protocol:InvalidInput';
                 errMsg = ' is not an existing folder!';
-                assert(isfolder(s.MainDir),errID, [strrep(s.MainDir,filesep, repmat(filesep,1,2)), errMsg]);
+%                 assert(isfolder(s.MainDir),errID, [strrep(s.MainDir,filesep, repmat(filesep,1,2)), errMsg]);
                 assert(isfolder(s.SaveDir),errID, [strrep(s.MainDir,filesep, repmat(filesep,1,2)), errMsg]);
                 %%%
                 newObj.MainDir = s.MainDir;
