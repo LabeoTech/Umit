@@ -31,3 +31,4 @@ test/test_runImagesClassification/rawData/info.txt
 test/test_runImagesClassification/rawData/StimParameters.mat
 test/test_run_HemoCorrection/exp_outFiles/hemoCorr_fluo.dat
 test/test_run_HemoCorrection/exp_outFiles/hemoCorr_fluo_info.mat
+myAllenAreas.mat

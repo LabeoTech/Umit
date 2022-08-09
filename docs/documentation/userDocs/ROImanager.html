@@ -40,7 +40,7 @@
       <li><a href="#create-rois-using-threshold">Create ROIs using threshold</a>: generate ROIs by setting a threshold on your image</li>
       <li><a href="#draw-a-mask">Draw a mask</a>: create a logical mask to exclude unwanted regions of the image</li>
       <li><a href="#roi-math">ROI math</a>: perform boolean operations between ROIs</li>
-      <li><a href="#gen-img-ref-frame">Create an imaging reference frame</a>: create and save to a file a reference frame for further use in <b><i>umIT</i></b></li>
+      <li><a href="#gen-img-ref-frame">Create an imaging reference frame file</a>: create and save to a file a reference frame for further use in <b><i>umIT</i></b></li>
       <li><a href="#rules-for-roi-fitting">Rules for ROI fitting</a>: how <samp>ROImanager</samp> manages ROI fitting</li>
       <li><a href="#import-rois">Import ROIs</a>: learn how to import ROIs from a <samp>.mat</samp> file or from Matlab's workspace</li>
     </ul>
@@ -427,16 +427,77 @@
     <h3 id="roi-math">ROI math</h3>
     <hr>
     <p>
-
+      The ROI math option allows one to perform the following operations on existing ROIs:
+      <ul>
+        <li><a href="#roi-split">Split</a>: splits a multi-region ROI on individual regions.</li>
+        <li><a href="#roi-merge">Merge</a>: merges selected ROIs into one.</li>
+        <li><a href="#roi-intersect">Intersect</a>: creates a new ROI as the overlapping area from selected ROIs.</li>
+        <li><a href="#roi-xor">XOR (exclusive OR)</a>: creates a new ROI as the non-overlapping area(s) from selected ROIs.</li>
+        <li><a href="#roi-subtract">Subtract</a>: creates a new ROI from the subtraction of two existing ROIs.</li>
+      </ul>
     </p>
+    <p>
+      In order to perform the desired operation, select the ROI(s) by checking the ROIs box in the <i>Select</i> column of the ROI table and go to Selection >> ROI math >> <i>&lt;OPERATION MENU&gt;</i>. A preview figure will be available to assess the result of the operation and confirm. At the end, you can edit the name(s) of the new ROI(s).
+    </p>
+    <div class="warnnote">
+      <p><strong>Important</strong><br>
+        Please, note that the original ROIs used in the operation will be replaced by the resulting ROI(s)!
+      </p>
 
-
-
-
-
-
-
-
+    </div>
+    <h4 id="roi-split">Split</h4>
+    <p>
+      This operation works with only <b>ONE</b> multi-region ROI. A multi-region ROI consists of an ROI with two or more non-contiguous (isolated) areas:
+    </p>
+    <p align="center">
+      <img src="../assets/gifs/roimanager_roiMath_split.gif" alt="roimanager_roiMath_split", width="880"><br>
+      <i>Steps to split a multi-region ROI.</i>
+    </p>
+    <h4 id="roi-merge">Merge</h4>
+    <p>
+      Here, one can merge two or more ROIs together into a single ROI:
+    </p>
+    <p align="center">
+    <img src="../assets/gifs/roimanager_roiMath_merge.gif" alt="roimanager_roiMath_merge", width="880"><br>
+    <i>Steps to merge ROIs.</i>
+    </p>
+    <h4 id="roi-intersect">Intersect</h4>
+    <p>
+      This operation retrieves the overlapping region(s) between the selected ROIs. This option accepts two or more ROIs as input.
+    </p>
+    <p align="center">
+      <img src="../assets/gifs/roimanager_roiMath_intersect.gif" alt="roimanager_roiMath_intersect", width="880"><br>
+      <i>Steps to intersect ROIs.</i>
+    </p>
+    <h4 id="roi-xor">XOR (exclusive OR)</h4>
+    <p>
+      This operation retrieves the non-overlapping regions between two or more ROIs. In other words, it gives the inverse of the intersection of ROIs.
+    </p>
+    <div class="tipnote">
+      <p><strong>Tip</strong><br>
+        Although, more than two ROIs are accepted for this operation, it is advisable to perform it with two ROIs at a time.
+      </p>
+    </div>
+    <p>
+      Here is an example of XOR operation between two ROIs:
+    </p>
+    <p align="center">
+      <img src="../assets/gifs/roimanager_roiMath_xor.gif" alt="roimanager_roiMath_xor", width="880"><br>
+      <i>Steps to perform XOR operation between two ROIs.</i>
+    </p>
+    <h4 id="roi-subtract">Subtract</h4>
+    <p>
+      This operation subtracts one ROI from another. Here, only two ROIs are accepted!
+    </p>
+    <p align="center">
+      <img src="../assets/gifs/roimanager_roiMath_subtract.gif" alt="roimanager_roiMath_subtract", width="880"><br>
+      <i>Steps to subtract two ROIs.</i>
+    </p>
+    <h3 id="gen-img-ref-frame">Create an imaging reference frame file</h3>
+    <hr>
+    <p>
+      An <i>Imaging reference frame file</i> stores information about a given imaging recording.
+    </p>
 
 
 
