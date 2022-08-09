@@ -496,10 +496,48 @@
     <h3 id="gen-img-ref-frame">Create an imaging reference frame file</h3>
     <hr>
     <p>
-      An <i>Imaging reference frame file</i> stores information about a given imaging recording.
+      An <i>Imaging reference frame file</i> stores a reference image - and some meta data - to be used by the analysis functions from <b><i>umIT</i></b>. For instance, one can use the reference frame to align different recordings (see <a href="../tutorials/tt_align_sessions.html">this tutorial</a>) or use one of the extra variables such as the <i>logical mask</i> to exclude pixels in some analysis such as the <a href="#"><samp>GSR</samp></a> function.
     </p>
-
-
+    <p>
+      The main information saved in the <i>Imaging reference frame file</i> include:
+      <ul>
+        <li>a reference frame</li>
+        <li>the X,Y coordinates of a reference point (i.e. origin)</li>
+        <li>a logical mask</li>
+        <li>the image's pixel size</li>
+        <li>the colormap and color scale of the reference frame</li>
+      </ul>
+    </p>
+    <p>
+      In order to create the <i>Imaging reference frame</i>, one can simply go to Image >>Image reference file... >> <i>Export</i> and select the folder and name of the file (default = <i>ImagingReferenceFrame.mat</i>) to save the current frame as the reference frame. However, it is advisable to set all image parameters (origin, pixel size, colormap and logical mask ) before creating the file.
+    </p>
+    <h4>Origin</h4>
+    <p>
+      To create a new reference point (i.e. origin), go to Image >> Set origin >> <i>New</i>. Here, you can select a point in the image to be the new <i>origin</i> (0,0) of the cartesian coordinates. In the example below, we will select an anatomical landmark from the mouse skull(<i>Bregma</i>) as the origin. To select a new origin, click and drag the green dot to the desired location and right-click to save. The image's axis will be shifted to match the new origin point.
+    </p>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        Once the new origin is set, the <i>X,Y coordinates</i> and <i>Distance from Origin</i> variables from the ROI table are updated to match the new coordinates.
+      </p>
+    </div>
+    <p align="center">
+      <img src="../assets/gifs/roimanager_draw_new_origin.gif" alt="roimanager_draw_new_origin", width="880"><br>
+      <i>How to set a new origin point.</i>
+    </p>
+    <p>
+      Notice that the image in the example above is slightly rotated. To adjust the image's angle, go to Image >> Set origin >> <i>Align image to origin</i>. Click and drag the moving point to the area on the image that is supposed to be vertically aligned with the origin. In our example, we will use the <i>Lambda</i> landmark of the mouse skull to align the frame:
+    </p>
+    <p align="center">
+      <img src="../assets/gifs/roimanager_align_image_to_origin.gif" alt="roimanager_align_image_to_origin", width="880"><br>
+      <i>How to rotate the image around the origin.</i>
+    </p>
+    <p>
+      One can also import the origin coordinates from a <samp>.mat</samp> file. To do so, go to Image >> Set origin >> <i>Import from file...</i>. Then you can open a <samp>.mat</samp> file and select the variable containing the X and Y coordinates. The variable <b>must</b> be a numerical array with dimensions 1X2.
+    </p>
+    <p align="center">
+      <img src="../assets/gifs/roimanager_import_origin.gif" alt="roimanager_import_origin", width="880"><br>
+      <i>How to import X,Y coordinates from <samp>.mat</samp> file as a new origin.</i>
+    </p>
 
 
 
