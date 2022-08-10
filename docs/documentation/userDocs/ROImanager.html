@@ -509,7 +509,7 @@
       </ul>
     </p>
     <p>
-      In order to create the <i>Imaging reference frame</i>, one can simply go to Image >>Image reference file... >> <i>Export</i> and select the folder and name of the file (default = <i>ImagingReferenceFrame.mat</i>) to save the current frame as the reference frame. However, it is advisable to set all image parameters (origin, pixel size, colormap and logical mask ) before creating the file.
+      In order to create the <i>Imaging reference frame</i>, one can simply go to Image >>Image reference file... >> <i>Export</i> and select the folder and name of the file (default: <i>ImagingReferenceFrame.mat</i>) to save the current frame as the reference frame. However, it is advisable to set all image parameters (origin, pixel size, colormap and logical mask) before creating the file. Here is a brief description on how to set the main image parameters:
     </p>
     <h4>Origin</h4>
     <p>
@@ -538,10 +538,65 @@
       <img src="../assets/gifs/roimanager_import_origin.gif" alt="roimanager_import_origin", width="880"><br>
       <i>How to import X,Y coordinates from <samp>.mat</samp> file as a new origin.</i>
     </p>
-
-
-
-
+    <h4>Pixel size</h4>
+    <p>
+      To set the image's pixel size, simply go to Image >> <i>Set pixel size</i> and type the image's pixel ratio in pixel per millimeter:
+    </p>
+    <img src="../assets/img/roimanager_set_pixel_size.png" alt="roimanager_set_pixel_size", width="200">
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        As for the origin, once the pixel size is set the units in the columns <i>X,Y coordinates</i> and <i>Distance from Origin</i> are changed to millimeter.
+      </p>
+    </div>
+    <div class="tipnote">
+      <p><strong>Tip</strong><br>
+        To erase the pixel size and reset the axis units and ROI coordinates back to <i>pixels</i>, just set the pixel ratio to <b>zero</b>.
+      </p>
+    </div>
+    <h4>Colormap</h4>
+    <p>
+      To change the colormap and the color scale, go to Image >> <i>Set colormap</i>:
+    </p>
+    <img src="../assets/img/roimanager_set_colormap.png" alt="roimanager_set_colormap", width="200">
+    <div class="warnnote">
+      <p><strong>Important</strong><br>
+        If the <samp>ROImanager</samp> app was opened as <i>Add-on</i> from the <samp>DataViewer</samp> app, the button <i>Set colormap</i> from <samp>ROImanager</samp> is disabled. You can access the colormap settings from the <samp>DataViewer</samp> interface instead.
+      </p>
+    </div>
+    <h4>Logical mask</h4>
+    <p>
+      To learn how to create or import a logical mask, read <a href="#draw-a-mask">this section</a>.
+    </p>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        As stated in this section's introduction, a logical mask is useful to exclude unwanted pixels during an analysis function. For instance, the function <a href="#"><samp>GSR</samp></a> (removes global variance from the recording) uses the <i>ImagingReferenceFrame</i> file as input and loads the <i>logical mask</i> to include only the pixels inside the mask in the calculation of the global variance. Therefore, if your recordings contain non-pertinent areas, it is advisable to create and save a logical mask to delimit the region of interest.
+      </p>
+    </div>
+    <h3 id="rules-for-roi-fitting">Rules for ROI fitting</h3>
+    <hr>
+    <p>
+      The <samp>ROImanager</samp> app will automatically detect if the ROIs are over an invalid region of the image. Invalid regions consist of:
+      <ul>
+        <li>Regions outside the image boundaries.</li>
+        <li>Areas of the image containing <samp>NaN</samp>s.</li>
+        <li>Areas outside the selected area using a logical mask.</li>
+      </ul>
+    </p>
+    <p>
+      If the ROI is completely inside an invalid region, it will be deleted. However, if the ROI is partially inside an invalid region, the app will redraw the ROI to exclude the invalid pixels.
+    </p>
+    <div class="warnnote">
+      <p><strong>Important</strong><br>
+        For partially invalid ROIs that are very small, there is a risk that the redrawing process yields an empty ROI. In this case, the ROI will be erased and you will be notified.
+      </p>
+    </div>
+    <p>
+      The example below illustrates the creation of ROIs containing invalid and partially invalid ROIs:
+    </p>
+    <p align="center">
+      <img src="" alt=""><br>
+      <i>How the <samp>ROImanager</samp> app deals with invalid and partially invalid ROIs. Invalid ROIs are deleted while partially invalid ROIs are redrawn.</i>
+    </p>
 
 
   </body>
@@ -555,15 +610,6 @@
 <!--
 <h5 id="rules-for-roi-fitting">Rules for ROI fitting</h5>
 <hr>
-<p>The <samp>ROImanager</samp> app will automatically detect if the ROIs are over an invalid region of the image.
-Invalid regions consist of :</p>
-<ul>
-<li>Regions outside the image boundaries.</li>
-<li>Areas of the image containing <samp>NaN</samp>s.</li>
-<li>Areas outside the selected area using a logical mask.</li>
-</ul>
-<p>If the ROI is completely inside an invalid region, it will be automatically deleted. However, if the ROI is partially inside an invalid region, a window will appear giving a choice to delete, try to fix or ignore.
-If <i>try to fix</i> is selected, <samp>ROImanager</samp> will redraw the ROI shape based on the valid pixels inside the image.</p>
 <blockquote>
 <p>Note: Depending on the size of the remaining ROIs, the fixing algorithm may create empty ROIs (without any pixels inside) or split the ROI. Check the descriptive statistics on the table to spot potentially broken ROIs!</p>
 </blockquote>
