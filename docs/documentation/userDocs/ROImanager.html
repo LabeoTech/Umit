@@ -42,7 +42,7 @@
       <li><a href="#roi-math">ROI math</a>: perform boolean operations between ROIs</li>
       <li><a href="#gen-img-ref-frame">Create an imaging reference frame file</a>: create and save to a file a reference frame for further use in <b><i>umIT</i></b></li>
       <li><a href="#rules-for-roi-fitting">Rules for ROI fitting</a>: how <samp>ROImanager</samp> manages ROI fitting</li>
-      <li><a href="#import-rois">Import ROIs</a>: learn how to import ROIs from a <samp>.mat</samp> file or from Matlab's workspace</li>
+      <li><a href="#import-rois">Import ROIs</a>: how to import ROIs from a <samp>.mat</samp> file or from Matlab's workspace</li>
     </ul>
     <h3 id="the-interface">The interface</h3>
     <hr>
@@ -591,29 +591,37 @@
       </p>
     </div>
     <p>
-      The example below illustrates the creation of ROIs containing invalid and partially invalid ROIs:
+      The example below illustrates the creation of invalid and partially invalid ROIs:
     </p>
     <p align="center">
-      <img src="" alt=""><br>
-      <i>How the <samp>ROImanager</samp> app deals with invalid and partially invalid ROIs. Invalid ROIs are deleted while partially invalid ROIs are redrawn.</i>
+      <img src="../assets/gifs/roimanager_dealing_with_invalid_rois.gif" alt="roimanager_dealing_with_invalid_rois", width="880"><br>
+      <i>How the <samp>ROImanager</samp> app deals with invalid (step #2) and partially invalid (step #3) ROIs. Invalid ROIs are deleted while partially invalid ROIs are redrawn.</i>
     </p>
+    <h3 id="import-rois">Import ROIs</h3>
+    <hr>
+    <p>
+      A
+    </p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
   </body>
 </html>
-
-<hr><hr>
-
-
-
-
-<!--
-<h5 id="rules-for-roi-fitting">Rules for ROI fitting</h5>
-<hr>
-<blockquote>
-<p>Note: Depending on the size of the remaining ROIs, the fixing algorithm may create empty ROIs (without any pixels inside) or split the ROI. Check the descriptive statistics on the table to spot potentially broken ROIs!</p>
-</blockquote>
-<p>If <i>ignore</i> is selected, some of the ROI shape statistics, such as the centroid coordinates or area, may be wrong. Regarding the selected pixels inside the ROIs, the pixels located outside the image will be removed, however the ones in regions with <samp>NaN</samp>s or outside the logical mask areas will be kept.</p>
-<h6 id="example-of-roi-fix-partially-outside-the-logical-mask">Example of ROI fix partially outside the logical mask</h6>
-<p><img src="https://s-belanger.github.io/Umit/assets/gifs/roimanager_fixingROIs.gif" alt="ROImanager_FixingROIGif"/></p>
- -->
