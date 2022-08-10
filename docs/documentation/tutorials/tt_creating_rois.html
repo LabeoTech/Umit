@@ -32,7 +32,7 @@
     <p>
       To create a polygonal ROI:
       <ol>
-        <li>Go to <i>Create >> Polygon </i></li>
+        <li>Go to <i>Create &gt;&gt; Polygon </i></li>
         <li>Enter the name of the new ROI.</li>
         <li>Draw the polygon.</li>
         <li>Once the drawing is finished, one can edit the shape by adding/deleting vertices or translating the polygon across the image.</li>
@@ -40,7 +40,7 @@
       </ol>
     </p>
     <p align="center">
-      <img src="../assets/gifs/roimanager_create_new_poly_roi.gif" alt="roimanager_create_new_poly_roi", width = "660">
+      <img src="../assets/gifs/roimanager_create_new_poly_roi.gif" alt="roimanager_create_new_poly_roi" width = "660">
     </p>
     <p align="center"><i>How to draw a new polygonal ROI</i></p>
     <h4>Point ROIs (single-pixel)</h4>
@@ -53,7 +53,7 @@
     <p>
       To create an ROI for a single pixel (interactively):
       <ol>
-        <li>Go to <i>Create >> Point </i></li>
+        <li>Go to <i>Create &gt;&gt; Point </i></li>
         <li>Enter the name of the new ROI.</li>
         <li>Click on <i>Interactively</i>.</li>
         <li>Double-click to select the pixel.</li>
@@ -61,13 +61,13 @@
     </p>
 
     <p align="center">
-      <img src="../assets/gifs/roimanager_create_new_pt_roi_interactive.gif" alt="roimanager_create_new_pt_roi_interactive", width="660">
+      <img src="../assets/gifs/roimanager_create_new_pt_roi_interactive.gif" alt="roimanager_create_new_pt_roi_interactive" width="660">
     </p>
     <p align="center"><i>How to select (interactively) a single pixel as ROI</i></p>
     <p>
       Alternatively, you can select a pixel by it's X,Y coordinates as so:
       <ol>
-        <li>Go to <i>Create >> Point </i></li>
+        <li>Go to <i>Create &gt;&gt; Point </i></li>
         <li>Enter the name of the new ROI.</li>
         <li>Click on <i>Type Coordinates</i>.</li>
         <li>Type the X and Y coordinates and click <i>Ok</i>.</li>
@@ -75,7 +75,7 @@
       *In the example below, we use Matlab's datatip tool <img src="../assets/img/tt_dataviewer_datatip_icon.png" alt="tt_dataviewer_datatip_icon"> just to show the X and Y coordinates of the pixel to be selected.
     </p>
     <p align="center">
-      <img src="../assets/gifs/roimanager_create_new_pt_roi_XYcoords.gif" alt="roimanager_create_new_pt_roi_XYcoords", width="660">
+      <img src="../assets/gifs/roimanager_create_new_pt_roi_XYcoords.gif" alt="roimanager_create_new_pt_roi_XYcoords" width="660">
     </p>
     <p align="center"><i>How to select (using X,Y coordinates) a single pixel as ROI</i></p>
 
@@ -85,7 +85,7 @@
       The <i>ROImanager</i> app provides a preset ROI mask composed by the top view of the  <i>Mouse Allen Brain Atlas</i>:
     </p>
     <p align="center">
-      <img src="../assets/img/roimanager_mouse-areas.png" alt="roimanager_mouse-areas.png", width="660">
+      <img src="../assets/img/roimanager_mouse-areas.png" alt="roimanager_mouse-areas.png" width="660">
     </p>
     <p align="center"><i>Preset ROIs from the Mouse Allen Brain Atlas showing the Bregma estimated position.</i></p>
 
@@ -97,11 +97,12 @@
     <div class="tipnote">
       <p><strong>Tip</strong><br>
          For a more accurate result, it is advisable to set <i>Bregma</i> as the image’s reference point and to set the image’s <i>pixel size</i> before applying the ROIs from the Mouse Brain Atlas. Once these parameters are set, the ROI mask will be automatically place the mask’s estimated Bregma position over the reference point and resize it to approximate the mask’s real size.
+       </p>
     </div>
     <p>
       Here is how to apply the ROIs from the Mouse Allen Brain Atlas:
       <ol>
-        <li>Go to <i>Create >> Mouse Allen Brain Atlas >> Areas >> Select.</i></li>
+        <li>Go to <i>Create &gt;&gt; Mouse Allen Brain Atlas &gt;&gt; Areas &gt;&gt; Select.</i></li>
         <li>Select the Regions using the "Select" tab (All regions are selected by default).</li>
         <li>Close the ROI table window.</li>
         <li>The ROI mask will be resized to match the image's pixel size and it will be automatically translated so the estimated Bregma is put over the reference point.</li>
@@ -110,7 +111,7 @@
       </ol>
     </p>
     <p align="center">
-      <img src="../assets/gifs/roimanager_apply_Allen_rois.gif" alt="roimanager_apply_Allen_rois", width = "660">
+      <img src="../assets/gifs/roimanager_apply_Allen_rois.gif" alt="roimanager_apply_Allen_rois" width = "660">
     </p>
     <p align="center"><i>How to use the Mouse Allen Brain Atlas to generate ROIs</i></p>
     <div class="infonote">
@@ -138,29 +139,29 @@
     <p>
       Here is a snapshot of the input data:
     </p>
-    <img src="../assets/img/roimanager_thresholdapp_data_overview.png" alt="roimanager_thresholdapp_data_overview", width = "880">
+    <img src="../assets/img/roimanager_thresholdapp_data_overview.png" alt="roimanager_thresholdapp_data_overview" width = "880">
     <p>
       The first thing to do is to navigate through the data to find the frame to be thresholded. Here, we will select the frame with the peak response (around 800 ms after the stimulation):
     </p>
-    <img src="../assets/img/roimanager_thresholdapp_data_overview2.png" alt="roimanager_thresholdapp_data_overview2", width="880">
+    <img src="../assets/img/roimanager_thresholdapp_data_overview2.png" alt="roimanager_thresholdapp_data_overview2" width="880">
     <p>
       To launch the thresholding tool:
     </p>
     <ol>
-      <li>Go to <i>Add-ons >> ROImanager</i> to open the <i>ROImanager</i> app.</li>
-      <li>In the <i>ROImanager</i> app, go to <i>Create >> From threshold...</i>.</li>
+      <li>Go to <i>Add-ons &gt;&gt; ROImanager</i> to open the <i>ROImanager</i> app.</li>
+      <li>In the <i>ROImanager</i> app, go to <i>Create &gt;&gt; From threshold...</i>.</li>
     </ol>
     <p>
       Below is an overview of the thresholding tool. The main GUI contains the control options to create the ROIs and the <i>Image window</i> shows the selected frame on the left in grayscale and on the right, a binary image showing the ROIs. For further details on how to use the app, read the documentation of the <a href="#">ROImanager</a> app.
     </p>
     <p align="center">
-    <img src="../assets/img/roimanager_roimask_creator_overview.png"  alt="roimanager_roimask_creator_overview", width = "660">
+    <img src="../assets/img/roimanager_roimask_creator_overview.png"  alt="roimanager_roimask_creator_overview" width = "660">
     </p>
     <p align="center"><i>Overview of the ROIMask Creator app</i></p>
     <p>
       You can use the slider in the main GUI to interactively set the threshold:
     </p>
-    <img src="../assets/gifs/roimanager_roimask_creator_interactive_thr_set.gif" alt="roimanager_roimask_creator_interactive_thr_set", width = "660">
+    <img src="../assets/gifs/roimanager_roimask_creator_interactive_thr_set.gif" alt="roimanager_roimask_creator_interactive_thr_set" width = "660">
     <p>
       Or, you can set the exact threshold value in the <i>threshold level</i> edit field in the main GUI.<br>
       Now, to select the region activate by the whisker stimulation, we will set the following parameters:
@@ -173,15 +174,15 @@
     <p>
       Here is the preview of the ROI with the abovementioned parameters set:
     </p>
-    <img src="../assets/img/roimanager_roimask_creator_roi_preview.png" alt="roimanager_roimask_creator_roi_preview", width = "660">
+    <img src="../assets/img/roimanager_roimask_creator_roi_preview.png" alt="roimanager_roimask_creator_roi_preview" width = "660">
     <p>
       Finally, click on <i>Create ROIs</i> to generate the ROI based on the thresholded image. The ROI will be created and listed in the <i>ROImanager</i> app with a generic name (<i>newROI_1</i>):
     </p>
-    <img src="../assets/img/roimanager_roimask_creator_resultROI.png" alt="roimanager_roimask_creator_resultROI", width = "660">
+    <img src="../assets/img/roimanager_roimask_creator_resultROI.png" alt="roimanager_roimask_creator_resultROI" width = "660">
     <p>
       To change the name of the ROI, click on the ROI name listed in the table in <i>ROImanager</i>, type the new name and press Enter:
     </p>
-    <img src="../assets/gifs/roimanager_changeROI_name.gif" alt="roimanager_changeROI_name", width="440">
+    <img src="../assets/gifs/roimanager_changeROI_name.gif" alt="roimanager_changeROI_name" width="440">
     <h3 id="save-rois">Saving ROIs</h3>
     <hr>
     <p>

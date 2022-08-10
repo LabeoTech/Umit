@@ -29,50 +29,50 @@
       </pre>
     </div>
     <p>
-      On the main menu, select <i>Project >> Open</i>:
+      On the main menu, select <i>Project &gt;&gt; Open</i>:
     </p>
-    <img src="../assets/img/mainGUI_dashboard_OpenProject.png" alt="mainGUI_dashboard_OpenProject", width="160">
+    <img src="../assets/img/mainGUI_dashboard_OpenProject.png" alt="mainGUI_dashboard_OpenProject" width="160">
     <p>
       Select the <samp>.mat</samp> project file to load on the app:
     </p>
-    <img src="../assets/img/mainGUI_selectProjFile.png" alt="mainGUI_selectProjFile", width="460">
+    <img src="../assets/img/mainGUI_selectProjFile.png" alt="mainGUI_selectProjFile" width="460">
     <p>
       The project is loaded:
     </p>
-    <img src="../assets/img/mainGUI_ProjFileOpen.png" alt="mainGUI_ProjFileOpen", width="660">
-    <h3 id='exploring-the-project-data'>Exploring the project data</h3>
+    <img src="../assets/img/mainGUI_ProjFileOpen.png" alt="mainGUI_ProjFileOpen" width="660">
+    <h3 id="exploring-the-project-data">Exploring the project data</h3>
     <p>
       All the information regarding the project items (i.e subjects, acquisitions, modalities) and files created inside <i><b>umIT</b></i> are accessible in the <i>Dashboard</i> tab. The project items are listed in the <i>tree</i> located in the bottom left of the GUI. Select an item from the <i>tree</i> to show it's information:
     </p>
-    <img src="../assets/img/mainGUI_dashboard_uitree.png" alt="mainGUI_dashboard_uitree", width = 200>
+    <img src="../assets/img/mainGUI_dashboard_uitree.png" alt="mainGUI_dashboard_uitree" width = "200">
     <p>
       The item's properties are displayed on the panel in the top right of the GUI (1). Any files created are listed in the <i>List of files</i> panel (2) as well as the last operations performed in the item are displayed in the table (3) at the bottom-right corner of the GUI:
     </p>
-    <img src="../assets/img/mainGUI_dashboard_objSelect.png" alt="mainGUI_dashboard_objSelect", width = 660>
+    <img src="../assets/img/mainGUI_dashboard_objSelect.png" alt="mainGUI_dashboard_objSelect" width = "660">
 
     <p>
       Click on an item from the <i>List of files</i> to display its properties on the top-right panel as well as the <i>History of file</i> (i.e, the operations that gave rise to the file) in the table at the bottom-right:
     </p>
-    <img src="../assets/img/mainGUI_dashboard_fileSelect.png" alt="mainGUI_dashboard_fileSelect", width = 660>
-    <h3 id='how-to-update-the-project'>How to update the project</h3>
+    <img src="../assets/img/mainGUI_dashboard_fileSelect.png" alt="mainGUI_dashboard_fileSelect" width = "660">
+    <h3 id="how-to-update-the-project">How to update the project</h3>
     <p>
       Here, we show how to update your project file. A project file needs to be updated when subjects/acquisitions are added to or deleted from the <i>main folder</i>. For example, a new acquisition (<i>NewRec</i>) was added to the <i>main folder</i>during the project:
     </p>
-    <img src="../assets/img/mainGUI_dashboard_newAcqAdded.png" alt="mainGUI_dashboard_newAcqAdded", width= 200>
+    <img src="../assets/img/mainGUI_dashboard_newAcqAdded.png" alt="mainGUI_dashboard_newAcqAdded" width = "200">
     <p>
-      First, in the main GUI go to <i>Utilities >> Project >> Look for new data</i>. The app will scan the <i>main folder</i> for new elements and a summary is displayed in the <i>Project status</i> panel showing the new/missing elements:
+      First, in the main GUI go to <i>Utilities &gt;&gt; Project &gt;&gt; Look for new data</i>. The app will scan the <i>main folder</i> for new elements and a summary is displayed in the <i>Project status</i> panel showing the new/missing elements:
     </p>
-    <img src="../assets/img/mainGUI_dashboard_newAcqDetected.png" alt="mainGUI_dashboard_newAcqDetected", width=220>
+    <img src="../assets/img/mainGUI_dashboard_newAcqDetected.png" alt="mainGUI_dashboard_newAcqDetected" width = "220">
     <p>
-      At this point, no changes are applied to the project file. To add the new acquisition to the project, go to <i>Utilities >> Project >> Update project</i>. The project item's <i>tree</i> is reloaded with the new element and the changes are applied automatically to the project's <samp>.mat</samp> file.
+      At this point, no changes are applied to the project file. To add the new acquisition to the project, go to <i>Utilities &gt;&gt; Project &gt;&gt; Update project</i>. The project item's <i>tree</i> is reloaded with the new element and the changes are applied automatically to the project's <samp>.mat</samp> file.
     </p>
-    <img src="../assets/img/mainGUI_dashboard_newAcqShown.png" alt="mainGUI_dashboard_newAcqShown", width = 180>
+    <img src="../assets/img/mainGUI_dashboard_newAcqShown.png" alt="mainGUI_dashboard_newAcqShown" width = "180">
     <h3 id="managing-the-project-data">Managing the project data</h3>
     <h4>Deleting and recovering deleted elements</h4>
     <p>
       In the <i>Dashboard</i> tab, you can delete elements from the <i>tree</i> by clicking on the <i>delete</i> button in the <i>optionsl</i> panel. You have the option to delete the element only or the element and the files created. Here, we will delete the acquisition <i>NewRec</i> from the mouse <i>M5G</i>:
     </p>
-    <img src="../assets/img/mainGUI_dashboard_deleteItem.png" alt="mainGUI_dashboard_deleteItem", width= 660>
+    <img src="../assets/img/mainGUI_dashboard_deleteItem.png" alt="mainGUI_dashboard_deleteItem" width = "660">
     <div class="warnnote">
       <p><strong>Important</strong><br>
         The toolbox does not delete any raw data! Only files created by the toolbox can be deleted through the main GUI.<br>
@@ -82,7 +82,7 @@
       When deleting an element from the project file, the path to the raw data associated is added to a list (<i>garbage list</i>) and is ignored next time the project is updated. This is particularly advantageous when the <i>main folder</i> containing the raw data is shared by different Users.
     </p>
     <p>
-      In order to recover a deleted item, go to <i>Utilities >> Project >> Restore garbage list</i>. All deleted elements will be put back to the project's <i>tree</i> with the condition that the elements' raw data are located in the <i>main folder</i>.
+      In order to recover a deleted item, go to <i>Utilities &gt;&gt; Project &gt;&gt; Restore garbage list</i>. All deleted elements will be put back to the project's <i>tree</i> with the condition that the elements' raw data are located in the <i>main folder</i>.
     </p>
     <h4>Editing elements' properties</h4>
     <p>
@@ -91,7 +91,7 @@
     <p>
       Here is an example of the editable properties of a subject:
     </p>
-    <img src="../assets/img/mainGUI_dashboard_objEdit2.png" alt="mainGUI_dashboard_objEdit2", width = "600">
+    <img src="../assets/img/mainGUI_dashboard_objEdit2.png" alt="mainGUI_dashboard_objEdit2" width = "600">
     <div class="infonote">
       <p><strong>Note</strong><br>
         It is always faster to set as many properties as possible during the object’s creation inside the <i>protocol function</i> and leave the rest to be set manually in the <i>Dashboard</i> tab!

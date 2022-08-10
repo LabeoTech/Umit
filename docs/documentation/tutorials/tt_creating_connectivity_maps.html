@@ -49,15 +49,15 @@
     </div>
     <p>
     In the GUI, go to the <i>Pipeline control panel</i> tab:</p>
-    <img src="../assets/img/mainGUI_pipeline_firstpage.png" alt="mainGUI_pipeline_firstpage", width="660">
+    <img src="../assets/img/mainGUI_pipeline_firstpage.png" alt="mainGUI_pipeline_firstpage" width="660">
     <p>
       Now, we need to select the recordings to be processed. Here, you can select multiple recordings and apply the analysis pipeline to all of them. In this example, we will process all <i>resting state</i> recordings from the mouse <i>M4D</i>. In the object <i>tree</i>, click on the subject node to select all recordings:
     </p>
-    <img src="../assets/img/mainGUI_pipeline_recordingselection.png" alt="mainGUI_pipeline_recordingselection", width="200">
+    <img src="../assets/img/mainGUI_pipeline_recordingselection.png" alt="mainGUI_pipeline_recordingselection" width="200">
     <p>
       Then, click on the <i>Select</i> green button to confirm the selection:
     </p>
-    <img src="../assets/img/mainGUI_pipeline_doneselection.png" alt="mainGUI_pipeline_doneselection", width="660">
+    <img src="../assets/img/mainGUI_pipeline_doneselection.png" alt="mainGUI_pipeline_doneselection" width="660">
     <p>
       Now, the <i>Launch Pipeline Config.</i> button is enabled and you are ready to create the pipeline.
     </p>
@@ -66,7 +66,7 @@
     <p>
       The analysis pipeline is created using the <i>Pipeline Configuration</i> app. To launch the app, click on <i>Launch Pipeline Config</i>. A dialog box will appear so you can select which object type you want to run the pipeline. In this example, the imaging data is associated with the object <i>FluorescenceImaging</i>:
     </p>
-    <img src="../assets/img/mainGUI_pipeline_selectclass.png" alt="mainGUI_pipeline_selectclass", width = "300">
+    <img src="../assets/img/mainGUI_pipeline_selectclass.png" alt="mainGUI_pipeline_selectclass" width = "300">
     <div class="infonote">
       <p> <strong>Note</strong><br>
         This step exists only when the pipeline is run through the <samp>umIToolbox</samp> app. This step doesn't apply to data analysed using the <b><i>DataViewer</i></b> app as standalone.
@@ -75,7 +75,7 @@
     <p>
       In the <i>Pipeline Configuration</i> app, select the functions to generate the pipeline to create <i>Seed-pixel correlation maps</i>:
     </p>
-    <img src="../assets/img/mainGUI_pipeline_selectfcns.png" alt="mainGUI_pipeline_selectfcns", width ="660">
+    <img src="../assets/img/mainGUI_pipeline_selectfcns.png" alt="mainGUI_pipeline_selectfcns" width ="660">
     <p>
       For more details on how to use the <i>Pipeline Configuration</i> app, click <a href="#">here</a>.
     </p>
@@ -90,7 +90,7 @@
     <p>
       Now that the analysis pipeline is built, we can save it by clicking on the button <i>Save to file...</i>. In this case, since the data consists of multi-channel recordings, the app will ask for the channel name (<i>fluo.dat</i>) to be the input for the function <samp>GSR</samp>:
     </p>
-    <img src="../assets/img/mainGUI_pipeline_selectfirstinput.png" alt="mainGUI_pipeline_selectfirstinput", height="500">
+    <img src="../assets/img/mainGUI_pipeline_selectfirstinput.png" alt="mainGUI_pipeline_selectfirstinput" heigth="500">
     <p>
       Type the name of the file to save the pipeline:
     </p>
@@ -112,19 +112,19 @@
     <p>
       Finally, click on the green button <i>Save Config</i> to confirm:
     </p>
-    <img src="../assets/img/mainGUI_pipeline_clickonsave.png" alt="mainGUI_pipeline_clickonsave", width = "660">
+    <img src="../assets/img/mainGUI_pipeline_clickonsave.png" alt="mainGUI_pipeline_clickonsave" width = "660">
     <p>
       In the main GUI, a summary of the pipeline is displayed in the <i>Pipeline status</i> panel. To run the pipeline on the selected data, simply click on the green button <i>Run Pipeline</i>.
     </p>
-    <img src="../assets/img/mainGUI_pipeline_pipeisready.png" alt="mainGUI_pipeline_pipeisready", width="660">
+    <img src="../assets/img/mainGUI_pipeline_pipeisready.png" alt="mainGUI_pipeline_pipeisready" width="660">
     <p>
       Two progress bars are displayed showing the progress of the pipeline across the selected objects:
     </p>
-    <img src="../assets/img/mainGUI_pipeline_progressbar.png" alt="mainGUI_pipeline_progressbar", width = "660">
+    <img src="../assets/img/mainGUI_pipeline_progressbar.png" alt="mainGUI_pipeline_progressbar" width = "660">
     <p>
       At the end of the execution of the pipeline, a summary table is displayed showing the information of each step of the pipeline. Use this table to spot failed steps and to retrieve error messages for later troubleshooting:
     </p>
-    <img src="../assets/img/mainGUI_pipeline_summarytab.png" alt="mainGUI_pipeline_summarytab", width="660">
+    <img src="../assets/img/mainGUI_pipeline_summarytab.png" alt="mainGUI_pipeline_summarytab" width="660">
     <p>
       The seed-pixel correlation maps created by the pipeline are stored in the file <samp>SPCMap.dat</samp>. Click <a href="#">here</a> to learn how to explore the data!
     </p>

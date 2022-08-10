@@ -47,7 +47,7 @@
     <p>
       As introduced above, the event-triggered dataset consists of the visual responses to drifting gratings. The data used as input for the extraction and aggregation function consists of <i>cortical activation maps</i> containing the response amplitude of the fluorescence signal to the gratings. The preprocessing workflow of the amplitude maps is shown below:
     </p>
-    <img src="../assets/img/tt_creating_evnt_triggered_avg_maps_ppline_workflow.png" alt="tt_creating_evnt_triggered_avg_maps_ppline_workflow", width="660">
+    <img src="../assets/img/tt_creating_evnt_triggered_avg_maps_ppline_workflow.png" alt="tt_creating_evnt_triggered_avg_maps_ppline_workflow" width="660">
     <p>
     </p>
       In this part of the tutorial, you will learn how to extract and calculate the average response amplitude of each ROI from cortical activation maps.
@@ -63,18 +63,18 @@
     <p>
       2. Then, go to the <i>Pipeline control panel</i> tab and highlight the recordings to extract. Here, we will extract the data from all cortical amplitude maps from the mouse <b>M4D</b>:
     </p>
-    <img src="../assets/img/tt_extracting_data_from_rois_mainGUI_data_selection.png" alt="tt_extracting_data_from_rois_mainGUI_data_selection", width="660">
+    <img src="../assets/img/tt_extracting_data_from_rois_mainGUI_data_selection.png" alt="tt_extracting_data_from_rois_mainGUI_data_selection" width="660">
     <p>
       3. Click on <i>Select</i> to confirm selection and on <i>Launch Pipeline Config</i> to open the pipeline configuration app.
     </p>
     <p>
       4. Select the <i>FluorescenceImaging</i> object:
     </p>
-    <img src="../assets/img/align_tt_select_objtype.png" alt="align_tt_select_objtype", width = "240">
+    <img src="../assets/img/align_tt_select_objtype.png" alt="align_tt_select_objtype" width = "240">
     <p>
       5. In the Pipeline Configuration app, select the function <i>getDataFromROI</i> (step 1), add it to the pipeline (step 2), select the function (step 3) and click on <i>Set Options</i> button (step 4):
     </p>
-    <img src="../assets/img/tt_extracting_data_from_rois_mainGUI_fcn_selection.png" alt="tt_extracting_data_from_rois_mainGUI_fcn_selection", width="660">
+    <img src="../assets/img/tt_extracting_data_from_rois_mainGUI_fcn_selection.png" alt="tt_extracting_data_from_rois_mainGUI_fcn_selection" width="660">
     <p>
       The function <i>getDataFromROI</i> has two parameters: the file name containing the ROI information (i.e. the <samp>ROImasks_&lt;NAME&gt;.mat</samp> file) and the spatial aggregation function to be applied (<samp>SpatialAggFcn</samp>). Here we will use the ROIs stored in <samp>ROImasks_data.mat</samp> file and the ROI pixel values will be averaged using the <samp>mean</samp> option for the <samp>SpatialAggFcn</samp> parameter:
     </p>
@@ -82,22 +82,22 @@
     <p>
       6. You can also rename the output file. To do so, click on <i>Save step</i> button and rename the file. Here the output file is renamed to <samp>ROI_dataSF</samp>:
     </p>
-    <img src="../assets/img/tt_extracting_data_from_rois_output_data_renaming.png" alt="tt_extracting_data_from_rois_output_data_renaming.png", width="330">
+    <img src="../assets/img/tt_extracting_data_from_rois_output_data_renaming.png" alt="tt_extracting_data_from_rois_output_data_renaming.png" width="330">
     <p>
       7. Next, click on <i>Save config.</i> button to apply the pipeline.
     </p>
     <p>
       8. Now, select the <i>FluorescenceImaging</i> object:
     </p>
-    <img src="../assets/img/tt_extracting_data_from_rois_fcn_sel_input_obj.png" alt="tt_extracting_data_from_rois_fcn_sel_input_obj", height="440">
+    <img src="../assets/img/tt_extracting_data_from_rois_fcn_sel_input_obj.png" alt="tt_extracting_data_from_rois_fcn_sel_input_obj" height="440">
     <p>
       9. Then, select the data to be extracted. Here, we will extract the ROI data from functional connectivity data stored in <samp>amplitude_Map.dat</samp> file:
     </p>
-    <img src="../assets/img/tt_extracting_data_from_rois_fcn_sel_input_file.png" alt="tt_extracting_data_from_rois_fcn_sel_input_file", height="440">
+    <img src="../assets/img/tt_extracting_data_from_rois_fcn_sel_input_file.png" alt="tt_extracting_data_from_rois_fcn_sel_input_file" height="440">
     <p>
       10. Finally, back in the main GUI, in the <i>Pipeline control panel</i> tab, click on <i>Run Pipeline</i> to extract the ROI data. The extracted and aggregated data from the ROIs are stored in the file <samp>ROI_dataSF.mat</samp>:
     </p>
-    <img src="../assets/img/tt_extracting_data_from_rois_mainGUI_ppln_result.png" alt="tt_extracting_data_from_rois_mainGUI_ppln_result", width="880">
+    <img src="../assets/img/tt_extracting_data_from_rois_mainGUI_ppln_result.png" alt="tt_extracting_data_from_rois_mainGUI_ppln_result" width="880">
     <div class="infonote">
       <p><strong>Note</strong><br>
         Once the data from ROIs were extracted from all recordings of your project, you can now use the <samp>ROI_dataSF.mat</samp> files to visualize the grouped data. Check the next tutorials on how to <a href="#">create groups</a> and <a href="#">visualize grouped data</a> to see how the data created in this tutorial is used!
@@ -117,11 +117,11 @@
       </pre>
     </div>
     <p>
-      2. In <i>DataViewer</i>, create or load the ROIs to be used to extract the data using the <i>ROImanager</i> app (<i>Add-ons >> ROImanager</i>):
+      2. In <i>DataViewer</i>, create or load the ROIs to be used to extract the data using the <i>ROImanager</i> app (<i>Add-ons &gt;&gt; ROImanager</i>):
     </p>
-    <img src="../assets/img/tt_extracting_data_from_rois_dataviewer_SFTF_with_rois.png" alt="tt_extracting_data_from_rois_dataviewer_SFTF_with_rois", width="880">
+    <img src="../assets/img/tt_extracting_data_from_rois_dataviewer_SFTF_with_rois.png" alt="tt_extracting_data_from_rois_dataviewer_SFTF_with_rois" width="880">
     <p>
-      3. In <i>DataViewer</i>'s main window, go to <i>Utilities >> ROI options >> Extract data from ROI</i>
+      3. In <i>DataViewer</i>'s main window, go to <i>Utilities &gt;&gt; ROI options &gt;&gt; Extract data from ROI</i>
     </p>
     <p>
       4. Select the folder and filename to save the ROI data.
@@ -129,7 +129,7 @@
     <p>
       5. Finally, choose the aggregation function to be used and click <i>Save</i>. Here, we chose the average (<samp>mean</samp>):
     </p>
-    <img src="../assets/img/tt_extracting_data_from_rois_dataviewer_choose_aggFcn.png" alt="tt_extracting_data_from_rois_dataviewer_choose_aggFcn", width="220">
+    <img src="../assets/img/tt_extracting_data_from_rois_dataviewer_choose_aggFcn.png" alt="tt_extracting_data_from_rois_dataviewer_choose_aggFcn" width="220">
     <p>
       Now, the data is saved as a <samp>.mat</samp> file in the folder of your choosing!
     </p>
@@ -141,12 +141,12 @@
         However, if you wish to analyse the extracted data outside the toolbox, please read the documentation of the function <a href="#"><i>getDataFromROI</i></a> for details on how the output <samp>.mat</samp> file is organized.
       </p>
     </div>
-    <h3 id="evnt-trig-intro">Resting state dataset</h3>
+    <h3 id="resting-state-dataset">Resting state dataset</h3>
     <hr>
     <p>
       The Resting state dataset used in this part of the tutorial was preprocessed as follows:
     </p>
-    <img src="../assets/img/tt_extracting_data_from_rois_RS_preprocess_workflow.png" alt="tt_extracting_data_from_rois_RS_preprocess_workflow", width="660">
+    <img src="../assets/img/tt_extracting_data_from_rois_RS_preprocess_workflow.png" alt="tt_extracting_data_from_rois_RS_preprocess_workflow" width="660">
     <p>
       Here, the normalized image time series will be used to extract and aggregate the ROI data as a correlation matrix. The function used to generate the matrices is named <i>genCorrelationMatrix</i>. It will extract and aggregate the ROI pixel values and calculate the Pearson's correlation between the ROIs creating a N x N matrix from the N ROIs. For more details on the function, please read its <a href="#">documentation</a>.
     </p>
@@ -157,7 +157,7 @@
     <p>
       2. In the <i>Pipeline Configuration</i> app, add the function <i>genCorrelationMatrix</i> to the pipeline (step 2) and open the optional parameters window:
     </p>
-    <img src="../assets/img/tt_extracting_data_from_rois_genCorrMat_opts_params.png" alt="tt_extracting_data_from_rois_genCorrMat_opts_params", width="330">
+    <img src="../assets/img/tt_extracting_data_from_rois_genCorrMat_opts_params.png" alt="tt_extracting_data_from_rois_genCorrMat_opts_params" width="330">
     <p>
       Here, we will use the default parameters. This setting will create a matrix based on the correlation between the ROIs' centroids. For more info on the different settings for this function, please read its <a href="#">documentation</a>.
     </p>
@@ -167,11 +167,11 @@
     <p>
       4. Select the input file for the function. Here, the file is named <samp>BPtemporalFilter</samp>:
     </p>
-    <img src="../assets/img/tt_extracting_data_from_rois_fcn_sel_input_file2.png" alt="tt_extracting_data_from_rois_fcn_sel_input_file2", height="440">
+    <img src="../assets/img/tt_extracting_data_from_rois_fcn_sel_input_file2.png" alt="tt_extracting_data_from_rois_fcn_sel_input_file2" height="440">
     <p>
       5. Back in the main GUI, in the <i>Pipeline control panel</i> tab, click on <i>Run Pipeline</i> to generate the correlation matrix. The matrices are stored in the file <samp>corrMatrix.mat</samp>.
     </p>
-    <img src="../assets/img/tt_extracting_data_from_rois_mainGUI_ppln_result_RS.png" alt="tt_extracting_data_from_rois_mainGUI_ppln_result_RS", width="660">
+    <img src="../assets/img/tt_extracting_data_from_rois_mainGUI_ppln_result_RS.png" alt="tt_extracting_data_from_rois_mainGUI_ppln_result_RS" width="660">
     <br>
     <h4 id="corr-mat-dataviewer">Create correlation matrix from DataViewer app</h4>
     <p>
@@ -183,11 +183,11 @@
       </pre>
     </div>
     <p>
-      2. In <i>DataViewer</i>, create or load the ROIs to be used to extract the data using the <i>ROImanager</i> app (<i>Add-ons >> ROImanager</i>):
+      2. In <i>DataViewer</i>, create or load the ROIs to be used to extract the data using the <i>ROImanager</i> app (<i>Add-ons &gt;&gt; ROImanager</i>):
     </p>
-    <img src="../assets/img/tt_extracting_data_from_rois_dataviewer_tempFilt_with_rois.png" alt="tt_extracting_data_from_rois_dataviewer_tempFilt_with_rois", width="880">
+    <img src="../assets/img/tt_extracting_data_from_rois_dataviewer_tempFilt_with_rois.png" alt="tt_extracting_data_from_rois_dataviewer_tempFilt_with_rois" width="880">
     <p>
-      3. In <i>DataViewer</i>'s main window, go to <i>Utilities >> ROI options >> Generate Correlation Matrix</i>
+      3. In <i>DataViewer</i>'s main window, go to <i>Utilities &gt;&gt; ROI options &gt;&gt; Generate Correlation Matrix</i>
     </p>
     <p>
       4. Select the folder and filename to save the ROI data.
@@ -195,7 +195,7 @@
     <p>
       5. Finally, set the parameters for the <i>genCorrelationMatrix</i> function (see full documentation <a href="#">here</a>) and click <i>Save</i>. Here, we chose the centroid vs centroid algorithm to generate the correlation matrix:
     </p>
-    <img src="..\assets\img\tt_extracting_data_from_rois_dataviewer_genCorrMat_opts_gui.png" alt="tt_extracting_data_from_rois_dataviewer_genCorrMat_opts_gui", width="330">
+    <img src="..\assets\img\tt_extracting_data_from_rois_dataviewer_genCorrMat_opts_gui.png" alt="tt_extracting_data_from_rois_dataviewer_genCorrMat_opts_gui" width="330">
     <p>
       Now, the data is saved as a <samp>.mat</samp> file in the folder of your choosing!
     </p>

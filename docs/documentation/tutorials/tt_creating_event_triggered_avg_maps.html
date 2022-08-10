@@ -42,7 +42,7 @@
     <hr>
     <div class="infonote">
       <p><strong>Note</strong><br>
-        In this example, we show how to process the data of a single experiment using the <b><i>DataViewer</i></b> app. However, the same pipeline can be created and run using the main GUI(<samp>umIToolbox</samp>). The only difference here is that the data import function <samp>run_ImagesClassification</samp> is called directly from the main menu in <i>File>>Import Raw data</i>. Check the tutorial on how to create <a href="./tt_creating_connectivity_maps.html">functional connectivity maps</a> to learn how to run analysis pipelines using the main GUI.
+        In this example, we show how to process the data of a single experiment using the <b><i>DataViewer</i></b> app. However, the same pipeline can be created and run using the main GUI(<samp>umIToolbox</samp>). The only difference here is that the data import function <samp>run_ImagesClassification</samp> is called directly from the main menu in <i>File&gt;&gt;Import Raw data</i>. Check the tutorial on how to create <a href="./tt_creating_connectivity_maps.html">functional connectivity maps</a> to learn how to run analysis pipelines using the main GUI.
       </p>
     </div>
     <p>
@@ -59,13 +59,13 @@
       <img src="../assets/img/dataviewer_maingui.png" alt="dataviewer_maingui">
     </p>
     <p>
-      In the main menu, go to <i>File >> Import Raw data</i>. Next, navigate to the folder containing the raw imaging data and select one of the <samp>img_xxxx.bin</samp> files:
+      In the main menu, go to <i>File &gt;&gt; Import Raw data</i>. Next, navigate to the folder containing the raw imaging data and select one of the <samp>img_xxxx.bin</samp> files:
     </p>
-    <img src="../assets/img/dataviewer_select_raw_data.png" alt="dataviewer_select_raw_data", width = "660">
+    <img src="../assets/img/dataviewer_select_raw_data.png" alt="dataviewer_select_raw_data" width = "660">
     <p>
       Then, select the folder to save the imported <samp>.dat</samp> files. Here, we chose the same folder:
     </p>
-    <img src="../assets/img/dataviewer_select_savefolder.png" alt="dataviewer_select_savefolder", width = "660">
+    <img src="../assets/img/dataviewer_select_savefolder.png" alt="dataviewer_select_savefolder" width = "660">
     <p>
       Now, set optional parameters for the data import function <samp>run_ImagesClassification</samp>. For details on the parameters, read the function's <a href="#">documentation</a>.<br>
       Here, we will apply a spatial binning of <b>2</b> and set the <i>b_IgnoreStim</i> parameter to <b>"No"</b> in order to detect triggers and create an <samp>events.mat</samp> file:
@@ -83,17 +83,17 @@
     <p>
       When the data import function execution is concluded, open the fluorescence output file <samp>fluo.dat</samp>:
     </p>
-    <img src="../assets/img/dataviewer_select_fluo_file.png" alt="dataviewer_select_fluo_file", width = "660">.
+    <img src="../assets/img/dataviewer_select_fluo_file.png" alt="dataviewer_select_fluo_file" width = "660">.
     <h3 id="create-pipeline">Create and run the analysis pipeline</h3>
     <hr>
     <p>
-      When the <samp>fluo.dat</samp> file is loaded, in the main menu, go to <i>Utilities >> Data Processing</i> to launch the <i>Pipeline Configuration</i> app:
+      When the <samp>fluo.dat</samp> file is loaded, in the main menu, go to <i>Utilities &gt;&gt; Data Processing</i> to launch the <i>Pipeline Configuration</i> app:
     </p>
-    <img src="../assets/img/dataviewer_fluo_file_example.png" alt="dataviewer_fluo_file_example", width = "660">
+    <img src="../assets/img/dataviewer_fluo_file_example.png" alt="dataviewer_fluo_file_example" width = "660">
     <p>
       In the <i>Pipeline Configuration</i> app, select the functions to create the remaining steps of the pipeline to obtain the <i>cortical activation maps</i>:
     </p>
-    <img src="../assets/img/pipeline_config_app_evnt_trig_maps.png" alt="pipeline_config_app_evnt_trig_maps.png", width = "660">
+    <img src="../assets/img/pipeline_config_app_evnt_trig_maps.png" alt="pipeline_config_app_evnt_trig_maps.png" width = "660">
     <p>
       Here, we will save the output from the intermediate function <samp>split_data_by_event</samp> data:
     </p>
@@ -106,11 +106,11 @@
     <p>
       In the <i>DataViewer</i> app, confirm and "Run!" the pipeline:
     </p>
-    <img src="../assets/img/dataviewer_confirm_pipeline.png" alt="dataviewer_confirm_pipeline", width ="880">
+    <img src="../assets/img/dataviewer_confirm_pipeline.png" alt="dataviewer_confirm_pipeline" width ="880">
     <p>
       Here is the final result of the pipeline showing the average cortical activation map with the increased signal amplitude in the right barrel cortex:
     </p>
-    <img src="../assets/img/dataviewer_resp_amp_ex.png" alt="dataviewer_resp_amp_ex", width = "880">
+    <img src="../assets/img/dataviewer_resp_amp_ex.png" alt="dataviewer_resp_amp_ex" width = "880">
     <p>
       Click, <a href="#">here</a> to learn more on how to explore the data split by events using <i>DataViewer</i>!
     </p>

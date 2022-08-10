@@ -43,7 +43,7 @@
       </p>
     </div>
 
-    <h3 id='import-and-preprocess-data'>Import and preprocess the data</h3>
+    <h3 id="import-and-preprocess-data">Import and preprocess the data</h3>
     <hr>
     <p>
       Here, we assume that the project file was created. For more info on how to create a project file click <a href="/tt_creating_a_new_project.html">here</a>.
@@ -58,19 +58,19 @@
     <p>
       In the main GUI, go to the <i>Pipeline control panel tab</i> and select the recordings to be processed (steps 1 and 2) and launch the <i>Pipeline Configuration</i> app (step 3). Here, we will align all four recordings from the mouse <b>M4D</b>:
     </p>
-    <img src="../assets/img/align_tt_selectdata.png" alt="align_tt_selectdata", width = "660">
+    <img src="../assets/img/align_tt_selectdata.png" alt="align_tt_selectdata" width = "660">
     <p>
       Select the <i>FluorescenceImaging</i> object from the list of available objects:
     </p>
-    <img src="../assets/img/align_tt_select_objtype.png" alt="align_tt_select_objtype", width = "220">
+    <img src="../assets/img/align_tt_select_objtype.png" alt="align_tt_select_objtype" width = "220">
     <p>
       In the <i>Pipeline Configuration</i> app, add the data import function <samp>run_ImagesClassification</samp> and the hemodynamic correction function <samp>run_HemoCorrection</samp>. In this case, we will use the default parameters from both of them. Finally, click on the green button "Save Config" to finish creating the pipeline:
     </p>
-    <img src="../assets/img/align_tt_dataimport_ppline.png" alt="align_tt_dataimport_ppline", width = "660">
+    <img src="../assets/img/align_tt_dataimport_ppline.png" alt="align_tt_dataimport_ppline" width = "660">
     <p>
       Back in the main GUI, click on <i>Run Pipeline</i> to import the raw data from the selected recordings. Once the data import is finished, we move on to the creation of the reference frame.
     </p>
-    <h3 id='create-img-reference'>Create the imaging reference frame</h3>
+    <h3 id="create-img-reference">Create the imaging reference frame</h3>
     <hr>
     <p>
       In the previous section, we imported the fluorescence and reflectance data, and used the latter to separate the hemodynamic signal from the fluorescence one. The corrected fluorescence data is stored in the file <samp>hemoCorr_fluo.dat</samp>. Now, we will choose one of the four recordings to create the reference frame for the alignment.
@@ -83,11 +83,11 @@
     <p>
       In the main GUI, go to the <i>Visualization</i> tab and select the recording to be the reference. In our case, we selected the recording <b>RS_21ST1803</b> as reference. Then, in the <i>Select a file</i> list box, click on the <samp>fluo.dat</samp> file. The reference frame is created using the <i>ROImanager</i> app. Click on the app's button to open it:
     </p>
-    <img src="../assets/img/align_tt_refFrame_dataselect.png" alt="align_tt_refFrame_dataselect", width = "660">
+    <img src="../assets/img/align_tt_refFrame_dataselect.png" alt="align_tt_refFrame_dataselect" width = "660">
     <p>
       Below is a snapshot of the <i>ROImanager</i> interface with a sample frame of the fluorescence data file <samp>fluo.dat</samp>:
     </p>
-    <img src="../assets/img/align_tt_roimanager_fig1.png" alt="align_tt_roimanager_fig1", width = "660">
+    <img src="../assets/img/align_tt_roimanager_fig1.png" alt="align_tt_roimanager_fig1" width = "660">
     <div class="infonote">
       <p><strong>Note</strong><br>
         The <i>Imaging Reference Frame</i> file carries more than a simple image frame used for alignment. For instance, one can use this file to store information such as the image's pixel ratio (in px/mm), the coordinantes of a reference point (e.g. in mice, generally the <i>Bregma</i> is used as reference point). In addition, one can also create and store a logical mask used in other analysis functions when one needs to exclude pixels that lie outside the region of interest. In this example, we will go through the steps to create and store the all the available information in our <i>Imaging Reference Frame</i> file.
@@ -106,21 +106,21 @@
     </ol>
     <h4>1. Set the reference Point</h4>
     <p>
-      To draw a new reference point, go to <i>Image >> Set origin >> New</i>. Follow the instructions to select the point. Here, we selected the Bregma as our reference point:
+      To draw a new reference point, go to <i>Image &gt;&gt; Set origin &gt;&gt; New</i>. Follow the instructions to select the point. Here, we selected the Bregma as our reference point:
     </p>
-    <img src="../assets/img/align_tt_refpt_selected.png" alt="align_tt_refpt_selected", width = "660">
+    <img src="../assets/img/align_tt_refpt_selected.png" alt="align_tt_refpt_selected" width = "660">
     <h4>2. Align image to the reference point</h4>
     <p>
-      Now, notice that the mouse's cortical surface is not properly aligned (it is slightly rotated to the right). To fix this, go to <i>Image >> Set origin >> Align image to origin</i>. Click the highlighted point and place it over a point where it should be vertically aligned with the reference point (in our case, <i>Lambda</i>):
+      Now, notice that the mouse's cortical surface is not properly aligned (it is slightly rotated to the right). To fix this, go to <i>Image &gt;&gt; Set origin &gt;&gt; Align image to origin</i>. Click the highlighted point and place it over a point where it should be vertically aligned with the reference point (in our case, <i>Lambda</i>):
     </p>
-    <img src="../assets/img/align_tt_click_and_drag_pt.png" alt="align_tt_click_and_drag_pt", width = "660">
+    <img src="../assets/img/align_tt_click_and_drag_pt.png" alt="align_tt_click_and_drag_pt" width = "660">
     <p>
       Right-click over the point to and confirm the image rotation. Below we can see the rotated frame:
     </p>
-    <img src="../assets/img/align_tt_result_refpt_alignment.png" alt="align_tt_result_refpt_alignment", width = "800">
+    <img src="../assets/img/align_tt_result_refpt_alignment.png" alt="align_tt_result_refpt_alignment" width = "800">
     <h4>3. Set the pixel ratio</h4>
     <p>
-      To set the pixel ratio, go to <i>Image >> Set pixel size</i>. In the dialog box, type the pixel ratio:
+      To set the pixel ratio, go to <i>Image &gt;&gt; Set pixel size</i>. In the dialog box, type the pixel ratio:
     </p>
     <img src="../assets/img/align_tt_set_px_size.png" alt="align_tt_set_px_size">
     <p>
@@ -142,16 +142,16 @@
       </p>
     </div>
     <p>
-      To draw a new logical mask go to <i>Image >> Mask >> Draw new</i>. You can set up to 10 regions as a mask. In our case, we will create one region delimiting the mouse cortex:
+      To draw a new logical mask go to <i>Image &gt;&gt; Mask &gt;&gt; Draw new</i>. You can set up to 10 regions as a mask. In our case, we will create one region delimiting the mouse cortex:
     </p>
-    <img src="../assets/img/align_tt_draw_logicmsk.png" alt="align_tt_draw_logicmsk", width = "660">
+    <img src="../assets/img/align_tt_draw_logicmsk.png" alt="align_tt_draw_logicmsk" width = "660">
     <p>
       Once finished drawing the region, double-click inside it to save. The saved mask will appear as a highlighted region over the image:
     </p>
-    <img src="../assets/img/align_tt_final_logicmsk.png" alt="align_tt_final_logicmsk", width = "660">
+    <img src="../assets/img/align_tt_final_logicmsk.png" alt="align_tt_final_logicmsk" width = "660">
     <h4>5. Export the data to the <i>Imaging Reference Frame</i> file</h4>
     <p>
-      Now that the frame was aligned, all relevant image's parameteres were set and the logical mask created, we can save everything to the <i>Imaging Reference Frame </i>file. To do so, go to <i>Image >> Image Reference file... >> Export</i>. A file named <samp>ImagingReferenceFrame.mat</samp> will be automatically created in the subject's save folder:
+      Now that the frame was aligned, all relevant image's parameteres were set and the logical mask created, we can save everything to the <i>Imaging Reference Frame </i>file. To do so, go to <i>Image &gt;&gt; Image Reference file... &gt;&gt; Export</i>. A file named <samp>ImagingReferenceFrame.mat</samp> will be automatically created in the subject's save folder:
     </p>
     <img src="../assets/img/align_tt_refFrameFile_saved.png" alt="align_tt_refFrameFile_saved.png">
 
@@ -166,30 +166,30 @@
     </p>
     <p align="center"><i>Geometric transformations used in the alignment tools</i></p>
     <p align="center">
-      <img src="../assets/img/align_tt_geomtransf.png" alt="align_tt_geomtransf", width = "660">
+      <img src="../assets/img/align_tt_geomtransf.png" alt="align_tt_geomtransf" width = "660">
     </p>
     <h4 id="automatic-alignment">Automatic alignement</h4>
     <hr>
     <p>
       For the automatic alignment, in the main GUI, go to the <i>Pipeline control panel</i> tab, select the recordings to be aligned and launch the Pipeline Configuration app (as performed for the raw data <a href="#import-and-preprocess-data">import and preprocessing</a>):
     </p>
-    <img src="../assets/img/align_tt_selectdata.png" alt="align_tt_selectdata", width = "660">
+    <img src="../assets/img/align_tt_selectdata.png" alt="align_tt_selectdata" width = "660">
     <p>
       Select the <i>FluorescenceImaging</i> object from the list of available objects:
     </p>
-    <img src="../assets/img/align_tt_select_objtype.png" alt="align_tt_select_objtype", width = "220">
+    <img src="../assets/img/align_tt_select_objtype.png" alt="align_tt_select_objtype" width = "220">
     <p>
       In the <i>Pipeline Configuration</i> app, add the alignment function <samp>alignFrames</samp> to the pipeline. Click on the green button "Save Config" to finish creating the pipeline:
     </p>
-    <img src="../assets/img/align_tt_select_alignFcn.png" alt="align_tt_select_alignFcn", width = "660">
+    <img src="../assets/img/align_tt_select_alignFcn.png" alt="align_tt_select_alignFcn" width = "660">
     <p>
       Here, you will be asked to give a file as input to the <samp>alignFrames</samp> function. First, select the object type that contains the file. In this case, it is the <i>FluorescenceImaging</i> object:
     </p>
-    <img src="../assets/img/align_tt_pipelineBuilder_select_inputObj.png" alt="align_tt_pipelineBuilder_select_inputObj", width = "660">
+    <img src="../assets/img/align_tt_pipelineBuilder_select_inputObj.png" alt="align_tt_pipelineBuilder_select_inputObj" width = "660">
     <p>
       Then, select the input file to the alignment function. The input file will be the one to be aligned. In this case, select the <samp>hemoCorr_fluo.dat</samp> file and confirm:
     </p>
-    <img src="../assets/img/align_tt_pipelineBuilder_select_inputFile.png" alt="align_tt_pipelineBuilder_select_inputFile", width = "660">
+    <img src="../assets/img/align_tt_pipelineBuilder_select_inputFile.png" alt="align_tt_pipelineBuilder_select_inputFile" width = "660">
     <p>
       Back in the main GUI, click on <i>Run Pipeline</i> to execute the  alignment. The aligned data will be saved as <samp>mov_aligned.dat</samp>:
     </p>
@@ -199,7 +199,7 @@
     </p>
     <p align="center"><i>Example of an output figure from the <samp>alignFrames</samp> function.</i></p>
     <p align="center">
-      <img src="../assets/img/align_tt_alignFrame_output_fig.png" alt="align_tt_alignFrame_output_fig", width = "660">
+      <img src="../assets/img/align_tt_alignFrame_output_fig.png" alt="align_tt_alignFrame_output_fig" width = "660">
     </p>
     <p align="center"><i>Top: Pseudo-colored overlay of both frames with the title showing the mutual information (MI) value; bottom: reference and registered frames.<br>
       Green and red markers show the current position of the mouse cursor over the images to assist with the qualitative assessment of the image registration.</i>
@@ -207,7 +207,7 @@
     <p>
       Here is a summary of the automatic alignment output for the four recordings of the mouse <b>M4D</b>:
     </p>
-    <img src="../assets/img/align_tt_autoalign_summary_fig.png" alt="align_tt_autoalign_summary_fig", width = "880">
+    <img src="../assets/img/align_tt_autoalign_summary_fig.png" alt="align_tt_autoalign_summary_fig" width = "880">
     <p>
       We can see from the image above that the three last recordings were successfully aligned with the reference frame. However, the alignment function failed to properly register the first recording (<i>RS_21ST1802</i>). In the next section, we will use the manual alignment tool to register this recording.
     </p>
@@ -216,7 +216,7 @@
     <p>
       To manually align a recording, in the main GUI, go to the <i>Visualization</i> tab and select the recording session (step 1) to be aligned. Next, select the file to be aligned (step 2) and launch the <i>Manual Image Registration</i> app (step 3):
     </p>
-    <img src="../assets/img/align_tt_manualalign_data_selection.png" alt="align_tt_manualalign_data_selection", width = "660">
+    <img src="../assets/img/align_tt_manualalign_data_selection.png" alt="align_tt_manualalign_data_selection" width = "660">
     <p>
       The reference frame and a frame from the corresponding channel of the selected recording will be loaded in the control point selection window (click <a href="https://www.mathworks.com/help/images/ref/cpselect.html">here</a> for details). In brief, the reference frame (<i>refFr</i>) is located on the right and the frame to be aligned (<i>targetFr</i>) on the left. On the top half of the window, there are zoomed-in figures of each frame while at the bottom half one can locate the zoomed regions on the images.
     </p>
@@ -228,11 +228,11 @@
     <p>
       Select the landmarks on both images sequentially: for each landmark, create a control point on one image and then create the corresponding point on the other. As so:
     </p>
-    <img src="../assets/gifs/align_tt_cpselection.gif" alt="align_tt_cpselection", width = "880">
+    <img src="../assets/gifs/align_tt_cpselection.gif" alt="align_tt_cpselection" width = "880">
     <p>
        Once all control points are created, close the figure. The app will use the points to register the recording frame (<i>targetFr</i>) to the reference frame (<i>refFr</i>). Then, a figure similar to the one created by the automatic alignment function is displayed so we can assess the quality of the alignment. Use the cursor to inspect the images and close the figure to continue:
     </p>
-    <img src="../assets/img/align_tt_manualalign_outfig.png" alt="align_tt_manualalign_outfig", width = "660">
+    <img src="../assets/img/align_tt_manualalign_outfig.png" alt="align_tt_manualalign_outfig" width = "660">
     <p>
        A dialog box is shown for confirmation of the alignment. Click on <i>Yes, proceed</i> button:
     </p>

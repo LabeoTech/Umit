@@ -36,15 +36,15 @@
     <p>
       The main components of the graphical interface are: a main window, containing file and data control options, an image window and a temporal signal window (if the time dimension exists).
     </p>
-    <p align="center">
-      <img src="../assets/img/dataviewer_fig1.png" alt="dataviewer_fig1", width="880"><br>
+    <p style="text-align: center;">
+      <img src="../assets/img/dataviewer_fig1.png" alt="dataviewer_fig1"  width = "880"> <br>
       <i>Main components of the <b>DataViewer</b> app</i>
     </p>
     <h4 id="1-menu-bar">1. Menu Bar</h4>
     <ul>
       <li><b>File &gt;&gt;</b><ul>
         <li><b><i>Open:</i></b>  Opens dialog to load previously saved .DAT files</li>
-        <li><b><i>Import Raw data</i></b> >>
+        <li><b><i>Import Raw data</i></b> &gt;&gt;
           <ul>
             <li><b><i>from LabeoTech system:</i></b> Import raw data from LabeoTech Imaging Systems. Read the documentation of <a href="#"><samp>run_ImagesClassification</samp></a> function for details</li>
             <li><b><i>from TIFF:</i></b> Import raw data from .TIFF files. Read the documentation of <a href="#"><samp>importFromTif</samp></a> function for details</li>
@@ -64,7 +64,7 @@
       <ul>
         <li><b><i>Data processing:</i></b> <b>(Standalone only)</b> Tool to setup image processing pipeline on the data using the <a href="/index.md/#analysisfunctions">analysis functions</a> from the toolbox</li>
         <li><b><i>View Data History:</i></b> Opens a table showing information about the analysis functions run for the opened data file</li>
-        <li><b><i>ROI options</i></b> <b>(Standalone only)</b> >>
+        <li><b><i>ROI options</i></b> <b>(Standalone only)</b> &gt;&gt;
           <ul>
             <li><b><i>Extract data from ROI:</i></b> <b></b> Tool to create a <samp>.mat</samp> file containing data from the displayed ROIs. Read the documentation of the <a href="#"><samp>getDataFromROI</samp></a> function for details</li>
             <li><b><i>Generate correlation matrix:</i></b> <b></b> Tool to create a <samp>.mat</samp> file containing a correlation matrix from the displayed ROIs. Read the documentation of the <a href="#"><samp>genCorrelationMatrix</samp></a> function for details</li>
@@ -99,22 +99,22 @@
     <p>
       Use the figure's <i>Data Tips</i> button(<img src="../assets/img/tt_dataviewer_datatip_icon.png" alt="tt_dataviewer_datatip_icon">) to add data tips with information about the selected pixel.
     </p>
-    <p align="center">
-      <img src="../assets/gifs/dataviewer_imagFig_clicking.gif" alt="DataViewer_Anim1", width="880">
+    <p style="text-align: center;">
+      <img src="../assets/gifs/dataviewer_imagFig_clicking.gif" alt="DataViewer_Anim1"  width = "880">
     </p>
     <h4 id="5-time-profile-window">5. Time profile window</h4>
     <p>
       This window will be visible only for data containing <b>T</b>ime dimension. Double-click over the plotted line to shift the current frame to the point in time.<br>As for the <i>Image Window</i>, use the figure&#39;s <i>Data Tips</i> button to add data tips  showing the signal amplitude and time delay values.
     </p>
-    <p align="center">
-      <img src="../assets/gifs/dataviewer_timeFig_clicking.gif" alt="DataViewer_Anim2", width="880">
+    <p style="text-align: center;">
+      <img src="../assets/gifs/dataviewer_timeFig_clicking.gif" alt="DataViewer_Anim2"  width = "880">
     </p>
-    <h4 id="5-time-profile-window">6. Events window</h4>
+    <h4 id="6-events-window">6. Events window</h4>
     <p>
       This window will be visible only for data containing <b>E</b>vents. Use this window to change the currently displayed condition/repetition or to edit the events list.
     </p>
-    <p align="center">
-      <img src="../assets/img/dataviewer_events_window.png" alt="dataviewer_events_window", width="220"><br>
+    <p style="text-align: center;">
+      <img src="../assets/img/dataviewer_events_window.png" alt="dataviewer_events_window"  width = "220"><br>
       <i>Events window</i>
     </p>
     <ul>
