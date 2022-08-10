@@ -43,7 +43,11 @@ help_dir = folders([folders.isdir] & startsWith({folders.name}, 'helpsearch-v'))
 if ~isempty(help_dir)
     status = rmdir(fullfile(help_dir.folder, help_dir.name), 's'); %#ok. Erase current database folder.
 end
-builddocsearchdb(fullfile(myenv,'docs'))
+try
+    builddocsearchdb(fullfile(myenv,'docs'))
+catch 
+    warning('Failed to create local documentation! Try to run MATLAB as admin and rerun this function!')
+end
 % Add toolbox to Path for the current Matlab session:
 addpath(genpath(getenv('Umitoolbox')));
 disp('Everything is set! You can start using the toolbox now!');
