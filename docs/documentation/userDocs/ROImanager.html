@@ -5,7 +5,7 @@
 		<meta charset="utf-8">
 		<style media="screen">
 			ul, ol {
-			line-height: 1.5;
+				line-height: 1.5;
 			}
 		</style>
 		<title>ROImanager</title>
@@ -619,12 +619,34 @@
 		<h3 id="import-rois">Import ROIs</h3>
 		<hr>
 		<p>
-			A <font class="stringformat"> CASA </font>.
+			One can create ROIs outside <b><i>umIT</i></b> and import them into <samp>ROImanager</samp>. You can import ROIs stored in a variable in a <samp>.mat</samp> file or directly from the workspace.
 		</p>
-		<p>A casa":
-			<ul>
-				<li>A</li>
-			</ul>
+		<p>The ROIs must be stored in one of the following formats:</p>
+		<ul>
+			<li>A 2D logical (Y by X true or false values) matrix</li>
+			<li>A 3D logical (Y by X by Z true of false values) array</li>
+			<li>A 2D labeled (Y by X positive integer values) matrix</li>
+		</ul>
+		<p>Each data format will be imported in a different way:</p>
+		<ul>
+			<li><b>2D logical matrix:</b> each region of contiguous pixels with <samp>TRUE</samp> values will be treated as an individual ROI</li>
+			<li><b>3D logical array:</b> each frame of the array (Y by X by frame) will be treated as a single ROI</li>
+			<li><b>2D labeled matrix:</b> each label will encodes one ROI</li>
+		</ul>
+		<p>
+			Thus, if you want to import multi-region ROIs using logical data types, create a 3D array with an ROI per frame. Alternatively, you can use a 2D labeled matrix to import the ROIs which will give the same results.
+		</p>
+		<div class="warnnote">
+			<p><strong>Important</strong><br>
+				In order to import the ROIs, the data arrays <b>must</b> have the same Y,X size of the current frame opened in the <samp>ROImanager</samp> app!
+			</p>
+		</div>
+		<p>
+			To import an ROI go to File &gt;&gt; Import ROIs from ... &gt;&gt; (<i><samp>.mat</samp> file / workspace</i>) and select the variable containing the ROIs. If the ROIs are stored in a <samp>.mat</samp> file, a dialog box will open so you can select the file.
+		</p>
+		<p style="text-align: center;">
+			<img src="../assets/gifs/roimanager_import_roi_from_ws.gif" alt="roimanager_import_roi_from_ws" width="880"><br>
+			<i>Example illustrating the ROI importation. Here, 2 ROIs (one single and one multi-region ROI) are imported from a 2D labeled matrix stored in a variable from Matlab's workspace.</i>
 		</p>
 	</body>
 </html>
