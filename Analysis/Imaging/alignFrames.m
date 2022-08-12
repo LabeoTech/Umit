@@ -13,8 +13,8 @@ function [outData, metaData] = alignFrames(data, metaData, object, varargin)
 
 % Defaults:
 default_Output = 'mov_aligned.dat'; %#ok This line is here just for Pipeline management.
-default_opts = struct('UseFile', 'auto');
-opts_values = struct('UseFile',{{'auto','self'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
+default_opts = struct('UseFile', 'auto', 'RefFile','ImagingReferenceFrame.mat');
+opts_values = struct('UseFile',{{'auto','self'}}, 'RefFile',{{'ImagingReferenceFrame.mat'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 %%% Arguments parsing and validation %%%
 p = inputParser;
 addRequired(p,'data',@(x) isnumeric(x) & ismember(ndims(x),[2 3])); % Validate if the input is a 3-D numerical matrix:
@@ -50,7 +50,11 @@ try
             idx = true;
         end
     end
-    ref_frame_info = matfile(fullfile(ParentObj.SaveFolder, 'ImagingReferenceFrame.mat'));
+    refFile = fullfile(ParentObj.SaveFolder, opts.RefFile);
+    if ~isfile(refFile)
+        error('umIToolbox:alignFrames:FileNotFound', 'Imaging reference file not found in Subject folder!');
+    end
+    ref_frame_info = matfile(refFile);
 catch ME
     causeException = MException('MATLAB:UMIToolbox:alignFrame:FileNotFound',...
         'Imaging Reference Frame file not found.');
