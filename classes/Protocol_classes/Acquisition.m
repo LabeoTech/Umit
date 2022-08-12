@@ -10,6 +10,7 @@ classdef Acquisition < handle
     properties
         ID % Acquisition ID
         Start_datetime % Date and time of the beginning of the acquisition.
+        Weight_g single {mustBeNonempty}  = 0.0 % Animal's weight in grams.
     end
     properties (SetAccess = {?Protocol, ?PipelineManager, ?Subject, ?ObjectListManager})
         Array % List of Modalities.

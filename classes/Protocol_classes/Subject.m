@@ -7,8 +7,7 @@ classdef Subject < handle
     
     properties 
         ID % Subject ID (It has it's on set function).
-        Sex char {mustBeNonempty} = 'Unknown'% Animal's Gender ID
-        Weight_g single {mustBeNonempty}  = 0.0 % Animal's weight in grams.
+        Sex char {mustBeNonempty} = 'Unknown'% Animal's Gender ID        
         Strain char {mustBeNonempty} = 'Unknown' % Animal's strain (Ex. Mouse strain "C57BL/6J").
         Calcium_indicator char {mustBeNonempty} = 'Unknown'% Name of the calcium indicator.        
     end
