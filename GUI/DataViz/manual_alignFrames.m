@@ -22,7 +22,20 @@ try
             idx = true;
         end
     end
-    ref_frame_info = matfile(fullfile(ParentObj.SaveFolder, 'ImagingReferenceFrame.mat'));
+    answer = inputdlg('Ref. frame file', 'Type the name of the reference frame file', [1 50], {'ImagingReferenceFrame.mat'});
+    if isempty(answer)
+        disp('Operation cancelled by User');
+        return
+    end
+    answer = answer{:};
+    if ~endsWith(answer, '.mat');
+        answer = [answer, '.mat'];
+    end
+    refFile = fullfile(ParentObj.SaveFolder, answer);
+    if ~isfile(refFile)
+        error('umIToolbox:manual_alignFrames:FileNotFound', 'Imaging reference file not found in Subject folder!');
+    end
+    ref_frame_info = matfile(refFile);
 catch ME
     causeException = MException('MATLAB:UMIToolbox:FileNotFound',...
         'Imaging Reference Frame file not found.');
