@@ -41,7 +41,7 @@
       The interface comprises of three or more figures: the <i>display options</i>, <i>main window</i> and one or more <i>summary windows</i>:
     </p>
     <p style="text-align: center;">
-      <img src="../assets/img/line-box_tool_fig1.png" alt="line-box_tool_fig1" width="880"><br>
+      <img src="../assets/img/line-box_tool_fig1.png" alt="line-box_tool_fig1" width="990"><br>
       <i>Main components of Line/Box tool interface. (1) Display options: controls the axis parameters and changes the ROI shown in the main window. (2) Main window: figure showing the current ROI data. (3) Summary window(s): One or more figures containing up to six subplots with all the ROIs loaded.</i>
     </p>
     <h4 id="1-display-options">1. Display options</h4>
@@ -52,6 +52,11 @@
            </li>
            <li><b><i>Export figures</i></b>: exports individual plots to one of the following image file formats: <i>.PNG (24-bit), .JPEG (24-bit), .PDF or .EPS</i></li>
         </ul>
+        <div class="infonote">
+          <p><strong>Note</strong><br>
+            Each plot will be saved in a separate file with a name composed of a string and the name of the ROI appended with an underscore (FILENAME_ROINAME).
+          </p>
+        </div>
       </li>
       <li><b><i>ROI in figure</i></b> dropdown menu: chooses the ROI data to show in the main window (2)</li>
       <li>Axis settings panel:
@@ -84,11 +89,6 @@
     <p>
       Figure containing up to six plots of all ROIs loaded. An extra figure will be created for each subset of six ROIs.
     </p>
-
-
-
-
-
 
   </body>
 </html>
