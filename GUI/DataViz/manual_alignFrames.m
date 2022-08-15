@@ -28,7 +28,7 @@ try
         return
     end
     answer = answer{:};
-    if ~endsWith(answer, '.mat');
+    if ~endsWith(answer, '.mat')
         answer = [answer, '.mat'];
     end
     refFile = fullfile(ParentObj.SaveFolder, answer);
