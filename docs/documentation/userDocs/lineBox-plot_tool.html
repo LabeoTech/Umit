@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../css/master.css">
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+    </style>
+    <title>Line/Box plot tool</title>
+  </head>
+  <body>
+    <h2>Line/Box plot tool</h2>
+    <hr>
+    <p>
+      This tool is part of the <i>Analysis</i> tab from the <a href="./userDocs/umIToolbox.html"><samp>umIToolbox</samp></a> app. This tool allows one to visualize longitudinal data that can be segregated into one or more experimental groups.
+    </p>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        This documentation does not cover the steps that precede the usage of the <i>Line/Box tool</i>.<br>
+        For more information on how to create the files used in the <i>Analysis</i> tab of <samp>umIToolbox</samp> as well as on how to separate the data into groups, check the tutorials on <a href="../gs_index.html"> how to extract, group and visualize grouped data</a>.
+      </p>
+    </div>
+    <p>
+      To use the tool, first, select the <b>recordings</b>, <b>files</b> and <b>ROIs</b> to be displayed. Then, launch the tool by clicking on <i>Line/Box plots</i> button in the <i>Apps & tools</i> panel.
+    </p>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        The current version of the tool displays the data as line plots. Box plots will be available on a later release of the toolbox!
+      </p>
+    </div>
+    <h4>Limitations</h4>
+    <p>This tool accepts only one numerical value per ROI.</p>
+    <h3 id="the-interface">The interface</h3>
+    <hr>
+    <p>
+      Once the tool is launched, the data is plotted as the ROI values as a function of time. By default, the data is shown as the ROI values grouped by acquisition over time. Individual data points are shown as a scatter plot while the average (+- standard deviation) is shown as a line plot.
+    </p>
+    <p>
+      The interface comprises of three or more figures: the <i>display options</i>, <i>main window</i> and one or more <i>summary windows</i>:
+    </p>
+    <p style="text-align: center;">
+      <img src="../assets/img/line-box_tool_fig1.png" alt="line-box_tool_fig1" width="880"><br>
+      <i>Main components of Line/Box tool interface. (1) Display options: controls the axis parameters and changes the ROI shown in the main window. (2) Main window: figure showing the current ROI data. (3) Summary window(s): One or more figures containing up to six subplots with all the ROIs loaded.</i>
+    </p>
+    <h4 id="1-display-options">1. Display options</h4>
+    <ul>
+      <li>Save/Export &gt;&gt;
+        <ul>
+          <li><b><i>Save figures</i></b>: saves individual plots in Matlab's <samp>.fig</samp> file format
+           </li>
+           <li><b><i>Export figures</i></b>: exports individual plots to one of the following image file formats: <i>.PNG (24-bit), .JPEG (24-bit), .PDF or .EPS</i></li>
+        </ul>
+      </li>
+      <li><b><i>ROI in figure</i></b> dropdown menu: chooses the ROI data to show in the main window (2)</li>
+      <li>Axis settings panel:
+        <ul>
+          <li><b><i>X/Y label</i></b>: X and Y axis labels</li>
+          <li>Y scale panel
+            <ul>
+              <li><b><i>Auto</i></b>: sets automatic Y limits for each individual plot (default)</li>
+              <li><b><i>Uniform</i></b>: sets the same Y axis limits to all plots</li>
+              <li><b><i>Fixed</i></b>: set fixed Y <b>min</b> and <b>max</b> values for all plots</li>
+              <li><b><i>Linear</i></b>: sets the Y scale as linear (default)</li>
+              <li><b><i>Log</i></b>:sets the Y scale as logarithmic</li>
+            </ul>
+          </li>
+          <li>Error bar style: sets the error bars of linear plots as one of the following:
+            <ul>
+              <li><b><i>Standard deviation (SD)</i></b></li>
+              <li><b><i>Standard error of the mean (SEM)</i></b></li>
+              <li><b><i>95% Confidence Interval (CI)</i></b></li>
+            </ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+    <h4 id="2-main-window">2. Main window</h4>
+    <p>
+      Figure containing the plot of the ROI selected in the <i>Display options</i> figure (1).
+    </p>
+    <h4 id="3-summary-window">3. Summary window(s)</h4>
+    <p>
+      Figure containing up to six plots of all ROIs loaded. An extra figure will be created for each subset of six ROIs.
+    </p>
+
+
+
+
+
+
+  </body>
+</html>
