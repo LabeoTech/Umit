@@ -26,7 +26,6 @@ opts_values = struct('channel', {{'auto',Inf}}, 'threshold',{{'auto',Inf}}, 'Tri
 
 %%% Arguments parsing and validation %%%
 p = inputParser;
-% The input of the function must be a File , RawFolder or SaveFolder
 % Imaging Object:
 addRequired(p, 'object', @(x) isa(x,'Modality'));
 % Save folder:
