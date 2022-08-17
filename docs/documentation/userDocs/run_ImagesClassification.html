@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../css/master.css">
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+      .collapsible {
+      background-color: #d9d9d9;
+      color: black;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      }
+      .active, .collapsible:hover {
+      background-color: #888;
+      }
+      .content {
+      padding: 0 18px;
+      display: none;
+      overflow: hidden;
+      background-color: #fff;
+      }
+    </style>
+    <title>run_ImagesClassification</title>
+  </head>
+  <body>
+    <h2>run_ImagesClassification</h2>
+    <hr>
+    <p>Imports raw imaging data acquired with the LabeoTech’s optical imaging systems.</p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+      This function reads multi-channel imaging data stored in binary files (<samp>img_xxxx.bin</samp>) as well as any analog signals (<samp>ai_xxxx.bin</samp>) recorded during an imaging session. The signal from each channel is stored separately in a <samp>.dat</samp> file with a <samp>.mat</samp> file containing associated metadata. This function has optional parameters that allows one to perform spatial and temporal binning as well as to import analog signals as events.
+    </p>
+
+    <h3 id="optional-parameters">Optional parameters</h3>
+    <hr>
+    <p>
+      The parameters of this function are the following:
+    </p>
+    <button type="button" class="collapsible"><samp><b>BinningSpatial</b></samp> - Spatial binning <br> <span style="font-size: .85em; "><i>1(default), 2, 4, 8, 16 or 32</i></span></button>
+    <div class="content">
+      <p>This section provides content on the spatial binning information.</p>
+    </div>
+    <button type="button" class="collapsible">Temporal binning</button>
+    <div class="content">
+      <p>Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+    </div>
+    <button type="button" class="collapsible">bIgnoreStim</button>
+    <div class="content">
+      <p>Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+    </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <!-- JavaScript to collapse sections -->
+    <script src="collapsible_behaviour.js"></script>
+  </body>
+</html>
