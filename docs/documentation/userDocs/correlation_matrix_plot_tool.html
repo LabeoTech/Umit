@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <link rel="stylesheet" href="../../css/master.css">
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+    </style>
+    <meta charset="utf-8">
+    <title>Correlation Matrix plot Tools</title>
+  </head>
+  <body>
+    <h2>Correlation Matrix plot tool</h2>
+    <hr>
+    <p>
+      This tool is dedicated to the visualization of correlation matrices of grouped data. In particular, the tool is useful to visualize and compare the correlation matrices between two or more experimental groups in a longitudinal setting (i.e. several acquisitions over time).
+    </p>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        This documentation does not cover the steps that precede the usage of the <i>Correlation matrix plot tool</i>.<br>
+        For more information on how to create the files used in the <i>Analysis</i> tab of <samp>umIToolbox</samp> as well as on how to separate the data into groups, check the tutorials on <a href="../gs_index.html"> how to extract, group and visualize grouped data</a>.
+      </p>
+    </div>
+    <p>
+      To use the tool, first, select the <b>recordings</b>, <b>files</b> and <b>ROIs</b> to be displayed. Then, launch the tool by clicking <i>Plot Correlation Matrix</i> button in the Apps & tools panel.
+    </p>
+    <h4 id="limitations">Limitations</h4>
+    <p>
+      This tool accepts only 2D numerical matrices as input. As for longitudinal datasets, all individuals must have the same number of acquisitions.
+    </p>
+    <h3 id="the=interface">The interface</h3>
+    <hr>
+    <p>
+      Once the tool is launched, an average of the correlation matrices is calculated per acquisition per group. The interface is comprised of three windows with: plotting options,  correlation matrices separated by group and acquisition and a line plot of the selected correlation.
+    </p>
+    <p style="text-align: center;">
+      <img src="../assets/img/correlation_matrix_plot_tool_fig1.png" alt="correlation_matrix_plot_tool_fig1" width="880"><br>
+      <i>Main components of the Correlation matrix plot tool. (1) Plot options window: contains several options to reorganize and plot the correlation matrices.(2) Matrix window: figure containing the average correlation matrices separated by group (rows) and acquisition (columns).(3) Timeline window: plot of the selected pair of observations in the matrix (red circle in Matrix window)</i>
+    </p>
+    <h4 id="1-plot-options">1. Plot options</h4>
+    <ul>
+      <li><b><i>re-order Matrix</i></b>: click here to reorganize the rows and columns from the correlation matrices.
+        <div class="infonote">
+          <p><strong>Note</strong><br>
+            For ROIs created using the Mouse Allen Brain preset in <samp>ROImanager</samp> app, the areas will be organized by hemisphere and functional modality. Otherwise, by default the app will plot the data in alphabetical order.
+          </p>
+        </div>
+      </li>
+      <li><b><i>Set colormap</i></b>: click here to change the matrix colormap and the color scale</li>
+      <li><b><i>Set baseline</i></b>: click here to merge two or more aquisitions as a baseline acquisitions.
+        <div class="infonote">
+          <p><strong>Note</strong><br>
+            By default, the first acquisition is considered as "baseline".
+          </p>
+        </div>
+       </li>
+       <li><b><i>Show matrix as:</i></b> Drop down menu with the following options to display the correlation matrices:
+         <ul>
+           <li><b><i>Data</i></b>: (default) shows the average correlation values of each matrix</li>
+           <li><b><i>Diff. from baseline</i></b>: shows the difference of the correlation values from the baseline acquisition</li>
+           <li><b><i>Diff. from previous</i></b>: shows the difference from the previous acquisition</li>
+         </ul>
+       </li>
+       <li><b><i>Hide diagonal</i></b>: shows only the bottom half of the matrix</li>
+       <li><b><i>Lock plot Y axis</i></b>: set a fixed Y axis scale in the timeline window</li>
+    </ul>
+  <h4 id="2-matrix-window">2. Matrix window</h4>
+  <p>
+    The matrix window is comprised of the average correlation matrices separated by group and acquisitions. The groups are shown in each row as the acquisition are shown in columns.
+  </p>
+  <p>Click on one quadrant of the matrix to upload the plot in the timeline window (3).</p>
+  <h4 id="3-timeline-window">3. Timeline window</h4>
+  <p>This figure shows a scatter plot with the correlation values of individual recordings overlayed with a line plot that shows the mean +- the standard error of the mean (SEM)</p>
+  </body>
+</html>
