@@ -27,6 +27,8 @@
       display: none;
       overflow: hidden;
       background-color: #fff;
+      border: 1px solid black;
+      margin-bottom: 10px;
       }
     </style>
     <title>run_ConvertToTiff</title>
@@ -40,44 +42,25 @@
     <h3 id="description">Description</h3>
     <hr>
     <p>
-      This function imports imaging data stored in a multi-frame .TIF file and saves in a <samp>.dat</samp> file to be used in <b><i>umIToolbox</i></b>. The function reads all valid <samp>.TIF</samp> files (see section below) inside a folder (RawFolder) and saves the output files (to a SaveFolder). This function has optional parameters that allows one to perform spatial and temporal binning to the data.
+      This function exports imaging data created in <b><i>umIT</i></b> to a  multi-frame .TIF file. For 3D datasets, the function will create a single .TIF file containing the image series. For image time series split by trials (4D arrays with dimensions E,Y,X,T), a .TIF file will be created for each trial. This function does not have optional parameters.
     </p>
-
     <h3>Output</h3>
     <hr>
-    <p>
-      A <samp>.dat</samp> file will be created and stored in the SaveFolder with the channel name (located in the <samp>Illumination1</samp> parameter from the metadata text file). For example, for the .TIF file <samp>img_fluo.tif</samp> with the text file <samp>img_fluo.txt</samp> containing the information below, the resulting output will be a .dat file named <samp>fluo.dat</samp>.
+    <p> For 3D data:<br>
+      A  multi-frame .TIF file will be created in the SaveFolder with the name of the <samp>.dat</samp> file prepended with the string <span class="stringformat">'img_'</span>. For instance, the .TIF file from the file <samp>fluo.dat</samp> will be named <samp>img_fluo.tif</samp>.
     </p>
-    <div class="codeinput">
-      <code>
-        Scan info<br>
-        DateTime: 20220101_120510<br>
-        FrameRateHz: 30<br>
-        ExposureMsec: 0.1<br>
-        Illumination1: fluo<br>
-      </code>
-    </div>
-    <h3 id="parameters">Parameters</h3>
-    <hr>
-    <p>The parameters of this function are the following:</p>
-    <button title="click to expand" type="button" class="collapsible">
-      <samp><b>BinningSpatial</b></samp> - Spatial binning <br>
-      <span class="title-desc"><i>1(default), 2, 4, 8, 16 or 32</i></span>
-    </button>
+    <p>For 4D data:<br>
+      One multi-frame .TIF file will be created in the SaveFolder for each trial. the filename will be appended with the condition (C) and repetition(R) indices as so: <span class="stringformat">'img_&lt;FILENAME&gt;_C&lt;index&gt;_R&lt;index&gt;.tif'</span>. For example, for a recording with name <samp>DF_F.dat</samp> with one condition and 10 repetitions the TIF files will be created as so: img_DF_F_C1_R1.tif, img_DF_F_C1_R2.tif, ..., img_DF_F_C1_R10.tif.
+    </p>
+    <button title="click to expand" type="button" class="collapsible"><b>More details</b></button>
     <div class="content">
+      <h4>Default output file name</h4>
       <p>
-        Performs binning on each frame of the imported channels using a bicubic interpolation. The <samp>BinningSpatial</samp> values represent the scale factor that a frame is divided by. For example, for a recording with original frame size of 1024 by 1024 pixels, a <samp>BinningSpatial</samp> value of <b>2</b> will result in a frame of size 512 by 512 pixels.<br>
-        A <samp>BinningSpatial</samp> value of <b>1</b> equals to no binning.
+        The output file name of this function is extracted from the variable <samp>datFile</samp> stored in the <samp>.mat</samp> meta data file associated with the <samp>.dat</samp> file. In the eventuality that this variable is empty, a default filename <span class="stringformat">'img_out.tif'</span> will be used.
       </p>
-    </div>
-    <button title="click to expand" type="button" class="collapsible">
-      <samp><b>BinningTemp</b></samp> - Temporal binning <br>
-      <span class="title-desc"><i>1(default), 2, 4, 8, 16 or 32</i></span>
-    </button>
-    <div class="content">
+      <h4>The algorithm</h4>
       <p>
-        Performs binning across frames (i.e. over the time dimension) using a linear interpolation. The <samp>BinningTemp</samp> values represent the scale factor for the temporal dimension of a recording. For example, for a recording with original frame rate of 10Hz, a <samp>BinningTemp</samp> value of <b>2</b> will reduce the number of frames in half, resulting in a frame rate of 5Hz.<br>
-        A <samp>BinningSpatial</samp> value of <b>1</b> equals to no binning.
+        This function uses the code from <a href="https://github.com/rharkes/Fast_Tiff_Write">this Git repo</a> to write to TIF files. As stated in their documentation: the algorithm writes <i>"the image data first, and end the file with IFD's"</i>. The accepted data formats are: <b>uint8</b>, <b>uint16</b> and <b>single</b> precision. No compression is applied.
       </p>
     </div>
     <!-- JavaScript code to collapse sections -->
