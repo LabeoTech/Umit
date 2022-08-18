@@ -38,7 +38,7 @@
     <h3 id="description">Description</h3>
     <hr>
     <p>
-      This function reads multi-channel imaging data stored in binary files (<samp>img_xxxx.bin</samp>) as well as any analog signals (<samp>ai_xxxx.bin</samp>) recorded during an imaging session. The signal from each channel is stored separately in a <samp>.dat</samp> file with a <samp>.mat</samp> file containing associated metadata. This function has customizable parameters that allows one to perform spatial and temporal binning as well as to import analog signals as events.
+      This function reads multi-channel imaging data stored in binary files (<samp>img_xxxx.bin</samp>) as well as any analog signals (<samp>ai_xxxx.bin</samp>) recorded during an imaging session. The signal from each channel is stored separately in a <samp>.dat</samp> file with a <samp>.mat</samp> file containing associated metadata. This function has optional parameters that allows one to perform spatial and temporal binning as well as to import analog signals as events.
     </p>
     <h3>Output</h3>
     <hr>
@@ -50,8 +50,7 @@
       <li>Green</li>
       <li>Yellow</li>
       <li>Speckle</li>
-      <li>fluo</li>
-      <li>fluo_475</li>
+      <li>fluo / fluo_475</li>
     </ul>
     <h3 id="parameters">Parameters</h3>
     <hr>
@@ -67,12 +66,12 @@
       </p>
     </div>
     <button title="click to expand" type="button" class="collapsible">
-      <samp><b>BinningTemporal</b></samp> - Temporal binning <br>
+      <samp><b>BinningTemp</b></samp> - Temporal binning <br>
       <span class="title-desc"><i>1(default), 2, 4, 8, 16 or 32</i></span>
     </button>
     <div class="content">
       <p>
-        Performs binning across frames (i.e. over the time dimension) using a linear interpolation. The <samp>BinningTemporal</samp> values represent the scale factor for the temporal dimension of a recording. For example, for a recording with original frame rate of 10Hz, a <samp>BinningTemporal</samp> value of <b>2</b> will reduce the number of frames in half, resulting in a frame rate of 5Hz.<br>
+        Performs binning across frames (i.e. over the time dimension) using a linear interpolation. The <samp>BinningTemp</samp> values represent the scale factor for the temporal dimension of a recording. For example, for a recording with original frame rate of 10Hz, a <samp>BinningTemp</samp> value of <b>2</b> will reduce the number of frames in half, resulting in a frame rate of 5Hz.<br>
         A <samp>BinningSpatial</samp> value of <b>1</b> equals to no binning.
       </p>
     </div>
