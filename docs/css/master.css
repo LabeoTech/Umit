@@ -31,6 +31,12 @@
 .stringformat{
   color: #A020F0
 }
+.title-desc{
+  font-size: 0.85em;
+  color: #444444;
+  padding-left: 20px;
+}
+
 pre, code, samp{
   font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
 }
