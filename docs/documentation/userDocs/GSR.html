@@ -34,34 +34,115 @@
     <title>GSR</title>
   </head>
   <body>
-    <h2>Global Signal Regression (GSR)</h2>
+    <h2>GSR - Global Signal Regression</h2>
     <hr>
     <p>
-
+      Removes global variance from imaging data.
     </p>
     <h3 id="description">Description</h3>
     <hr>
     <p>
-
+      The Global Signal Regression is commonly used in brain imaging to remove signal oscillations that is present all over the surface of the brain (i.e. global). Some global oscillations may arise from other sources than the brain itself such as breathing and cardiac activity <a href="#refs">[1-4]</a>. Thus, the main assumption used to perform GSR is that the source(s) of global signal fluctuations are considered as noise and ought to be removed.
     </p>
+    <h3>Input</h3>
+    <hr>
+    <p>
+      This function accepts only image time series as input with dimensions Y, X and T.
+    </p>
+    <h3> The algorithm</h3>
+    <hr>
+    <p>
+      In brief, this function uses the average signal of all pixels from the image (or selected region) as a regressor in a linear model which results in the global component of the signal. Then, the global signal is subtracted from the original data.
+    </p>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <b>More details</b>
+    </button>
+    <div class="content">
+      <p>
+        The input signal <i>S(y,x,t)</i> is reshaped to get the temporal profile (<i>t</i>) for each pixel <i>i</i>. Then GSR is applied as:
+      </p>
+      <p style="text-align: center;">
+        <img src="../assets/img/GSR_eq1.png" alt="GSR_eq1">
+      </p>
+      <p>
+        where <i>R<sub>i</sub>(t)</i> is the resulting signal without global variance, <i>S<sub>i</sub>(t)</i> is the original signal, <i>g<sub>i</sub>(t)</i> is the global signal and &beta;<sub>i</sub> the regression coefficient.
+      </p>
+      <p>
+        The global signal is expressed as the spatial average of the pixels in the image:
+      </p>
+      <p style="text-align: center;">
+        <img src="../assets/img/GSR_eq2.png" alt="GSR_eq2">
+      </p>
+      <p>
+        And the regression coefficient &beta;<sub>i</sub> is estimated using a linear ordinary least squares (OLS) method as:
+      </p>
+      <p style="text-align: center;">
+        <img src="../assets/img/GSR_eq3.png" alt="GSR_eq3">
+      </p>
+
+    </div>
+
     <h3>Output</h3>
     <hr>
     <p>
-
+      The output of this function is a numerical matrix with dimensions Y,X and T containing the filtered data.
     </p>
     <h3 id="parameters">Parameters</h3>
     <hr>
     <p>The parameters of this function are the following:</p>
     <button title="click to expand" type="button" class="collapsible">
       <span class="iconplus"></span>
-      <samp><b>varName</b></samp> - var description <br>
-      <span class="title-desc"><i>vals</i></span>
+      <samp><b>b_UseMask</b></samp> - enable use of logical mask <br>
+      <span class="title-desc"><i>true | false (default)</i></span>
     </button>
     <div class="content">
       <p>
-        CONTENT
+        If set to <b>true</b>, the function will use the logical mask stored in the <samp>MaskFile</samp> parameter to calculate the global signal based on the pixels inside the mask. If set to <b>false</b>, all pixels from the image will be used to calculate the global signal.
+      </p>
+      <p>
+        Normally, if the image contains areas that are not a region of interest (e.g. the brain surface), it is advisable to create and use a logical mask to exclude these areas. A logical mask is created using the <samp>ROImanager</samp> app. Read the <a href="./ROImanager.html">app's documentation</a> to learn how to create a logical mask and export it to a <samp>MaskFile</samp>.
       </p>
     </div>
+
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>MaskFile</b></samp> - the name of the <samp>.mat</samp> file with the logical mask <br>
+      <span class="title-desc"><i>"ImagingReferenceFrame.mat" (default) | string</i></span>
+    </button>
+    <div class="content">
+      <p>
+        This is the name of the <i>Imaging Reference file</i> created in the <a href="./ROImanager.html">ROImanager</a> app. The logical mask is stored in the variable named <samp>logical_mask</samp>. The mask is a 2D logical matrix with the same size as the frame (Y and X dimensions) of the input file to this function.
+      </p>
+      <div class="infonote">
+        <p><strong>Note</strong><br>
+          If this function is called from the <b>umIToolbox</b> app, it will look for the <i>Imaging Reference file</i> in the subject's folder. In contrast, if the function is called directly from the <b>DataViewer</b> app, it will look for the <samp>.mat</samp> file in the same directory as the data displayed in the app.
+        </p>
+      </div>
+    </div>
+    <h3>References</h3>
+    <hr>
+    <ol id="refs">
+      <li>
+        Macey, Paul M, Katherine E Macey, Rajesh Kumar, and Ronald M Harper. 2004. ‘A Method for Removal of Global Effects from FMRI Time Series’. NeuroImage 22 (1): 360–66. <a href="https://doi.org/10.1016/j.neuroimage.2003.12.042">https://doi.org/10.1016/j.neuroimage.2003.12.042</a>.
+      </li>
+      <li>
+        Bauer, Adam Q., Andrew W. Kraft, Patrick W. Wright, Abraham Z. Snyder, Jin-Moo Lee, and Joseph P. Culver. 2014. ‘Optical Imaging of Disrupted Functional Connectivity Following Ischemic Stroke in Mice’. NeuroImage 99 (October): 388–401. <a href="https://doi.org/10.1016/j.neuroimage.2014.05.051">https://doi.org/10.1016/j.neuroimage.2014.05.051</a>.
+      </li>
+      <li>
+        Turley, J. A., K. Zalewska, M. Nilsson, F. R. Walker, and S. J. Johnson. 2017. ‘An Analysis of Signal Processing Algorithm Performance for Cortical Intrinsic Optical Signal Imaging and Strategies for Algorithm Selection’. Scientific Reports 7 (1): 7198. <a href="https://doi.org/10.1038/s41598-017-06864-y">https://doi.org/10.1038/s41598-017-06864-y</a>.
+      </li>
+      <li>
+        Murphy, Kevin, and Michael D. Fox. 2017. ‘Towards a Consensus Regarding Global Signal Regression for Resting State Functional Connectivity MRI’. NeuroImage, Cleaning up the fMRI time series: Mitigating noise with advanced acquisition and correction strategies, 154 (July): 169–73. <a href="https://doi.org/10.1016/j.neuroimage.2016.11.052">https://doi.org/10.1016/j.neuroimage.2016.11.052</a>.
+      </li>
+    </ol>
+
+
+
+
+
+
+
     <!-- JavaScript code to collapse sections -->
     <script src="collapsible_behaviour.js"></script>
   </body>
