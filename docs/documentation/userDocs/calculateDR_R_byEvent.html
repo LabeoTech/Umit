@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../css/master.css">
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+      .collapsible {
+      background-color: #eeeeee;
+      color: black;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      margin-bottom: 10px;
+      }
+      .active, .collapsible:hover {
+      background-color: #888;
+      }
+      .content {
+      padding: 0 18px;
+      display: none;
+      overflow: hidden;
+      background-color: #fff;
+      border: 1px solid black;
+      margin-bottom: 10px;
+      }
+    </style>
+    <title>calculate DeltaR/R</title>
+  </head>
+  <body>
+    <h2>calculateDR_R_byEvent - DeltaR/R by trials</h2>
+    <hr>
+    <p>
+      Normalizes event-triggered signal as &Delta;R/R.
+    </p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+      This function calculates the relative response change for each trial of an image time series split by events (with dimensions E,Y,X,T). The function calculates the relative response change expressed as the response amplitude divided by the median of the pre-event time as &Delta;R/R.<br> This function has no parameters.
+    </p>
+    <h3>Input</h3>
+    <hr>
+    <p>
+      This function accepts <b>only</b> image time series split by events as input with dimensions E, Y, X and T.
+    </p>
+    <h3> The algorithm</h3>
+    <hr>
+    <p>
+      For each trial, the function calculates the response amplitude as the pixel values over time minus the baseline (&Delta;R). Then this result is divided by the baseline resulting in pixel values expressed as &Delta;R/R. Here, the baseline corresponds to the median value of the pre-event period. The pre-event period is a value (in seconds) stored in the input data's meta data file in the variable <samp>preEventTime_sec</samp>.
+    </p>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <b>More details</b>
+    </button>
+    <div class="content">
+      <p>
+        The input signal <i>S(e,i,t)</i>, for each trial <i>e</i>, and pixel <i>i</i>, the relative signal change (<i>&Delta;R/R(t)</i>) is calculated as:
+      </p>
+      <p style="text-align: center;">
+        <img src="../assets/img/calculateDR_R_byEvent_eq1.png" alt="calculateDR_R_byEvent_eq1">
+      </p>
+      <p>
+        where <i>S<sub>i</sub>(t)</i> is the pixel value for a given time <i>t</i> and <i>bsln<sub>i</sub></i> is the baseline value. The baseline is calculated as the median of the pixel values between the beginning of the trial (<i>t<sub>0</sub></i>) and the event timestamp (<i>t<sub>evnt</sub></i>):
+      </p>
+      <p style="text-align: center;">
+        <img src="../assets/img/calculateDR_R_byEvent_eq2.png" alt="calculateDR_R_byEvent_eq2">
+      </p>
+    </div>
+
+    <h3>Output</h3>
+    <hr>
+    <p>
+      The output of this function is a numerical matrix with dimensions E,Y,X and T containing the normalized data.
+    </p>
+
+    <!-- JavaScript code to collapse sections -->
+    <script src="collapsible_behaviour.js"></script>
+  </body>
+</html>
