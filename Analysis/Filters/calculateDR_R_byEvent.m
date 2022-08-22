@@ -7,7 +7,7 @@ function outData = calculateDR_R_byEvent(data, metaData)
 %   metaData (struct): structure containing smeta data associated with "data".
 % Output:
 %   outData(4D numerical matrix): "data" with values transformed to express
-%   DeltaF/F0.
+%   DeltaR/R0.
 % Defaults:
 default_Output = 'deltaR_R_ByEvent.dat'; %#ok This is here only as a reference for PIPELINEMANAGER.m. 
 %%% Arguments parsing and validation %%%
@@ -25,14 +25,11 @@ clear p
 errMsg = 'Input Data must be an Image time series separated by events with dimensions {"E","Y","X",T"}.';
 errID = 'umIToolbox:calculateDF_F0_byEvent:WrongInput';
 assert(isequal(metaData.dim_names, {'E','Y','X','T'}), errID, errMsg)
-
-% Perform linear detrending on data:
 % Calculate baseline:
 bsln = median(outData(:,:,:,1:round(metaData.preEventTime_sec*metaData.Freq)), ...
     4,'omitnan');
-% Normalize data to get DeltaF/F values
+% Normalize data to get DeltaR/R values
 disp('Calculating DeltaR/R ...');
-outData = bsxfun(@rdivide,bsxfun(@minus,outData,bsln),bsln);
-
+outData = (outData - bsln)./bsln;
 disp('Finished with DeltaR/R!')
 end
