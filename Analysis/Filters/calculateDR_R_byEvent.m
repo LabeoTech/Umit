@@ -1,5 +1,5 @@
-function outData = calculateDF_F_byEvent(data, metaData)
-% CALCULATEDF_F_BYEVENT generates DeltaF/F0 movie from DATA.
+function outData = calculateDR_R_byEvent(data, metaData)
+% CALCULATEDR_R_BYEVENT generates DeltaR/R0 movie from DATA.
 % The data must be a 4-D matrix containing image time series separated by
 % trials.
 % Inputs:
@@ -9,7 +9,7 @@ function outData = calculateDF_F_byEvent(data, metaData)
 %   outData(4D numerical matrix): "data" with values transformed to express
 %   DeltaF/F0.
 % Defaults:
-default_Output = 'deltaF_F_ByEvent.dat'; %#ok This is here only as a reference for PIPELINEMANAGER.m. 
+default_Output = 'deltaR_R_ByEvent.dat'; %#ok This is here only as a reference for PIPELINEMANAGER.m. 
 %%% Arguments parsing and validation %%%
 p = inputParser;
 addRequired(p,'data',@(x) isnumeric(x)); % Validate if the input is a numerical matrix:
@@ -31,8 +31,8 @@ assert(isequal(metaData.dim_names, {'E','Y','X','T'}), errID, errMsg)
 bsln = median(outData(:,:,:,1:round(metaData.preEventTime_sec*metaData.Freq)), ...
     4,'omitnan');
 % Normalize data to get DeltaF/F values
-disp('Calculating DeltaF/F ...');
+disp('Calculating DeltaR/R ...');
 outData = bsxfun(@rdivide,bsxfun(@minus,outData,bsln),bsln);
 
-disp('Finished with DeltaF/F!')
+disp('Finished with DeltaR/R!')
 end

@@ -18,7 +18,7 @@ function [outData, metaData] = apply_aggregate_function(data, metaData, varargin
 % Defaults:
 default_Output = 'aggFcn_applied.dat'; %ok This is here for PIPELINEMANAGER.M.
 default_opts = struct('aggregateFcn', 'mean', 'dimensionName', 'T');
-opts_values = struct('aggregateFcn', {{'mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}}, 'dimensionName',{{'X','Y','Z','T','E'}});% This is here only as a reference for PIPELINEMANAGER.m.
+opts_values = struct('aggregateFcn', {{'mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}}, 'dimensionName',{{'X','Y','T','E'}});% This is here only as a reference for PIPELINEMANAGER.m.
 %%% Arguments parsing and validation %%%
 % Parse inputs:
 p = inputParser;
