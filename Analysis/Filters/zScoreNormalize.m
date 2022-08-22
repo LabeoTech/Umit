@@ -22,7 +22,7 @@ metaData = p.Results.metaData;
 clear p
 %%%%
 % Validate if "data" is an Image Time Series:
-errID = 'umIToolbox:GSR:InvalidInput';
+errID = 'umIToolbox:zScoreNormalize:InvalidInput';
 errMsg = 'Wrong Input Data type. Data must be an Image time series with dimensions "X", "Y" and "T".';
 assert(all(ismember(metaData.dim_names,{'Y', 'X', 'T'})), errID, errMsg);
 
@@ -34,3 +34,4 @@ outData = (outData - mean(outData,2,'omitnan'))./std(outData,0,2,'omitnan');
 outData = reshape(outData,orig_sz);
 disp('Finished with Zscore normalization.')      
 end
+    

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../css/master.css">
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+      .collapsible {
+      background-color: #eeeeee;
+      color: black;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      margin-bottom: 10px;
+      }
+      .active, .collapsible:hover {
+      background-color: #888;
+      }
+      .content {
+      padding: 0 18px;
+      display: none;
+      overflow: hidden;
+      background-color: #fff;
+      border: 1px solid black;
+      margin-bottom: 10px;
+      }
+    </style>
+    <title>Z-score normalize</title>
+  </head>
+  <body>
+    <h2>zScoreNormalize - Z-score normalization</h2>
+    <hr>
+    <p>
+      Normalizes the image time series as <b>z-scores</b>.
+    </p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+      This function normalizes image series with dimensions Y,X,T to have zero mean and unit standard deviation over the time domain. This function has no parameters.
+    </p>
+    <h3>Input</h3>
+    <hr>
+    <p>
+      This function accepts <b>only</b> image time series as input with dimensions Y, X and T.
+    </p>
+    <h3> The algorithm</h3>
+    <hr>
+    <p>
+      For each pixel, the z-score is calculated as the pixel value minus it's time average divided by the standard deviation.
+    </p>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <b>More details</b>
+    </button>
+    <div class="content">
+      <p>
+        Give the signal <i>S(i,t)</i>, for each pixel <i>i</i>, the z-score is calculated as:
+      </p>
+      <p style="text-align: center;">
+        <img src="../assets/img/zScoreNormalize_eq1.png" alt="zScoreNormalize_eq1" height="60">
+      </p>
+      <p>
+        where <i>S<sub>i</sub>(t)</i> is the pixel value for a given time <i>t</i>, <img src="../assets/img/zScoreNormalize_inline_var.png" alt="zScoreNormalize_inline_var" height="18"> is the time average of the signal while the <i>SD</i> is the temporal standard deviation. The time average is calculated as:
+      </p>
+      <p style="text-align: center;">
+        <img src="../assets/img/zScoreNormalize_eq2.png" alt="zScoreNormalize_eq2" height="60">
+      </p>
+      <p>
+        and the standard deviation as:
+      </p>
+      <p style="text-align: center;">
+        <img src="../assets/img/zScoreNormalize_eq3.png" alt="zScoreNormalize_eq3" height="60">
+      </p>
+    </div>
+    <h3>Output</h3>
+    <hr>
+    <p>
+      Image time series data with temporal mean equal to zero and unit standard deviation.
+    </p>
+    <!-- JavaScript code to collapse sections -->
+    <script src="collapsible_behaviour.js"></script>
+  </body>
+</html>
