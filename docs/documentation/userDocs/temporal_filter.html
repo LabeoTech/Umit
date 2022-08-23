@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../css/master.css">
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+      .collapsible {
+      background-color: #eeeeee;
+      color: black;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      margin-bottom: 10px;
+      }
+      .active, .collapsible:hover {
+      background-color: #888;
+      }
+      .content {
+      padding: 0 18px;
+      display: none;
+      overflow: hidden;
+      background-color: #fff;
+      border: 1px solid black;
+      margin-bottom: 10px;
+      }
+    </style>
+    <title>temporal filter</title>
+  </head>
+  <body>
+    <h2>temporal_filter - Temporal filter</h2>
+    <hr>
+    <p>
+      Filters the time domain of image time series.
+    </p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+      This function applies a band-pass filter to the Time dimension of an image time series recording. The function uses two cut-off frequency values to create a filtered signal (R) that can be expressed as &Delta;R or &Delta;R/R, depending on the function's paramaters.
+    </p>
+    <h3>Input</h3>
+    <hr>
+    <p>
+      This function accepts only image time series as input with dimensions Y, X and T.
+    </p>
+    <h3 id="the-algorithm"> The algorithm</h3>
+    <hr>
+    <p>
+      This function applies a low pass filter to the input data at two cut-off frequencies (set in the function's parameters). Then, these two low-passed signals are either subtracted or divided which results in a band-passed normalized signal (R) expressed as &Delta;R or &Delta;R/R, respectively.
+    </p>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <b>More details</b>
+    </button>
+    <div class="content">
+      <p>
+        The function applies a 4th-order low-pass Butterworth filter with 3dB cut-off frequencies <i>freqHigh</i> and <i>freqLow</i>. This yields two low-passed signals <i>S_lwp<sub>freqHigh</sub></i> and <i>S_lwp<sub>freqLow</sub></i>. Then, if the parameter <samp>Normalize</samp> is set to <b>True</b>, the signals are divided as:
+      </p>
+      <p style="text-align: center;">
+        <img src="../assets/img/temporal_filter_eq1.png" alt="temporal_filter_eq1">
+      </p>
+      <p>
+        otherwise, the signals are subtracted:
+      </p>
+      <p style="text-align: center;">
+        <img src="../assets/img/temporal_filter_eq2.png" alt="temporal_filter_eq2">
+      </p>
+    </div>
+    <h3>Output</h3>
+    <hr>
+    <p>
+      The output of this function is a numerical matrix with dimensions Y,X and T containing the data filtered and normalized.
+    </p>
+    <h3 id="parameters">Parameters</h3>
+    <hr>
+    <p>The parameter of this function is the following:</p>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>LowCutOffHz</b></samp> -Low frequency cut-off <br>
+      <span class="title-desc"><i>0.0083 (default) | nonnegative scalar</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Sets the value (in Hertz) of the low frequency cut-off. Oscillations below this frequency will be removed from the signal.
+      </p>
+      <p>
+        The <samp>LowCutOffHz</samp> value ranges from <b>zero</b> to the <b>Nyquist</b> (half the sample rate).
+      </p>
+      <div class="infonote">
+        <p><strong>Note</strong><br>
+          If this value is set to <b>zero</b>, the output will be a low-passed signal at cut-off frequency <samp>HighCutOffHz</samp>.
+        </p>
+      </div>
+    </div>
+
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>HighCutOffHz</b></samp> -High frequency cut-off <br>
+      <span class="title-desc"><i>0 (default) | nonnegative scalar</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Sets the value (in Hertz) of the high frequency cut-off. Oscillations above this frequency will be removed from the signal.
+      </p>
+      <p>
+        The <samp>HighCutOffHz</samp> value ranges from <b>zero</b> to the <b>Nyquist</b> (half the sample rate).
+      </p>
+      <div class="infonote">
+        <p><strong>Note</strong><br>
+          If this value is set to <b>zero</b>, the output will be a high-passed signal at cut-off frequency <samp>LowCutOffHz</samp>.
+        </p>
+      </div>
+    </div>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>Normalize</b></samp> - Normalize data by division <br>
+      <span class="title-desc"><i>true | false (default)</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Sets this parameter to <b>True</b> to return the output signal (R) as &Delta;R/R, otherwise set to <b>False</b> to return the output signal as &Delta;R (see the <a href="#the-algorithm">algorithm</a>) sections for details).
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>bApplyExpFit</b></samp> - Applly exponential fit to signal<br>
+      <span class="title-desc"><i>true | false (default)</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Set this parameter to <b>True</b> to apply a double exponential fit to the input signal prior to the filtering. In the majority of cases, this is not necessary. However, in cases where the temperature of the illumination source of the imaging system is poorly managed, a signal decay may occur. Thus, the exponential fit can be applied to fix this issue.
+      </p>
+    </div>
+    <!-- JavaScript code to collapse sections -->
+    <script src="collapsible_behaviour.js"></script>
+  </body>
+</html>
