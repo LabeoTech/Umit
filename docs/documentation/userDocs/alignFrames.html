@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../css/master.css">
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+      .collapsible {
+      background-color: #eeeeee;
+      color: black;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      margin-bottom: 10px;
+      }
+      .active, .collapsible:hover {
+      background-color: #888;
+      }
+      .content {
+      padding: 0 18px;
+      display: none;
+      overflow: hidden;
+      background-color: #fff;
+      border: 1px solid black;
+      margin-bottom: 10px;
+      }
+    </style>
+    <title>alignFrames</title>
+  </head>
+  <body>
+    <h2>alignFrames - Image registration</h2>
+    <hr>
+    <p>
+      Performs automatic registration of imaging data to a reference frame.
+    </p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+      This function performs the automatic alignment of an image dataset to an <i>Imaging Reference frame</i>. The creation of the reference frame is performed by the <samp>ROImanager</samp> app and is described <a href="./ROImanager.html">here</a>. The function uses one imaging data (stored in a <samp>.dat</samp> file) to align with the <i>reference frame</i> and applies the geometric transformation to the input file.
+    </p>
+    <h3>Input</h3>
+    <hr>
+    <p>
+      This function accepts only images (with dimensions Y,X) or image time series (with dimensions Y,X,T) as input.
+    </p>
+    <h3 id="the-algorithm"> The algorithm</h3>
+    <hr>
+    <p>
+
+    </p>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <b>More details</b>
+    </button>
+    <div class="content">
+      <p>
+        CONTENT
+      </p>
+    </div>
+    <h3>Output</h3>
+    <hr>
+    <p>
+      The output of this function is the input data aligned to the <i>reference frame</i>. Additionally, a figure is created for visual inspection and qualitative validation of the automatic image registration algorithm.
+    </p>
+    <h4>The validation figure</h4>
+    <p>
+      CONTENT
+    </p>
+    <h3 id="parameters">Parameters</h3>
+    <hr>
+    <p>The parameter of this function are the following:</p>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>var</b></samp> - CONTENT <br>
+      <span class="title-desc"><i>val(default) | val</i></span>
+    </button>
+    <div class="content">
+      <p>
+        CONTENT
+      </p>
+    </div>
+
+    <!-- JavaScript code to collapse sections -->
+    <script src="collapsible_behaviour.js"></script>
+  </body>
+</html>

@@ -89,15 +89,16 @@ switch opts.UseFile
     otherwise
         % Load the filename in "opts.UseFile"
         % Disabled option to type file name. (BrunoO, 09/06/2022).
-%         try
-%             [targetDat, targetMetaData] = mapDatFile(fullfile(object.SaveFolder, opts.UseFile));
-%             targetFr = targetDat.Data.data(:,:,1);
-%         catch ME
-%             causeException = MException('MATLAB:UMIToolbox:alignFrame:FileNotFound',...
-%                 ['Cannot find "' opts.UseFile '" in object''s SaveFolder']);
-%             addCause(ME, causeException);
-%             rethrow(ME)
-%         end
+        %         try
+        %             [targetDat, targetMetaData] = mapDatFile(fullfile(object.SaveFolder, opts.UseFile));
+        %             targetFr = targetDat.Data.data(:,:,1);
+        %         catch ME
+        %             causeException = MException('MATLAB:UMIToolbox:alignFrame:FileNotFound',...
+        %                 ['Cannot find "' opts.UseFile '" in object''s SaveFolder']);
+        %             addCause(ME, causeException);
+        %             rethrow(ME)
+        %         end
+        error('Invalid target file name');
 end
 targetMetaData.dim_names;
 
@@ -144,8 +145,8 @@ optimizer.MaximumIterations = MaxIter;
 % Iterate over optimization parameters to obtain highest mutual
 % information:
 disp('Optimizing image registration parameters...')
-for i = 1:4 
-    disp(['Iteration ' num2str(i) '/4']);        
+for i = 1:4
+    disp(['Iteration ' num2str(i) '/4']);
     optimizer.GrowthFactor = GF(i);
     optimizer.Epsilon = Eps(i);
     optimizer.InitialRadius = IR(i);
@@ -162,7 +163,7 @@ for i = 1:4
     if tmpMI<=MI
         idx = i-1;
         disp('Optimization stopped here!');
-        break        
+        break
     else
         MI = tmpMI;
         idx = i;
@@ -230,15 +231,15 @@ end
 % Figure callbacks:
 
 function moveDot(src,~)
-% 
+%
 % disp('moving...')
 for i = 1:length(src.Children)
     coords = get(src.Children(i), 'CurrentPoint');
     coords = round(coords(1,1:2));
     b_in = getBounds(coords, src.Children(i));
     if b_in
-        break        
-    end    
+        break
+    end
 end
 if ~b_in
     return
