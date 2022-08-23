@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../css/master.css">
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+      .collapsible {
+      background-color: #eeeeee;
+      color: black;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      margin-bottom: 10px;
+      }
+      .active, .collapsible:hover {
+      background-color: #888;
+      }
+      .content {
+      padding: 0 18px;
+      display: none;
+      overflow: hidden;
+      background-color: #fff;
+      border: 1px solid black;
+      margin-bottom: 10px;
+      }
+    </style>
+    <title>calc. amplitude</title>
+  </head>
+  <body>
+    <h2>calculate_response_amplitude</h2>
+    <hr>
+    <p>
+      Creates response amplitude maps from event-triggered data.
+    </p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+      This function calculates response amplitude maps from image time series split by events. The response amplitude is calculated by the subtraction of a baseline from a post-event (trigger) measure. The available measures are:
+    </p>
+    <ul>
+      <li>mean</li>
+      <li>median</li>
+      <li>min</li>
+      <li>max</li>
+    </ul>
+    <h3>Input</h3>
+    <hr>
+    <p>
+      This function accepts only image time series split by events as input with dimensions E, Y, X and T.
+    </p>
+    <h3>Output</h3>
+    <hr>
+    <p>
+      The output of this function is a numerical matrix with dimensions E,Y,X containing the response amplitude maps for each event.
+    </p>
+    <h3 id="parameters">Parameters</h3>
+    <hr>
+    <p>The parameter of this function are the following:</p>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>preEvent_value</b></samp> - Baseline measure <br>
+      <span class="title-desc"><i> mean (default) | median | min | max </i></span>
+    </button>
+    <div class="content">
+      <p>
+        Measure to calculate the "baseline". Here the baseline accounts for all the frames before the trigger (i.e. event).
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>postEvent_value</b></samp> - Response measure <br>
+      <span class="title-desc"><i> mean (default) | median | min | max </i></span>
+    </button>
+    <div class="content">
+      <p>
+        Measure to calculate the "response". Here the response accounts for the frames between the trigger (i.e. event) and the end of the trial or for a specific amout of time (set by the parameter <samp>postEvnt_timeWindow_sec</samp>).
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>postEvnt_timeWindow_sec</b></samp> - Time window of response measure <br>
+      <span class="title-desc"><i> all (default) | positive number</i></span>
+    </button>
+    <div class="content">
+      <p>
+        If set to <samp>'all'</samp>, the function will use all the frames after the trigger to calculate the response measure. Otherwise, type a time (in seconds) to limit the time window in which the response amplitude will be calculated. In this case, the function will limit the calculation to <b>N seconds</b> post-trigger. This can be useful in cases where known artifacts may occur towards the end of the trial, for example.
+      </p>
+      <div class="infonote">
+        <p><strong>Note</strong><br>
+          If a time window value is larger than the post-event time, the function will set this parameter to <samp>'all'</samp>.
+        </p>
+      </div>
+    </div>
+    <!-- JavaScript code to collapse sections -->
+    <script src="collapsible_behaviour.js"></script>
+  </body>
+</html>

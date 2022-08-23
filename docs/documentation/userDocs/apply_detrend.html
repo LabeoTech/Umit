@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../css/master.css">
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+      .collapsible {
+      background-color: #eeeeee;
+      color: black;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      margin-bottom: 10px;
+      }
+      .active, .collapsible:hover {
+      background-color: #888;
+      }
+      .content {
+      padding: 0 18px;
+      display: none;
+      overflow: hidden;
+      background-color: #fff;
+      border: 1px solid black;
+      margin-bottom: 10px;
+      }
+    </style>
+    <title>apply detrending</title>
+  </head>
+  <body>
+    <h2>apply_detrend - Linear detrending</h2>
+    <hr>
+    <p>
+      Removes linear trends of image time series.
+    </p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+      This function removes linear tends from the time domain of image time series (dimensions Y,X,T) or image time series split by events (dimensions E,Y,X,T) data. In the first case, the linear trend will be calculated from the whole recording whereas in the second, the trends will be calculated for each trial.
+    </p>
+    <h3>Input</h3>
+    <hr>
+    <p>
+      This function accepts only image time series (with dimensions Y,X,T) or image time series split by events (with dimensions E,Y,X,T).
+    </p>
+    <h3>The algorithm</h3>
+    <hr>
+    <p>
+      The first and last few frames are used to calculate a linear trend of the temporal profile of each pixel. Then, the trend is subtracted from the raw data. If the raw data was not previously normalized, the function will normalize the data (<i>S<sub>i</sub></i>) as:
+    </p>
+    <p style="text-align: center;">
+      <img src="../assets/img/apply_detrend_eq1.png" alt="apply_detrend_eq1" height="35">
+    </p>
+    <p>Here is an example showing the the temporal profile of a pixel (in blue) and the linear trend of the signal (in orange):</p>
+    <img src="../assets/img/apply_detrend_fig1.png" alt="apply_detrend_fig1" width="660">
+    <p>
+      And here is the comparison between the original data (in blue) and the detrended signal (in orange):
+    </p>
+    <img src="../assets/img/apply_detrend_fig2.png" alt="apply_detrend_fig2" width="660">
+    <h3>Output</h3>
+    <hr>
+    <p>
+      The output of this function is the detrended input data.
+    </p>
+    <!-- JavaScript code to collapse sections -->
+    <script src="collapsible_behaviour.js"></script>
+  </body>
+</html>

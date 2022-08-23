@@ -34,18 +34,17 @@ disp('Detrending...');
 delta_y = median(data(:,end-7:end),2, 'omitnan') - median(data(:,1:7),2,'omitnan');
 delta_x =(size(data,2)- 7);
 M = delta_y./delta_x; clear delta_*
-
 trend = bsxfun(@times,M,linspace(-2,size(data,2)-3,...
     size(data,2))) + median(data(:,1:7),2,'omitnan');
 % Automatic selection of normalization/subtraction-only depending on the
 % average value of the data:
 if mean(data,'all','omitnan') > 1 
     % Normalize "raw" data
-    disp('Normalizing data...');
-    outData = bsxfun(@rdivide,bsxfun(@minus,data,trend),trend);
+    disp('Normalizing data...');    
+    outData = (data - trend)./trend;
 else
-    % Just remove trend if data was already normalized
-    outData = bsxfun(@minus,data,trend);
+    % Just remove trend if data was already normalized    
+    outData = data - trend;
 end
 outData = reshape(outData, orig_sz);
 disp('Finished detrend!');
