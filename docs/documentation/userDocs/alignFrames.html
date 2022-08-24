@@ -42,7 +42,7 @@
     <h3 id="description">Description</h3>
     <hr>
     <p>
-      This function performs the automatic alignment of an image dataset to an <i>Imaging Reference frame</i>. The creation of the reference frame is performed by the <samp>ROImanager</samp> app and is described <a href="./ROImanager.html">here</a>. The function uses one imaging data (stored in a <samp>.dat</samp> file) to align with the <i>reference frame</i> and applies the geometric transformation to the input file.
+      This function performs the automatic alignment of an imaging recording to an <i>Imaging Reference frame</i>. The creation of the reference frame is performed by the <samp>ROImanager</samp> app and is described <a href="./ROImanager.html">here</a>. The function uses an imaging recording (stored in a <samp>.dat</samp> file) to align with the <i>reference frame</i> and applies the geometric transformation to the input file.
     </p>
     <h3>Input</h3>
     <hr>
@@ -52,7 +52,10 @@
     <h3 id="the-algorithm"> The algorithm</h3>
     <hr>
     <p>
-
+      This function uses a <i>reference frame</i> stored in a <samp>.mat</samp> file, a <i>target <samp>.dat</samp> file</i> and the input data. The alignment algorithm works in two main steps: in the first step, the function gets the first frame of the <i>target file</i> and aligns it with the <i>reference frame</i>. Secondly, it uses the geometric transformations created to align the images in the first step and applies it to all the frames of the input data.
+    </p>
+    <p>
+      The alignment procedure provides a quantitative metrics as well as a figure to visually assess the quality of the alignment. The quantitative metrics provided is the <b>Mutual Information</b> (MI). In brief, low MI values correspond to poor alignment while high values indicate a good alignment. The section below describes the validation figure.
     </p>
     <button title="click to expand" type="button" class="collapsible">
       <span class="iconplus"></span>
@@ -60,7 +63,19 @@
     </button>
     <div class="content">
       <p>
-        CONTENT
+        First, the <i>reference</i> and <i>target</i> frames are spatially filtered to remove low frequency inhomogeneities such as illumination inconsistencies across the image. Then the filtered images are used to apply the registration.
+      </p>
+      <p>
+        This function applies two registration methods: first, it uses phase correlation to align the images (for more information click <a href="https://www.mathworks.com/help/images/ref/imregcorr.html?searchHighlight=imregcorr&s_tid=srchtitle_imregcorr_1">here</a>). If this first alignment yields a MI value lower than the non-registered image, the function will ignore this alignment and go direct to the next step. Otherwise, it will use this first approximation as input to the next step.
+      </p>
+      <p>
+        Then, we use an intensity-based registration algorithm (for more information click <a href="https://www.mathworks.com/help/images/ref/imregister.html?s_tid=doc_ta">here</a>) to ìmprove the first alignment (by phase correlation). The registration is run up to four times with different parameters in order to optimize the aligment. The parameters yielding the largest MI value are used in the final alignment.
+      </p>
+      <p>
+        Finally, the geometric transformations used in the previous alignment are applied to all frames of the input data.
+      </p>
+      <p>
+        The algorithm for calculating the <b>Mutual Information </b> parameter was based on <a href="https://matthew-brett.github.io/teaching/mutual_information.html">this one</a>.
       </p>
     </div>
     <h3>Output</h3>
@@ -70,22 +85,53 @@
     </p>
     <h4>The validation figure</h4>
     <p>
-      CONTENT
+      One figure will be created at the end of the function's execution. The figure contains the <i>reference frame</i> (bottom left), the aligned <i>target image</i> (bottom right) and a pseudo-colored ovelay of both images containing the MI value (top). The figure is interactive to facilitate the assessment of the registration. For instance, you can hover the cursor over the images to verify if landmarks (such as blood vessels and skull sutures) are properly registered with the reference frame.
+    </p>
+    <p style="text-align: center;">
+      <img src="../assets/img/align_tt_alignFrame_output_fig.png" alt="align_tt_alignFrame_output_fig" width="660">
     </p>
     <h3 id="parameters">Parameters</h3>
     <hr>
     <p>The parameter of this function are the following:</p>
     <button title="click to expand" type="button" class="collapsible">
       <span class="iconplus"></span>
-      <samp><b>var</b></samp> - CONTENT <br>
-      <span class="title-desc"><i>val(default) | val</i></span>
+      <samp><b>UseFile</b></samp> - Target file name<br>
+      <span class="title-desc"><i>'auto' (default) | char</i></span>
     </button>
     <div class="content">
       <p>
-        CONTENT
+        The <i>target file</i> consists of a <samp>.dat</samp> file containing imaging data with dimensions Y,X,T or Y,X.
       </p>
+      <p>
+        If set to <b>"auto"</b>, the function will use a file with the same name as the <samp>.dat</samp> file used to create the <i>Imaging reference frame</i>. This information is stored in the variable <samp>datFile</samp> inside the <i>Imaging reference file</i>. Alternatively, type the name of the file to be used to register with the <i>reference frame</i>.
+      </p>
+      <div class="infonote">
+        <p><strong>Note</strong><br>
+          The <samp>datFile</samp> will contain the name of the file used to create the <i>reference frame</i> <b>only</b> if it was used as input to the <samp>ROImanager</samp> app. If not, this variable will be empty and the <samp>alignFrames</samp> function will raise an error. In this case, type the target file name instead.
+        </p>
+      </div>
+      <div class="infonote">
+        <p><strong>Note</strong><br>
+          This function assumes that the <i>target file</i> is located in the same folder as the input file. If no files are found, the function will raise an error.
+        </p>
+      </div>
     </div>
 
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>RefFile</b></samp> - Imaging Reference file name <br>
+      <span class="title-desc"><i>'ImagingReferenceFrame.mat' (default) | char</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Name of the <i>Imaging reference file</i> containing the reference frame. The <i>reference frame</i> must be an image (with dimensions Y,X) with the same size as the <i>target frame</i> and the frames of the input data. The <i>reference frame</i> is stored in the variable <samp>reference_frame</samp>. The <i>Imaging reference frame file</i> is created by the <a href="./ROImanager.html">ROImanager</a> app.
+      </p>
+      <div class="infonote">
+        <p><strong>Note</strong><br>
+          This function assumes that the <i>Imaging Reference file</i> is located in the <b>Subject</b>'s folder of the object containing the input data. If the file is not found, the function will raise an error.
+        </p>
+      </div>
+    </div>
     <!-- JavaScript code to collapse sections -->
     <script src="collapsible_behaviour.js"></script>
   </body>

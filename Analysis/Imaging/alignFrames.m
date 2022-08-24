@@ -14,7 +14,7 @@ function [outData, metaData] = alignFrames(data, metaData, object, varargin)
 % Defaults:
 default_Output = 'mov_aligned.dat'; %#ok This line is here just for Pipeline management.
 default_opts = struct('UseFile', 'auto', 'RefFile','ImagingReferenceFrame.mat');
-opts_values = struct('UseFile',{{'auto','self'}}, 'RefFile',{{'ImagingReferenceFrame.mat'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
+opts_values = struct('UseFile',{{'auto'}}, 'RefFile',{{'ImagingReferenceFrame.mat'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 %%% Arguments parsing and validation %%%
 p = inputParser;
 addRequired(p,'data',@(x) isnumeric(x) & ismember(ndims(x),[2 3])); % Validate if the input is a 3-D numerical matrix:
@@ -35,8 +35,8 @@ errMsg = 'Data must be have dimensions X,Y or X,Y,T';
 assert(all(ismember(metaData.dim_names, {'X','Y','T'})),errID,errMsg);
 % Further validation of optional parameter "opts.UseFile":
 errID = 'MATLAB:UMIToolbox:InvalidInput';
-errMsg = 'Invalid entry for "UseFile" field. Input must be "self", "auto" or a name of a .dat file';
-validFcn = @(x) ismember(x, {'self','auto'}) || endsWith(x, '.dat');
+errMsg = 'Invalid entry for "UseFile" field. Input must be "auto" or a name of a .dat file';
+validFcn = @(x) ischar(x) || strcmpi(x, 'auto');
 assert(validFcn(opts.UseFile), errID, errMsg);
 %%%%
 
@@ -51,56 +51,60 @@ try
         end
     end
     refFile = fullfile(ParentObj.SaveFolder, opts.RefFile);
+    if ~endsWith(refFile, '.mat')
+        refFile = [refFile, '.mat'];
+    end        
     if ~isfile(refFile)
         error('umIToolbox:alignFrames:FileNotFound', 'Imaging reference file not found in Subject folder!');
     end
     ref_frame_info = matfile(refFile);
 catch ME
-    causeException = MException('MATLAB:UMIToolbox:alignFrame:FileNotFound',...
+    causeException = MException('umIToolbox:alignFrame:FileNotFound',...
         'Imaging Reference Frame file not found.');
     addCause(ME, causeException);
     rethrow(ME)
 end
 % Load frame from file to compare with reference image:
-switch opts.UseFile
-    case 'self'
-        % Use first frame from "data"
-        targetFr = data(:,:,1);
-        targetMetaData = metaData;
+switch lower(opts.UseFile)    
     case 'auto'
         % Look for a file with the same name as the one used to create the
         % "ImagingReferenceFrame.mat" file:
         if isempty(ref_frame_info.datFile)
-            error('MATLAB:UMIToolbox:alignFrames:MissingInput',...
+            error('umIToolbox:alignFrames:MissingInput',...
                 ['Failed to locate reference file.' ...
                 'The path to dat file in ImagingReferenceFrame.mat file is empty.' ...
                 'Try again without the "auto" option.']);
         end
         [~,filename,ext] = fileparts(ref_frame_info.datFile);
         try
-            [targetDat, targetMetaData]= mapDatFile(fullfile(object.SaveFolder, [filename,ext]));
+            targetDat = mapDatFile(fullfile(object.SaveFolder, [filename,ext]));
             targetFr = targetDat.Data.data(:,:,1);
         catch ME
-            causeException = MException('MATLAB:UMIToolbox:alignFrames:FileNotFound',...
+            causeException = MException('umIToolbox:alignFrames:FileNotFound',...
                 ['Cannot find "' filename '" in object''s SaveFolder']);
             addCause(ME, causeException);
             rethrow(ME)
         end
     otherwise
-        % Load the filename in "opts.UseFile"
-        % Disabled option to type file name. (BrunoO, 09/06/2022).
-        %         try
-        %             [targetDat, targetMetaData] = mapDatFile(fullfile(object.SaveFolder, opts.UseFile));
-        %             targetFr = targetDat.Data.data(:,:,1);
-        %         catch ME
-        %             causeException = MException('MATLAB:UMIToolbox:alignFrame:FileNotFound',...
-        %                 ['Cannot find "' opts.UseFile '" in object''s SaveFolder']);
-        %             addCause(ME, causeException);
-        %             rethrow(ME)
-        %         end
+        if ~endsWith(opts.UseFile, '.dat')
+            opts.UseFile = [opts.UseFile , '.dat'];
+        end
+        % Load the filename in "opts.UseFile"        
+        try
+            targetDat = mapDatFile(fullfile(object.SaveFolder, opts.UseFile));
+            if ndims(targetDat) == 3
+                targetFr = targetDat.Data.data(:,:,1);
+            else
+                targetFr = targetDat.Data.data;
+            end
+        catch ME
+            causeException = MException('umIToolbox:alignFrame:FileNotFound',...
+                ['Cannot find "' opts.UseFile '" in object''s SaveFolder']);
+            addCause(ME, causeException);
+            rethrow(ME)
+        end
         error('Invalid target file name');
 end
-targetMetaData.dim_names;
 
 % Load Reference Frame;
 refFr = ref_frame_info.reference_frame;
