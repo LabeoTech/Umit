@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../css/master.css">
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+      .collapsible {
+      background-color: #eeeeee;
+      color: black;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      margin-bottom: 10px;
+      }
+      .active, .collapsible:hover {
+      background-color: #888;
+      }
+      .content {
+      padding: 0 18px;
+      display: none;
+      overflow: hidden;
+      background-color: #fff;
+      border: 1px solid black;
+      margin-bottom: 10px;
+      }
+    </style>
+    <title>trim movie</title>
+  </head>
+  <body>
+    <h2>trim_movie - Crop movie</h2>
+    <hr>
+    <p>
+      Crops the beginning and/or the end of an image time series data.
+    </p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+      Use this function to remove frames (trim) from the start and/or the end of an image time series with dimensions (Y,X,T). Set the time (in seconds) to remove from the start/end of the data. The number of frames corresponding to the time will be removed.
+    </p>
+    <h3>Input</h3>
+    <hr>
+    <p>
+      This function accepts only image time series (with dimensions Y,X,T) as input.
+    </p>
+    <h3>Output</h3>
+    <hr>
+    <p>
+      Trimmed data with dimensions Y,X,T.
+    </p>
+
+    <h3 id="parameters">Parameters</h3>
+    <hr>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>crop_start_sec</b></samp> - Seconds from start <br>
+      <span class="title-desc"><i> 0 (default) | positive number</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Number of seconds to crop from the start of the image time series. If set to <b>zero</b>, no cropping is performed.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>crop_end_sec</b></samp> - Seconds at end <br>
+      <span class="title-desc"><i> 0 (default) | positive number</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Number of seconds to crop at the end of the image time series. If set to <b>zero</b>, no cropping is performed.
+      </p>
+    </div>
+    <!-- JavaScript code to collapse sections -->
+    <script src="collapsible_behaviour.js"></script>
+  </body>
+</html>

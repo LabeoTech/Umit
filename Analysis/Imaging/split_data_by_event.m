@@ -13,7 +13,7 @@ function [outData, metaData] = split_data_by_event(data, metaData, SaveFolder, v
 % Defaults:
 default_Output = 'data_splitByEvent.dat';  %#ok. This line is here just for Pipeline management.
 default_opts = struct('preEventTime_sec','auto', 'postEventTime_sec','auto', 'PadWith', 'mean');
-opts_values = struct('preEventTime_sec', {{'auto',Inf}}, 'postEventTime_sec', {{'auto',Inf}}, 'PadWith',{{'mean','NaN',Inf}});% This is here only as a reference for PIPELINEMANAGER.m. 
+opts_values = struct('preEventTime_sec', {{'auto',Inf}}, 'postEventTime_sec', {{'auto',Inf}}, 'PadWith',{{'mean','NaN',Inf}});%#ok. This is here only as a reference for PIPELINEMANAGER.m. 
 
 %%% Arguments parsing and validation %%%
 p = inputParser;

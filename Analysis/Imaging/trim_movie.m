@@ -1,5 +1,5 @@
 function [outData, metaData] = trim_movie(data, metaData, varargin)
-% TRIM_MOVIE crops a Image time series by N Frames at the beginning and/OR end of the movie.
+% TRIM_MOVIE crops a Image time series by N seconds at the beginning and/OR end of the movie.
 
 % Inputs:
 %   data: numerical matrix containing image time series (dimensions {"Y", "X", "T"}).
@@ -31,24 +31,29 @@ clear p
 %%%%
 dim_names = metaData.dim_names;
 % Input File validation:
-errID = 'Umitoolbox:trim_movie:InvalidDataType';
+errID = 'umIToolbox:trim_movie:InvalidDataType';
 errMsg = 'Invalid Input. Input must be a 3D matrix with third dimension  = "T"';
-assert(numel(dim_names) == 3 && strcmp(dim_names{3}, 'T'), errID, errMsg);
+assert(all(ismember(dim_names, {'Y', 'X', 'T'})), errID, errMsg);
 errMsg = 'must be a positive number';
 valid_Opts = @(x) x>=0;
-assert(valid_Opts(opts.crop_start_sec), errID, ['Start crop time ' errMsg]);
-assert(valid_Opts(opts.crop_end_sec), errID, ['End crop time ' errMsg]);
-
+assert(valid_Opts(opts.crop_start_sec), errID, ['Start crop time: ' errMsg]);
+assert(valid_Opts(opts.crop_end_sec), errID, ['End crop time: ' errMsg]);
 
 % Identify "T" dimension and permute data so Time is the first dimension:
 idxT = find(strcmp('T', dim_names));
 % Calculate cropping frames:
 fr_start = round(metaData.Freq*opts.crop_start_sec);
-if fr_start == 0
+if fr_start <= 0
     fr_start = 1;
 end
 fr_stop = round(size(outData,idxT) - metaData.Freq*opts.crop_end_sec);
-
+if fr_stop > size(outData,idxT)
+    fr_stop = size(outData,idxT);
+end
+% Validate if cropped movie has a minimal length of 1 frame:
+errMsg = ['Failed to crop from frame ' num2str(fr_start) ' to frame ' num2str(fr_stop)];
+assert(~isempty(fr_start:fr_stop), errID, errMsg);
+%
 orig_dim_indx = 1:numel(dim_names);
 new_dim_indx = [idxT setdiff(orig_dim_indx, idxT)];
 outData = permute(outData, new_dim_indx);
@@ -56,9 +61,7 @@ outData = permute(outData, new_dim_indx);
 data_sz = size(outData);
 % Reshape data:
 outData = reshape(outData,data_sz(1), []);
-% Validate if cropped movie has a minimal length of 1 frame:
-errMsg = ['Failed to crop from frame ' num2str(fr_start) ' to frame ' num2str(fr_stop)];
-assert(~isempty(fr_start:fr_stop), errID, errMsg);
+
 % Crop Movie:
 disp('Cropping movie...')
 % Recover data dimensions:

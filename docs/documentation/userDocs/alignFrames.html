@@ -69,10 +69,10 @@
         This function applies two registration methods: first, it uses phase correlation to align the images (for more information click <a href="https://www.mathworks.com/help/images/ref/imregcorr.html?searchHighlight=imregcorr&s_tid=srchtitle_imregcorr_1">here</a>). If this first alignment yields a MI value lower than the non-registered image, the function will ignore this alignment and go direct to the next step. Otherwise, it will use this first approximation as input to the next step.
       </p>
       <p>
-        Then, we use an intensity-based registration algorithm (for more information click <a href="https://www.mathworks.com/help/images/ref/imregister.html?s_tid=doc_ta">here</a>) to ìmprove the first alignment (by phase correlation). The registration is run up to four times with different parameters in order to optimize the aligment. The parameters yielding the largest MI value are used in the final alignment.
+        Secondly, an intensity-based registration algorithm (for more information click <a href="https://www.mathworks.com/help/images/ref/imregister.html?s_tid=doc_ta">here</a>) is used to ìmprove the first alignment (by phase correlation). The registration is run up to four times with different parameters with increasing accuracy (for more information click <a href="https://www.mathworks.com/help/images/ref/registration.optimizer.oneplusoneevolutionary.html">here</a>) in order to optimize the aligment. The parameters yielding the largest MI value are used in the final alignment.
       </p>
       <p>
-        Finally, the geometric transformations used in the previous alignment are applied to all frames of the input data.
+        Finally, the geometric transformations used in the previous registration are applied to all frames of the input data.
       </p>
       <p>
         The algorithm for calculating the <b>Mutual Information </b> parameter was based on <a href="https://matthew-brett.github.io/teaching/mutual_information.html">this one</a>.
@@ -92,7 +92,7 @@
     </p>
     <h3 id="parameters">Parameters</h3>
     <hr>
-    <p>The parameter of this function are the following:</p>
+
     <button title="click to expand" type="button" class="collapsible">
       <span class="iconplus"></span>
       <samp><b>UseFile</b></samp> - Target file name<br>
