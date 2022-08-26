@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../css/master.css">
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+      .collapsible {
+      background-color: #eeeeee;
+      color: black;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      margin-bottom: 10px;
+      }
+      .active, .collapsible:hover {
+      background-color: #888;
+      }
+      .content {
+      padding: 0 18px;
+      display: none;
+      overflow: hidden;
+      background-color: #fff;
+      border: 1px solid black;
+      margin-bottom: 10px;
+      }
+    </style>
+    <title>getDataFromROI</title>
+  </head>
+  <body>
+    <h2>getDataFromROI</h2>
+    <hr>
+    <p>
+      Extracts data from ROIs.
+    </p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+      This function extracts and aggregates data from ROIs. The function uses the ROIs stored in a <samp>ROImasks_&lt;NAME&gt;.mat</samp> file to extract the data from any imageing dataset created in <b><i>umIT</i></b>. Additionally, this function applies an aggregation function (i.e., mean, max, min, median, mode, sum or standard deviation) to summarize the pixel values from an ROI.
+    </p>
+    <h3>Input</h3>
+    <hr>
+    <p>
+      This function accepts any imaging data containing the dimensions Y,X as input.
+    </p>
+    <h3>Output</h3>
+    <hr>
+    <p>
+      The output of this function is a <samp>.mat</samp> file containing the data separated by ROI. In this case, the ROIs are called observations.
+    </p>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <b>More details</b>
+    </button>
+    <div class="content">
+      <p>
+        CONTENT
+      </p>
+    </div>
+
+    <h3 id="parameters">Parameters</h3>
+    <hr>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>var</b></samp> - DESC<br>
+      <span class="title-desc"><i> val1 (default) | val2 </i></span>
+    </button>
+    <div class="content">
+      <p>
+        CONTENT
+      </p>
+    </div>
+    <!-- JavaScript code to collapse sections -->
+    <script src="collapsible_behaviour.js"></script>
+  </body>
+</html>
