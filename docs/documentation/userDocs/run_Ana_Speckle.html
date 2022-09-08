@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../css/master.css">
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+      .collapsible {
+      background-color: #eeeeee;
+      color: black;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      margin-bottom: 10px;
+      }
+      .active, .collapsible:hover {
+      background-color: #888;
+      }
+      .content {
+      padding: 0 18px;
+      display: none;
+      overflow: hidden;
+      background-color: #fff;
+      border: 1px solid black;
+      margin-bottom: 10px;
+      }
+    </style>
+    <title>run_Ana_Speckle</title>
+  </head>
+  <body>
+    <h2>run_Ana_Speckle</h2>
+    <hr>
+    <p>
+      Calculates the blood flow from the Laser Contrast Speckle Imaging (LSCI) data.
+    </p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+      This function uses the raw LSCI data stored in the file <samp>speckle.dat</samp> and calculates flow of imaged blood vessels (in arbitrary units). The algorithm used in this function is described in <a href="#references">[1]</a>.
+    </p>
+    <h3>Input</h3>
+    <hr>
+    <p>
+      A file named <samp>speckle.dat</samp> containing image time series (with dimensions Y,X,T) with raw LSCI data.
+    </p>
+    <h3>Output</h3>
+    <hr>
+    <p>
+      Image time series (with dimensions Y,X,T) with the blood flow values in arbitrary units.
+    </p>
+    <h3 id="parameters">Parameters</h3>
+    <hr>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>bNormalize</b></samp> - Normalize output<br>
+      <span class="title-desc"><i> true (default) | false </i></span>
+    </button>
+    <div class="content">
+      <p>
+        If <b>true</b>, the function normalizes the blood flow values of each pixel by its temporal average.
+      </p>
+    </div>
+    <h3 id="references">References</h3>
+    <hr>
+    <ol>
+      <li>Boas, David A., and Andrew K. Dunn. ‘Laser Speckle Contrast Imaging in Biomedical Optics’. Journal of Biomedical Optics 15, no. 1 (February 2010): 011109. <a href="https://doi.org/10.1117/1.3285504">https://doi.org/10.1117/1.3285504</a>.
+      </li>
+    </ol>
+    <!-- JavaScript code to collapse sections -->
+    <script src="collapsible_behaviour.js"></script>
+  </body>
+</html>
