@@ -16,7 +16,7 @@
         <li><i>Event-triggered image time series</i>: 4D arrays with dimensions Y,X,T,E(vent).</li>
         <li><i>Correlation Maps</i>: 3D arrays with dimensions Y,X,S(eed).</li>
       </ul>
-      Here, we will explore some of the data created in the previous tutorials on how to <i>Preprocess imaging data</i>. This tutorial focuses on the basic use of the <i>DataViewer</i> app to explore individual imaging dataset. To learn about all the functionalities of the app, read it's full documentation <a href="#">here</a>.
+      Here, we will explore some of the data created in the previous tutorials on how to <i>Preprocess imaging data</i>. This tutorial focuses on the basic use of the <i>DataViewer</i> app to explore individual imaging dataset. To learn about all the functionalities of the app, read it's full documentation <a href="../userDocs/DataViewer.html">here</a>.
     </p>
     <h3>Sections</h3>
     <hr>
@@ -68,7 +68,7 @@
     <h3 id="viz-image-time-series">Basic data exploration</h3>
     <hr>
     <p>
-      In this tutorial, we will explore an intermediate step from the preproceesing of a resting state experiment. The data stored in the file <samp>HP_tempFilt.dat</samp> consists of the fluorescence signal that was corrected for the hemodynamic artifacts, followed by the removal of the global signal variance and temporally filtered and normalized (check the tutorial on <a href="./tt_creating_connectivity_maps.html">preprocessing data for resting state</a> for details).
+      In this tutorial, we will explore an intermediate step from the preproceesing of a resting state experiment. The data stored in the file <samp>HP_tempFilt.dat</samp> consists of the fluorescence signal that was corrected for the hemodynamic artifacts, followed by the removal of the global signal variance and temporally filtered and normalized (check the tutorial on <a href="tt_creating_connectivity_maps.html">preprocessing data for resting state</a> for details).
     </p>
     <p>
       Below is a screenshot of the app with the data loaded. It consists of three windows: the main window (1), where all the options and controls are located, the image window (2) where the current frame of the data is shown, and the temporal signal window (3) where the temporal profile of the selected pixel is displayed.
@@ -106,7 +106,7 @@
     <h3 id="viz-spcm">Visualize functional maps</h3>
     <hr>
     <p>
-      The functional connectivity maps created in <a href="./tt_creating_connectivity_maps.html">this tutorial</a> were stored in the file <samp>SCPMap.dat</samp>. This data consists of a 3D array containing correlation values where each frame represents the correlation map for a given seed pixel.
+      The functional connectivity maps created in <a href="tt_creating_connectivity_maps.html">this tutorial</a> were stored in the file <samp>SCPMap.dat</samp>. This data consists of a 3D array containing correlation values where each frame represents the correlation map for a given seed pixel.
     </p>
     <p>
       When visualizing a correlation map, the behaviour of the image's crosshair is different from the other imaging data types. Here, when clicking on a pixel, the correlation map is updated to show the map from the selected pixel as the seed:

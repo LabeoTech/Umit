@@ -100,7 +100,7 @@
     <img src="../assets/img/tt_extracting_data_from_rois_mainGUI_ppln_result.png" alt="tt_extracting_data_from_rois_mainGUI_ppln_result" width="880">
     <div class="infonote">
       <p><strong>Note</strong><br>
-        Once the data from ROIs were extracted from all recordings of your project, you can now use the <samp>ROI_dataSF.mat</samp> files to visualize the grouped data. Check the next tutorials on how to <a href="#">create groups</a> and <a href="#">visualize grouped data</a> to see how the data created in this tutorial is used!
+        Once the data from ROIs were extracted from all recordings of your project, you can now use the <samp>ROI_dataSF.mat</samp> files to visualize the grouped data. Check the next tutorials on how to <a href="tt_creating_groups.html">create groups</a> and <a href="tt_viz_group_data.html">visualize grouped data</a> to see how the data created in this tutorial is used!
       </p>
     </div>
     <br>
@@ -138,7 +138,7 @@
         This is as far as it goes when using the standalone version of <i>DataViewer</i>. If you are running an experiment with several animals or if it is a longitudinal study, we suggest to use the full version of the toolbox (i.e. by creating a project file and using the main GUI, <samp>umIToolbox</samp>) in order to be able to use the other analysis features available.
       </p>
       <p>
-        However, if you wish to analyse the extracted data outside the toolbox, please read the documentation of the function <a href="#"><i>getDataFromROI</i></a> for details on how the output <samp>.mat</samp> file is organized.
+        However, if you wish to analyse the extracted data outside the toolbox, please read the documentation of the function <a href="../userDocs/getDataFromROI.html"><i>getDataFromROI</i></a> for details on how the output <samp>.mat</samp> file is organized.
       </p>
     </div>
     <h3 id="resting-state-dataset">Resting state dataset</h3>
@@ -148,7 +148,7 @@
     </p>
     <img src="../assets/img/tt_extracting_data_from_rois_RS_preprocess_workflow.png" alt="tt_extracting_data_from_rois_RS_preprocess_workflow" width="660">
     <p>
-      Here, the normalized image time series will be used to extract and aggregate the ROI data as a correlation matrix. The function used to generate the matrices is named <i>genCorrelationMatrix</i>. It will extract and aggregate the ROI pixel values and calculate the Pearson's correlation between the ROIs creating a N x N matrix from the N ROIs. For more details on the function, please read its <a href="#">documentation</a>.
+      Here, the normalized image time series will be used to extract and aggregate the ROI data as a correlation matrix. The function used to generate the matrices is named <i>genCorrelationMatrix</i>. It will extract and aggregate the ROI pixel values and calculate the Pearson's correlation between the ROIs creating a N x N matrix from the N ROIs. For more details on the function, please read its <a href="../userDocs/genCorrelationMatrix.html">documentation</a>.
     </p>
     <h4 id="corr-mat-main-gui">Create correlation matrix from the main GUI</h4>
     <p>
@@ -159,7 +159,7 @@
     </p>
     <img src="../assets/img/tt_extracting_data_from_rois_genCorrMat_opts_params.png" alt="tt_extracting_data_from_rois_genCorrMat_opts_params" width="330">
     <p>
-      Here, we will use the default parameters. This setting will create a matrix based on the correlation between the ROIs' centroids. For more info on the different settings for this function, please read its <a href="#">documentation</a>.
+      Here, we will use the default parameters. This setting will create a matrix based on the correlation between the ROIs' centroids. For more info on the different settings for this function, please read its <a href="../userDocs/genCorrelationMatrix.html">documentation</a>.
     </p>
     <p>
       3. Next, click on <i>Save config</i>. button to apply the pipeline and select the <i>FluorescenceImaging</i> object (see steps 7-8 from the <a href="#evnt-trig-data-main-gui">previous section</a>).
@@ -193,7 +193,7 @@
       4. Select the folder and filename to save the ROI data.
     </p>
     <p>
-      5. Finally, set the parameters for the <i>genCorrelationMatrix</i> function (see full documentation <a href="#">here</a>) and click <i>Save</i>. Here, we chose the centroid vs centroid algorithm to generate the correlation matrix:
+      5. Finally, set the parameters for the <i>genCorrelationMatrix</i> function (see full documentation <a href="../userDocs/genCorrelationMatrix.html">here</a>) and click <i>Save</i>. Here, we chose the centroid vs centroid algorithm to generate the correlation matrix:
     </p>
     <img src="..\assets\img\tt_extracting_data_from_rois_dataviewer_genCorrMat_opts_gui.png" alt="tt_extracting_data_from_rois_dataviewer_genCorrMat_opts_gui" width="330">
     <p>

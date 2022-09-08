@@ -425,7 +425,7 @@
 		<h3 id="draw-a-mask">Draw a mask</h3>
 		<hr>
 		<p>
-			Applies a logical mask to the image. The logical mask is used by the <samp>ROImanager</samp> app to exclude areas of the image during ROI creation (for details, see the <a href="#rules-for-roi-fitting"> rules for ROI fitting</a>). In addition the logical mask is used by some of <b><i>umIT</i></b>'s <a href="../user_doc_index.html">analysis functions</a> as a variable in a <i>Imaging reference frame</i> file (for details see <a href="#create-an-imaging-reference-frame">this section</a>).
+			Applies a logical mask to the image. The logical mask is used by the <samp>ROImanager</samp> app to exclude areas of the image during ROI creation (for details, see the <a href="#rules-for-roi-fitting"> rules for ROI fitting</a>). In addition the logical mask is used by some of <b><i>umIT</i></b>'s <a href="../user_doc_index.html">analysis functions</a> as a variable in a <i>Imaging reference frame</i> file (for details see <a href="#gen-img-ref-frame">this section</a>).
 		</p>
 		<p>To draw a new mask:</p>
 		<ol>
@@ -517,7 +517,7 @@
 		<h3 id="gen-img-ref-frame">Create an imaging reference frame file</h3>
 		<hr>
 		<p>
-			An <i>Imaging reference frame file</i> stores a reference image - and some meta data - to be used by the analysis functions from <b><i>umIT</i></b>. For instance, one can use the reference frame to align different recordings (see <a href="../tutorials/tt_align_sessions.html">this tutorial</a>) or use one of the extra variables such as the <i>logical mask</i> to exclude pixels in some analysis such as the <a href="#"><samp>GSR</samp></a> function.
+			An <i>Imaging reference frame file</i> stores a reference image - and some meta data - to be used by the analysis functions from <b><i>umIT</i></b>. For instance, one can use the reference frame to align different recordings (see <a href="../tutorials/tt_align_sessions.html">this tutorial</a>) or use one of the extra variables such as the <i>logical mask</i> to exclude pixels in some analysis such as the <a href="GSR.html"><samp>GSR</samp></a> function.
 		</p>
 		<p>
 			The main information saved in the <i>Imaging reference frame file</i> include:</p>
@@ -589,7 +589,7 @@
 		</p>
 		<div class="infonote">
 			<p><strong>Note</strong><br>
-				As stated in this section's introduction, a logical mask is useful to exclude unwanted pixels during an analysis function. For instance, the function <a href="#"><samp>GSR</samp></a> (removes global variance from the recording) uses the <i>ImagingReferenceFrame</i> file as input and loads the <i>logical mask</i> to include only the pixels inside the mask in the calculation of the global variance. Therefore, if your recordings contain non-pertinent areas, it is advisable to create and save a logical mask to delimit the region of interest.
+				As stated in this section's introduction, a logical mask is useful to exclude unwanted pixels during an analysis function. For instance, the function <a href="GSR.htmlS"><samp>GSR</samp></a> (removes global variance from the recording) uses the <i>ImagingReferenceFrame</i> file as input and loads the <i>logical mask</i> to include only the pixels inside the mask in the calculation of the global variance. Therefore, if your recordings contain non-pertinent areas, it is advisable to create and save a logical mask to delimit the region of interest.
 			</p>
 		</div>
 		<h3 id="rules-for-roi-fitting">Rules for ROI fitting</h3>
