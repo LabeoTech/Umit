@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../css/master.css">
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+      .collapsible {
+      background-color: #eeeeee;
+      color: black;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      margin-bottom: 10px;
+      }
+      .active, .collapsible:hover {
+      background-color: #888;
+      }
+      .content {
+      padding: 0 18px;
+      display: none;
+      overflow: hidden;
+      background-color: #fff;
+      border: 1px solid black;
+      margin-bottom: 10px;
+      }
+    </style>
+    <title>run_HemoCompute</title>
+  </head>
+  <body>
+    <h2>run_HemoCompute</h2>
+    <hr>
+    <p>
+      Calculates HbO and HbR from reflectance signals.
+    </p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+      This function uses reflectance (intrinsic) signals to estimate the concentration levels of oxygenated (HbO) and deoxygenated (HbR) hemoglobin.
+      <div class="warnnote">
+        <p><strong>Important</strong><br>
+          This function works <b>specifically</b> for data generated using widefield imaging systems from <a href="http://www.labeotech.com">Labeo Technologies Inc.</a> <b>only</b>!
+        </p>
+      </div>
+    </p>
+    <h3>Input</h3>
+    <hr>
+    <p>
+      Series of <samp>.dat</samp> files containing image time series data with dimensions Y,X,T. This function uses one to three files containing reflectance (red, yellow and green) data. The file names must be the following:<br>
+    </p>
+    <ul>
+      <li><i>red.dat</i>: red channel</li>
+      <li><i>yellow.dat</i>: yellow/amber channel</li>
+      <li><i>green.dat</i>: green channel</li>
+    </ul>
+    <p>The abovementioned files are created using the <a href="./run_ImagesClassification.html">run_ImagesClassification</a> function.</p>
+    <h3>Output</h3>
+    <hr>
+    <p>
+      This function creates the files <samp>HbO.dat</samp> and <samp>HbR.dat</samp> containing the image time series with the approximate values for the oxygenated and deoxygenated hemoglobin, respectively.
+    </p>
+    <h3 id="parameters">Parameters</h3>
+    <hr>
+
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>FilterSet</b></samp> - Filter set<br>
+      <span class="title-desc"><i> GCaMP | jRGECO | none</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Set of excitation and emission filters used in recordings:
+      </p>
+      <ul>
+        <li><i>GCaMP</i>: Filter set from recordings using GCaMP as a fluorophore</li>
+        <li><i>jRGECO</i>: Filter set from recordings using jRGECO as a fluorophore</li>
+        <li><i>none</i>: No filter set</li>
+      </ul>
+    </div>
+
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>Red</b></samp> - Red channel<br>
+      <span class="title-desc"><i> true (default) | false </i></span>
+    </button>
+    <div class="content">
+      <p>
+        If <b>true</b>, the function includes the <b>Red</b> channel in the estimation of oxy/deoxygenated hemoglobin.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>Green</b></samp> - Green channel<br>
+      <span class="title-desc"><i> true (default) | false </i></span>
+    </button>
+    <div class="content">
+      <p>
+        If <b>true</b>, the function includes the <b>Green</b> channel in the estimation of oxy/deoxygenated hemoglobin.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>Amber</b></samp> - Yellow/Amber channel<br>
+      <span class="title-desc"><i> true (default) | false </i></span>
+    </button>
+    <div class="content">
+      <p>
+        If <b>true</b>, the function includes the <b>Amber</b> channel in the estimation of oxy/deoxygenated hemoglobin.
+      </p>
+    </div>    
+    <!-- JavaScript code to collapse sections -->
+    <script src="collapsible_behaviour.js"></script>
+  </body>
+</html>
