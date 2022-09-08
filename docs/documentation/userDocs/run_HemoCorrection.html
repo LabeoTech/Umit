@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../css/master.css">
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+      .collapsible {
+      background-color: #eeeeee;
+      color: black;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      margin-bottom: 10px;
+      }
+      .active, .collapsible:hover {
+      background-color: #888;
+      }
+      .content {
+      padding: 0 18px;
+      display: none;
+      overflow: hidden;
+      background-color: #fff;
+      border: 1px solid black;
+      margin-bottom: 10px;
+      }
+    </style>
+    <title>run_HemoCorrection</title>
+  </head>
+  <body>
+    <h2>run_HemoCorrection</h2>
+    <hr>
+    <p>
+      Performs hemodynamic correction of the fluorescence signal.
+    </p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+      This function removes the hemodynamic fluctuations from a fluorescence signal using data acquired with the LabeoTech's optical imaging systems.The function uses multi-channel recordings to measure the light absorption of the hemoglobin in order to remove it from the fluorescence channel. The algorithm used in this function is described in <a href="#references">[1]</a>.
+    </p>
+    <h3>Input</h3>
+    <hr>
+    <p>
+      Series of <samp>.dat</samp> files containing image time series data with dimensions Y,X,T. This function uses one to three files containing reflectance (red, yellow and green) data and applies the hemodynamic correction to the file containing the fluorescence data. The file names must be the following:<br>
+    </p>
+    <ul>
+      <li><i>fluo.dat | fluo_475.dat</i>: fluorescence channel</li>
+      <li><i>red.dat</i>: red channel</li>
+      <li><i>yellow.dat</i>: yellow/amber channel</li>
+      <li><i>green.dat</i>: green channel</li>
+    </ul>
+    <p>The abovementioned files are created using the <a href="./run_ImagesClassification.html">run_ImagesClassification</a> function.</p>
+    <h3>Output</h3>
+    <hr>
+    <p>
+      Image time series with dimension Y,X,T containing the corrected fluorescence signal.</p>
+    <h3 id="parameters">Parameters</h3>
+    <hr>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>Red</b></samp> - Red channel<br>
+      <span class="title-desc"><i> true (default) | false </i></span>
+    </button>
+    <div class="content">
+      <p>
+        If <b>true</b>, the function includes the <b>Red</b> channel in the hemodynamic correction algorithm.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>Green</b></samp> - Green channel<br>
+      <span class="title-desc"><i> true (default) | false </i></span>
+    </button>
+    <div class="content">
+      <p>
+        If <b>true</b>, the function includes the <b>Green</b> channel in the hemodynamic correction algorithm.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>Amber</b></samp> - Yellow/Amber channel<br>
+      <span class="title-desc"><i> true (default) | false </i></span>
+    </button>
+    <div class="content">
+      <p>
+        If <b>true</b>, the function includes the <b>Amber</b> channel in the hemodynamic correction algorithm.
+      </p>
+    </div>
+    <h3 id="references">References</h3>
+    <hr>
+    <ol>
+      <li>Valley, M. T., M. G. Moore, J. Zhuang, N. Mesa, D. Castelli, D. Sullivan, M. Reimers, and J. Waters. 2020. ‘Separation of Hemodynamic Signals from GCaMP Fluorescence Measured with Wide-Field Imaging’. Journal of Neurophysiology 123 (1): 356–66. <a href="https://doi.org/10.1152/jn.00304.2019">https://doi.org/10.1152/jn.00304.2019</a>.
+      </li>
+    </ol>
+
+    <!-- JavaScript code to collapse sections -->
+    <script src="collapsible_behaviour.js"></script>
+  </body>
+</html>

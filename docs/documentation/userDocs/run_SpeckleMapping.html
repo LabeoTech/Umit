@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../css/master.css">
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+      .collapsible {
+      background-color: #eeeeee;
+      color: black;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      margin-bottom: 10px;
+      }
+      .active, .collapsible:hover {
+      background-color: #888;
+      }
+      .content {
+      padding: 0 18px;
+      display: none;
+      overflow: hidden;
+      background-color: #fff;
+      border: 1px solid black;
+      margin-bottom: 10px;
+      }
+    </style>
+    <title>run_SpeckleMapping</title>
+  </head>
+  <body>
+    <h2>run_SpeckleMapping</h2>
+    <hr>
+    <p>
+      Calculates the average speckle contrast map from Laser Speckle Contrast Imaging (LSCI) raw data.
+    </p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+      This function reads the raw speckle data stored in `speckle.dat` file and calculates the temporal average of the speckle contrast defined by the equation below:
+    </p>
+    <p align="center">
+    <img alt = "Speckle equation" src="./../assets/img/speckle_Eq.png"/>
+    </p>
+    <p>
+      where the speckle contrast (<b>K<sub>s</sub></b>) is equal to the ratio of standard deviation (<b>&sigma;</b>) to the mean intensity (<b>I</b>) averaged across time. The speckle contrast can be calculated either in the spatial or the temporal dimensions <a href="#references">[1]</a>. In brief, the estimation of the speckle contrast in space is obtained by calculating the standard deviation across a 5 by 5 pixel window which may decrease the spatial resolution. In contrast, if the calculation is performed in the temporal domain, the original spatial resolution is preserved.
+    </p>
+    <h3>Input</h3>
+    <hr>
+    <p>
+      This function accepts image time series with dimensions Y,X,T containing LSCI data.
+    </p>
+    <h3>Output</h3>
+    <hr>
+    <p>
+      This function creates a <samp>.dat</samp> file containing the speckle contrast map of the input data with dimensions Y,X.
+    </p>
+    <h3 id="parameters">Parameters</h3>
+    <hr>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>sType</b></samp> - Mapping algorithm<br>
+      <span class="title-desc"><i> Spatial | Temporal (default) </i></span>
+    </button>
+    <div class="content">
+      <p>
+        This parameter sets speckle mapping algorithm. More precisely, it chooses how the standard deviation (see <a href="#description">description</a>) is calculated. If set to <i>Spatial</i>, the standard deviation is calculated on the spatial dimension using a 5 by 5 pixel kernel. However, if set to <i>Temporal</i>, the function will calculate the standard deviation over the time dimension using a kernel of 5 frames.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>channel</b></samp> - File name<br>
+      <span class="title-desc"><i> speckle (default) | fluo_475 | fluo | red | green | yellow </i></span>
+    </button>
+    <div class="content">
+      <p>
+        Name of the <samp>.dat</samp> file containing the LSCI raw data. The available options are default file names from the function <a href="./run_ImagesClassification.html"> <samp>run_ImagesClassification</samp></a> function.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>bSaveMap</b></samp> - save map to TIF<br>
+      <span class="title-desc"><i> true | false (default) </i></span>
+    </button>
+    <div class="content">
+      <p>
+        If <b>true</b>, the function will save the speckle map to a TIF file in the same folder of the input data with name <samp>std_speckle.tiff</samp>.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>bLogScale</b></samp> - Log scale transform<br>
+      <span class="title-desc"><i> true | false (default) </i></span>
+    </button>
+    <div class="content">
+      <p>
+        If <b>true</b>, the speckle contrast values are transformed to negative logarithm values as:
+      </p>
+      <p style="text-align: center;">
+        <img src="../assets/img/run_SpeckleMapping_eg1.png" alt="run_SpeckleMapping_eg1">
+      </p>
+    </div>
+    <h3 id="references">References</h3>
+    <hr>
+    <ol>
+      <li>Boas, David A., and Andrew K. Dunn. 2010. ‘Laser Speckle Contrast Imaging in Biomedical Optics’. Journal of Biomedical Optics 15 (1): 011109. <a href="https://doi.org/10.1117/1.3285504">https://doi.org/10.1117/1.3285504</a></li>
+    </ol>
+
+    <!-- JavaScript code to collapse sections -->
+    <script src="collapsible_behaviour.js"></script>
+  </body>
+</html>
