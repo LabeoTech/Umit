@@ -37,6 +37,8 @@ info_file = strrep(info_file,path_str{:}, fullfile(myenv,'docs'));
 fid = fopen(fullfile(myenv,'docs','info.xml'),'w');
 fprintf(fid,'%s',info_file);
 fclose(fid);
+% Add toolbox to Path for the current Matlab session:
+addpath(genpath(myenv));
 % Build serch database:
 folders = dir(fullfile(myenv, 'docs'));
 help_dir = folders([folders.isdir] & startsWith({folders.name}, 'helpsearch-v'));
@@ -48,8 +50,6 @@ try
 catch 
     warning('Failed to create local documentation! Try to run MATLAB as admin and rerun this function!')
 end
-% Add toolbox to Path for the current Matlab session:
-addpath(genpath(getenv('Umitoolbox')));
 disp('Everything is set! You can start using the toolbox now!');
 end
 % Local functions:
