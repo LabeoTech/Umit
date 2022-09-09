@@ -31,18 +31,18 @@
       margin-bottom: 10px;
       }
     </style>
-    <title>temporal filter</title>
+    <title>normalizeLPF</title>
   </head>
   <body>
-    <h2>temporal_filter - Temporal filter</h2>
+    <h2>normalizeLPF - Normalize by Low-pass filter</h2>
     <hr>
     <p>
-      Filters the time domain of image time series.
+      Normalizes image time series using low-pass filter
     </p>
     <h3 id="description">Description</h3>
     <hr>
     <p>
-      This function applies a band-pass filter to the Time dimension of an image time series recording. The function uses two cut-off frequency values to create a filtered signal (R) that can be expressed as &Delta;R or &Delta;R/R, depending on the function's paramaters.
+      This function can be used to normalise channels (&Delta;F/F or &Delta;R/R), or to do a low-pass filtering.
     </p>
     <h3>Input</h3>
     <hr>
@@ -52,7 +52,7 @@
     <h3 id="the-algorithm"> The algorithm</h3>
     <hr>
     <p>
-      This function applies a low pass filter to the input data at two cut-off frequencies (set in the function's parameters). Then, these two low-passed signals are either subtracted or divided which results in a band-passed normalized signal (R) expressed as &Delta;R or &Delta;R/R, respectively.
+      This function applies low pass filters at two cut-off frequencies (set in the function's parameters). Then, these two low-passed signals are either subtracted or divided which results in the normalized signal (R) expressed as &Delta;R or &Delta;R/R, respectively.
     </p>
     <button title="click to expand" type="button" class="collapsible">
       <span class="iconplus"></span>
@@ -87,7 +87,7 @@
     </button>
     <div class="content">
       <p>
-        Sets the value (in Hertz) of the low frequency cut-off. Oscillations below this frequency will be removed from the signal.
+        Sets the value (in Hertz) of the low frequency cut-off.
       </p>
       <p>
         The <samp>LowCutOffHz</samp> value ranges from <b>zero</b> to the <b>Nyquist</b> (half the sample rate).
@@ -102,29 +102,24 @@
     <button title="click to expand" type="button" class="collapsible">
       <span class="iconplus"></span>
       <samp><b>HighCutOffHz</b></samp> -High frequency cut-off <br>
-      <span class="title-desc"><i>0 (default) | nonnegative scalar</i></span>
+      <span class="title-desc"><i>1 (default) | positive scalar</i></span>
     </button>
     <div class="content">
       <p>
-        Sets the value (in Hertz) of the high frequency cut-off. Oscillations above this frequency will be removed from the signal.
+        Sets the value (in Hertz) of the high frequency cut-off.
       </p>
       <p>
-        The <samp>HighCutOffHz</samp> value ranges from <b>zero</b> to the <b>Nyquist</b> (half the sample rate).
+        The <samp>HighCutOffHz</samp> value must be a positive number between the <samp>LowCutOffHz</samp> value and the <b>Nyquist</b> (half the sample rate).
       </p>
-      <div class="infonote">
-        <p><strong>Note</strong><br>
-          If this value is set to <b>zero</b>, the output will be a high-passed signal at cut-off frequency <samp>LowCutOffHz</samp>.
-        </p>
-      </div>
     </div>
     <button title="click to expand" type="button" class="collapsible">
       <span class="iconplus"></span>
       <samp><b>Normalize</b></samp> - Normalize data by division <br>
-      <span class="title-desc"><i>true | false (default)</i></span>
+      <span class="title-desc"><i>true (default) | false </i></span>
     </button>
     <div class="content">
       <p>
-        Sets this parameter to <b>True</b> to return the output signal (R) as &Delta;R/R, otherwise set to <b>False</b> to return the output signal as &Delta;R (see the <a href="#the-algorithm">algorithm</a>) sections for details).
+        Sets this parameter to <b>True</b> (default) to return the output signal (R) as &Delta;R/R, otherwise set to <b>False</b> to return the output signal as &Delta;R (see the <a href="#the-algorithm">algorithm</a>) sections for details).
       </p>
     </div>
     <button title="click to expand" type="button" class="collapsible">

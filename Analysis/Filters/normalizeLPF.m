@@ -1,6 +1,5 @@
-function outData = temporal_filter(data, metaData, varargin)
-% This function applies a band-pass 4th-order Butterworth filter to the Time
-% dimension of an image time series (Y,X,T) dataset.
+function outData = normalizeLPF(data, metaData, varargin)
+% NORMALIZELPF performs a data normalization by low pass filtering.
 % The filtering algorithm consists in creating two low-passed versions of the
 % signal with a given cut-off frequency ("LowCutOff" and "HighCutOff") and
 % subsequently subtracting the two filtered signals.
@@ -24,9 +23,9 @@ function outData = temporal_filter(data, metaData, varargin)
 %   metaData: .mat file with meta data associated with "outData".
 
 % Defaults:
-default_Output = 'BPtemporalFilter.dat';  %#ok. This line is here just for Pipeline management.
-default_opts = struct('LowCutOffHz', 0.0083, 'HighCutOffHz', 0, 'Normalize', false, 'bApplyExpFit', false);
-opts_values = struct('LowCutOffHz', [0,Inf], 'HighCutOffHz',[0,Inf],'Normalize',[false, true],'bApplyExpFit', [true,false]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
+default_Output = 'normLPF.dat';  %#ok. This line is here just for Pipeline management.
+default_opts = struct('LowCutOffHz', 0.0083, 'HighCutOffHz', 1, 'Normalize', true, 'bApplyExpFit', false);
+opts_values = struct('LowCutOffHz', [0,Inf], 'HighCutOffHz',[eps,Inf],'Normalize',[false, true],'bApplyExpFit', [true,false]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 % Some notes on the CutOff values:
 % 1) The HighCutOffHz value of 0 will be translated as the Nyquist of the sample rate
 % 2) For the LowCutOff, values equal to zero will give a low-passed signal at "HighCutOff".
@@ -48,7 +47,7 @@ clear p
 %%%%
 
 % Validate if "data" is an Image Time Series:
-errID = 'umIToolbox:temporal_filter:InvalidInput';
+errID = 'umIToolbox:normalizeLPF:InvalidInput';
 errMsg = 'Wrong Input Data type. Data must be an Image time series with dimensions "X", "Y" and "T".';
 assert(all(ismember(metaData.dim_names,{'Y', 'X', 'T'})), errID, errMsg);
 
@@ -57,16 +56,20 @@ idx_nan = isnan(outData);
 outData(idx_nan) = 0;
 % Run Temporal filter function
 % Check if cut-off frequencies are in the acceptable range:
+errID = 'umIToolbox:normalizeLPF:InvalidInput';
 % Check Low cut-off frequency:
-if opts.LowCutOffHz < 0 || opts.LowCutOffHz > metaData.Freq
-    error(['Invalid cut off value! LowCutOffHz must be between 0 and ' num2str(metaData.Freq) '!'], ...
-        'umIToolbox:temporal_filter:InvalidInput');
+if opts.LowCutOffHz < 0 || opts.LowCutOffHz > metaData.Freq/2
+    error(errID,['Invalid cut off value! LowCutOffHz must be between 0 and ' num2str(metaData.Freq/2) '!'])        
 end
 % Check High cut-off frequency:
-if opts.HighCutOffHz < 0 || opts.HighCutOffHz > metaData.Freq
-    error(['Invalid cut off value! HighCutOffHz must be between 0 and ' num2str(metaData.Freq) '!'], ...
-        'umIToolbox:temporal_filter:InvalidInput');
+if opts.HighCutOffHz < opts.LowCutOffHz 
+    error(errID,'Invalid cut off value! HighCutOffHz must be higher than LowCutOffHz!');        
 end
+
+if opts.HighCutOffHz == 0 ||  opts.HighCutOffHz > metaData.Freq/2
+    error(errID,['Invalid cut off value! HighCutOffHz must be a positive number less than or equal to ' num2str(metaData.Freq/2) '!']);
+end
+
 disp('Filtering data...')
 outData = NormalisationFiltering(pwd, outData, opts.LowCutOffHz, opts.HighCutOffHz, ...
     opts.Normalize,opts.bApplyExpFit, metaData.Freq);

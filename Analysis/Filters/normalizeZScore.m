@@ -1,14 +1,13 @@
-function outData = zScoreNormalize(data, metaData)
-% ZSCORENORMALIZE normalizes an image time series with zero mean and unit standard 
+function outData = normalizeZScore(data, metaData)
+% NORMALIZEZSCORE normalizes an image time series with zero mean and unit standard 
 % deviation.
-
 
 % Limitations:
 % The data must be an Image time series with dimensions
 % {Y,X,T}.
 
 % Defaults:
-default_Output = 'Znorm.dat'; %#ok. This line is here just for Pipeline management.
+default_Output = 'normZ.dat'; %#ok. This line is here just for Pipeline management.
 %%% Arguments parsing and validation %%%
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder
@@ -22,7 +21,7 @@ metaData = p.Results.metaData;
 clear p
 %%%%
 % Validate if "data" is an Image Time Series:
-errID = 'umIToolbox:zScoreNormalize:InvalidInput';
+errID = 'umIToolbox:normalizeZScore:InvalidInput';
 errMsg = 'Wrong Input Data type. Data must be an Image time series with dimensions "X", "Y" and "T".';
 assert(all(ismember(metaData.dim_names,{'Y', 'X', 'T'})), errID, errMsg);
 
@@ -32,6 +31,5 @@ orig_sz = size(outData);
 outData = reshape(outData,[],orig_sz(3));
 outData = (outData - mean(outData,2,'omitnan'))./std(outData,0,2,'omitnan');
 outData = reshape(outData,orig_sz);
-disp('Finished with Zscore normalization.')      
 end
     
