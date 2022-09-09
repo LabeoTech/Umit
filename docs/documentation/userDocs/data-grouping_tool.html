@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../css/master.css">
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+    </style>
+    <title>Data grouping tool</title>
+  </head>
+  <body>
+    <h2>Data grouping tool</h2>
+    <hr>
+    <p>
+      This tool is launched through the <i>options panel</i> of the <a href="umIToolbox-Analysis.html"><i>Analysis tab</i></a> of the <a href="umIToolbox.html">umIToolbox</a> app. The <b>Data grouping tool</b> provides an graphical interface that allows the creation of experimental groups. Once the groups are created, they can be saved to a <samp>.mat</samp> file for later use.
+    </p>
+    <p>
+      This documentation provides a description of the elements from the tool's interface. Check the tutorial on <a href="../tutorials/tt_creating_groups.html"> how to create groups</a> for a step-by-step procedure.
+    </p>
+    <h3 id="the-interface">The interface</h3>
+    <hr>
+    <p style="text-align: center">
+      <img src="../assets/img/data-grouping_tool_fig1.png" alt="data-grouping_tool_fig1" width="660"><br>
+      <i>Main components of the <b>Data grouping tool</b> interface </i>
+    </p>
+    <h4 id="1-menu">1. Menu</h4>
+    <ul>
+      <li>File &gt;&gt;
+        <ul>
+          <li><b><i>Load groups</i></b>: loads groups previously created using the tool and saved in a <samp>.mat</samp> file with name <samp>StatsGroupInfo_&lt;NAME&gt;.mat</samp> </li>
+          <li><b><i>Save groups</i></b>: saves the current groups to a  <samp>.mat</samp> file</li>
+        </ul>
+      </li>
+      <li>DataFilter &gt;&gt;
+        <ul>
+          <li>filter base data by &gt;&gt;
+            <ul>
+              <li><b><i>Query</i></b>: uses the <a href="umIToolbox.html"><i>Advanced Search</i> interface </a> to filter the elements of the <i>base tree</i></li>
+              <li><b><i>Date</i></b>: filters the elements of the <i>base tree</i> by date</li>
+              <li><b><i>Event</i></b>: (option currently disabled) filters the elements of the <i>base tree</i> by <i>text events</i></li>
+            </ul>
+          </li>
+          <li><b><i>reset base</i></b>: shows all elements from the base tree</li>
+          <li><b><i>erase base</i></b>: erases all elements from the base tree</li>
+          <li><b><i>restore base and erase groups</i></b>: erases the content of existing groups and resets the base tree</li>
+        </ul>
+      </li>
+      <li>Group options &gt;&gt;
+        <ul>
+          <li><b><i>add new group</i></b>: creates a new group tree</li>
+          <li><b><i>remove group</i></b>: erases a group tree and its content</li>
+          <li><b><i>erase group content</i></b>: erases juts the content of a group tree</li>
+        </ul>
+      </li>
+    </ul>
+    <h4 id="2-base-tree">2. Base tree</h4>
+    <p>
+      This is the <i>source</i> tree containing the project's objects. Once the tool is launched, the base tree is populated with the elements that are not shown in the <i>object tree</i> in the <samp>umIToolbox</samp> app.
+    </p>
+    <h4 id="3-group-tree-s">3. Group tree(s)</h4>
+    <p>
+      One or more object trees containing the grouped elements. The group name (tree title) is editable.
+    </p>
+    <h4 id="4-tree-controls">4. Tree controls</h4>
+    <p>
+      Use these controls to move the tree elements between trees. To move elements, highlight the objects, select the target tree from the dropdown menu and click on the <i>Go!</i> button.
+    </p>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        To finish the creation of groups and apply the changes in the main app (<samp>umIToolbox</samp>), click on the <b>Apply</b> button!
+      </p>
+    </div>
+  </body>
+</html>

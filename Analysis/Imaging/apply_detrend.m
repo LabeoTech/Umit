@@ -38,7 +38,7 @@ trend = bsxfun(@times,M,linspace(-2,size(data,2)-3,...
     size(data,2))) + median(data(:,1:7),2,'omitnan');
 % Automatic selection of normalization/subtraction-only depending on the
 % average value of the data:
-if mean(data,'all','omitnan') > 1 
+if mean(data,'all','omitnan') >= 1 
     % Normalize "raw" data
     disp('Normalizing data...');    
     outData = (data - trend)./trend;
