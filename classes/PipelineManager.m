@@ -10,8 +10,8 @@ classdef PipelineManager < handle
     end
     properties (SetAccess = private)
         ClassName char % Name of the class that the pipeline analysis functions will run.
-        ClassLevel int16 % Level of the class in protocol's hierarchy (1 = Modality, 2 = Acquisition, 3= Subject);
-        % Structure array containing steps of the pipeline.
+        ClassLevel int16 % Level of the class in protocol's hierarchy (1 = Modality, 2 = Acquisition, 3= Subject);        
+        % Structure array containing steps of the pipeline:
         pipe = struct('className', '','argsIn', {},'argsOut',{},'outFileName','',...
             'inputFileName', '','lvl', [], 'b_save2File', logical.empty, 'datFileName',...
             '', 'opts',struct.empty,'opts_vals',struct.empty,...
@@ -24,7 +24,7 @@ classdef PipelineManager < handle
         tmp_LogBook % Temporarily stores the table from PROTOCOL.LOGBOOKFILE
         tmp_BranchPipeline % Temporarily stores LogBook from a Hierarchical branch.
         PipelineSummary % Shows the jobs run in the current Pipeline
-        tmp_TargetObj % % Temporarily stores an object (TARGEROBJ).
+        tmp_TargetObj % % Temporarily stores an object (TARGEROBJ).        
         current_task % Task structure currently running.
         current_pipe % Pipeline currently running.
         current_data % Data available in the workspace during pipeline.
@@ -464,15 +464,16 @@ classdef PipelineManager < handle
         obj.getTargetObj(targetIdxArr(i,:));
         % Initialize Log table:
         obj.tmp_TargetObj.LastLog = obj.ProtocolObj.createEmptyTable;
-        % Create Full ID of object:
-        myParent = obj.tmp_TargetObj.MyParent;
-        myFullName = {obj.tmp_TargetObj.ID};
-        while ~isa(myParent, 'Protocol')
-            myFullName = [myFullName, {myParent.ID}];
-            myParent = myParent.MyParent;
-        end
-        myFullName = fliplr(myFullName);
-        obj.targetObjFullID = strjoin(myFullName, ' -- ');
+        % Create Full ID of object:        
+        ID_list = repmat({'null'}, 1,3);
+        if isa(obj.tmp_TargetObj, 'Modality')
+            ID_list = {obj.tmp_TargetObj.MyParent.MyParent.ID, obj.tmp_TargetObj.MyParent.ID, obj.tmp_TargetObj.ID};
+        elseif isa(obj.tmp_TargetObj, 'Acquisition')
+            ID_list(1,[1,2]) = {obj.tmp_TargetObj.MyParent.ID, obj.tmp_TargetObj.ID};
+        else
+            ID_list{1} = obj.tmp_TargetObj.ID;
+        end                  
+        obj.targetObjFullID = strjoin(ID_list, ' -- ');
         % Update waitbars:
         obj.setWaitBar('UpdateItem', i, size(targetIdxArr,1));
         fprintf([repmat('-',1,50),'\n']);
@@ -608,22 +609,12 @@ methods (Access = private)
         task = obj.current_task;
         % Initialize empty Log for current object:
         LastLog = obj.ProtocolObj.createEmptyTable;
-        % Fill out Log with Subject/Acquisition/Modality IDs :
-        cnt = 2;
-        tmpObj = obj.tmp_TargetObj;
-        ID_list = {tmpObj.ID};
-        while ~isa(tmpObj.MyParent, 'Protocol')
-            tmpObj = tmpObj.MyParent;
-            ID_list{cnt} = tmpObj.ID;
-            cnt = cnt+1;
-        end
-        LastLog(:,1:3) = fliplr(ID_list);
-        clear tmpObj
+        % Fill out Log with Subject/Acquisition/Modality IDs :        
+        LastLog(:,1:3) = strsplit(obj.targetObjFullID, ' -- ');       
         % Add class name to table:
         LastLog(:,4) = {task.className};
         LastLog(:,5) = {task.name};
-        %%%
-        
+        %%%        
         % Create function string and update log table:
         task.funcStr = createFcnString(obj, task);
         LastLog.Job = {task.funcStr};
@@ -724,9 +715,8 @@ methods (Access = private)
             return
         end
         
-        
         % Get target object:
-        targetObj = getTargetObj(obj,funcInfo.name);
+        targetObj = getChildObj(obj,funcInfo.name);
         % Display a list of files from the selected
         % object(targetObj):
         datFileList = dir(fullfile(targetObj.SaveFolder, '*.dat'));
@@ -740,9 +730,8 @@ methods (Access = private)
             [~,datFileNames,~] = arrayfun(@(x) fileparts(x.name), datFileList, 'UniformOutput', false);
             [~,matFileNames,~] = arrayfun(@(x) fileparts(x.name), matFileList, 'UniformOutput', false);
             b_statMat = ~ismember(matFileNames, datFileNames);
-            % Update index of valid .mat files:
-            b_validMat = b_validMat & b_statMat;
-            FileList = matFileList(b_validMat);
+            % Update index of valid .mat files:            
+            FileList = matFileList(b_validMat & b_statMat);
         else
             FileList = datFileList;
         end
@@ -765,7 +754,7 @@ methods (Access = private)
         obj.pipeFirstInput = out;
         
         % Local function
-        function trgtObj = getTargetObj(obj, fcnName)
+        function trgtObj = getChildObj(obj, fcnName)
             % Get all existing objects from the selected items in Protocol
             % object:
             trgtObj = [];
@@ -923,10 +912,15 @@ methods (Access = private)
         % Replace input argument names:
         % Important! Put "dataStat" and "outDataStat" first in the string list, otherwise
         % the replace function will create a non-existant property name:
-        
-        argsIn = replace(task.argsIn, ["RawFolder", "SaveFolder", "dataStat","metaData", "object", "data"],...
-            {['''' obj.tmp_TargetObj.RawFolder ''''],['''' obj.tmp_TargetObj.SaveFolder ''''], 'obj.current_data',...
-            'obj.current_metaData', 'obj.tmp_TargetObj', 'obj.current_data'});
+        if isprop(obj.tmp_TargetObj, 'RawFolder')
+            argsIn = replace(task.argsIn, ["RawFolder", "SaveFolder", "dataStat","metaData", "object", "data"],...
+                {['''' obj.tmp_TargetObj.RawFolder ''''],['''' obj.tmp_TargetObj.SaveFolder ''''], 'obj.current_data',...
+                'obj.current_metaData', 'obj.tmp_TargetObj', 'obj.current_data'});
+        else
+            argsIn = replace(task.argsIn, [ "SaveFolder", "dataStat","metaData", "object", "data"],...
+                {['''' obj.tmp_TargetObj.SaveFolder ''''], 'obj.current_data',...
+                'obj.current_metaData', 'obj.tmp_TargetObj', 'obj.current_data'});
+        end
         
         argsOut = replace(task.argsOut, ["outDataStat", "metaData", "outData", "outFile"],...
             {'obj.current_data', 'obj.current_metaData', 'obj.current_data', 'obj.current_outFile'});
