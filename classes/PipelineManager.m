@@ -1153,7 +1153,7 @@ for i = 1:length(fields)
     currOpts(i,1) = fields(i);
     currOpts(i,2) = currVals(i);
 end
-dlg = uifigure('Name',['Set Parameters for: ' fcnName], 'NumberTitle','off','Position',[0,0,310,240],...
+dlg = uifigure('Name',['Set Parameters for: ' fcnName], 'NumberTitle','off','Position',[0,0,310,260],...
     'MenuBar','none', 'ToolBar', 'none','Visible','off', 'CloseRequestFcn', @figCloseRequest);
 movegui(dlg, 'center');
 myFontSize = 12;

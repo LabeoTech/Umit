@@ -1,4 +1,4 @@
-function avgData = avgMaps(statsobj, b_useMsk, b_isPolar, b_scale)
+function avgData = avgMaps(statsobj, b_useMsk, b_isPolar)
 % AVGMAPS creates an average map (i.e. image with dimensions Y,X) per group
 % per acquisition.
 
