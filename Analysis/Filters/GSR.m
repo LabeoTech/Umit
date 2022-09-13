@@ -64,7 +64,7 @@ szData = size(outData);
 outData = reshape(outData, [], szData(3));
 % Calculate GSR:
 disp('Calculating Global signal regression...');
-mData = mean(outData(logical_mask(:), :),3);
+mData = mean(outData,3);
 Sig = mean(outData(logical_mask(:),:),1);
 Sig = Sig / mean(Sig);
 X = [ones(szData(3),1), Sig'];
