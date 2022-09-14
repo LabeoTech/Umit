@@ -208,6 +208,9 @@ classdef StatsManager < handle
                                                
             idx = false(1,size(obj.stats_data,1));
             for i = 1:length(idx)
+                if isempty(obj.stats_data{i,11})
+                    continue
+                end
                 if prod(obj.stats_data{i,11}{1}) == max(obj.stats_data{i,11}{1})
                     idx(i) = true;
                 end

@@ -106,8 +106,6 @@ if ismember('E', dim_names)
         end
     end
 end
-%
-disp('Prepping label...');
 % Prepare "label" to save:
 if ischar(label)
     label = arrayfun(@(x) strjoin({label, num2str(x)}, '_'), 1:size(s.data{1},2), 'UniformOutput', 0);

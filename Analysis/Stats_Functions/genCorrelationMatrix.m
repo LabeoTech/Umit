@@ -106,7 +106,7 @@ if startsWith(opts.CorrAlgorithm, 'centroid', 'IgnoreCase', true)
                         % we want to make a huge matrix such as the fig. 4
                         % in Bauer et al., 2017??
                         disp('Huge Matrix not available yet!')
-                        error('Centroic versus No aggregation option is unavailable for now!')
+                        error('Centroid versus No aggregation option is unavailable for now!')
                 end
             end
     end
