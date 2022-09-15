@@ -198,26 +198,41 @@ classdef StatsManager < handle
             msgbox(['Data saved to file : ' filename], 'to CSV');
         end
         
-        function b_isExportable = checkDataDims(obj)
+        function [b_isExportable, dataType] = checkDataDims(obj)
             % This method checks if the number of dimensions of each observation data.
             % This info will be used to lock/unlock the options to export
             % the data as CSV or to create a table. In these cases, only 1D
             % data are allowed.
             % Output:
             % b_isExportable (bool): True, if the data is either 1-D.
-                                               
-            idx = false(1,size(obj.stats_data,1));
+            % dataType (str): type of data ('scalar', 'matrix' or 'map', 'unknown' or 'mixed').
+            types ={'scalar', 'matrix', 'map', 'unknown'};
+            
+            idx = false(1,size(obj.stats_data,1));            
+            typeList = zeros(size(idx));
             for i = 1:length(idx)
                 if isempty(obj.stats_data{i,11})
                     continue
                 end
                 if prod(obj.stats_data{i,11}{1}) == max(obj.stats_data{i,11}{1})
                     idx(i) = true;
+                    typeList(i) = 1;
+                elseif all(strcmpi(obj.stats_data{i,6}.dim_names, 'O'))
+                    typeList(i) = 2;
+                elseif all(ismember(obj.stats_data{i,6}.dim_names, {'Y', 'X', 'O'}))
+                    typeList(i) = 3;
+                else
+                    typeList(i) = 4;
                 end
             end
             b_isExportable = all(idx);
-        end                              
-        
+            myTypes = unique(typeList);
+            if length(myTypes)>1
+                dataType = 'mixed';
+            else
+                dataType = types{myTypes};
+            end                            
+        end                                      
     end
    
     methods(Access = private)
