@@ -20,8 +20,8 @@ function outDataStat = genCorrelationMatrix(data, metaData, varargin)
 % Defaults: IMPORTANT, keep all default statements in one line each so the
 % Pipeline Managers will be able to read it!
 default_Output = 'corrMatrix.mat'; %#ok This line is here just for Pipeline management.
-default_opts = struct('ROImasks_filename', 'ROImasks_data.mat', 'CorrAlgorithm', 'centroid_vs_centroid', 'SpatialAggFcn', 'mean','b_FisherZ_transform', false);
-opts_values = struct('ROImasks_filename', {{'ROImasks_data.mat'}}, 'CorrAlgorithm',{{'centroid_vs_centroid','centroid_vs_agg', 'avg_vs_avg'}}, 'SpatialAggFcn', {{'mean', 'max', 'min', 'median'}},'b_FisherZ_transform',[true,false]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
+default_opts = struct('ROImasks_filename', 'ROImasks_data.mat', 'CorrAlgorithm', 'centroid_vs_centroid', 'SpatialAggFcn', 'mean','b_FisherZ_transform', false, 'b_genSPCMaps', false);
+opts_values = struct('ROImasks_filename', {{'ROImasks_data.mat'}}, 'CorrAlgorithm',{{'centroid_vs_centroid','centroid_vs_agg', 'avg_vs_avg'}}, 'SpatialAggFcn', {{'mean', 'max', 'min', 'median'}},'b_FisherZ_transform',[true,false],'b_genSPCMaps',[true,false]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 
 default_object = ''; % This line is here just for Pipeline management to be able to detect this input.
 %%% Arguments parsing and validation %%%
@@ -44,7 +44,7 @@ object = p.Results.object;
 clear p
 %%%%
 % Find ROI file:
-opts.ROImasks_filename = findMyROIfile(opts.ROImasks_filename,object);        
+opts.ROImasks_filename = findMyROIfile(opts.ROImasks_filename,object);
 
 % Validate data dimensions
 errID = 'Umitoolbox:genCorrelationMatrix:WrongFormat';
@@ -63,25 +63,41 @@ roi_corrVals = cell(size(roi_names));
 % Get centroids, if applicable:
 if startsWith(opts.CorrAlgorithm, 'centroid', 'IgnoreCase', true)
     centroid_list = arrayfun(@(x) find(bwmorph(x.Stats.ROI_binary_mask,'shrink',Inf)),...
-        roi_data.ROI_info, 'UniformOutput', false); 
+        roi_data.ROI_info, 'UniformOutput', false);
     % In cases where there are non-contiguous ROIs, get first centroid (Arbitrary decision here!):
-    centroid_list = cellfun(@(x) x(1),centroid_list); 
+    centroid_list = cellfun(@(x) x(1),centroid_list);
+    % Create SPCMaps for each centroid:
+    if opts.b_genSPCMaps
+        SPCMaps = cell(length(centroid_list),1);
+        w = waitbar(0,'Creating SPCMaps...');
+        for i = 1:length(centroid_list)
+            SPCMaps{i} = reshape(corr(data(centroid_list(i),:)', data'), ...
+                data_sz(1), data_sz(2));
+            if opts.b_FisherZ_transform
+                % Apply Z-Fisher transform to SPCMaps
+                SPCMaps{i} = atanh(SPCMaps{i});
+            end
+            waitbar(i/length(centroid_list),w);
+        end
+        delete(w);
+    end
+    disp('Seed Pixel Correlation Maps created!');
     switch opts.CorrAlgorithm
         case 'centroid_vs_centroid'
-            roiVals = data(centroid_list,:);            
+            roiVals = data(centroid_list,:);
             clear data;
             % Calculate Pearson's correlation:
-            B = corrcoef(roiVals');                    
+            B = corrcoef(roiVals');
         case 'centroid_vs_agg'
             B = zeros(length(centroid_list),length(centroid_list), 'single');
             target = arrayfun(@(x) data(x.Stats.ROI_binary_mask(:),:), roi_data.ROI_info,...
                 'UniformOutput',false);
             for i = 1: length(centroid_list)
-                source = data(centroid_list(i),:);                
+                source = data(centroid_list(i),:);
                 rho_vals = cellfun(@(x) corr(source',x'), target, 'UniformOutput',false);
                 switch opts.SpatialAggFcn
                     %'mean', 'max', 'min', 'median'
-                    case 'mean'                        
+                    case 'mean'
                         B(i,:) = cellfun(@(x) mean(x, 'omitnan'), rho_vals);
                     case 'median'
                         B(i,:) = cellfun(@(x) median(x, 'omitnan'), rho_vals);
@@ -94,7 +110,7 @@ if startsWith(opts.CorrAlgorithm, 'centroid', 'IgnoreCase', true)
                         % we want to make a huge matrix such as the fig. 4
                         % in Bauer et al., 2017??
                         disp('Huge Matrix not available yet!')
-                        error('Centroic versus No aggregation option is unavailable for now!')                        
+                        error('Centroid versus No aggregation option is unavailable for now!')
                 end
             end
     end
@@ -106,13 +122,13 @@ else
     end
     clear data;
     % Calculate Pearson's correlation:
-    B = corrcoef(roiVals');    
+    B = corrcoef(roiVals');
 end
 % Apply Z-Fisher transformation to the correlation matrix:
 if opts.b_FisherZ_transform
     disp('Applying Z-Fisher transform to correlation matrix...')
-   B = atanh(B);
-end                     
+    B = atanh(B);
+end
 %%% Save Data to .mat file:
 % Create cell array per observation:
 out = cell(size(B,1),1);
@@ -123,4 +139,10 @@ end
 dim_names = {'O','O'};
 outDataStat = save2Mat([], out ,roi_names, dim_names, 'label',roi_names ,...
     'appendMetaData', metaData,'genFile', false);
+% Create .MAT files with SPCMaps:
+if exist('SPCMaps', 'var')
+    dim_names = {'Y', 'X','O'};
+    save2Mat(fullfile(object.SaveFolder, 'corrMat_SPCMaps.mat'), SPCMaps ,roi_names,...
+    dim_names, 'appendMetaData', metaData,'genFile', true);
+end
 end

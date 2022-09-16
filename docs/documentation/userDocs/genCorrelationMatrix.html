@@ -111,6 +111,21 @@
         Set this parameter to <b>True</b> to apply a Fisher Z transformation of the Pearson's correlation values.
       </p>
     </div>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>b_genSPCMaps</b></samp> - Create SCPMaps<br>
+      <span class="title-desc"><i> true | false (default) </i></span>
+    </button>
+    <div class="content">
+      <p>
+        Set this parameter to <b>True</b> to create a file containing the Seed Pixel Correlation Maps for each ROI. The maps are created using the centroid pixel of the <i>source</i> ROI as seed. The maps are stored in a file named <samp>SPCMaps.mat</samp> and it can be accessed through the <i>Analysis</i> tab of <a href="umIToolbox-Analysis.html">umIToolbox</a> app.
+      </p>
+      <div class="infonote">
+        <p><strong>Note</strong><br>
+          This parameter is taken into account <b>only</b> when the correlation algorithm is set to <samp>centroid_vs_centroid</samp> or <samp>centroid_vs_agg</samp>. Thus, the SPCMaps are not create when the algorithm <samp>avg_vs_avg</samp> is used.
+        </p>
+      </div>
+    </div>
 
     <!-- JavaScript code to collapse sections -->
     <script src="collapsible_behaviour.js"></script>
