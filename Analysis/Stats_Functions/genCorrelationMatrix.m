@@ -75,7 +75,7 @@ if startsWith(opts.CorrAlgorithm, 'centroid', 'IgnoreCase', true)
                 data_sz(1), data_sz(2));
             if opts.b_FisherZ_transform
                 % Apply Z-Fisher transform to SPCMaps
-                SPCMaps{i} = atanh(SPCMaps{i});
+                SPCMaps{i} = ZFisher_truncated(SPCMaps{i});
             end
             waitbar(i/length(centroid_list),w);
         end
@@ -127,7 +127,7 @@ end
 % Apply Z-Fisher transformation to the correlation matrix:
 if opts.b_FisherZ_transform
     disp('Applying Z-Fisher transform to correlation matrix...')
-    B = atanh(B);
+    B = ZFisher_truncated(B);
 end
 %%% Save Data to .mat file:
 % Create cell array per observation:
@@ -146,3 +146,17 @@ if exist('SPCMaps', 'var')
     dim_names, 'appendMetaData', metaData,'genFile', true);
 end
 end
+
+% Local function
+function out = ZFisher_truncated(data)
+% This function truncates the ZFisher transformed data between -0.998 and
+% 0.997 Pearson's rho values. This avoids the creation of Infinite values
+% at Pearsons' correlation values of -1 and 1.
+
+lim = 0.998;
+data(data < -lim) = -lim;
+data(data > lim) = lim;
+out = atanh(data);
+end
+
+
