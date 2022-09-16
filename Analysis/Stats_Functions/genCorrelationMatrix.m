@@ -73,6 +73,10 @@ if startsWith(opts.CorrAlgorithm, 'centroid', 'IgnoreCase', true)
         for i = 1:length(centroid_list)
             SPCMaps{i} = reshape(corr(data(centroid_list(i),:)', data'), ...
                 data_sz(1), data_sz(2));
+            if opts.b_FisherZ_transform
+                % Apply Z-Fisher transform to SPCMaps
+                SPCMaps{i} = atanh(SPCMaps{i});
+            end
             waitbar(i/length(centroid_list),w);
         end
         delete(w);

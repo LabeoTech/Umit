@@ -216,6 +216,8 @@ classdef StatsManager < handle
                 end
                 if prod(obj.stats_data{i,11}{1}) == max(obj.stats_data{i,11}{1})
                     idx(i) = true;
+                end
+                if isscalar(obj.stats_data{i,11}{1})
                     typeList(i) = 1;
                 elseif all(strcmpi(obj.stats_data{i,6}.dim_names, 'O'))
                     typeList(i) = 2;
