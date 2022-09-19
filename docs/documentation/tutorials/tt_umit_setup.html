@@ -15,10 +15,9 @@
     <hr>
     <h4>1. Download the toolbox</h4>
     <p>
-      First, download the most recent versions of <i><b>umIT</b></i> and <i><b>IOI_ana</b></i> library from the following <i>master</i> repositories:
+      First, download the most recent release of <i><b>umIT</b></i>:
       <ul>
         <li><a href="https://github.com/S-Belanger/Umit">umIToolbox</a></li>
-        <li><a href="https://github.com/flesage/ioi_ana">IOI_ana library</a></li>
       </ul>
     </p>
     <p>
@@ -29,43 +28,37 @@
         It is advisable to place the toolbox in a folder that is accessible for all users of the Toolbox in order to avoid duplicate files in your computer!
       </p>
     </div>
-    <p>
-      Once all <i><b>umIT</b></i> files are extracted to a local folder, extract the content of <b><i>IOI_ana</i></b> library inside the <b><i>umIT</i></b> folder as:<br><samp>C:/../umIT/IOI_ana/</samp>
-    </p>
 
-    <h4>2. Create an environment variable</h4>
+    <h4>2. Create the local documentation</h4>
     <p>
-      You will need to create custom <a href="https://en.wikipedia.org/wiki/Environment_variable">environment variable</a> that will point to the <b><i>umIT</i></b> folder. This step is necessary for the toolbox to locate the analysis function folders and to add the documentation to Matlab's interface.<br>
-      The variable <b>name</b> is <samp>Umitoolbox</samp> and the <b>value</b> is the path to the toolbox folder: <samp>C:/../umIT</samp>.
-    </p>
-    <p>
-      There are different ways to create an environment variable depending on the operating system. Here are some information on how to create an environment variable on <a href="https://phoenixnap.com/kb/windows-set-environment-variable">Windows</a>, <a href="https://phoenixnap.com/kb/set-environment-variable-mac">MacOS</a> and <a href="https://phoenixnap.com/kb/linux-set-environment-variable">Linux</a>. If you are using Windows, you can use the function <samp>Umitoolbox_setupEnv.m</samp> to automatically create the <samp>Umitoolbox</samp> environment variable for the <b>current user account</b>.
-      Here is the procedure to create the environment variable using <b><i>umIT</i>'s </b> setup function:
+      In order to access our documentation from Matlab's interface, run the function <i>Umitoolbox_setup</i>:
     </p>
     <ol>
       <li>In Matlab, change the current directory to the <b><i>umIT</i>folder</b>.</li>
       <li>In the command window type:
         <div class="codeinput">
           <pre>
-            <code>Umitoolbox_setupEnv</code>
+            <code>Umitoolbox_setup</code>
           </pre>
         </div>
       </li>
-      <li>Select the folder where the toolbox is located.</li>
-      <li>If the env. variable was successfully created, the following message will appear on the command window:
-        <div class="codeinput">
-          <pre>
-            <code>done!<br>Restart MATLAB to apply the changes and rerun this function!</code>
-          </pre>
-        </div>
-      </li>
-      <li> Follow the instructions above to restart Matlab.</li>
     </ol>
-    <h4>3. Finish the setup</h4>
-    <p>
-      Once the <samp>Umitoolbox</samp> environment variable is created, run the function <samp>Umitoolbox_setupEnv</samp>. A dialog box will appear showing that the env. variable was detected. Click on <i>Finish Setup</i> button to conclude the setup process:
-    </p>
-    <img src="../assets/img/umitoolbox_setupenv_dlgbox.png" alt="umitoolbox_setupenv_dlgbox">
+    <div class="warnnote">
+      <p><strong>Important</strong><br>
+        You may need administrator permission to create a local documentation. If you do not, the function <i>Umitoolbox_setup</i> will display a warning:
+      </p>
+      <div class="codeinput">
+        <pre>
+            <code>
+            -------------------------------------------------------------------------<br>Warning: Failed to create local documentation! Try to run MATLAB as admin and rerun this function!<br>If you do not have admin access, the same documentation is available in the project's wiki page at:
+            https://s-belanger.github.io/Umit/ <br>-------------------------------------------------------------------------
+          </code>
+        </pre>
+      </div>
+      <p>
+        In this case, the same information is accessed through the project's <a href="https://s-belanger.github.io/Umit/"> wiki page</a>!
+      </p>
+    </div>
     <p>
       Now, the toolbox is ready to use and the toolbox documentation is accessible through Matlab's interface. To read the documentation, type in the command window:
     </p>
