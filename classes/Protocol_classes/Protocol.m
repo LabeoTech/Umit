@@ -503,6 +503,9 @@ classdef Protocol < handle
             else
                 obj = s;
             end
+            % Add Main and Save directories to Matlab's path (this may be SLOW for directories with a lot of folders...):
+            addpath(genpath(obj.MainDir));
+            addpath(genpath(obj.SaveDir));
             % Rebuild handle of "MyParent" property of elements from
             % Protocol:
             obj.Array.parentObj = obj; % Update handle in ObjectListManager.            
