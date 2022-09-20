@@ -59,22 +59,32 @@
     <hr>
     <button title="click to expand" type="button" class="collapsible">
       <span class="iconplus"></span>
-      <samp><b>crop_start_sec</b></samp> - Seconds from start <br>
+      <samp><b>crop_start</b></samp> - Trim from start <br>
       <span class="title-desc"><i> 0 (default) | positive number</i></span>
     </button>
     <div class="content">
       <p>
-        Number of seconds to crop from the start of the image time series. If set to <b>zero</b>, no cropping is performed.
+        Number of frames to crop from the start of the image time series. If set to <b>zero</b>, no cropping is performed.
       </p>
     </div>
     <button title="click to expand" type="button" class="collapsible">
       <span class="iconplus"></span>
-      <samp><b>crop_end_sec</b></samp> - Seconds at end <br>
+      <samp><b>crop_end</b></samp> - Trim at end <br>
       <span class="title-desc"><i> 0 (default) | positive number</i></span>
     </button>
     <div class="content">
       <p>
-        Number of seconds to crop at the end of the image time series. If set to <b>zero</b>, no cropping is performed.
+        Number of frames to crop at the end of the image time series. If set to <b>zero</b>, no cropping is performed.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>TimeUnit</b></samp> - Time unit <br>
+      <span class="title-desc"><i> Frames (default) | Seconds (default)</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Time unit used to crop the movie. If set to <b>Seconds</b>, the function will calculate the number of frames corresponding to the time in seconds.
       </p>
     </div>
     <!-- JavaScript code to collapse sections -->
