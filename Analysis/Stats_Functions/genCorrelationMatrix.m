@@ -142,8 +142,14 @@ outDataStat = save2Mat([], out ,roi_names, dim_names, 'label',roi_names ,...
 % Create .MAT files with SPCMaps:
 if exist('SPCMaps', 'var')
     dim_names = {'Y', 'X','O'};
-    save2Mat(fullfile(object.SaveFolder, 'corrMat_SPCMaps.mat'), SPCMaps ,roi_names,...
-    dim_names, 'appendMetaData', metaData,'genFile', true);
+    if isempty(object)
+        % When the function is called from DataViewer
+        save2Mat(fullfile(pwd, 'corrMat_SPCMaps.mat'), SPCMaps ,roi_names,...
+            dim_names, 'appendMetaData', metaData,'genFile', true);
+    else
+        save2Mat(fullfile(object.SaveFolder, 'corrMat_SPCMaps.mat'), SPCMaps ,roi_names,...
+            dim_names, 'appendMetaData', metaData,'genFile', true);
+    end
 end
 end
 
