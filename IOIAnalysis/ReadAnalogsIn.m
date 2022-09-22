@@ -41,7 +41,7 @@ stimChan(idxMiss) = [];
 out = struct();
 for i = 1:length(stimChan)
     chanName = Infos.(['AICh' num2str(stimChan(i))]);
-    v = genvarname(chanName);
+    v = genvarname(['Stim_' chanName]);
     eval(['out.' v ' = Stim{i};']);
 end   
 % Save Stim parameters:
