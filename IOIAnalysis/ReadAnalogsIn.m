@@ -1,13 +1,5 @@
 function out = ReadAnalogsIn(FolderPath, SaveFolder, Infos, stimChan)
 
-% Instantiate some variableS:
-Stim = 0;
-StimLength = 0;
-NbStim = 0;
-InterStim_min = 0;
-InterStim_max = 0;
-
-%
 if( ~strcmp(FolderPath, filesep) )
     FolderPath = strcat(FolderPath, filesep);
 end
@@ -28,6 +20,37 @@ for ind = 1:size(aiFilesList,1)
 end
 clear tmp ind data aiFilesList;
 
+% Detect Triggers in each channel:
+Stim = {};
+for i = 1:length(stimChan)
+    Stim{i} = detectTriggers(stimChan(i), Infos, AnalogIN);    
+end
+disp('Checking stim info...')
+idxMiss = cellfun(@(x) isequaln(x,0), Stim);
+if all(idxMiss)
+    % If no stim is detected, save StimParameters.mat file with default
+    % values:
+    disp('No Stimulations detected. Resting State experiment?');
+    Stim = 0;
+    save([SaveFolder filesep 'StimParameters.mat'], 'Stim');
+    return
+end
+% Remove data with missing triggers:
+Stim(idxMiss) = [];%#ok; It is used in an eval fcn below.
+stimChan(idxMiss) = [];
+out = struct();
+for i = 1:length(stimChan)
+    chanName = Infos.(['AICh' num2str(stimChan(i))]);
+    v = genvarname(chanName);
+    eval(['out.' v ' = Stim{i};']);
+end   
+% Save Stim parameters:
+save([SaveFolder filesep 'StimParameters.mat'], '-struct', 'out');
+end
+
+% Local functions:
+function Stim = detectTriggers(stimChan, Infos, AnalogIN)
+Stim = 0;
 % CamTrig is on the first channel:
 CamTrig = find((AnalogIN(1:(end-1),1) < 1.25) & (AnalogIN(2:end,1) >= 1.25))+1;
 % Detect Stimulation triggers in channel 2:
@@ -37,20 +60,14 @@ if( ~isfield(Infos, 'Stimulation1_Amplitude') )
 end
 StimTrig = find((AnalogIN(1:(end-1), stimChan) < Infos.Stimulation1_Amplitude/2) &...
     (AnalogIN(2:end, stimChan) >= Infos.Stimulation1_Amplitude/2))+1;
-% If no stim is detected, save StimParameters.mat file with default
-% values:
 if isempty(StimTrig)
-    disp('No Stimulations detected. Resting State experiment?');    
-    save([SaveFolder filesep 'StimParameters.mat'], 'CamTrig', 'Stim',...
-        'StimLength', 'NbStim', 'InterStim_min', 'InterStim_max');
+    disp(['Missing triggers in channel ' Infos.(['AICh' num2str(stimChan)]) '!'])
     return
 end
 
 if Infos.Stimulation == 1
     Period = median(StimTrig(2:end)-StimTrig(1:(end-1)))/Infos.AISampleRate;
     Freq = 1/Period;
-    Width = sum(AnalogIN(StimTrig(1):StimTrig(2),stimChan) > 2.5)...
-        /(Period*Infos.AISampleRate);    
     StimLim = find(diff(StimTrig)>20000);
     NbStim = length(StimLim)+1;
     if( NbStim == length(StimTrig) ) %Single Pulse trigged Stims
@@ -61,19 +78,11 @@ if Infos.Stimulation == 1
             StimLength = 3*(CamTrig(2) - CamTrig(1))/Infos.AISampleRate;
             StimLim = StimLim + 3*(CamTrig(2) - CamTrig(1));
         end
-        InterStim_min = min((StimTrig(2:end) - StimLim(1:(end-1)))./10000);
-        InterStim_max = max((StimTrig(2:end) - StimLim(1:(end-1)))./10000);
         Stim = zeros(length(AnalogIN(:,stimChan)),1);
         for indS = 1:NbStim
-           Stim(StimTrig(indS):StimLim(indS)) = 1; 
+            Stim(StimTrig(indS):StimLim(indS)) = 1;
         end
     else %Pulses train Stim
-        StimLength = round(length(StimTrig)/(NbStim*Freq));
-        InterStim_min = min((StimTrig(StimLim + 1) - StimTrig(StimLim))./10000);
-        InterStim_max = max((StimTrig(StimLim + 1) - StimTrig(StimLim))./10000);
-        InterStim_min = InterStim_min - StimLength;
-        InterStim_max = InterStim_max - StimLength;
-    
         Stim = zeros(length(AnalogIN(:,stimChan)),1);
         if( NbStim > 1 )
             Stim(StimTrig(1):StimTrig(StimLim(1))) = 1;
@@ -85,9 +94,8 @@ if Infos.Stimulation == 1
             Stim(StimTrig(1):StimTrig(end)) = 1;
         end
     end
-    
-    Stim = Stim(CamTrig);    
-elseif Infos.Stimulation == 2 
+    Stim = Stim(CamTrig);
+elseif Infos.Stimulation == 2
     NbStimAI = length(StimTrig);
     NbStimCycle = Infos.Stimulation_Repeat;
     NbStim = sum(~cellfun(@isempty, regexpi(fieldnames(Infos), 'stim\d{1}'))); % Search for field "Stim" + one digit;
@@ -118,23 +126,13 @@ elseif Infos.Stimulation == 2
     Stim = zeros(size(CamTrig),'single'); % Reset "Stim"
     for ind = 1:length(StimTrig)
         if isfield(Infos,'Events_Order')
-            ID = Infos.Events_Order(ind);            
+            ID = Infos.Events_Order(ind);
         else
             ID = mod(ind-1, NbStim) + 1;
         end
-            St = StimTrig(ind);
-            En = round(StimDurations(ID).*Infos.FrameRateHz + St);
-            Stim(St:En) = StimIDs(ID);
+        St = StimTrig(ind);
+        En = round(StimDurations(ID).*Infos.FrameRateHz + St);
+        Stim(St:En) = StimIDs(ID);
     end
-    
-    StimLength = 2*InterFrame;
-    NbStim = NbStimAI;
-    StStart = find(diff(AnalogIN(:,stimChan)) > Infos.Stimulation1_Amplitude/2);
-    InterStim_min = mean(StStart(2:end) - StStart(1:(end-1)))/1e4;
-    InterStim_max = InterStim_min;    
 end
-% Save Stim parameters:
-save([SaveFolder filesep 'StimParameters.mat'],'CamTrig', 'Stim', 'StimLength',...
-    'NbStim', 'InterStim_min', 'InterStim_max');
 end
-
