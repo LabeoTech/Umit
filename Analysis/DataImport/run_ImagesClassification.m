@@ -40,7 +40,7 @@ if ~opts.b_IgnoreStim
     % Here the first channel fom "chanList" is chosen to retrieve the
     % "Stim" data:
     chan = matfile(fullfile(SaveFolder, strrep(chanList{1}, '.dat', '.mat')));     
-    if ~any(chan.Stim)
+    if all(strcmpi(fieldnames(chan), 'stim'))
         warning('Stim signal not found! Skipped Event file creation.')
     else
        % Create events.mat from StimParameters.mat file:
@@ -49,10 +49,21 @@ if ~opts.b_IgnoreStim
        exp_info = load(fullfile(SaveFolder, 'AcqInfos.mat'));
        stim_info = load(fullfile(SaveFolder, 'StimParameters.mat'));
        % Get On and off timestamps of stims:
-       on_indx = find(stim_info.Stim(1:end-1)<.5 & stim_info.Stim(2:end)>.5);
-       off_indx = find(stim_info.Stim(1:end-1)>.5 & stim_info.Stim(2:end)<.5);
-       timestamps = (sort([on_indx;off_indx]))./exp_info.AcqInfoStream.FrameRateHz;
-       state = repmat([true;false], numel(on_indx),1);
+       fn = fieldnames(stim_info);
+       ID =[];
+       timestamps = [];
+       state = [];
+       for i = 1:length(fn)           
+           on_indx = find(stim_info.(fn{i})(1:end-1)<.5 & stim_info.(fn{i})(2:end)>.5);
+           off_indx = find(stim_info.(fn{i})(1:end-1)>.5 & stim_info.(fn{i})(2:end)<.5);
+           timestamps =[timestamps; (sort([on_indx;off_indx]))./exp_info.AcqInfoStream.FrameRateHz];
+           state =[state; repmat([true;false], numel(on_indx),1)];
+           ID = [ID; repmat(i,size(timestamps))];
+       end
+       % Rearrange arrays by chronological order:
+       [timestamps,idxTime] = sort(timestamps);
+       state = state(idxTime);
+       ID = ID(idxTime);
        % Look for events:
        if any(startsWith('event', fieldnames(exp_info.AcqInfoStream)))
            disp('Digital stimulation data found!')
@@ -63,8 +74,8 @@ if ~opts.b_IgnoreStim
               eventNameList{i} = exp_info.AcqInfoStream.(['Stim' num2str(i)]).name;
            end
        else
-           eventID = ones(size(state));
-           eventNameList = {'1'};       
+           eventID = ID;
+           eventNameList = fn;       
        end        
        saveEventsFile(SaveFolder, eventID, timestamps, state, eventNameList)   
     end

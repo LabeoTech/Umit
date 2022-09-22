@@ -238,13 +238,29 @@ else
     fprintf('Done. \n');
 end
 
-    function ChannelsSort(fList, colors)
-       
-        %for each color, initialise output files:
+    function ChannelsSort(fList, colors)               
+        % Load Stim info:
+        if( ~b_IgnoreStim )
+            Stim = load([SaveFolder 'StimParameters.mat']);            
+            % Control for missing stim in file:
+            if all(ismember(lower(fieldnames(Stim)), {'stim'}))
+                Stim.b_hasStim = false;
+            else
+                Stim.b_hasStim = true;
+            end
+        else
+            Stim.b_hasStim = false;
+            Stim.Stim = 0;
+        end
+        stim_fn = fieldnames(Stim);
+        stim_fn = stim_fn(startsWith(stim_fn, 'stim', 'IgnoreCase', true));
+        
+        % for each color, initialise output files:
         fColor = {};
         fid = [];
         stimPos = 0;
         subNbColors = size(colors,2);
+        
         for indC = 1:size(colors,2)
             if( contains(colors(indC).Color, {'red','green'},'IgnoreCase', true) )
                 hTag = [lower(colors(indC).Color) '.mat'];
@@ -272,7 +288,9 @@ end
             fColor{indC} = matfile([SaveFolder hTag], 'Writable', true);
             fColor{indC}.datFile = dTag; 
             fColor{indC}.datSize = [Ry, Rx]; % Flipped datSize
-            fColor{indC}.Stim = [];
+            for ii = 1:length(stim_fn)
+                fColor{indC}.(stim_fn{ii}) = [];
+            end
             fColor{indC}.datLength = 0;
             fColor{indC}.FirstDim = 'y';
             fColor{indC}.Datatype = 'single';
@@ -285,12 +303,7 @@ end
         
         %Opening Images Files:
         oIm = [];
-        Cnt = 0;
-        if( ~b_IgnoreStim )
-            Stim = load([SaveFolder 'StimParameters.mat']);
-        else
-            Stim.NbStim = 0;
-        end
+        Cnt = 0;        
         for indF = 1:size(fList,1)
             fprintf('Sorting %s.', fList(indF).name);
             data = memmapfile([DataFolder fList(indF).name],...
@@ -352,16 +365,19 @@ end
             Images = iData(:,:,1:(size(iData,3)-overflow));
             clear iData hData overflow;
             
-            if( (~b_IgnoreStim) & (Stim.NbStim > 0) )
-                SubStim = Stim.Stim(stimPos + (1:size(Images,3)));
-                stimPos = stimPos + length(SubStim);
+            if( (~b_IgnoreStim) & (Stim.b_hasStim) )
+                SubStim = [];
+                for ii = 1:length(stim_fn)
+                    SubStim(ii,:) = Stim.(stim_fn{ii})(stimPos + (1:size(Images,3)));
+                end
+                stimPos = stimPos + size(SubStim,2);
             else
                 SubStim = zeros(size(Images,3),1,'single');
             end
             
             Images = reshape(Images, ImRes_XY(2), ImRes_XY(1), subNbColors, []);
-            SubStim = reshape(SubStim, subNbColors, BinningTemp, []);
-            SubStim = ceil(squeeze(mean(SubStim, 2)));
+            SubStim = reshape(SubStim,size(SubStim,1), subNbColors, BinningTemp, []);
+            SubStim = ceil(squeeze(mean(SubStim, 3)));
             for indC = 1:size(colors,2)
                 Ims = squeeze(Images(:, :, indC, :));
                 if( any(sum(sum(Ims,1),2) == 0) )
@@ -385,8 +401,9 @@ end
                 if( BinningSpatial > 1 )
                     Ims = imresize(Ims,1/BinningSpatial);
                 end
-                
-                fColor{indC}.Stim = [fColor{indC}.Stim, SubStim(indC,:)];
+                for ii = 1:length(stim_fn)
+                    fColor{indC}.(stim_fn{ii}) = [fColor{indC}.(stim_fn{ii}); squeeze(SubStim(ii,indC,:))];
+                end
                 
                 fwrite(fid(indC), single(Ims), 'single');
                 fColor{indC}.datLength = fColor{indC}.datLength + size(Ims,3);
