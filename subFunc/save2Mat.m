@@ -71,8 +71,8 @@ max_data_size = max(max_data_size,[],1);
 assert(isequaln(sum(max_data_size~=1),length(dim_names(2:end))), errID, errMsg);
 
 % Further validate dim_names:
-root = getenv('Umitoolbox');
-dim_names_info = load(fullfile(root, 'subFunc','dimension_names.mat'));
+root = fileparts(mfilename('fullpath'));
+dim_names_info = load(fullfile(root, 'dimension_names.mat'));
 
 errID = 'Umitoolbox:save2Mat:InvalidName';
 errMsg = 'List of dimension names contain invalid values.';

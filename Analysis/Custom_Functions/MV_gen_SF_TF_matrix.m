@@ -39,7 +39,9 @@ errID = 'MATLAB:UMIToolbox:MissingVariable';
 errMsg = 'File meta data does not containt Bregma and Lambda coordinates. Run "alignFrames" function and try again.';
 assert(isprop(metaData, 'BregmaXY'), errID, errMsg);
 % Load Allen Brain mask:
-root = getenv('UMIToolbox');
+root = mfilename('fullpath');
+str = strfind(root, 'Analysis');
+root = root(1:str-1);
 a = load(fullfile(root, 'GUI', 'DataViz', 'mouse_ctx_borders.mat'));
 
 % SECTION TO BE CREATED:

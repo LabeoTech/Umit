@@ -33,8 +33,8 @@ addRequired(p, 'dim_names', @iscell);
 addOptional(p, 'extraParams', struct, @isstruct);
 parse(p, data, dim_names, varargin{:});
 % Further validate dim_names:
-root = getenv('Umitoolbox');
-dim_names_info = load(fullfile(root, 'subFunc','dimension_names.mat'));
+root = fileparts(mfilename('fullpath'));
+dim_names_info = load(fullfile(root, 'dimension_names.mat'));
 errID = 'Umitoolbox:save2Dat:InvalidName';
 errMsg = 'List of dimension names contain invalid values.';
 assert(all(ismember(p.Results.dim_names, dim_names_info.dims_dict)), errID, errMsg);

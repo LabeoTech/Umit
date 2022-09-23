@@ -116,7 +116,7 @@ classdef PipelineManager < handle
                 a = load(fullfile(obj.fcnDir,'deployFcnList.mat'));
                 obj.funcList = a.out; % Get the structure "out" created inside the function "umitFcnReader".
             else
-                rootDir = getenv('Umitoolbox');
+                rootDir = erase(mfilename('fullpath'),['classes' filesep 'PipelineManager']);
                 if isempty(rootDir)
                     error('Umitoolbox environment variable not found!')
                 end
