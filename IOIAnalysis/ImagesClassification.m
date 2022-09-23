@@ -372,7 +372,7 @@ end
                 end
                 stimPos = stimPos + size(SubStim,2);
             else
-                SubStim = zeros(size(Images,3),1,'single');
+                SubStim = zeros(1,size(Images,3),'single');
             end
             
             Images = reshape(Images, ImRes_XY(2), ImRes_XY(1), subNbColors, []);
