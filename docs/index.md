@@ -10,6 +10,7 @@ ___
 ### Getting started with ***umIT***
 Here, you will find an introduction about the toolbox and a series of tutorials showing how to use ***umIT***.
 * [An overview](#an-overview)
+* [System requirements](/documentation/rec_sys_requirements.html)
 * [Tutorials](/documentation/gs_index.html)
 
 ___
