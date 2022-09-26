@@ -39,7 +39,7 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
                 obj.ID = ID;                
                 obj.RawFiles_FP = RawFiles_FP;
                 obj.RecordingSystem = RecordingSystem;
-                obj.SampleRate = SampleRate;
+                obj.SampleRateHz = SampleRate;
             else
                 obj.ID = 'def';
             end
