@@ -139,9 +139,6 @@ end
 dim_names = {'O','O'};
 outDataStat = save2Mat([], out ,roi_names, dim_names, 'label',roi_names ,...
     'appendMetaData', metaData,'genFile', false);
-% Update reference point and pixel ratio in data's meta data from ROI file:
-metaData.refPt = roi_data.img_info.refPt;
-metaData.pxPermm = roi_data.img_info.pxPermm;
 % Create .MAT files with SPCMaps:
 if exist('SPCMaps', 'var')
     dim_names = {'Y', 'X','O'};
