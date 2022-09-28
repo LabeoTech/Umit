@@ -188,7 +188,10 @@ if( AcqInfoStream.MultiCam )
     NbColors = sum(idx);
     Colors = struct('ID', {}, 'Color', {}, 'CamIdx', {}, 'FrameIdx', {}, 'Exposure', {});
     for indC = 1:NbColors
-        eval(['Colors(' int2str(indC) ') = AcqInfoStream.Illumination' int2str(indC) ';']);
+         Colors(indC).ID = indC;
+         eval(['Colors(' int2str(indC) ').Color = AcqInfoStream.Illumination' int2str(indC) '.Color;']);
+         eval(['Colors(' int2str(indC) ').CamIdx = AcqInfoStream.Illumination' int2str(indC) '.CamIdx;']);
+         eval(['Colors(' int2str(indC) ').FrameIdx = AcqInfoStream.Illumination' int2str(indC) '.FrameIdx;']);
          if( contains(Colors(indC).Color,{'red', 'amber', 'green'}, 'IgnoreCase', true) )
             Colors(indC).Exposure = AcqInfoStream.ExposureMsec;
         elseif( contains(Colors(indC).Color,{'speckle'}, 'IgnoreCase', true) )
