@@ -30,7 +30,7 @@ catch
     disp(repmat('-', 1,100))
     warning('Failed to create local documentation! Try to run MATLAB as admin and rerun this function!')    
     disp('If you do not have admin access, the same documentation is available in the project''s wiki page at:')
-    disp('https://s-belanger.github.io/Umit/')
+    disp('https://labotech.github.io/Umit/')
     disp(repmat('-', 1,100))
 end
 disp('Everything is set! You can start using the toolbox now!');

@@ -116,7 +116,7 @@ classdef PipelineManager < handle
                 a = load(fullfile(obj.fcnDir,'deployFcnList.mat'));
                 obj.funcList = a.out; % Get the structure "out" created inside the function "umitFcnReader".
             else
-                rootDir = getenv('Umitoolbox');
+                rootDir = erase(mfilename('fullpath'),['classes' filesep 'PipelineManager']);
                 if isempty(rootDir)
                     error('Umitoolbox environment variable not found!')
                 end
@@ -174,8 +174,10 @@ classdef PipelineManager < handle
                         typeVals{i} = 'numericRange'; % 1x2 array of numerical values indicating lower and upper bounds.
                     elseif islogical(listVals{i})
                         typeVals{i} = 'logical'; % 1x2 array of logical values = [true;false];
-                    elseif all(cellfun(@ischar, listVals{i})) && numel(listVals{i}) > 1
+                    elseif all(cellfun(@ischar, listVals{i})) && numel(listVals{i}) > 1 && size(listVals{i},1) < size(listVals{i},2)
                         typeVals{i} = 'charArray'; % Cell array of strings.
+                    elseif all(cellfun(@ischar, listVals{i})) && numel(listVals{i}) > 1 && size(listVals{i},1) > size(listVals{i},2)
+                        typeVals{i} = 'charArrayMultiSelect'; % Cell array of strings with multi-selection option.
                     else
                         typeVals{i} = 'mixArray'; % Cell array of strings and numbers.
                     end
@@ -373,8 +375,19 @@ classdef PipelineManager < handle
         if isempty(obj.pipe(i).opts)
             opts = {'none'; 'none'};
         else
-            opts = [fieldnames(obj.pipe(i).opts)';...
-                cellfun(@(x) num2str(x), struct2cell(obj.pipe(i).opts), 'UniformOutput', false)'];
+            fn = fieldnames(obj.pipe(i).opts)';
+            vals = {};
+            for j = 1:length(fn)
+                val = obj.pipe(i).opts.(fn{j});
+                if isnumeric(val) || islogical(val)
+                    vals{j} = num2str(val);
+                elseif iscell(val) && ischar(val{1})
+                    vals{j} = strjoin(val, ', ');
+                else
+                    vals{j} = val;
+                end
+            end
+            opts = [fn;vals];
         end
         txt = sprintf('Function name : %s\nOptional Parameters:\n',...
             obj.pipe(i).name);
@@ -1153,7 +1166,7 @@ for i = 1:length(fields)
     currOpts(i,1) = fields(i);
     currOpts(i,2) = currVals(i);
 end
-dlg = uifigure('Name',['Set Parameters for: ' fcnName], 'NumberTitle','off','Position',[0,0,310,260],...
+dlg = uifigure('Name',['Set Parameters for: ' fcnName], 'NumberTitle','off','Position',[0,0,310,240],...
     'MenuBar','none', 'ToolBar', 'none','Visible','off', 'CloseRequestFcn', @figCloseRequest);
 movegui(dlg, 'center');
 myFontSize = 12;
@@ -1163,7 +1176,17 @@ g = uigridlayout(dlg);
 g.ColumnWidth = {max(cellfun(@(x) length(x), fields))*myFontSize,'1x'};
 g.ColumnWidth = {'1x','1x'};
 g.ColumnSpacing = 5;
-g.RowHeight = [repmat({30},1,length(fields)), {60}];
+% Set RowHeight of gridLayout depending on the type of variable:
+idx = strcmpi('charArrayMultiSelect', typeVals);
+rh = {};
+for i = 1:length(idx)
+    if idx(i)
+        rh{i} = '1x';
+    else
+        rh{i} = 30;
+    end
+end   
+g.RowHeight = [rh, {60}];
 % Update figure height:
 dlg.InnerPosition(4) = sum([g.RowHeight{:}, 2*g.RowSpacing]);
 for i = 1:length(fields)
@@ -1176,6 +1199,8 @@ for i = 1:length(fields)
     switch typeVals{i}
         case{'numericArray','logical', 'charArray'}
             vo = uidropdown(g);
+        case 'charArrayMultiSelect'
+            vo = uipanel(g, 'Scrollable', 'on');
         case {'numericRange'}
             vo = uieditfield(g, 'numeric');
         otherwise
@@ -1184,16 +1209,28 @@ for i = 1:length(fields)
     % Set position of element in uigrid:
     vo.Layout.Row = i;
     vo.Layout.Column = 2;
-    
+            
     % Populate elements with current values:
     switch typeVals{i}
-        case 'numericArray'
+        case 'numericArray'                   
             vo.Items = arrayfun(@(x) num2str(x), listVals{i}, 'UniformOutput',false);
             vo.Value = vo.Items(listVals{i} == currVals{i});
         case 'charArray'
             vo.Items = listVals{i};
             vo.Value = vo.Items(strcmp(listVals{i},currVals{i}));
-        case 'logical'
+        case 'charArrayMultiSelect'
+            % Create uipanel with series of checkboxes:
+            idxDef = strcmp(listVals{i},currVals{i});
+            glChar = uigridlayout(vo,[length(listVals{i}),1]);
+            glChar.RowHeight = repmat({20},size(listVals{i}));            
+            for jj = 1:length(listVals{i})
+                c = uicheckbox('Parent',glChar, 'Text', listVals{i}{jj}, 'Value', idxDef(jj));
+                c.Layout.Row = jj;
+            end
+            % Resize figure to accomodate checkbox list:
+            dlg.Position(4) = dlg.Position(4) + 20*length(listVals{i});
+            movegui(dlg, 'center');
+        case 'logical'            
             keys = {'Yes','No'};
             [~,locB] = ismember([true, false], listVals{i});
             vo.Items = keys(locB);
@@ -1211,7 +1248,7 @@ for i = 1:length(fields)
             else
                 vo.Tooltip = 'Type a string';
             end
-    end
+    end      
 end
 % Add "Save button"
 g2 = uigridlayout(g);
@@ -1225,6 +1262,7 @@ btnReset.Layout.Row = 1;
 btnReset.Layout.Column = 2;
 btnReset.Tooltip = 'Reset current values to function''s default';
 dlg.Visible = 'on';
+pause(0.2);
 waitfor(dlg);
 % Return current values if user closes the figure:
 if isempty(out)
@@ -1233,11 +1271,11 @@ if isempty(out)
 end
 % Clean "out" before completion:
 for i = 1:size(out,1)
-    out{i,1} = currOpts{i,1};
+    out{i,1} = currOpts{i,1};   
     switch typeVals{i}
         case 'numericArray'
             out{i,2} = str2double(out{i,2});
-        case 'charArray'
+        case {'charArray', 'charArrayMultiSelect'}
             %Do Nothing%
         case 'numericRange'
             %Do Nothing%
@@ -1272,33 +1310,40 @@ end
                     case {'numericArray', 'logical'}
                         idx_def = listVals{ii} == defVals{ii};
                     case 'charArray'
-                        idx_def = strcmp(listVals{ii}, defVals{ii});
+                        idx_def = strcmp(listVals{ii}, defVals{ii});                                  
                 end
                 valueObj.Value = valueObj.Items(idx_def);
-                %             elseif isa(valueObj,'matlab.ui.control.NumericEditField')
+            elseif isa(valueObj,'matlab.ui.container.Panel')
+                % For charArrayMultiSelect case:                                
+                idxDefReset = strcmpi(defVals{ii}, listVals{ii});
+                arrayfun(@(x,y) set(x,'Value', y), valueObj.Children.Children, idxDefReset);
             else
                 valueObj.Value = defVals{ii};
             end
-        end
+        end        
     end
-
-
     function saveParams(src,~)
         % This callback saves the parameters selected by the user in the
-        % GUI to the "out" variable and closes the figure;
+        % GUI to the "out" variable and closes the figure;        
         gl = src.Parent.Parent;
         nRows = length(gl.RowHeight)-1;
         layout_info = arrayfun(@(x) get(x, 'Layout'),gl.Children);
         for ii = 1:nRows
             valueObj = gl.Children([layout_info.Row] == ii & [layout_info.Column] == 2);
-            out{ii,2} = valueObj.Value;
+            if isa(valueObj,'matlab.ui.container.Panel')
+                % Special case: get checkbox values inside uipanel:                
+                out{ii,2} = listVals{ii}(arrayfun(@(x) x.Value, valueObj.Children.Children));           
+            else
+                out{ii,2} = valueObj.Value;
+            end
         end
         delete(src.Parent.Parent.Parent); % Close figure.
     end
-
     function figCloseRequest(src,~)
         % Just displays a message to user.
-        warndlg('Operation cancelled by User! Changes won''t be applied!', 'Set options Cancelled!');
+        src.Visible = 'off';
+        w = warndlg('Operation cancelled by User! Changes won''t be applied!', 'Set options Cancelled!', 'modal');
+        waitfor(w);
         delete(src);
     end
 end

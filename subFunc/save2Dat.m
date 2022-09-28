@@ -19,8 +19,8 @@ data = p.Results.data;
 metaData = p.Results.metaData;
 clear p
 % Further validate dim_names:
-root = getenv('Umitoolbox');
-dim_names_info = load(fullfile(root, 'subFunc','dimension_names.mat'));
+root = fileparts(mfilename('fullpath'));
+dim_names_info = load(fullfile(root, 'dimension_names.mat'));
 errID = 'Umitoolbox:save2Dat:InvalidName';
 errMsg = 'List of dimension names contain invalid values.';
 assert(all(ismember(metaData.dim_names, dim_names_info.dims_dict)), errID, errMsg);

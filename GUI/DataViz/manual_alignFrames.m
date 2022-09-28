@@ -116,6 +116,8 @@ set(s3, 'DataAspectRatio', [1 1 1], 'DataAspectRatioMode', 'manual');
 title(s1,'Merge - (Close figure to continue...)');
 title(s2, 'Reference');
 title(s3, 'Registered');
+% link axes
+linkaxes([s1,s2,s3],'xy')
 % draw dots
 hold(s2,'on');
 plot(s2,1,1,'g+', 'Tag', 'gDot'); hold(s2,'off');

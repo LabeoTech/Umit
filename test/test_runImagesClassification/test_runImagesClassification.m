@@ -9,7 +9,8 @@ classdef test_runImagesClassification < matlab.unittest.TestCase
     
     methods(Test)
         function realSolution(testCase, rawFolder, outFolder, expOutFolder, opts)
-            root = getenv('Umitoolbox');  
+            root = erase(mfilename('fullpath'), ['test' filesep ...
+                'test_runImagesClassification' filesep 'test_runImagesClassification']); 
             run_ImagesClassification(fullfile(root,rawFolder), fullfile(root,outFolder),opts);
             % Test .DAT files:
             dat_files = dir([fullfile(root,outFolder) '*.dat']);

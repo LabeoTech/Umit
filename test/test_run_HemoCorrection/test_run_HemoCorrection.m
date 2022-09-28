@@ -8,7 +8,7 @@ classdef test_run_HemoCorrection < matlab.unittest.TestCase
     
     methods(Test)
         function realSolution(testCase, rawFolder, outFolder, expOutFolder, opts)
-            root = getenv('Umitoolbox');
+            root = erase(mfilename('fullfile'), ['test' filesep 'test_run_HemoCorrection' filesep 'test_run_HemoCorrection']);
             
             % Since the function HemoCorrection works with files in the
             % same folder, copy the raw data from rawFolder to

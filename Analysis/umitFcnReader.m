@@ -7,7 +7,7 @@ function umitFcnReader(appName)
 % classes to be able to display the optional parameters of the analysis functions.
 
 % Try to locate umIT's "Analysis" folder:
-root = getenv('Umitoolbox');
+root = erase(mfilename('fullpath'),['Analysis' filesep 'umitFcnReader']);
 if isempty(root)
     % Try to locate "Analysis" folder by searching for the funcTemplate.m
     % function inside it.
