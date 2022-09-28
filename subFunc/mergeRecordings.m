@@ -28,7 +28,6 @@ addOptional(p, 'merge_order',[], @isnumeric);
 parse(p,SaveFilename,folderList,filename, merge_type,varargin{:})
 % Set merge_order variable and force it to an integer:
 merge_order = p.Results.merge_order;
-merge_type = merge_type;
 if isempty(merge_order)
     % If not provided, the order of merging will be the order of
     % "folderList":
@@ -106,6 +105,9 @@ stim_fn = fn(startsWith(fn, 'Stim'));
 for i  = 1:length(stim_fn)
     mOut.(stim_fn{i}) = [];
 end
+if isempty(stim_fn)
+    mOut.Stim = [];
+end
 % Get required fields meta data from the first file:
 mOut.Freq = mIn.Freq;
 mOut.datName = mIn.datName;
@@ -143,7 +145,7 @@ if strcmpi(merge_type, 'movie')
     end
         fclose(fidOut);
         % Save meta data to file:
-        save(strrep(SaveFilename, '.dat', '.mat'), '-struct', 'mOut');
+        save(strrep(SaveFilename, '.dat', '.mat'), '-struct', 'mOut');        
 else
     % Concatenate data in "E"vent domain:
     % Create empty 4D matrix with dimensions {Trials,Y,X,T}:
@@ -162,16 +164,19 @@ else
     mOut.dim_names = [{'E'}, mOut.dim_names];
     mOut.datSize = [length(dataPath) mIn.datSize(1)];
     mOut.datLength = [mIn.datSize(2) mIn.datLength(1)];
-    % Add generic event info to meta data:
+    % Create "events.mat" file and get event info??
+    
+    % Add event info to meta data:
+    
     mOut.eventID = ones(mOut.datSize(1),1,'uint16');
     mOut.eventNameList = {'1'};
-    mOut.preEventTime_sec = 1/mOut.Freq;
-    mOut.postEventTime_sec= mOut.datLength(2)-1/mOut.Freq;    
+    mOut.preEventTime_sec = 150/mOut.Freq;
+    mOut.postEventTime_sec= mOut.datLength(2)-150/mOut.Freq;    
     save2Dat(SaveFilename, data, mOut);
 end
 close(w)
 % Add/update events:
-%%%%%%% TO DO %%%%%%%%
+
 disp('Done')
 end
 
