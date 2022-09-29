@@ -91,10 +91,6 @@ idx = cellfun(@(x) all(ismember(reqFields, fieldnames(matfile(x)))), metaDataPat
 assert(all(idx), 'umIToolbox:mergeRecordings:WrongInput', 'Input data must be generated from LabeoTech Imaging systems');
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Data merge:
-% if isfile(SaveFilename) % delete existing .dat and .mat files
-%     delete(SaveFilename);
-%     delete(strrep(SaveFilename, '.dat', '.mat'));
-% end
 
 % Open new .mat (meta data) file:
 mOut = struct();
@@ -102,12 +98,16 @@ mIn = matfile(metaDataPath{1});
 fn = setdiff(fieldnames(mIn),[{'Properties'}, reqFields]);
 % Generate "Stim" fields:
 stim_fn = fn(startsWith(fn, 'Stim'));
-for i  = 1:length(stim_fn)
-    mOut.(stim_fn{i}) = [];
-end
-if isempty(stim_fn)
+if isempty(stim_fn) || sum(mIn.Stim) == 0
     mOut.Stim = [];
+    b_noStim = true;
+else
+    b_noStim = false;
+    for i  = 1:length(stim_fn)
+        mOut.(stim_fn{i}) = [];
+    end
 end
+
 % Get required fields meta data from the first file:
 mOut.Freq = mIn.Freq;
 mOut.datName = mIn.datName;
@@ -123,7 +123,7 @@ fn = setdiff(fn, stim_fn);
 for i = 1:length(fn)
     mOut.(fn{i}) = mIn.(fn{i});
 end
-w = waitbar(0,'Merging data...');
+w = waitbar(0,'Merging data...', 'Name', ['Merging ' filename]);
 if strcmpi(merge_type, 'movie')
     % Open new .dat file:
     fidOut = fopen(SaveFilename,'w');
@@ -137,46 +137,55 @@ if strcmpi(merge_type, 'movie')
         fclose(fidIn);
         % Update meta data:
         mOut.datLength = sum([mOut.datLength, mIn.datLength]); % Update data length
-        % Concatenate Stim-related variables:
-        for j = 1:length(stim_fn)
-            mOut.(stim_fn{j}) = [mOut.(stim_fn{j}), mIn.(stim_fn{j})];
+        % Concatenate Stim-related variables:        
+        if b_noStim
+            % Create a fake stim trigger to mark the trial:            
+            mOut.Stim = [mOut.Stim, ones(1,mIn.datLength-1), 0];
+        else
+            for j = 1:length(stim_fn)
+                mOut.(stim_fn{j}) = [mOut.(stim_fn{j}), mIn.(stim_fn{j})];
+            end
         end
         waitbar(i/length(dataPath),w);
     end
-        fclose(fidOut);
-        % Save meta data to file:
-        save(strrep(SaveFilename, '.dat', '.mat'), '-struct', 'mOut');        
+    fclose(fidOut);
+    % Save meta data to file:
+    save(strrep(SaveFilename, '.dat', '.mat'), '-struct', 'mOut');        
 else
     % Concatenate data in "E"vent domain:
     % Create empty 4D matrix with dimensions {Trials,Y,X,T}:
     data = nan([length(dataPath), mOut.datSize, mIn.datLength], 'single');
     % Populate each trial with the input data
     for i = 1:length(dataPath)
-        [datIn, mIn] = loadDatFile(dataPath{i});       
+        [datIn, mIn] = loadDatFile(dataPath{i});
         data(i,:,:,:) = datIn(:,:,1:size(data,4));
-        % Update meta data:        
-        for j = 1:length(stim_fn)
-            mOut.(stim_fn{j}) = [mOut.(stim_fn{j}), mIn.(stim_fn{j})];
-        end
+        % Update meta data:
+        if b_noStim
+            % Create a fake stim trigger at the middle of the trial:
+            mOut.Stim = [mOut.Stim, 0, ones(1,mIn.datLength-2), 0];
+        else
+            for j = 1:length(stim_fn)
+                mOut.(stim_fn{j}) = [mOut.(stim_fn{j}), mIn.(stim_fn{j})];
+            end
+        end       
         waitbar(i/length(dataPath),w);
     end
     % Update dimensions in metadata:
     mOut.dim_names = [{'E'}, mOut.dim_names];
     mOut.datSize = [length(dataPath) mIn.datSize(1)];
     mOut.datLength = [mIn.datSize(2) mIn.datLength(1)];
-    % Create "events.mat" file and get event info??
-    
-    % Add event info to meta data:
-    
+    % Add event info to meta data:    
     mOut.eventID = ones(mOut.datSize(1),1,'uint16');
     mOut.eventNameList = {'1'};
-    mOut.preEventTime_sec = 150/mOut.Freq;
-    mOut.postEventTime_sec= mOut.datLength(2)-150/mOut.Freq;    
+    mOut.preEventTime_sec = single(2/mOut.Freq);
+    mOut.postEventTime_sec = single((mOut.datLength(2)-2)/mOut.Freq);
+    waitbar(1,w,'Please wait. Writing data to file...')
     save2Dat(SaveFilename, data, mOut);
 end
+% Copy AcqInfo file from one of the original files to get some experiment info:
+copyfile(fullfile(fileparts(dataPath{end}), 'AcqInfos.mat'), fullfile(fileparts(SaveFilename),'AcqInfos.mat'));
 close(w)
 % Add/update events:
-
 disp('Done')
 end
 
