@@ -1,4 +1,4 @@
-function [HbO, HbR] = HemoCompute(DataFolder, SaveFolder, FilterSet, Illumination)
+function [HbO, HbR] = HemoCompute(DataFolder, SaveFolder, FilterSet, Illumination, b_normalize)
 
 %Inputs Validation
 if( ~strcmp(DataFolder(end), filesep) )
@@ -10,7 +10,7 @@ if isempty(SaveFolder)
 elseif( ~strcmp(SaveFolder(end), filesep) )
     SaveFolder = strcat(SaveFolder, filesep);
 end
-    
+
 if( ~contains(lower(FilterSet), {'gcamp', 'jrgeco', 'none'}) )
     disp('Invalide Filter set name');
     return;
@@ -20,10 +20,13 @@ if( any(idx) )
     Illumination{idx} = 'yellow';
 end
 if( sum(contains({'red', 'yellow', 'green'}, lower(Illumination))) < 2 )
-    disp('At least two different illumination wavelengths are needed for Hb computation'); 
+    disp('At least two different illumination wavelengths are needed for Hb computation');
     return;
 end
-
+% Tags:
+fTags = {'fidR', 'fidG', 'fidY'};
+cTags = {'iRed', 'iGreen', 'iYellow'};
+colors = {'Red', 'Green', 'Yellow'};
 %Files Opening:
 NbFrames = inf;
 fidR = 0;
@@ -53,9 +56,44 @@ for indC = 1:size(Illumination,2)
             disp('Unknown colour');
     end
 end
-NbPix = double(NbPix);
-% clear iRed iGreen iYellow indC;
 
+NbPix = double(NbPix);
+% Check if the data is normalized:
+indxNorm = [-2 -2 -2];
+
+disp('Cheking channel data...')
+for i = 1:3
+    if eval([fTags{i} '== 0'])
+        continue
+    end
+    eval(['Mdat = mean(fread(' fTags{i} ', Inf, ''*single''),''all'');']);
+    if Mdat >.75 && Mdat <1.25
+        % If the data is centered at one.
+        indxNorm(i) = 1;
+    elseif Mdat > -.25 && Mdat <.25
+        % If the data is centered at zero
+        indxNorm(i) = 0;
+    else
+        % Data not normalized!
+        indxNorm(i) = -1;
+    end
+end
+disp('Data checked!')
+if any(indxNorm == -1) && ~b_normalize
+    channels = strjoin(colors(indxNorm == -1), ', ');
+    error(['Operation aborted! The channels "' channels '" must be normalized or set "b_normalize" input to TRUE.'])
+elseif any(indxNorm == 0)
+    channels = strjoin(colors(indxNorm == 0), ', ');
+    warning(['The channels "' channels '" are centered at zero. They will be shifted to be centered at one.'])
+end
+% Get data size:
+for i = 1:3
+    if exist(cTags{i},'var')
+        break
+    end
+end
+eval(['iFile = ' cTags{i} ';']);
+% clear iRed iGreen iYellow indC;
 
 % Filter setting
 switch( lower(FilterSet) )
@@ -93,28 +131,43 @@ for indP = 1:nIter
     if( fidR )
         fseek(fidR, (indP-1)*NbPix(1)*MemFact*4,'bof');
         Red = fread(fidR,[NbPix(1)*MemFact, NbFrames],Precision,(NbPix(1)*NbPix(2) - NbPix(1)*MemFact)*4);
-        Red = single(filtfilt(lpass_high.sosMatrix, lpass_high.ScaleValues, double(Red)'))';
-        tmp = single(filtfilt(lpass_low.sosMatrix, lpass_low.ScaleValues, double(Red)'))';
-        tmp(tmp<min(Red(:))) = min(Red(:));
-        Red = (Red)./(tmp);
+        if b_normalize && indxNorm(1) == -1
+            Red = single(filtfilt(lpass_high.sosMatrix, lpass_high.ScaleValues, double(Red)'))';
+            tmp = single(filtfilt(lpass_low.sosMatrix, lpass_low.ScaleValues, double(Red)'))';
+            tmp(tmp<min(Red(:))) = min(Red(:));
+            Red = (Red)./(tmp);
+        end
+        if indxNorm(1) == 0 % data centered at zero
+            Red = Red + 1;
+        end
         Red = -log10(Red);
     end
     if( fidG )
         fseek(fidG, (indP-1)*NbPix(1)*MemFact*4,'bof');
         Green = fread(fidG,[NbPix(1)*MemFact, NbFrames],Precision,(NbPix(1)*NbPix(2) - NbPix(1)*MemFact)*4);
-        Green = single(filtfilt(lpass_high.sosMatrix, lpass_high.ScaleValues, double(Green)'))';
-        tmp = single(filtfilt(lpass_low.sosMatrix, lpass_low.ScaleValues, double(Green)'))';
-        tmp(tmp<min(Green(:))) = min(Green(:));
-        Green = (Green)./(tmp);
+        if b_normalize && indxNorm(2) == -1
+            Green = single(filtfilt(lpass_high.sosMatrix, lpass_high.ScaleValues, double(Green)'))';
+            tmp = single(filtfilt(lpass_low.sosMatrix, lpass_low.ScaleValues, double(Green)'))';
+            tmp(tmp<min(Green(:))) = min(Green(:));
+            Green = (Green)./(tmp);
+        end
+        if indxNorm(2) == 0 % data centered at zero
+            Green = Green + 1;
+        end
         Green = -log10(Green);
     end
     if( fidY )
         fseek(fidY, (indP-1)*NbPix(1)*MemFact*4,'bof');
         Yel = fread(fidY,[NbPix(1)*MemFact, NbFrames],Precision,(NbPix(1)*NbPix(2) - NbPix(1)*MemFact)*4);
-        Yel = single(filtfilt(lpass_high.sosMatrix, lpass_high.ScaleValues, double(Yel)'))';
-        tmp = single(filtfilt(lpass_low.sosMatrix, lpass_low.ScaleValues, double(Yel)'))';
-        tmp(tmp<min(Yel(:))) = min(Yel(:));
-        Yel = (Yel)./(tmp);
+        if b_normalize && indxNorm(3) == -1
+            Yel = single(filtfilt(lpass_high.sosMatrix, lpass_high.ScaleValues, double(Yel)'))';
+            tmp = single(filtfilt(lpass_low.sosMatrix, lpass_low.ScaleValues, double(Yel)'))';
+            tmp(tmp<min(Yel(:))) = min(Yel(:));
+            Yel = (Yel)./(tmp);
+        end
+        if indxNorm(3) == 0 % data centered at zero
+            Yel = Yel + 1;
+        end
         Yel = -log10(Yel);
     end
     clear tmp;
@@ -140,54 +193,37 @@ for indP = 1:nIter
     Hbs = real(Hbs);
     HbO(:,(indP-1)*MemFact + (1:MemFact),:) = squeeze(Hbs(1,:,:,:));
     HbR(:,(indP-1)*MemFact + (1:MemFact),:) = squeeze(Hbs(2,:,:,:));
+    
     waitbar(indP/nIter,h);
 end
 close(h);
 % Save File management:
 if( bSave )
-    % Save HbO:
+    % Save HbO:    
     % Save .DAT file:
     fidHbO = fopen([SaveFolder 'HbO.dat'],'W');
     fwrite(fidHbO, HbO, '*single');
-    fclose(fidHbO);
-    % Get handles from one of the color channels (data from
-    % ImagesClassification):
-    cTags = {'iRed', 'iGreen', 'iYellow'};
-    for i = 1:3
-        if exist(cTags{i},'var')
-            break
-        end
-    end
+    fclose(fidHbO);    
+    fn = setdiff(fieldnames(iFile), {'Properties', 'datFile'});
+    
     % Save .MAT file:
     fHbO = matfile([SaveFolder 'HbO.mat'], 'Writable', true);
     fHbO.datFile = 'HbO.dat';
-    fHbO.datSize = [size(HbO,1), size(HbO,2)];    
-    fHbO.datLength = size(HbO,3);
-    fHbO.FirstDim = 'y';
-    fHbO.Datatype = 'single';
-    fHbO.datName = 'data';
-    fHbO.dim_names = {'Y', 'X', 'T'};
-    fHbO.Freq = Freq;
-    % Copy "Stim" and "tExposure" from input color channel:
-    eval(['fHbO.Stim = ' cTags{i} '.Stim;']); 
-    eval(['fHbO.tExposure = ' cTags{i} '.tExposure;']); 
+    for i = 1:numel(fn)
+        fHbO.(fn{i}) = iFile.(fn{i});
+    end
     
     % Save HbR:
-    fidHbR = fopen([SaveFolder 'HbR.dat'],'W');    
+    % Save .DAT file:
+    fidHbR = fopen([SaveFolder 'HbR.dat'],'W');
     fwrite(fidHbR, HbR, '*single');
     fclose(fidHbR);
     
-     % Save .MAT file:
+    % Save .MAT file:
     fHbR = matfile([SaveFolder 'HbR.mat'], 'Writable', true);
     fHbR.datFile = 'HbR.dat';
-    fHbR.datSize = [size(HbR,1), size(HbR,2)];    
-    fHbR.datLength = size(HbR,3);
-    fHbR.FirstDim = 'y';
-    fHbR.Datatype = 'single';
-    fHbR.datName = 'data';
-    fHbR.dim_names = {'Y', 'X', 'T'};
-    fHbR.Freq = Freq;
-    % Copy "Stim" and "tExposure" from one of the input color channels (data from ImagesClassification):
-    eval(['fHbR.Stim = ' cTags{i} '.Stim;']); 
-    eval(['fHbR.tExposure = ' cTags{i} '.tExposure;']); 
+    for i = 1:numel(fn)
+        fHbO.(fn{i}) = iFile.(fn{i});
+    end 
+end
 end
