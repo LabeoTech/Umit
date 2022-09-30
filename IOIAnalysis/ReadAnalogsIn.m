@@ -1,4 +1,4 @@
-function out = ReadAnalogsIn(FolderPath, SaveFolder, Infos, stimChan)
+function varargout = ReadAnalogsIn(FolderPath, SaveFolder, Infos, stimChan)
 
 if( ~strcmp(FolderPath, filesep) )
     FolderPath = strcat(FolderPath, filesep);
@@ -23,7 +23,7 @@ clear tmp ind data aiFilesList;
 % Detect Triggers in each channel:
 Stim = {};
 for i = 1:length(stimChan)
-    Stim{i} = detectTriggers(stimChan(i), Infos, AnalogIN);    
+    Stim{i} = detectTriggers(stimChan(i), Infos, AnalogIN);
 end
 disp('Checking stim info...')
 idxMiss = cellfun(@(x) isequaln(x,0), Stim);
@@ -40,12 +40,20 @@ Stim(idxMiss) = [];%#ok; It is used in an eval fcn below.
 stimChan(idxMiss) = [];
 out = struct();
 for i = 1:length(stimChan)
-    chanName = Infos.(['AICh' num2str(stimChan(i))]);
+    if isfield(Infos,['AICh' num2str(stimChan(i))])
+        chanName = Infos.(['AICh' num2str(stimChan(i))]);
+    else
+        chanName = num2str(stimChan(i));
+    end
     v = genvarname(['Stim_' chanName]);
     eval(['out.' v ' = Stim{i};']);
-end   
+end
 % Save Stim parameters:
 save([SaveFolder filesep 'StimParameters.mat'], '-struct', 'out');
+disp('StimParameters saved!')
+if nargout
+    varargout{:} = out;
+end
 end
 
 % Local functions:
@@ -58,11 +66,22 @@ CamTrig = find((AnalogIN(1:(end-1),1) < 1.25) & (AnalogIN(2:end,1) >= 1.25))+1;
 if( ~isfield(Infos, 'Stimulation1_Amplitude') )
     Infos.Stimulation1_Amplitude = 5;
 end
+
 StimTrig = find((AnalogIN(1:(end-1), stimChan) < Infos.Stimulation1_Amplitude/2) &...
     (AnalogIN(2:end, stimChan) >= Infos.Stimulation1_Amplitude/2))+1;
 if isempty(StimTrig)
-    disp(['Missing triggers in channel ' Infos.(['AICh' num2str(stimChan)]) '!'])
+    if isfield(Infos,['AICh' num2str(stimChan)])
+        str = Infos.(['AICh' num2str(stimChan)]);
+    else
+        str = num2str(stimChan);
+    end
+    disp(['Missing triggers in channel ' str '!'])
     return
+end
+
+% Add Stimulation field for retrocompatibility:
+if( ~isfield(Infos, 'Stimulation') )
+    Infos.Stimulation = 1;
 end
 
 if Infos.Stimulation == 1

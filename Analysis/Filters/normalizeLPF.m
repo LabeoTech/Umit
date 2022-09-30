@@ -8,7 +8,7 @@ function outData = normalizeLPF(data, metaData, varargin)
 % to express the signal as DeltaR/R.
 % This function is a wrapper of the IOI library function "NormalisationFiltering.m".
 % For more information on the algorithm, refer to the function's documentation.
-% 
+%
 % Limitations:
 % The data must be an Image time series with dimensions
 % {Y,X,T}.
@@ -18,8 +18,8 @@ function outData = normalizeLPF(data, metaData, varargin)
 %   metaData: .mat file with meta data associated with "data".
 %   opts (optional): structure containing extra parameters. See "default_opts" variable below for details!
 %
-% Outputs: 
-%   outData: numerical matrix with dimensions {Y,X,T}.   
+% Outputs:
+%   outData: numerical matrix with dimensions {Y,X,T}.
 %   metaData: .mat file with meta data associated with "outData".
 
 % Defaults:
@@ -33,7 +33,7 @@ opts_values = struct('LowCutOffHz', [0,Inf], 'HighCutOffHz',[eps,Inf],'Normalize
 
 %%% Arguments parsing and validation %%%
 p = inputParser;
-addRequired(p,'data',@(x) isnumeric(x) & ndims(x) == 3); % Validate if the input is a 3-D numerical matrix:
+addRequired(p,'data',@(x) isnumeric(x)); % Validate if the input is numerical
 addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
 % Parse inputs:
@@ -48,9 +48,14 @@ clear p
 
 % Validate if "data" is an Image Time Series:
 errID = 'umIToolbox:normalizeLPF:InvalidInput';
-errMsg = 'Wrong Input Data type. Data must be an Image time series with dimensions "X", "Y" and "T".';
-assert(all(ismember(metaData.dim_names,{'Y', 'X', 'T'})), errID, errMsg);
-
+errMsg = 'Wrong Input Data type. Data must be an Image time series.';
+assert(all(ismember({'Y', 'X', 'T'}, metaData.dim_names)), errID, errMsg);
+idxE = strcmpi(metaData.dim_names,'E');
+if any(idxE)
+    b_HasEvents = true;
+else
+    b_HasEvents = false;
+end
 % Find NaNs and replace them with zeros:
 idx_nan = isnan(outData);
 outData(idx_nan) = 0;
@@ -59,11 +64,11 @@ outData(idx_nan) = 0;
 errID = 'umIToolbox:normalizeLPF:InvalidInput';
 % Check Low cut-off frequency:
 if opts.LowCutOffHz < 0 || opts.LowCutOffHz > metaData.Freq/2
-    error(errID,['Invalid cut off value! LowCutOffHz must be between 0 and ' num2str(metaData.Freq/2) '!'])        
+    error(errID,['Invalid cut off value! LowCutOffHz must be between 0 and ' num2str(metaData.Freq/2) '!'])
 end
 % Check High cut-off frequency:
-if opts.HighCutOffHz < opts.LowCutOffHz 
-    error(errID,'Invalid cut off value! HighCutOffHz must be higher than LowCutOffHz!');        
+if opts.HighCutOffHz < opts.LowCutOffHz
+    error(errID,'Invalid cut off value! HighCutOffHz must be higher than LowCutOffHz!');
 end
 
 if opts.HighCutOffHz == 0 ||  opts.HighCutOffHz > metaData.Freq/2
@@ -71,8 +76,19 @@ if opts.HighCutOffHz == 0 ||  opts.HighCutOffHz > metaData.Freq/2
 end
 
 disp('Filtering data...')
-outData = NormalisationFiltering(pwd, outData, opts.LowCutOffHz, opts.HighCutOffHz, ...
-    opts.Normalize,opts.bApplyExpFit, metaData.Freq);
+if b_HasEvents    
+    dimorder = 1:4;
+    dimorder = [dimorder(idxE), dimorder(~idxE)];
+    outData = permute(outData, dimorder);
+    for i = 1:size(outData,1)
+        outData(i,:,:,:) = NormalisationFiltering(pwd, squeeze(outData(i,:,:,:)), opts.LowCutOffHz, opts.HighCutOffHz, ...
+            opts.Normalize,opts.bApplyExpFit, metaData.Freq);
+    end
+    outData = ipermute(outData,dimorder);
+else
+    outData = NormalisationFiltering(pwd, outData, opts.LowCutOffHz, opts.HighCutOffHz, ...
+        opts.Normalize,opts.bApplyExpFit, metaData.Freq);
+end
 disp('Finished with temporal filter.')
 % Put NaNs back to data:
 outData(idx_nan) = NaN;

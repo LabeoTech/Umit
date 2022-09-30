@@ -1,6 +1,10 @@
 function outData = apply_detrend(data, metaData)
 % APPLY_DETREND applies a linear detrend to the time domain of image time
-% series or image time series split by events.
+% series or image time series split by events. To calculate the linear
+% trend, this function uses some frames at the start and at the end of the
+% time series to calculate the slope. If the data is an image time series
+% split by events, the number of frames corresponds to the baseline time
+% stored in the "preEventTime_sec" variable from "metaData".
 % Inputs: 
 %   data (3D or 4D numerical matrix): Image time series ('Y','X','T') or
 %       image time series split by events ('E', 'Y', 'X', 'T').
@@ -28,24 +32,30 @@ clear p
 orig_sz = size(data);
 idx_T = strcmp('T', metaData.dim_names);
 data = reshape(data, prod(orig_sz(~idx_T)), orig_sz(idx_T));
-% Calculate linear trend:
 
+% Calculate linear trend:
 disp('Detrending...');
-delta_y = median(data(:,end-7:end),2, 'omitnan') - median(data(:,1:7),2,'omitnan');
-delta_x =(size(data,2)- 7);
-M = delta_y./delta_x; clear delta_*
-trend = bsxfun(@times,M,linspace(-2,size(data,2)-3,...
-    size(data,2))) + median(data(:,1:7),2,'omitnan');
-% Automatic selection of normalization/subtraction-only depending on the
-% average value of the data:
-if mean(data,'all','omitnan') >= 1 
-    % Normalize "raw" data
-    disp('Normalizing data...');    
-    outData = (data - trend)./trend;
+% Check for baseline info:
+if isfield(metaData, 'preEventTime_sec')
+    frames = metaData.preEventTime_sec*metaData.Freq;
+    if frames <=2
+        frames = 3;
+    end
+    % use odd number of frames:
+    if mod(frames,2) == 0
+        frames = frames + 1;
+    end
 else
-    % Just remove trend if data was already normalized    
-    outData = data - trend;
+    frames = 7; % Force to 7, the number of frames to calculate linear slope.
 end
+delta_y = median(data(:,end-frames:end),2, 'omitnan') - median(data(:,1:frames),2,'omitnan');
+delta_x =(size(data,2)- frames);
+M = delta_y./delta_x; clear delta_*
+b = median(data(:,1:frames),2,'omitnan');
+trend = bsxfun(@times,M,linspace(-2,size(data,2)-3,...
+    size(data,2))) + b;
+% Remove trend if data was already normalized    
+outData = data - trend + b;
 outData = reshape(outData, orig_sz);
 disp('Finished detrend!');
 end
