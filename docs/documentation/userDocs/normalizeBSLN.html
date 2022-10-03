@@ -37,22 +37,22 @@
     <h2>normalizeBSLN - Normalize by baseline</h2>
     <hr>
     <p>
-      Normalizes event-triggered signal using the pre-event time as baseline.
+      Normalizes image time series or image time series split by events using a baseline time period.
     </p>
     <h3 id="description">Description</h3>
     <hr>
     <p>
-      This function calculates the relative response change for each trial of an image time series split by events (with dimensions E,Y,X,T). The function calculates the relative response change expressed as the response amplitude divided by the median of the pre-event time as &Delta;R/R.<br> This function has no parameters.
+      This function calculates the relative response change from the median value of the frames from a baseline time period at the beginning of the recording (for image time series) or trial (for image time series split by events). The baseline time period is set by the parameter <i>baseline_sec</i>.
     </p>
     <h3>Input</h3>
     <hr>
     <p>
-      This function accepts <b>only</b> image time series split by events as input with dimensions E, Y, X and T.
+      This function accepts image time series with dimensions Y,X,T or image time series split by events with dimensions E, Y, X and T as input.
     </p>
     <h3> The algorithm</h3>
     <hr>
     <p>
-      For each trial, the function calculates the response amplitude as the pixel values over time minus the baseline (&Delta;R). Then this result is divided by the baseline resulting in pixel values expressed as &Delta;R/R. Here, the baseline corresponds to the median value of the pre-event period. The pre-event period is a value (in seconds) stored in the input data's meta data file in the variable <samp>preEventTime_sec</samp>.
+      For each trial (or the whole recording, for image time series), the function calculates the response amplitude as the pixel values over time minus the baseline (&Delta;R). Then this result is divided by the baseline resulting in pixel values expressed as &Delta;R/R. Here, the baseline corresponds to the median value of the pre-event period. The pre-event period is a value (in seconds) stored in the parameter <samp>baseline_sec</samp>.
     </p>
     <button title="click to expand" type="button" class="collapsible">
       <span class="iconplus"></span>
@@ -60,25 +60,61 @@
     </button>
     <div class="content">
       <p>
-        The input signal <i>S(e,i,t)</i>, for each trial <i>e</i>, and pixel <i>i</i>, the relative signal change (<i>&Delta;R/R(t)</i>) is calculated as:
+        The input signal <i>S(e,i,t)</i>, for each trial/recording <i>e</i>, and pixel <i>i</i>, the relative signal change (<i>&Delta;R/R(t)</i>) is calculated as:
       </p>
       <p style="text-align: center;">
         <img src="../assets/img/calculateDR_R_byEvent_eq1.png" alt="calculateDR_R_byEvent_eq1">
       </p>
       <p>
-        where <i>S<sub>i</sub>(t)</i> is the pixel value for a given time <i>t</i> and <i>bsln<sub>i</sub></i> is the baseline value. The baseline is calculated as the median of the pixel values between the beginning of the trial (<i>t<sub>0</sub></i>) and the event timestamp (<i>t<sub>evnt</sub></i>):
+        where <i>S<sub>i</sub>(t)</i> is the pixel value for a given time <i>t</i> and <i>bsln<sub>i</sub></i> is the baseline value. The baseline is calculated as the median of the pixel values between the first frame of the trial/recording (<i>t<sub>0</sub></i>) and the last frame of the <i>baseline</i> period (<i>t<sub>evnt</sub></i>):
       </p>
       <p style="text-align: center;">
         <img src="../assets/img/calculateDR_R_byEvent_eq2.png" alt="calculateDR_R_byEvent_eq2">
       </p>
     </div>
-
     <h3>Output</h3>
     <hr>
     <p>
-      The output of this function is a numerical matrix with dimensions E,Y,X and T containing the normalized data.
+      The output of this function is a numerical matrix with the same dimensions of the input data containing the normalized data.
     </p>
+    <h3 id="parameters">Parameters</h3>
+    <hr>
 
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>baseline_sec</b></samp> - Baseline time period (in seconds)<br>
+      <span class="title-desc"><i> "auto" | positive number</i></span>
+    </button>
+    <div class="content">
+      <p>
+        For the <b>auto</b> setting, this function calculates the baseline time period  differently depending on the type of input data. If the input data is an image time series, the baseline time period corresponds to the first frames encompassing 20% of the recording duration. However, if the input data is an image time series split by events, this function will use the time period stored in the <samp>preEventTime_sec</samp> variable and use it as baseline.
+      </p>
+      <p>
+        If this parameter is set to a number, the value will be used to calculate the number of frames to be used as baseline.
+      </p>
+      <div class="warnnote">
+        <p><strong>Important</strong><br>
+            If the input data is an image time series split by events and this parameter is set to a number, the meta data's variables <samp>preEventTime_sec</samp> will be updated to the value of <samp>baseline_sec</samp> as well as the <samp>postEventTime_sec</samp> as the trial duration minus the baseline time period.
+        </p>
+      </div>
+    </div>
+
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>b_centerAtOne</b></samp> - center data at one<br>
+      <span class="title-desc"><i> true | false (default)</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Set this parameter to <b>true</b>, to center the normalized data to one (data average &asymp; 1). Otherwise, the data will be centered at zero (data average &asymp; 0).
+      </p>
+      <div class="tipnote">
+        <p><strong>Tip</strong><br>
+          Centering the normalized data to one is useful if other calculations of value changes (&Delta;) will be performed later on the analysis. In those cases, centering the data at one will avoid any divisions by zero or values too close to zero.
+        </p>
+
+      </div>
+    </div>
     <!-- JavaScript code to collapse sections -->
     <script src="collapsible_behaviour.js"></script>
   </body>

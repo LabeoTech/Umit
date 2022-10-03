@@ -52,10 +52,14 @@
     <h3>The algorithm</h3>
     <hr>
     <p>
-      The first and last few frames are used to calculate a linear trend of the temporal profile of each pixel. Then, the trend is subtracted from the raw data. If the raw data was not previously normalized, the function will normalize the data (<i>S<sub>i</sub></i>) as:
+      The first and last few frames are used to solve for the linear function:
     </p>
     <p style="text-align: center;">
-      <img src="../assets/img/apply_detrend_eq1.png" alt="apply_detrend_eq1" height="35">
+      <img src="../assets/img/apply_detrend_eq1.png" alt="apply_detrend_eq1" height="20">
+    </p>
+    <p>Then, the linear <i>trend</i> is substracted from the data as: </p>
+    <p style="text-align: center;">
+      <img src="../assets/img/apply_detrend_eq2.png" alt="apply_detrend_eq2" height="20">
     </p>
     <p>Here is an example showing the the temporal profile of a pixel (in blue) and the linear trend of the signal (in orange):</p>
     <img src="../assets/img/apply_detrend_fig1.png" alt="apply_detrend_fig1" width="660">
@@ -66,7 +70,7 @@
     <h3>Output</h3>
     <hr>
     <p>
-      The output of this function is the detrended input data.
+      The output of this function is the detrended data with the same dimensions as the input data.
     </p>
     <!-- JavaScript code to collapse sections -->
     <script src="collapsible_behaviour.js"></script>
