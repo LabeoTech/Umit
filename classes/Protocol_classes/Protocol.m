@@ -221,6 +221,9 @@ classdef Protocol < handle
             % The output are the handles for the new modality and
             % acquisition. 
             disp('Manually adding object to Parent...');            
+            modHandle = [];
+            AcqHandle = [];
+            %%% Validation:
             % Check if the modality exists:
             errID = 'umIToolbox:Protocol:WrongInput';
             if ~exist(modClass, 'class')
@@ -229,6 +232,15 @@ classdef Protocol < handle
             if ~isa(subjHandle, 'Subject')
                 error(errID,'The subject handle is invalid!');
             end
+            % Check if the acquisition was added to the subject:
+            idxS = obj.Array.findElement('ID',subjHandle.ID); 
+            if any(strcmp(AcqID, obj.Array.ObjList(idxS).Array.listProp('ID')))
+                
+                warning('Acquisition was already exists in the selected Subject! Operation aborted.')
+                return
+            end
+            %%%
+            
             % Create Acquisition:
             AcqHandle = Acquisition(); 
             AcqHandle.ID = AcqID;
@@ -240,12 +252,8 @@ classdef Protocol < handle
             AcqHandle.Array.addObj(modHandle)
             % Add the acquisition to the Subject:
             subjHandle.Array.addObj(AcqHandle);            
-            % Check if the acquisition was added to the subject:
-            idxS = obj.Array.findElement('ID',subjHandle.ID);            
-            if any(strcmp(AcqHandle.ID, obj.Array.ObjList(idxS).Array.listProp('ID')))
-                warning('Acquisition was already exists in the selected Subject! Operation aborted.')
-                return
-            end
+                       
+            
             % Create Save folder for the new acquisition:
             obj.generateSaveFolders;
             disp('Done')            
@@ -271,7 +279,10 @@ classdef Protocol < handle
             else
                 iRem = obj.Array.ObjList(p.Results.SubjectIndex).Array.removeObj(p.Results.AcqIndex);
             end
-            if p.Results.b_delFolder
+            if isempty(iRem)
+                return
+            end
+            if p.Results.b_delFolder && ~isempty(iRem(3))
                 answer = questdlg(['Delete Folder "' iRem(3) '" and it''s contents?'],...
                     'Delete Save Folder?', 'Yes', 'No', 'No');
                 if strcmp(answer, 'Yes')

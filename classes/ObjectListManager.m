@@ -63,6 +63,11 @@ classdef ObjectListManager < handle
             %   obj.ObjList. The index "idx" can be obtained using the
             %   findElement function. The function outputs a string array
             %   containing the class and ID of the deleted objects.
+            if ~ismember(idx, 1:length(obj.ObjList))
+                warning('umIToolbox:ObjectListManager:MissingInput', 'Invalid object index! Operation aborted!')
+                out = "";
+                return
+            end
             out = arrayfun(@(x) [string(class(x)) string(x.ID) string(x.SaveFolder)], obj.ObjList(idx), 'UniformOutput', false);
             out = [out{:}];
             out = reshape(out, [], length(idx)); out = out';
