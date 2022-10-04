@@ -174,13 +174,12 @@ function objectList = compareLists(obj, objectList)
 %   of valid objects (see function "checkIfIsObj"). It uses the "ID"
 %   property of objects to check for duplicates.
 
-isDup = ismember({objectList.ID}, {obj.ObjList.ID});
+[isDup, locB] = ismember({objectList.ID}, {obj.ObjList.ID});
 if any(isDup)
     objectList = objectList(~isDup);
-    disp('The following objects already exist on the ObjList and were ignored.')
-    loc = find(isDup);
-    for i = 1:numel(loc)
-        disp(obj.ObjList(loc(i)))
+    disp('The following objects already exist on the ObjList and were ignored.')    
+    for i = 1:numel(locB)
+        disp(obj.ObjList(locB(i)))
     end
 end
 

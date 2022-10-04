@@ -54,13 +54,13 @@ classdef Protocol < handle
             % Set function for MainDir property.
             %   Accepts only existing Folders as input.
             MainDir = checkFolder(MainDir, 'raw');
-%             obj.validate_path(MainDir); % Checks for existing Path.
+            %             obj.validate_path(MainDir); % Checks for existing Path.
             if isempty(obj.MainDir)
                 obj.MainDir = MainDir;
             else
                 obj.changeMainDir(MainDir);
                 obj.MainDir = MainDir;
-            end 
+            end
             
         end
         function set.SaveDir(obj, SaveDir)
@@ -78,7 +78,7 @@ classdef Protocol < handle
             if ~isempty(ProtoFunc)
                 % Check if ProtoFunc is a function handle:
                 validateattributes(ProtoFunc, {'function_handle'}, {'nonempty'}, 'set.ProtoFunc');
-                obj.ProtoFunc = ProtoFunc; 
+                obj.ProtoFunc = ProtoFunc;
             end
         end
         function set.Array(obj, Array)
@@ -93,7 +93,7 @@ classdef Protocol < handle
                 obj.Array = ObjectListManager([],obj);
             end
         end
-         %%% Property Get functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        %%% Property Get functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function out = get.LogBookFile(obj)
             % Get function for getting the full path of Log Book .MAT file.
             % It is dependent from the property "SaveFolder":
@@ -135,7 +135,7 @@ classdef Protocol < handle
                     tmpA_obj = tmpS_obj.Array.ObjList(indx);
                     [~,~] = mkdir(fullfile(obj.SaveDir, tmpS_obj.ID, tmpA_obj.ID));
                     for k = 1:length(modList{i}{j})
-                        tmpM = modList{i}{j}{k};                        
+                        tmpM = modList{i}{j}{k};
                         [~,~] = mkdir(fullfile(obj.SaveDir, tmpS, tmpA, tmpM));
                     end
                 end
@@ -147,7 +147,7 @@ classdef Protocol < handle
             % obj.ProtoFunc.
             % Input:
             %   b_discardData(bool) : (Optional) If TRUE, discards elements
-            %   that were not found in the raw folder (Default).          
+            %   that were not found in the raw folder (Default).
             %   If FALSE, elements that were not found during the update
             %   will be kept.
             %       *This is not a wise option since keeping invalid
@@ -171,7 +171,7 @@ classdef Protocol < handle
             % 2nd, control for new or deleted Acquisitions from each Subject:
             indNwArr = find(~iNewSubj);
             % Locate the sujects from "newArray" in "obj":
-            [~,indObj] = ismember({newArray(indNwArr).ID},{obj.Array.ObjList.ID}); 
+            [~,indObj] = ismember({newArray(indNwArr).ID},{obj.Array.ObjList.ID});
             % Get new Acquisitions from existing Subjects:
             iNewAcq = arrayfun(@(a,b) ~ismember({a.Array.ObjList.ID}, {b.Array.ObjList.ID}),...
                 newArray(indNwArr), obj.Array.ObjList(indObj), 'UniformOutput', false);
@@ -188,7 +188,7 @@ classdef Protocol < handle
                     newArray(indNwArr(indSubj(i))));
             end
             %   Add new Subjects:
-            if any(iNewSubj)                
+            if any(iNewSubj)
                 obj.Array.addObj(newArray(iNewSubj));
             end
             % Add new Folders to OBJ.SAVEDIR
@@ -207,11 +207,50 @@ classdef Protocol < handle
                     remInfo = obj.Array.removeObj(find(iMissSubj));
                     obj.garbageList = [obj.garbageList; remInfo];
                 end
-%             else
-%                 uiwait(warndlg('Keeping invalid Paths and/or files may cause problems later on during the analysis', 'Warning!', 'modal'));
+                %             else
+                %                 uiwait(warndlg('Keeping invalid Paths and/or files may cause problems later on during the analysis', 'Warning!', 'modal'));
             end
             uiwait(msgbox('Project update completed!'));
         end
+        
+        function [modHandle, AcqHandle] = manualAddModality(obj, modClass, modID, AcqID, subjHandle)
+            % MANUALADDMODALITY creates a new Acquisition inside a "Subject" Object.
+            % and adds the modality object of class "modClass" as it's child. The
+            % Acquisition ID is stored in "acqID". 
+            % The Subject object handle is "subjHandle".
+            % The output are the handles for the new modality and
+            % acquisition. 
+            disp('Manually adding object to Parent...');            
+            % Check if the modality exists:
+            errID = 'umIToolbox:Protocol:WrongInput';
+            if ~exist(modClass, 'class')
+                error(errID, ['The modality ' modClass 'does not exist!']);
+            end
+            if ~isa(subjHandle, 'Subject')
+                error(errID,'The subject handle is invalid!');
+            end
+            % Create Acquisition:
+            AcqHandle = Acquisition(); 
+            AcqHandle.ID = AcqID;
+            % Create modality:
+            eval(['modHandle = ' modClass '();'])
+            modHandle.ID = modID;
+            modHandle.RawFiles_FP = {'MISSING'}; % Create dummy raw file name in new modality.
+            % Add the modality to the Acquisition:
+            AcqHandle.Array.addObj(modHandle)
+            % Add the acquisition to the Subject:
+            subjHandle.Array.addObj(AcqHandle);            
+            % Check if the acquisition was added to the subject:
+            idxS = obj.Array.findElement('ID',subjHandle.ID);            
+            if any(strcmp(AcqHandle.ID, obj.Array.ObjList(idxS).Array.listProp('ID')))
+                warning('Acquisition was already exists in the selected Subject! Operation aborted.')
+                return
+            end
+            % Create Save folder for the new acquisition:
+            obj.generateSaveFolders;
+            disp('Done')            
+        end
+                        
         function manualRemoveObj(obj, SubjectIndex, varargin)
             % This function manually removes one Subject/Acquisition from
             % Protocol.
@@ -279,25 +318,25 @@ classdef Protocol < handle
         function out = extractFilteredObjects(obj, lvl)
             %EXTRACTFILTEREDOBJECTS generates a cell array containing all
             % objects listed in OBJ.IDX_FILTERED at the level LVL.
-            % Input: 
-            % lvl: 
-                % 1 - Subject            
-                % 2 - Acquisition
-                % 3 - Modality
-           out = {};
-                switch lvl
-                    case 1 
-                        indx = unique(obj.Idx_Filtered(:,1));
-                        out = arrayfun(@(x) obj.Array.ObjList(x), indx, 'UniformOutput', false);
-                    case 2
-                        indx = unique(obj.Idx_Filtered(:,[1 2]), 'rows');
-                        out = arrayfun(@(x,y) obj.Array.ObjList(x).Array.ObjList(y),...
-                            indx(:,1), indx(:,2), 'UniformOutput', false);
-                    case 3 
-                        indx = unique(obj.Idx_Filtered, 'rows');
-                        out = arrayfun(@(x,y,z) obj.Array.ObjList(x).Array.ObjList(y).Array.ObjList(z),...
-                            indx(:,1), indx(:,2), indx(:,3), 'UniformOutput', false);
-                end
+            % Input:
+            % lvl:
+            % 1 - Subject
+            % 2 - Acquisition
+            % 3 - Modality
+            out = {};
+            switch lvl
+                case 1
+                    indx = unique(obj.Idx_Filtered(:,1));
+                    out = arrayfun(@(x) obj.Array.ObjList(x), indx, 'UniformOutput', false);
+                case 2
+                    indx = unique(obj.Idx_Filtered(:,[1 2]), 'rows');
+                    out = arrayfun(@(x,y) obj.Array.ObjList(x).Array.ObjList(y),...
+                        indx(:,1), indx(:,2), 'UniformOutput', false);
+                case 3
+                    indx = unique(obj.Idx_Filtered, 'rows');
+                    out = arrayfun(@(x,y,z) obj.Array.ObjList(x).Array.ObjList(y).Array.ObjList(z),...
+                        indx(:,1), indx(:,2), indx(:,3), 'UniformOutput', false);
+            end
         end
         function addTextEvent(obj, Text, dateAndTime, varargin)
             % This method adds an event to a "Text_events.mat" file.
@@ -333,7 +372,7 @@ classdef Protocol < handle
                     disp('Operation cancelled by user')
                     return
                 end
-            elseif isfile(txtEv_file) && strcmp(flag, 'overwrite')    
+            elseif isfile(txtEv_file) && strcmp(flag, 'overwrite')
                 answer = questdlg('Text Event file will be overwritten. Proceed?', ...
                     'Create Text Event File', 'Yes', 'No. Add a new entry instead', 'Cancel', 'Cancel');
                 switch answer
@@ -344,7 +383,7 @@ classdef Protocol < handle
                         flag = 'add';
                 end
             end
-                            
+            
             switch flag
                 case 'add'
                     f = '-a';
@@ -361,11 +400,11 @@ classdef Protocol < handle
             
             new_Idx_Filtered = [];
             % Filter Subjects
-            indS = getIndex(obj, obj, obj.FilterStruct.Subject);          
+            indS = getIndex(obj, obj, obj.FilterStruct.Subject);
             % Filter Acquisitions
             for i = 1:length(indS)
                 targetObj = obj.Array.ObjList(indS(i));
-                indA = getIndex(obj, targetObj, obj.FilterStruct.Acquisition);                
+                indA = getIndex(obj, targetObj, obj.FilterStruct.Acquisition);
                 % Filter Modality
                 for j = 1:length(indA)
                     targetObj = obj.Array.ObjList(indS(i)).Array.ObjList(indA(j));
@@ -381,13 +420,13 @@ classdef Protocol < handle
             end
             % Remove objects that are not in the pre-filtered array:
             if ~isempty(obj.Idx_Filtered)
-                new_Idx_Filtered = new_Idx_Filtered(ismember(new_Idx_Filtered,obj.Idx_Filtered,'rows'),:);                
+                new_Idx_Filtered = new_Idx_Filtered(ismember(new_Idx_Filtered,obj.Idx_Filtered,'rows'),:);
             end
             obj.Idx_Filtered = new_Idx_Filtered;
         end
         function clearFilterStruct(obj)
-           % CLEARFILTERSTRUCT erases the list of filtered objects and 
-           % resets the Filter Parameters to an empty structure.
+            % CLEARFILTERSTRUCT erases the list of filtered objects and
+            % resets the Filter Parameters to an empty structure.
             obj.Idx_Filtered = [];
             obj.createFilterStruct;
         end
@@ -416,7 +455,7 @@ classdef Protocol < handle
         function createFilterStruct(obj)
             % CREATEFILTERSTRUCT creates an empty structure with the query info.
             Query = struct('PropName', '', 'Expression', '', 'LogicalOperator', '');
-            obj.FilterStruct = struct('Subject', Query, 'Acquisition', Query, 'Modality', Query, 'FilterMethod', 'contains'); 
+            obj.FilterStruct = struct('Subject', Query, 'Acquisition', Query, 'Modality', Query, 'FilterMethod', 'contains');
         end
         function createLogBookFile(obj)
             % This function creates an empty table LOGBOOK and saves in a .MAT file (LOGBOOKFILE).
@@ -432,7 +471,7 @@ classdef Protocol < handle
             % NEWMAINDIR.
             %   This function must be used only AFTER the user manually moves the
             %   files from OBJ.MAINDIR to NEWMAINDIR. The paths inside
-            %   OBJ.MAINDIR must remain unchanged.    
+            %   OBJ.MAINDIR must remain unchanged.
             newMainDir = checkFolder(newMainDir);
             if ~isempty(obj.Array.ObjList)
                 for i = 1:length(obj.Array.ObjList)
@@ -454,14 +493,14 @@ classdef Protocol < handle
             %   targetObj : Protocol Object of class Subject, Acquisition
             %       or Modality.
             %   FilterStruct(struct): Protocol's filter structure
-            %   containing info for filtering objects inside "targetObj".                                   
+            %   containing info for filtering objects inside "targetObj".
             
             ind = cell(1,length(FilterStruct));
             for i = 1:length(FilterStruct)
                 Filt = FilterStruct(i);
                 ind{i} = targetObj.Array.findElement(Filt.PropName, Filt.Expression, obj.FilterStruct.FilterMethod);
             end
-                        
+            
             if length(FilterStruct) > 1
                 for i = 1:length(FilterStruct)-1
                     switch FilterStruct(i).LogicalOperator
@@ -475,9 +514,9 @@ classdef Protocol < handle
                             ind{i+1} = union(ind{i}, ind{i+1}); % Selects the combined elements from both arrays.
                     end
                 end
-            end                        
+            end
             
-            out = ind{end};           
+            out = ind{end};
         end
     end
     methods (Static)
@@ -488,7 +527,7 @@ classdef Protocol < handle
                 % Check MainDir and SaveDir existance:
                 errID = 'umIToolbox:Protocol:InvalidInput';
                 errMsg = ' is not an existing folder!';
-%                 assert(isfolder(s.MainDir),errID, [strrep(s.MainDir,filesep, repmat(filesep,1,2)), errMsg]);
+                %                 assert(isfolder(s.MainDir),errID, [strrep(s.MainDir,filesep, repmat(filesep,1,2)), errMsg]);
                 assert(isfolder(s.SaveDir),errID, [strrep(s.MainDir,filesep, repmat(filesep,1,2)), errMsg]);
                 %%%
                 newObj.MainDir = s.MainDir;
@@ -508,7 +547,7 @@ classdef Protocol < handle
             addpath(genpath(obj.SaveDir));
             % Rebuild handle of "MyParent" property of elements from
             % Protocol:
-            obj.Array.parentObj = obj; % Update handle in ObjectListManager.            
+            obj.Array.parentObj = obj; % Update handle in ObjectListManager.
             % Update handles in Subjects, Acquisitions and Modalities:
             for i = 1:numel(obj.Array.ObjList)
                 obj.Array.ObjList(i).MyParent = obj;
