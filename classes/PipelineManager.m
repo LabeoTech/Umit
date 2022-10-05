@@ -1346,4 +1346,11 @@ end
         waitfor(w);
         delete(src);
     end
+    function lockCheckBox(src,~)
+        % This callback avoids the unchecking of the last checked box.
+        idxState = arrayfun(@(x) x.Value, src.Parent.Children);
+        if ~any(idxState)
+            src.Value = 1;
+        end        
+    end
 end

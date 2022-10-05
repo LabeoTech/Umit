@@ -1,4 +1,4 @@
-function genEventsFromMetaData(metaData)
+function genEventsFromMetaData(metaData, saveFolder)
 % GENEVENTSFROMMETADATA is a helper function for run_ImagesClassification
 % and other data import functions for data obtained with LabeoTech Optical
 % Imaging Systems.
@@ -10,7 +10,9 @@ function genEventsFromMetaData(metaData)
 % function "mergeRecordings.m" to merge separate trials into one recording.
 % Inputs:
 %   metaData (struct): structure with the meta data of a given file 
-%     from which an "events.mat" file will be created.Fullpath of the folder where to save the%     
+%     from which an "events.mat" file will be created.
+%   saveFolder (char): Fullpath of the folder where to save the events.mat
+%   file.
 
 
 % Create events.mat from StimParameters.mat file:
@@ -36,7 +38,8 @@ end
 % Decide split method
 if strcmpi(stimVar, 'trialid')
     splitMethod = 'trial';
-elseif ischar(stimVar)
+elseif numel(stimVar) == 1
+    stimVar = stimVar{:};
     splitMethod = 'singleStim';
 else
     splitMethod = 'multiStim';
@@ -67,7 +70,7 @@ switch splitMethod
 end
 eventNameList = {'1'}; % for now...
 % Save event File:
-saveEventsFile(fileparts(metaData.datFile), ID, timestamps, state, eventNameList)
+saveEventsFile(saveFolder, ID, timestamps, state, eventNameList)
 end
 
 

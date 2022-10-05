@@ -684,7 +684,8 @@ for i = 1:length(fields)
             glChar = uigridlayout(vo,[length(listVals{i}),1]);
             glChar.RowHeight = repmat({20},size(listVals{i}));            
             for jj = 1:length(listVals{i})
-                c = uicheckbox('Parent',glChar, 'Text', listVals{i}{jj}, 'Value', idxDef(jj));
+                c = uicheckbox('Parent',glChar, 'Text', listVals{i}{jj},...
+                    'Value', idxDef(jj), 'ValueChangedFcn', @lockCheckBox);
                 c.Layout.Row = jj;
             end
             % Resize figure to accomodate checkbox list:
@@ -806,4 +807,13 @@ end
         waitfor(w);
         delete(src);
     end
+    function lockCheckBox(src,~)
+        % This callback avoids the unchecking of the last checked box.
+        idxState = arrayfun(@(x) x.Value, src.Parent.Children);
+        if ~any(idxState)
+            src.Value = 1;
+        end        
+    end
+
 end
+

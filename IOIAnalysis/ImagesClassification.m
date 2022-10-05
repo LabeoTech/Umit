@@ -395,7 +395,8 @@ end
             
             Images = reshape(Images, ImRes_XY(2), ImRes_XY(1), subNbColors, []);
             SubStim = reshape(SubStim,size(SubStim,1), subNbColors, BinningTemp, []);
-            SubStim = ceil(squeeze(mean(SubStim, 3)));
+            SubStim = ceil(mean(SubStim, 3));
+            SubStim = reshape(SubStim, size(SubStim,1), subNbColors,[]);
             for indC = 1:size(colors,2)
                 Ims = squeeze(Images(:, :, indC, :));
                 if( any(sum(sum(Ims,1),2) == 0) )

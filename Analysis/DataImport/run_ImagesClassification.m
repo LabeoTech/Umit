@@ -16,7 +16,7 @@ parse(p, RawFolder, SaveFolder, varargin{:});
 RawFolder = p.Results.RawFolder;
 SaveFolder = p.Results.SaveFolder;
 opts = p.Results.opts;
-outFile = {};
+% outFile = {};
 clear p
 %%%%
 % Get existing ImagesClassification files in directory:
@@ -39,11 +39,11 @@ chanList = {chanList(idxNew).name};
 if ~opts.b_IgnoreStim    
     % Here the first channel fom "chanList" is chosen to retrieve the
     % "Stim" data:
-    chan = matfile(fullfile(SaveFolder, strrep(chanList{1}, '.dat', '.mat')));     
-    if ~any(strcmpi(fieldnames(chan), 'stim'))
+    chan = load(fullfile(SaveFolder, strrep(chanList{1}, '.dat', '.mat')));     
+    if ~any(startsWith(fieldnames(chan), 'stim', 'IgnoreCase', true)) || sum(chan.Stim) == 0
         warning('Stim signal not found! Skipped Event file creation.')
     else
-      genEventsFromStimParams(SaveFolder);
+      genEventsFromMetaData(chan, SaveFolder);
     end
 end
 outFile = fullfile(SaveFolder, chanList);
