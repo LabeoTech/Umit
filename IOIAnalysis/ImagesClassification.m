@@ -133,7 +133,7 @@ NbImsPefFile = single(header.Data.header(5)); %Number of images contained in eac
 
 %Header format for each individual image:
 frameFormat = {'uint64', 3, 'framej';'uint16', [double(nx), double(ny)], 'imgj'};
-ImRes_XY = [nx, ny];
+ImRes_XY = single([nx, ny]);
 SizeImage = nx*ny*2 + 3*8;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
