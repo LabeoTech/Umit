@@ -1,5 +1,5 @@
 function varargout = ReadAnalogsIn(FolderPath, SaveFolder, Infos, stimChan)
-
+out = [];
 if( ~strcmp(FolderPath, filesep) )
     FolderPath = strcat(FolderPath, filesep);
 end
@@ -26,11 +26,11 @@ for i = 1:length(stimChan)
     Stim{i} = detectTriggers(stimChan(i), Infos, AnalogIN);
 end
 disp('Checking stim info...')
-idxMiss = cellfun(@(x) isequaln(x,0), Stim);
+idxMiss = cellfun(@(x) isequaln(sum(x),0), Stim);
 if all(idxMiss)
     % If no stim is detected, save StimParameters.mat file with default
     % values:
-    disp('No Stimulations detected. Resting State experiment?');
+    disp('No Stimulations detected. Resting State experiment?');    
     Stim = 0;
     save([SaveFolder filesep 'StimParameters.mat'], 'Stim');
     return
@@ -48,6 +48,8 @@ for i = 1:length(stimChan)
     v = genvarname(['Stim_' chanName]);
     eval(['out.' v ' = Stim{i};']);
 end
+out.Stim = 1; % Indicates that stim triggers were found.
+out.FrameRateHz = Infos.FrameRateHz; 
 % Save Stim parameters:
 save([SaveFolder filesep 'StimParameters.mat'], '-struct', 'out');
 disp('StimParameters saved!')
