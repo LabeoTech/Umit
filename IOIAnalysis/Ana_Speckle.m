@@ -42,8 +42,8 @@ if( isempty(FileList) )
     return;
 else
     Iptr = matfile([Folder filesep filename '.mat']);
-    nx = double(Iptr.datSize(1,2));
-    ny = double(Iptr.datSize(1,1));
+    nx = Iptr.datSize(1,2);
+    ny = Iptr.datSize(1,1);
     nt = Iptr.datLength;
     tFreq = Iptr.Freq;
     speckle_int_time = Iptr.tExposure/1000.;        
