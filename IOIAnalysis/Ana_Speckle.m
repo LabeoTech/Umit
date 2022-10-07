@@ -1,4 +1,4 @@
-function varargout = Ana_Speckle(Folder, bNormalize)
+function varargout = Ana_Speckle(Folder, bNormalize, varargin)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % General Infos:
 %
@@ -7,6 +7,9 @@ function varargout = Ana_Speckle(Folder, bNormalize)
 %
 % Inputs:
 % 1. Folder: Folder contaning the dataset to work with.
+% 2. bNormalize: Set to TRUE to normalize the output by the temporal mean
+% 3. speckleFile: (optional) Type the name of the file to perform the
+% calculation. If not provided, the file "speckle.dat" will be used.
 % Ouput:
 % - If an output is set, the 3D matrix containing the blood flow data it's meta data
 %    will be given back through this output.
@@ -24,19 +27,26 @@ function varargout = Ana_Speckle(Folder, bNormalize)
 % A structure containing the data's meta data is also given as output.
 
 disp('Running Ana speckle...')
-FileList = dir([Folder filesep 'speckle.mat']);
+if ~isempty(varargin{:})
+    filename = varargin{:};
+    if endsWith(filename, '.dat')
+        filename = erase(filename, '.dat');
+    end
+else
+    filename = 'speckle';
+end
+FileList = dir([Folder filesep filename '.mat']);
 if( isempty(FileList) )
     disp(['No speckle data files found in ' Folder ' Folder.']);
     disp('Speckle Analysis will not run');
     return;
 else
-    Iptr = matfile([Folder filesep 'speckle.mat']);
-    nx = Iptr.datSize(1,2);
-    ny = Iptr.datSize(1,1);
+    Iptr = matfile([Folder filesep filename '.mat']);
+    nx = double(Iptr.datSize(1,2));
+    ny = double(Iptr.datSize(1,1));
     nt = Iptr.datLength;
     tFreq = Iptr.Freq;
-    speckle_int_time = Iptr.tExposure/1000.;    
-    Dptr = memmapfile(fullfile(Folder,Iptr.datFile), 'Format', 'single');
+    speckle_int_time = Iptr.tExposure/1000.;        
 end
 
 % Parameters
@@ -44,39 +54,40 @@ end
 
 fprintf('Opening files.\n');
 
-fid = fopen([Folder filesep 'speckle.dat']);
+fid = fopen([Folder filesep filename '.dat']);
 dat = fread(fid,inf,'single');
 fclose(fid);
 dat = reshape(dat, ny, nx,[]);
 MeanMap = mean(dat,3);
+dat = zeros(nt - 1, ny, nx, 'single');
+Dptr = memmapfile(fullfile(Folder,Iptr.datFile), 'Format', 'single');
 % Need to convert to contrast
 fprintf('Flow Conversion:\n');
 speckle_window = fspecial('disk',2)>0;
 OPTIONS.GPU = 0;
 OPTIONS.Power2Flag = 0;
 OPTIONS.Brep = 0;
-dat = zeros(nt - 1, ny, nx, 'single');
+
 prcflg = linspace(1, nt-1, 11); indP = 2;
 for i3 = 1:nt-1
     if( i3 >= prcflg(indP) )
-         fprintf('%d%%...', 10*(indP-1));
-         indP = indP+1;
-     end
+        fprintf('%d%%...', 10*(indP-1));
+        indP = indP+1;
+    end
     tmp_laser = Dptr.Data(((i3-1)*nx*ny + 1):(i3*nx*ny));
-    tmp_laser = reshape(tmp_laser, ny, []);  
+    tmp_laser = reshape(tmp_laser, ny, []);
     tmp_laser = tmp_laser./MeanMap;
     std_laser = imgaussfilt(stdfilt(tmp_laser,speckle_window),1);
     mean_laser = imgaussfilt(convnfft(tmp_laser,speckle_window,'same',1:2,OPTIONS)/sum(speckle_window(:)),1);
-    contrast=std_laser./mean_laser;
+    contrast = std_laser./mean_laser;
     dat(i3, :, :) = single(private_flow_from_contrast(contrast,speckle_int_time));
 end
 clear tmp_laser std_laser contrast mean_laser;
 
-fprintf('\nFiltering:\n');
+fprintf('\nFiltering...\n');
 fW = ceil(0.5*tFreq);
 dat = medfilt1(dat, fW, [], 1, 'truncate');
 fprintf('100%%.');
-fprintf('\nSaving...\n');
 % Save/Output data and meta data:
 dat = permute(dat, [2 3 1]);
 
@@ -89,6 +100,13 @@ end
 metaData = struct();
 metaData.datName = 'data';
 metaData.Stim = Iptr.Stim;
+% Copy Stim fields:
+fn = fieldnames(Iptr);
+fn = fn(startsWith(fn, 'stim_', 'IgnoreCase',true));
+for i = 1:length(fn)
+    metaData.(fn{i}) = Iptr.(fn{i});
+end
+%
 metaData.datLength = Iptr.datLength-1;
 metaData.datSize = Iptr.datSize;
 metaData.Freq = Iptr.Freq;
