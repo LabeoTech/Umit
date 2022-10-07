@@ -40,17 +40,17 @@ if ~opts.b_IgnoreStim
     % Here the first channel fom "chanList" is chosen to retrieve the
     % "Stim" data:
     try
-        stimInfo = load(fullfile(SaveFolder, 'StimParameters.mat'));
-        if isempty(stimInfo) || sum(stimInfo.Stim) == 0
-            warning('Stim signal not found! Skipped Event file creation.')
-        else
-            % This works for one channel for now:
-            genEventsFromStimParameters(SaveFolder);
-        end
-    catch
+        stimInfo = load(fullfile(SaveFolder, 'StimParameters.mat'));        
+    catch ME
+        stimInfo = [];
         warning('Stim Parameters file not found! Skipped event file creation.')
     end
-    
+    if isempty(stimInfo) || sum(stimInfo.Stim) == 0
+        warning('Stim signal not found! Skipped Event file creation.')
+    else
+        % This works for one channel for now:
+        genEventsFromStimParameters(SaveFolder);
+    end
 end
 outFile = fullfile(SaveFolder, chanList);
 end
