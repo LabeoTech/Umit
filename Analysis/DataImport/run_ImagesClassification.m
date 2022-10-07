@@ -41,7 +41,7 @@ if ~opts.b_IgnoreStim
     % "Stim" data:
     try
         stimInfo = load(fullfile(SaveFolder, 'StimParameters.mat'));        
-    catch ME
+    catch 
         stimInfo = [];
         warning('Stim Parameters file not found! Skipped event file creation.')
     end
