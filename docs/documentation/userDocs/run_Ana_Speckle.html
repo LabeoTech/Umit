@@ -47,7 +47,7 @@
     <h3>Input</h3>
     <hr>
     <p>
-      A file named <samp>speckle.dat</samp> containing image time series (with dimensions Y,X,T) with raw LSCI data.
+      A <samp>.dat</samp> file containing image time series (with dimensions Y,X,T) with raw LSCI data.
     </p>
     <h3>Output</h3>
     <hr>
@@ -64,6 +64,16 @@
     <div class="content">
       <p>
         If <b>true</b>, the function normalizes the blood flow values of each pixel by its temporal average.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>SpeckleFileName</b></samp> - Name of speckle file<br>
+      <span class="title-desc"><i> speckle (default) | string </i></span>
+    </button>
+    <div class="content">
+      <p>
+        Name of the <samp>.dat</samp> file containing the raw LSCI data.
       </p>
     </div>
     <h3 id="references">References</h3>
