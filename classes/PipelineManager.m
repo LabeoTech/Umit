@@ -1167,7 +1167,7 @@ for i = 1:length(fields)
     currOpts(i,2) = currVals(i);
 end
 dlg = uifigure('Name',['Set Parameters for: ' fcnName], 'NumberTitle','off','Position',[0,0,310,240],...
-    'MenuBar','none', 'ToolBar', 'none','Visible','off', 'CloseRequestFcn', @figCloseRequest);
+    'MenuBar','none', 'ToolBar', 'none','Visible','off', 'Resize', 'off', 'CloseRequestFcn', @figCloseRequest);
 movegui(dlg, 'center');
 myFontSize = 12;
 
@@ -1222,7 +1222,8 @@ for i = 1:length(fields)
             % Create uipanel with series of checkboxes:
             idxDef = strcmp(listVals{i},currVals{i});
             glChar = uigridlayout(vo,[length(listVals{i}),1]);
-            glChar.RowHeight = repmat({20},size(listVals{i}));            
+            glChar.RowHeight = repmat({20},size(listVals{i}));
+            glChar.Scrollable = 'on';
             for jj = 1:length(listVals{i})
                 c = uicheckbox('Parent',glChar, 'Text', listVals{i}{jj}, 'Value', idxDef(jj));
                 c.Layout.Row = jj;

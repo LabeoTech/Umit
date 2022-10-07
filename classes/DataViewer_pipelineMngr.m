@@ -341,6 +341,12 @@ classdef DataViewer_pipelineMngr < handle
             %   Finished" or an Exception report if errors were found
             %   during execution.
             
+            % Clear current data if the first step outputs a data from a
+            % folder (like Ana_Speckle for instance) to save  some RAM.
+            if ~ismember('data',obj.pipe(1).argsIn) & any(ismember({'SaveFolder', 'RawFolder'},obj.pipe(1).argsIn)) &...
+                    ismember('outData',obj.pipe(1).argsOut)
+                obj.data = [];
+            end            
             disp('Running pipeline on Data...');
             
             h = waitbar(0, 'Initiating pipeline...');
@@ -627,7 +633,7 @@ for i = 1:length(fields)
     currOpts(i,2) = currVals(i);
 end
 dlg = uifigure('Name',['Set Parameters for: ' fcnName], 'NumberTitle','off','Position',[0,0,310,240],...
-    'MenuBar','none', 'ToolBar', 'none','Visible','off', 'CloseRequestFcn', @figCloseRequest);
+    'MenuBar','none', 'ToolBar', 'none','Visible','off', 'Resize','off', 'CloseRequestFcn', @figCloseRequest);
 movegui(dlg, 'center');
 myFontSize = 12;
 
@@ -636,6 +642,7 @@ g = uigridlayout(dlg);
 g.ColumnWidth = {max(cellfun(@(x) length(x), fields))*myFontSize,'1x'};
 g.ColumnWidth = {'1x','1x'};
 g.ColumnSpacing = 5;
+
 % Set RowHeight of gridLayout depending on the type of variable:
 idx = strcmpi('charArrayMultiSelect', typeVals);
 rh = {};
@@ -660,7 +667,7 @@ for i = 1:length(fields)
         case{'numericArray','logical', 'charArray'}
             vo = uidropdown(g);
         case 'charArrayMultiSelect'
-            vo = uipanel(g, 'Scrollable', 'on');
+            vo = uipanel(g, 'Scrollable', 'off');
         case {'numericRange'}
             vo = uieditfield(g, 'numeric');
         otherwise
@@ -682,6 +689,7 @@ for i = 1:length(fields)
             % Create uipanel with series of checkboxes:
             idxDef = strcmp(listVals{i},currVals{i});
             glChar = uigridlayout(vo,[length(listVals{i}),1]);
+            glChar.Scrollable = 'on';
             glChar.RowHeight = repmat({20},size(listVals{i}));            
             for jj = 1:length(listVals{i})
                 c = uicheckbox('Parent',glChar, 'Text', listVals{i}{jj},...
