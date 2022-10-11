@@ -94,9 +94,9 @@ classdef Acquisition < handle
         function out = get.SaveFolder(obj)
             % Get function for depentend property SaveFolder.
             out = fullfile(obj.MyParent.MyParent.SaveDir,obj.MyParent.ID, obj.ID);
-            msgID = 'umIToolbox:Acquisition:FolderNotFound';
-            msg = 'Acquisition SaveFolder doesnt exist.';
-            assert(isfolder(out), msgID,msg);
+            if ~isfolder(out)
+                out = '';
+            end            
         end
         
         function out = get.Start_datetime(obj)

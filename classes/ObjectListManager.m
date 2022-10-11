@@ -63,6 +63,11 @@ classdef ObjectListManager < handle
             %   obj.ObjList. The index "idx" can be obtained using the
             %   findElement function. The function outputs a string array
             %   containing the class and ID of the deleted objects.
+            if ~ismember(idx, 1:length(obj.ObjList))
+                warning('umIToolbox:ObjectListManager:MissingInput', 'Invalid object index! Operation aborted!')
+                out = "";
+                return
+            end
             out = arrayfun(@(x) [string(class(x)) string(x.ID) string(x.SaveFolder)], obj.ObjList(idx), 'UniformOutput', false);
             out = [out{:}];
             out = reshape(out, [], length(idx)); out = out';
@@ -174,13 +179,12 @@ function objectList = compareLists(obj, objectList)
 %   of valid objects (see function "checkIfIsObj"). It uses the "ID"
 %   property of objects to check for duplicates.
 
-isDup = ismember({objectList.ID}, {obj.ObjList.ID});
+[isDup, locB] = ismember({objectList.ID}, {obj.ObjList.ID});
 if any(isDup)
     objectList = objectList(~isDup);
-    disp('The following objects already exist on the ObjList and were ignored.')
-    loc = find(isDup);
-    for i = 1:numel(loc)
-        disp(obj.ObjList(loc(i)))
+    disp('The following objects already exist on the ObjList and were ignored.')    
+    for i = 1:numel(locB)
+        disp(obj.ObjList(locB(i)))
     end
 end
 
