@@ -16,6 +16,10 @@ function mergeRecordings(SaveFilename,folderList,filename, merge_type, varargin)
 %       the ascending order of "folderList".
 %   b_IgnoreStim (bool, optional): set to TRUE to skip concatenation of
 %   "Stim" data from file's meta data.
+%   trialMarker (cell array, optional): provide a list of trial IDs (char) to
+%       create a "Stim" array containing the onset/offset timestamps for each trial/segment.
+%       !! Beware that if a list is provided, the existing "Stim" data will be
+%       overwritten!!
 
 
 %%% Arguments parsing and validation %%%
@@ -27,11 +31,13 @@ addRequired(p, 'filename', @(x) ischar(x) & ~isempty(x));
 addRequired(p, 'merge_type', @(x) ischar(x) & ismember(lower(x), {'trial', 'movie'}));
 addOptional(p, 'merge_order',[], @isnumeric);
 addOptional(p, 'b_IgnoreStim',false, @islogical);
+addOptional(p, 'trialMarker',{}, @iscell);
 % Parse inputs:
 parse(p,SaveFilename,folderList,filename, merge_type,varargin{:})
 % Set optional variables:
 merge_order = p.Results.merge_order;
 b_IgnoreStim = p.Results.b_IgnoreStim;
+trialMarker = p.Results.trialMarker;
 if isempty(merge_order)
     % If not provided, the order of merging will be the order of
     % "folderList":
@@ -39,6 +45,12 @@ if isempty(merge_order)
 else
     merge_order = round(merge_order);
 end
+if ~isempty(trialMarker)
+    trialMarker = cellfun(@num2str, trialMarker, 'UniformOutput',false);    
+    assert(isequaln(numel(trialMarker),numel(folderList)),'umIToolbox:mergeRecordings:WrongInput',...
+        'The number of trial IDs must be the same as the number of input folders!');
+end
+    
 % Append ".dat" to filenames if not done yet:
 if ~endsWith(SaveFilename,'.dat')
     SaveFilename = [SaveFilename '.dat'];
@@ -102,16 +114,26 @@ mIn = matfile(metaDataPath{1});
 fn = setdiff(fieldnames(mIn),[{'Properties'}, reqFields]);
 % Generate "Stim" fields:
 stim_fn = fn(startsWith(fn, 'Stim'));
-if b_IgnoreStim || isempty(stim_fn) || sum(mIn.Stim) == 0
-    mOut.Stim = [];
+if ( b_IgnoreStim || isempty(stim_fn) || sum(mIn.Stim) == 0 )&& isempty(trialMarker)
+    mOut.Stim = 0;
     b_hasStim = false;
-else
+elseif isempty(trialMarker)
     b_hasStim = true;
     for i  = 1:length(stim_fn)
         mOut.(stim_fn{i}) = [];
     end
+elseif ~isempty(trialMarker)
+    b_hasStim = false;
+    mOut.Stim_TrialMarker = [];    
+else
+    error('This error should not be reached!')
 end
-
+% Get extra fields from the first file as well. Here, we assume that these
+% fields are the same across all input files and fixed!
+fn = setdiff(fn, fn(startsWith(fn, 'Stim')));
+for i = 1:length(fn)
+    mOut.(fn{i}) = mIn.(fn{i});
+end
 % Get required fields meta data from the first file:
 mOut.Freq = mIn.Freq;
 mOut.datName = mIn.datName;
@@ -121,12 +143,7 @@ mOut.datFile = SaveFilename;
 mOut.Datatype = mIn.Datatype;
 mOut.datLength = [];
 mOut.datSize = mIn.datSize;
-% Get extra fields from the first file as well. Here, we assume that these
-% fields are the same across all input files and fixed!
-fn = setdiff(fn, stim_fn);
-for i = 1:length(fn)
-    mOut.(fn{i}) = mIn.(fn{i});
-end
+
 w = waitbar(0,'Merging data...', 'Name', ['Merging ' filename]);
 if strcmpi(merge_type, 'movie')
     % Open new .dat file:
@@ -141,11 +158,16 @@ if strcmpi(merge_type, 'movie')
         fclose(fidIn);
         % Update meta data:
         mOut.datLength = sum([mOut.datLength, mIn.datLength]); % Update data length         
-        if b_hasStim
+        if b_hasStim 
             % Concatenate Stim-related variables:       
             for j = 1:length(stim_fn)
                 mOut.(stim_fn{j}) = [mOut.(stim_fn{j}), mIn.(stim_fn{j})];
             end
+        end
+        if ~isempty(trialMarker)
+            % Populate "Stim_trialMarker":
+            SubStim = ones(1,mIn.datLength); SubStim([1,end]) = 0; % Use the first/last frame to mark the onset and offset of the Trial.
+            mOut.Stim_TrialMarker = [mOut.Stim_TrialMarker, SubStim];
         end
         waitbar(i/length(dataPath),w);
     end
@@ -163,18 +185,25 @@ else
             for j = 1:length(stim_fn)
                 mOut.(stim_fn{j}) = [mOut.(stim_fn{j}), mIn.(stim_fn{j})];
             end
-        end       
+        end  
+        if ~isempty(trialMarker)
+            % Populate "Stim_trialMarker":
+            SubStim = ones(1,mIn.datLength); SubStim([1,end]) = 0; % Use the first/last frame to mark the onset and offset of the Trial.
+            mOut.Stim_TrialMarker = [mOut.Stim_TrialMarker, SubStim];
+        end
         waitbar(i/length(dataPath),w);
     end
     % Update dimensions in metadata:
     mOut.dim_names = [{'E'}, mOut.dim_names];
     mOut.datSize = [length(dataPath) mIn.datSize(1)];
     mOut.datLength = [mIn.datSize(2) mIn.datLength(1)];
-    % Add event info to meta data:    
-    mOut.eventID = ones(mOut.datSize(1),1,'uint16');
-    mOut.eventNameList = {'1'};
-    mOut.preEventTime_sec = single(2/mOut.Freq);
-    mOut.postEventTime_sec = single((mOut.datLength(2)-2)/mOut.Freq);
+    % Add event info to meta data:
+    if isempty(trialMarker)
+        mOut.eventID = ones(mOut.datSize(1),1,'uint16');
+        mOut.eventNameList = {'1'};
+        mOut.preEventTime_sec = single(2/mOut.Freq);
+        mOut.postEventTime_sec = single((mOut.datLength(2)-2)/mOut.Freq);
+    end        
     waitbar(1,w,'Please wait. Writing data to file...')
     save2Dat(SaveFilename, data, mOut);
 end
@@ -191,7 +220,13 @@ opts.merge_order = merge_order;
 opts.b_IgnoreStim = b_IgnoreStim;
 dH = genDataHistory(myInfo,[SaveFilename ' = mergeRecordings(opts);'], opts, {SaveFilename});
 mOut.dataHistory = dH;
-
+% Add Stim_TrialMarker info, if applicable:
+if ~isempty(trialMarker)
+    [~,mOut.eventID] = ismember(trialMarker,unique(trialMarker));
+    mOut.eventNameList = unique(trialMarker);
+    mOut.preEventTime_sec = single(1/mOut.Freq);
+    mOut.postEventTime_sec = single((mOut.datLength(2)-1)/mOut.Freq);
+end
 % Save meta data to file:
 save(strrep(SaveFilename, '.dat', '.mat'), '-struct', 'mOut');   
 disp('Done')
