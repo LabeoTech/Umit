@@ -50,8 +50,13 @@
             <li><b><i>from TIFF:</i></b> Import raw data from .TIFF files. Read the documentation of <a href="importFromTif.html"><samp>importFromTif</samp></a> function for details</li>
           </ul>
         </li>
-        <li><b><i>Export images:</i></b> Opens dialog to export Image and temporal signal windows (PNG (default), JPEG, PDF or EPS formats)</li>
-        <li><b><i>Export movie:</i></b> Opens dialog to export Image and temporal signal windows as a movie (.AVI (default) or .MP4)</li>
+        <li><b><i>Export...</i></b> &gt;&gt;
+          <ul>
+            <li><b><i>images:</i></b> Opens dialog to export Image and temporal signal windows (PNG (default), JPEG, PDF or EPS formats)</li>
+            <li><b><i>movie:</i></b> Opens dialog to export Image and temporal signal windows as a movie (.AVI (default) or .MP4)</li>
+            <li><b><i>data to .TIF:</i></b> Exports the current data to a .TIF file with name <samp>img_&lt;NAME&gt;.tif</samp>. Works with 3D and 4D (image time series separated by events) datasets. As for the latter, one .TIF file will be created for each trial.</li>
+          </ul>
+        </li>
         <li><b><i>Save as...:</i></b> Open dialog to save current data into a .DAT file</li>
       </ul>
     </li>
