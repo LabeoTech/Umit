@@ -49,7 +49,7 @@ for i = 1:length(stimChan)
     eval(['out.' v ' = Stim{i};']);
 end
 out.Stim = 1; % Indicates that stim triggers were found.
-out.FrameRateHz = Infos.FrameRateHz; 
+out.FrameRateHz = Infos.FrameRateHz; % Add recording frame rate to StimParameters file.
 % Save Stim parameters:
 save([SaveFolder filesep 'StimParameters.mat'], '-struct', 'out');
 disp('StimParameters saved!')

@@ -220,6 +220,7 @@ classdef Protocol < handle
             % The Subject object handle is "subjHandle".
             % The output are the handles for the new modality and
             % acquisition. 
+            %         **Use the outputs to edit the elements' properties.**
             disp('Manually adding object to Parent...');            
             modHandle = [];
             AcqHandle = [];
@@ -234,9 +235,8 @@ classdef Protocol < handle
             end
             % Check if the acquisition was added to the subject:
             idxS = obj.Array.findElement('ID',subjHandle.ID); 
-            if any(strcmp(AcqID, obj.Array.ObjList(idxS).Array.listProp('ID')))
-                
-                warning('Acquisition was already exists in the selected Subject! Operation aborted.')
+            if any(strcmp(AcqID, obj.Array.ObjList(idxS).Array.listProp('ID')))                
+                warning('Acquisition already exists in the selected Subject! Operation aborted.')
                 return
             end
             %%%
@@ -251,9 +251,7 @@ classdef Protocol < handle
             % Add the modality to the Acquisition:
             AcqHandle.Array.addObj(modHandle)
             % Add the acquisition to the Subject:
-            subjHandle.Array.addObj(AcqHandle);            
-                       
-            
+            subjHandle.Array.addObj(AcqHandle);                                              
             % Create Save folder for the new acquisition:
             obj.generateSaveFolders;
             disp('Done')            

@@ -14,6 +14,8 @@ function mergeRecordings(SaveFilename,folderList,filename, merge_type, varargin)
 %   merge_order (int, optional): array of integers with indices of "folderList". The data will be
 %       merged in this order. If not provided, the data will be merged in
 %       the ascending order of "folderList".
+%   b_IgnoreStim (bool, optional): set to TRUE to skip concatenation of
+%   "Stim" data from file's meta data.
 
 
 %%% Arguments parsing and validation %%%
@@ -24,10 +26,12 @@ addRequired(p, 'folderList', @(x) iscell(x) & ~isempty(x));
 addRequired(p, 'filename', @(x) ischar(x) & ~isempty(x));
 addRequired(p, 'merge_type', @(x) ischar(x) & ismember(lower(x), {'trial', 'movie'}));
 addOptional(p, 'merge_order',[], @isnumeric);
+addOptional(p, 'b_IgnoreStim',false, @islogical);
 % Parse inputs:
 parse(p,SaveFilename,folderList,filename, merge_type,varargin{:})
-% Set merge_order variable and force it to an integer:
+% Set optional variables:
 merge_order = p.Results.merge_order;
+b_IgnoreStim = p.Results.b_IgnoreStim;
 if isempty(merge_order)
     % If not provided, the order of merging will be the order of
     % "folderList":
@@ -98,11 +102,11 @@ mIn = matfile(metaDataPath{1});
 fn = setdiff(fieldnames(mIn),[{'Properties'}, reqFields]);
 % Generate "Stim" fields:
 stim_fn = fn(startsWith(fn, 'Stim'));
-if isempty(stim_fn) || sum(mIn.Stim) == 0
+if b_IgnoreStim || isempty(stim_fn) || sum(mIn.Stim) == 0
     mOut.Stim = [];
-    b_noStim = true;
+    b_hasStim = false;
 else
-    b_noStim = false;
+    b_hasStim = true;
     for i  = 1:length(stim_fn)
         mOut.(stim_fn{i}) = [];
     end
@@ -136,21 +140,16 @@ if strcmpi(merge_type, 'movie')
         fwrite(fidOut,data, mIn.Datatype);
         fclose(fidIn);
         % Update meta data:
-        mOut.datLength = sum([mOut.datLength, mIn.datLength]); % Update data length
-        % Concatenate Stim-related variables:        
-        if b_noStim
-            % Create a fake stim trigger to mark the trial:            
-            mOut.Stim = [mOut.Stim, ones(1,mIn.datLength-1), 0];
-        else
+        mOut.datLength = sum([mOut.datLength, mIn.datLength]); % Update data length         
+        if b_hasStim
+            % Concatenate Stim-related variables:       
             for j = 1:length(stim_fn)
                 mOut.(stim_fn{j}) = [mOut.(stim_fn{j}), mIn.(stim_fn{j})];
             end
         end
         waitbar(i/length(dataPath),w);
     end
-    fclose(fidOut);
-    % Save meta data to file:
-    save(strrep(SaveFilename, '.dat', '.mat'), '-struct', 'mOut');        
+    fclose(fidOut);         
 else
     % Concatenate data in "E"vent domain:
     % Create empty 4D matrix with dimensions {Trials,Y,X,T}:
@@ -158,12 +157,9 @@ else
     % Populate each trial with the input data
     for i = 1:length(dataPath)
         [datIn, mIn] = loadDatFile(dataPath{i});
-        data(i,:,:,:) = datIn(:,:,1:size(data,4));
-        % Update meta data:
-        if b_noStim
-            % Create a fake stim trigger at the middle of the trial:
-            mOut.Stim = [mOut.Stim, 0, ones(1,mIn.datLength-2), 0];
-        else
+        data(i,:,:,:) = datIn(:,:,1:size(data,4));        
+        if b_hasStim
+            % Concatenate Stim-related variables:       
             for j = 1:length(stim_fn)
                 mOut.(stim_fn{j}) = [mOut.(stim_fn{j}), mIn.(stim_fn{j})];
             end
@@ -182,10 +178,22 @@ else
     waitbar(1,w,'Please wait. Writing data to file...')
     save2Dat(SaveFilename, data, mOut);
 end
-% Copy AcqInfo file from one of the original files to get some experiment info:
+% Copy AcqInfo file from one of the original files to get some experiment info. This is used by some IOI_ana functions.
 copyfile(fullfile(fileparts(dataPath{end}), 'AcqInfos.mat'), fullfile(fileparts(SaveFilename),'AcqInfos.mat'));
 close(w)
-% Add/update events:
+% Add data history to meta data file with info of this function:
+myInfo = dir([mfilename('fullpath') '.m']);
+opts = struct;
+opts.filename = filename;
+opts.folderList = folderList;
+opts.merge_type = merge_type;
+opts.merge_order = merge_order;
+opts.b_IgnoreStim = b_IgnoreStim;
+dH = genDataHistory(myInfo,[SaveFilename ' = mergeRecordings(opts);'], opts, {SaveFilename});
+mOut.dataHistory = dH;
+
+% Save meta data to file:
+save(strrep(SaveFilename, '.dat', '.mat'), '-struct', 'mOut');   
 disp('Done')
 end
 
