@@ -10,11 +10,10 @@ function outData = normalizeLPF(data, metaData, varargin)
 % For more information on the algorithm, refer to the function's documentation.
 %
 % Limitations:
-% The data must be an Image time series with dimensions
-% {Y,X,T}.
+% The data must be an Image time series with dimensions {Y,X,T} or split by events ('E','Y','X','T').
 %
 % Inputs:
-%   data: numerical matrix containing image time series (with dimensions "Y", "X", "T").
+%   data: numerical matrix containing image time series (with dimensions "Y", "X", "T" or "E","Y", "X", "T").
 %   metaData: .mat file with meta data associated with "data".
 %   opts (optional): structure containing extra parameters. See "default_opts" variable below for details!
 %
