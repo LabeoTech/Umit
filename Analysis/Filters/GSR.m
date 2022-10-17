@@ -33,7 +33,7 @@ outData = p.Results.data;
 metaData = p.Results.metaData;
 opts = p.Results.opts;
 object = p.Results.object;
-clear p
+clear p data
 %%%%
 % Validate if "data" is an Image Time Series:
 errID = 'umIToolbox:GSR:InvalidInput';

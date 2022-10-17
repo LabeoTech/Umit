@@ -42,7 +42,7 @@ clear p
 errMsg = 'Input Data must be an Image time series with dimensions "Y","X",T" or "E","Y","X","T".';
 errID = 'umIToolbox:normalizeBSLN:WrongInput';
 assert(all(ismember({'Y','X','T'}, metaData.dim_names)), errID, errMsg)
-if strcmpi('E',metaData.dim_names)
+if any(strcmpi('E',metaData.dim_names))
     % Update event timings in metaData:
     if ~strcmpi(opts.baseline_sec,'auto')
         % Update event timings in metaData:
@@ -50,7 +50,7 @@ if strcmpi('E',metaData.dim_names)
         metaData.preEventTime_sec = single(opts.baseline_sec);
         bsln_sec = metaData.preEventTime_sec;
     else
-        bsln_sec = metaData.pre_EventTime_sec;
+        bsln_sec = metaData.preEventTime_sec;
     end
 else
    if strcmpi(opts.baseline_sec, 'auto')
@@ -63,7 +63,7 @@ end
 
 disp('Normalizing data by baseline...');
 % Calculate baseline:
-if strcmpi('E',metaData.dim_names)
+if any(strcmpi('E',metaData.dim_names))
     % for 4D data:
     bsln = median(outData(:,:,:,1:round(bsln_sec*metaData.Freq)), ...
         4,'omitnan');
