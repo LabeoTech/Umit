@@ -13,6 +13,7 @@ function [data, metaData] = genVSM(SaveFolder, varargin)
 %   "data".
 
 % Defaults:
+default_Output = 'VSM.dat'; %#ok. This line is here just for Pipeline management.
 default_opts = struct('SpatialFilter_Sigma', 0);
 opts_values = struct('SpatialFilter_Sigma', [0, Inf]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 % Notes on Spatial filter:
