@@ -1,4 +1,4 @@
-function [data, metaData] = genVSM(SaveFolder, varargin)
+function [outData, metaData] = genVSM(SaveFolder, varargin)
 % GENVSM creates a Visual Sign Map (Sereno et al. 1994, Sereno et al. 1995)
 % from the phase component of the Azimuth and Elevation maps created with
 % the function "genRetinotopyMaps.m".
@@ -53,13 +53,13 @@ disp('Calculating visual sign map...');
 gradDirAz = atan2(gradAzy, gradAzx);
 gradDirEl = atan2(gradEly, gradElx);
 
-data = sin(angle(exp(1i.*gradDirAz).*exp(-1i.*gradDirEl)));
-data(isnan(data)) = 0;
+outData = sin(angle(exp(1i.*gradDirAz).*exp(-1i.*gradDirEl)));
+outData(isnan(outData)) = 0;
 % Filter map
 if opts.SpatialFilter_Sigma > 0
-    data = imgaussfilt(data, opts.SpatialFilter_Sigma);
+    outData = imgaussfilt(outData, opts.SpatialFilter_Sigma);
 end
 % Create meta data:
-metaData = genMetaData(data,{'Y','X'});
+metaData = genMetaData(outData,{'Y','X'});
 disp('Done');
 end
