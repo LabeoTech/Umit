@@ -34,6 +34,7 @@ metaData = load(metaDatFileName);
 fid = fopen(DatFileName);
 outFile = fread(fid, inf, '*single');
 outFile = reshape(outFile, [metaData.datSize metaData.datLength]);
+fclose(fid);
 end
 
 % Validation function
