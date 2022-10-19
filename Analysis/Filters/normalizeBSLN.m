@@ -50,7 +50,7 @@ if strcmpi('E',metaData.dim_names)
         metaData.preEventTime_sec = single(opts.baseline_sec);
         bsln_sec = metaData.preEventTime_sec;
     else
-        bsln_sec = metaData.pre_EventTime_sec;
+        bsln_sec = metaData.preEventTime_sec;
     end
 else
    if strcmpi(opts.baseline_sec, 'auto')
