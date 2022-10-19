@@ -36,7 +36,7 @@ elseif( ~strcmp(SaveFolder(end), filesep) )
 end
 
 if( ~contains(lower(FilterSet), {'gcamp', 'jrgeco', 'none'}) )
-    disp('Invalide Filter set name');
+    disp('Invalid Filter set name');
     return;
 end
 idx = contains(lower(Illumination), 'amber');
@@ -117,7 +117,7 @@ elseif any(indxNorm == 0)
     channels = strjoin(colors(indxNorm == 0), ', ');
     warning(['The channels "' channels '" are centered at zero. They will be shifted to be centered at one.'])
 elseif ( any(indxNorm == 1) || any(indxNorm == 0) ) && b_normalize
-    warning('The input data is already normalized.Normalization will be skipped!')
+    warning('The input data is already normalized. Normalization will be skipped!')
 end
 disp('Data checked!')
 % clear iRed iGreen iYellow indC;
