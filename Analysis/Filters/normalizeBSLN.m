@@ -63,7 +63,7 @@ end
 
 disp('Normalizing data by baseline...');
 % Calculate baseline:
-if strcmpi('E',metaData.dim_names)
+if any(strcmpi('E',metaData.dim_names))
     % for 4D data:
     bsln = median(outData(:,:,:,1:round(bsln_sec*metaData.Freq)), ...
         4,'omitnan');
