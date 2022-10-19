@@ -93,7 +93,7 @@ NbPix = double(NbPix);
 % Check if the data is normalized:
 indxNorm = [-2 -2 -2];
 
-disp('Cheking channel data...')
+disp('Checking channel data...')
 for i = 1:3
     if eval([fTags{i} '== 0'])
         continue
