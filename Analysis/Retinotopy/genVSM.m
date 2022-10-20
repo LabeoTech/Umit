@@ -39,7 +39,7 @@ errID = 'umIToolbox:genVSM:MissingInput';
 errMsg = 'The files "AzimuthMap.dat" and "ElevationMap.dat" were not found in the Save Folder!';
 assert(isfile(AzFile) & isfile(ElFile),errID, errMsg);
 % Open Maps
-azMap= loadDatFile(AzFile);
+[azMap, metaData]= loadDatFile(AzFile);
 elMap = loadDatFile(ElFile);
 % Calculate Visual Sign Map:
 phaseAz = azMap(:,:,2); 
@@ -60,6 +60,6 @@ if opts.SpatialFilter_Sigma > 0
     outData = imgaussfilt(outData, opts.SpatialFilter_Sigma);
 end
 % Create meta data:
-metaData = genMetaData(outData,{'Y','X'});
+metaData = genMetaData(outData,{'Y','X'}, metaData);
 disp('Done');
 end

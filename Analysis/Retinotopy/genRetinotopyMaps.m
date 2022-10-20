@@ -123,14 +123,14 @@ end
 %%% Save Maps:
 % Save Azimuth map:
 if sum(AzimMap(:)) ~= 0
-    md = genMetaData(AzimMap,{'Y','X','F'});
+    md = genMetaData(AzimMap,{'Y','X','F'}, metaData);
     filename = fullfile(SaveFolder, 'AzimuthMap.dat');
     save2Dat(filename,AzimMap,md);
     outFile = [outFile;{filename}];
 end
 % Save Elevation map:
 if sum(ElevMap(:)) ~= 0
-    md = genMetaData(ElevMap,{'Y','X','F'});
+    md = genMetaData(ElevMap,{'Y','X','F'}, metaData);
     filename = fullfile(SaveFolder, 'ElevationMap.dat');
     save2Dat(filename,ElevMap,md);
     outFile = [outFile;{filename}];
