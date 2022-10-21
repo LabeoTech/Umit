@@ -42,7 +42,7 @@ clear p
 errMsg = 'Input Data must be an Image time series with dimensions "Y","X",T" or "E","Y","X","T".';
 errID = 'umIToolbox:normalizeBSLN:WrongInput';
 assert(all(ismember({'Y','X','T'}, metaData.dim_names)), errID, errMsg)
-if strcmpi('E',metaData.dim_names)
+if any(strcmpi('E',metaData.dim_names))
     % Update event timings in metaData:
     if ~strcmpi(opts.baseline_sec,'auto')
         % Update event timings in metaData:
