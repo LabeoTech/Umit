@@ -21,7 +21,7 @@ function outDataStat = genCorrelationMatrix(data, metaData, varargin)
 % Pipeline Managers will be able to read it!
 default_Output = 'corrMatrix.mat'; %#ok This line is here just for Pipeline management.
 default_opts = struct('ROImasks_filename', 'ROImasks_data.mat', 'CorrAlgorithm', 'centroid_vs_centroid', 'SpatialAggFcn', 'mean','b_FisherZ_transform', false, 'b_genSPCMaps', false);
-opts_values = struct('ROImasks_filename', {{'ROImasks_data.mat'}}, 'CorrAlgorithm',{{'centroid_vs_centroid','centroid_vs_agg', 'avg_vs_avg'}}, 'SpatialAggFcn', {{'mean', 'max', 'min', 'median'}},'b_FisherZ_transform',[true,false],'b_genSPCMaps',[true,false]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
+opts_values = struct('ROImasks_filename', {{'ROImasks_data.mat'}}, 'CorrAlgorithm',{{'centroid_vs_centroid','centroid_vs_agg', 'avg_vs_avg'}}, 'SpatialAggFcn', {{'mean', 'max', 'min', 'median'}},'b_FisherZ_transform',[true,false],'b_genSPCMaps',[true,false]);%  % This is here only as a reference for PIPELINEMANAGER.m.
 
 default_object = ''; % This line is here just for Pipeline management to be able to detect this input.
 %%% Arguments parsing and validation %%%
@@ -59,29 +59,34 @@ data = reshape(data, [],data_sz(3));
 % Calculate the correlation for each ROI:
 roi_names = {roi_data.ROI_info.Name}';
 roi_corrVals = cell(size(roi_names));
+% Create list of centroids:
+centroid_list = arrayfun(@(x) find(bwmorph(x.Stats.ROI_binary_mask,'shrink',Inf)),...
+    roi_data.ROI_info, 'UniformOutput', false);
+% In cases where there are non-contiguous ROIs, get first centroid (Arbitrary decision here!):
+centroid_list = cellfun(@(x) x(1),centroid_list);
+% Create SPCMaps for each centroid:
+if opts.b_genSPCMaps
+    SPCMaps = cell(length(centroid_list),1);
+    w = waitbar(0,'Creating SPCMaps...');
+    for i = 1:length(centroid_list)
+        tmp_out = zeros(1,size(data,1),'single');
+        for j = 1:size(tmp_out,2)
+            rho = corrcoef(data(centroid_list(i),:)', data(j,:)');
+            tmp_out(j) = rho(1,2);
+        end
+        SPCMaps{i} = reshape(tmp_out, data_sz(1), data_sz(2));
+        if opts.b_FisherZ_transform
+            % Apply Z-Fisher transform to SPCMaps
+            SPCMaps{i} = ZFisher_truncated(SPCMaps{i});
+        end
+        waitbar(i/length(centroid_list),w);
+    end
+    delete(w);
+    disp('Seed Pixel Correlation Maps created!');
+end
 
 % Get centroids, if applicable:
 if startsWith(opts.CorrAlgorithm, 'centroid', 'IgnoreCase', true)
-    centroid_list = arrayfun(@(x) find(bwmorph(x.Stats.ROI_binary_mask,'shrink',Inf)),...
-        roi_data.ROI_info, 'UniformOutput', false);
-    % In cases where there are non-contiguous ROIs, get first centroid (Arbitrary decision here!):
-    centroid_list = cellfun(@(x) x(1),centroid_list);
-    % Create SPCMaps for each centroid:
-    if opts.b_genSPCMaps
-        SPCMaps = cell(length(centroid_list),1);
-        w = waitbar(0,'Creating SPCMaps...');
-        for i = 1:length(centroid_list)
-            SPCMaps{i} = reshape(corr(data(centroid_list(i),:)', data'), ...
-                data_sz(1), data_sz(2));
-            if opts.b_FisherZ_transform
-                % Apply Z-Fisher transform to SPCMaps
-                SPCMaps{i} = ZFisher_truncated(SPCMaps{i});
-            end
-            waitbar(i/length(centroid_list),w);
-        end
-        delete(w);
-    end
-    disp('Seed Pixel Correlation Maps created!');
     switch opts.CorrAlgorithm
         case 'centroid_vs_centroid'
             roiVals = data(centroid_list,:);
@@ -92,9 +97,18 @@ if startsWith(opts.CorrAlgorithm, 'centroid', 'IgnoreCase', true)
             B = zeros(length(centroid_list),length(centroid_list), 'single');
             target = arrayfun(@(x) data(x.Stats.ROI_binary_mask(:),:), roi_data.ROI_info,...
                 'UniformOutput',false);
-            for i = 1: length(centroid_list)
+            for i = 1:length(centroid_list)
                 source = data(centroid_list(i),:);
-                rho_vals = cellfun(@(x) corr(source',x'), target, 'UniformOutput',false);
+                rho_vals = cell(size(target));
+                for j = 1:numel(target)
+                    tmp = target{j};
+                    vals = zeros(1,size(target{j},1), 'single');
+                    for k = 1:size(tmp,1)
+                        rho_tmp = corrcoef(source,tmp(k,:));
+                        vals(k) = rho_tmp(1,2);
+                    end
+                    rho_vals{j} = vals;
+                end
                 switch opts.SpatialAggFcn
                     %'mean', 'max', 'min', 'median'
                     case 'mean'
