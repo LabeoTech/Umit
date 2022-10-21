@@ -168,10 +168,15 @@ if strcmpi(merge_type, 'movie')
             % Populate "Stim_trialMarker":
             SubStim = ones(1,mIn.datLength); SubStim([1,end]) = 0; % Use the first/last frame to mark the onset and offset of the Trial.
             mOut.Stim_TrialMarker = [mOut.Stim_TrialMarker, SubStim];
+            % Add Stim_TrialMarker info, if applicable:
+            [~,mOut.eventID] = ismember(trialMarker,unique(trialMarker));
+            mOut.eventNameList = unique(trialMarker);
+            mOut.preEventTime_sec = single(1/mIn.Freq);
+            mOut.postEventTime_sec = single((mIn.datLength-1)/mIn.Freq);
         end
         waitbar(i/length(dataPath),w);
     end
-    fclose(fidOut);         
+    fclose(fidOut);   
 else
     % Concatenate data in "E"vent domain:
     % Create empty 4D matrix with dimensions {Trials,Y,X,T}:
@@ -220,13 +225,6 @@ opts.merge_order = merge_order;
 opts.b_IgnoreStim = b_IgnoreStim;
 dH = genDataHistory(myInfo,[SaveFilename ' = mergeRecordings(opts);'], opts, {SaveFilename});
 mOut.dataHistory = dH;
-% Add Stim_TrialMarker info, if applicable:
-if ~isempty(trialMarker)
-    [~,mOut.eventID] = ismember(trialMarker,unique(trialMarker));
-    mOut.eventNameList = unique(trialMarker);
-    mOut.preEventTime_sec = single(1/mOut.Freq);
-    mOut.postEventTime_sec = single((mOut.datLength(2)-1)/mOut.Freq);
-end
 % Save meta data to file:
 save(strrep(SaveFilename, '.dat', '.mat'), '-struct', 'mOut');   
 disp('Done')
