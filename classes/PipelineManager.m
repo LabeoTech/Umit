@@ -311,7 +311,9 @@ classdef PipelineManager < handle
                             end
                             obj.pipeFirstInput = task.inputFileName;
                         else
-                            task.inputFileName = obj.getFirstInputFile(task);
+                            if isempty(task.inputFileName)
+                                task.inputFileName = obj.getFirstInputFile(task);
+                            end
                             if task.inputFileName == 0
                                 disp('Operation Cancelled by User')
                                 return
@@ -719,7 +721,7 @@ methods (Access = private)
         
         out = '';
         % If the first input was already set, abort:
-        if ~isempty(obj.pipeFirstInput)
+        if ~isempty(obj.pipeFirstInput)            
             return
         end
         
