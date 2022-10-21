@@ -1,4 +1,4 @@
-function outFile = run_HemoCompute(RawFolder,SaveFolder, varargin)
+function outFile = run_HemoCompute(SaveFolder, varargin)
 % RUN_HEMOCOMPUTE calls the function HEMOCOMPUTE from the IOI library (LabeoTech).
 % For more info, read the HEMOCOMPUTE docstring.
 
@@ -9,13 +9,11 @@ opts_values = struct('FilterSet',{{'GCaMP', 'jRGECO' , 'none'}},'b_normalize',[t
 %%% Arguments parsing and validation %%%
 p = inputParser;
 % Save folder:
-addRequired(p, 'RawFolder', @isfolder);
 addRequired(p, 'SaveFolder', @isfolder);
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
 % Parse inputs:
-parse(p,RawFolder,SaveFolder, varargin{:});
+parse(p,SaveFolder, varargin{:});
 %Initialize Variables:
-RawFolder = p.Results.RawFolder;
 SaveFolder = p.Results.SaveFolder;
 opts = p.Results.opts;
 outFile = default_Output;
@@ -28,7 +26,7 @@ list = fields(idx)';
 
 % Run HemoCompute function from IOI library:
 try
-    HbO = HemoCompute(RawFolder,SaveFolder, opts.FilterSet, list, opts.b_normalize); %#ok The output is here just to catch assertion errors from HemoCompute.
+    HbO = HemoCompute(SaveFolder,SaveFolder, opts.FilterSet, list, opts.b_normalize); %#ok The output is here just to catch assertion errors from HemoCompute.
 catch ME
     ME = addCause(ME, MException('umIToolbox:run_HemoCompute:UnkwnownError',...
         'Function HemoCompute Failed! Check Matlab command window for messages!'));
