@@ -166,17 +166,18 @@ if strcmpi(merge_type, 'movie')
         end
         if ~isempty(trialMarker)
             % Populate "Stim_trialMarker":
-            SubStim = ones(1,mIn.datLength); SubStim([1,end]) = 0; % Use the first/last frame to mark the onset and offset of the Trial.
+            SubStim = i*(ones(1,mIn.datLength)); SubStim([1,end]) = 0; % Use the first/last frame to mark the onset and offset of the Trial.
             mOut.Stim_TrialMarker = [mOut.Stim_TrialMarker, SubStim];
-            % Add Stim_TrialMarker info, if applicable:
-            [~,mOut.eventID] = ismember(trialMarker,unique(trialMarker));
-            mOut.eventNameList = unique(trialMarker);
-            mOut.preEventTime_sec = single(1/mIn.Freq);
-            mOut.postEventTime_sec = single((mIn.datLength-1)/mIn.Freq);
+            
+%             % Add Stim_TrialMarker info, if applicable:            
+%             mOut.preEventTime_sec = single(1/mIn.Freq);
+%             mOut.postEventTime_sec = single((mIn.datLength-1)/mIn.Freq);
         end
         waitbar(i/length(dataPath),w);
     end
     fclose(fidOut);   
+    % Create info for "events.mat" file:
+    
 else
     % Concatenate data in "E"vent domain:
     % Create empty 4D matrix with dimensions {Trials,Y,X,T}:
@@ -206,11 +207,19 @@ else
     if isempty(trialMarker)
         mOut.eventID = ones(mOut.datSize(1),1,'uint16');
         mOut.eventNameList = {'1'};
-        mOut.preEventTime_sec = single(2/mOut.Freq);
-        mOut.postEventTime_sec = single((mOut.datLength(2)-2)/mOut.Freq);
+        mOut.preEventTime_sec = single(1/mOut.Freq);
+        mOut.postEventTime_sec = single((mOut.datLength(2)-1)/mOut.Freq);
     end        
     waitbar(1,w,'Please wait. Writing data to file...')
     save2Dat(SaveFilename, data, mOut);
+end
+% Create "events.mat" file from "Stim" parameters:
+genEventsFromStimParameters(fileparts(SaveFilename), mOut);
+if ~isempty(trialMarker)
+    % Open "events.mat" file and update eventNameList var:
+    evntFile = matfile(fullfile(fileparts(SaveFilename), 'events.mat'), 'Writable', true);    
+    evntFile.eventNameList = trialMarker;
+    
 end
 % Copy AcqInfo file from one of the original files to get some experiment info. This is used by some IOI_ana functions.
 copyfile(fullfile(fileparts(dataPath{end}), 'AcqInfos.mat'), fullfile(fileparts(SaveFilename),'AcqInfos.mat'));
@@ -229,5 +238,6 @@ mOut.dataHistory = dH;
 save(strrep(SaveFilename, '.dat', '.mat'), '-struct', 'mOut');   
 disp('Done')
 end
+
 
 
