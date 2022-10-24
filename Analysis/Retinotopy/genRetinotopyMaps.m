@@ -42,7 +42,8 @@ assert(all(ismember({'Y','X','T'},metaData.dim_names)), errID1,...
 % Check if the "events.mat" file exists and if the event Names correspond to the directions 0, 90, 180 and 270:
 assert(isfile(fullfile(SaveFolder, 'events.mat')), errID2, '"events.mat" file not found!')
 evntInfo = load(fullfile(SaveFolder, 'events.mat'));
-assert(all(ismember(evntInfo.eventNameList, {'0','90','180','270'})), errID2, 'Invalid directions found in "events.mat" file! They must be one of the following: 0,90,180,270.')
+assert(all(ismember(evntInfo.eventNameList, {'0','90','180','270'})),...
+    errID2, 'Invalid directions found in "events.mat" file! They must be one of the following: 0,90,180,270.')
 %%%%
 outFile = {};
 % Prepare data for FFT calculation:
