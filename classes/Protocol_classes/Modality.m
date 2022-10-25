@@ -136,14 +136,12 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         
         function out = get.MetaDataFile(obj)
             % Get function for depentend property MetaDataFile.
+            out = fullfile(obj.RawFolder, obj.MetaDataFileName);
             if isempty(obj.MetaDataFileName)
                 out = 'none';
                 return
-            else
-                out = fullfile(obj.RawFolder, obj.MetaDataFileName);
-                msgID = 'umIToolbox:Modality:FileNotFound';
-                msg = 'Modality MetaDataFile not found in Raw Folder.';
-                assert(isfile(out), msgID,msg);
+            elseif ~isfile(out)
+                out = 'missing';            
             end
         end
     end

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../css/master.css">
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+      .collapsible {
+      background-color: #eeeeee;
+      color: black;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      margin-bottom: 10px;
+      }
+      .active, .collapsible:hover {
+      background-color: #888;
+      }
+      .content {
+      padding: 0 18px;
+      display: none;
+      overflow: hidden;
+      background-color: #fff;
+      border: 1px solid black;
+      margin-bottom: 10px;
+      }
+    </style>
+    <title>genRetinotopyMaps</title>
+  </head>
+  <body>
+    <h2>genRetinotopyMaps</h2>
+    <hr>
+    <p>
+      Creates azimuth and elevation maps from retinotopic mapping recordings.
+    </p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+      This function generates the amplitude and phase components of the azimuth and elevation retinotopic maps. The maps are created from the cortical responses to a periodic stimulus  <a href="#refs">[1-4]</a>.
+    </p>
+    <h3>Input</h3>
+    <hr>
+    <p>
+      This function accepts only image time series as input with dimensions Y, X and T. The input data must contain the cortical responses to at least <b>two</b> opposite directions in order to calculate either the azimuth or elevation maps. The directions of the visual stimuli are encoded in degrees where the cardinal directions left-right, bottom-up, right-left and top-down correspond to 0&deg;, 90&deg;, 180&deg; and 270&deg;, respectively. This information should be stored in a <samp>events.mat</samp> file located in the same directory of the input data.
+    </p>
+
+    <h3> The algorithm</h3>
+    <hr>
+    <p>
+      For each direction, the fourier transform is performed in the time domain and the first harmonic (i.e. at the stimulation frequency) is selected to calculate the amplitude and phase maps. The directions 0&deg; and 180&deg; are combined to create the azimuth map while the directions 90&deg; and 270&deg; are combined to create the elevation map. The amplitude of opposign directions are averaged while the phases are subtracted in order to remove the response phase delay as proposed by Kalatsky and Stryker <a href="#refs">[1]</a>.
+    </p>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <b>More details</b>
+    </button>
+    <div class="content">
+      <p>
+        The calculation of the amplitude and phase maps for each cardinal direction was performed as in <a href="refs">[4]</a>. Given the Fast-Fourier Transformed data <i>fDat<sub>(x,y,&xi;)</sub></i> with the first harmonic frequency <i>&xi;</i>, the amplitude is calculated as:
+      </p>
+      <p style="text-align:center">
+        <img src="../assets/img/genRetinotopyMaps_eq1.png" alt="genRetinotopyMaps_eq1" height="50">
+      </p>
+      <p> where the <i>re</i> and <i>im</i> are the real and imaginary components of <i>fDat</i> and <i>N</i> is the size of the frequency dimensions of <i>fDat</i>.
+      </p>
+      <p>
+        The phase map &phi; is calculated as:
+      </p>
+      <p style="text-align:center">
+        <img src="../assets/img/genRetinotopyMaps_eq2.png" alt="genRetinotopyMaps_eq2" height="20"><br>
+      </p>
+      <p>
+        where the angle &theta; is the four-quadrant inverse tangent of <i>fDat<sub>(,x,y,&xi;)</sub></i>:
+      </p>
+      <p style="text-align:center">
+        <img src="../assets/img/genRetinotopyMaps_eq3.png" alt="genRetinotopyMaps_eq3" height="17">
+      </p>
+    </div>
+
+    <h3>Output</h3>
+    <hr>
+    <p>
+      The <samp>genRetinotopyMaps</samp> function creates the following <samp>.dat</samp> files:
+    </p>
+    <ul>
+      <li>AzimuthMap</li>
+      <li>ElevationMap</li>
+    </ul>
+    <p>
+      Each file contains the amplitude and phase Y,X maps.
+    </p>
+    <h3 id="parameters">Parameters</h3>
+    <hr>
+    <p>The parameters of this function are the following:</p>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>nSweeps</b></samp> - number of stimulus sweeps <br>
+      <span class="title-desc"><i> positive integer</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Number of times that the visual stimulus was presented. This value is used to select the first harmonic.
+      </p>
+    </div>
+
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>b_useAverageMovie</b></samp> - use movie average <br>
+      <span class="title-desc"><i> false (default) | true</i></span>
+    </button>
+    <div class="content">
+      <p>
+        This is used in <a href="#refs">[4]</a> to calculate the azimuth and elevation maps. Set this parameter to <b>true</b> to preprocess each direction movie as the average of each trial normalized by the median of an inter-trial period. To make this work, the trigger timestamps of each trial must be stored in the <samp>events.mat</samp> file and an inter-trial time period between trial must exist.
+      </p>
+      <p>
+        If the average movie is used, the value of the <samp>nSweeps</samp> parameter is set to 1 sweep, given that each trial represents a single sweep of the visual stimulus.
+      </p>
+    </div>
+    <h3>References</h3>
+    <hr>
+    <ol id="refs">
+      <li>
+        Kalatsky, Valery A., and Michael P. Stryker. 2003. ‘New Paradigm for Optical Imaging’. Neuron 38 (4): 529–45. <a href="https://doi.org/10.1016/S0896-6273(03)00286-1">https://doi.org/10.1016/S0896-6273(03)00286-1</a>.
+      </li>
+      <li>
+        Marshel, James H., Marina E. Garrett, Ian Nauhaus, and Edward M. Callaway. 2011. ‘Functional Specialization of Seven Mouse Visual Cortical Areas’. Neuron 72 (6): 1040–54.
+        <a href="https://doi.org/10.1016/j.neuron.2011.12.004">https://doi.org/10.1016/j.neuron.2011.12.004</a>.
+      </li>
+      <li>
+        Garrett, Marina E., Ian Nauhaus, James H. Marshel, and Edward M. Callaway. 2014. ‘Topography and Areal Organization of Mouse Visual Cortex’. The Journal of Neuroscience 34 (37): 12587–600. <a href="https://doi.org/10.1523/JNEUROSCI.1124-14.2014">https://doi.org/10.1523/JNEUROSCI.1124-14.2014</a>.
+      </li>
+      <li>
+        Zhuang, Jun, Lydia Ng, Derric Williams, Matthew Valley, Yang Li, Marina Garrett, and Jack Waters. 2017. ‘An Extended Retinotopic Map of Mouse Cortex’. Edited by David Kleinfeld. ELife 6 (January): e18372. <a href="https://doi.org/10.7554/eLife.18372">https://doi.org/10.7554/eLife.18372</a>.
+      </li>
+    </ol>
+    <!-- JavaScript code to collapse sections -->
+    <script src="collapsible_behaviour.js"></script>
+  </body>
+</html>

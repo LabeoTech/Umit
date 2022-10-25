@@ -7,7 +7,12 @@ function outData = GSR(data, metaData, varargin)
 % Inputs:
 %   data: numerical matrix containing image time series (with dimensions "Y", "X", "T").
 %   metaData: .mat file with meta data associated with "data".
-%   opts (optional) : structure containing extra parameters. See "default_opts" variable below for details!
+%   opts (optional) : structure containing extra parameters
+%       - b_UseMask (bool): If TRUE, the function loads a logical mask from
+%           the " MaskFile to calculate the Global Signal only from pixels inside the mask.
+%       - MaskFile (char): Name of the ".mat" file containing the "logical_mask" variable.
+%   object (used by PipelineManager class ONLY): Protocol objecf of type "Modality".
+%       If provided, the function will look for the "MaskFile" in the "Subject" folder.
 %
 % Outputs: 
 %   outData: numerical matrix with dimensions {Y,X,T}.   
@@ -33,7 +38,7 @@ outData = p.Results.data;
 metaData = p.Results.metaData;
 opts = p.Results.opts;
 object = p.Results.object;
-clear p
+clear p data
 %%%%
 % Validate if "data" is an Image Time Series:
 errID = 'umIToolbox:GSR:InvalidInput';
@@ -68,9 +73,9 @@ mData = mean(outData,3);
 Sig = mean(outData(logical_mask(:),:),1);
 Sig = Sig / mean(Sig);
 X = [ones(szData(3),1), Sig'];
-B = X\outData';
-A = X*B;
-clear X B Sig
+clear Sig
+A = X*(X\outData');
+clear X 
 outData = outData - A';%Center at Zero
 outData = outData + mData; %Center over constant mean value.
 outData = reshape(outData,szData);

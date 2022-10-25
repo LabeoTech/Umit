@@ -2,7 +2,7 @@ classdef DataViewer_pipelineMngr < handle
     % This class is a simpler version of a PipelineManager class from
     % umIToolbox. This class will create and manage a small analysis
     % pipeline for imaging datasets inside the GUI "DataViewer".
-    %
+
     
     properties
         fcnDir char % Directory of the analysis functions.
@@ -13,8 +13,7 @@ classdef DataViewer_pipelineMngr < handle
         % structure containing the info of each step of the pipeline:
         pipe = struct('argsIn', {},'argsOut',{},'outFileName','','opts',struct.empty,...
             'opts_vals',struct.empty,'opts_def',struct.empty, 'name','',...
-            'funcStr', '','b_save2File', logical.empty, 'datFileName', '');
-        
+            'funcStr', '','b_save2File', logical.empty, 'datFileName', '');         
         data % numerical array containing imaging data
         metaData % structure or matfile containing meta data associated with "data".
         SaveFolder % folder where data created will be stored (Save Directory).
@@ -36,8 +35,7 @@ classdef DataViewer_pipelineMngr < handle
                 end
                 obj.fcnDir = fullfile(rootDir, 'Analysis');
                 obj.createFcnList;
-            end
-            
+            end           
             obj.data = data;
             obj.metaData = metaData;
             obj.SaveFolder = SaveFolder;
@@ -224,13 +222,13 @@ classdef DataViewer_pipelineMngr < handle
                 % one of the "Files" in the workspace before running the
                 % current step.
                 
-                if (numel(obj.pipe(end).outFileName) > 1) && any(strcmp(obj.pipe(end).argsOut, 'outFile'))
+                if (numel(obj.pipe(end).outFileName) > 1) && any(strcmp(obj.pipe(end).argsOut, 'outFile')) && any(strcmpi('data',funcInfo.argsIn))                                        
                     disp('Controlling for multiple outputs')
                     w = warndlg({'Previous step has multiple output files!',...
                         'Please, select one to be analysed!'});
                     waitfor(w);
                     [indx, tf] = listdlg('ListString', obj.pipe(end).outFileName,...
-                        'SelectionMode','single');
+                        'SelectionMode','single', 'PromptString', {'Select input from ', obj.pipe(end).name}, 'Name', funcInfo.name);
                     if ~tf
                         disp('Operation cancelled by User')
                         return
@@ -616,7 +614,6 @@ classdef DataViewer_pipelineMngr < handle
         end
     end
 end
-
 
 % Local functions
 % These functions work with the "setOpts" method to create an input dialog

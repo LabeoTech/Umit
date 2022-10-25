@@ -633,6 +633,10 @@ methods (Access = private)
         % Create function string and update log table:
         task.funcStr = createFcnString(obj, task);
         LastLog.Job = {task.funcStr};
+        % Add full path of input file, if applicable:
+        if ~isempty(task.inputFileName)
+            LastLog.InputFile_Path = fullfile(obj.tmp_TargetObj.SaveFolder, task.inputFileName);
+        end
         %  Execute the task:
         try
             % Control for missing input files:
@@ -967,7 +971,11 @@ methods (Access = private)
             % Get only filename instead of full path:
             [~, filenames, ext] = cellfun(@(x) fileparts(x), obj.current_outFile,...
                 'UniformOutput', false);
-            curr_dtHist.outputFile_list = join([filenames',ext'],'');
+            if size(filenames,2) > size(filenames,1)
+                filenames = filenames';
+                ext = ext';
+            end
+            curr_dtHist.outputFile_list = join([filenames,ext],'');
             
             for i = 1:length(obj.current_outFile)
                 % Map existing metaData file to memory:

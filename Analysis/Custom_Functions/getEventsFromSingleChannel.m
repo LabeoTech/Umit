@@ -137,12 +137,12 @@ if isfield(a, 'BarSize')
     Direction = a.DriftDirection;
     nSweeps = a.nTrials;
     if Direction == -1
-        eventID = repmat([0:90:270]',nSweeps*2,1); % accounts for ON/OFF state.
+        eventID = repmat([1:4]',nSweeps*2,1); % accounts for ON/OFF state.
         eventID = sort(eventID);
     else
         eventID = repmat(Direction, nSweeps*2,1);
     end
-    condList = num2cell(unique(eventID),2);
+    condList = {'0','90','180','270'};
     [~, state, timestamps] = getEventsFromTTL(signal, sr, opts.threshold, opts.TriggerType);
 elseif isfield(a,'TrialList')
     [condList, ~, eventID] = unique(a.TrialList, 'rows');

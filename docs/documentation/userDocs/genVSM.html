@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../css/master.css">
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+      .collapsible {
+      background-color: #eeeeee;
+      color: black;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      margin-bottom: 10px;
+      }
+      .active, .collapsible:hover {
+      background-color: #888;
+      }
+      .content {
+      padding: 0 18px;
+      display: none;
+      overflow: hidden;
+      background-color: #fff;
+      border: 1px solid black;
+      margin-bottom: 10px;
+      }
+    </style>
+    <title>genVSM</title>
+  </head>
+  <body>
+    <h2>genVSM - generate Visual Sign Map</h2>
+    <hr>
+    <p>
+      Creates a visual sign map using the azimuth and elevation maps.
+    </p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+      This function uses the azimuth and elevation phase maps created in the function <samp>genRetinotopyMaps</samp> to create the Visual Sign Map (VSM). Optionally, this function can segment the VSM to create ROIs compatible with the <samp>ROImanager</samp> app.
+    </p>
+    <h3>Input</h3>
+    <hr>
+    <p>
+      Azimuth and Elevation maps stored in the <samp>AzimuthMap</samp> and <samp>ElevationMap</samp> <samp>.dat </samp> files.
+    </p>
+
+    <h3> The algorithm</h3>
+    <hr>
+    <p>
+      In brief, the visual sign map is calculated as the sine of the difference between the gradients of the azimuth and elevation phase maps. This function uses the algorithm described by Sereno et al. <a href="#refs">[1,2]</a>.
+    </p>
+    <h3>Output</h3>
+    <hr>
+    <p>
+      The output of this function is a numerical matrix with dimensions Y,X containing the visual sign map and its associated meta data structure.
+    </p>
+    <h3 id="parameters">Parameters</h3>
+    <hr>
+    <p>The parameters of this function are the following:</p>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>SpatialFilter_Sigma</b></samp> - Spatial filter size <br>
+      <span class="title-desc"><i> 0 (default) | positive number</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Standard deviation of the gaussian spatial filter (in pixels) to be applied to the visual sign map. Set to skip spatial filter.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>b_CreateROIs</b></samp> - create ROI mask <br>
+      <span class="title-desc"><i> false (default) | true</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Set to <b>true</b> to export a labeled matrix containing masks based on the visual sign map.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>ROIfileName</b></samp> - Name of ROI mask file <br>
+      <span class="title-desc"><i> VisualCtxAreas.mat (default) | char</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Name of the <samp>.mat</samp> file with the labeled matrix with the ROIs extracted from the visual sign map. This file will be stored in the same folder as the input files to this function.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>b_UseMask</b></samp> - use logical mask <br>
+      <span class="title-desc"><i> false (default) | true</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Set to <b>true</b> to use a logical mask stored in a variable named <samp>logical_mask</samp> in a <samp>.mat</samp> file. This mask is used to exclude non-pertinent areas of the visual sign map before the ROI creation.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="collapsible">
+      <span class="iconplus"></span>
+      <samp><b>MaskFile</b></samp> - logical mask file name <br>
+      <span class="title-desc"><i> ImagingReferenceFrame.mat (default) | char</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Name of the file containing the logical mask.
+      </p>
+    </div>
+    <h3>References</h3>
+    <hr>
+    <ol id="refs">
+      <li>
+        Sereno, M. I., A. M. Dale, J. B. Reppas, K. K. Kwong, J. W. Belliveau, T. J. Brady, B. R. Rosen, and R. B. Tootell. 1995. ‘Borders of Multiple Visual Areas in Humans Revealed by Functional Magnetic Resonance Imaging’. Science (New York, N.Y.) 268 (5212): 889–93.<a href="https://doi.org/10.1126/science.7754376">https://doi.org/10.1126/science.7754376</a>.
+      </li>
+      <li>
+        Sereno, Martin I., Colin T. McDonald, and John M. Allman. 1994. ‘Analysis of Retinotopic Maps in Extrastriate Cortex’. Cerebral Cortex 4 (6): 601–20. <a href="https://doi.org/10.1093/cercor/4.6.601">https://doi.org/10.1093/cercor/4.6.601</a>.
+      </li>
+      <li>
+        Garrett, Marina E., Ian Nauhaus, James H. Marshel, and Edward M. Callaway. 2014. ‘Topography and Areal Organization of Mouse Visual Cortex’. The Journal of Neuroscience 34 (37): 12587–600. <a href="https://doi.org/10.1523/JNEUROSCI.1124-14.2014">https://doi.org/10.1523/JNEUROSCI.1124-14.2014</a>.
+      </li>
+    </ol>
+    <!-- JavaScript code to collapse sections -->
+    <script src="collapsible_behaviour.js"></script>
+  </body>
+</html>

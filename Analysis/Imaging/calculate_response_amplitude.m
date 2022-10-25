@@ -84,15 +84,13 @@ postTrig = data(trigFrame:endFrame,:);
 % Use aggregate function OR value defined by User:
 bsln = applyAggFcn(bsln, opts.preEvent_value);
 postTrig = applyAggFcn(postTrig, opts.postEvent_value);
-
-% calculate amplitude:
-outData = postTrig - bsln;
-
-% Reshape outData to match data size:
+% Reshape data to match original data size:
 new_sz = data_sz;
 new_sz(1) = 1;
-outData = reshape(outData, new_sz);
-
+bsln = reshape(bsln, new_sz);
+postTrig = reshape(postTrig, new_sz);
+% calculate amplitude:
+outData = postTrig - bsln;
 % Find singleton dimensions:
 singletonDims = size(outData) == 1;
 % Permute outData to original data size and remove singleton dimensions:
