@@ -240,7 +240,7 @@ classdef StatsManager < handle
             end
             b_isExportable = all(idx);
             myTypes = unique(typeList);
-            if length(myTypes)>1
+            if length(myTypes) > 1
                 dataType = 'mixed';
             else
                 dataType = types{myTypes};
