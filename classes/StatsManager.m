@@ -20,9 +20,10 @@ classdef StatsManager < handle
     end
     properties (SetAccess = private)
 %         timestamp_list % List of timestamps associated with each object in list_of_objs.
-        stats_data  = {} % cell array containing all data and metaData created.
-        stats_data_headers = {} % cell array containing the headers of the cell array stats_data.
+        stats_data  = {} % cell array containing all data and metaData created.        
+        headers = {} % cell array with the _stats_data column names as keys and indices as values.        
         b_hasStatsToolbox  % True, if Matlab contains the Statistics and Machine learning toolbox.
+        
     end
     
     methods
@@ -39,18 +40,20 @@ classdef StatsManager < handle
             % handles:           
             obj.validateStatsInputs;            
             obj.createDataArray;
-            obj.checkDataDims; %Checks if the number of dimensions of each observation data.
+            obj.checkDataDims; % Checks if the number of dimensions of each observation data.
                                % This info will be used to lock/unlock the
                                % options to export the data as CSV or to
                                % create a table in umit's main GUI. 
                                % In these cases, only 1D data are allowed.
-
+           % Check if Matlab's Stats. toolbox exist:
            a = ver;
            if any(strcmp('Statistics and Machine Learning Toolbox', {a.Name}))
                obj.b_hasStatsToolbox = true;
            else
                obj.b_hasStatsToolbox = false;
            end
+           % Check if the data is homogeneous:
+           
         end
         %%% Property Set Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function set.list_of_objs(obj, list_of_objs)
@@ -106,17 +109,17 @@ classdef StatsManager < handle
             obj.stats_filename = stats_filename;
         end
         
-        function set.time_resolution(obj, time_res)
-            % Set function for time_resolution.
-            % It checks if time_res is a valid string.
-            errID = 'Umitoolbox:StatsManager:InvalidInput';
-            errMsg = ['Invalid time resolution. Valid options are: ' ...
-                '{"none", "second", "minute", "hour", "day", "week", "month"}'];
-            assert(ismember(time_res, {'none', 'minute', 'hour', 'day', ...
-                'week', 'month'}), errID, errMsg);
-            % Set time_res:
-            obj.time_resolution = time_res;
-        end
+%         function set.time_resolution(obj, time_res)
+%             % Set function for time_resolution.
+%             % It checks if time_res is a valid string.
+%             errID = 'Umitoolbox:StatsManager:InvalidInput';
+%             errMsg = ['Invalid time resolution. Valid options are: ' ...
+%                 '{"none", "second", "minute", "hour", "day", "week", "month"}'];
+%             assert(ismember(time_res, {'none', 'minute', 'hour', 'day', ...
+%                 'week', 'month'}), errID, errMsg);
+%             % Set time_res:
+%             obj.time_resolution = time_res;
+%         end
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         
         function [out,uniqLabels] = createTable(obj, varargin)
@@ -143,7 +146,7 @@ classdef StatsManager < handle
             % be used by "getObsData" method to put NaNs on missing
             % data (i.e. labels that are missing for a given recording).
             
-            uniqLabels = unique(vertcat(obj.stats_data{:,8})); % Sort unique labels in alphabetical order.
+            uniqLabels = unique(vertcat(obj.stats_data{:,obj.hMap('labels')})); % Sort unique labels in alphabetical order.
            
             % Get observations's labels from the stats_data structure:
             
@@ -219,17 +222,17 @@ classdef StatsManager < handle
             idx = false(1,size(obj.stats_data,1));            
             typeList = zeros(size(idx));
             for i = 1:length(idx)
-                if isempty(obj.stats_data{i,11})
+                if isempty(obj.stats_data{i,obj.hMap('dataSize')})
                     continue
                 end
-                if prod(obj.stats_data{i,11}{1}) == max(obj.stats_data{i,11}{1})
+                if prod(obj.stats_data{i,obj.hMap('dataSize')}{1}) == max(obj.stats_data{i,obj.hMap('dataSize')}{1})
                     idx(i) = true;
                 end
-                if isscalar(obj.stats_data{i,11}{1})
+                if isscalar(obj.stats_data{i,obj.hMap('dataSize')}{1})
                     typeList(i) = 1;
-                elseif all(strcmpi(obj.stats_data{i,6}.dim_names, 'O'))
+                elseif all(strcmpi(obj.stats_data{i,obj.hMap('MatFile')}.dim_names, 'O'))
                     typeList(i) = 2;
-                elseif all(ismember(obj.stats_data{i,6}.dim_names, {'Y', 'X', 'O'}))
+                elseif all(ismember(obj.stats_data{i,obj.hMap('MatFile')}.dim_names, {'Y', 'X', 'O'}))
                     typeList(i) = 3;
                 else
                     typeList(i) = 4;
@@ -253,87 +256,57 @@ classdef StatsManager < handle
             
             % Check if the index range is valid:
             topIndx = round(topIndx);
-            assert(topIndx <= max(unique([obj.stats_data{:,obj.getDataCol('AcquisitionIndx')}])) & topIndx > 0, ...
+            assert(topIndx <= max(unique([obj.stats_data{:,obj.hMap('AcquisitionIndx')}])) & topIndx > 0, ...
                 'umIToolbox:StatsManager:extendBaseline:WrongInput','Acquisition index is out of bounds!');
             % Set acquisitions as baseline:
-            idxAcq = ismember([obj.stats_data{:,obj.getDataCol('AcquisitionIndx')}], 1:topIndx);
-            obj.stats_data(:, obj.getDataCol('b_isBaseline')) = num2cell(idxAcq);
+            idxAcq = ismember([obj.stats_data{:,obj.hMap('AcquisitionIndx')}], 1:topIndx);
+            obj.stats_data(:, obj.hMap('b_isBaseline')) = num2cell(idxAcq);
             disp(['Acquisitions 1 to ' num2str(topIndx) ' set as baseline.'])
         end
         
-        function out = averageBaselineData(obj,varType)
+        function out = averageBaselineData(obj)
             % AVERAGEBASELINEDATA calculates the average of all data set as
-            % baseline. The input "varType" sets the type of variability
-            % measure ('STD', 'SEM' or 'CI').
-            % Input:
-            %   varType (char): variability measure:
-            %       'STD': standard deviation.
-            %       'SEM': standard error of the mean.
-            %       'CI' : 95% confidence interval (Statistics and Machine
-            %              Learning toolbox)
+            % baseline. 
             % Output:
-            %   out (struct): structure array containing the average, 
-            %     variability measure and meta data related to baseline acquisitions.
-            
+            %   out (cell): cell array with same structure as "stats_data"
+            %       containing the average of  baseline acquisitions.            
             % Instantiate output variable:
-            out = [];            
-            % Validate input:
-            errID = 'umIToolbox:StatsManager:averageBaselineData:WrongInput';
-            assert(ischar(varType) & any(strcmpi(varType, {'std', 'sem', 'ci'})),errID,...                
-                'Invalid variability measure. The following measures are accepted : "STD", "SEM" or "CI"');
-            if strcmpi(varType, 'ci') && ~obj.b_hasStatsToolbox
-                error(errID, 'Confidence Interval not supported! Matlab''s Statistics and Machine Learning Toolbox is needed.')
-            end
+            out = {};                                   
             % Average data
-            disp('averaging data...')
+            disp('averaging baseline data...')
             groupID = unique(obj.list_of_groups);            
-            subjID = unique(obj.stats_data(:,obj.getDataCol('SubjectID')));            
-            dimCat = numel(setdiff(obj.stats_data{1,obj.getDataCol('MatFile')}.dim_names, 'O'))+1;
+            subjID = unique(obj.stats_data(:,obj.hMap('SubjectID')));            
+            dimCat = numel(setdiff(obj.stats_data{1,obj.hMap('MatFile')}.dim_names, 'O'))+1;
+            bslnIdx = [obj.stats_data{:,obj.hMap('b_isBaseline')}]';
+            cols2copy = {'groupID','SubjectID','ModalityID', 'RecStartDateTime', 'labels', 'dataSize'};
             for iG = 1:numel(groupID)
-                idxG = strcmp(obj.stats_data(:,obj.getDataCol('GroupID')), groupID{iG});
+                % Select group:
+                idxG = strcmp(obj.stats_data(:,obj.hMap('groupID')), groupID{iG});
                 for iS = 1:numel(subjID)
-                    idxS = strcmp(obj.stats_data(:, obj.getDataCol('SubjectID')), subjID(iS));
-                    subset = 
-                    
-                
-%             
-            
-            
-            
-            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%             for i = 1:numel(subjID)
-%                 idxS = strcmp(obj.stats_data(:, obj.getDataCol('SubjectID')), subjID{i});
-%                 idxBsln = [obj.stats_data{:, obj.getDataCol('b_isBaseline')}]';
-%                 subset = obj.stats_data(idxS & idxBsln, :);
-%                 subjData = struct('SubjectID',subjID{i}, 'RecStartDateTime',subset{[subset{:,obj.getDataCol('AcquisitionIndx')}] == 1,obj.getDataCol('RecStartDateTime')},...
-%                     
-%                 % Update output
-%                 tmp = cell(1,size(subset,2));
-%                 indxCol = obj.getDataCol({'groupID','SubjectID','AcquisitionID','ModalityID', 'labels'});
-%                 tmp(1,indxCol) = subset(1,indxCol);
-%                 
-%                 for k = 1:length(obj.obs_list)
-%                     indxObs = cellfun(@(x) find(ismember(x, obj.obs_list{k})), subset(:,obj.getDataCol('observationID')), 'UniformOutput',false);                    
-%                     tmp{1,obj.getDataCol('observationID')} = [tmp{1,obj.getDataCol('observationID')}; obj.obs_list(k)];
-%                     dataIn = {};
-%                     for ii = 1:length(indxObs)
-%                         if isempty(indxObs{ii})
-%                             continue
-%                         end
-%                         dataIn = [dataIn, subset{ii,obj.getDataCol('data')}(indxObs{ii})];
-%                     end
-%                     avg = mean(cat(dimCat, dataIn{:}), dimCat,'omitnan');   
-%                         
-%                     
-%                 end
-%             end
-            
-            
-            
-            
-            
-            
-            
+                    % Select subject:
+                    idxS = strcmp(obj.stats_data(:, obj.hMap('SubjectID')), subjID(iS));
+                    subset = obj.stats_data(idxG & idxS & bslnIdx,:);
+                    tmp = cell(1, size(subset,2));
+                    tmp(obj.hMap(cols2copy)) = subset(1,obj.hMap(cols2copy));
+                    for iOb = 1:length(obj.obs_list)
+                        % Loop across each observation and average the data:
+                        idxOb = cellfun(@(x) ismember(x, obj.obs_list(iOb)),...
+                            subset(:,obj.hMap('observationID')), 'UniformOutput',false);
+                        dat = cellfun(@(x,y) x(y),subset(:,obj.hMap('data')), idxOb, 'UniformOutput',false);
+                        idxEmpty = cellfun(@isempty,dat);
+                        if all(idxEmpty)
+                            continue
+                        else
+                            dat = [dat{~idxEmpty}]';
+                            % Calculate average:
+                            tmp{obj.hMap('data')} = [tmp{obj.hMap('data')}; {mean(cat(dimCat,dat{:}),dimCat,'omitnan')}];
+                            tmp{obj.hMap('observationID')} = [tmp{obj.hMap('observationID')}; obj.obs_list(iOb)];
+                        end                                                
+                    end
+                    out = [out;tmp];
+                end
+            end
+            disp('Done!')                         
         end
     end
    
@@ -417,10 +390,10 @@ classdef StatsManager < handle
             % data and metadata provided as inputs to STATSMANAGER class.
             
             disp('Creating Data array. Please wait...')
-            obj.stats_data_headers = {'groupID', 'SubjectID', 'AcquisitionID', 'ModalityID',...
+            obj.headers = {'groupID', 'SubjectID', 'AcquisitionID', 'ModalityID',...
                 'RecStartDateTime', 'MatFile', 'dataFile','labels','observationID',...
-                'data', 'dataSize','AcquisitionIndx', 'b_isBaseline'};
-            obj.stats_data = cell(numel(obj.list_of_objs),length(obj.stats_data_headers));
+                'data', 'dataSize','AcquisitionIndx', 'b_isBaseline'};            
+            obj.stats_data = cell(numel(obj.list_of_objs),length(obj.headers));
             for i = 1:numel(obj.list_of_objs)                
                 obj.stats_data{i,1} = obj.list_of_groups{i}; % Group ID 
                 obj.stats_data{i,2} = obj.getElementInfo(obj.list_of_objs{i},'Subject', 'ID'); % Subject ID
@@ -443,15 +416,15 @@ classdef StatsManager < handle
             % Create Relative time per subject's acquisitions per group:
             gNames= unique(obj.list_of_groups);
             for iG = 1:numel(gNames)
-                idxG = strcmp(obj.stats_data(:,obj.getDataCol('GroupID')),gNames{iG});
-                subjs = unique(obj.stats_data(:,obj.getDataCol('SubjectID')));
+                idxG = strcmp(obj.stats_data(:,obj.hMap('groupID')),gNames{iG});
+                subjs = unique(obj.stats_data(:,obj.hMap('SubjectID')));
                 for iS = 1:numel(subjs)
-                    indxS = find(strcmp(subjs{iS}, obj.stats_data(:,obj.getDataCol('SubjectID'))) & idxG);
-                    acq_time_list = datetime(vertcat(obj.stats_data{indxS,obj.getDataCol('RecStartDateTime')}));
+                    indxS = find(strcmp(subjs{iS}, obj.stats_data(:,obj.hMap('SubjectID'))) & idxG);
+                    acq_time_list = datetime(vertcat(obj.stats_data{indxS,obj.hMap('RecStartDateTime')}));
                     [~,tm_idx] = sort(acq_time_list);
                     [~,rel_time]= sort(tm_idx);
-                    obj.stats_data(indxS,12) = arrayfun(@(x) x, rel_time, 'UniformOutput', false);
-                    obj.stats_data(indxS,13) = num2cell([obj.stats_data{indxS,12}] == 1);
+                    obj.stats_data(indxS,obj.hMap('AcquisitionIndx')) = arrayfun(@(x) x, rel_time, 'UniformOutput', false);
+                    obj.stats_data(indxS,obj.hMap('b_isBaseline')) = num2cell([obj.stats_data{indxS,obj.hMap('AcquisitionIndx')}] == 1);
                 end
             end
              disp('Done!')
@@ -493,7 +466,7 @@ classdef StatsManager < handle
             % Find indexes of the observation inside stats_data:
             indx_obs = zeros(1,size(obj.stats_data,1));
             for i = 1:size(obj.stats_data,1)
-                indx = find(strcmp(obs_ID, obj.stats_data{i,9}));
+                indx = find(strcmp(obs_ID, obj.stats_data{i,obj.hMap('observationID')}));
                 if isempty(indx)
                     continue
                 end
@@ -529,18 +502,44 @@ classdef StatsManager < handle
                 'RecordingTime', 'ObsID'}, generic_label];            
         end
         
-        function out = getDataCol(obj, colName)
-            % GETDATACOL gives the index of the "stats_data" column with
+        function out = hMap(obj, colName)
+            % HMAP gives the index of the "stats_data" column with
             % the header "colName".
             if ischar(colName)
                 colName = {colName};
             end            
-            [~, out]= ismember(lower(colName), lower(obj.stats_data_headers));            
+            [~, out]= ismember(lower(colName), lower(obj.headers));            
         end
         
-        %%%%%%%%%%%%%%%%%%
+        function out = calculateVariation(~, varType,data, dim)
+            % CALCULATEVARIATION calculates one of the following variation
+            % measures on "data": 
+            %   'STD': standard deviation
+            %   'SEM': standard error of the mean
+            %   'CI': 95% Confidence Interval.
+            % Inputs:
+            %   varType (char): name of the variation measure (see above).
+            %   data (numerical array): data to calculate variation.
+            %   dim (int scalar): number of the dimension to calculate the
+            %   variation. 
+            % !! Note #1: NaNs are excluded in all calculations.
+            % Output:
+            %   out(numerical array): variation of the input data. For the
+            %   CI measure, the upper bound is provided.
+            
+            switch upper(varType)
+                case 'STD'
+                    out = std(data,0,dim, 'omitnan');
+                case 'SEM'
+                    out = std(data,0,dim,'omitnan')./sqtr(size(data,dim));
+                case 'CI'
+                    out = (tinv(1-0.025,size(data,dim)-1)).*(std(data,0,dim,'omitnan')./sqtr(size(data,dim)));
+                otherwise                   
+                    error('Unknown variation measure!')
+            end                                
+        end
         
-    end
-           
-    
+        
+        %%%%%%%%%%%%%%%%%%        
+    end               
 end
