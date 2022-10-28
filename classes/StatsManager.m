@@ -19,9 +19,10 @@ classdef StatsManager < handle
                        % Options: "none", "minute", "hour, "day", "week", "month".                  
     end
     properties (SetAccess = private)
-        timestamp_list % List of timestamps associated with each object in list_of_objs.
+%         timestamp_list % List of timestamps associated with each object in list_of_objs.
         stats_data  = {} % cell array containing all data and metaData created.
         stats_data_headers = {} % cell array containing the headers of the cell array stats_data.
+        b_hasStatsToolbox  % True, if Matlab contains the Statistics and Machine learning toolbox.
     end
     
     methods
@@ -42,7 +43,14 @@ classdef StatsManager < handle
                                % This info will be used to lock/unlock the
                                % options to export the data as CSV or to
                                % create a table in umit's main GUI. 
-                               % In these cases, only 1D data are allowed. 
+                               % In these cases, only 1D data are allowed.
+
+           a = ver;
+           if any(strcmp('Statistics and Machine Learning Toolbox', {a.Name}))
+               obj.b_hasStatsToolbox = true;
+           else
+               obj.b_hasStatsToolbox = false;
+           end
         end
         %%% Property Set Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function set.list_of_objs(obj, list_of_objs)
@@ -121,8 +129,7 @@ classdef StatsManager < handle
             %       metadata from all observations in obj.stats_data structure.
             %   uniqLabels(cell array of char): list of all labels found in 
             %       the "stats_data" structure.
-          
-            
+                      
             p = inputParser;
             addRequired(p, 'obj');
             addOptional(p,'tableType', 'raw', @(x) ismember(x, {'raw', 'summary'}));
@@ -181,6 +188,7 @@ classdef StatsManager < handle
             pause(1);
             close(h);
         end
+        
         function exportToCSV(obj, filename)
             % This function creates a .CSV file containing all data created
             % by the method "createTable".
@@ -234,34 +242,126 @@ classdef StatsManager < handle
             else
                 dataType = types{myTypes};
             end                            
-        end                                      
+        end    
+        
+        function extendBaseline(obj, topIndx)
+            % EXTENDBASELINE sets one or more acquisitions as baseline. 
+            % Input:
+            %   topIndx(int scalar): top acquisition index to extend 
+            %   the baseline. For example, to set the first 3
+            %   acquisitions as baseline: idxRange = 3.
+            
+            % Check if the index range is valid:
+            topIndx = round(topIndx);
+            assert(topIndx <= max(unique([obj.stats_data{:,obj.getDataCol('AcquisitionIndx')}])) & topIndx > 0, ...
+                'umIToolbox:StatsManager:extendBaseline:WrongInput','Acquisition index is out of bounds!');
+            % Set acquisitions as baseline:
+            idxAcq = ismember([obj.stats_data{:,obj.getDataCol('AcquisitionIndx')}], 1:topIndx);
+            obj.stats_data(:, obj.getDataCol('b_isBaseline')) = num2cell(idxAcq);
+            disp(['Acquisitions 1 to ' num2str(topIndx) ' set as baseline.'])
+        end
+        
+        function out = averageBaselineData(obj,varType)
+            % AVERAGEBASELINEDATA calculates the average of all data set as
+            % baseline. The input "varType" sets the type of variability
+            % measure ('STD', 'SEM' or 'CI').
+            % Input:
+            %   varType (char): variability measure:
+            %       'STD': standard deviation.
+            %       'SEM': standard error of the mean.
+            %       'CI' : 95% confidence interval (Statistics and Machine
+            %              Learning toolbox)
+            % Output:
+            %   out (struct): structure array containing the average, 
+            %     variability measure and meta data related to baseline acquisitions.
+            
+            % Instantiate output variable:
+            out = [];            
+            % Validate input:
+            errID = 'umIToolbox:StatsManager:averageBaselineData:WrongInput';
+            assert(ischar(varType) & any(strcmpi(varType, {'std', 'sem', 'ci'})),errID,...                
+                'Invalid variability measure. The following measures are accepted : "STD", "SEM" or "CI"');
+            if strcmpi(varType, 'ci') && ~obj.b_hasStatsToolbox
+                error(errID, 'Confidence Interval not supported! Matlab''s Statistics and Machine Learning Toolbox is needed.')
+            end
+            % Average data
+            disp('averaging data...')
+            groupID = unique(obj.list_of_groups);            
+            subjID = unique(obj.stats_data(:,obj.getDataCol('SubjectID')));            
+            dimCat = numel(setdiff(obj.stats_data{1,obj.getDataCol('MatFile')}.dim_names, 'O'))+1;
+            for iG = 1:numel(groupID)
+                idxG = strcmp(obj.stats_data(:,obj.getDataCol('GroupID')), groupID{iG});
+                for iS = 1:numel(subjID)
+                    idxS = strcmp(obj.stats_data(:, obj.getDataCol('SubjectID')), subjID(iS));
+                    subset = 
+                    
+                
+%             
+            
+            
+            
+            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%             for i = 1:numel(subjID)
+%                 idxS = strcmp(obj.stats_data(:, obj.getDataCol('SubjectID')), subjID{i});
+%                 idxBsln = [obj.stats_data{:, obj.getDataCol('b_isBaseline')}]';
+%                 subset = obj.stats_data(idxS & idxBsln, :);
+%                 subjData = struct('SubjectID',subjID{i}, 'RecStartDateTime',subset{[subset{:,obj.getDataCol('AcquisitionIndx')}] == 1,obj.getDataCol('RecStartDateTime')},...
+%                     
+%                 % Update output
+%                 tmp = cell(1,size(subset,2));
+%                 indxCol = obj.getDataCol({'groupID','SubjectID','AcquisitionID','ModalityID', 'labels'});
+%                 tmp(1,indxCol) = subset(1,indxCol);
+%                 
+%                 for k = 1:length(obj.obs_list)
+%                     indxObs = cellfun(@(x) find(ismember(x, obj.obs_list{k})), subset(:,obj.getDataCol('observationID')), 'UniformOutput',false);                    
+%                     tmp{1,obj.getDataCol('observationID')} = [tmp{1,obj.getDataCol('observationID')}; obj.obs_list(k)];
+%                     dataIn = {};
+%                     for ii = 1:length(indxObs)
+%                         if isempty(indxObs{ii})
+%                             continue
+%                         end
+%                         dataIn = [dataIn, subset{ii,obj.getDataCol('data')}(indxObs{ii})];
+%                     end
+%                     avg = mean(cat(dimCat, dataIn{:}), dimCat,'omitnan');   
+%                         
+%                     
+%                 end
+%             end
+            
+            
+            
+            
+            
+            
+            
+        end
     end
    
     methods(Access = private)
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        function setTimeStamps(obj)
-            % SETTIMESTAMPS sets the resolution for grouping data in
-            % time based on the time_resolution property. New datetime values will 
-            % be shifted to the start of the period 
-            % (e.g., setTimeStamps("13-Jun-2021", 'month') = 01-Jun-2021);
-            % Obs: "none" defaults to a time resolution of seconds.
-            
-            % Get Acquisitions' timestamps:
-            tmstmp_list = NaT(length(obj.list_of_objs),1);
-            for i=1:numel(obj.list_of_objs)
-                elem = obj.list_of_objs{i};
-                if isa(elem, 'Modality')
-                    elem = elem.MyParent;
-                end
-                tmstmp_list(i) = elem.Start_datetime;
-            end
-            % Set resolution of tmpstmp_list:
-            if strcmp(obj.time_resolution, 'none')
-                obj.timestamp_list = dateshift(tmstmp_list, 'start', 'second');
-            else
-                obj.timestamp_list = dateshift(tmstmp_list, 'start', obj.time_resolution);
-            end
-        end
+%         function setTimeStamps(obj)
+%             % SETTIMESTAMPS sets the resolution for grouping data in
+%             % time based on the time_resolution property. New datetime values will 
+%             % be shifted to the start of the period 
+%             % (e.g., setTimeStamps("13-Jun-2021", 'month') = 01-Jun-2021);
+%             % Obs: "none" defaults to a time resolution of seconds.
+%             
+%             % Get Acquisitions' timestamps:
+%             tmstmp_list = NaT(length(obj.list_of_objs),1);
+%             for i=1:numel(obj.list_of_objs)
+%                 elem = obj.list_of_objs{i};
+%                 if isa(elem, 'Modality')
+%                     elem = elem.MyParent;
+%                 end
+%                 tmstmp_list(i) = elem.Start_datetime;
+%             end
+%             % Set resolution of tmpstmp_list:
+%             if strcmp(obj.time_resolution, 'none')
+%                 obj.timestamp_list = dateshift(tmstmp_list, 'start', 'second');
+%             else
+%                 obj.timestamp_list = dateshift(tmstmp_list, 'start', obj.time_resolution);
+%             end
+%         end
         %%% Validator Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         
         function validateStatsInputs(obj)
@@ -313,14 +413,14 @@ classdef StatsManager < handle
                
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function createDataArray(obj)
-            % CREATEDATAArray generates a cell array containing all
+            % CREATEDATAARRAY generates a cell array containing all
             % data and metadata provided as inputs to STATSMANAGER class.
             
             disp('Creating Data array. Please wait...')
             obj.stats_data_headers = {'groupID', 'SubjectID', 'AcquisitionID', 'ModalityID',...
                 'RecStartDateTime', 'MatFile', 'dataFile','labels','observationID',...
-                'data', 'dataSize','AcquisitionIndx'};
-            obj.stats_data = cell(numel(obj.list_of_objs),11);
+                'data', 'dataSize','AcquisitionIndx', 'b_isBaseline'};
+            obj.stats_data = cell(numel(obj.list_of_objs),length(obj.stats_data_headers));
             for i = 1:numel(obj.list_of_objs)                
                 obj.stats_data{i,1} = obj.list_of_groups{i}; % Group ID 
                 obj.stats_data{i,2} = obj.getElementInfo(obj.list_of_objs{i},'Subject', 'ID'); % Subject ID
@@ -335,20 +435,24 @@ classdef StatsManager < handle
                 obsID = obj.MfileArr{i}.obsID;
                 data = obj.MfileArr{i}.data;
                 obj.stats_data{i,9} = obsID(indx,:); % observation ID
-                obj.stats_data{i,10}= data(indx,:); % observation data
-                
+                obj.stats_data{i,10}= data(indx,:); % observation data                
                 obj.stats_data{i,11}= cellfun(@(x) size(squeeze(x)), ...
                     obj.stats_data{i,10}, 'UniformOutput', false);% size of observation data
             end
             
-            % Create Relative time per subject's acquisitions:
-            subjs = unique(obj.stats_data(:,2));
-            for i = 1:numel(subjs)
-                indx = find(strcmp(subjs{i}, obj.stats_data(:,2)));
-                acq_time_list = datetime(vertcat(obj.stats_data{indx,5}));
-                [~,tm_idx] = sort(acq_time_list);
-                [~,rel_time]= sort(tm_idx);
-                obj.stats_data(indx,12) = arrayfun(@(x) x, rel_time, 'UniformOutput', false);
+            % Create Relative time per subject's acquisitions per group:
+            gNames= unique(obj.list_of_groups);
+            for iG = 1:numel(gNames)
+                idxG = strcmp(obj.stats_data(:,obj.getDataCol('GroupID')),gNames{iG});
+                subjs = unique(obj.stats_data(:,obj.getDataCol('SubjectID')));
+                for iS = 1:numel(subjs)
+                    indxS = find(strcmp(subjs{iS}, obj.stats_data(:,obj.getDataCol('SubjectID'))) & idxG);
+                    acq_time_list = datetime(vertcat(obj.stats_data{indxS,obj.getDataCol('RecStartDateTime')}));
+                    [~,tm_idx] = sort(acq_time_list);
+                    [~,rel_time]= sort(tm_idx);
+                    obj.stats_data(indxS,12) = arrayfun(@(x) x, rel_time, 'UniformOutput', false);
+                    obj.stats_data(indxS,13) = num2cell([obj.stats_data{indxS,12}] == 1);
+                end
             end
              disp('Done!')
         end
@@ -424,7 +528,16 @@ classdef StatsManager < handle
             out.Properties.VariableNames = [{'GroupName','Subject', 'Acquisition', 'Modality',...
                 'RecordingTime', 'ObsID'}, generic_label];            
         end
-               
+        
+        function out = getDataCol(obj, colName)
+            % GETDATACOL gives the index of the "stats_data" column with
+            % the header "colName".
+            if ischar(colName)
+                colName = {colName};
+            end            
+            [~, out]= ismember(lower(colName), lower(obj.stats_data_headers));            
+        end
+        
         %%%%%%%%%%%%%%%%%%
         
     end
