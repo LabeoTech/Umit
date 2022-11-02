@@ -13,8 +13,7 @@ classdef StatsManager < handle
         obs_list       % Cell Array of observations from stats_filename.
         list_of_groups % Cell array of group names of objects from list_of_objs.
         stats_filename % Filename of .MAT file saved using "save2Mat.m"
-        % function.
-        MfileArr       % Array of MATFILE objects.
+        % function.        
         time_resolution = 'none' % Time resolution for grouping each observation
         % Options: "none", "minute", "hour, "day", "week", "month".
     end
@@ -24,6 +23,7 @@ classdef StatsManager < handle
         inputFeatures % Structure containing some information about the input data. This will be used by plotting tools and the umIToolbox app.
     end
     properties (Access = private)
+        MfileArr       % Array of MATFILE objects.
         stats_data  = {} % cell array containing all data and metaData created.
         avg_stats_data = {} % cell array similar to stats_data containing the average values of acquisitions. (See method averageData).
         headers = {} % cell array with the _stats_data column names as keys and indices as values.
@@ -136,7 +136,7 @@ classdef StatsManager < handle
             myHeaders = setdiff(obj.headers, {'MatFile','indx_avg_data'}, 'stable'); % Remove non-pertinent columns.
             for i = 1:length(indxZero)
                 for j = 1:length(myHeaders)
-                    out(i).(myHeaders{j}) = obj.stats_data{indxZero(i),j};
+                    out(i).(myHeaders{j}) = obj.stats_data{indxZero(i),obj.hMap(myHeaders{j})};
                 end
             end
             % Average acquisitions and append to non-averaged data:
@@ -155,7 +155,7 @@ classdef StatsManager < handle
                 end
             end
             
-            % Local function
+            % Local function:
             function out = averageData(obj, dataIn)
                 % AVERAGEDATA calculates the average of all data (from "stats_data")
                 % set with indices greater than zero in the column
@@ -223,14 +223,11 @@ classdef StatsManager < handle
             %
             disp('Creating table...')
             
-            % Get all unique labels from "stats_data" structure. This will
+            % Get all unique labels from "dataArr" structure. This will
             % be used by "getObsData" method to put NaNs on missing
-            % data (i.e. labels that are missing for a given recording).
-            
-            uniqLabels = unique(vertcat(obj.stats_data{:,obj.hMap('labels')})); % Sort unique labels in alphabetical order.
-            
-            % Get observations's labels from the stats_data structure:
-            
+            % data (i.e. labels that are missing for a given recording).            
+            uniqLabels = unique(vertcat(obj.dataArr.labels), 'stable'); % Sort unique labels in alphabetical order.           
+            % Get observations's labels from the stats_data structure:            
             if strcmp(tableType, 'raw')
                 tableArr = cellfun(@(x) obj.getObsData(x, uniqLabels), obj.obs_list,'UniformOutput',false);
                 out = vertcat(tableArr{:});
@@ -240,45 +237,46 @@ classdef StatsManager < handle
             disp('Table created!')
         end
         
-        function out = packageData(obj)
-            % This function creates a structure with all
-            % "raw" stats data.
-            % Output:
-            %   out(struct): structure containing all data and metadata stored
-            %   in obj.stats_data.
-            
-            % Get metaData from Matfile:
-            out = cell2struct(obj.stats_data, obj.headers,2);
-            out(1).metaData = [];
-            h = waitbar(0,'Packaging stats data into structure array...');
-            for i = 1:length(out)
-                metaData_fn = properties(out(i).MatFile);
-                metaData_fn = setdiff(metaData_fn, {'Properties','data',...
-                    'obsID','label', 'datFile','datLength','datSize'});
-                for j = 1:numel(metaData_fn)
-                    out(i).metaData.(metaData_fn{j}) = out(i).MatFile.(metaData_fn{j});
-                end
-                % Pack observation info:
-                out(i).observations = struct('ID','', 'data',[], 'dataSize',[]);
-                for j = 1:numel(out(i).observationID)
-                    out(i).observations(j).ID = out(i).observationID{j};
-                    out(i).observations(j).data = out(i).data{j};
-                    out(i).observations(j).dataSize = out(i).dataSize{j};
-                end
-                waitbar(i/length(out),h);
-            end
-            out = rmfield(out, {'MatFile', 'observationID', 'data', 'dataSize'});
-            waitbar(1,h,'Done!');
-            pause(1);
-            close(h);
-        end
+%         function out = packageData(obj)
+%             % This function creates a structure with all stats data.
+%             % Output:
+%             %   out(struct): structure containing all data and metadata stored
+%             %   in obj.stats_data.
+%             
+%             % Get metaData from Matfile:
+%             out = cell2struct(obj.stats_data, obj.headers,2);
+%             out(1).metaData = [];
+%             h = waitbar(0,'Packaging stats data into structure array...');
+%             for i = 1:length(out)
+%                 metaData_fn = properties(out(i).MatFile);
+%                 metaData_fn = setdiff(metaData_fn, {'Properties','data',...
+%                     'obsID','label', 'datFile','datLength','datSize'});
+%                 for j = 1:numel(metaData_fn)
+%                     out(i).metaData.(metaData_fn{j}) = out(i).MatFile.(metaData_fn{j});
+%                 end
+%                 % Pack observation info:
+%                 out(i).observations = struct('ID','', 'data',[], 'dataSize',[]);
+%                 for j = 1:numel(out(i).observationID)
+%                     out(i).observations(j).ID = out(i).observationID{j};
+%                     out(i).observations(j).data = out(i).data{j};
+%                     out(i).observations(j).dataSize = out(i).dataSize{j};
+%                 end
+%                 waitbar(i/length(out),h);
+%             end
+%             out = rmfield(out, {'MatFile', 'observationID', 'data', 'dataSize'});
+%             waitbar(1,h,'Done!');
+%             pause(1);
+%             close(h);
+%         end
         
         function exportToCSV(obj, filename)
             % This function creates a .CSV file containing all data created
             % by the method "createTable".
             % Input:
             % filename (char): valid path for a .CSV file.
-            
+            if ~obj.inputFeatures.b_isExportable
+                error(['Data type ' obj.inputFeatures.dataType ' cannot be exported to CSV'])
+            end
             [data, labels] = obj.createTable;
             % Transform data table to cell array to avoid invalid variable names from labels:
             varNames = data.Properties.VariableNames;
@@ -462,11 +460,11 @@ classdef StatsManager < handle
             % For homogeneous data, guess type of data from first element
             % of "stats_data" array:
             if isscalar(obj.stats_data{1,obj.hMap('dataSize')}{1})
-                obj.inputFeatures.dataType = 'scalar'; % Single value per observation.
-            elseif isequaln(prod(obj.stats_data{1, obj.hMap('dataSize')}{1}),max(obj.stats_data{1, obj.hMap('dataSize')}{1}))
-                obj.inputFeatures.dataType = 'vector';
+                obj.inputFeatures.dataType = 'scalar'; % Single value per observation.            
             elseif all(strcmpi(obj.inputFeatures.dim_names, 'O'))
                 obj.inputFeatures.dataType = 'matrix'; % Correlation Matrix with dimensions {'O','O'};
+            elseif isequaln(prod(obj.stats_data{1, obj.hMap('dataSize')}{1}),max(obj.stats_data{1, obj.hMap('dataSize')}{1}))
+                obj.inputFeatures.dataType = 'vector';
             elseif all(ismember(obj.inputFeatures.dim_names, {'Y', 'X', 'O'}))
                 obj.inputFeatures.dataType = 'map'; % Map with dimensions {'Y','X'} per observations.
             elseif all(ismember(obj.inputFeatures.dim_names, {'Y', 'X', 'T','O'}))
@@ -554,44 +552,43 @@ classdef StatsManager < handle
             % Input
             %   obs_ID (char) = Name of observation.
             %   labelList(cell array of char): list of all possible labels in
-            %       "stats_data".
+            %       "dataArr".
             % Outputs:
             %   out (table) : table containing the recording
             %       information and numerical data of the observation
             %       "obs_ID" for all recordings.
             
-            % Find indexes of the observation inside stats_data:
-            indx_obs = zeros(1,size(obj.stats_data,1));
-            for i = 1:size(obj.stats_data,1)
-                indx = find(strcmp(obs_ID, obj.stats_data{i,obj.hMap('observationID')}));
+            % Find indexes of the observation inside dataArr:
+            indx_obs = zeros(1,length(obj.dataArr));
+            for i = 1:length(indx_obs)
+                indx = find(strcmp(obs_ID, obj.dataArr(i).observationID));
                 if isempty(indx)
                     continue
                 end
                 indx_obs(i) = indx;
             end
-            % Get info only from data containing the observation:
-            stats_info = obj.stats_data(indx_obs~=0,:);
+            % Get info only from data containing the observation:                        
+            stats_info = obj.dataArr(indx_obs ~= 0);            
             indx_obs = indx_obs(indx_obs~=0);
-            % Get observation's data:
-            
+            % Get observation's data:            
             % Preallocate data with NaNs based on the length of unique
             % labels:
-            data = nan(size(stats_info,1),length(labelList));
-            for i = 1:size(stats_info,1)
-                [~,locB] = ismember(stats_info{i,8},labelList);
-                data(i,locB) = stats_info{i,10}{indx_obs(i)};
+            data = nan(length(stats_info),length(labelList));
+            for i = 1:length(stats_info)
+                [~,locB] = ismember(stats_info(i).labels,labelList);
+                data(i,locB) = stats_info(i).data{indx_obs(i)};
             end
             % Prepare data to be added to "out" table:
             data = num2cell(data);
-            % Prepare metaData to be added to "out" table:
-            stats_info(:,5) = cellfun(@(x) datetime(x), stats_info(:,5), 'UniformOutput',false);
-            % Build table:
-            out = table('Size', [size(stats_info,1) 6 + size(data,2)],...
+            % Prepare metaData to be added to "out" table:            
+            % Build table:            
+            out = table('Size', [length(stats_info), 6 + size(data,2)],...
                 'VariableTypes',...
                 [{'cellstr', 'cellstr', 'cellstr', 'cellstr', 'datetime', 'cellstr'}...
-                repmat({'single'},1,size(data,2))]);
-            out(:,1:5) = stats_info(:,1:5);
-            out(:,6) = repmat({obs_ID},size(stats_info,1),1);
+                repmat({obj.MfileArr{1}.Datatype},1,size(data,2))]);
+            out(:,1:5) = [{stats_info.groupID}', {stats_info.SubjectID}', {stats_info.AcquisitionID}', ...
+                {stats_info.ModalityID}' arrayfun(@(x) datetime(x.RecStartDateTime), stats_info, 'UniformOutput',false)'];
+            out(:,6) = repmat({obs_ID},length(stats_info),1);
             out(:,7:end) = data;
             % Set table header:
             generic_label = arrayfun(@(x) ['Val_' num2str(x)], 1:size(data,2), 'UniformOutput',false);
