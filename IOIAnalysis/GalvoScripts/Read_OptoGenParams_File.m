@@ -61,7 +61,7 @@ if( contains(tline, 'Single') )
                end
            case 'Use Null Condition?'
                answer = tline((strfind(tline,':')+1):end);
-               if( strcmp(answer, 'Yes') )
+               if( contains(answer, 'Yes') )
                    out.NullCond = 1;
                else
                    out.NullCond = 0;
