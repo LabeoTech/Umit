@@ -110,13 +110,19 @@ for i = 1:3
         indxNorm(i) = -1;
     end
 end
-if any(indxNorm == -1) && ~b_normalize
-    channels = strjoin(colors(indxNorm == -1), ', ');
-    error(['Operation aborted! The channels "' channels '" must be normalized or set "b_normalize" input to TRUE.'])
-elseif any(indxNorm == 0)
-    channels = strjoin(colors(indxNorm == 0), ', ');
-    warning(['The channels "' channels '" are centered at zero. They will be shifted to be centered at one.'])
-elseif ( any(indxNorm == 1) || any(indxNorm == 0) ) && b_normalize
+% Check if all channels have the same profile:
+if ~all(indxNorm)
+    error('The input data is heterogeneous! All channels must be preprocessed in the same way.')
+end
+indxNorm = indxNorm(1);
+if indxNorm == -1 && ~b_normalize    
+    error('Operation aborted! The channels must be normalized or set "b_normalize" input to TRUE.')
+end
+if indxNorm == 0   
+    warning('The channels are centered at zero. They will be shifted to be centered at one.')
+end
+if b_normalize && (indxNorm == 1 || indxNorm == 0)
+    b_normalize = false;
     warning('The input data is already normalized. Normalization will be skipped!')
 end
 disp('Data checked!')
@@ -172,14 +178,14 @@ for indP = 1:nIter
 %         fseek(fidR, (indP-1)*NbPix(1)*MemFact*4,'bof');
 %         Red = fread(fidR,[NbPix(1)*MemFact, NbFrames],Precision,(NbPix(1)*NbPix(2) - NbPix(1)*MemFact)*4);
         fseek(fidR,(indP-1)*offset,'bof');
-        Red = fread(fidR,Size,Precision,Skip);
-        if b_normalize && indxNorm(1) == -1
+        Red = fread(fidR,Size,Precision,Skip);        
+        if b_normalize 
             Red = single(filtfilt(lpass_high.sosMatrix, lpass_high.ScaleValues, double(Red)'))';
             tmp = single(filtfilt(lpass_low.sosMatrix, lpass_low.ScaleValues, double(Red)'))';
             tmp(tmp<min(Red(:))) = min(Red(:));
             Red = (Red)./(tmp);
-        end
-        if indxNorm(1) == 0 % data centered at zero
+        end        
+        if indxNorm == 0 % data centered at zero
             Red = Red + 1;
         end
         Red = -log(Red);
@@ -189,13 +195,13 @@ for indP = 1:nIter
 %         Green = fread(fidG,[NbPix(1)*MemFact, NbFrames],Precision,(NbPix(1)*NbPix(2) - NbPix(1)*MemFact)*4);
         fseek(fidG,(indP-1)*offset,'bof');
         Green = fread(fidG,Size,Precision,Skip);
-        if b_normalize && indxNorm(2) == -1
+        if b_normalize
             Green = single(filtfilt(lpass_high.sosMatrix, lpass_high.ScaleValues, double(Green)'))';
             tmp = single(filtfilt(lpass_low.sosMatrix, lpass_low.ScaleValues, double(Green)'))';
             tmp(tmp<min(Green(:))) = min(Green(:));
             Green = (Green)./(tmp);
         end
-        if indxNorm(2) == 0 % data centered at zero
+        if indxNorm == 0 % data centered at zero
             Green = Green + 1;
         end
         Green = -log(Green);
@@ -205,13 +211,13 @@ for indP = 1:nIter
 %         Yel = fread(fidY,[NbPix(1)*MemFact, NbFrames],Precision,(NbPix(1)*NbPix(2) - NbPix(1)*MemFact)*4);
         fseek(fidY,(indP-1)*offset,'bof');
         Yel = fread(fidY,Size,Precision,Skip);
-        if b_normalize && indxNorm(3) == -1
+        if b_normalize
             Yel = single(filtfilt(lpass_high.sosMatrix, lpass_high.ScaleValues, double(Yel)'))';
             tmp = single(filtfilt(lpass_low.sosMatrix, lpass_low.ScaleValues, double(Yel)'))';
             tmp(tmp<min(Yel(:))) = min(Yel(:));
             Yel = (Yel)./(tmp);
         end
-        if indxNorm(3) == 0 % data centered at zero
+        if indxNorm == 0 % data centered at zero
             Yel = Yel + 1;
         end
         Yel = -log(Yel);
