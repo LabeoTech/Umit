@@ -182,7 +182,7 @@ for indP = 1:nIter
         if indxNorm(1) == 0 % data centered at zero
             Red = Red + 1;
         end
-        Red = -log10(Red);
+        Red = -log(Red);
     end
     if( fidG )
 %         fseek(fidG, (indP-1)*NbPix(1)*MemFact*4,'bof');
@@ -198,7 +198,7 @@ for indP = 1:nIter
         if indxNorm(2) == 0 % data centered at zero
             Green = Green + 1;
         end
-        Green = -log10(Green);
+        Green = -log(Green);
     end
     if( fidY )
 %         fseek(fidY, (indP-1)*NbPix(1)*MemFact*4,'bof');
@@ -214,7 +214,7 @@ for indP = 1:nIter
         if indxNorm(3) == 0 % data centered at zero
             Yel = Yel + 1;
         end
-        Yel = -log10(Yel);
+        Yel = -log(Yel);
     end
     clear tmp;   
     if(  fidR*fidG*fidY > 0)
