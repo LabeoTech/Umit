@@ -112,7 +112,7 @@ if ischar(label)
 end
 % Check if "label" has the same length of data:
 errID = 'Umitoolbox:save2Mat:IncompatibleSize';
-errMsg = 'The lenght of Labels is different from the length of data.';
+errMsg = 'The length of Labels is different from the length of data.';
 assert(isequaln(size(s.data{1},2),length(label)), errID, errMsg);
 % Add "label" to s:
 s.label = label;

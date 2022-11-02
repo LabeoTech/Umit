@@ -14,6 +14,7 @@ classdef StatsManager < handle
         list_of_groups % Cell array of group names of objects from list_of_objs.
         stats_filename % Filename of .MAT file saved using "save2Mat.m"
         % function.        
+        MfileArr       % Array of MATFILE objects.
         time_resolution = 'none' % Time resolution for grouping each observation
         % Options: "none", "minute", "hour, "day", "week", "month".
     end
@@ -22,8 +23,7 @@ classdef StatsManager < handle
         b_hasStatsToolbox  % True, if Matlab contains the Statistics and Machine learning toolbox.
         inputFeatures % Structure containing some information about the input data. This will be used by plotting tools and the umIToolbox app.
     end
-    properties (Access = private)
-        MfileArr       % Array of MATFILE objects.
+    properties (Access = private)        
         stats_data  = {} % cell array containing all data and metaData created.
         avg_stats_data = {} % cell array similar to stats_data containing the average values of acquisitions. (See method averageData).
         headers = {} % cell array with the _stats_data column names as keys and indices as values.
@@ -128,7 +128,7 @@ classdef StatsManager < handle
             % stored in this class. The data will average any acquisition with
             % the value in the column "indx_avg_data" higher than zero.
             
-            out = struct();
+            out = struct.empty(0,1);
             idx = [obj.stats_data{:,obj.hMap('indx_avg_data')}]' == 0;
             % Populate structure with all acquisitions that will not be
             % averaged:
@@ -141,6 +141,7 @@ classdef StatsManager < handle
             end
             % Average acquisitions and append to non-averaged data:
             gNames = unique(obj.list_of_groups);
+            tmp = {};
             for iG = 1:numel(gNames)
                 idxG = strcmp(obj.stats_data(:, obj.hMap('groupID')), gNames(iG));
                 sNames = unique(obj.stats_data(idxG, obj.hMap('SubjectID')));
@@ -150,11 +151,16 @@ classdef StatsManager < handle
                     nMerge = setdiff(unique(indxAcq), 0);
                     for iAcq = 1:length(nMerge)
                         idxA = [obj.stats_data{:, obj.hMap('indx_avg_data')}]' == nMerge(iAcq);
-                        out = [out, averageData(obj, obj.stats_data(idxG & idxS & idxA,:))];%#ok
+                        tmp = [tmp; {averageData(obj, obj.stats_data(idxG & idxS & idxA,:))}];%#ok
                     end
                 end
             end
-            
+            if isempty(out)
+                out = horzcat(tmp{:});
+            else
+                out = horzcat(out,tmp{:});
+            end
+                
             % Local function:
             function out = averageData(obj, dataIn)
                 % AVERAGEDATA calculates the average of all data (from "stats_data")
@@ -166,10 +172,13 @@ classdef StatsManager < handle
                 out = struct();
                 % Average data
                 cols2copy = {'groupID','SubjectID','ModalityID', 'labels',...
-                    'dataSize', 'b_isBaseline'};
+                    'dataSize'};
                 for ii = 1:length(cols2copy)
                     out.(cols2copy{ii}) = dataIn{1,obj.hMap(cols2copy{ii})};
                 end
+                % Set as baseline if one of the elements in dataIn is a
+                % baseline:
+                out.b_isBaseline = any([dataIn{:,obj.hMap('b_isBaseline')}]);
                 % Use the earliest recording start datetime:
                 [~,k] = min(datetime(string(dataIn(:,obj.hMap('RecStartDateTime')))));
                 out.('RecStartDateTime') = dataIn{k,obj.hMap('RecStartDateTime')};
@@ -198,7 +207,7 @@ classdef StatsManager < handle
                 out.observationID = currObs;
                 out.AcquisitionID = ['AverageAcq_' num2str(dataIn{1,obj.hMap('indx_avg_data')})];
                 out.AcquisitionIndx = [];
-                out.dataFile = [];
+                out.dataFile = '';
             end
             
         end
@@ -225,8 +234,9 @@ classdef StatsManager < handle
             
             % Get all unique labels from "dataArr" structure. This will
             % be used by "getObsData" method to put NaNs on missing
-            % data (i.e. labels that are missing for a given recording).            
-            uniqLabels = unique(vertcat(obj.dataArr.labels), 'stable'); % Sort unique labels in alphabetical order.           
+            % data (i.e. labels that are missing for a given recording).
+            labelList = horzcat(obj.dataArr.labels); labelList(cellfun(@isempty, labelList)) = []; % remove empty labels.
+            uniqLabels = unique(labelList, 'stable'); % Sort unique labels in alphabetical order.           
             % Get observations's labels from the stats_data structure:            
             if strcmp(tableType, 'raw')
                 tableArr = cellfun(@(x) obj.getObsData(x, uniqLabels), obj.obs_list,'UniformOutput',false);
@@ -284,10 +294,52 @@ classdef StatsManager < handle
             data = table2cell(data);
             data = vertcat(varNames, data);
             % Write to .csv file:
+            disp('Writing table to .CSV file...')
             writecell(data,filename);
             msgbox(['Data saved to file : ' filename], 'to CSV');
         end
+        function out = getAcqIndexList(obj, type)
+            % GETACQINDEXLIST provides the list of the acquisition indices
+            % that are available for merging by "setAcquisitionRange"
+            % method OR the original list of acquisition indices.
+            % Input: 
+            %   type(char): 'original', 'available', 'current'
+            % Output:
+            %   out (int or cell): list of acquisition indices as a numeric
+            %   array for input type 'original' OR 'available' or as a
+            %   cell array for type 'current'. The order of the cell array
+            %   corresponds to the index of the "indx_avg_data" in
+            %   stats_data.
+            
+            
+            if ~ismember(lower(type), {'original', 'available', 'current'})
+                error('Input should be either "original" or "available".')
+            end
+           
+            switch lower(type)
+                case 'original'
+                    out =  unique([obj.stats_data{:, obj.hMap('AcquisitionIndx')}]);                        
+                case 'available'                        
+                    idx = [obj.stats_data{:,obj.hMap('indx_avg_data')}]' == 0;
+                    out =  unique([obj.stats_data{idx, obj.hMap('AcquisitionIndx')}]);                        
+                case 'current'
+                    disp('Calculating current data');
+                    indxAvg = [obj.stats_data{:,obj.hMap('indx_avg_data')}];
+                    acqIndx = [obj.stats_data{:,obj.hMap('AcquisitionIndx')}];
+                    b_isCurrent = indxAvg ~=0;
+                    if ~any(b_isCurrent)
+                        out = {};
+                       return
+                    end                    
+                    for ii = 1:sum(unique(indxAvg) ~= 0)                        
+                        out{ii} = sort(acqIndx(indxAvg == ii));
+                    end                    
+            end
+            
+        end
         
+            
+            
         function setAcquisitionRange(obj, indxRange)
             % SETACQUISITIONRANGE regroups a range of acquisitions to be
             % merged using the method "averageData".
@@ -408,7 +460,7 @@ classdef StatsManager < handle
             %   2) All input data must have the same dimension names.
             %   3) All input data must have the same dimension sizes.
             % In addition, it classifies the input data in one of the
-            % following categories: 'scalar', 'matrix','map','time-series',
+            % following categories: 'scalar', 'vector','matrix','map','time-series',
             % 'time-series-by-event', 'map-by-event' or 'unknown'.
             % And if it is "exportable" as a .CSV file. To be exportable,
             % the data must be scalar or be a 1xN array per observation.
@@ -447,6 +499,8 @@ classdef StatsManager < handle
                 obj.inputFeatures.b_hasSameDimSize = isequaln(dim_sizes{:});
             end
             % Check if the data is exportable to a .CSV file:
+            % Here, two criteria are applied: 1) the data must be a 1xN
+            % vector or a matrix; 2) the labels must be the same across 
             obj.inputFeatures.b_isExportable = all(cellfun(@(x) isequaln(prod(x{1}),max(x{1})),...
                 obj.stats_data(:,obj.hMap('dataSize'))));
             % Set input data type:
