@@ -322,8 +322,7 @@ classdef StatsManager < handle
                 case 'available'                        
                     idx = [obj.stats_data{:,obj.hMap('indx_avg_data')}]' == 0;
                     out =  unique([obj.stats_data{idx, obj.hMap('AcquisitionIndx')}]);                        
-                case 'current'
-                    disp('Calculating current data');
+                case 'current'                    
                     indxAvg = [obj.stats_data{:,obj.hMap('indx_avg_data')}];
                     acqIndx = [obj.stats_data{:,obj.hMap('AcquisitionIndx')}];
                     b_isCurrent = indxAvg ~=0;
@@ -334,8 +333,7 @@ classdef StatsManager < handle
                     for ii = 1:sum(unique(indxAvg) ~= 0)                        
                         out{ii} = sort(acqIndx(indxAvg == ii));
                     end                    
-            end
-            
+            end            
         end
         
             
