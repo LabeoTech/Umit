@@ -162,7 +162,6 @@ classdef StatsManager < handle
             end
              % Remap acquisition indices of non-averaged data to have a
              % continuous range of acquisition indices.
-             disp('remapping acq indx values...');
              for iG = 1:numel(gNames)
                  idxG = strcmp({out.groupID}, gNames{iG});
                  sNames = unique({out(idxG).SubjectID});
@@ -349,7 +348,7 @@ classdef StatsManager < handle
                        return
                     end                    
                     for ii = 1:sum(unique(indxAvg) ~= 0)                        
-                        out{ii} = sort(acqIndx(indxAvg == ii));
+                        out{ii} = sort(acqIndx(indxAvg == ii));%#ok
                     end                    
             end            
         end
@@ -364,8 +363,8 @@ classdef StatsManager < handle
             %   to be merged.
             
             % Block function usage ONLY for equal number of acquisitions:
-            assert(obj.inputFeatures.b_hasSameAcqN,...
-                'Grouping acquisitions is available for data with equal number of acquisitions!')
+            assert(obj.inputFeatures.b_hasSameAcqN & obj.inputFeatures.b_AcqHasSameDimSize,...
+                'Grouping acquisitions is available for data with equal number of acquisitions and with the same data size per Subject!')
             %%%%% Input validation: %%%%%
             indxRange = round(indxRange);
             % Get available acquisition ranges:
@@ -483,7 +482,7 @@ classdef StatsManager < handle
             
             % Instantiate "inputFeatures" structure:
             obj.inputFeatures = struct('b_hasSameAcqN',false,'b_hasSameDimNames',false,...
-                'b_hasSameDimSize',false, 'b_isExportable',false,...
+                'b_AcqHasSameDimSize',false, 'b_SubjHasSameDimSize', false,  'b_isExportable',false,...
                 'dataType', 'unknown', 'dim_names', {'unknown'});
             
             % Check #1 - are there is an equal number of acquisitions per
@@ -500,20 +499,40 @@ classdef StatsManager < handle
             end
             acqIndx(cellfun(@isempty, acqIndx)) = [];
             obj.inputFeatures.b_hasSameAcqN = all(cellfun(@(x) all(isequal(x, acqIndx{1})), acqIndx));
-            % Check #2 - Do the input data have the same dimensions and sizes?
+            % Check #2 - Do the input data have the same dimensions?
             dim_names = cellfun(@(x) x.dim_names, obj.stats_data(:,obj.hMap('MatFile')), 'UniformOutput',false);
             if isscalar(dim_names)
                 obj.inputFeatures.b_hasSameDimNames = true;
             else
                 obj.inputFeatures.b_hasSameDimNames = isequaln(dim_names{:});
             end
-            % Check #3 - Do the input data have the same size?
-            dim_sizes = obj.stats_data(:,obj.hMap('dataSize')); dim_sizes = vertcat(dim_sizes{:});
-            if isscalar(dim_sizes)
-                obj.inputFeatures.b_hasSameDimSize = true;
-            else
-                obj.inputFeatures.b_hasSameDimSize = isequaln(dim_sizes{:});
+            % Check #3a - Do the input data have the same size across acquisitions per subject?
+            
+            %%% TO DO %%%
+            sNames = unique(obj.stats_data(:, obj.hMap('SubjectID')));
+            b_equalAcqSize = false(size(sNames));
+            for ii = 1:numel(sNames)
+                idxS = strcmp(obj.stats_data(:,obj.hMap('SubjectID')), sNames{ii});
+                dim_sizes = obj.stats_data(idxS,obj.hMap('dataSize')); dim_sizes = vertcat(dim_sizes{:});
+                if isscalar(dim_sizes)
+                    b_equalAcqSize(ii) = true;
+                else
+                    b_equalAcqSize(ii) = isequaln(dim_sizes{:});
+                end
             end
+            if all(b_equalAcqSize)
+                obj.inputFeatures.b_AcqHasSameDimSize = true;
+            end
+            % Check #3b - Do the input data have the same size across all
+            % Subjects?
+            if obj.inputFeatures.b_AcqHasSameDimSize
+                dim_sizes = obj.stats_data(:,obj.hMap('dataSize')); dim_sizes = vertcat(dim_sizes{:});
+                if isscalar(dim_sizes)
+                    obj.inputFeatures.b_SubjHasSameDimSize = true;
+                else
+                    obj.inputFeatures.b_SubjHasSameDimSize = isequaln(dim_sizes{:});obj.inputFeatures.b_SubjHasSameDimSize
+                end
+            end            
             % Check if the data is exportable to a .CSV file:
             % Here, two criteria are applied: 1) the data must be a 1xN
             % vector or a matrix; 2) the labels must be the same across 
