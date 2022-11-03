@@ -158,8 +158,26 @@ classdef StatsManager < handle
             if isempty(out)
                 out = horzcat(tmp{:});
             else
-                out = horzcat(out,tmp{:});
+                out = horzcat(out,tmp{:});                   
             end
+             % Remap acquisition indices of non-averaged data to have a
+             % continuous range of acquisition indices.
+             disp('remapping acq indx values...');
+             for iG = 1:numel(gNames)
+                 idxG = strcmp({out.groupID}, gNames{iG});
+                 sNames = unique({out(idxG).SubjectID});
+                 for iS = 1:numel(sNames)
+                     idxS = strcmp({out.SubjectID}, sNames{iS});
+                     acqList = sort([out(idxG & idxS).AcquisitionIndx]);
+                     newList = [min(acqList):numel(acqList)];
+                     mapIndx = containers.Map(acqList, newList);
+                     indxAcq = find(idxG & idxS);
+                     for iA = 1:length(indxAcq)
+                         out(indxAcq(iA)).AcquisitionIndx = mapIndx(out(indxAcq(iA)).AcquisitionIndx);
+                     end
+                 end
+             end
+            
                 
             % Local function:
             function out = averageData(obj, dataIn)
@@ -206,7 +224,7 @@ classdef StatsManager < handle
                 out.data = avg;
                 out.observationID = currObs;
                 out.AcquisitionID = ['AverageAcq_' num2str(dataIn{1,obj.hMap('indx_avg_data')})];
-                out.AcquisitionIndx = [];
+                out.AcquisitionIndx = min([dataIn{:,obj.hMap('AcquisitionIndx')}]);
                 out.dataFile = '';
             end
             
@@ -371,7 +389,7 @@ classdef StatsManager < handle
             % RESETAVGINDEX sets all acquisition indices in the average
             % data to zero.
             obj.stats_data(:,obj.hMap('indx_avg_data')) = repmat({0},size(obj.stats_data,1),1);
-            disp('Acquisition group indices reset!')
+            disp('Acquisition average group indices reset!')
         end
     end
     
@@ -511,7 +529,7 @@ classdef StatsManager < handle
             end
             % For homogeneous data, guess type of data from first element
             % of "stats_data" array:
-            if isscalar(obj.stats_data{1,obj.hMap('dataSize')}{1})
+            if isscalar(obj.stats_data{1,obj.hMap('data')}{1})
                 obj.inputFeatures.dataType = 'scalar'; % Single value per observation.            
             elseif all(strcmpi(obj.inputFeatures.dim_names, 'O'))
                 obj.inputFeatures.dataType = 'matrix'; % Correlation Matrix with dimensions {'O','O'};
