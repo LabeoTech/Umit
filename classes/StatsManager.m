@@ -133,7 +133,7 @@ classdef StatsManager < handle
             % Populate structure with all acquisitions that will not be
             % averaged:
             indxZero = find(idx);
-            myHeaders = setdiff(obj.headers, {'MatFile','indx_avg_data'}, 'stable'); % Remove non-pertinent columns.
+            myHeaders = setdiff(obj.headers, {'indx_avg_data'}, 'stable'); % Remove non-pertinent columns.
             for i = 1:length(indxZero)
                 for j = 1:length(myHeaders)
                     out(i).(myHeaders{j}) = obj.stats_data{indxZero(i),obj.hMap(myHeaders{j})};
@@ -189,7 +189,7 @@ classdef StatsManager < handle
                 out = struct();
                 % Average data
                 cols2copy = {'groupID','SubjectID','ModalityID', 'labels',...
-                    'dataSize'};
+                    'dataSize', 'MatFile'};
                 for ii = 1:length(cols2copy)
                     out.(cols2copy{ii}) = dataIn{1,obj.hMap(cols2copy{ii})};
                 end
@@ -530,7 +530,8 @@ classdef StatsManager < handle
                 if isscalar(dim_sizes)
                     obj.inputFeatures.b_SubjHasSameDimSize = true;
                 else
-                    obj.inputFeatures.b_SubjHasSameDimSize = isequaln(dim_sizes{:});obj.inputFeatures.b_SubjHasSameDimSize
+                    obj.inputFeatures.b_SubjHasSameDimSize = isequaln(dim_sizes{:});
+                    obj.inputFeatures.b_SubjHasSameDimSize;
                 end
             end            
             % Check if the data is exportable to a .CSV file:
