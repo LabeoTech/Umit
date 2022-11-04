@@ -17,7 +17,7 @@ addpath(genpath('G:\DummyDataSet_4_testing'));
 maindir = 'F:\Solenn';
 savedir = 'E:\Solenn_Data\ProjectSaveDir';
 ProjectName = 'Solenn_backupData_2.mat';
-load(fullfile(savedir, ProjectName));
+protocol = loadProtocol(fullfile(savedir, ProjectName));
 %% Query filter
 % Clear previously saved Filter structure:
 protocol.clearFilterStruct
@@ -43,7 +43,7 @@ protocol.FilterStruct.FilterMethod = 'contains'; % Options: 'contains', 'regexp'
 % Perform query:
 protocol.queryFilter;
 % Display indices of selected branches from the Protocol hierarchy:
-idx = protocol.Idx_Filtered
+idx = protocol.Idx_Filtered;
 
 %% Preprocessing Pipeline
 % Create pipeline

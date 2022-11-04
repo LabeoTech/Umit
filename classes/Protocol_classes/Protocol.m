@@ -536,7 +536,7 @@ classdef Protocol < handle
                 % Check MainDir and SaveDir existance:
                 errID = 'umIToolbox:Protocol:InvalidInput';
                 errMsg = ' is not an existing folder!';
-                %                 assert(isfolder(s.MainDir),errID, [strrep(s.MainDir,filesep, repmat(filesep,1,2)), errMsg]);
+                                assert(isfolder(s.MainDir),errID, [strrep(s.MainDir,filesep, repmat(filesep,1,2)), errMsg]);
                 assert(isfolder(s.SaveDir),errID, [strrep(s.MainDir,filesep, repmat(filesep,1,2)), errMsg]);
                 %%%
                 newObj.MainDir = s.MainDir;
