@@ -17,6 +17,9 @@ classdef Acquisition < handle
         MyParent % Subject object that contains ACQUISITION object.
         LastLog = table.empty % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
     end
+    properties (SetAccess = {?Protocol})
+        b_isVirtual = false % (bool) If TRUE, means that the current instance was created by "Protocol" and the raw data does not exist. 
+    end
     properties (Dependent, SetAccess = private)
         SaveFolder % Path of directory containing transformed data.
     end

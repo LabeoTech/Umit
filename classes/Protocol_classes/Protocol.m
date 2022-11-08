@@ -142,6 +142,60 @@ classdef Protocol < handle
             end
             disp('Save Folders generated!');
         end
+        function [objArray, idxStruc,msg] = lookForNewData(obj, b_verbose)
+            % This function re-runs the protocol function and compares the
+            % newly created array with the current object array in
+            % "protocol".
+            % Input:
+            %   b_verbose(bool): If TRUE, outputs a formatted text with a
+            %   summary with the number of new/missing items in "protocol".
+            % Outputs:
+            %   objArray(Subject): Subject array after running the protocol
+            %       fcn.
+            %   idxStruc (struct): list of boolean indices for new/missing
+            %       items in protocol.
+            %   msg (char): If "b_verbose" is TRUE, contains a text with
+            %       total number of new/missing items in "protocol".
+            
+            idxStruc = struct('iNewSubj',{},'iMissSubj', {}, 'iNewAcq', {},'iMissAcq',{});            
+            objArray = obj.ProtoFunc(obj);
+            % Delete objects listed in OBJ.GARBAGELIST from NEWARRAY
+            objArray = obj.removeGarbage(objArray);
+            
+            % 1st, control for new or deleted Subjects:
+            iNewSubj = ~ismember({objArray.ID}, {obj.Array.ObjList.ID}); % New subjects in the newArray.
+            iMissSubj = ~ismember({obj.Array.ObjList.ID},{objArray.ID});% Subjects from original list that are no longer in the newArray.
+            
+            % 2nd, control for new or deleted Acquisitions from each Subject:
+            indNwArr = find(~iNewSubj);
+            % Locate the sujects from "newArray" in "obj":
+            [~,indObj] = ismember({objArray(indNwArr).ID},{obj.Array.ObjList.ID});
+            % Get new Acquisitions from existing Subjects:
+            iNewAcq = arrayfun(@(a,b) ~ismember({a.Array.ObjList.ID}, {b.Array.ObjList.ID}),...
+                objArray(indNwArr), obj.Array.ObjList(indObj), 'UniformOutput', false);
+            % Get missing Acquisitions from existing Subjects:
+            iMissAcq = arrayfun(@(a,b) ~ismember({b.Array.ObjList.ID}, {a.Array.ObjList.ID}),...
+                objArray(indNwArr), obj.Array.ObjList(indObj), 'UniformOutput', false);
+            % Exclude "virtual" acquisitions from the missing list:
+            indSubj = find(cellfun(@any, iMissAcq));
+            for ii = 1:length(indSubj)
+                % REMOVE virtual ACQS:
+                iMissAcq{indSubj(ii)} = iMissAcq{indSubj(ii)} & ~[obj.Array.ObjList(indObj(indSubj(ii))).Array.ObjList.b_isVirtual];                
+            end
+            % Create message with total number of new/missing items:
+            if b_verbose                                
+                msg = sprintf(['List of New/missing Items:\nNewSubjects: %d\n'...
+                    'Missing Subjects: %d\nNewAcquisitions: %d\nMissingAcquisitions: %d'],...
+                    sum(iNewSubj), sum(iMissSubj), sum([iNewAcq{:}]),sum([iMissAcq{:}]));
+            else
+                msg = '';
+            end
+            % Populate output structure:
+            idxStruc(1).iNewSubj = iNewSubj;
+            idxStruc(1).iMissSubj = iMissSubj;
+            idxStruc(1).iNewAcq = iNewAcq;
+            idxStruc(1).iMissAcq = iMissAcq;            
+        end
         function updateList(obj, varargin)
             % This function updates the list of Subjects using
             % obj.ProtoFunc.
@@ -159,59 +213,41 @@ classdef Protocol < handle
                 discardData = true;
             else
                 discardData = varargin{1};
-            end
-            newArray = obj.ProtoFunc(obj);
-            % Delete objects listed in OBJ.GARBAGELIST from NEWARRAY
-            newArray = obj.removeGarbage(newArray);
-            
-            % 1st, control for new or deleted Subjects:
-            iNewSubj = ~ismember({newArray.ID}, {obj.Array.ObjList.ID}); % New subjects in the newArray.
-            iMissSubj = ~ismember({obj.Array.ObjList.ID},{newArray.ID});% Subjects from original list that are no longer in the newArray.
-            
-            % 2nd, control for new or deleted Acquisitions from each Subject:
-            indNwArr = find(~iNewSubj);
-            % Locate the sujects from "newArray" in "obj":
-            [~,indObj] = ismember({newArray(indNwArr).ID},{obj.Array.ObjList.ID});
-            % Get new Acquisitions from existing Subjects:
-            iNewAcq = arrayfun(@(a,b) ~ismember({a.Array.ObjList.ID}, {b.Array.ObjList.ID}),...
-                newArray(indNwArr), obj.Array.ObjList(indObj), 'UniformOutput', false);
-            % Get missing Acquisitions from existing Subjects:
-            iMissAcq = arrayfun(@(a,b) ~ismember({b.Array.ObjList.ID}, {a.Array.ObjList.ID}),...
-                newArray(indNwArr), obj.Array.ObjList(indObj), 'UniformOutput', false);
-            
+            end            
+            % Look for new data:
+            [newArray,idxInfo] = obj.lookForNewData(false);             
             %%% Updates the existing list:
             % Add new Acquisitions:
-            indSubj = find(cellfun(@(x) any(x), iNewAcq));
+            indSubj = find(cellfun(@any, idxInfo.iNewAcq));
             for i = 1:length(indSubj)
-                indAcq = find(iNewAcq{indSubj(i)});
+                indAcq = find(idxInfo.iNewAcq{indSubj(i)});
                 arrayfun(@(x) obj.Array.ObjList(indObj(indSubj(i))).Array.addObj(x.Array.ObjList(indAcq)), ...
                     newArray(indNwArr(indSubj(i))));
             end
             %   Add new Subjects:
-            if any(iNewSubj)
-                obj.Array.addObj(newArray(iNewSubj));
+            if any(idxInfo.iNewSubj)
+                obj.Array.addObj(newArray(idxInfo.iNewSubj));
             end
             % Add new Folders to OBJ.SAVEDIR
-            obj.generateSaveFolders();
-            
+            obj.generateSaveFolders();            
             if discardData
                 %   Remove existing Acquisitions:
-                indSubj = find(cellfun(@(x) any(x), iMissAcq));
+                indSubj = find(cellfun(@(x) any(x), idxInfo.iMissAcq));
                 for i = 1:length(indSubj)
-                    indAcq = find(iMissAcq{indSubj(i)});
+                    indAcq = find(idxInfo.iMissAcq{indSubj(i)});
                     remInfo = obj.Array.ObjList(indObj(indSubj(i))).Array.removeObj(indAcq);
                     obj.garbageList = [obj.garbageList; remInfo];
                 end
                 %   Remove existing Subjects:
-                if any(iMissSubj)
-                    remInfo = obj.Array.removeObj(find(iMissSubj));
+                if any(idxInfo.iMissSubj)
+                    remInfo = obj.Array.removeObj(find(idxInfo.iMissSubj));
                     obj.garbageList = [obj.garbageList; remInfo];
                 end
                 %             else
                 %                 uiwait(warndlg('Keeping invalid Paths and/or files may cause problems later on during the analysis', 'Warning!', 'modal'));
             end
             uiwait(msgbox('Project update completed!'));
-        end
+        end        
         
         function [modHandle, AcqHandle] = manualAddModality(obj, modClass, modID, AcqID, subjHandle)
             % MANUALADDMODALITY creates a new Acquisition inside a "Subject" Object.
@@ -254,9 +290,10 @@ classdef Protocol < handle
             subjHandle.Array.addObj(AcqHandle);                                              
             % Create Save folder for the new acquisition:
             obj.generateSaveFolders;
+            % Mark Acquisition as "virtual":
+            AcqHandle.b_isVirtual = true;
             disp('Done')            
-        end
-                        
+        end                       
         function manualRemoveObj(obj, SubjectIndex, varargin)
             % This function manually removes one Subject/Acquisition from
             % Protocol.
