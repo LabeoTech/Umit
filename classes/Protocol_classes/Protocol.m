@@ -302,10 +302,9 @@ classdef Protocol < handle
                             continue
                         end
                         newObj(idxS) = [];
-                    case 'Acquisition'
-                        str = erase(gbList(i,3), obj.SaveDir);
-                        str = split(str, filesep);
-                        subjID = str{1};
+                    case 'Acquisition'                        
+                        str = split(gbList(i,3), filesep);
+                        subjID = str{end-1};
                         idxS = strcmp(subjID, {newObj.ID});
                         if isempty(idxS)
                             continue
