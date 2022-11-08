@@ -252,7 +252,7 @@ classdef StatsManager < handle
             % Get all unique labels from "dataArr" structure. This will
             % be used by "getObsData" method to put NaNs on missing
             % data (i.e. labels that are missing for a given recording).
-            labelList = horzcat(obj.dataArr.labels); labelList(cellfun(@isempty, labelList)) = []; % remove empty labels.
+            labelList = vertcat(obj.dataArr.labels); labelList(cellfun(@isempty, labelList)) = []; % remove empty labels.
             uniqLabels = unique(labelList, 'stable'); % Sort unique labels in alphabetical order.           
             % Get observations's labels from the stats_data structure:            
             if strcmp(tableType, 'raw')
@@ -483,7 +483,7 @@ classdef StatsManager < handle
             % Instantiate "inputFeatures" structure:
             obj.inputFeatures = struct('b_hasSameAcqN',false,'b_hasSameDimNames',false,...
                 'b_AcqHasSameDimSize',false, 'b_SubjHasSameDimSize', false,  'b_isExportable',false,...
-                'dataType', 'unknown', 'dim_names', {'unknown'});
+                'b_hasSameObs',false,'dataType', 'unknown', 'dim_names', {'unknown'});
             
             % Check #1 - are there is an equal number of acquisitions per
             % subject per group?
@@ -506,8 +506,9 @@ classdef StatsManager < handle
             else
                 obj.inputFeatures.b_hasSameDimNames = isequaln(dim_names{:});
             end
-            % Check #3a - Do the input data have the same size across acquisitions per subject?
-            
+            % Check if all observations exist across all data:            
+            obj.inputFeatures.b_hasSameObs = all(arrayfun(@(x) all(ismember(obj.obs_list, x.observationID)), obj.dataArr));
+            % Check #3a - Do the input data have the same size across acquisitions per subject?            
             %%% TO DO %%%
             sNames = unique(obj.stats_data(:, obj.hMap('SubjectID')));
             b_equalAcqSize = false(size(sNames));
