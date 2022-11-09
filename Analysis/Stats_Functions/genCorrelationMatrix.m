@@ -170,7 +170,7 @@ end
 % Local function
 function out = ZFisher_truncated(data)
 % This function truncates the ZFisher transformed data between -0.998 and
-% 0.997 Pearson's rho values. This avoids the creation of Infinite values
+% 0.998 Pearson's rho values. This avoids the creation of Infinite values
 % at Pearsons' correlation values of -1 and 1.
 
 lim = 0.998;
