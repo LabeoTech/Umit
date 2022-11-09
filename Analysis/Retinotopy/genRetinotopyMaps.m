@@ -15,8 +15,8 @@ function outFile = genRetinotopyMaps(data, metaData,SaveFolder, varargin)
 
 % Defaults:
 default_Output = {'AzimuthMap.dat' 'ElevationMap.dat'};  %#ok. This line is here just for Pipeline management.
-default_opts = struct('nSweeps', 1, 'b_useAverageMovie', false);
-opts_values = struct('nSweeps', [1,Inf], 'b_useAverageMovie', [true,false]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
+default_opts = struct('nSweeps', 1, 'b_useAverageMovie', false, 'ViewingDist_cm', 0,'ScreenXsize_cm',0,'ScreenYsize_cm',0);
+opts_values = struct('nSweeps', [1,Inf], 'b_useAverageMovie', [true,false], 'ViewingDist_cm', [0,Inf],'ScreenXsize_cm',[0,Inf],'ScreenYsize_cm',[0,Inf]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 %%% Arguments parsing and validation %%%
 p = inputParser;
 addRequired(p,'data',@(x) isnumeric(x)); % Validate if the input is numerical
@@ -64,10 +64,10 @@ end
 w = waitbar(0,'Calculating FFT ...', 'Name', 'genRetinotopyMaps');
 w.Children.Title.Interpreter = 'none';
 framestamps = round(evntInfo.timestamps*metaData.Freq);
-for i = 1:numel(evntInfo.eventNameList)
-    w.Children.Title.String = ['Calculating FFT for direction ' evntInfo.eventNameList{i}]; drawnow
-    indxOn = find(evntInfo.eventID == i & evntInfo.state == 1);
-    indxOff = find(evntInfo.eventID == i & evntInfo.state == 0);
+for ind = 1:numel(evntInfo.eventNameList)
+    w.Children.Title.String = ['Calculating FFT for direction ' evntInfo.eventNameList{ind}]; drawnow
+    indxOn = find(evntInfo.eventID == ind & evntInfo.state == 1);
+    indxOff = find(evntInfo.eventID == ind & evntInfo.state == 0);
     if opts.b_useAverageMovie        
         % Create average DeltaR movie for each direction:
         bsln_len = round(mean(framestamps(indxOn(2:end)) - framestamps(indxOff(1:end-1))));
@@ -76,7 +76,7 @@ for i = 1:numel(evntInfo.eventNameList)
         end
         trial_len = round(mean(framestamps(indxOff) - framestamps(indxOn)));
         avg_mov = zeros([metaData.datSize, trial_len + bsln_len],'single');
-        disp(['Creating average Delta R movie for direction ' evntInfo.eventNameList{i}]);
+        disp(['Creating average Delta R movie for direction ' evntInfo.eventNameList{ind}]);
         for ii = 1:length(indxOn)
             DeltaR = data(:,:,framestamps(indxOn(ii)) - bsln_len : framestamps(indxOn(ii)) + trial_len -1) - ...
                 median(data(:,:,framestamps(indxOn(ii)) - bsln_len: framestamps(indxOn(ii)) - 1), 3,'omitnan'); % trial period minus the intertrial period.
@@ -96,11 +96,11 @@ for i = 1:numel(evntInfo.eventNameList)
         fDat = fft(data(:,:,frOn),[],3);
     end
     % Create Amplitude/Phase maps for the input frequency (from Zhuang et al., 2017)
-    ampMaps{i} = (abs(fDat(:,:,freqFFT)) * 2) / size(fDat,3);
-    phiMaps{i} = mod(-1.*angle(fDat(:,:,freqFFT)),2*pi);
-    waitbar(i/numel(evntInfo.eventNameList),w);
+    ampMaps{ind} = (abs(fDat(:,:,freqFFT)) * 2) / size(fDat,3);
+    phiMaps{ind} = mod(-1.*angle(fDat(:,:,freqFFT)),2*pi);
+    waitbar(ind/numel(evntInfo.eventNameList),w);
 end
-clear fDat md avg_mov i
+clear fDat md avg_mov 
 close(w);
 %%% Calculate Azimuth and Elevation maps
 % Check if all directions exist:
@@ -112,15 +112,24 @@ ElevMap = AzimMap;
 if all(idxAz)
     disp('Calculating Azimuth map...')
     AzimMap(:,:,1) = mean(cat(3,ampMaps{indxAz}),3); % Average amplitude;
-    AzimMap(:,:,2) = (phiMaps{indxAz(1)} - phiMaps{indxAz(2)})/2; % From Kalatsky and Stryker, 2003    
+    AzimMap(:,:,2) = pi + ((phiMaps{indxAz(1)} - phiMaps{indxAz(2)})/2); % From Kalatsky and Stryker, 2003; Shift phase to be between 0 - 2pi  
 end
 % Elevation:
 if all(idxEl)
     disp('Calculating Elevation map...')
     ElevMap(:,:,1) = mean(cat(3,ampMaps{indxEl}),3); % Average amplitude;
-    ElevMap(:,:,2) = (phiMaps{indxEl(1)} - phiMaps{indxEl(2)})/2; % From Kalatsky and Stryker, 2003        
+    ElevMap(:,:,2) = pi + ((phiMaps{indxEl(1)} - phiMaps{indxEl(2)})/2); % From Kalatsky and Stryker, 2003; Shift phase to be between 0 - 2pi      
 end
-% Save raw FFT data:
+% Rescale phase maps:
+if all([opts.ViewingDist_cm, opts.ScreenXsize_cm, opts.ScreenYsize_cm])>0
+    disp('Rescaling phase maps to visual angle...')
+    va_az = atand(opts.ScreenXsize_cm/(2*opts.ViewingDist_cm)); va_az = [-va_az va_az];
+    va_el = atand(opts.ScreenYsize_cm/(2*opts.ViewingDist_cm)); va_el = [-va_el va_el];
+    AzimMap(:,:,2) = rescale(AzimMap(:,:,2), va_az(1), va_az(2));
+    ElevMap(:,:,2) = rescale(ElevMap(:,:,2), va_el(1), va_el(2));    
+elseif any([opts.ViewingDist_cm, opts.ScreenXsize_cm, opts.ScreenYsize_cm])>0
+    warning('Cannot calculate visual angle! Phase values will be shown as radians!')
+end
 %%% Save Maps:
 % Save Azimuth map:
 if sum(AzimMap(:)) ~= 0
