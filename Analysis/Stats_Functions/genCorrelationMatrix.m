@@ -151,7 +151,7 @@ for i = 1:size(B,1)
 end
 % Create new dimension names as {'O', 'O'}:
 dim_names = {'O','O'};
-outDataStat = save2Mat([], out ,roi_names, dim_names, 'label',roi_names ,...
+outDataStat = save2Mat('', out ,roi_names, dim_names, 'label',roi_names ,...
     'appendMetaData', metaData,'genFile', false);
 % Create .MAT files with SPCMaps:
 if exist('SPCMaps', 'var')

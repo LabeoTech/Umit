@@ -14,5 +14,5 @@ data = p.Results.data;
 metaData = p.Results.metaData;
 %%%%
 dim_names = [metaData.dim_names, {'O'}];
-outDataStat = save2Mat([], {data} ,{'genericObs'}, dim_names, 'appendMetaData', metaData,'genFile', false);
+outDataStat = save2Mat('', {data} ,{'genericObs'}, dim_names, 'appendMetaData', metaData,'genFile', false);
 end
