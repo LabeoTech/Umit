@@ -22,11 +22,12 @@ classdef StatsManager < handle
         %         timestamp_list % List of timestamps associated with each object in list_of_objs.
         b_hasStatsToolbox  % True, if Matlab contains the Statistics and Machine learning toolbox.
         inputFeatures % Structure containing some information about the input data. This will be used by plotting tools and the umIToolbox app.
+        data_hierarchy = {'event','acquisition', 'roi', 'group'}; % bottom-up hierarchy of data to be used as reference for plot tools in umIToolbox app.
     end
     properties (Access = private)        
         stats_data  = {} % cell array containing all data and metaData created.
         avg_stats_data = {} % cell array similar to stats_data containing the average values of acquisitions. (See method averageData).
-        headers = {} % cell array with the _stats_data column names as keys and indices as values.
+        headers = {} % cell array with the _stats_data column names as keys and indices as values.        
     end
     properties (Dependent)
         dataArr = {} % cell array extracted from "stats_data" AND/OR "avg_stats_data" (see it's get method)
@@ -127,7 +128,7 @@ classdef StatsManager < handle
             % This method creates a structure containing the data and meta data
             % stored in this class. The data will average any acquisition with
             % the value in the column "indx_avg_data" higher than zero.
-            
+            disp('getting data Arr...')
             out = struct.empty(0,1);
             idx = [obj.stats_data{:,obj.hMap('indx_avg_data')}]' == 0;
             % Populate structure with all acquisitions that will not be
@@ -264,6 +265,92 @@ classdef StatsManager < handle
             disp('Table created!')
         end
         
+        function out = pivotData(obj, dimOrder)
+           % PIVOTDATA reorganizes "dataArr" to be ready for plotting. 
+           % The data can be regrouped by rearranging the indices of the
+           % "data_hierarchy" elements by the list in dimOrder.
+           % Input:
+           %    dimOrder(cell): list of "data_hierarchy" elements as one or
+           %    more in {'event', 'acquisition','roi','group'}.
+           
+           % Validate for equal acquisitions and data homogeneity:
+           % %%%%%%%%% TO BE DONE %%%%%%
+           if isempty(dimOrder)
+               dimOrder = obj.data_hierarchy;
+           end
+           % get Data:
+           dataIn = obj.dataArr;
+           % Check for events:
+           
+           % %%%%%%% TO BE DONE %%%%%%
+           
+           %
+           nSubjs = numel(unique({dataIn.SubjectID}));
+           nEvents = 1;
+           nAcqs = numel(unique([dataIn.AcquisitionIndx]));
+           nROIs = numel(obj.obs_list);
+           nGroups = numel(unique(obj.list_of_groups));
+           % Preallocate output array:
+           out = repmat({nan},prod([length(dataIn), nEvents,nROIs]),1);
+           %
+           dimMap = containers.Map(obj.data_hierarchy, [nEvents, nAcqs, nROIs, nGroups]);
+           % Repackage data:
+           disp('repackaging data');
+           %            
+                      
+           % Get ROI indices
+           [b_hasROI,roiIndx] = arrayfun(@(x) ismember(obj.obs_list,x.observationID), dataIn, 'UniformOutput',false);
+           roiIndx = cellfun(@(x,y) x(y), roiIndx,b_hasROI, 'UniformOutput',false);
+           % TEMPORARY FAKE Event INDEX LIST:
+           evntIndx = cellfun(@(x) single(x>0), roiIndx, 'UniformOutput',false);
+           % Get Acquisition indices:
+           acqIndx = [dataIn.AcquisitionIndx];
+           % Get Group indices:
+           gIndx = arrayfun(@(x) find(strcmp(x.groupID, unique(obj.list_of_groups))), dataIn);                      
+           % Sort data based on hierarchy order:
+           data = {dataIn.data};                      
+           % Sort by event Index
+           for ii = 1:length(data)
+               [~,idx] = sort(evntIndx{ii});
+               data{ii} = data{ii}(idx);
+           end
+           % Then, sort by ROI index:
+           for ii = 1:length(roiIndx)
+               [~,idx] = sort(roiIndx{ii});
+               data{ii} = data{ii}(idx);
+           end
+           % Now, sort by ascending order of Group index and Acquisition
+           % index:
+           [gIndx,idxG] = sort(gIndx);
+           acqIndx = acqIndx(idxG);
+           data = data(idxG);
+           acqIndx = reshape(acqIndx,length(unique(gIndx)),[]);           
+           idxA = [];
+           for ii = 1:size(acqIndx,1)
+               [~,idx] = sort(acqIndx(ii,:));
+               idxA = [idxA,idx];
+           end
+           str = {'evntIndx', 'roiIndx', 'acqIndx','gIndx'};
+           indxOut = find(b_hasROI);
+           for ii = 1:4
+               eval(['[~,indx] = sort(' str{ii} ');']);
+               data = data(indx);
+               indxOut = indxOut(indx);
+           end
+           out(indxOut) = data;
+           out = reshape(out, nSubjs*nEvents, nAcqs, nROIs, nGroups);
+               
+               
+               
+               
+           
+           
+           
+           
+           
+            
+            
+        end
 %         function out = packageData(obj)
 %             % This function creates a structure with all stats data.
 %             % Output:
@@ -565,7 +652,7 @@ classdef StatsManager < handle
             elseif all(ismember(obj.inputFeatures.dim_names, {'Y', 'X', 'E','O'}))
                 obj.inputFeatures.dataType = 'map-by-event';
             else
-                obj.inputFeatures.dataType = 'unknown';
+                obj.inputFeatures.dataType = 'unsupported';
             end
             
         end
@@ -695,6 +782,7 @@ classdef StatsManager < handle
             end
             [~, out]= ismember(lower(colName), lower(obj.headers));
         end
+                                
         %%%%%%%%%%%%  Auxiliary Stats functions %%%%%%%%%%%%%%%%%%%%%%%%%%%
         function out = calculateVariation(~, varType,data, dim)
             % CALCULATEVARIATION calculates one of the following variation
