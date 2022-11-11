@@ -467,12 +467,12 @@ classdef StatsManager < handle
             end
             % For homogeneous data, guess type of data from first element
             % of "stats_data" array:
-            if ( isscalar(obj.stats_data{1,obj.hMap('data')}{1}) ||...
+            if sum(strcmp(obj.inputFeatures.dim_names, 'O')) == 2
+                obj.inputFeatures.dataType = 'matrix'; % Correlation Matrix with dimensions {'O','O'};
+            elseif ( isscalar(obj.stats_data{1,obj.hMap('data')}{1}) ||...
                     ( isequaln(prod(obj.stats_data{1, obj.hMap('dataSize')}{1}),max(obj.stats_data{1, obj.hMap('dataSize')}{1})) && ...
                     numel(setdiff(obj.inputFeatures.dim_names, {'E'})) == 1 ) )
-                obj.inputFeatures.dataType = 'scalar'; % Single value per observation.
-            elseif all(strcmpi(obj.inputFeatures.dim_names, 'O'))
-                obj.inputFeatures.dataType = 'matrix'; % Correlation Matrix with dimensions {'O','O'};
+                obj.inputFeatures.dataType = 'scalar'; % Single value per observation.            
             elseif ( isequaln(prod(obj.stats_data{1, obj.hMap('dataSize')}{1}),max(obj.stats_data{1, obj.hMap('dataSize')}{1})) && ...
                     numel(setdiff(obj.inputFeatures.dim_names, {'T', 'E'})) == 1 )
                 obj.inputFeatures.dataType = 'time-vector';
