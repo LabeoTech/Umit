@@ -22,7 +22,6 @@ classdef StatsManager < handle
         %         timestamp_list % List of timestamps associated with each object in list_of_objs.
         b_hasStatsToolbox  % True, if Matlab contains the Statistics and Machine learning toolbox.
         inputFeatures % Structure containing some information about the input data. This will be used by plotting tools and the umIToolbox app.
-        data_hierarchy = {'event','acquisition', 'roi', 'group'}; % bottom-up hierarchy of data to be used as reference for plot tools in umIToolbox app.
     end
     properties (Access = private)        
         stats_data  = {} % cell array containing all data and metaData created.
@@ -265,91 +264,94 @@ classdef StatsManager < handle
             disp('Table created!')
         end
         
-        function out = pivotData(obj, dimOrder)
+        function [outDat, outInfo] = pivotData(obj)
            % PIVOTDATA reorganizes "dataArr" to be ready for plotting. 
-           % The data can be regrouped by rearranging the indices of the
-           % "data_hierarchy" elements by the list in dimOrder.
-           % Input:
-           %    dimOrder(cell): list of "data_hierarchy" elements as one or
-           %    more in {'event', 'acquisition','roi','group'}.
+           % The data is regrouped in a multi-dimensional cell array with
+           % each dimension corresponding to the Group, Subject, ROI,
+           % Acquisition and Event.
+           % If the data is not separated by Event, the event dimension
+           % will have size equal to 1.                      
+           % Outputs:
+           %    outDat(cell): array with dimensions (Group x Subject x ROI
+           %    x Acquisition x Event) containing the data from
+           %    obj.dataArr.
+           %    outInfo (cell): array with same dimensions of "outDat"
+           %    containing some meta Data linked to the corresponding data.
            
            % Validate for equal acquisitions and data homogeneity:
            % %%%%%%%%% TO BE DONE %%%%%%
-           if isempty(dimOrder)
-               dimOrder = obj.data_hierarchy;
-           end
+           
            % get Data:
-           dataIn = obj.dataArr;
-           % Check for events:
-           
-           % %%%%%%% TO BE DONE %%%%%%
-           
+           dataIn = obj.dataArr;                                            
+           % Calculate size of each dimension of "out": 
+           gNames = unique(obj.list_of_groups);
+           sNames = unique({dataIn.SubjectID});
+           acqIndxList = unique([dataIn.AcquisitionIndx]);
+           if obj.inputFeatures.b_hasValidEvent
+               eventNameList = unique(arrayfun(@(x) x.MatFile.eventNameList, dataIn, 'UniformOutput',true), 'stable');
+           else
+               eventNameList = {'NoEvent'};
+           end
            %
-           nSubjs = numel(unique({dataIn.SubjectID}));
-           nEvents = 1;
-           nAcqs = numel(unique([dataIn.AcquisitionIndx]));
-           nROIs = numel(obj.obs_list);
-           nGroups = numel(unique(obj.list_of_groups));
-           % Preallocate output array:
-           out = repmat({nan},prod([length(dataIn), nEvents,nROIs]),1);
-           %
-           dimMap = containers.Map(obj.data_hierarchy, [nEvents, nAcqs, nROIs, nGroups]);
-           % Repackage data:
-           disp('repackaging data');
-           %            
-                      
-           % Get ROI indices
-           [b_hasROI,roiIndx] = arrayfun(@(x) ismember(obj.obs_list,x.observationID), dataIn, 'UniformOutput',false);
-           roiIndx = cellfun(@(x,y) x(y), roiIndx,b_hasROI, 'UniformOutput',false);
-           % TEMPORARY FAKE Event INDEX LIST:
-           evntIndx = cellfun(@(x) single(x>0), roiIndx, 'UniformOutput',false);
-           % Get Acquisition indices:
-           acqIndx = [dataIn.AcquisitionIndx];
-           % Get Group indices:
-           gIndx = arrayfun(@(x) find(strcmp(x.groupID, unique(obj.list_of_groups))), dataIn);                      
-           % Sort data based on hierarchy order:
-           data = {dataIn.data};                      
-           % Sort by event Index
-           for ii = 1:length(data)
-               [~,idx] = sort(evntIndx{ii});
-               data{ii} = data{ii}(idx);
-           end
-           % Then, sort by ROI index:
-           for ii = 1:length(roiIndx)
-               [~,idx] = sort(roiIndx{ii});
-               data{ii} = data{ii}(idx);
-           end
-           % Now, sort by ascending order of Group index and Acquisition
-           % index:
-           [gIndx,idxG] = sort(gIndx);
-           acqIndx = acqIndx(idxG);
-           data = data(idxG);
-           acqIndx = reshape(acqIndx,length(unique(gIndx)),[]);           
-           idxA = [];
-           for ii = 1:size(acqIndx,1)
-               [~,idx] = sort(acqIndx(ii,:));
-               idxA = [idxA,idx];
-           end
-           str = {'evntIndx', 'roiIndx', 'acqIndx','gIndx'};
-           indxOut = find(b_hasROI);
-           for ii = 1:4
-               eval(['[~,indx] = sort(' str{ii} ');']);
-               data = data(indx);
-               indxOut = indxOut(indx);
-           end
-           out(indxOut) = data;
-           out = reshape(out, nSubjs*nEvents, nAcqs, nROIs, nGroups);
-               
-               
-               
-               
-           
-           
-           
-           
-           
-            
-            
+           nGroups = numel(gNames);
+           nSubjs = numel(sNames);
+           nROIs = numel(obj.obs_list);           
+           nAcqs = numel(acqIndxList);
+           nEvents = numel(eventNameList);            
+           % Preallocate output arrays:           
+           outDat = num2cell(nan([nGroups, nSubjs, nROIs, nAcqs, nEvents]));      
+           outInfo = outDat;
+           % Sort data based on hierarchy order:                      
+           for iG = 1:nGroups
+               for iS = 1:nSubjs
+                   for iR = 1:nROIs
+                       for iA = 1:nAcqs
+                           for iE = 1:nEvents
+                               idx = ( strcmp({dataIn.groupID}, gNames{iG}) & ... % Find Group
+                                   strcmp({dataIn.SubjectID},sNames{iS}) & ...    % Find Subject   
+                                   arrayfun(@(x) ismember(obj.obs_list{iR},x.observationID), dataIn) & ...% Find ROI
+                                   [dataIn.AcquisitionIndx] == acqIndxList(iA) ); % Find Acquisition index
+                               if obj.inputFeatures.b_hasValidEvent
+                                   idx = ( idx & arrayfun(@(x) ismember(eventNameList{iE}, x.MatFile.eventNameList), dataIn) );
+                               end                                   
+                               
+                               if ( ~any(idx) )
+                                   continue
+                               end
+                               tmp = dataIn(idx);
+                               % Get data for the current ROI:
+                               data = tmp.data{strcmp(tmp.observationID, obj.obs_list{iR})};                               
+                               indxEvnt = false;
+                               if obj.inputFeatures.b_hasValidEvent
+                                   % Get Event inside data:
+                                   dimE_indx = find(strcmpi('E',tmp.MatFile.dim_names));
+                                   dimOrder = [dimE_indx setdiff(1:numel(tmp.MatFile.dim_names), dimE_indx)];
+                                   data = permute(data, dimOrder);
+                                   sz = size(data);
+                                   data = reshape(data, sz(1), []);
+                                   evntName = eventNameList{iE};
+                                   indxEvnt = ( tmp.MatFile.eventID == find(strcmp(tmp.MatFile.eventNameList, evntName)) );
+                                   data = mean(data(indxEvnt,:),1, 'omitnan'); % Average all repetitions of the current event.
+                                   data = ipermute(data, dimOrder);
+                               end
+                               % store data in output array:
+                               outDat{iG, iS, iR, iA, iE} = data; 
+                               % Populate meta data cell array:
+                               s = struct();
+                               s.GroupID = tmp.groupID;
+                               s.SubjectID = tmp.SubjectID;
+                               s.ROIname = obj.obs_list{iR};
+                               s.AcquisitionID = tmp.AcquisitionID;
+                               s.AcquisitionIndx = tmp.AcquisitionIndx;
+                               s.RecStartDateTime = tmp.RecStartDateTime;
+                               s.EventName = eventNameList{iE};
+                               s.Event_nreps = sum(indxEvnt);
+                               outInfo{iG, iS, iR, iA, iE} = s;                                                                 
+                           end
+                       end
+                   end
+               end
+           end                               
         end
 %         function out = packageData(obj)
 %             % This function creates a structure with all stats data.
@@ -570,7 +572,7 @@ classdef StatsManager < handle
             % Instantiate "inputFeatures" structure:
             obj.inputFeatures = struct('b_hasSameAcqN',false,'b_hasSameDimNames',false,...
                 'b_AcqHasSameDimSize',false, 'b_SubjHasSameDimSize', false,  'b_isExportable',false,...
-                'b_hasSameObs',false,'dataType', 'unknown', 'dim_names', {'unknown'});
+                'b_hasSameObs',false,'b_hasValidEvent',false, 'dataType', 'unknown', 'dim_names', {'unknown'});
             
             % Check #1 - are there is an equal number of acquisitions per
             % subject per group?
@@ -587,15 +589,20 @@ classdef StatsManager < handle
             acqIndx(cellfun(@isempty, acqIndx)) = [];
             obj.inputFeatures.b_hasSameAcqN = all(cellfun(@(x) all(isequal(x, acqIndx{1})), acqIndx));
             % Check #2 - Do the input data have the same dimensions?
-            dim_names = cellfun(@(x) x.dim_names, obj.stats_data(:,obj.hMap('MatFile')), 'UniformOutput',false);
+            dim_names = arrayfun(@(x) x.MatFile.dim_names, obj.dataArr, 'UniformOutput',false);
             if isscalar(dim_names)
                 obj.inputFeatures.b_hasSameDimNames = true;
             else
                 obj.inputFeatures.b_hasSameDimNames = isequaln(dim_names{:});
             end
-            % Check if all observations exist across all data:            
+            % Check #3 - All observations exist across all data?            
             obj.inputFeatures.b_hasSameObs = all(arrayfun(@(x) all(ismember(obj.obs_list, x.observationID)), obj.dataArr));
-            % Check #3a - Do the input data have the same size across acquisitions per subject?            
+            % Check #4 - All data have "E"vents. If so, check if all necessary event info is present.
+            if any(strcmpi(dim_names{1}, 'E'))
+                obj.inputFeatures.b_hasValidEvent = all(arrayfun(@(x)...
+                    isprop(x.MatFile, 'eventID') & isprop(x.MatFile, 'eventNameList'),obj.dataArr));
+            end                                            
+            % Check #5 - Do the input data have the same size across acquisitions per subject?            
             %%% TO DO %%%
             sNames = unique(obj.stats_data(:, obj.hMap('SubjectID')));
             b_equalAcqSize = false(size(sNames));
@@ -611,7 +618,7 @@ classdef StatsManager < handle
             if all(b_equalAcqSize)
                 obj.inputFeatures.b_AcqHasSameDimSize = true;
             end
-            % Check #3b - Do the input data have the same size across all
+            % Check #6 - Do the input data have the same size across all
             % Subjects?
             if obj.inputFeatures.b_AcqHasSameDimSize
                 dim_sizes = obj.stats_data(:,obj.hMap('dataSize')); dim_sizes = vertcat(dim_sizes{:});
