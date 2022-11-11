@@ -13,7 +13,7 @@ classdef StatsManager < handle
         obs_list       % Cell Array of observations from stats_filename.
         list_of_groups % Cell array of group names of objects from list_of_objs.
         stats_filename % Filename of .MAT file saved using "save2Mat.m"
-        % function.        
+        % function.
         MfileArr       % Array of MATFILE objects.
         time_resolution = 'none' % Time resolution for grouping each observation
         % Options: "none", "minute", "hour, "day", "week", "month".
@@ -22,16 +22,14 @@ classdef StatsManager < handle
         %         timestamp_list % List of timestamps associated with each object in list_of_objs.
         b_hasStatsToolbox  % True, if Matlab contains the Statistics and Machine learning toolbox.
         inputFeatures % Structure containing some information about the input data. This will be used by plotting tools and the umIToolbox app.
+        dataArr  % structure with data extracted from "stats_data" AND/OR "avg_stats_data" 
     end
-    properties (Access = private)        
+    properties (Access = private)
         stats_data  = {} % cell array containing all data and metaData created.
         avg_stats_data = {} % cell array similar to stats_data containing the average values of acquisitions. (See method averageData).
-        headers = {} % cell array with the _stats_data column names as keys and indices as values.        
+        headers = {} % cell array with the _stats_data column names as keys and indices as values.
     end
-    properties (Dependent)
-        dataArr = {} % cell array extracted from "stats_data" AND/OR "avg_stats_data" (see it's get method)
-    end
-    
+   
     methods
         function obj = StatsManager(list_of_objs, obs_list, list_of_groups, stats_filename)
             % Class constructor.
@@ -46,6 +44,7 @@ classdef StatsManager < handle
             % handles:
             obj.validateObject;
             obj.createDataArray;
+            obj.update_dataArr;
             obj.validateData; % Checks if the input data is homogeneous and exportable.
             % Check if Matlab's Stats. toolbox exist:
             a = ver;
@@ -107,128 +106,8 @@ classdef StatsManager < handle
             assert(isa(stats_filename, 'char') & endsWith(stats_filename, '.mat'),...
                 errID, errMsg);
             obj.stats_filename = stats_filename;
-        end
-        
-        %         function set.time_resolution(obj, time_res)
-        %             % Set function for time_resolution.
-        %             % It checks if time_res is a valid string.
-        %             errID = 'umIToolbox:StatsManager:InvalidInput';
-        %             errMsg = ['Invalid time resolution. Valid options are: ' ...
-        %                 '{"none", "second", "minute", "hour", "day", "week", "month"}'];
-        %             assert(ismember(time_res, {'none', 'minute', 'hour', 'day', ...
-        %                 'week', 'month'}), errID, errMsg);
-        %             % Set time_res:
-        %             obj.time_resolution = time_res;
-        %         end
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        %%% Property Get Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        function out = get.dataArr(obj)
-            % Get method for the "dataArr" dependent property.
-            % This method creates a structure containing the data and meta data
-            % stored in this class. The data will average any acquisition with
-            % the value in the column "indx_avg_data" higher than zero.
-            disp('getting data Arr...')
-            out = struct.empty(0,1);
-            idx = [obj.stats_data{:,obj.hMap('indx_avg_data')}]' == 0;
-            % Populate structure with all acquisitions that will not be
-            % averaged:
-            indxZero = find(idx);
-            myHeaders = setdiff(obj.headers, {'indx_avg_data'}, 'stable'); % Remove non-pertinent columns.
-            for i = 1:length(indxZero)
-                for j = 1:length(myHeaders)
-                    out(i).(myHeaders{j}) = obj.stats_data{indxZero(i),obj.hMap(myHeaders{j})};
-                end
-            end
-            % Average acquisitions and append to non-averaged data:
-            gNames = unique(obj.list_of_groups);
-            tmp = {};
-            for iG = 1:numel(gNames)
-                idxG = strcmp(obj.stats_data(:, obj.hMap('groupID')), gNames(iG));
-                sNames = unique(obj.stats_data(idxG, obj.hMap('SubjectID')));
-                for iS = 1:numel(sNames)
-                    idxS = strcmp(obj.stats_data(:,obj.hMap('SubjectID')), sNames(iS));
-                    indxAcq = [obj.stats_data{idxG & idxS, obj.hMap('indx_avg_data')}];
-                    nMerge = setdiff(unique(indxAcq), 0);
-                    for iAcq = 1:length(nMerge)
-                        idxA = [obj.stats_data{:, obj.hMap('indx_avg_data')}]' == nMerge(iAcq);
-                        tmp = [tmp; {averageData(obj, obj.stats_data(idxG & idxS & idxA,:))}];%#ok
-                    end
-                end
-            end
-            if isempty(out)
-                out = horzcat(tmp{:});
-            else
-                out = horzcat(out,tmp{:});                   
-            end
-             % Remap acquisition indices of non-averaged data to have a
-             % continuous range of acquisition indices.
-             for iG = 1:numel(gNames)
-                 idxG = strcmp({out.groupID}, gNames{iG});
-                 sNames = unique({out(idxG).SubjectID});
-                 for iS = 1:numel(sNames)
-                     idxS = strcmp({out.SubjectID}, sNames{iS});
-                     acqList = sort([out(idxG & idxS).AcquisitionIndx]);
-                     newList = [min(acqList):numel(acqList)];
-                     mapIndx = containers.Map(acqList, newList);
-                     indxAcq = find(idxG & idxS);
-                     for iA = 1:length(indxAcq)
-                         out(indxAcq(iA)).AcquisitionIndx = mapIndx(out(indxAcq(iA)).AcquisitionIndx);
-                     end
-                 end
-             end
-            
-                
-            % Local function:
-            function out = averageData(obj, dataIn)
-                % AVERAGEDATA calculates the average of all data (from "stats_data")
-                % set with indices greater than zero in the column
-                % "indx_avg_data".  
-                % Output:
-                %   out (struct): structure containing the average of  the tagged acquisitions.
-                % Instantiate output variable:
-                out = struct();
-                % Average data
-                cols2copy = {'groupID','SubjectID','ModalityID', 'labels',...
-                    'dataSize', 'MatFile'};
-                for ii = 1:length(cols2copy)
-                    out.(cols2copy{ii}) = dataIn{1,obj.hMap(cols2copy{ii})};
-                end
-                % Set as baseline if one of the elements in dataIn is a
-                % baseline:
-                out.b_isBaseline = any([dataIn{:,obj.hMap('b_isBaseline')}]);
-                % Use the earliest recording start datetime:
-                [~,k] = min(datetime(string(dataIn(:,obj.hMap('RecStartDateTime')))));
-                out.('RecStartDateTime') = dataIn{k,obj.hMap('RecStartDateTime')};
-                % Average the data per observation:
-                obsList = unique(vertcat(dataIn{:,obj.hMap('observationID')}), 'stable');
-                %
-                dimCat = numel(dataIn{1,obj.hMap('MatFile')}.dim_names) + 1;
-                avg = {};
-                currObs = {};
-                for iOb = 1:length(obsList)
-                    % Loop across each observation and average the data:
-                    idxOb = cellfun(@(x) ismember(x, obsList(iOb)),...
-                        dataIn(:,obj.hMap('observationID')), 'UniformOutput',false);
-                    dat = cellfun(@(x,y) x(y),dataIn(:,obj.hMap('data')), idxOb, 'UniformOutput',false);
-                    idxEmpty = cellfun(@isempty,dat);
-                    if all(idxEmpty)
-                        continue
-                    else
-                        dat = [dat{~idxEmpty}]';
-                        % Calculate average:
-                        avg = [avg; {mean(cat(dimCat,dat{:}),dimCat,'omitnan')}];%#ok
-                        currObs = [currObs; obsList(iOb)];%#ok
-                    end
-                end
-                out.data = avg;
-                out.observationID = currObs;
-                out.AcquisitionID = ['AverageAcq_' num2str(dataIn{1,obj.hMap('indx_avg_data')})];
-                out.AcquisitionIndx = min([dataIn{:,obj.hMap('AcquisitionIndx')}]);
-                out.dataFile = '';
-            end
-            
-        end
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        end             
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%     
         function [out,uniqLabels] = createTable(obj, varargin)
             % This function creates a table or an array of tables
             % containing ROI data from each observation.
@@ -247,14 +126,17 @@ classdef StatsManager < handle
             obj = p.Results.obj;
             tableType = p.Results.tableType;
             %
-            disp('Creating table...')
-            
+            disp('Creating table...')            
             % Get all unique labels from "dataArr" structure. This will
             % be used by "getObsData" method to put NaNs on missing
             % data (i.e. labels that are missing for a given recording).
-            labelList = vertcat(obj.dataArr.labels); labelList(cellfun(@isempty, labelList)) = []; % remove empty labels.
-            uniqLabels = unique(labelList, 'stable'); % Sort unique labels in alphabetical order.           
-            % Get observations's labels from the stats_data structure:            
+            if size(obj.dataArr(1).labels,1) < size(obj.dataArr(1).labels,2)
+                labelList = [obj.dataArr.labels]';
+            else
+                labelList = vertcat(obj.dataArr.labels); labelList(cellfun(@isempty, labelList)) = []; % remove empty labels.
+            end
+            uniqLabels = unique(labelList, 'stable'); % Sort unique labels in alphabetical order.
+            % Get observations's labels from the stats_data structure:
             if strcmp(tableType, 'raw')
                 tableArr = cellfun(@(x) obj.getObsData(x, uniqLabels), obj.obs_list,'UniformOutput',false);
                 out = vertcat(tableArr{:});
@@ -265,125 +147,92 @@ classdef StatsManager < handle
         end
         
         function [outDat, outInfo] = pivotData(obj)
-           % PIVOTDATA reorganizes "dataArr" to be ready for plotting. 
-           % The data is regrouped in a multi-dimensional cell array with
-           % each dimension corresponding to the Group, Subject, ROI,
-           % Acquisition and Event.
-           % If the data is not separated by Event, the event dimension
-           % will have size equal to 1.                      
-           % Outputs:
-           %    outDat(cell): array with dimensions (Group x Subject x ROI
-           %    x Acquisition x Event) containing the data from
-           %    obj.dataArr.
-           %    outInfo (cell): array with same dimensions of "outDat"
-           %    containing some meta Data linked to the corresponding data.
-           
-           % Validate for equal acquisitions and data homogeneity:
-           % %%%%%%%%% TO BE DONE %%%%%%
-           
-           % get Data:
-           dataIn = obj.dataArr;                                            
-           % Calculate size of each dimension of "out": 
-           gNames = unique(obj.list_of_groups);
-           sNames = unique({dataIn.SubjectID});
-           acqIndxList = unique([dataIn.AcquisitionIndx]);
-           if obj.inputFeatures.b_hasValidEvent
-               eventNameList = unique(arrayfun(@(x) x.MatFile.eventNameList, dataIn, 'UniformOutput',true), 'stable');
-           else
-               eventNameList = {'NoEvent'};
-           end
-           %
-           nGroups = numel(gNames);
-           nSubjs = numel(sNames);
-           nROIs = numel(obj.obs_list);           
-           nAcqs = numel(acqIndxList);
-           nEvents = numel(eventNameList);            
-           % Preallocate output arrays:           
-           outDat = num2cell(nan([nGroups, nSubjs, nROIs, nAcqs, nEvents]));      
-           outInfo = outDat;
-           % Sort data based on hierarchy order:                      
-           for iG = 1:nGroups
-               for iS = 1:nSubjs
-                   for iR = 1:nROIs
-                       for iA = 1:nAcqs
-                           for iE = 1:nEvents
-                               idx = ( strcmp({dataIn.groupID}, gNames{iG}) & ... % Find Group
-                                   strcmp({dataIn.SubjectID},sNames{iS}) & ...    % Find Subject   
-                                   arrayfun(@(x) ismember(obj.obs_list{iR},x.observationID), dataIn) & ...% Find ROI
-                                   [dataIn.AcquisitionIndx] == acqIndxList(iA) ); % Find Acquisition index
-                               if obj.inputFeatures.b_hasValidEvent
-                                   idx = ( idx & arrayfun(@(x) ismember(eventNameList{iE}, x.MatFile.eventNameList), dataIn) );
-                               end                                   
-                               
-                               if ( ~any(idx) )
-                                   continue
-                               end
-                               tmp = dataIn(idx);
-                               % Get data for the current ROI:
-                               data = tmp.data{strcmp(tmp.observationID, obj.obs_list{iR})};                               
-                               indxEvnt = false;
-                               if obj.inputFeatures.b_hasValidEvent
-                                   % Get Event inside data:
-                                   dimE_indx = find(strcmpi('E',tmp.MatFile.dim_names));
-                                   dimOrder = [dimE_indx setdiff(1:numel(tmp.MatFile.dim_names), dimE_indx)];
-                                   data = permute(data, dimOrder);
-                                   sz = size(data);
-                                   data = reshape(data, sz(1), []);
-                                   evntName = eventNameList{iE};
-                                   indxEvnt = ( tmp.MatFile.eventID == find(strcmp(tmp.MatFile.eventNameList, evntName)) );
-                                   data = mean(data(indxEvnt,:),1, 'omitnan'); % Average all repetitions of the current event.
-                                   data = ipermute(data, dimOrder);
-                               end
-                               % store data in output array:
-                               outDat{iG, iS, iR, iA, iE} = data; 
-                               % Populate meta data cell array:
-                               s = struct();
-                               s.GroupID = tmp.groupID;
-                               s.SubjectID = tmp.SubjectID;
-                               s.ROIname = obj.obs_list{iR};
-                               s.AcquisitionID = tmp.AcquisitionID;
-                               s.AcquisitionIndx = tmp.AcquisitionIndx;
-                               s.RecStartDateTime = tmp.RecStartDateTime;
-                               s.EventName = eventNameList{iE};
-                               s.Event_nreps = sum(indxEvnt);
-                               outInfo{iG, iS, iR, iA, iE} = s;                                                                 
-                           end
-                       end
-                   end
-               end
-           end                               
+            % PIVOTDATA reorganizes "dataArr" to be ready for plotting.
+            % The data is regrouped in a multi-dimensional cell array with
+            % each dimension corresponding to the Group, Subject, ROI,
+            % Acquisition and Event.
+            % If the data is not separated by Event, the event dimension
+            % will have size equal to 1.
+            % Outputs:
+            %    outDat(cell): array with dimensions (Group x Subject x ROI
+            %    x Acquisition x Event) containing the data from
+            %    obj.dataArr.
+            %    outInfo (cell): array with same dimensions of "outDat"
+            %    containing some meta Data linked to the corresponding data.
+            
+            % Validate for equal acquisitions and data homogeneity:
+            % %%%%%%%%% TO BE DONE %%%%%%
+                        
+            % Calculate size of each dimension of "out":
+            gNames = unique(obj.list_of_groups);
+            sNames = unique({obj.dataArr.SubjectID});
+            acqIndxList = unique([obj.dataArr.AcquisitionIndx]);
+            if obj.inputFeatures.b_hasValidEvent
+                eventNameList = unique(arrayfun(@(x) x.MatFile.eventNameList, obj.dataArr, 'UniformOutput',true), 'stable');
+            else
+                eventNameList = {'NoEvent'};
+            end
+            %
+            nGroups = numel(gNames);
+            nSubjs = numel(sNames);
+            nROIs = numel(obj.obs_list);
+            nAcqs = numel(acqIndxList);
+            nEvents = numel(eventNameList);
+            % Preallocate output arrays:
+            outDat = num2cell(nan([nGroups, nSubjs, nROIs, nAcqs, nEvents]));
+            outInfo = outDat;
+            % Sort data based on hierarchy order:
+            for iG = 1:nGroups
+                for iS = 1:nSubjs
+                    for iR = 1:nROIs
+                        for iA = 1:nAcqs
+                            for iE = 1:nEvents
+                                idx = ( strcmp({obj.dataArr.groupID}, gNames{iG}) & ... % Find Group
+                                    strcmp({obj.dataArr.SubjectID},sNames{iS}) & ...    % Find Subject
+                                    arrayfun(@(x) ismember(obj.obs_list{iR},x.observationID), obj.dataArr) & ...% Find ROI
+                                    [obj.dataArr.AcquisitionIndx] == acqIndxList(iA) ); % Find Acquisition index
+                                if obj.inputFeatures.b_hasValidEvent
+                                    idx = ( idx & arrayfun(@(x) ismember(eventNameList{iE}, x.MatFile.eventNameList), obj.dataArr) );
+                                end
+                                
+                                if ( ~any(idx) )
+                                    continue
+                                end
+                                tmp = obj.dataArr(idx);
+                                % Get data for the current ROI:
+                                data = tmp.data{strcmp(tmp.observationID, obj.obs_list{iR})};
+                                indxEvnt = false;
+                                if obj.inputFeatures.b_hasValidEvent
+                                    % Get Event inside data:
+                                    dimE_indx = find(strcmpi('E',tmp.MatFile.dim_names));
+                                    dimOrder = [dimE_indx setdiff(1:numel(tmp.MatFile.dim_names), dimE_indx)];
+                                    data = permute(data, dimOrder);
+                                    sz = size(data);
+                                    data = reshape(data, sz(1), []);
+                                    evntName = eventNameList{iE};
+                                    indxEvnt = ( tmp.MatFile.eventID == find(strcmp(tmp.MatFile.eventNameList, evntName)) );
+                                    data = mean(data(indxEvnt,:),1, 'omitnan'); % Average all repetitions of the current event.
+                                    data = ipermute(data, dimOrder);
+                                end
+                                % store data in output array:
+                                outDat{iG, iS, iR, iA, iE} = data;
+                                % Populate meta data cell array:
+                                s = struct();
+                                s.GroupID = tmp.groupID;
+                                s.SubjectID = tmp.SubjectID;
+                                s.ROIname = obj.obs_list{iR};
+                                s.AcquisitionID = tmp.AcquisitionID;
+                                s.AcquisitionIndx = tmp.AcquisitionIndx;
+                                s.RecStartDateTime = tmp.RecStartDateTime;
+                                s.EventName = eventNameList{iE};
+                                s.Event_nreps = sum(indxEvnt);
+                                outInfo{iG, iS, iR, iA, iE} = s;
+                            end
+                        end
+                    end
+                end
+            end
         end
-%         function out = packageData(obj)
-%             % This function creates a structure with all stats data.
-%             % Output:
-%             %   out(struct): structure containing all data and metadata stored
-%             %   in obj.stats_data.
-%             
-%             % Get metaData from Matfile:
-%             out = cell2struct(obj.stats_data, obj.headers,2);
-%             out(1).metaData = [];
-%             h = waitbar(0,'Packaging stats data into structure array...');
-%             for i = 1:length(out)
-%                 metaData_fn = properties(out(i).MatFile);
-%                 metaData_fn = setdiff(metaData_fn, {'Properties','data',...
-%                     'obsID','label', 'datFile','datLength','datSize'});
-%                 for j = 1:numel(metaData_fn)
-%                     out(i).metaData.(metaData_fn{j}) = out(i).MatFile.(metaData_fn{j});
-%                 end
-%                 % Pack observation info:
-%                 out(i).observations = struct('ID','', 'data',[], 'dataSize',[]);
-%                 for j = 1:numel(out(i).observationID)
-%                     out(i).observations(j).ID = out(i).observationID{j};
-%                     out(i).observations(j).data = out(i).data{j};
-%                     out(i).observations(j).dataSize = out(i).dataSize{j};
-%                 end
-%                 waitbar(i/length(out),h);
-%             end
-%             out = rmfield(out, {'MatFile', 'observationID', 'data', 'dataSize'});
-%             waitbar(1,h,'Done!');
-%             pause(1);
-%             close(h);
-%         end
         
         function exportToCSV(obj, filename)
             % This function creates a .CSV file containing all data created
@@ -408,7 +257,7 @@ classdef StatsManager < handle
             % GETACQINDEXLIST provides the list of the acquisition indices
             % that are available for merging by "setAcquisitionRange"
             % method OR the original list of acquisition indices.
-            % Input: 
+            % Input:
             %   type(char): 'original', 'available', 'current'
             % Output:
             %   out (int or cell): list of acquisition indices as a numeric
@@ -421,29 +270,26 @@ classdef StatsManager < handle
             if ~ismember(lower(type), {'original', 'available', 'current'})
                 error('Input should be either "original" or "available".')
             end
-           
+            
             switch lower(type)
                 case 'original'
-                    out =  unique([obj.stats_data{:, obj.hMap('AcquisitionIndx')}]);                        
-                case 'available'                        
+                    out =  unique([obj.stats_data{:, obj.hMap('AcquisitionIndx')}]);
+                case 'available'
                     idx = [obj.stats_data{:,obj.hMap('indx_avg_data')}]' == 0;
-                    out =  unique([obj.stats_data{idx, obj.hMap('AcquisitionIndx')}]);                        
-                case 'current'                    
+                    out =  unique([obj.stats_data{idx, obj.hMap('AcquisitionIndx')}]);
+                case 'current'
                     indxAvg = [obj.stats_data{:,obj.hMap('indx_avg_data')}];
                     acqIndx = [obj.stats_data{:,obj.hMap('AcquisitionIndx')}];
                     b_isCurrent = indxAvg ~=0;
                     if ~any(b_isCurrent)
                         out = {};
-                       return
-                    end                    
-                    for ii = 1:sum(unique(indxAvg) ~= 0)                        
+                        return
+                    end
+                    for ii = 1:sum(unique(indxAvg) ~= 0)
                         out{ii} = sort(acqIndx(indxAvg == ii));%#ok
-                    end                    
-            end            
+                    end
+            end
         end
-        
-            
-            
         function setAcquisitionRange(obj, indxRange)
             % SETACQUISITIONRANGE regroups a range of acquisitions to be
             % merged using the method "averageData".
@@ -472,40 +318,18 @@ classdef StatsManager < handle
             obj.stats_data(idx,obj.hMap('indx_avg_data')) = repmat({nextIndx},sum(idx),1);
             disp(['Acquisitions ' num2str(indxRange(1)) ' to ' num2str(indxRange(2))...
                 ' added to average data array as group No. #' num2str(nextIndx) '.']);
+            obj.update_dataArr;
         end
         function resetAvgIndex(obj)
             % RESETAVGINDEX sets all acquisition indices in the average
             % data to zero.
             obj.stats_data(:,obj.hMap('indx_avg_data')) = repmat({0},size(obj.stats_data,1),1);
             disp('Acquisition average group indices reset!')
+            obj.update_dataArr;
         end
     end
     
-    methods(Access = private)
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        %         function setTimeStamps(obj)
-        %             % SETTIMESTAMPS sets the resolution for grouping data in
-        %             % time based on the time_resolution property. New datetime values will
-        %             % be shifted to the start of the period
-        %             % (e.g., setTimeStamps("13-Jun-2021", 'month') = 01-Jun-2021);
-        %             % Obs: "none" defaults to a time resolution of seconds.
-        %
-        %             % Get Acquisitions' timestamps:
-        %             tmstmp_list = NaT(length(obj.list_of_objs),1);
-        %             for i=1:numel(obj.list_of_objs)
-        %                 elem = obj.list_of_objs{i};
-        %                 if isa(elem, 'Modality')
-        %                     elem = elem.MyParent;
-        %                 end
-        %                 tmstmp_list(i) = elem.Start_datetime;
-        %             end
-        %             % Set resolution of tmpstmp_list:
-        %             if strcmp(obj.time_resolution, 'none')
-        %                 obj.timestamp_list = dateshift(tmstmp_list, 'start', 'second');
-        %             else
-        %                 obj.timestamp_list = dateshift(tmstmp_list, 'start', obj.time_resolution);
-        %             end
-        %         end
+    methods(Access = private)       
         %%% Validator Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         
         function validateObject(obj)
@@ -564,8 +388,7 @@ classdef StatsManager < handle
             %   2) All input data must have the same dimension names.
             %   3) All input data must have the same dimension sizes.
             % In addition, it classifies the input data in one of the
-            % following categories: 'scalar', 'vector','matrix','map','time-series',
-            % 'time-series-by-event', 'map-by-event' or 'unknown'.
+            % following categories: 'scalar', 'time-vector','map', 'matrix' or 'unknown'.
             % And if it is "exportable" as a .CSV file. To be exportable,
             % the data must be scalar or be a 1xN array per observation.
             
@@ -595,14 +418,14 @@ classdef StatsManager < handle
             else
                 obj.inputFeatures.b_hasSameDimNames = isequaln(dim_names{:});
             end
-            % Check #3 - All observations exist across all data?            
+            % Check #3 - All observations exist across all data?
             obj.inputFeatures.b_hasSameObs = all(arrayfun(@(x) all(ismember(obj.obs_list, x.observationID)), obj.dataArr));
             % Check #4 - All data have "E"vents. If so, check if all necessary event info is present.
             if any(strcmpi(dim_names{1}, 'E'))
                 obj.inputFeatures.b_hasValidEvent = all(arrayfun(@(x)...
                     isprop(x.MatFile, 'eventID') & isprop(x.MatFile, 'eventNameList'),obj.dataArr));
-            end                                            
-            % Check #5 - Do the input data have the same size across acquisitions per subject?            
+            end
+            % Check #5 - Do the input data have the same size across acquisitions per subject?
             %%% TO DO %%%
             sNames = unique(obj.stats_data(:, obj.hMap('SubjectID')));
             b_equalAcqSize = false(size(sNames));
@@ -628,10 +451,10 @@ classdef StatsManager < handle
                     obj.inputFeatures.b_SubjHasSameDimSize = isequaln(dim_sizes{:});
                     obj.inputFeatures.b_SubjHasSameDimSize;
                 end
-            end            
+            end
             % Check if the data is exportable to a .CSV file:
             % Here, two criteria are applied: 1) the data must be a 1xN
-            % vector or a matrix; 2) the labels must be the same across 
+            % vector or a matrix; 2) the labels must be the same across
             obj.inputFeatures.b_isExportable = all(cellfun(@(x) isequaln(prod(x{1}),max(x{1})),...
                 obj.stats_data(:,obj.hMap('dataSize'))));
             % Set input data type:
@@ -644,22 +467,25 @@ classdef StatsManager < handle
             end
             % For homogeneous data, guess type of data from first element
             % of "stats_data" array:
-            if isscalar(obj.stats_data{1,obj.hMap('data')}{1})
-                obj.inputFeatures.dataType = 'scalar'; % Single value per observation.            
+            if ( isscalar(obj.stats_data{1,obj.hMap('data')}{1}) ||...
+                    ( isequaln(prod(obj.stats_data{1, obj.hMap('dataSize')}{1}),max(obj.stats_data{1, obj.hMap('dataSize')}{1})) && ...
+                    numel(setdiff(obj.inputFeatures.dim_names, {'E'})) == 1 ) )
+                obj.inputFeatures.dataType = 'scalar'; % Single value per observation.
             elseif all(strcmpi(obj.inputFeatures.dim_names, 'O'))
                 obj.inputFeatures.dataType = 'matrix'; % Correlation Matrix with dimensions {'O','O'};
-            elseif isequaln(prod(obj.stats_data{1, obj.hMap('dataSize')}{1}),max(obj.stats_data{1, obj.hMap('dataSize')}{1}))
-                obj.inputFeatures.dataType = 'vector';
-            elseif all(ismember(obj.inputFeatures.dim_names, {'Y', 'X', 'O'}))
+            elseif ( isequaln(prod(obj.stats_data{1, obj.hMap('dataSize')}{1}),max(obj.stats_data{1, obj.hMap('dataSize')}{1})) && ...
+                    numel(setdiff(obj.inputFeatures.dim_names, {'T', 'E'})) == 1 )
+                obj.inputFeatures.dataType = 'time-vector';
+            elseif all(ismember(obj.inputFeatures.dim_names, {'Y', 'X', 'O', 'E'}))
                 obj.inputFeatures.dataType = 'map'; % Map with dimensions {'Y','X'} per observations.
-            elseif all(ismember(obj.inputFeatures.dim_names, {'Y', 'X', 'T','O'}))
-                obj.inputFeatures.dataType = 'time-series';
-            elseif all(ismember(obj.inputFeatures.dim_names, {'Y', 'X', 'T', 'E','O'}))
-                obj.inputFeatures.dataType = 'time-series-by-event';
-            elseif all(ismember(obj.inputFeatures.dim_names, {'Y', 'X', 'E','O'}))
-                obj.inputFeatures.dataType = 'map-by-event';
+                %             elseif all(ismember(obj.inputFeatures.dim_names, {'Y', 'X', 'T','O'}))
+                %                 obj.inputFeatures.dataType = 'time-series';
+                %             elseif all(ismember(obj.inputFeatures.dim_names, {'Y', 'X', 'T', 'E','O'}))
+                %                 obj.inputFeatures.dataType = 'time-series-by-event';
+                %             elseif all(ismember(obj.inputFeatures.dim_names, {'Y', 'X', 'E','O'}))
+                %                 obj.inputFeatures.dataType = 'map-by-event';
             else
-                obj.inputFeatures.dataType = 'unsupported';
+                obj.inputFeatures.dataType = 'unknown';
             end
             
         end
@@ -752,10 +578,10 @@ classdef StatsManager < handle
                 end
                 indx_obs(i) = indx;
             end
-            % Get info only from data containing the observation:                        
-            stats_info = obj.dataArr(indx_obs ~= 0);            
+            % Get info only from data containing the observation:
+            stats_info = obj.dataArr(indx_obs ~= 0);
             indx_obs = indx_obs(indx_obs~=0);
-            % Get observation's data:            
+            % Get observation's data:
             % Preallocate data with NaNs based on the length of unique
             % labels:
             data = nan(length(stats_info),length(labelList));
@@ -765,8 +591,8 @@ classdef StatsManager < handle
             end
             % Prepare data to be added to "out" table:
             data = num2cell(data);
-            % Prepare metaData to be added to "out" table:            
-            % Build table:            
+            % Prepare metaData to be added to "out" table:
+            % Build table:
             out = table('Size', [length(stats_info), 6 + size(data,2)],...
                 'VariableTypes',...
                 [{'cellstr', 'cellstr', 'cellstr', 'cellstr', 'datetime', 'cellstr'}...
@@ -789,7 +615,117 @@ classdef StatsManager < handle
             end
             [~, out]= ismember(lower(colName), lower(obj.headers));
         end
-                                
+        
+        function update_dataArr(obj)
+            % UPDATE_DATAARR updates the values of dataArr property. This
+            % function is used by the public methods 'setAcquisitionRange'
+            % and 'resetAvgIndex'.
+            
+            % "dataArr" is a structure containing the data and meta data
+            % stored in this class. The data will average any acquisition with
+            % the value in the column "indx_avg_data" higher than zero.
+            disp('updating data Array...')
+            obj.dataArr = struct.empty(0,1);
+            idx = [obj.stats_data{:,obj.hMap('indx_avg_data')}]' == 0;
+            % Populate structure with all acquisitions that will not be
+            % averaged:
+            indxZero = find(idx);
+            myHeaders = setdiff(obj.headers, {'indx_avg_data'}, 'stable'); % Remove non-pertinent columns.
+            for i = 1:length(indxZero)
+                for j = 1:length(myHeaders)
+                    obj.dataArr(i).(myHeaders{j}) = obj.stats_data{indxZero(i),obj.hMap(myHeaders{j})};
+                end
+            end
+            % Average acquisitions and append to non-averaged data:
+            gNames = unique(obj.list_of_groups);
+            tmp = {};
+            for iG = 1:numel(gNames)
+                idxG = strcmp(obj.stats_data(:, obj.hMap('groupID')), gNames(iG));
+                sNames = unique(obj.stats_data(idxG, obj.hMap('SubjectID')));
+                for iS = 1:numel(sNames)
+                    idxS = strcmp(obj.stats_data(:,obj.hMap('SubjectID')), sNames(iS));
+                    indxAcq = [obj.stats_data{idxG & idxS, obj.hMap('indx_avg_data')}];
+                    nMerge = setdiff(unique(indxAcq), 0);
+                    for iAcq = 1:length(nMerge)
+                        idxA = [obj.stats_data{:, obj.hMap('indx_avg_data')}]' == nMerge(iAcq);
+                        tmp = [tmp; {averageData(obj, obj.stats_data(idxG & idxS & idxA,:))}];%#ok
+                    end
+                end
+            end
+            if isempty(obj.dataArr)
+                obj.dataArr = horzcat(tmp{:});
+            else
+                obj.dataArr = horzcat(obj.dataArr,tmp{:});
+            end
+            % Remap acquisition indices of non-averaged data to have a
+            % continuous range of acquisition indices.
+            for iG = 1:numel(gNames)
+                idxG = strcmp({obj.dataArr.groupID}, gNames{iG});
+                sNames = unique({obj.dataArr(idxG).SubjectID});
+                for iS = 1:numel(sNames)
+                    idxS = strcmp({obj.dataArr.SubjectID}, sNames{iS});
+                    acqList = sort([obj.dataArr(idxG & idxS).AcquisitionIndx]);
+                    newList = [min(acqList):numel(acqList)];
+                    mapIndx = containers.Map(acqList, newList);
+                    indxAcq = find(idxG & idxS);
+                    for iA = 1:length(indxAcq)
+                        obj.dataArr(indxAcq(iA)).AcquisitionIndx = mapIndx(obj.dataArr(indxAcq(iA)).AcquisitionIndx);
+                    end
+                end
+            end
+            disp('Done');
+            
+            % Local function:
+            function out = averageData(obj, dataIn)
+                % AVERAGEDATA calculates the average of all data (from "stats_data")
+                % set with indices greater than zero in the column
+                % "indx_avg_data".
+                % Output:
+                %   out (struct): structure containing the average of  the tagged acquisitions.
+                % Instantiate output variable:
+                out = struct();
+                % Average data
+                cols2copy = {'groupID','SubjectID','ModalityID', 'labels',...
+                    'dataSize', 'MatFile'};
+                for ii = 1:length(cols2copy)
+                    out.(cols2copy{ii}) = dataIn{1,obj.hMap(cols2copy{ii})};
+                end
+                % Set as baseline if one of the elements in dataIn is a
+                % baseline:
+                out.b_isBaseline = any([dataIn{:,obj.hMap('b_isBaseline')}]);
+                % Use the earliest recording start datetime:
+                [~,k] = min(datetime(string(dataIn(:,obj.hMap('RecStartDateTime')))));
+                out.('RecStartDateTime') = dataIn{k,obj.hMap('RecStartDateTime')};
+                % Average the data per observation:
+                obsList = unique(vertcat(dataIn{:,obj.hMap('observationID')}), 'stable');
+                %
+                dimCat = numel(dataIn{1,obj.hMap('MatFile')}.dim_names) + 1;
+                avg = {};
+                currObs = {};
+                for iOb = 1:length(obsList)
+                    % Loop across each observation and average the data:
+                    idxOb = cellfun(@(x) ismember(x, obsList(iOb)),...
+                        dataIn(:,obj.hMap('observationID')), 'UniformOutput',false);
+                    dat = cellfun(@(x,y) x(y),dataIn(:,obj.hMap('data')), idxOb, 'UniformOutput',false);
+                    idxEmpty = cellfun(@isempty,dat);
+                    if all(idxEmpty)
+                        continue
+                    else
+                        dat = [dat{~idxEmpty}]';
+                        % Calculate average:
+                        avg = [avg; {mean(cat(dimCat,dat{:}),dimCat,'omitnan')}];%#ok
+                        currObs = [currObs; obsList(iOb)];%#ok
+                    end
+                end
+                out.data = avg;
+                out.observationID = currObs;
+                out.AcquisitionID = ['AverageAcq_' num2str(dataIn{1,obj.hMap('indx_avg_data')})];
+                out.AcquisitionIndx = min([dataIn{:,obj.hMap('AcquisitionIndx')}]);
+                out.dataFile = '';
+            end
+            
+        end
+        
         %%%%%%%%%%%%  Auxiliary Stats functions %%%%%%%%%%%%%%%%%%%%%%%%%%%
         function out = calculateVariation(~, varType,data, dim)
             % CALCULATEVARIATION calculates one of the following variation
