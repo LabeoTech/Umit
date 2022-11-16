@@ -666,9 +666,9 @@ for i = 1:length(fields)
         case 'charArrayMultiSelect'
             vo = uipanel(g, 'Scrollable', 'off');
         case {'numericRange'}
-            vo = uieditfield(g, 'numeric');
+            vo = uieditfield(g, 'numeric', 'ValueChangedFcn', @lockTextField);
         otherwise
-            vo = uieditfield(g);
+            vo = uieditfield(g, 'ValueChangedFcn', @lockTextField);
     end
     % Set position of element in uigrid:
     vo.Layout.Row = i;
@@ -819,6 +819,12 @@ end
             src.Value = 1;
         end        
     end
-
+    function lockTextField(src,evnt)
+        % This callback avoids leaving any input field EMPTY.        
+        if ( isempty(evnt.Value) ) || ( ~isnumeric(evnt.Value)  && isempty(strip(evnt.Value)) )
+            beep
+            src.Value = evnt.PreviousValue;            
+        end         
+    end
 end
 

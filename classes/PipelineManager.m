@@ -1212,9 +1212,9 @@ for i = 1:length(fields)
         case 'charArrayMultiSelect'
             vo = uipanel(g, 'Scrollable', 'on');
         case {'numericRange'}
-            vo = uieditfield(g, 'numeric');
+            vo = uieditfield(g, 'numeric', 'ValueChangedFcn', @lockTextField);
         otherwise
-            vo = uieditfield(g);
+            vo = uieditfield(g, 'ValueChangedFcn', @lockTextField);
     end
     % Set position of element in uigrid:
     vo.Layout.Row = i;
@@ -1235,7 +1235,8 @@ for i = 1:length(fields)
             glChar.RowHeight = repmat({20},size(listVals{i}));
             glChar.Scrollable = 'on';
             for jj = 1:length(listVals{i})
-                c = uicheckbox('Parent',glChar, 'Text', listVals{i}{jj}, 'Value', idxDef(jj));
+                c = uicheckbox('Parent',glChar, 'Text', listVals{i}{jj},...
+                    'Value', idxDef(jj), 'ValueChangedFcn', @lockCheckBox);
                 c.Layout.Row = jj;
             end
             % Resize figure to accomodate checkbox list:
@@ -1353,7 +1354,7 @@ end
     function figCloseRequest(src,~)
         % Just displays a message to user.
         src.Visible = 'off';
-        w = warndlg('Operation cancelled by User! Changes won''t be applied!', 'Set options Cancelled!', 'modal');
+        w = warndlg('Operation cancelled by User! Changes won''t be applied!', 'Set options Cancelled', 'modal');        
         waitfor(w);
         delete(src);
     end
@@ -1362,6 +1363,13 @@ end
         idxState = arrayfun(@(x) x.Value, src.Parent.Children);
         if ~any(idxState)
             src.Value = 1;
+        end        
+    end
+    function lockTextField(src,evnt)
+        % This callback avoids leaving any input field EMPTY.        
+        if ( isempty(evnt.Value) ) || ( ~isnumeric(evnt.Value)  && isempty(strip(evnt.Value)) )
+            beep
+            src.Value = evnt.PreviousValue;            
         end        
     end
 end
