@@ -2,7 +2,7 @@ classdef DataViewer_pipelineMngr < handle
     % This class is a simpler version of a PipelineManager class from
     % umIToolbox. This class will create and manage a small analysis
     % pipeline for imaging datasets inside the GUI "DataViewer".
-
+    
     
     properties
         fcnDir char % Directory of the analysis functions.
@@ -13,7 +13,7 @@ classdef DataViewer_pipelineMngr < handle
         % structure containing the info of each step of the pipeline:
         pipe = struct('argsIn', {},'argsOut',{},'outFileName','','opts',struct.empty,...
             'opts_vals',struct.empty,'opts_def',struct.empty, 'name','',...
-            'funcStr', '','b_save2File', logical.empty, 'datFileName', '');         
+            'funcStr', '','b_save2File', logical.empty, 'datFileName', '');
         data % numerical array containing imaging data
         metaData % structure or matfile containing meta data associated with "data".
         SaveFolder % folder where data created will be stored (Save Directory).
@@ -25,7 +25,7 @@ classdef DataViewer_pipelineMngr < handle
     methods
         function obj = DataViewer_pipelineMngr(data, metaData, SaveFolder, RawFolder)
             if isdeployed
-                [obj.fcnDir,~,~] = fileparts(which('funcTemplate.m'));                                
+                [obj.fcnDir,~,~] = fileparts(which('funcTemplate.m'));
                 a = load(fullfile(obj.fcnDir,'deployFcnList.mat'));
                 obj.funcList = a.out; % Get the structure "out" created inside the function "umitFcnReader".
             else
@@ -35,7 +35,7 @@ classdef DataViewer_pipelineMngr < handle
                 end
                 obj.fcnDir = fullfile(rootDir, 'Analysis');
                 obj.createFcnList;
-            end           
+            end
             obj.data = data;
             obj.metaData = metaData;
             obj.SaveFolder = SaveFolder;
@@ -69,7 +69,7 @@ classdef DataViewer_pipelineMngr < handle
                 end
             else
                 obj.metaData = metaData;
-            end            
+            end
         end
         
         function set.pipe(obj, pipe)
@@ -115,22 +115,22 @@ classdef DataViewer_pipelineMngr < handle
                 for i = 1:length(listVals)
                     if isnumeric(listVals{i}) && numel(listVals{i}) > 2
                         typeVals{i} = 'numericArray'; % Array of numerical values.
-                    elseif isnumeric(listVals{i}) && numel(listVals{i}) == 2 
+                    elseif isnumeric(listVals{i}) && numel(listVals{i}) == 2
                         typeVals{i} = 'numericRange'; % 1x2 array of numerical values indicating lower and upper bounds.
                     elseif islogical(listVals{i})
                         typeVals{i} = 'logical'; % 1x2 array of logical values = [true;false];
                     elseif all(cellfun(@ischar, listVals{i})) && numel(listVals{i}) > 1 && size(listVals{i},1) < size(listVals{i},2)
                         typeVals{i} = 'charArray'; % Cell array of strings.
-                    elseif all(cellfun(@ischar, listVals{i})) && numel(listVals{i}) > 1 && size(listVals{i},1) > size(listVals{i},2) 
-                        typeVals{i} = 'charArrayMultiSelect'; % Cell array of strings with multi-selection option.                    
+                    elseif all(cellfun(@ischar, listVals{i})) && numel(listVals{i}) > 1 && size(listVals{i},1) > size(listVals{i},2)
+                        typeVals{i} = 'charArrayMultiSelect'; % Cell array of strings with multi-selection option.
                     else
                         typeVals{i} = 'mixArray'; % Cell array of strings and numbers.
                     end
                 end
-                out = buildInputDlg(obj.funcList(idx).name,fieldnames(S.opts),currVals,defVals,listVals,typeVals);               
+                out = buildInputDlg(obj.funcList(idx).name,fieldnames(S.opts),currVals,defVals,listVals,typeVals);
             else
-                % Older version of fcn params input dialog:  
-                fields = fieldnames(S.opts);                             
+                % Older version of fcn params input dialog:
+                fields = fieldnames(S.opts);
                 b_isNum = structfun(@(x) isnumeric(x), S.opts);
                 b_isLogic = structfun(@(x) islogical(x), S.opts);
                 for i = 1:length(fields)
@@ -149,14 +149,14 @@ classdef DataViewer_pipelineMngr < handle
                 if isempty(out)
                     disp('Operation cancelled by User');
                     return
-                end                 
+                end
                 for i = 1:length(out)
                     if b_isNum(i)
                         out{i} = str2double(out{i});
                     elseif b_isLogic(i)
-                        out{i} = logical(str2double(out{i}));                    
+                        out{i} = logical(str2double(out{i}));
                     end
-                end 
+                end
                 out = horzcat(fieldnames(S.opts),out);
             end
             % Save parameters to 'opts' structure:
@@ -208,7 +208,7 @@ classdef DataViewer_pipelineMngr < handle
                     errID = 'umIToolbox:DataViewer_pipelineMngr:MissingInputs';
                     error(errID, 'Cannot add task! The following inputs are missing:\n"%s"', ...
                         strjoin(erase(props(idx_miss), 'obj.'), ' , '));
-                end                
+                end
             elseif contains(funcInfo.name, {obj.pipe.name})
                 % Abort, if the user tries to add the same function more
                 % than once to the pipeline:
@@ -222,7 +222,7 @@ classdef DataViewer_pipelineMngr < handle
                 % one of the "Files" in the workspace before running the
                 % current step.
                 
-                if (numel(obj.pipe(end).outFileName) > 1) && any(strcmp(obj.pipe(end).argsOut, 'outFile')) && any(strcmpi('data',funcInfo.argsIn))                                        
+                if (numel(obj.pipe(end).outFileName) > 1) && any(strcmp(obj.pipe(end).argsOut, 'outFile')) && any(strcmpi('data',funcInfo.argsIn))
                     disp('Controlling for multiple outputs')
                     w = warndlg({'Previous step has multiple output files!',...
                         'Please, select one to be analysed!'});
@@ -240,7 +240,7 @@ classdef DataViewer_pipelineMngr < handle
                     str = ['[obj.data, obj.metaData] = loadDatFile(fullfile(obj.SaveFolder, '''...
                         obj.pipe(end).outFileName{indx} '''));'];
                     funcInfo.funcStr = [str, funcInfo.funcStr];
-                end                
+                end
             end
             
             % Add step to pipeline:
@@ -310,7 +310,7 @@ classdef DataViewer_pipelineMngr < handle
                             vals{j} = strjoin(val, ', ');
                         else
                             vals{j} = val;
-                        end                        
+                        end
                     end
                     opts = [fn;vals];
                 end
@@ -344,7 +344,7 @@ classdef DataViewer_pipelineMngr < handle
             if ~ismember('data',obj.pipe(1).argsIn) & any(ismember({'SaveFolder', 'RawFolder'},obj.pipe(1).argsIn)) &...
                     ismember('outData',obj.pipe(1).argsOut)
                 obj.data = [];
-            end            
+            end
             disp('Running pipeline on Data...');
             
             h = waitbar(0, 'Initiating pipeline...');
@@ -364,7 +364,7 @@ classdef DataViewer_pipelineMngr < handle
                     end
                     % Load options structure in the workspace.
                     opts = obj.pipe(i).opts;%#ok the "opts" structure is used in the EVAL function.
-                    % Run the function: 
+                    % Run the function:
                     eval(obj.pipe(i).funcStr);
                     % Update the metaData with the current function info:
                     obj.updateDataHistory(obj.pipe(i));
@@ -485,7 +485,7 @@ classdef DataViewer_pipelineMngr < handle
             default_Output = '';
             default_opts = struct();
             opts_values = struct();
-            list = dir(fullfile(obj.fcnDir, '\*\*.m'));            
+            list = dir(fullfile(obj.fcnDir, '\*\*.m'));
             for i = 1:length(list)
                 out = parseFuncFile(list(i));
                 % Validate if all input arguments from the function are
@@ -501,11 +501,11 @@ classdef DataViewer_pipelineMngr < handle
                 end
                 
             end
-            disp('Function list created!');            
+            disp('Function list created!');
             function info = parseFuncFile(fcnStruct)
                 info = struct('argsIn', {},'argsOut', {}, 'outFileName', '', 'opts', [],...
                     'opts_def',[],'opts_vals',[]);
-                txt = fileread(fullfile(fcnStruct.folder, fcnStruct.name));                
+                txt = fileread(fullfile(fcnStruct.folder, fcnStruct.name));
                 funcStr = erase(regexp(txt, '(?<=function\s*).*?(?=\r*\n)', 'match', 'once'),' ');
                 outStr = regexp(funcStr,'.*(?=\=)', 'match', 'once');
                 out_args = regexp(outStr, '\[*(\w*)\,*(\w*)\]*', 'tokens', 'once');
@@ -569,7 +569,7 @@ classdef DataViewer_pipelineMngr < handle
                     else
                         mtD.dataHistory = curr_dtHist;
                     end
-                end                           
+                end
             else
                 if isfield(obj.metaData, 'dataHistory')
                     obj.metaData.dataHistory = [obj.metaData.dataHistory; curr_dtHist];
@@ -649,7 +649,7 @@ for i = 1:length(idx)
     else
         rh{i} = 30;
     end
-end   
+end
 g.RowHeight = [rh, {60}];
 % Update figure height:
 dlg.InnerPosition(4) = sum([g.RowHeight{:}, 2*g.RowSpacing]);
@@ -673,10 +673,10 @@ for i = 1:length(fields)
     % Set position of element in uigrid:
     vo.Layout.Row = i;
     vo.Layout.Column = 2;
-            
+    
     % Populate elements with current values:
     switch typeVals{i}
-        case 'numericArray'                   
+        case 'numericArray'
             vo.Items = arrayfun(@(x) num2str(x), listVals{i}, 'UniformOutput',false);
             vo.Value = vo.Items(listVals{i} == currVals{i});
         case 'charArray'
@@ -687,7 +687,7 @@ for i = 1:length(fields)
             idxDef = strcmp(listVals{i},currVals{i});
             glChar = uigridlayout(vo,[length(listVals{i}),1]);
             glChar.Scrollable = 'on';
-            glChar.RowHeight = repmat({20},size(listVals{i}));            
+            glChar.RowHeight = repmat({20},size(listVals{i}));
             for jj = 1:length(listVals{i})
                 c = uicheckbox('Parent',glChar, 'Text', listVals{i}{jj},...
                     'Value', idxDef(jj), 'ValueChangedFcn', @lockCheckBox);
@@ -696,7 +696,7 @@ for i = 1:length(fields)
             % Resize figure to accomodate checkbox list:
             dlg.Position(4) = dlg.Position(4) + 20*length(listVals{i});
             movegui(dlg, 'center');
-        case 'logical'            
+        case 'logical'
             keys = {'Yes','No'};
             [~,locB] = ismember([true, false], listVals{i});
             vo.Items = keys(locB);
@@ -714,7 +714,7 @@ for i = 1:length(fields)
             else
                 vo.Tooltip = 'Type a string';
             end
-    end      
+    end
 end
 % Add "Save button"
 g2 = uigridlayout(g);
@@ -737,7 +737,7 @@ if isempty(out)
 end
 % Clean "out" before completion:
 for i = 1:size(out,1)
-    out{i,1} = currOpts{i,1};   
+    out{i,1} = currOpts{i,1};
     switch typeVals{i}
         case 'numericArray'
             out{i,2} = str2double(out{i,2});
@@ -776,29 +776,29 @@ end
                     case {'numericArray', 'logical'}
                         idx_def = listVals{ii} == defVals{ii};
                     case 'charArray'
-                        idx_def = strcmp(listVals{ii}, defVals{ii});                                  
+                        idx_def = strcmp(listVals{ii}, defVals{ii});
                 end
                 valueObj.Value = valueObj.Items(idx_def);
             elseif isa(valueObj,'matlab.ui.container.Panel')
-                % For charArrayMultiSelect case:                                
+                % For charArrayMultiSelect case:
                 idxDefReset = strcmpi(defVals{ii}, listVals{ii});
                 arrayfun(@(x,y) set(x,'Value', y), valueObj.Children.Children, idxDefReset);
             else
                 valueObj.Value = defVals{ii};
             end
-        end        
+        end
     end
     function saveParams(src,~)
         % This callback saves the parameters selected by the user in the
-        % GUI to the "out" variable and closes the figure;        
+        % GUI to the "out" variable and closes the figure;
         gl = src.Parent.Parent;
         nRows = length(gl.RowHeight)-1;
         layout_info = arrayfun(@(x) get(x, 'Layout'),gl.Children);
         for ii = 1:nRows
             valueObj = gl.Children([layout_info.Row] == ii & [layout_info.Column] == 2);
             if isa(valueObj,'matlab.ui.container.Panel')
-                % Special case: get checkbox values inside uipanel:                
-                out{ii,2} = listVals{ii}(arrayfun(@(x) x.Value, valueObj.Children.Children));           
+                % Special case: get checkbox values inside uipanel:
+                out{ii,2} = listVals{ii}(arrayfun(@(x) x.Value, valueObj.Children.Children));
             else
                 out{ii,2} = valueObj.Value;
             end
@@ -817,14 +817,14 @@ end
         idxState = arrayfun(@(x) x.Value, src.Parent.Children);
         if ~any(idxState)
             src.Value = 1;
-        end        
+        end
     end
     function lockTextField(src,evnt)
-        % This callback avoids leaving any input field EMPTY.        
+        % This callback avoids leaving any input field EMPTY.
         if ( isempty(evnt.Value) ) || ( ~isnumeric(evnt.Value)  && isempty(strip(evnt.Value)) )
             beep
-            src.Value = evnt.PreviousValue;            
-        end         
+            src.Value = evnt.PreviousValue;
+        end
     end
 end
 
