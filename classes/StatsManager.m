@@ -473,9 +473,8 @@ classdef StatsManager < handle
                     ( isequaln(prod(obj.stats_data{1, obj.hMap('dataSize')}{1}),max(obj.stats_data{1, obj.hMap('dataSize')}{1})) && ...
                     numel(setdiff(obj.inputFeatures.dim_names, {'E'})) == 1 ) )
                 obj.inputFeatures.dataType = 'scalar'; % Single value per observation.            
-            elseif ( isequaln(prod(obj.stats_data{1, obj.hMap('dataSize')}{1}),max(obj.stats_data{1, obj.hMap('dataSize')}{1})) && ...
-                    numel(setdiff(obj.inputFeatures.dim_names, {'T', 'E'})) == 1 )
-                obj.inputFeatures.dataType = 'time-vector';
+            elseif all(ismember(obj.inputFeatures.dim_names, {'O', 'T'})) || all(ismember(obj.inputFeatures.dim_names, {'O', 'T', 'E'}))                                                      
+                obj.inputFeatures.dataType = 'time-vector';            
             elseif all(ismember(obj.inputFeatures.dim_names, {'Y', 'X', 'O', 'E'}))
                 obj.inputFeatures.dataType = 'map'; % Map with dimensions {'Y','X'} per observations.
                 %             elseif all(ismember(obj.inputFeatures.dim_names, {'Y', 'X', 'T','O'}))
