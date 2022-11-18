@@ -161,77 +161,109 @@ classdef StatsManager < handle
             %    containing some meta Data linked to the corresponding data.
             
             % Validate for equal acquisitions and data homogeneity:
-            % %%%%%%%%% TO BE DONE %%%%%%
+            if ~( obj.inputFeatures.b_hasSameAcqN && obj.inputFeatures.b_hasSameDimNames && ...
+                    contains(obj.inputFeatures.dataType, {'scalar', 'time'}) )
+                warning('Cannot pivot data. The data must be scalar OR time-series with equal number of acquisitions and same data type!'); 
+                return
+            end
                         
-            % Calculate size of each dimension of "out":
-            gNames = unique(obj.list_of_groups);
-            sNames = unique({obj.dataArr.SubjectID});
-            acqIndxList = unique([obj.dataArr.AcquisitionIndx]);
+            % Get List of all dimension identifiers:
+            gNames = unique(obj.list_of_groups); % Names of Groups
+            sNames = unique({obj.dataArr.SubjectID}); % Names of Subjects
+            acqIndxList = unique([obj.dataArr.AcquisitionIndx]); % Acquisition Indices
+            rNames = obj.obs_list; % Names of ROIs
+            % Get event Names:
             if obj.inputFeatures.b_hasValidEvent
-                eventNameList = unique(arrayfun(@(x) x.MatFile.eventNameList, obj.dataArr, 'UniformOutput',true), 'stable');
+                allEvntNames = arrayfun(@(x) x.MatFile.eventNameList, obj.dataArr, 'UniformOutput',false);
+                eventNameList = unique(vertcat(allEvntNames{:}), 'stable');
             else
                 eventNameList = {'NoEvent'};
             end
-            %
+            
+            % Preallocate output data array:
             nGroups = numel(gNames);
             nSubjs = numel(sNames);
-            nROIs = numel(obj.obs_list);
             nAcqs = numel(acqIndxList);
+            nROIs = numel(rNames);
             nEvents = numel(eventNameList);
+            % Get the largest number of data points for time-series:
+            if contains(obj.inputFeatures.dataType, 'time', 'IgnoreCase',true)
+                Tdim = find(strcmpi(obj.dataArr(1).MatFile.dim_names, 'T'));
+                Tsize = arrayfun(@(x) cellfun(@(y) size(y,Tdim), x.data), obj.dataArr, 'UniformOutput', false)';                
+                Tsize = max(vertcat(Tsize{:}),[],'all');
+            else 
+                % For scalar data:
+                Tsize = 1; 
+            end
             % Preallocate output arrays:
-            outDat = num2cell(nan([nGroups, nSubjs, nROIs, nAcqs, nEvents]));
-            outInfo = outDat;
-            % Sort data based on hierarchy order:
-            for iG = 1:nGroups
-                for iS = 1:nSubjs
-                    for iR = 1:nROIs
-                        for iA = 1:nAcqs
-                            for iE = 1:nEvents
-                                idx = ( strcmp({obj.dataArr.groupID}, gNames{iG}) & ... % Find Group
-                                    strcmp({obj.dataArr.SubjectID},sNames{iS}) & ...    % Find Subject
-                                    arrayfun(@(x) ismember(obj.obs_list{iR},x.observationID), obj.dataArr) & ...% Find ROI
-                                    [obj.dataArr.AcquisitionIndx] == acqIndxList(iA) ); % Find Acquisition index
-                                if obj.inputFeatures.b_hasValidEvent
-                                    idx = ( idx & arrayfun(@(x) ismember(eventNameList{iE}, x.MatFile.eventNameList), obj.dataArr) );
-                                end
-                                
-                                if ( ~any(idx) )
-                                    continue
-                                end
-                                tmp = obj.dataArr(idx);
-                                % Get data for the current ROI:
-                                data = tmp.data{strcmp(tmp.observationID, obj.obs_list{iR})};
-                                indxEvnt = false;
-                                if obj.inputFeatures.b_hasValidEvent
-                                    % Get Event inside data:
-                                    dimE_indx = find(strcmpi('E',tmp.MatFile.dim_names));
-                                    dimOrder = [dimE_indx setdiff(1:numel(tmp.MatFile.dim_names), dimE_indx)];
-                                    data = permute(data, dimOrder);
-                                    sz = size(data);
-                                    data = reshape(data, sz(1), []);
-                                    evntName = eventNameList{iE};
-                                    indxEvnt = ( tmp.MatFile.eventID == find(strcmp(tmp.MatFile.eventNameList, evntName)) );
-                                    data = mean(data(indxEvnt,:),1, 'omitnan'); % Average all repetitions of the current event.
-                                    data = ipermute(data, dimOrder);
-                                end
-                                % store data in output array:
-                                outDat{iG, iS, iR, iA, iE} = data;
-                                % Populate meta data cell array:
-                                s = struct();
-                                s.GroupID = tmp.groupID;
-                                s.SubjectID = tmp.SubjectID;
-                                s.ROIname = obj.obs_list{iR};
-                                s.AcquisitionID = tmp.AcquisitionID;
-                                s.AcquisitionIndx = tmp.AcquisitionIndx;
-                                s.RecStartDateTime = tmp.RecStartDateTime;
-                                s.EventName = eventNameList{iE};
-                                s.Event_nreps = sum(indxEvnt);
-                                outInfo{iG, iS, iR, iA, iE} = s;
-                            end
-                        end
+            outDat = nan([nGroups, nSubjs, nAcqs, nROIs, nEvents, Tsize]);
+            outInfo = struct('groupID', '', 'SubjectID','', 'AcquisitionID','', ...
+                'ModalityID','','RecStartDateTime','', 'gIndx',[],'sIndx',[],...
+                'aIndx',[],'rIndx',[],'eIndx',[]); % This structure contains the indices of the data from each acquisition pointing to "outDat".
+            % Loop across "dataArr" and insert the data into the right
+            % places in "outDat":
+            for ii = 1:length(obj.dataArr)
+                idxG = strcmp(obj.dataArr(ii).groupID, gNames); % Group index;
+                idxS = strcmp(obj.dataArr(ii).SubjectID, sNames); % Subject index;
+                indxA = obj.dataArr(ii).AcquisitionIndx; % Acquisition index;                               
+                [~,indxR] = ismember(obj.dataArr(ii).observationID, rNames); % ROI index;
+                dimT = strcmpi(obj.dataArr(ii).MatFile.dim_names, 'T'); % Check if it is a time series;
+                % Manage Events:
+                tmp = obj.dataArr(ii).data;                
+                if ~strcmpi([eventNameList{:}], 'NoEvent')                    
+                    [~,indxE] = ismember(obj.dataArr(ii).MatFile.eventNameList, eventNameList);
+                    % Here, we will average all repetitions and permute the
+                    % data to be in the same order as "eventNameList" from the
+                    % MatFile.
+                    data = cell(size(tmp));
+                    datEventNameList = obj.dataArr(ii).MatFile.eventNameList;
+                    datEventID = obj.dataArr(ii).MatFile.eventID;
+                    dimE = find(strcmpi(obj.dataArr(ii).MatFile.dim_names, 'E'));
+                    for jj = 1:length(data)
+                        dat = tmp{jj};
+                        newDimOrd = [dimE, setdiff(1:ndims(dat),dimE)];
+                        dat = permute(dat,newDimOrd);
+                        datsz = size(dat);
+                        dat = reshape(dat, size(dat,1), []);
+                        tmp_dat = zeros(numel(datEventNameList), size(dat,2), 'single');
+                        for kk = 1:numel(datEventNameList)
+                            tmp_dat(kk,:) = mean(dat(datEventID == kk,:), 1,'omitnan');
+                        end 
+                        tmpsz = [numel(datEventNameList), datsz(2:end)];
+                        tmp_dat = reshape(tmp_dat, tmpsz);
+                        tmp_dat = ipermute(tmp_dat, newDimOrd);
+                        data{jj} = tmp_dat;                        
+                    end
+                else
+                    data = tmp;
+                    indxE = 1;
+                end                                                        
+                % Populate outDat per ROI:
+                for jj = 1:length(indxR)                    
+                    if any(dimT)
+                        % For time series:
+                        outDat(idxG, idxS, indxA, indxR(jj), indxE, 1:size(data{jj}, find(dimT))) = data{jj};
+                    else
+                        % For scalar:
+                        outDat(idxG, idxS, indxA, indxR(jj), indxE) = data{jj};
                     end
                 end
+                % Populate struct with meta data and indices pointing to
+                % "outDat":                
+                outInfo.groupID = [outInfo.groupID, {obj.dataArr(ii).groupID}];
+                outInfo.SubjectID = [outInfo.SubjectID {obj.dataArr(ii).SubjectID}];                
+                outInfo.AcquisitionID = [outInfo.AcquisitionID, {obj.dataArr(ii).AcquisitionID}];
+                outInfo.ModalityID = [outInfo.ModalityID {obj.dataArr(ii).ModalityID}];                
+                outInfo.RecStartDateTime = [outInfo.RecStartDateTime {obj.dataArr(ii).RecStartDateTime}];               
+                outInfo.gIndx = [outInfo.gIndx find(idxG)];
+                outInfo.sIndx = [outInfo.sIndx find(idxS)];
+                outInfo.aIndx = [outInfo.aIndx indxA];
+                outInfo.rIndx = [outInfo.rIndx {indxR}]; % These are cell arrays because different subjects may not share all ROIs.
+                outInfo.eIndx = [outInfo.eIndx {indxE}]; % Same for events.
             end
+            outInfo.rNames = rNames; % Names of all ROIs.
+            outInfo.evNames = eventNameList; %List of all events.
+            disp('Finished creating outDat!');            
         end
         
         function exportToCSV(obj, filename)
@@ -253,6 +285,7 @@ classdef StatsManager < handle
             writecell(data,filename);
             msgbox(['Data saved to file : ' filename], 'to CSV');
         end
+        
         function out = getAcqIndexList(obj, type)
             % GETACQINDEXLIST provides the list of the acquisition indices
             % that are available for merging by "setAcquisitionRange"
@@ -290,6 +323,7 @@ classdef StatsManager < handle
                     end
             end
         end
+        
         function setAcquisitionRange(obj, indxRange)
             % SETACQUISITIONRANGE regroups a range of acquisitions to be
             % merged using the method "averageData".
@@ -320,6 +354,7 @@ classdef StatsManager < handle
                 ' added to average data array as group No. #' num2str(nextIndx) '.']);
             obj.update_dataArr;
         end
+        
         function resetAvgIndex(obj)
             % RESETAVGINDEX sets all acquisition indices in the average
             % data to zero.
