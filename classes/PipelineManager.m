@@ -1034,7 +1034,7 @@ classdef PipelineManager < handle
             % the same, we consider that the current step was already run.
             if isempty(dH)
                 return
-            elseif ( isequal(datetime(fcnInfo.date), dH.creationDatetime) &&...
+            elseif ( isequal(datetime(fcnInfo.datenum, 'ConvertFrom', 'datenum'), dH.creationDatetime) &&...
                     strcmp(step.funcStr, dH.funcStr) ) && isequaln(step.opts, dH.opts)
                 b_skip = true;
             end
