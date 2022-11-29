@@ -23,13 +23,13 @@ classdef StatsManager < handle
     properties (SetAccess = private)
         %         timestamp_list % List of timestamps associated with each object in list_of_objs.
         b_hasStatsToolbox  % True, if Matlab contains the Statistics and Machine learning toolbox.
-        inputFeatures % Structure containing some information about the input data. This will be used by plotting tools and the umIToolbox app.
-        dataArr  % structure with data extracted from "stats_data" that can be averaged using the method "setAcquisitionRange".
+        inputFeatures % Structure containing some information about the input data. This will be used by plotting tools and the umIToolbox app.        
     end
     properties (Access = private)
         stats_data  = {} % cell array containing all data and metaData created.
         avg_stats_data = {} % cell array similar to stats_data containing the average values of acquisitions. (See method averageData).
         headers = {} % cell array with the _stats_data column names as keys and indices as values.
+        dataArr  % structure with data extracted from "stats_data" that can be averaged using the method "setAcquisitionRange".
     end
     
     methods
@@ -173,23 +173,20 @@ classdef StatsManager < handle
         function out = getDataArr(obj, type)
            % GETDATAARR outputs the "dataArr" structure. If type = 'plot', 
            % the data is concatenated to facilitate plotting. 
-           
+           b_repack = false;
            out = obj.dataArr;           
-           if nargin>1
-               b_repack = strcmpi(type, 'plot');
-           else
-               b_repack = false;
+           if ( nargin > 1 ) 
+               b_repack = strcmpi(type, 'plot');           
            end
-           if ~b_repack
+           if ( ~b_repack )
                return
-           end
-           
-           % Repackage data for plotting:
-           if ismember(obj.inputFeatures.dataType,{'map','matrix'})
-               warning(['Operation aborted. Plot option not available for data type ' ...
+           end                      
+           if ( ismember(obj.inputFeatures.dataType,{'map','matrix'}) )
+               error(['Operation aborted. Plot option not available for data type ' ...
                    obj.inputFeatures.dataType])
                return
            end
+           % Repackage data for plotting:
            disp('repackaging data...')
            % Check for time-series:
            [hasT,indxT] = ismember('T', obj.inputFeatures.dim_names);
@@ -200,28 +197,56 @@ classdef StatsManager < handle
            else
                Xsz = 1; % For scalar data.
            end
-           % Preallocate output array with NaNs:
+           % Preallocate output array with maximum possible data size:
            nRec = numel(obj.dataArr);
            nEv = numel(obj.list_of_events);
            nROI = numel(obj.obs_list);         
            datOut = nan(prod([nRec,nEv,nROI]), Xsz, 'single');
            % Populate output data structure:
-           out = struct();
-           out.groupID = {obj.dataArr.groupID}';
-           out.SubjectID = {obj.dataArr.SubjectID}';
-           out.AcquisitionID = {obj.dataArr.AcquisitionID}';
-           out.RecStartDateTime = {obj.dataArr.RecStartDateTime}';
-           out.gIndx = []; out.sIndx = []; out.AcquisitionIndx = [];out.rIndx = [];out.eIndx = [];out.data = [];
-           %
-           [hasEv,indxEv] = ismember('E', obj.inputFeatures.dim_names);
+           out = struct('data',[],'gIndx', [],'sIndx', [],'rIndx',[],'eIndx',[],'AcquisitionIndx',[],...
+               'AcquisitionID', {},'RecStartDateTime',{});                     
+           [hasEv,indxEv] = ismember('E', obj.inputFeatures.dim_names);           
+           cnt = 1;
            for ii = 1:length(obj.dataArr)
-               dataSize = cellfun(@size, obj.dataArr(ii).data, 'UniformOutput',false);
-               
+               % Concatenate the data:               
+               dat = vertcat(obj.dataArr(ii).data{:});
+               if ( hasEv )
+                   datSz1 = size(obj.dataArr(ii).data{1},indxEv) * numel(obj.dataArr(ii).data);                   
+                   dat = reshape(permute(dat,[indxEv, setdiff(1:ndims(dat),indxEv)]),datSz1,[]); % Reshape data;                   
+               else
+                  datSz1 =  numel(obj.dataArr(ii).data);
+               end
+                   
+               if ( hasT )
+                   datSz2 = size(obj.dataArr(ii).data{1},indxT);
+               else
+                   datSz2 = 1;
+               end                              
+               % Add data to output array:
+               datOut(cnt:cnt+datSz1-1,1:datSz2) = dat;               
+               % Get meta data:
+               RecStartDateTime = repmat({obj.dataArr(ii).RecStartDateTime},datSz1,1); 
+               AcquisitionID = repmat({obj.dataArr(ii).AcquisitionID},datSz1,1);
+               aIndx = repmat(obj.dataArr(ii).AcquisitionIndx, datSz1,1);
+               gIndx = repmat(obj.dataArr(ii).gIndx,datSz1,1);               
+               sIndx = repmat(obj.dataArr(ii).sIndx,datSz1,1);
+               rIndx = repelem(obj.dataArr(ii).rIndx, datSz1/length(obj.dataArr(ii).rIndx),1);               
+               eIndx = repmat(obj.dataArr(ii).eIndx, datSz1/length(obj.dataArr(ii).eIndx),1);
+               % Add meta data to output structure:
+               out(1).gIndx = [out.gIndx; gIndx];
+               out.sIndx = [out.sIndx; sIndx];
+               out.rIndx = [out.rIndx; rIndx];               
+               out.eIndx = [out.eIndx; eIndx];
+               out.AcquisitionIndx = [out.AcquisitionIndx; aIndx];
+               out.AcquisitionID = [out.AcquisitionID; AcquisitionID];
+               out.RecStartDateTime = [out.RecStartDateTime; RecStartDateTime];               
+               cnt = cnt + datSz1;               
            end
-           
-           
-           
-           
+           out.data = datOut(~all(isnan(datOut),2),:);
+           out.groupID = unique(obj.list_of_groups);
+           out.SubjectID = unique({obj.dataArr.SubjectID});
+           out.EventID = obj.list_of_events;
+           out.ObsID = obj.obs_list;                      
         end
         
         function out = getAcqIndexList(obj, type)
