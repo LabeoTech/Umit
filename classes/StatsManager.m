@@ -24,7 +24,7 @@ classdef StatsManager < handle
         %         timestamp_list % List of timestamps associated with each object in list_of_objs.
         b_hasStatsToolbox  % True, if Matlab contains the Statistics and Machine learning toolbox.
         inputFeatures % Structure containing some information about the input data. This will be used by plotting tools and the umIToolbox app.
-        dataArr  % structure with data extracted from "stats_data" AND/OR "avg_stats_data"
+        dataArr  % structure with data extracted from "stats_data" that can be averaged using the method "setAcquisitionRange".
     end
     properties (Access = private)
         stats_data  = {} % cell array containing all data and metaData created.
@@ -168,6 +168,60 @@ classdef StatsManager < handle
             disp('Writing table to .CSV file...')
             writecell(data,filename);
             msgbox(['Data saved to file : ' filename], 'to CSV');
+        end
+        
+        function out = getDataArr(obj, type)
+           % GETDATAARR outputs the "dataArr" structure. If type = 'plot', 
+           % the data is concatenated to facilitate plotting. 
+           
+           out = obj.dataArr;           
+           if nargin>1
+               b_repack = strcmpi(type, 'plot');
+           else
+               b_repack = false;
+           end
+           if ~b_repack
+               return
+           end
+           
+           % Repackage data for plotting:
+           if ismember(obj.inputFeatures.dataType,{'map','matrix'})
+               warning(['Operation aborted. Plot option not available for data type ' ...
+                   obj.inputFeatures.dataType])
+               return
+           end
+           disp('repackaging data...')
+           % Check for time-series:
+           [hasT,indxT] = ismember('T', obj.inputFeatures.dim_names);
+           dataSize = arrayfun(@(x) cellfun(@(y) size(y), x.data, 'UniformOutput',false), obj.dataArr, 'UniformOutput', false)';
+           dataSize = vertcat(dataSize{:});
+           if ( hasT )               
+               Xsz = max(cellfun(@(x) x(indxT), dataSize));              
+           else
+               Xsz = 1; % For scalar data.
+           end
+           % Preallocate output array with NaNs:
+           nRec = numel(obj.dataArr);
+           nEv = numel(obj.list_of_events);
+           nROI = numel(obj.obs_list);         
+           datOut = nan(prod([nRec,nEv,nROI]), Xsz, 'single');
+           % Populate output data structure:
+           out = struct();
+           out.groupID = {obj.dataArr.groupID}';
+           out.SubjectID = {obj.dataArr.SubjectID}';
+           out.AcquisitionID = {obj.dataArr.AcquisitionID}';
+           out.RecStartDateTime = {obj.dataArr.RecStartDateTime}';
+           out.gIndx = []; out.sIndx = []; out.AcquisitionIndx = [];out.rIndx = [];out.eIndx = [];out.data = [];
+           %
+           [hasEv,indxEv] = ismember('E', obj.inputFeatures.dim_names);
+           for ii = 1:length(obj.dataArr)
+               dataSize = cellfun(@size, obj.dataArr(ii).data, 'UniformOutput',false);
+               
+           end
+           
+           
+           
+           
         end
         
         function out = getAcqIndexList(obj, type)
@@ -633,7 +687,6 @@ classdef StatsManager < handle
                 else
                     obj.dataArr(ind).eIndx = 0;
                 end
-                
             end
             disp('Done');
             % Local functions:
