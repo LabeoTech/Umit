@@ -23,6 +23,11 @@ function varargout = stripchart(x,y,varargin)
 %       error bar.
 %   axHandle (axis handle | default = GCA ): handle to the axis where the
 %       data will be plotted.
+%   dataTips (cell | default = {''}): cell array of characters containing
+%       text associated with the data point in the scatter plot. This info
+%       will be appended to the element's UserData structure and can be
+%       used to customize a data tip or to be able to easily retrieve meta
+%       data associated with a datapoint in the plot.
 % Outputs:
 %   Optional output:
 %   axHandle : handle to axis containing the plotted data.
@@ -39,6 +44,7 @@ addParameter(p,'color', 'b',@(x) ( ischar(x) || ismatrix(x))  || ( iscell(x) && 
 addParameter(p,'Xjitter',false,@islogical)
 addParameter(p,'Boxplot',false,@islogical);
 addParameter(p,'axHandle',[],@(x) isa(x, 'matlab.graphics.axis.Axes')| isempty(x));
+addParameter(p,'dataTips',{''},@iscell);
 % Parse inputs:
 parse(p,x, y, varargin{:});
 %Initialize Variables:
@@ -50,6 +56,7 @@ color = p.Results.color;
 b_Xjitter = p.Results.Xjitter;
 b_showBox = p.Results.Boxplot;
 axHandle = p.Results.axHandle;
+dataTips = p.Results.dataTips;
 clear p
 %%%%
 % Further input validation:
@@ -57,7 +64,7 @@ if isempty(axHandle)
     % Create new figure:
     figure; axHandle = gca;
 end
-[x,y,color,group] = validateVector(x,y,color,group);
+[x,y,color,group, dataTips] = validateVector(x,y,color,group, dataTips);
 % Extra Parameters:
 lenSpread = 0.8; % Data spreads 80% of the space between X points.
 MarkerAlpha = 0.5; % Dot transparency.
@@ -120,6 +127,7 @@ for ii = 1:xVec(end)
         s.MarkerEdgeColor = MarkerEdgeColor;
         s.SizeData = MarkerSize;
         s.UserData.Xpos = x(idxX & idxG); % Store data's initial X position in UserData.
+        s.UserData.DataTip = dataTips(idxX & idxG); % Store cell array of characters ("DataTips").
         s.Tag = ['scatG' num2str(jj) 'X' num2str(ii)];
     end
 end
@@ -129,13 +137,23 @@ if nargout
 end
 end
 %--------------------------------------------------------------------------
-function [x,y,c,g] = validateVector(x,y,c,g)
+function [x,y,c,g,dt] = validateVector(x,y,c,g,dt)
 % Check if all inputs have the same dimensions.
 
+if isempty([dt{:}])
+    dt = repmat({'null'}, size(x));
+end
 if isscalar(g)
     g = repmat(g, size(x));
 end
 
+if ( ismatrix(c) && numel(unique(g)) == size(c,1) )
+    col = zeros(size(g,1),3);
+    for ii = 1:size(col,1)
+        col(ii,:) = c(g(ii),:);
+    end
+    c = col;
+end
 if ischar(c)
     c = {c};
 end
@@ -168,7 +186,7 @@ if iscell(c)
     end
     c = col;
 end
-if ( ~isequaln(length(x), length(y), size(c,1), length(g)) )
+if ( ~isequaln(length(x), length(y), size(c,1), length(g), length(dt)) )
     ME = MException('stripchart:invalidInput', 'Input vectors must have the same size.');
     throwAsCaller(ME)
 end
@@ -187,6 +205,10 @@ end
 
 if size(g,1) < size(g,2)
     g = g';
+end
+
+if size(dt,1) < size(dt,2)
+    dt = dt';
 end
 end
 
