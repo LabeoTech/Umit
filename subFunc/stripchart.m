@@ -1,4 +1,4 @@
-function stripchart(x,y,varargin)
+function varargout = stripchart(x,y,varargin)
 % STRIPCHART strip plot for categorical variables.
 % This type of plot is built-in in Maltab R2021b and above. Thus, this is
 % an option for those with older Matlab versions.
@@ -8,16 +8,24 @@ function stripchart(x,y,varargin)
 %   x (int): column vector of x axis positions. This corresponds to the
 %   index of the categorical variable.
 %   y (float): column vector of data.
-% Optional inputs:
+%   Optional inputs:
+%   varType (char | 'std'): name of variation measure for error bars. It
+%       should be one of the following: "std" (standard deviation), "sem"
+%       (standard error of the mean) or "ci" (95% confidence interval).
 %   group (int| default = 1): Column vector of extra group indices. The x axis will be split
-%   between groups.
+%       between groups.
 %   color (char or 3xN array | default = 'b'): color of scatter plot. If an array is
-%   provided, it must have the same size of "y".
+%       provided, it must have the same size of "y".
 %   Xjitter (bool | default = false): Apply jitter in X axis. If TRUE, data points
-%   will be jittered randomly with an uniform distribution. Otherwise, the
-%   data points will be plotted over a single X axis point.
+%       will be jittered randomly with an uniform distribution. Otherwise, the
+%       data points will be plotted over a single X axis point.
+%   Boxplot (bool | default = false): If TRUE, show boxplot instead of
+%       error bar.
 %   axHandle (axis handle | default = GCA ): handle to the axis where the
-%   data will be plotted.
+%       data will be plotted.
+% Outputs:
+%   Optional output:
+%   axHandle : handle to axis containing the plotted data.
 
 %%% Arguments parsing and validation %%%
 p = inputParser;
@@ -116,6 +124,9 @@ for ii = 1:xVec(end)
     end
 end
 hold(axHandle, 'off');
+if nargout 
+    varargout = {axHandle};
+end
 end
 %--------------------------------------------------------------------------
 function [x,y,c,g] = validateVector(x,y,c,g)
