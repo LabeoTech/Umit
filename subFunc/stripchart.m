@@ -92,7 +92,8 @@ for ii = 1:xVec(end)
     for jj = 1:nG
         idxG = ( group == jj );
         data = y(idxX & idxG);
-        if isempty(data)
+        
+        if isempty(data(~isnan(data)))
             continue
         end
         myColor = unique(color(idxX & idxG,:),'rows');
@@ -228,14 +229,15 @@ if strcmpi(plotType, 'err')
         case 'ci'
             errDat = (tinv(1-0.025,length(data)-1)).*(std(data,0,'all','omitnan')./sqrt(length(data)));
     end
-    line(ax,[xCtr xCtr],[avgDat - errDat, avgDat + errDat],'Parent',hg);
-    line(ax,[xCtr - 0.6*xRange, xCtr + 0.6*xRange],...
-        [avgDat - errDat, avgDat - errDat; avgDat + errDat, avgDat + errDat]',...
-        'Parent',hg,'Tag','capLine');
+    line(ax,[xCtr xCtr],[avgDat - errDat, avgDat + errDat],'Parent',hg, 'Tag','errorLine');
+    line(ax,[xCtr - 0.6*xRange, xCtr + 0.6*xRange],[avgDat - errDat, avgDat - errDat],...
+        'Parent',hg,'Tag','NegativeCapLine');
+    line(ax,[xCtr - 0.6*xRange, xCtr + 0.6*xRange],[avgDat + errDat, avgDat + errDat],...
+        'Parent',hg,'Tag','PositiveCapLine');
     info.Mean = avgDat;
     info.(errType) = errDat;
 else
-    data = sort(data);
+    data = sort(data(~isnan(data)));
     % Calculate boxplot elements:
     med = median(data,'omitnan');
     avg = mean(data,'omitnan');
