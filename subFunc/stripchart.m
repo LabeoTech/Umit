@@ -114,7 +114,7 @@ for ii = 1:xVec(end)
         % Append the info structure with the original X axis position of
         % the data:
         errG.Tag = ['errG' num2str(jj) 'X' num2str(ii)];
-        errG.UserData.Xpos = x(idxX & idxG); % Store data's initial X position in object's UserData.
+        errG.UserData.Xpos = unique(x(idxX & idxG)); % Store data's initial X position in object's UserData.
         % Create scatter plot in selected positions:
         xPos = rand(size(data,1),1);
         if b_Xjitter
@@ -148,7 +148,7 @@ if isscalar(g)
     g = repmat(g, size(x));
 end
 
-if ( ismatrix(c) && numel(unique(g)) == size(c,1) )
+if ( isnumeric(c) && numel(unique(g)) == size(c,1) )
     col = zeros(size(g,1),3);
     for ii = 1:size(col,1)
         col(ii,:) = c(g(ii),:);
@@ -235,7 +235,7 @@ if strcmpi(plotType, 'err')
     line(ax,[xCtr - 0.6*xRange, xCtr + 0.6*xRange],[avgDat + errDat, avgDat + errDat],...
         'Parent',hg,'Tag','PositiveCapLine');
     info.Mean = avgDat;
-    info.(errType) = errDat;
+    info.Variation = errDat;
 else
     data = sort(data(~isnan(data)));
     % Calculate boxplot elements:
@@ -272,6 +272,7 @@ else
     info.Median = med;
     info.q1 = q1;
     info.q3 = q3;
+    info.NbOutliers = sum(data < lb | data > ub);
 end
 % Save plot's data to Group UserData:
 hg.UserData = info;
