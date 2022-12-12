@@ -36,7 +36,7 @@ function varargout = stripchart(x,y,varargin)
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder
 validateNumVec = @(x)isnumeric(x) & isvector(x);
-addRequired(p,'x',validateNumVec); % Validate if the input is a 3-D numerical matrix:
+addRequired(p,'x',validateNumVec); % Validate if the input is a numerical vector:
 addRequired(p,'y',validateNumVec); % Validate if the input is a numerical vector:
 addOptional(p,'varType','std',@(x) ismember(lower(x), {'sem', 'std','ci'}));
 addParameter(p,'group', 1, validateNumVec)
@@ -44,7 +44,7 @@ addParameter(p,'color', 'b',@(x) ( ischar(x) || ismatrix(x))  || ( iscell(x) && 
 addParameter(p,'Xjitter',false,@islogical)
 addParameter(p,'Boxplot',false,@islogical);
 addParameter(p,'axHandle',[],@(x) isa(x, 'matlab.graphics.axis.Axes')| isempty(x));
-addParameter(p,'dataTips',{''},@iscell);
+addParameter(p,'dataTip',{''},@iscell);
 % Parse inputs:
 parse(p,x, y, varargin{:});
 %Initialize Variables:
@@ -56,7 +56,7 @@ color = p.Results.color;
 b_Xjitter = p.Results.Xjitter;
 b_showBox = p.Results.Boxplot;
 axHandle = p.Results.axHandle;
-dataTips = p.Results.dataTips;
+dataTip = p.Results.dataTip;
 clear p
 %%%%
 % Further input validation:
@@ -64,7 +64,7 @@ if isempty(axHandle)
     % Create new figure:
     figure; axHandle = gca;
 end
-[x,y,color,group, dataTips] = validateVector(x,y,color,group, dataTips);
+[x,y,color,group, dataTip] = validateVector(x,y,color,group, dataTip);
 % Extra Parameters:
 lenSpread = 0.8; % Data spreads 80% of the space between X points.
 MarkerAlpha = 0.5; % Dot transparency.
@@ -128,7 +128,7 @@ for ii = 1:xVec(end)
         s.MarkerEdgeColor = MarkerEdgeColor;
         s.SizeData = MarkerSize;
         s.UserData.Xpos = x(idxX & idxG); % Store data's initial X position in UserData.
-        s.UserData.DataTip = dataTips(idxX & idxG); % Store cell array of characters ("DataTips").
+        s.UserData.DataTip = dataTip(idxX & idxG); % Store cell array of characters ("dataTip").
         s.Tag = ['scatG' num2str(jj) 'X' num2str(ii)];
     end
 end
