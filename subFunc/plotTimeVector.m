@@ -62,12 +62,14 @@ if isempty(axHandle)
     figure; axHandle = gca;
 end
 [color,group,dataTip] = validateMatrix(data, color, group, dataTip);
-ShadeAlpha = 0.4; % Dot transparency.
+ShadeAlpha = 0.2; % Patch transparency.
 % Get number of groups per X point:
 nG = numel(unique(group));
 % Plotting:
 hold(axHandle, 'on');
+
 for ii = 1:nG
+    hg = hggroup('Parent', axHandle);
     idxG = ( group == ii );
     dat = data(idxG,:);    
     if isempty(dat(~isnan(dat)))
@@ -92,27 +94,29 @@ for ii = 1:nG
     if strcmpi(plotType, 'shaded')
         % Plot shaded area:       
         p = patch(axHandle,[x(~isnan(avg)) fliplr(x(~isnan(avg)))],[avg(~isnan(avg)) - errDat(~isnan(errDat)),...
-            fliplr(avg(~isnan(avg)) + errDat(~isnan(errDat)))], myColor);
-        p.FaceAlpha = ShadeAlpha;
-        p.EdgeColor = myColor;
-        p.Tag = ['ShadeG' num2str(ii)];
-        p.UserData.(varType) = errDat;
+            fliplr(avg(~isnan(avg)) + errDat(~isnan(errDat)))], myColor,'Parent',hg);
+        set(p,'FaceAlpha',ShadeAlpha,...
+            'EdgeColor', myColor,...
+            'Tag',['ShadeG' num2str(ii)]);        
     else
         % Plot individual lines:
         Tips = dataTip(idxG);
         for jj = 1:size(dat,1)
-            p(jj) = plot(axHandle,x,dat(jj,:),'Color',myColor, 'Tag',['dataLn' num2str(jj), 'G', num2str(ii)]);
+            p(jj) = plot(axHandle,x,dat(jj,:),'Color',myColor, 'Tag',['dataLn' num2str(jj), 'G', num2str(ii)], 'Parent',hg);
             p(jj).Color(4) = ShadeAlpha;
             p(jj).UserData.DataTip = Tips(jj);
         end
     end
     % Plot Average line on top of previous plot(s):
-    avgLn(ii) = plot(x,avg, 'Color', myColor,'LineWidth',2,'Tag',['avgLnG', num2str(ii)]);
-    avgLn(ii).UserData.Mean = avg;    
+    avgLn(ii) = plot(x,avg, 'Color', myColor,'LineWidth',2,'Tag',['avgLnG', num2str(ii)], 'Parent', hg);%#ok. Otherwise, I cannot get a handle array.
+    hg.Tag = ['timeVecG' num2str(ii)];  
+    hg.UserData.Mean = avg;
+    hg.UserData.std = std(dat,0,1,'omitnan');% Be sure to always have the standard deviation field.
+    hg.UserData.Ndata = size(dat,1); % Store the number of data used to calculate the error bar. This can be used to recalculate the error later.
+    if ~strcmpi(varType, 'std')
+        hg.UserData.(varType) = errDat;
+    end
 end
-% Put all average lines on top to facilitate visualization:
-uistack(avgLn, 'top');
-% 
 hold(axHandle, 'off');
 if nargout
     varargout = {axHandle};

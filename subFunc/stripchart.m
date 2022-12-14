@@ -115,6 +115,7 @@ for ii = 1:xVec(end)
         % the data:
         errG.Tag = ['errG' num2str(jj) 'X' num2str(ii)];
         errG.UserData.Xpos = unique(x(idxX & idxG)); % Store data's initial X position in object's UserData.
+        errG.UserData.Ndata = sum(idxX & idxG); % Store the number of data used to calculate the error bar. This can be used to recalculate the error later.
         % Create scatter plot in selected positions:
         xPos = rand(size(data,1),1);
         if b_Xjitter
@@ -235,7 +236,10 @@ if strcmpi(plotType, 'err')
     line(ax,[xCtr - 0.6*xRange, xCtr + 0.6*xRange],[avgDat + errDat, avgDat + errDat],...
         'Parent',hg,'Tag','PositiveCapLine');
     info.Mean = avgDat;
-    info.Variation = errDat;
+    info.std = std(data,0,'all','omitnan'); % Be sure to always have the standard deviation
+    if ~strcmpi(errType, 'std')
+        info.(errType) = errDat;
+    end
 else
     data = sort(data(~isnan(data)));
     % Calculate boxplot elements:
