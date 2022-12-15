@@ -333,13 +333,29 @@ classdef StatsManager < handle
                     idxE = true;
                     obj.dataArr(ind).eIndx = 0;
                 end
-                if any(idxE)
-                    % Remove data corresponding to missing events:
-                    obj.dataArr(ind).data = cellfun(@(x) x(idxE), obj.dataArr(ind).data, 'UniformOutput',false);
-                    obj.dataArr(ind).eIndx(~idxE) = [];
-                    obj.dataArr(ind).labels(~idxE) = [];
-                else
-                    idxErase(ind) = true; % Erase everything.
+                % Manage missing events:
+                if ( obj.dataArr(ind).b_hasEvents )
+                    if  any(idxE)
+                        indxE = find(strcmp(obj.dataArr(ind).MatFile.dim_names,'E'));
+                        permE = [indxE, setdiff(1:numel(obj.dataArr(ind).MatFile.dim_names), indxE)];                        
+                        
+                        % Remove data corresponding to missing events:
+                        for kk = 1:length(obj.dataArr(ind).data)
+                            tmp = permute(obj.dataArr(ind).data{kk},permE);
+                            sz = size(tmp);
+                            tmp = reshape(tmp,sz(1),[]);
+                            tmp(~idxE,:) = []; % Erase missing events
+                            sz(1) = sum(idxE);
+                            tmp = reshape(tmp,sz);
+                            obj.dataArr(ind).data{kk} = ipermute(tmp,permE);                            
+                        end
+                        % Update meta data:
+                        obj.dataArr(ind).eIndx(~idxE) = [];
+                        obj.dataArr(ind).labels(~idxE) = [];
+                        clear tmp sz indxE permE
+                    else
+                        idxErase(ind) = true; % Erase everything.
+                    end
                 end
                 % Remove data corresponding to missing observations:
                 if any(idxObs)
