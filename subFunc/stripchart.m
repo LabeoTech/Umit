@@ -19,6 +19,9 @@ function varargout = stripchart(x,y,varargin)
 %   Xjitter (bool | default = false): Apply jitter in X axis. If TRUE, data points
 %       will be jittered randomly with an uniform distribution. Otherwise, the
 %       data points will be plotted over a single X axis point.
+%   XGroup (bool | default = true): If TRUE, plots the data side by side
+%       around each X axis point. If FALSE, overlays the data on each X
+%       axis point.
 %   Boxplot (bool | default = false): If TRUE, show boxplot instead of
 %       error bar.
 %   axHandle (axis handle | default = GCA ): handle to the axis where the
@@ -42,6 +45,7 @@ addOptional(p,'varType','std',@(x) ismember(lower(x), {'sem', 'std','ci'}));
 addParameter(p,'group', 1, validateNumVec)
 addParameter(p,'color', 'b',@(x) ( ischar(x) || ismatrix(x))  || ( iscell(x) && ischar(x{:}) ));
 addParameter(p,'Xjitter',false,@islogical)
+addParameter(p,'XGroup',true,@islogical)
 addParameter(p,'Boxplot',false,@islogical);
 addParameter(p,'axHandle',[],@(x) isa(x, 'matlab.graphics.axis.Axes')| isempty(x));
 addParameter(p,'dataTip',{''},@iscell);
@@ -54,6 +58,7 @@ varType = p.Results.varType;
 group = p.Results.group;
 color = p.Results.color;
 b_Xjitter = p.Results.Xjitter;
+b_isCat = p.Results.XGroup;
 b_showBox = p.Results.Boxplot;
 axHandle = p.Results.axHandle;
 dataTip = p.Results.dataTip;
@@ -65,6 +70,10 @@ if isempty(axHandle)
     figure; axHandle = gca;
 end
 [x,y,color,group, dataTip] = validateVector(x,y,color,group, dataTip);
+if ( b_showBox && ~b_isCat )
+    warning('Boxplot option not available for non-categorical data. The data will be treated as categorical')
+    b_isCat = true;
+end
 % Extra Parameters:
 lenSpread = 0.8; % Data spreads 80% of the space between X points.
 MarkerAlpha = 0.5; % Dot transparency.
@@ -100,16 +109,26 @@ for ii = 1:xVec(end)
         % Create Errorbar in X-centers:
         % Group lines in a single graphical object:
         if b_showBox
+            % Create Boxplot of categorical data:
             errG = plotGroup(axHandle, data, xCtr(ii,jj), (lenSpread/nG) - spacing, 'box');
             % Customize the colors and line widths of boxplot elements:
             medLine = findobj(errG,'Tag','Median'); set(medLine, 'LineWidth',ErrorLineWidth,'Color',myColor);
             avgLine = findobj(errG, 'Tag','Mean'); set(avgLine, 'LineWidth',ErrorLineWidth, 'Color', myColor);
             boxPatch = findobj(errG,'Tag','Box'); set(boxPatch, 'FaceColor',myColor);                        
-        else
+        elseif b_isCat
+            % Create custom error bars of categorical data
             errG = plotGroup(axHandle, data,xCtr(ii,jj), (lenSpread/nG) - spacing, 'err', varType);
             arrayfun(@(x) set(x, 'Color',myColor,'LineWidth', 0.7*ErrorLineWidth), errG.Children);
             idxAvgLine = strcmp({errG.Children.Tag},'avgLine');
             set(errG.Children(idxAvgLine), 'LineWidth', ErrorLineWidth);
+        else
+            % Create standard line plot with errorbars (like for continuous
+            % data):
+            % Create custom error bars of categorical data
+            errG = plotGroup(axHandle, data,xVec(ii), 0, 'err', varType);
+            arrayfun(@(x) set(x, 'Color',myColor,'LineWidth', 0.7*ErrorLineWidth), errG.Children);
+            idxAvgLine = strcmp({errG.Children.Tag},'avgLine');
+            set(errG.Children(idxAvgLine), 'LineWidth', ErrorLineWidth);                        
         end
         % Append the info structure with the original X axis position of
         % the data:
@@ -120,6 +139,8 @@ for ii = 1:xVec(end)
         xPos = rand(size(data,1),1);
         if b_Xjitter
             xPos = rescale(xPos,xLim(ii,jj)+spacing/2,xLim(ii,jj+1)-spacing/2);
+        elseif ~b_isCat
+            xPos = repmat(xVec(ii),length(data),1);
         else
             xPos = repmat(xCtr(ii,jj),length(data),1);
         end
@@ -133,6 +154,18 @@ for ii = 1:xVec(end)
         s.Tag = ['scatG' num2str(jj) 'X' num2str(ii)];
     end
 end
+% Create a line between error bars if XGroup is not applied:
+if ~b_isCat
+   for ii = 1:nG
+      avgH = findobj(axHandle, '-regexp','Tag', ['errG' num2str(ii) 'X\d+']);      
+      if ~isempty(avgH)
+          indx = regexp({avgH.Tag}, '(?<=errG\d+X)\d+','match'); indx = cellfun(@str2double,[indx{:}]);
+          avg = arrayfun(@(x) x.UserData.Mean,avgH(indx));
+          plot(axHandle, xVec, avg,'Color', avgH(1).Children(1).Color, 'LineWidth',1);
+      end
+   end
+end
+
 hold(axHandle, 'off');
 if nargout 
     varargout = {axHandle};
@@ -215,8 +248,14 @@ end
 end
 
 function hg = plotGroup(ax,data,xCtr, xRange,plotType, varargin)
-errType = [varargin{:}];
+if nargin > 5
+    errType = varargin{1};
+end
 xRange = xRange/2;
+CapSz = xRange*0.6; % Error cap width.
+if xRange == 0
+    CapSz = 0.15; % Force fixed cap size for non-grouped data (b_isCat == FALSE)
+end
 hg = hggroup('Parent', ax);
 info = struct();
 if strcmpi(plotType, 'err')
@@ -231,9 +270,9 @@ if strcmpi(plotType, 'err')
             errDat = (tinv(1-0.025,length(data)-1)).*(std(data,0,'all','omitnan')./sqrt(length(data)));
     end
     line(ax,[xCtr xCtr],[avgDat - errDat, avgDat + errDat],'Parent',hg, 'Tag','errorLine');
-    line(ax,[xCtr - 0.6*xRange, xCtr + 0.6*xRange],[avgDat - errDat, avgDat - errDat],...
+    line(ax,[xCtr - CapSz, xCtr + CapSz],[avgDat - errDat, avgDat - errDat],...
         'Parent',hg,'Tag','NegativeCapLine');
-    line(ax,[xCtr - 0.6*xRange, xCtr + 0.6*xRange],[avgDat + errDat, avgDat + errDat],...
+    line(ax,[xCtr - CapSz, xCtr + CapSz],[avgDat + errDat, avgDat + errDat],...
         'Parent',hg,'Tag','PositiveCapLine');
     info.Mean = avgDat;
     info.std = std(data,0,'all','omitnan'); % Be sure to always have the standard deviation
