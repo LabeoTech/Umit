@@ -43,7 +43,7 @@ addRequired(p,'x',validateNumVec); % Validate if the input is a numerical vector
 addRequired(p,'y',validateNumVec); % Validate if the input is a numerical vector:
 addOptional(p,'varType','std',@(x) ismember(lower(x), {'sem', 'std','ci'}));
 addParameter(p,'group', 1, validateNumVec)
-addParameter(p,'color', 'b',@(x) ( ischar(x) || ismatrix(x))  || ( iscell(x) && ischar(x{:}) ));
+addParameter(p,'color', '',@(x) ( ischar(x) || ismatrix(x))  || ( iscell(x) && ischar(x{:}) ));
 addParameter(p,'Xjitter',false,@islogical)
 addParameter(p,'XGroup',true,@islogical)
 addParameter(p,'Boxplot',false,@islogical);
@@ -181,7 +181,9 @@ end
 if isscalar(g)
     g = repmat(g, size(x));
 end
-
+if isempty(c)
+    c = jet(numel(unique(g))); % Create default colors from "jet" colormap
+end
 if ( isnumeric(c) && numel(unique(g)) == size(c,1) )
     col = zeros(size(g,1),3);
     for ii = 1:size(col,1)
@@ -233,10 +235,10 @@ end
 if size(y,1) < size(y,2)
     y = y';
 end
-
-if size(c,1) < size(c,2)
-    c = c';
-end
+% 
+% if size(c,1) < size(c,2)
+%     c = c';
+% end
 
 if size(g,1) < size(g,2)
     g = g';

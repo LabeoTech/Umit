@@ -188,7 +188,7 @@ classdef StatsManager < handle
             
             
             if ~ismember(lower(type), {'original', 'available', 'current'})
-                error('Input should be either "original" or "available".')
+                error('Input should be either "original", "available" or "current".')
             end
             
             switch lower(type)
@@ -382,7 +382,7 @@ classdef StatsManager < handle
                 out = struct();
                 % Average data
                 cols2copy = {'groupID','SubjectID','ModalityID', 'labels',...
-                    'dataSize', 'MatFile'};
+                    'dataSize', 'MatFile', 'b_hasEvents'};
                 for ii = 1:length(cols2copy)
                     out.(cols2copy{ii}) = dataIn{1,obj.hMap(cols2copy{ii})};
                 end
