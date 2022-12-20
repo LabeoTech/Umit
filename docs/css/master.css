@@ -50,7 +50,7 @@ pre, code, samp{
 pre {
   text-align: left;
   white-space: pre-line;
-  padding: 10px 10px 10px 10px;
+  padding: 10px;
   border-left: 0;
   margin-left: 0;
   margin: 0;
@@ -63,4 +63,18 @@ pre {
 body{
   margin-left:40px;
   margin-right:40px;
+}
+.add_font_monospace{
+  font-family: monospace;
+}
+.black-box {
+  color: white;
+  background-color: black;
+  padding-left: 20px;
+  margin: 0px;
+}
+.code-block{
+  display: block;
+  white-space: pre-wrap;
+  margin: 0px;
 }

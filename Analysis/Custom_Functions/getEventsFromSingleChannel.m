@@ -97,20 +97,32 @@ if endsWith(object.MetaDataFile, '.mat')
     % For data created in PsychToolbox:
     a = load(object.MetaDataFile);
 elseif endsWith(object.MetaDataFile, '.csv')
+    
     % For data created in PsychoPy:
     a = readtable(object.MetaDataFile);
-    a = a(~isnan(a.SF),:);
     condList = cell(1,height(a));
-    colNames = a.Properties.VariableNames;
-    indx = find(strcmp(colNames,'trials_thisRepN'));
-    colNames = colNames(1:indx-1);
-    for i = 1:height(a)
-        str = {};
-        for j = 1:numel(colNames)
-            str = [str,{[colNames{j} num2str(a.(colNames{j})(i))]}];
+    if isfield(a,'SF')
+        % For Veronique:
+        a = a(~isnan(a.SF),:);        
+        colNames = a.Properties.VariableNames;
+        indx = find(strcmp(colNames,'trials_thisRepN'));
+        colNames = colNames(1:indx-1);
+        for i = 1:height(a)
+            str = {};
+            for j = 1:numel(colNames)
+                str = [str,{[colNames{j} num2str(a.(colNames{j})(i))]}];
+            end
+            condList{i} = strjoin(str,'-');
         end
-        condList{i} = strjoin(str,'-');
+    elseif isfield(a, 'Contrast')
+        % For Catherine:
+        % Here the columns of interest are : "AngDir" and "Contrast". DO
+        % NOT CHANGE THEM!
+        a = a(~isnan(a.Contrast),:);        
+        condList = arrayfun(@(x,y) ['Dir-', num2str(x), 'Cont-',num2str(y)], ...
+            a.AngDir, a.Contrast, 'UniformOutput',false);        
     end
+    
 elseif endsWith(object.MetaDataFile, '.txt')
     % For data created in DMD system
     disp('CREATING SECTION ...');
