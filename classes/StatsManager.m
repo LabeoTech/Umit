@@ -14,6 +14,7 @@ classdef StatsManager < handle
         list_of_groups % Cell array of group names of objects from list_of_objs.
         list_of_events % current list of event Names from all objects.
         % !!If the input data has no events, the list will contain the string"NoEvents" !!
+        list_of_subjects % Current list of Subject Names.
         stats_filename % Filename of .MAT file saved using "save2Mat.m"
         % function.
         MfileArr       % Array of MATFILE objects.
@@ -27,6 +28,7 @@ classdef StatsManager < handle
         dataArr  % structure with data extracted from "stats_data" that can be averaged using the method "setAcquisitionRange".
         obs_list_original % Cell Array of observations from stats_filename when this object was created.
         list_of_events_original% Cell array of event Names from all objects when this object was created.
+        list_of_subjects_original % Cell array of Subject Names from all objects when this object was created.
     end
     properties (Access = private)
         stats_data  = {} % cell array containing all data and metaData created.
@@ -51,6 +53,8 @@ classdef StatsManager < handle
             obj.getEventList; % Get list of events and store it to "list_of_events" property.
             obj.list_of_events_original = obj.list_of_events;
             obj.gen_dataArr;
+            obj.list_of_subjects = unique({obj.dataArr.SubjectID});
+            obj.list_of_subjects_original = obj.list_of_subjects;
             obj.validateData; % Identifies the type of input data and other properties.
             
             % Check if Matlab's Stats. toolbox exist:
