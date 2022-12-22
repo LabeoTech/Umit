@@ -69,6 +69,7 @@ body{
 }
 .black-box {
   color: white;
+  border-radius: 20px;
   background-color: black;
   padding-left: 20px;
   margin: 0px;

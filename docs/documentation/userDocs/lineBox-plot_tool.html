@@ -14,28 +14,29 @@
     <h2>Line/Box plot tool</h2>
     <hr>
     <p>
-      This tool is part of the <i>Analysis</i> tab from the <a href="umIToolbox.html"><samp>umIToolbox</samp></a> app. This tool allows one to visualize longitudinal data that can be segregated into one or more experimental groups.
+      This tool is part of the <i>Analysis</i> tab from the <a href="umIToolbox.html"><samp>umIToolbox</samp></a> app. It plots scalar (i.e. single values) or time vectors (i.e. 1 x N array).
     </p>
     <div class="infonote">
       <p><strong>Note</strong><br>
         This documentation does not cover the steps that precede the usage of the <i>Line/Box tool</i>.<br>
-        For more information on how to create the files used in the <i>Analysis</i> tab of <samp>umIToolbox</samp> as well as on how to separate the data into groups, check the tutorials on <a href="../gs_index.html"> how to extract, group and visualize grouped data</a>.
+        For more information on how to create the files used in the <a href="./umIToolbox-Analysis.html"><i>Analysis</i></a> tab of the <a href="./umIToolbox.html"><i>umIToolbox</i></a> app as well as on how to separate the data into groups, check the tutorials on <a href="../gs_index.html"> how to extract, group and visualize grouped data</a>.
       </p>
     </div>
     <p>
-      To use the tool, first, select the <b>recordings</b>, <b>files</b> and <b>ROIs</b> to be displayed. Then, launch the tool by clicking on <i>Line/Box plots</i> button in the <i>Apps & tools</i> panel.
+      To use the tool, first, select the <b>recordings</b> and <b>files</b>. If the data contains scalar or time series, the <b>Line/Box plot</b> button will be enabled. Launch the tool by clicking on <i>Line/Box plots</i> button.
     </p>
-    <div class="infonote">
-      <p><strong>Note</strong><br>
-        The current version of the tool displays the data as line plots. Box plots will be available on a later release of the toolbox!
-      </p>
-    </div>
-    <h4>Limitations</h4>
-    <p>This tool accepts only one numerical value per ROI.</p>
+    <h3 id="sections">Sections</h3>        
+    <hr>
+    <ul>
+      <li><a href="#the-interface">The interface</a></li>
+      <li><a href="#plotting-scalar-data">Plotting scalar data</a></li>
+      <li><a href="#plotting-time-series">Plotting time series</a></li>
+      <li><a href="#how-to-regroup-data">How to regroup data</a></li>
+    </ul>
     <h3 id="the-interface">The interface</h3>
     <hr>
     <p>
-      Once the tool is launched, the data is plotted as the ROI values as a function of time. By default, the data is shown as the ROI values grouped by acquisition over time. Individual data points are shown as a scatter plot while the average (+- standard deviation) is shown as a line plot.
+      Once the tool is launched, the data is plotted as amplitude as a function of acquisitions. By default, the data is shown as the ROI values grouped by acquisition over time. Individual data points are shown as a scatter plot while the average (+- standard deviation) is shown as a line plot.
     </p>
     <p>
       The interface comprises of three or more figures: the <i>display options</i>, <i>main window</i> and one or more <i>summary windows</i>:
