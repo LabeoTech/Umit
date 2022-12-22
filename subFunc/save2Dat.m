@@ -5,7 +5,7 @@ function save2Dat(DatFileName, data, metaData)
 % Inputs:
 % DatFileName (str): fullpath of .DAT file.
 % data (numerical array): non-empty "single" numeric multi-dimensional matrix.
-% metaData (struct): meta data associated with "data".
+% metaData (struct): meta data associated with "data".UUU
 
 % Arguments validation
 p = inputParser;
@@ -18,6 +18,10 @@ DatFileName = p.Results.DatFileName;
 data = p.Results.data;
 metaData = p.Results.metaData;
 clear p
+% Apply filename extension:
+if ~endsWith(DatFileName, '.dat')
+    DatFileName = [DatFileName, '.dat'];
+end
 % Further validate dim_names:
 root = fileparts(mfilename('fullpath'));
 dim_names_info = load(fullfile(root, 'dimension_names.mat'));
