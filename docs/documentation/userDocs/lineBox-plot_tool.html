@@ -14,7 +14,7 @@
     <h2>Line/Box plot tool</h2>
     <hr>
     <p>
-      This tool is part of the <i>Analysis</i> tab from the <a href="umIToolbox.html"><samp>umIToolbox</samp></a> app. It plots scalar (i.e. single values) or time vectors (i.e. 1 x N array).
+      This tool is part of the <i>Analysis</i> tab from the <a href="umIToolbox.html"><samp>umIToolbox</samp></a> app. It displays scalar (i.e. single values) or time vectors (i.e. 1 x N array).
     </p>
     <div class="infonote">
       <p><strong>Note</strong><br>
@@ -34,36 +34,60 @@
       <li><a href="#how-to-regroup-data">How to regroup data</a></li>
     </ul>
     <h3 id="the-interface">The interface</h3>
-    <hr>
-    <p>
-      Once the tool is launched, the data is plotted as amplitude as a function of acquisitions. By default, the data is shown as the ROI values grouped by acquisition over time. Individual data points are shown as a scatter plot while the average (+- standard deviation) is shown as a line plot.
-    </p>
+    <hr>    
     <p>
       The interface comprises of three or more figures: the <i>display options</i>, <i>main window</i> and one or more <i>summary windows</i>:
     </p>
     <p style="text-align: center;">
       <img src="../assets/img/line-box_tool_fig1.png" alt="line-box_tool_fig1" width="990"><br>
-      <i>Main components of Line/Box tool interface. (1) Display options: controls the axis parameters and changes the ROI shown in the main window. (2) Main window: figure showing the current ROI data. (3) Summary window(s): One or more figures containing up to six subplots with all the ROIs loaded.</i>
+      <i>Main components of Line/Box tool interface. (1) Display options: controls the axis parameters and changes the data shown in the main window. (2) Main window: figure with larger axis for data exploration. (3) Summary window(s): one or more figures containing up to eight small subplots each.</i>
     </p>
     <h4 id="1-display-options">1. Display options</h4>
     <ul>
-      <li>Save/Export &gt;&gt;
+      <li>Menu &gt;&gt; Figures &gt;&gt;
         <ul>
-          <li><b><i>Save figures</i></b>: saves individual plots in Matlab's <samp>.fig</samp> file format
-           </li>
-           <li><b><i>Export figures</i></b>: exports individual plots to one of the following image file formats: <i>.PNG (24-bit), .JPEG (24-bit), .PDF or .EPS</i></li>
+          <li><b><i>Save to .FIG</i></b>: saves individual plots in Matlab's <samp>.fig</samp> file format</li>
+           <li><b><i>Export</i></b>: exports individual plots to one of the following image file formats: <i>.PNG (24-bit), .JPEG (24-bit), .PDF or .EPS</i></li>
         </ul>
         <div class="infonote">
           <p><strong>Note</strong><br>
-            Each plot will be saved in a separate file with a name composed of a string and the name of the ROI appended with an underscore (FILENAME_ROINAME).
+            Each plot will be saved in a separate file with a name composed of a string and the name of the ROI appended with an underscore (FILENAME_AXIS-TITLE).
           </p>
         </div>
       </li>
-      <li><b><i>ROI in figure</i></b> dropdown menu: chooses the ROI data to show in the main window (2)</li>
-      <li>Axis settings panel:
+      <li> Menu &gt;&gt; Data &gt;&gt;
         <ul>
-          <li><b><i>X/Y label</i></b>: X and Y axis labels</li>
-          <li>Y scale panel
+          <li><b>Select</b>: launches the <a href=""><b>data selection</b></a> tool. This tool allows one to determine how the data is displayed in the axes.</li>
+          <div class="infonote">
+            <p><strong>Note</strong><br>
+              For scalar datasets, the <i>Line/Box plot</i> tool will display the data as the amplitude of different experimental groups as a function of the acquisition index with each axis containing the data of one observation (as the example shown in the figure above). For time series, the X axis will display the temporal profile of the dataset instead. 
+            </p>
+          </div>
+        </ul>
+      </li>
+      <li><b><i>Data in main figure</i></b>: dropdown menu with the axis currently displayed in the <i>main figure</i></li>          
+      <li>Axis options panel:
+        <ul>
+          <li><b><i>X/Y label</i></b>: Text fields with main figure's axis labels</li>
+          <div class="tipnote">
+            <p><strong>Tip</strong><br>
+              The <b>X</b> and <b>Y</b> labels have the <samp>Interpreter</samp> property set to <samp>Tex</samp>. This allows one to add special characters. For instance, the text <span class="code-inline"> \Delta/F (x100)</span> will be displayed as <b>&Delta;F/F(x100)</b>.
+            </p>
+          </div>
+          <li><i>Group plot type</i> dropdown menu &gt;&gt; <b>For scalar data ONLY</b>: 
+            <ul>
+              <li><b><i>Error bar</i></b>: Shows error bars with group average &pm; variation (see <a href="#variation-type-panel">variation type panel</a> options below</li>
+              <li><b><i>Box plot</i></b>: Shows a box plot per group per X data value with the following measures:</li>
+              <div style="display: flex;">
+                <img src="../assets/img/line-box_tool_box-plot.png" alt="line-box_tool_box-plot" width="260">
+                <p>
+                  Here, the interquartile range is the range between the 25th (<b>q1</b>) and 75th (<b>q3</b>) percentiles while the upper and lower adjacent values are the highest and loest value that fall inside the whisker lengths. The lengths of the upper and lower whiskers are calculated as follows : <span class="code-inline"> upper_whisker_lenght = q3 + 1.5 × (q3 – q1)</span> and <span class="code-inline"> lower_whisker_length = q1 – 1.5 × (q3 – q1)</span>
+                </p>
+              </div>                              
+            </ul>                    
+          </li>
+          <div class="black-box"><p>TO BE CONTINUED FROM HERE!!</p></div>
+          <li>Y limits panel
             <ul>
               <li><b><i>Auto</i></b>: sets automatic Y limits for each individual plot (default)</li>
               <li><b><i>Uniform</i></b>: sets the same Y axis limits to all plots</li>

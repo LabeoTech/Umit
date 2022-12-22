@@ -136,9 +136,9 @@ for ii = 1:xVec(end)
         errG.UserData.Xpos = unique(x(idxX & idxG)); % Store data's initial X position in object's UserData.
         errG.UserData.Ndata = sum(idxX & idxG); % Store the number of data used to calculate the error bar. This can be used to recalculate the error later.
         % Create scatter plot in selected positions:
-        xPos = rand(size(data,1),1);
+        
         if b_Xjitter
-            xPos = rescale(xPos,xLim(ii,jj)+spacing/2,xLim(ii,jj+1)-spacing/2);
+            xPos = rescale(rand(size(data,1),1),xLim(ii,jj)+spacing/2,xLim(ii,jj+1)-spacing/2);
         elseif ~b_isCat
             xPos = repmat(xVec(ii),length(data),1);
         else
