@@ -49,7 +49,7 @@
       </li>
       <li> Menu &gt;&gt; Data &gt;&gt;
         <ul>
-          <li><b>Select</b>: launches the <a href=""><b>data selection</b></a> tool. This tool allows one to determine how the data is displayed in the axes.</li>
+          <li><b>Select</b>: launches the <a href="./data-selector_tool.html"><b>data selection</b></a> tool. This tool allows one to determine how the data is displayed in the axes.</li>
           <div class="infonote">
             <p><strong>Note</strong><br>
               For scalar datasets, the <i>Line/Box plot</i> tool will display the data as the amplitude of different experimental groups as a function of the acquisition index with each axis containing the data of one observation (as the example shown in the figure above). For time series, the X axis will display the temporal profile of the dataset instead. 
@@ -70,21 +70,22 @@
             <ul>
               <li><b><i>Error bar</i></b>: Shows error bars with group average &pm; variation (see <a href="#variation-type-panel">variation type panel</a> options below)</li>
               <li><b><i>Box plot</i></b>: Shows a box plot per group per X data value with the following measures:</li>
-              <div style="display: flex;">
-                <img src="../assets/img/line-box_tool_box-plot.png" alt="line-box_tool_box-plot" width="260">
-                <p>
-                  Here, the interquartile range is the range between the 25th (<b>q1</b>) and 75th (<b>q3</b>) percentiles while the upper and lower adjacent values are the highest and lowest value that fall inside the whiskers' lengths. The lengths of the upper and lower whiskers are calculated as follows : <span class="code-inline"> upper_whisker_lenght = q3 + 1.5 × (q3 – q1)</span> and <span class="code-inline"> lower_whisker_length = q1 – 1.5 × (q3 – q1)</span>
-                </p>
-              </div>                              
+                <img style="float:left" src="../assets/img/line-box_tool_box-plot.png" alt="line-box_tool_box-plot" width="260" height="166">
+                <div>
+                  <p>
+                    Here, the interquartile range is the range between the 25th (<b>q1</b>) and 75th (<b>q3</b>) percentiles while the upper and lower adjacent values are the highest and lowest value that fall inside the whiskers' lengths. The lengths of the upper and lower whiskers are calculated as follows : <span class="code-inline"> upper_whisker_lenght = q3 + 1.5 × (q3 – q1)</span> and <span class="code-inline"> lower_whisker_length = q1 – 1.5 × (q3 – q1)</span>
+                  </p>
+                </div>
             </ul>                    
           </li>
+          <br><br><br><br>
           <li>Y limits panel
             <ul>
               <li><b><i>Auto</i></b>: sets automatic Y limits for each individual plot (default)</li>
               <li><b><i>Uniform</i></b>: sets the same Y axis limits to all plots</li>
               <li><b><i>Fixed</i></b>: set Y limits to all plots using the <b>min</b> and <b>max</b> values</li>
               <li><b><i>Linear</i></b>: sets the Y scale as linear (default)</li>
-              <li><b><i>Log</i></b>:sets the Y scale as logarithmic</li>
+              <li><b><i>Log</i></b>: sets the Y scale as logarithmic</li>
             </ul>
           </li>
           <li>X axis options panel
