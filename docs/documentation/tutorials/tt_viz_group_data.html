@@ -45,54 +45,48 @@
     </p>
     <img src="../assets/img/tt_viz_data_file_selection_in_main_gui.png" alt="tt_viz_data_file_selection_in_main_gui" width="660">
     <p>
-      4. Once the <samp>.mat</samp> file is selected, a list of ROI names will appear on the <i>Select observation(s)</i> list box. Highlight the ROIs that you want to visualize and click on the <i>Select</i> button. Here, we will select the left and right primary visual areas (V1_L and V1_R):
+      4. Click on the <b>Select</b> button to load the data.
     </p>
-    <img src="../assets/img/tt_viz_data_obs_selection_in_main_gui.png" alt="tt_viz_data_obs_selection_in_main_gui" width="660">
+    <img src="../assets/img/tt_viz_data_obs_selection_btn_pressed.png" alt="tt_viz_data_obs_selection_btn_pressed" width="660" >
     <p>
-      Notice in the image above that the content of the <i>Apps & tools</i> panel is now visible. Here, we will use the <i>Line/Box plots</i> tool to visualize the selected data. For more information on this and other tools from this panel, please refer to the <i>Analysis</i> section of the umIToolbox <a href="../userDocs/umIToolbox-Analysis.html">documentation</a>.
+      5. Now the <b>Apps & tools</b> panel is visible. Here, you can use the different tools in the <b>Utilities</b> panel to save, export or edit the loaded data. For more information on each tool, please refer to the <a href="../userDocs/umIToolbox-Analysis.html">Analysis tab</a> documentation.
     </p>
+    <p>
+      6. In this example, we will visualize  the visual response amplitudes of each observation (i.e. ROIs) by clicking on the <b>Line/Box plots</b> button. This app is dedicated to the visualization of scalar (i.e. single value) or time-series (1 x N frames) datasets. Here is a snapshot of the app:
+    </p>    
+    
     <p>
       5. Finally, click on the <i>Line/Box plots</i> to open the tool and explore your data!
     </p>
     <img src="../assets/img/tt_viz_data_line_box_plot_interface.png" alt="tt_viz_data_line_box_plot_interface" width="900">
     <p>
-      The image above shows the interface of the plotting tool. It consists of a main window (left) containing options to set several axis parameters, a main plot window (center) showing the selected ROI and one or more summary figures (right) containing the plots of all ROIs.
+      The image above shows the interface of the plotting tool. It consists of a main window (left) containing options to set several axis parameters, a main plot window (center) showing the selected ROI and one or more summary figures (right) containing the plots of all ROIs. Click <a href="../userDocs/lineBox-plot_tool.html">here</a> to learn more about the <b>Line/Box plot</b> app.
     </p>
     <h3 id="plot-corr-mat">Plot correlation matrices</h3>
     <hr>
     <p>
-      In the previous section, we showed how to observe single values from ROIs. Here, we show how to visualize averaged functional connectivity data. Here is the data processing workflow for the resting state experiments:
+      In the previous section, we showed how to observe single values (scalar) from ROIs across acquisitions. Here, we show how to visualize averaged functional connectivity data. Here is the data processing workflow for the resting state experiments:
     </p>
     <img src="../assets/img/tt_viz_spcm_data_processing_workflow.png" alt="tt_viz_spcm_data_processing_workflow" width="660">
     <p>
-      1. As the steps 1 and 2 of the previous section, open the main GUI and group the resting state recordings:
+      1. As the steps 1 to 3 of the previous section, open the main GUI, group the resting state recordings and select the file containing the data. Here, we will select the file <samp>corrMatrix_avg_vs_avg</samp> which contains the correlation values between the averaged correlation values of all pixels inside each ROI:
     </p>
     <img src="../assets/img/tt_viz_data_grouped_data_in_main_gui2.png" alt="tt_viz_data_grouped_data_in_main_gui2" width="660">
     <p>
-      2. Highlight all recordings and select the file containing the correlation matrices (i.e. <samp>corrMatrix</samp>):
+      2. Click on the <b>Select</b> button to load the data:
     </p>
-    <img src="../assets/img/tt_viz_data_file_selection_in_main_gui2.png" alt="tt_viz_data_file_selection_in_main_gui2" width="660">
+    <img src="../assets/img/tt_viz_data_selection_btn_pressed2.png" alt="tt_viz_data_selection_btn_pressed2" width="660">
     <p>
-      3. Now, select the ROIs and, in the <i>Apps & tools</i> panel, click on the <i>Plot Correlation Matrix</i> button. For more information on this app, click <a href="../userDocs/correlation_matrix_plot_tool.html">here</a>.
+      3. Now, we will create a subset of observations (ROIs) to visualize as the correlation matrix and regroup the ROIs as left and right hemispheres. To do so, we will use the <b>Change lists</b> utility:
     </p>
+    <img src="../assets/gifs/tt_viz_obs_subsetting_and_rearrangement.gif" alt="tt_viz_obs_subsetting_and_rearrangement" width="680">
     <p>
-      4. Here is a screenshot of the correlation matrix plotting app:
+      4. Launch the <b>Plot Correlation Matrix</b> app. Here is a screenshot of the correlation matrix plotting app:
     </p>
     <img src="../assets/img/plotCorrMatrix_interface.png" alt="plotCorrMatrix_interface" width="900">
     <p>
-      You can click on any region of a correlation matrix (top) to show the temporal profile (bottom) of the correlation between pairs of ROIs.
+      You can click on any region of a correlation matrix (top) to show the temporal profile (bottom) of the correlation between pairs of ROIs. Click <a href="../userDocs/correlation_matrix_plot_tool.html"">here</a> to learn more about the <b>Plot Correlation Matrix</b> app.
     </p>
-
-
-
-
-
-
-
-
-
-
-
-
+    <hr>
   </body>
 </html>
