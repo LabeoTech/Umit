@@ -19,34 +19,61 @@
     <h3>Sections</h3>
     <hr>
     <ul>
-      <li><a href="#tab-components">Tab components</a></li>
+      <li><a href="#tab-components">Tab components</a>
+        <ul>
+          <li><a href="#4-utilities-panel">Utilities panel</a></li>
+          <li><a href="#6-plotting-apps">Plotting apps</a></li>
+        </ul>
+      </li>
       <li><a href="#options-panel">Options panel</a></li>
+      <li><a href="#how-to-select-data-for-analysis">How to select data for analysis</a></li>
     </ul>
-    <h3>Tab components</h3>
+    <h3 id="tab-components">Tab components</h3>
     <hr>
-    <p align="center">
-    <img src="../assets/img/mainGUI_analysis_fig1.png" alt="mainGUI_analysis_fig1"  width="660"><br>
-    <i>Main components of the <b>Analysis</b> tab.</i>
+    <p style="text-align: center;">
+      <img src="../assets/img/mainGUI_analysis_fig1.png" alt="mainGUI_analysis_fig1"  width="660"><br>
+      <i>Main components of the <b>Analysis</b> tab.</i>
     </p>
     <h4 id="1-file-list">1. File list</h4>
     <p>
-      List of <samp>.mat</samp> files located in the folders of the selected objects.
-      Select a file from the list to load the ROI list.
+      List of <samp>.mat</samp> files located in the folders of the selected objects.      
     </p>
-    <h4 id="2-ROI-list">2. ROI list</h4>
+    <h4 id="2-select-undo-button">2. Select/Undo button</h4>
     <p>
-      List of ROIs from the selected <samp>.mat</samp> file. Select one or more ROIs and click on <i>Select</i> button to access the content of the <i>Apps & tools</i> panel.
+      Click on "Select" to load the data from the selected file from the <i>File list</i> and access the <i>Apps & Tools</i> panel. To Select a new set of data, click on "Undo" and start over.
     </p>
-    <h4 id="3-apps-tools">3. Apps &amp; tools</h4>
+    <h4 id="3-summary-table">3. Summary table</h4>
     <p>
-      This panel shows the available apps and tools that can be used to visualize and export the ROI data from the selected <samp>.mat</samp> files. Here are the links for the documentation of each app/tool:
+      This table gives an overview of some features of the selected data. For instance, it shows if the selected data has equal dimensions, if it is exportable to .CSV and it's data type and dimension names. These features will determine the availability of some tools from the <i>Apps &amp; Tools</i> panel.
+    </p>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        This table is updated only when the <b>Select</b> button is pressed. Thus, it describes the "original" data. This means that the table is not updated after changes on the data using the utilities tools (e.g. Avg Acquisitions or Change Lists).
+      </p>
+    </div>
+    <h4 id="4-utilities-panel">4. Utilities panel</h4>
+    <p>
+      In this panel, there are options to export the data outside <b><i>umIT</i></b> as well as to merge acquisitions and create subsets of observations and/or events. Here is the list of available options (click on the links for further details):
     </p>
     <ul>
-      <li><b><i>Table View</i></b>: visualizes the ROI data as a table (2D data <b>only</b>!)</li>
-      <li><b><i>Save to .Mat</i></b>: exports the ROI data to a <samp>.mat</samp> file to be used outside <b><i>umIT</i></b>. The file contains a stucture called <samp>stats_data</samp> with all ROI data and metadata</li>
-      <li><b><i>Export to .CSV</i></b>: exports the ROI data to a .CSV file to be accessed outside MATLAB (2D data <b>only</b>!)</li>
-      <li><a href="lineBox-plot_tool.html"><b><i>Line/Box plotter</i></b></a>: plots grouped longitudinal ROI data (scalar values <b>only</b>!)</li>
-      <li><a href="correlation_matrix_plot_tool.html"><b><i>Correlation Matrix plotter</i></b></a>: plots correlation matrices</li>
+      <li><b><i><a href="./umIToolbox-Analysis-Save2Mat.html">Save to .MAT</a></i></b>: exports the data to a <samp>.mat</samp> file to be used outside <b><i>umIT</i></b>. The file contains a stucture called <samp>stats_data</samp> with all observation data and metadata</li>
+      <li><b><i><a href="./umIToolbox-Analysis-Export2CSV.html">Export to .CSV</a></i></b>: exports the data to a .CSV file to be accessed outside MATLAB (1 or 2D data <b>only</b>!)</li>
+      <li><b><i><a href="./umIToolbox-Analysis-TableView.html">Table View</a></i></b>: visualizes the data as a table (1 or 2D data <b>only</b>!)</li> 
+      <li><b><i><a href="./umIToolbox-Analysis-AvgAcqs.html">Average Acquisitions</a></i></b>: averages consecutive acquisitions</li>     
+      <li><b><i><a href="./umIToolbox-Analysis-ChangeLists.html">Change Lists</a></i></b>: reorder and subset the <b>observation</b> and/or <b>event</b> lists</li>     
+    </ul>    
+    <h4 id="5-observation-and-event-lists">5. Observation &amp; Event lists</h4>
+    <p>
+      Here, the list of unique values of <i>observations</i> and/or <i>events</i> are shown. The elements in these lists will be those to be used by the <a href="#4-utilities-panel"><i>utilities</i></a> and <a href="#6-plotting-apps"><i>plotting</i></a> apps. To rearrange and/or subset these lists, use the <a href="./umIToolbox-Analysis-ChangeLists.html">Change lists</a> tool.
+    </p>
+    <h4 id="6-plotting-apps">6. Plotting apps</h4>
+    <p>
+      This panel contains the plotting apps currently available. These tools allows one to exploredifferent types of data and compare between experimental groups.
+    </p>
+    <ul>
+      <li><b><i><a href="./lineBox-plot_tool.html">Line/Box plot</a></i></b>: plots scalar or time series data</li>
+      <li><b><i><a href="./correlation_matrix_plot_tool.html">Plot Correlation Matrix</a></i></b>: plots correlation matrices</li>
+      <li><b><i><a href="./PlotAvgMaps_tool.html">Plot Average Maps</a></i></b>: plots average activation maps per experimental groups</li>      
     </ul>
     <h3 id="options-panel">Options panel</h3>
     <hr>
@@ -54,11 +81,31 @@
     <h4 id="1-grouping-tool">1. grouping tool</h4>
     <p>
       This button launches the <b>Data grouping tool</b>. This tool allows the segregation of the elements from the <i>object tree</i> into two or more groups.<br>
-      Click <a href="data-grouping_tool.html">here</a> for more info about how to use the <b>Data grouping tool</b>!
+      Click <a href="./data-grouping_tool.html">here</a> for more info about how to use the <b>Data grouping tool</b>!
     </p>
     <h4 id="2-erase-groups">2. Erase groups</h4>
     <p>
       Click here, to erase the groups created using the <b>Data grouping tool</b> and restore the object tree to the original list.
     </p>
+    <h3 id="how-to-select-data-for-analysis">How to select data for analysis</h3>
+    <hr>
+    <p>
+      In order to have access to the <i>Apps &amp; Tools</i> panel, one has to:
+    </p>
+    <ol>
+      <li>select the data from the object tree (left)</li>
+      <li>select the filename from the <b>Select a file</b> list</li>
+      <li>Click on the <b>Select</b> button</li>
+    </ol>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        Once the file is selected in the <b>Select a file</b> list, a green check icon will appear on the items from the object tree containing the selected file. Review the object tree to be sure of which objects are selected before clicking on the <b>Select</b> button on the bottom of the <i>Analysis</i> tab.
+      </p>
+    </div>
+    <p style="text-align: center;">
+      <img src="../assets/gifs/umIToolbox-Analysis-example_data_selection.gif" alt="umIToolbox-Analysis-example_data_selection" width="880"><br>
+      <i>Example of data selection for analysis. Note that the items from the object tree containing the selected files are highlighted with a green check icon.</i>
+    </p>
+    <hr>
   </body>
 </html>

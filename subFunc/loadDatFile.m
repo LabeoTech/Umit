@@ -31,6 +31,9 @@ end
 metaData = load(metaDatFileName);
 
 % Read binary file:
+if ~endsWith(DatFileName,'.dat')
+    DatFileName = [DatFileName, '.dat'];
+end
 fid = fopen(DatFileName);
 outFile = fread(fid, inf, '*single');
 outFile = reshape(outFile, [metaData.datSize metaData.datLength]);
@@ -39,7 +42,10 @@ end
 
 % Validation function
 function mustBeDatFile(datFileName)
-if ~isfile(datFileName) && ~strcmp(datFileName(end-3:end), '.dat')
+if ~endsWith(datFileName,'.dat')
+    datFileName = [datFileName, '.dat'];
+end
+if ~isfile(datFileName)
     errID = 'umIToolbox:loadDatFile:InvalidInput';
     msg = [datFileName ' is not a .DAT file!'];
     throwAsCaller(MException(errID,msg))

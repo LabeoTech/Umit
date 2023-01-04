@@ -246,8 +246,71 @@ classdef Protocol < handle
                 %             else
                 %                 uiwait(warndlg('Keeping invalid Paths and/or files may cause problems later on during the analysis', 'Warning!', 'modal'));
             end
+                     
+            % Update element's properties, if changes were made in the
+            % protocol function:            
+            for ii = 1:length(newArray)
+                % Compare Subjects' properties:
+                idxS = strcmp(newArray(ii).ID, obj.Array.listProp('ID'));
+                propInfo = metaclass(newArray(ii));
+                settableProps = protocolCanSet(propInfo.PropertyList);
+                % Compare settable properties between the old and new
+                % arrays:
+                b_HasChanged = cellfun(@(x) ~isequaln(newArray(ii).(x), obj.Array.ObjList(idxS).(x)), settableProps);
+                if any(b_HasChanged)
+                    cellfun(@(x) evalin('caller',['obj.Array.ObjList(' num2str(find(idxS)) ').' x ' = newArray(' num2str(ii) ').' x ';']), ...
+                                settableProps(b_HasChanged))                                                                        
+                end
+                % Compare Acquisitions:
+                for jj = 1:length(newArray(ii).Array.ObjList)
+                    idxA = strcmp(newArray(ii).Array.ObjList(jj).ID, obj.Array.ObjList(idxS).Array.listProp('ID'));
+                    propInfo = metaclass(newArray(ii).Array.ObjList(jj));
+                    settableProps = protocolCanSet(propInfo.PropertyList);
+                    % Compare settable properties between the old and new
+                    % arrays:
+                    b_HasChanged = cellfun(@(x) ~isequaln(newArray(ii).Array.ObjList(jj).(x), obj.Array.ObjList(idxS).Array.ObjList(idxA).(x)), settableProps);
+                    if any(b_HasChanged)
+                        cellfun(@(x) evalin('caller',['obj.Array.ObjList(' num2str(find(idxS)) ').Array.ObjList(' num2str(find(idxA)) ').' x...
+                                ' = newArray(' num2str(ii) ').Array.ObjList(' num2str(jj) ').' x ';']), ...
+                                settableProps(b_HasChanged))                                                    
+                    end
+                    % Compare modalities:
+                    for kk = 1:length(newArray(ii).Array.ObjList(jj).Array.ObjList)
+                        idxM = strcmp(newArray(ii).Array.ObjList(jj).Array.ObjList(kk).ID, obj.Array.ObjList(idxS).Array.ObjList(idxA).Array.listProp('ID'));
+                        propInfo = metaclass(newArray(ii).Array.ObjList(jj).Array.ObjList(kk));
+                        settableProps = protocolCanSet(propInfo.PropertyList);
+                        % Compare settable properties between the old and new
+                        % arrays:
+                        b_HasChanged = cellfun(@(x) ~isequaln(newArray(ii).Array.ObjList(jj).Array.ObjList(kk).(x), obj.Array.ObjList(idxS).Array.ObjList(idxA).Array.ObjList(idxM).(x)), settableProps);
+                        if any(b_HasChanged)                            
+                            cellfun(@(x) evalin('caller',['obj.Array.ObjList(' num2str(find(idxS)) ').Array.ObjList(' num2str(find(idxA)) ').Array.ObjList(' num2str(find(idxM)) ').' x...
+                                ' = newArray(' num2str(ii) ').Array.ObjList(' num2str(jj) ').Array.ObjList(' num2str(kk) ').' x ';']), ...
+                                settableProps(b_HasChanged))                            
+                        end
+                    end
+                end
+            end
             uiwait(msgbox('Project update completed!'));
-        end        
+            % Local functions
+            function propNames = protocolCanSet(propList)
+                b_pass = false(size(propList));
+                propNames = {propList.Name}';
+                for ind = 1:length(propList)
+                    % Remove MyParent From Settable Array:
+                    if ismember(lower(propList(ind).Name), {'myparent', 'array', 'lastlog'})
+                        continue
+                    end
+                    
+                    if ischar(propList(ind).SetAccess)
+                        b_pass(ind) = strcmpi(propList(ind).SetAccess, 'public');
+                    else
+                        b_pass(ind) = any(cellfun(@(x) strcmpi(x.Name, 'protocol'), propList(ind).SetAccess));
+                    end
+                end  
+                propNames = propNames(b_pass);
+            end
+            
+        end          
         
         function [modHandle, AcqHandle] = manualAddModality(obj, modClass, modID, AcqID, subjHandle)
             % MANUALADDMODALITY creates a new Acquisition inside a "Subject" Object.

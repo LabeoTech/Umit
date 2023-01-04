@@ -1,0 +1,90 @@
+<html lang="en">
+<head>
+    <link rel="stylesheet" href="../../css/master.css">
+    <meta charset="utf-8">
+    <style media="screen">
+      ul,ol {
+        line-height: 1.5;
+      }
+    </style>
+    <title>Data selector</title>
+</head>
+<body>
+    <h2>Data selector</h2>
+    <hr>
+    <p>
+        This tool is part of the <a href="./lineBox-plot_tool.html">Line/Box plot tool</a>. As described in the plot tool documentation, the data is plotted as color-coded <b>groups</b> (experimental groups by default) as a function of one dimension in the <b>X axis</b> (acquisitions by default) with each <b>plot</b> containing the data of a second dimension (observations by default). In brief, this tool allows one to change how the data is represented by permuting these three parameters.
+    </p>
+    <p>
+       Here are all possible dimensions that can be interchanged using the <b><i>Data selector</i></b> tool:
+    </p>
+    <ul>
+        <li><b><i>Group</i></b>: experimental group set in the <a href="./umIToolbox-Analysis.html">Analysis tab</a> using the <a href="./data-grouping_tool.html">Data grouping tool</a></li>
+        <li><b><i>Subject</i></b>: list of <i>Subject ID</i>s</li>
+        <li><b><i>ROI</i></b>: list of <i>observations</i></li>
+        <li><b><i>Acquisition</i></b>: acquisition indices</li>
+        <li><b><i>Event</i></b>: list of <i>events</i></li>
+    </ul>
+    <h3>The interface</h3>
+    <hr>
+    <p style="text-align: center;">
+        <img src="../assets/img/data_selector_fig1.png" alt="data_selector_fig1">
+        <br>
+        <i>Components of the <b>Data selector</b> interface</i>
+    </p>
+    <h4 id="1-dimension-selection-drop-down-menus">1. Dimension selection drop down menus</h4>
+    <p>
+        Drop down menus with dimensions to be assigned to:
+    </p>
+    <ol>
+        <li>X axis (X data)</li>
+        <li>Color-coded groups (Group by)</li>
+        <li>Plots (Plot by)</li>
+    </ol>
+    <div class="infonote">
+        <p><strong>Note</strong><br>
+            For time series data, the <b>X data</b> option is pre-selected as <b>Time</b> and cannot be changed.
+        </p>
+    </div>
+    <p>
+        The selection must be performed in this order.
+    </p>
+    <h4 id="2-colormap-drop-down-menu">2. Colormap drop down menu</h4>
+    <p>
+        Select the colormap of the <b>Group by</b> dimension items. If <b>none</b> is selected, a distinct color will be assigned to each item.
+    </p>
+    <h4 id="3-reset-button">3. Reset button</h4>
+    <p>
+        Click on the <b>Reset</b> button to erase the selected dimensions from the drop dowm menus <b>(1)</b>.
+    </p>
+    <h4 id="4-group-list">4. Group list</h4>
+    <p>
+        List of items from the grouped dimension set in the <b>Group by</b> drop down menu.
+    </p>
+    <div class="tipnote">
+        <p><strong>Tip</strong>
+            You can customize the selected colormap by clicking on an item and changing its color:
+        </p> 
+        <img src="../assets/gifs/Data_selector_customize_color.gif" alt="Data_selector_customize_color" width="260">       
+    </div>
+    <h4 id="5-set-button">5. Set button</h4>
+    <p>
+        Once all dimensions and colormap are selected, click on the <b>Set</b> button to apply the changes and show the items in the group list <b>(4)</b>.
+    </p>
+    <h4 id="6-apply-button">6. Apply button</h4>
+    <p>
+        Click on the <b>Apply</b> button <b>(6)</b> to rearrange the data and recreate the plots in the <a href="./lineBox-plot_tool.html">Line/Box plot tool</a>.
+    </p>
+    <h3 id="example">Example</h3>
+    <hr>
+    <p>
+        Here is an example on how to use the <b>Data selector</b> tool to rearrange the data in the <a href="./lineBox-plot_tool.html">Line/Box plot tool</a>. In this example, we will plot the data from the experimental groups as a function of events with each plot containing the data from a given observation:
+    </p>
+    <p style="text-align: center;">
+        <img src="../assets/gifs/Data_selector_example.gif" alt="Data_selector_example" width="880"><br>        
+    </p>
+    <p><i>*Summary figures not shown.</i></p>
+    <hr>
+</body>
+</html>
+

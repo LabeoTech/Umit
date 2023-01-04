@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../css/master.css">
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+      .collapsible {
+      background-color: #eeeeee;
+      color: black;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      margin-bottom: 10px;
+      }
+      .active, .collapsible:hover {
+      background-color: #888;
+      }
+      .content {
+      padding: 0 18px;
+      display: none;
+      overflow: hidden;
+      background-color: #fff;
+      border: 1px solid black;
+      margin-bottom: 10px;
+      }
+    </style>
+    <title>transformDat2Mat</title>
+  </head>
+  <body>
+    <h2>transformDat2Mat</h2>
+    <hr>
+    <p>
+      Saves imaging data from <samp>.dat</samp> to a <samp>.mat</samp> file compatible with <samp>umIToolbox</samp> <i>Analysis</i> tab.
+    </p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+      This function transforms an imaging data file from <samp>.dat</samp> to a <samp>.mat</samp> file to be used as input in the <i>Analysis</i> tab of the <samp>umIToolbox</samp> app.
+    </p>
+    <h3>Input</h3>
+    <hr>
+    <p>
+      This function accepts any imaging data from a <small>.dat</small> file.
+    </p>
+    <h3>Output</h3>
+    <hr>
+    <p>
+      The output of this function is a <samp>.mat</samp> file containing the input data linked to a generic ROI with name <samp>genericObs</samp>.
+    </p>
+    <!-- JavaScript code to collapse sections -->
+    <script src="collapsible_behaviour.js"></script>
+  </body>
+</html>

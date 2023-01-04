@@ -88,10 +88,12 @@ end
 s.data = data;
 s.obsID = obsID;
 s.dim_names = dim_names;
-
+% Set dimension of data that will be labeled. Default = 2;
+dim_label = 2;
 % Check if "E" exists in dim_names and verify if event info exists in "s"
 % struct:
 if ismember('E', dim_names)
+    dim_label = find(strcmpi('E',dim_names));
     fn = fieldnames(s);
     errID = 'Umitoolbox:save2Mat:MissingInfo';
     errMsg = 'An event dimension name ("E") was detected but no event info ("eventID" and "eventNameList")was found in metaData.';
@@ -105,15 +107,16 @@ if ismember('E', dim_names)
             label{indx(j)} = strjoin({s.eventNameList{i}, 'rep', num2str(j)}, '_');
         end
     end
+    disp('Done')
 end
 % Prepare "label" to save:
 if ischar(label)
-    label = arrayfun(@(x) strjoin({label, num2str(x)}, '_'), 1:size(s.data{1},2), 'UniformOutput', 0);
+    label = arrayfun(@(x) strjoin({label, num2str(x)}, '_'), 1:size(s.data{1},dim_label), 'UniformOutput', 0);
 end
 % Check if "label" has the same length of data:
 errID = 'Umitoolbox:save2Mat:IncompatibleSize';
-errMsg = 'The lenght of Labels is different from the length of data.';
-assert(isequaln(size(s.data{1},2),length(label)), errID, errMsg);
+errMsg = 'The length of Labels is different from the length of data.';
+assert(isequaln(size(s.data{1},dim_label),length(label)), errID, errMsg);
 % Add "label" to s:
 s.label = label;
 

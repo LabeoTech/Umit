@@ -25,7 +25,7 @@
     <p>
       To use the tool, first, select the <b>recordings</b>, <b>files</b> and <b>ROIs</b> to be displayed. Then, launch the tool by clicking <i>Plot Correlation Matrix</i> button in the Apps & tools panel.
     </p>
-    <h4 id="limitations">Limitations</h4>
+    <h4 id="input-data">Input data</h4>
     <p>
       This tool accepts only 2D numerical matrices as input. As for longitudinal datasets, all individuals must have the same number of acquisitions.
     </p>
@@ -39,31 +39,17 @@
       <i>Main components of the Correlation matrix plot tool. (1) Plot options window: contains several options to reorganize and plot the correlation matrices.(2) Matrix window: figure containing the average correlation matrices separated by group (rows) and acquisition (columns).(3) Timeline window: plot of the selected pair of observations in the matrix (red circle in Matrix window)</i>
     </p>
     <h4 id="1-plot-options">1. Plot options</h4>
-    <ul>
-      <li><b><i>re-order Matrix</i></b>: click here to reorganize the rows and columns from the correlation matrices.
-        <div class="infonote">
-          <p><strong>Note</strong><br>
-            For ROIs created using the Mouse Allen Brain preset in <samp>ROImanager</samp> app, the areas will be organized by hemisphere and functional modality. Otherwise, by default the app will plot the data in alphabetical order.
-          </p>
-        </div>
+    <ul>      
+      <li><b><i>Set colormap</i></b>: click here to change the matrix colormap and the color scale</li>      
+      <li><b><i>Show matrix as:</i></b> Drop down menu with the following options to display the correlation matrices:
+        <ul>
+          <li><b><i>Data</i></b>: (default) shows the average correlation values of each matrix</li>
+          <li><b><i>Diff. from baseline</i></b>: shows the difference of the correlation values from the baseline acquisition</li>
+          <li><b><i>Diff. from previous</i></b>: shows the difference from the previous acquisition</li>
+        </ul>
       </li>
-      <li><b><i>Set colormap</i></b>: click here to change the matrix colormap and the color scale</li>
-      <li><b><i>Set baseline</i></b>: click here to merge two or more aquisitions as a baseline acquisitions.
-        <div class="infonote">
-          <p><strong>Note</strong><br>
-            By default, the first acquisition is considered as "baseline".
-          </p>
-        </div>
-       </li>
-       <li><b><i>Show matrix as:</i></b> Drop down menu with the following options to display the correlation matrices:
-         <ul>
-           <li><b><i>Data</i></b>: (default) shows the average correlation values of each matrix</li>
-           <li><b><i>Diff. from baseline</i></b>: shows the difference of the correlation values from the baseline acquisition</li>
-           <li><b><i>Diff. from previous</i></b>: shows the difference from the previous acquisition</li>
-         </ul>
-       </li>
-       <li><b><i>Hide diagonal</i></b>: shows only the bottom half of the matrix</li>
-       <li><b><i>Lock plot Y axis</i></b>: set a fixed Y axis scale in the timeline window</li>
+      <li><b><i>Hide diagonal</i></b>: shows only the bottom half of the matrix</li>
+      <li><b><i>Lock plot Y axis</i></b>: set a fixed Y axis scale in the timeline window</li>
     </ul>
   <h4 id="2-matrix-window">2. Matrix window</h4>
   <p>
@@ -71,6 +57,7 @@
   </p>
   <p>Click on one quadrant of the matrix to upload the plot in the timeline window (3).</p>
   <h4 id="3-timeline-window">3. Timeline window</h4>
-  <p>This figure shows a scatter plot with the correlation values of individual recordings overlayed with a line plot that shows the mean +- the standard error of the mean (SEM)</p>
+  <p>This figure shows a scatter plot with the correlation values of individual recordings overlayed with a line plot that shows the group <b>average</b> &pm; the <b>standard error of the mean (SEM)</b>.</p>
+  <hr>
   </body>
 </html>
