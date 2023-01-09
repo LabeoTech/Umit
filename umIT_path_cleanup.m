@@ -8,14 +8,14 @@ else
     separator = ':';
 end
 P = strsplit(path,separator)';
-search_str = ['GUI' filesep 'StatsModule'];
+search_str = ['docs' filesep 'css']; % Use UMIT's subfolders to identify where the toolbox is (and any other versions).
 myRoot = unique(cellfun(@(x) erase(x, search_str),...
     P(contains(P, search_str) | contains(P, 'ioi_ana','IgnoreCase',true)), 'UniformOutput',false));
 % Disable warnings
 warning('off')
 % Remove all "Umit" paths:
-for i = 1:length(myRoot)
-    rmpath(genpath(myRoot{i}))
+for ii = 1:length(myRoot)
+    rmpath(genpath(myRoot{ii}))
 end
 % Add current Path to Matlab's path:
 addpath(genpath(currPath));
