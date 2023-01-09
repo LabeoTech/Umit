@@ -1,34 +1,40 @@
-function outFile = MV_gen_SF_TF_matrix(File, SaveFolder, varargin)
+function outFile = MV_gen_SF_TF_matrix(SaveFolder, varargin)
 % MV_GEN_SF_TF_MATRIX is a custom function from Matthieu Vanni's lab.
 % This function finds the centroid pixels of visual areas and
 % values from SF-TF experiments for statistical analysis.
 %
 % Inputs:
-%   File: Imaging data file containing Resting State OR SFTF data.
 %   SaveFolder: Folder where data are stored.
 %   Output: name of .DAT file saved in SAVEFOLDER.
+%   datFileName: name of the .DAT file containing the SF-TF data
 % Outputs:
 %   outFile: name of aligned file.
 % 
 
 % Defaults:
+default_opts = struct('datFileName', 'data_splitByEvent');
+opts_values = struct('datFileName', {{'data_splitByEvent'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 default_Output = 'SF_TF_matrix.mat'; 
 %%% Arguments parsing and validation %%%
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder
 % Imaging Object:
-addRequired(p, 'File', @isfile);
 addRequired(p, 'SaveFolder', @isfolder);
+addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
 addOptional(p, 'Output', default_Output)
 % Parse inputs:
-parse(p,File, SaveFolder, varargin{:});
+parse(p,SaveFolder, varargin{:});
 % Initialize Variables:
-File= p.Results.File;
+File= p.Results.opts.datFileName;
 SaveFolder = p.Results.SaveFolder;
 outFile = p.Results.Output;
 
+if ~endsWith(File,'.dat')
+    File = [File '.dat'];
+end
+
 % Control for types of data
-[mDat, metaData] = mapDatFile(File);
+[mDat, metaData] = mapDatFile(fullfile(SaveFolder, File));
 fields = fieldnames(mDat.Data);
 errID = 'MATLAB:UMIToolbox:WrongFile';
 errMsg = 'Wrong .dat file. Accepts only Resting State or SFTF experients';

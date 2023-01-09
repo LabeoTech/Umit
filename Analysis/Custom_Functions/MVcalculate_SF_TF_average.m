@@ -1,10 +1,9 @@
-function outFile = MVcalculate_SF_TF_average(File, SaveFolder, varargin)
+function outFile = MVcalculate_SF_TF_average(SaveFolder, varargin)
 % MVCALCULATE_SF_TF_AVERAGE is a custom function used in the experimental
 % protocol of Stroke project 2021 at Matthieu Vanni's. 
 % This function averages specific conditions in the SF/TF experiments.
 %
 % Inputs:
-%   File: fullpath of data_splitByEvent.DAT file (output of event_triggered_average function).
 %   SaveFolder: path to save the output file.
 %   Output (optional) : Name of outFile.
 % Output:
@@ -14,19 +13,24 @@ function outFile = MVcalculate_SF_TF_average(File, SaveFolder, varargin)
 
 % Defaults:
 default_Output = 'SF_TF_AVG.dat'; 
-
+default_opts = struct('datFileName', 'data_splitByEvent');
+opts_values = struct('datFileName', {{'data_splitByEvent'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 %%% Arguments parsing and validation %%%
 p = inputParser;
-addRequired(p,'File',@isfile)
 addRequired(p, 'SaveFolder', @isfolder);
+addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
 addOptional(p, 'Output', default_Output)
+
 % Parse inputs:
-parse(p,File, SaveFolder, varargin{:});
+parse(p,SaveFolder, varargin{:});
 %Initialize Variables:
-File = p.Results.File; 
 SaveFolder = p.Results.SaveFolder;
+File = p.Results.opts.datFileName;
 Output = p.Results.Output;
 %%%%
+if ~endsWith(File,'.dat')
+    File = [File '.dat'];
+end
 % Map movie and metadata to memory:
 [mData, metaDat] = mapDatFile(File);
 szdat = size(mData.Data.data);
