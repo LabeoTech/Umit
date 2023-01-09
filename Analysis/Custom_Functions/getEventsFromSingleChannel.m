@@ -96,13 +96,21 @@ disp('Finding events...')
 if endsWith(object.MetaDataFile, '.mat')
     % For data created in PsychToolbox:
     a = load(object.MetaDataFile);
-elseif endsWith(object.MetaDataFile, '.csv')
-    
+elseif endsWith(object.MetaDataFile, '.csv')    
     % For data created in PsychoPy:
     a = readtable(object.MetaDataFile);
     condList = cell(1,height(a));
-    if isfield(a,'SF')
-        % For Veronique:
+    
+    if any(strcmpi('PatchSize',fieldnames(a)))
+        % For CATHERINE:
+        % Here the columns of interest are : "AngDir", "Contrast", "PatchSize", "SF" ,"TF". DO
+        % NOT CHANGE THEM!
+        a = a(~isnan(a.Contrast),:);        
+        condList = arrayfun(@(x,y,z,w,b) ['AngDir-', num2str(x), '-Cont-',num2str(y), ...
+            '-PatchSz-' num2str(z), '-SF-', num2str(w), '-TF-', num2str(b)], ...
+            a.AngDir, a.Contrast, a.PatchSize, a.SF, a.TF, 'UniformOutput',false);   
+    else
+        % For VERONIQUE:
         a = a(~isnan(a.SF),:);        
         colNames = a.Properties.VariableNames;
         indx = find(strcmp(colNames,'trials_thisRepN'));
@@ -114,13 +122,6 @@ elseif endsWith(object.MetaDataFile, '.csv')
             end
             condList{i} = strjoin(str,'-');
         end
-    elseif isfield(a, 'Contrast')
-        % For Catherine:
-        % Here the columns of interest are : "AngDir" and "Contrast". DO
-        % NOT CHANGE THEM!
-        a = a(~isnan(a.Contrast),:);        
-        condList = arrayfun(@(x,y) ['Dir-', num2str(x), 'Cont-',num2str(y)], ...
-            a.AngDir, a.Contrast, 'UniformOutput',false);        
     end
     
 elseif endsWith(object.MetaDataFile, '.txt')

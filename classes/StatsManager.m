@@ -787,6 +787,7 @@ classdef StatsManager < handle
             end
         end
         
+        
         %%%%%%%%%%%%%%%%%%
     end
 end
