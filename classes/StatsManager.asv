@@ -67,7 +67,7 @@ classdef StatsManager < handle
             a = ver;
             if any(strcmp('Statistics and Machine Learning Toolbox', {a.Name}))
                 obj.b_hasStatsToolbox = true;
-                obj.setIndependentVars; % Update list of independent variable(s) used in statistical comparisons.
+                obj.genIndepVarInfo; % Create structure with information necessary for statistical comparisons.
             else
                 obj.b_hasStatsToolbox = false;
             end
@@ -255,7 +255,8 @@ classdef StatsManager < handle
                 
         function setIndependentVars(obj, varargin)
             % This method sets the "indepVars" property based on the
-            % available data in "dataArr".                        
+            % available data in "dataArr".            
+            
             p = inputParser;
             addRequired(p, 'obj');
             addOptional(p, 'varNames', '',@(x) ischar | ( iscell(x) & ischar(x{:})) );            
@@ -271,11 +272,11 @@ classdef StatsManager < handle
             end
             % Check if the variable name is valid:
             if ~all(ismember(varNames, {obj.indepVarInfo.Name}))
-                error('Invalid variable name(s):/n%s/n%s/nValid variables are: %s, %s, %s, %s, %s.',[varNames{:},obj.indepVarInfo.Name])
-            end
+                error('Invalid variable name(s):/n%s/n%s/nValid variables are: %s, %s, %s, %s, %s.',[
             fprintf('Setting independent variable(s) to :/n%s/n%s/n', varNames{:});
-            obj.indepVars = varNames(~cellfun(@isempty,varNames));                        
-            disp('Done');
+            
+            
+            
         end
         
         function resetAvgIndex(obj)
