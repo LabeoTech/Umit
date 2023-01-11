@@ -1,22 +1,19 @@
 %% Main script for applying a Pipeline to Labeo Datasets
 % Add necessary folders to Matlab Path
 clearvars
-toolboxFolder = 'D:\Academico\PostDoc_UdeM\LabeoTech\IsaToolbox';
-IOI_ANAfolder = 'D:\Academico\PostDoc_UdeM\LabeoTech\ioi_ana';
+toolboxFolder = 'C:\PATH_TO_TOOLBOX_FOLDER';
 addpath(genpath(toolboxFolder));
-addpath(genpath(IOI_ANAfolder));
+%% Set Directories Paths and Project Name:
+maindir = 'F:\Solenn';
+savedir = 'E:\Solenn_Data\ProjectSaveDir';
+ProjectName = 'Solenn_backupData_2.mat';
+
 %% Create Protocol Object
-maindir = 'G:\DummyDataSet_4_testing';
-savedir = 'G:\DummyDataSet_4_testing\SaveDir';
-protocol = Protocol('TestProtocol', maindir, savedir, @protocolFcn_template, []);
+protocol = Protocol(ProjectName, maindir, savedir, @protocolFcn_template, []);
 protocol.generateList;
 protocol.generateSaveFolders;
 save(fullfile(protocol.SaveDir, [protocol.Name '.mat']), 'protocol');
 %% Load existing Protocol Object:
-addpath(genpath('G:\DummyDataSet_4_testing'));
-maindir = 'F:\Solenn';
-savedir = 'E:\Solenn_Data\ProjectSaveDir';
-ProjectName = 'Solenn_backupData_2.mat';
 protocol = loadProtocol(fullfile(savedir, ProjectName));
 %% Query filter
 % Clear previously saved Filter structure:

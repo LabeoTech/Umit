@@ -38,8 +38,10 @@ classdef StatsManager < handle
         
         % Structure with information about all possible independent variables (see prop "indepVar") for statistics:
         indepVarInfo = struct('Name',{'Group','Subject','ROI','Acquisition', 'Event'}, ...
-                'fieldName',{'groupID','SubjectID','observationID','AcquisitionIndx','eIndx'},...
-                'b_isRepeatedMeasure',[false,false,false,true,true]);
+            'fieldName',{'groupID','SubjectID','observationID','AcquisitionIndx','eIndx'},...
+            'b_isRepeatedMeasure',[false,false,false,true,true]);
+        list_of_tests = {'pairedTT','unpairedTT','oneWayANOVA','twoWayANOVA'}; % List of currently available statistical tests
+        curr_test = ''; % Name of the current test from the list_of_tests.
     end
     
     methods
@@ -271,9 +273,10 @@ classdef StatsManager < handle
             end
             % Check if the variable name is valid:
             if ~all(ismember(varNames, {obj.indepVarInfo.Name}))
-                error('Invalid variable name(s):/n%s/n%s/nValid variables are: %s, %s, %s, %s, %s.',[varNames{:},obj.indepVarInfo.Name])
+                fprintf('Valid variables are: %s, %s, %s, %s, %s.\n',obj.indepVarInfo.Name);
+                error(['Invalid variable name(s):' varNames{1} ' - ' varNames{2}])
             end
-            fprintf('Setting independent variable(s) to :/n%s/n%s/n', varNames{:});
+            fprintf('Setting independent variable(s) to :\n%s\n%s\n', varNames{:});
             obj.indepVars = varNames(~cellfun(@isempty,varNames));                        
             disp('Done');
         end
@@ -820,14 +823,68 @@ classdef StatsManager < handle
             end
         end                
         
+        function updateCurrentStatTest(obj)
+           % This method uses the current independent variables and the
+           % size of the data in "dataArr" to decide which statistical test
+           % to apply.
+           
+           
+           
+           
+            
+        end
+        
+        
+        
         function b_isNormal = validateDataNormality(obj)
             % This function uses the Lilliefors normality test to check if
             % all data follow a normal distribution.
             
-            
+            %%%% TO BE DONE %%%
             
         end
-        
-        %%%%%%%%%%%%%%%%%%
+                
     end
 end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
