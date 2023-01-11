@@ -4,9 +4,9 @@ clearvars
 toolboxFolder = 'C:\PATH_TO_TOOLBOX_FOLDER';
 addpath(genpath(toolboxFolder));
 %% Set Directories Paths and Project Name:
-maindir = 'F:\Solenn';
-savedir = 'E:\Solenn_Data\ProjectSaveDir';
-ProjectName = 'Solenn_backupData_2.mat';
+maindir = 'C:\PATH_TO_RAW_FOLDER';
+savedir = 'C:\PATH_TO_SAVE_FOLDER';
+ProjectName = 'TYPEprojectNAME';
 
 %% Create Protocol Object
 protocol = Protocol(ProjectName, maindir, savedir, @protocolFcn_template, []);
