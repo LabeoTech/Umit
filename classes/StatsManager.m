@@ -23,13 +23,16 @@ classdef StatsManager < handle
     end
     properties (SetAccess = private)
         %         timestamp_list % List of timestamps associated with each object in list_of_objs.
-        b_hasStatsToolbox  % True, if Matlab contains the Statistics and Machine learning toolbox.
+        b_hasStatsToolbox  % True, if Matlab contains the Statistics and Machine learning toolbox.        
         inputFeatures % Structure containing some information about the input data. This will be used by plotting tools and the umIToolbox app.
         dataArr  % structure with data extracted from "stats_data" that can be averaged using the method "setAcquisitionRange".
+        flatData % structure derived from "dataArr" used by some plotting tools and stats functions.
         obs_list_original % Cell Array of observations from stats_filename when this object was created.
         list_of_events_original% Cell array of event Names from all objects when this object was created.
-        list_of_subjects_original % Cell array of Subject Names from all objects when this object was created.
-        indepVars = {}; % Name(s) of the independent variables used to perform statistical comparisons.
+        list_of_subjects_original % Cell array of Subject Names from all objects when this object was created.    
+        curr_test = ''; % Name of the current test from the list_of_tests.
+        indepVars % Independent variables used to perform statistical comparisons.        
+        splitVar % Data dimension to use to split the data into subsets for statistical analysis.
     end
     properties (Access = private)
         stats_data  = {} % cell array containing all data and metaData created.
@@ -38,10 +41,11 @@ classdef StatsManager < handle
         
         % Structure with information about all possible independent variables (see prop "indepVar") for statistics:
         indepVarInfo = struct('Name',{'Group','Subject','ROI','Acquisition', 'Event'}, ...
-            'fieldName',{'groupID','SubjectID','observationID','AcquisitionIndx','eIndx'},...
-            'b_isRepeatedMeasure',[false,false,false,true,true]);
-        list_of_tests = {'pairedTT','unpairedTT','oneWayANOVA','twoWayANOVA'}; % List of currently available statistical tests
-        curr_test = ''; % Name of the current test from the list_of_tests.
+            'fieldName',{'groupID','SubjectID','observationID','AcquisitionIndx','EventID'},...
+            'indexName',{'gIndx','sIndx','rIndx','AcquisitionIndx','eIndx'},...
+            'b_isRepeatedMeasure',{false,false,false,true,true});
+        list_of_tests = {'WilcoxPaired','WilcoxUnpaired','oneWayANOVA','twoWayANOVA'}; % List of currently available statistical tests
+        
     end
     
     methods
@@ -69,7 +73,7 @@ classdef StatsManager < handle
             a = ver;
             if any(strcmp('Statistics and Machine Learning Toolbox', {a.Name}))
                 obj.b_hasStatsToolbox = true;
-                obj.setIndependentVars; % Update list of independent variable(s) used in statistical comparisons.
+                obj.setStatsVariables; % Update list of independent variable(s) used in statistical comparisons.
             else
                 obj.b_hasStatsToolbox = false;
             end
@@ -255,29 +259,33 @@ classdef StatsManager < handle
             obj.gen_dataArr;
         end
                 
-        function setIndependentVars(obj, varargin)
+        function setStatsVariables(obj, varargin)
             % This method sets the "indepVars" property based on the
             % available data in "dataArr".                        
+            % Inputs:
+            %   varNames (cell): name(s) of the 2 data dimension to set as 
+            %       Independent variable(s).
+            %   groupVar (char): name of the dimension to split the data.
+            %   For instance, if the groupVar is "Observation", the statistical
+            %   analysis will be performed for each one of them separately.
+            
             p = inputParser;
             addRequired(p, 'obj');
-            addOptional(p, 'varNames', '',@(x) ischar | ( iscell(x) & ischar(x{:})) );            
+            name_validation = @(x) all(ismember(x, {obj.indepVarInfo.Name}));
+            addOptional(p, 'varNames', {'Acquisition','Group'},@(x) name_validation(x) & numel(x) == 2);            
+            addOptional(p, 'groupVar', 'ROI',@(x) name_validation(x));  
             parse(p, obj, varargin{:});
             varNames = p.Results.varNames;
-            if isempty(varNames)
-                % If no input is provided, set the independent variables by
-                % default to be the "Acquisition" and "Groups"
-                obj.indepVars = {'Acquisition','Group'};
-                return
-            elseif ischar(varNames)
-                varNames = {varNames, ''};
-            end
-            % Check if the variable name is valid:
-            if ~all(ismember(varNames, {obj.indepVarInfo.Name}))
-                fprintf('Valid variables are: %s, %s, %s, %s, %s.\n',obj.indepVarInfo.Name);
-                error(['Invalid variable name(s):' varNames{1} ' - ' varNames{2}])
-            end
-            fprintf('Setting independent variable(s) to :\n%s\n%s\n', varNames{:});
-            obj.indepVars = varNames(~cellfun(@isempty,varNames));                        
+            groupVar = p.Results.groupVar;
+            % Further validation:
+            if any(strcmpi(groupVar, varNames))
+                error('groupVar cannot be part of varNames');
+            end            
+            fprintf('Setting independent variable(s) to "%s" and "%s"\n', varNames{:});
+            [~,lb] = ismember(varNames, {obj.indepVarInfo.Name});
+            obj.indepVars = obj.indepVarInfo(lb);
+            fprintf('Statistical analysis will be performed for each "%s" item.\n', groupVar);
+            obj.splitVar = obj.indepVarInfo(strcmpi(groupVar, {obj.indepVarInfo.Name}));
             disp('Done');
         end
         
@@ -472,7 +480,7 @@ classdef StatsManager < handle
                 out = ipermute(out, newOrder);
             end
         end
-        
+                                
         function resetLists(obj)
            % RESETLISTS will reset the observation and event lists to the
            % original state when this object was created. Additionally, the
@@ -483,6 +491,34 @@ classdef StatsManager < handle
            % Update data array:
            obj.gen_dataArr;                      
         end
+        %%% Stats functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        function varargout = getStats(obj)
+            % This function checks if the data can be used for statistical
+            % analysis (using the available tests) and performs the
+            % statistical analysis on the data.  
+            % IMPORTANT: !! currently, this method is available only for
+            % "scalar" data!!
+            % Output:
+            %   statsReport (optional): text containing a report of the
+            %   statistical comparison in the data.
+            
+            % Validation:           
+            if ~obj.b_hasStatsToolbox
+                warning('Operation Aborter! "Statistics and Machine learning" toolbox is necessary!');
+                return
+            end            
+            if ~strcmpi(obj.inputFeatures.dataType, 'scalar') 
+                warning('Operation Aborter! Statistical Comparison available ONLY for "scalar" data types!');
+                return
+            end
+            % Use the independent variables list ("indepVars") and the data
+            % from "dataArr" to decide which statistical test to use.
+            obj.chooseStatsTest;
+            %
+            
+        end
+        
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     end
     
     methods(Access = private)
@@ -789,9 +825,83 @@ classdef StatsManager < handle
             end
             [~, out]= ismember(lower(colName), lower(obj.headers));
         end
-                
+        
         %%%%%%%%%%%%  Auxiliary Stats functions %%%%%%%%%%%%%%%%%%%%%%%%%%%
+        
+        function flatDataArr(obj)
+            % This function flattens the data Array into one vector for
+            % scalar data and a X by T matrix for time-series data. The
+            % dimensions indices are also provided to retrieve the meta
+            % data information.
+            if ( any(strcmpi(obj.inputFeatures.dataType,{'map','matrix'})) )
+                error(['Operation aborted. Plot option not available for data type ' ...
+                    obj.inputFeatures.dataType])
+            end
+            % Repackage data for plotting:
+            disp('repackaging data...')
+            % Check for time-series:
+            %             [hasT,indxT] = ismember('T', obj.inputFeatures.dim_names);
+            indxT = find(strcmpi('t',obj.inputFeatures.dim_names));
+            dataSize = arrayfun(@(x) cellfun(@(y) size(y), x.data, 'UniformOutput',false), obj.dataArr, 'UniformOutput', false)';
+            dataSize = vertcat(dataSize{:}); dataSize = vertcat(dataSize{:});
+            if ( indxT )
+                Xsz = max(dataSize(indxT,:));
+            else
+                Xsz = 1; % For scalar data.
+            end
+            % Preallocate output array with maximum possible data size:
+            nRec = numel(obj.dataArr);
+            nEv = numel(obj.list_of_events);
+            nROI = numel(obj.obs_list);
+            datOut = nan(prod([nRec,nEv,nROI]), Xsz, 'single');
+            % Populate output data structure:
+            obj.flatData = struct('data',[],'gIndx', [],'sIndx', [],'rIndx',[],'eIndx',[],'AcquisitionIndx',[],...
+                'AcquisitionID', {},'RecStartDateTime',{});
+            indxEv = find(strcmpi('E', obj.inputFeatures.dim_names));
+            cnt = 1;
+            for ii = 1:length(obj.dataArr)
+                % Concatenate the data:
+                dat = vertcat(obj.dataArr(ii).data{:});
+                if ( indxEv )
+                    datSz1 = size(obj.dataArr(ii).data{1},indxEv) * numel(obj.dataArr(ii).data);
+                    dat = reshape(permute(dat,[indxEv, setdiff(1:ndims(dat),indxEv)]),datSz1,[]); % Reshape data;
+                else
+                    datSz1 =  length(obj.dataArr(ii).data);
+                end
                 
+                if ( indxT )
+                    datSz2 = size(obj.dataArr(ii).data{1},indxT);
+                else
+                    datSz2 = 1;
+                end
+                % Add data to output array:
+                datOut(cnt:cnt+datSz1-1,1:datSz2) = dat;
+                % Get meta data:
+                RecStartDateTime = repmat({obj.dataArr(ii).RecStartDateTime},datSz1,1);
+                AcquisitionID = repmat({obj.dataArr(ii).AcquisitionID},datSz1,1);
+                aIndx = repmat(obj.dataArr(ii).AcquisitionIndx, datSz1,1);
+                gIndx = repmat(obj.dataArr(ii).gIndx,datSz1,1);
+                sIndx = repmat(obj.dataArr(ii).sIndx,datSz1,1);
+                rIndx = repelem(obj.dataArr(ii).rIndx, datSz1/length(obj.dataArr(ii).rIndx),1);
+                eIndx = repmat(obj.dataArr(ii).eIndx, datSz1/length(obj.dataArr(ii).eIndx),1);
+                % Add meta data to output structure:
+                obj.flatData(1).gIndx = [obj.flatData.gIndx; gIndx];
+                obj.flatData.sIndx = [obj.flatData.sIndx; sIndx];
+                obj.flatData.rIndx = [obj.flatData.rIndx; rIndx];
+                obj.flatData.eIndx = [obj.flatData.eIndx; eIndx];
+                obj.flatData.AcquisitionIndx = [obj.flatData.AcquisitionIndx; aIndx];
+                obj.flatData.AcquisitionID = [obj.flatData.AcquisitionID; AcquisitionID];
+                obj.flatData.RecStartDateTime = [obj.flatData.RecStartDateTime; RecStartDateTime];
+                cnt = cnt + datSz1;
+            end
+            obj.flatData.data = datOut(~all(isnan(datOut),2),:);
+            obj.flatData.groupID = unique(obj.list_of_groups);
+            obj.flatData.SubjectID = obj.list_of_subjects;
+            obj.flatData.EventID = obj.list_of_events;
+            obj.flatData.ObsID = obj.obs_list;
+            disp('Done.')
+        end
+        
         function out = calculateVariation(~, varType,data, dim)
             % CALCULATEVARIATION calculates one of the following variation
             % measures on "data":
@@ -821,29 +931,45 @@ classdef StatsManager < handle
                 otherwise
                     error('Unknown variation measure!')
             end
-        end                
+        end
         
-        function updateCurrentStatTest(obj)
+        function chooseStatsTest(obj)
            % This method uses the current independent variables and the
            % size of the data in "dataArr" to decide which statistical test
            % to apply.
            
+           obj.flatDataArr; % Prepare data for stats.
+           disp('Choosing statistical test...')
+           % Get first independent variable:           
+           nIndpV1 = length(unique(obj.flatData.(obj.indepVars(1).fieldName)));
+           % Secondary independent variable:          
+           nIndpV2 = length(unique(obj.flatData.(obj.indepVars(2).fieldName)));
+           % Decide which test to use:
+           % One group: abort:
+           if nIndpV1 == 1 && nIndpV2 == 1
+               disp('No stats for one group with one independent variable')
+               return
+           end
            
-           
-           
-            
-        end
-        
-        
-        
-        function b_isNormal = validateDataNormality(obj)
-            % This function uses the Lilliefors normality test to check if
-            % all data follow a normal distribution.
-            
-            %%%% TO BE DONE %%%
-            
-        end
-                
+           if (nIndpV1 == 2 && nIndpV2 == 1 && obj.indepVars(1).b_isRepeatedMeasure) || (nIndpV1 == 1 && nIndpV2 == 2 && obj.indepVars(2).b_isRepeatedMeasure)
+               % Paired two-sided test
+               disp('Comparison type: paired two-sided data')
+               obj.curr_test = 'WilcoxonPaired';
+           elseif (nIndpV1 == 2 && nIndpV2 == 1 && ~obj.indepVars(1).b_isRepeatedMeasure) || (nIndpV1 == 1 && nIndpV2 == 2 && ~obj.indepVars(2).b_isRepeatedMeasure)
+               % Unpaired two-sided test
+               disp('Comparison type: unpaired two-sided data')
+               obj.curr_test = 'WilcoxonUnpaired';
+           elseif (nIndpV1 == 1 && nIndpV2 > 2 && ~obj.indepVars(2).b_isRepeatedMeasure) || (nIndpV1 > 2 && nIndpV2 == 1 && ~obj.indepVars(1).b_isRepeatedMeasure)
+               % 3+ independent (unpaired) samples test
+               disp('Comparison type: data with 3+ independent samples')
+               obj.curr_test = 'KruskalWallis';
+           else
+               disp('Comparison type: data with 3+ dependent samples')
+               obj.curr_test = 'Friedman';
+           end           
+           fprintf('Hypothesis test chosen: %s\n', obj.curr_test);
+           disp('Done')
+        end                                                   
     end
 end
 

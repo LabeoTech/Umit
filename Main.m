@@ -14,7 +14,7 @@ protocol.generateList;
 protocol.generateSaveFolders;
 save(fullfile(protocol.SaveDir, [protocol.Name '.mat']), 'protocol');
 %% Load existing Protocol Object:
-protocol = loadProtocol(fullfile(savedir, ProjectName));
+load(fullfile(savedir, ProjectName));
 %% Query filter
 % Clear previously saved Filter structure:
 protocol.clearFilterStruct
@@ -27,7 +27,7 @@ protocol.FilterStruct.Subject.Expression = 'M5';
 % protocol.FilterStruct.Subject(2).Expression = 'M0005844209';
 % Query Acquisition and Modality:
 protocol.FilterStruct.Acquisition.PropName = 'ID';
-protocol.FilterStruct.Acquisition.Expression = 'OD_SFTF_21ST18'; % Leave empty to select all
+protocol.FilterStruct.Acquisition.Expression = 'SF'; % Leave empty to select all
 % protocol.FilterStruct.Acquisition.LogicalOperator ='OR';
 % protocol.FilterStruct.Acquisition(2).PropName = 'ID';
 % protocol.FilterStruct.Acquisition(2).Expression = 'RS'; % Leave empty to select all
@@ -73,4 +73,34 @@ pipe = PipelineManager(protocol, 'FluorescenceImaging');
 pipe.loadPipe('TestPipe1')
 pipe.showPipeSummary
 pipe.run_pipeline
+
+%% Data analysis
+% In this section, we put together the data created using one of the
+% "Analysis" functions (e.g. transformDat2Mat, genCorrelationMatrix). 
+% These files contain the data from observations (i.e. ROIs). Here, we will
+% use the "StatsManager" class to group the data into one or more
+% experimental groups and gather the data for plotting.
+
+% Select .MAT file containing the data
+fileName = 'scalar.mat';
+% Get the list of objects containing the data
+list_of_objs = protocol.extractFilteredObjects(3);
+% Get the list of observations contained in all files:
+obs_list = {'A_R','AL_R','AM_R','V1_L', 'M1_L', 'M2_L'};
+% Set a list of experimental groups for each item in the "list_of_obj":
+list_of_groups = repmat({'Test'},size(list_of_objs));
+% Instantiate the "StatsManager" object:
+statMngr = StatsManager(list_of_objs, obs_list,list_of_groups, fileName);
+%% Plot grouped data
+PlotLongData(statMngr); % Plotting tool for scalar and time-series data types.
+%% Perform statistical analysis for scalar data
+statMngr.setStatsVariables({'Subject','Group'},'ROI')
+statMngr.getStats
+
+
+
+
+
+
+
 
