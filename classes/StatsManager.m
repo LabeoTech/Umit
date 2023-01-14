@@ -41,11 +41,10 @@ classdef StatsManager < handle
         
         % Structure with information about all possible independent variables (see prop "indepVar") for statistics:
         indepVarInfo = struct('Name',{'Group','Subject','ROI','Acquisition', 'Event'}, ...
-            'fieldName',{'groupID','SubjectID','observationID','AcquisitionIndx','EventID'},...
-            'indexName',{'gIndx','sIndx','rIndx','AcquisitionIndx','eIndx'},...
+            'fieldName',{'groupID','SubjectID','ObsID','AcquisitionID','EventID'},...
+            'indexName',{'gIndx','sIndx','rIndx','aIndx','eIndx'},...
             'b_isRepeatedMeasure',{false,false,false,true,true});
         list_of_tests = {'WilcoxPaired','WilcoxUnpaired','oneWayANOVA','twoWayANOVA'}; % List of currently available statistical tests
-        
     end
     
     methods
@@ -79,7 +78,7 @@ classdef StatsManager < handle
             end
         end
         %%% Property Set Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        function set.list_of_objs(obj, list_of_objs)
+        function set.list_of_objs(obj,list_of_objs)
             % Set function for list_of_objs.
             % It checks if the input is a cell array of valid objects.
             types = cellfun(@(x) isa(x, 'Protocol') || isa(x, 'Subject') ||...
@@ -98,7 +97,7 @@ classdef StatsManager < handle
             end
         end
         
-        function set.obs_list(obj, obs_list)
+        function set.obs_list(obj,obs_list)
             % Set function for obs_list.
             % It checks if obs_list is a cell array of CHAR.
             if iscell(obs_list) && ischar([obs_list{:}])
@@ -110,7 +109,7 @@ classdef StatsManager < handle
             end
         end
         
-        function set.list_of_groups(obj, list_of_groups)
+        function set.list_of_groups(obj,list_of_groups)
             % Set function for list_of_groups.
             % It checks if list_of_groups is a cell array of CHAR.
             if iscell(list_of_groups) && ischar([list_of_groups{:}])
@@ -122,7 +121,7 @@ classdef StatsManager < handle
             end
         end
         
-        function set.stats_filename(obj, stats_filename)
+        function set.stats_filename(obj,stats_filename)
             % Set function for stats_filename.
             % It checks if stats_filename is a .MAT file.
             errID = 'umIToolbox:StatsManager:InvalidInput';
@@ -132,7 +131,7 @@ classdef StatsManager < handle
             obj.stats_filename = stats_filename;
         end
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        function [out,uniqLabels] = createTable(obj, varargin)
+        function [out,uniqLabels] = createTable(obj,varargin)
             % This function creates a table or an array of tables
             % containing ROI data from each observation.
             % Input:
@@ -170,7 +169,7 @@ classdef StatsManager < handle
             disp('Table created!')
         end
         
-        function exportToCSV(obj, filename)
+        function exportToCSV(obj,filename)
             % This function creates a .CSV file containing all data created
             % by the method "createTable".
             % Input:
@@ -190,7 +189,7 @@ classdef StatsManager < handle
             msgbox(['Data saved to file : ' filename], 'to CSV');
         end
         
-        function out = getAcqIndexList(obj, type)
+        function out = getAcqIndexList(obj,type)
             % GETACQINDEXLIST provides the list of the acquisition indices
             % that are available for merging by "setAcquisitionRange"
             % method OR the original list of acquisition indices.
@@ -202,7 +201,6 @@ classdef StatsManager < handle
             %   cell array for type 'current'. The order of the cell array
             %   corresponds to the index of the "indx_avg_data" in
             %   stats_data.
-            
             
             if ~ismember(lower(type), {'original', 'available', 'current'})
                 error('Input should be either "original", "available" or "current".')
@@ -228,7 +226,7 @@ classdef StatsManager < handle
             end
         end
         
-        function setAcquisitionRange(obj, indxRange)
+        function setAcquisitionRange(obj,indxRange)
             % SETACQUISITIONRANGE regroups a range of acquisitions to be
             % merged using the method "averageData".
             % Input:
@@ -259,7 +257,7 @@ classdef StatsManager < handle
             obj.gen_dataArr;
         end
         
-        function setStatsVariables(obj, varargin)
+        function setStatsVariables(obj,varargin)
             % This method sets the "indepVars" property based on the
             % available data in "dataArr".
             % Inputs:
@@ -280,6 +278,11 @@ classdef StatsManager < handle
             % Further validation:
             if any(strcmpi(groupVar, varNames))
                 error('groupVar cannot be part of varNames');
+            end
+            % Use this only for "scalar" data (FOR NOW):
+            if ~strcmpi(obj.inputFeatures.dataType, 'scalar')
+                warning(['Statistical comparisons not available for data of type ' obj.inputFeatures.dataType]);
+                return
             end
             disp(repmat('-',1,100));
             fprintf('Current independent variable(s) are "%s" and "%s".\n', varNames{:});
@@ -481,6 +484,87 @@ classdef StatsManager < handle
                 out = reshape(out, [numel(evNames), datsz(2:end)]);
                 out = ipermute(out, newOrder);
             end
+        end
+        
+        function flatDataArr(obj)
+            % This function flattens the data Array into one vector for
+            % scalar data and a X by T matrix for time-series data. The
+            % dimensions indices are also provided to retrieve the meta
+            % data information.
+            
+            if ( any(strcmpi(obj.inputFeatures.dataType,{'map','matrix'})) )
+                error(['Operation aborted. Plot option not available for data type ' ...
+                    obj.inputFeatures.dataType])
+            end
+            % Repackage data for plotting:
+            disp('repackaging data...')
+            % Check for time-series:
+            %             [hasT,indxT] = ismember('T', obj.inputFeatures.dim_names);
+            indxT = find(strcmpi('t',obj.inputFeatures.dim_names));
+            dataSize = arrayfun(@(x) cellfun(@(y) size(y), x.data, 'UniformOutput',false), obj.dataArr, 'UniformOutput', false)';
+            dataSize = vertcat(dataSize{:}); dataSize = vertcat(dataSize{:});
+            if ( indxT )
+                Xsz = max(dataSize(indxT,:));
+            else
+                Xsz = 1; % For scalar data.
+            end
+            % Preallocate output array with maximum possible data size:
+            nRec = numel(obj.dataArr);
+            nEv = numel(obj.list_of_events);
+            nROI = numel(obj.obs_list);
+            datOut = nan(prod([nRec,nEv,nROI]), Xsz, 'single');
+            % Populate output data structure:
+            obj.flatData = struct('data',[],'gIndx', [],'sIndx', [],'rIndx',[],'eIndx',[],'aIndx',[],...
+                'groupID',{},'SubjectID',{},'ObsID',{},'EventID',{},'AcquisitionID', {},...
+                'AcquisitionNames',{},'RecStartDateTime',{});
+            % *Here, "AcquisitionID" are just generic strings (e.g. Acq#1,
+            % Acq#2...) while "AcquisitionNames" are the original IDs of
+            % the recordings.
+            indxEv = find(strcmpi('E', obj.inputFeatures.dim_names));
+            cnt = 1;
+            for ii = 1:length(obj.dataArr)
+                % Concatenate the data:
+                dat = vertcat(obj.dataArr(ii).data{:});
+                if ( indxEv )
+                    datSz1 = size(obj.dataArr(ii).data{1},indxEv) * numel(obj.dataArr(ii).data);
+                    dat = reshape(permute(dat,[indxEv, setdiff(1:ndims(dat),indxEv)]),datSz1,[]); % Reshape data;
+                else
+                    datSz1 =  length(obj.dataArr(ii).data);
+                end
+                
+                if ( indxT )
+                    datSz2 = size(obj.dataArr(ii).data{1},indxT);
+                else
+                    datSz2 = 1;
+                end
+                % Add data to output array:
+                datOut(cnt:cnt+datSz1-1,1:datSz2) = dat;
+                % Get meta data:
+                RecStartDateTime = repmat({obj.dataArr(ii).RecStartDateTime},datSz1,1);
+                AcqNames = repmat({obj.dataArr(ii).AcquisitionID},datSz1,1);
+                aIndx = repmat(obj.dataArr(ii).AcquisitionIndx, datSz1,1);
+                gIndx = repmat(obj.dataArr(ii).gIndx,datSz1,1);
+                sIndx = repmat(obj.dataArr(ii).sIndx,datSz1,1);
+                rIndx = repelem(obj.dataArr(ii).rIndx, datSz1/length(obj.dataArr(ii).rIndx),1);
+                eIndx = repmat(obj.dataArr(ii).eIndx, datSz1/length(obj.dataArr(ii).eIndx),1);
+                % Add meta data to output structure:
+                obj.flatData(1).gIndx = [obj.flatData.gIndx; gIndx];
+                obj.flatData.sIndx = [obj.flatData.sIndx; sIndx];
+                obj.flatData.rIndx = [obj.flatData.rIndx; rIndx];
+                obj.flatData.eIndx = [obj.flatData.eIndx; eIndx];
+                obj.flatData.aIndx = [obj.flatData.aIndx; aIndx];
+                obj.flatData.AcquisitionNames = [obj.flatData.AcquisitionNames; AcqNames];
+                obj.flatData.RecStartDateTime = [obj.flatData.RecStartDateTime; RecStartDateTime];
+                cnt = cnt + datSz1;
+            end
+            obj.flatData.data = datOut(~all(isnan(datOut),2),:);
+            obj.flatData.groupID = unique(obj.list_of_groups);
+            obj.flatData.SubjectID = obj.list_of_subjects;
+            obj.flatData.ObsID = obj.obs_list;
+            obj.flatData.EventID = obj.list_of_events;
+            obj.flatData.AcquisitionID = arrayfun(@(x) ['Acq#' num2str(x)],...
+                unique(obj.flatData.aIndx), 'UniformOutput',false)';
+            disp('Done.')
         end
         
         function resetLists(obj)
@@ -729,7 +813,7 @@ classdef StatsManager < handle
             disp('Done!')
         end
         
-        function out = getElementInfo(~,elem,className, propName)
+        function out = getElementInfo(~,elem,className,propName)
             % getElementInfo retrieves the property PROPNAME from an
             % object ELEM of class CLASSNAME or from its Parents.
             
@@ -750,7 +834,7 @@ classdef StatsManager < handle
             end
         end
         
-        function out = getObsData(obj, obs_ID, labelList)
+        function out = getObsData(obj,obs_ID,labelList)
             % This function retrieves the observation data from all
             % recordings containing the observation "obs_ID".
             % Input
@@ -819,7 +903,7 @@ classdef StatsManager < handle
             
         end
         
-        function out = hMap(obj, colName)
+        function out = hMap(obj,colName)
             % HMAP gives the index of the "stats_data" column with
             % the header "colName".
             if ischar(colName)
@@ -829,82 +913,8 @@ classdef StatsManager < handle
         end
         
         %%%%%%%%%%%%  Auxiliary Stats functions %%%%%%%%%%%%%%%%%%%%%%%%%%%
-        
-        function flatDataArr(obj)
-            % This function flattens the data Array into one vector for
-            % scalar data and a X by T matrix for time-series data. The
-            % dimensions indices are also provided to retrieve the meta
-            % data information.
-            if ( any(strcmpi(obj.inputFeatures.dataType,{'map','matrix'})) )
-                error(['Operation aborted. Plot option not available for data type ' ...
-                    obj.inputFeatures.dataType])
-            end
-            % Repackage data for plotting:
-            disp('repackaging data...')
-            % Check for time-series:
-            %             [hasT,indxT] = ismember('T', obj.inputFeatures.dim_names);
-            indxT = find(strcmpi('t',obj.inputFeatures.dim_names));
-            dataSize = arrayfun(@(x) cellfun(@(y) size(y), x.data, 'UniformOutput',false), obj.dataArr, 'UniformOutput', false)';
-            dataSize = vertcat(dataSize{:}); dataSize = vertcat(dataSize{:});
-            if ( indxT )
-                Xsz = max(dataSize(indxT,:));
-            else
-                Xsz = 1; % For scalar data.
-            end
-            % Preallocate output array with maximum possible data size:
-            nRec = numel(obj.dataArr);
-            nEv = numel(obj.list_of_events);
-            nROI = numel(obj.obs_list);
-            datOut = nan(prod([nRec,nEv,nROI]), Xsz, 'single');
-            % Populate output data structure:
-            obj.flatData = struct('data',[],'gIndx', [],'sIndx', [],'rIndx',[],'eIndx',[],'AcquisitionIndx',[],...
-                'AcquisitionID', {},'RecStartDateTime',{});
-            indxEv = find(strcmpi('E', obj.inputFeatures.dim_names));
-            cnt = 1;
-            for ii = 1:length(obj.dataArr)
-                % Concatenate the data:
-                dat = vertcat(obj.dataArr(ii).data{:});
-                if ( indxEv )
-                    datSz1 = size(obj.dataArr(ii).data{1},indxEv) * numel(obj.dataArr(ii).data);
-                    dat = reshape(permute(dat,[indxEv, setdiff(1:ndims(dat),indxEv)]),datSz1,[]); % Reshape data;
-                else
-                    datSz1 =  length(obj.dataArr(ii).data);
-                end
-                
-                if ( indxT )
-                    datSz2 = size(obj.dataArr(ii).data{1},indxT);
-                else
-                    datSz2 = 1;
-                end
-                % Add data to output array:
-                datOut(cnt:cnt+datSz1-1,1:datSz2) = dat;
-                % Get meta data:
-                RecStartDateTime = repmat({obj.dataArr(ii).RecStartDateTime},datSz1,1);
-                AcquisitionID = repmat({obj.dataArr(ii).AcquisitionID},datSz1,1);
-                aIndx = repmat(obj.dataArr(ii).AcquisitionIndx, datSz1,1);
-                gIndx = repmat(obj.dataArr(ii).gIndx,datSz1,1);
-                sIndx = repmat(obj.dataArr(ii).sIndx,datSz1,1);
-                rIndx = repelem(obj.dataArr(ii).rIndx, datSz1/length(obj.dataArr(ii).rIndx),1);
-                eIndx = repmat(obj.dataArr(ii).eIndx, datSz1/length(obj.dataArr(ii).eIndx),1);
-                % Add meta data to output structure:
-                obj.flatData(1).gIndx = [obj.flatData.gIndx; gIndx];
-                obj.flatData.sIndx = [obj.flatData.sIndx; sIndx];
-                obj.flatData.rIndx = [obj.flatData.rIndx; rIndx];
-                obj.flatData.eIndx = [obj.flatData.eIndx; eIndx];
-                obj.flatData.AcquisitionIndx = [obj.flatData.AcquisitionIndx; aIndx];
-                obj.flatData.AcquisitionID = [obj.flatData.AcquisitionID; AcquisitionID];
-                obj.flatData.RecStartDateTime = [obj.flatData.RecStartDateTime; RecStartDateTime];
-                cnt = cnt + datSz1;
-            end
-            obj.flatData.data = datOut(~all(isnan(datOut),2),:);
-            obj.flatData.groupID = unique(obj.list_of_groups);
-            obj.flatData.SubjectID = obj.list_of_subjects;
-            obj.flatData.EventID = obj.list_of_events;
-            obj.flatData.ObsID = obj.obs_list;
-            disp('Done.')
-        end
-        
-        function out = calculateVariation(~, varType,data, dim)
+                        
+        function out = calculateVariation(~,varType,data,dim)
             % CALCULATEVARIATION calculates one of the following variation
             % measures on "data":
             %   'STD': standard deviation
@@ -973,14 +983,27 @@ classdef StatsManager < handle
                 disp('Comparison type: data with 3+ dependent samples.')
                 obj.curr_test = 'Friedman';
             end
+            % Update "flatData" with the list of names from stats grouping variables:
+            
+            % Get the list of unique values for each independent variable:
+            obj.flatData.indPNames = cell(2,1);
+            for ii = 1:2
+                % Get the names of the variable keeping its original
+                % order:
+                names = unique(obj.flatData.(obj.indepVars(ii).fieldName), 'stable');
+                if size(names,1) > size(names,2)
+                    names = names';
+                end
+                obj.flatData.indPNames{ii} = names;
+            end
+            % Get the list of names of the split variable:
+            obj.flatData.splitNames = obj.flatData.(obj.splitVar.fieldName);            
+            % Display messages:
             fprintf('Hypothesis test chosen: %s.\n', obj.curr_test);
             disp(repmat('-',1,100));
             disp('Done')
-        end
+        end                  
         
-        function classifyFlatDataByStatGroup(obj)
-           % TBD
-        end
     end
 end
 
