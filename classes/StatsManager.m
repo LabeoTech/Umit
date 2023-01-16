@@ -20,6 +20,8 @@ classdef StatsManager < handle
         MfileArr       % Array of MATFILE objects.
         time_resolution = 'none' % Time resolution for grouping each observation
         % Options: "none", "minute", "hour, "day", "week", "month".
+        %%%%% STATS PARAMETERS %%%%%
+        pAlpha = 0.05 % "Significance" threshold (Alpha) for statistical analysis.
     end
     properties (SetAccess = private)
         %         timestamp_list % List of timestamps associated with each object in list_of_objs.
@@ -1020,7 +1022,8 @@ classdef StatsManager < handle
             % statistical comparison:            
             indxG = unique(obj.flatData.(obj.splitVar.indexName));
             % Instantiate stats structure:
-            statsInfo = repmat(struct('subGroupName','','GroupComparison', struct('Name','None', 'h',[],'p',[],'stats',[],'postHocStats','none')),1,numel(indxG));
+            statsInfo = repmat(struct('subGroupName','','GroupComparison', struct('Name','None', 'h',[],'p',[],'stats',[], 'ANOVAtab',[],...
+                'postHocStats',struct('Name','none','p',[]))),1,numel(indxG));
             
             for ii = 1:numel(indxG)
                 statsInfo(ii).subGroupName = obj.flatData.(obj.splitVar.fieldName){ii};
@@ -1043,8 +1046,7 @@ classdef StatsManager < handle
                             % Skip if one of the subsamples are missing:
                             warning(['Skipped paired Wilcoxon test because of missing data on comparison :' statsInfo(ii).subGroupName ' --> ' statsInfo(ii).GroupComparison.Name]);
                             continue
-                        end    
-                        
+                        end                            
                         % Perform statistical comparison:
                         [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.h,statsInfo(ii).GroupComparison.stats] = ranksum(x,y);                                                
                     case 'WilcoxonPaired'
@@ -1068,7 +1070,31 @@ classdef StatsManager < handle
                             continue                        
                         end                        
                         % Perform statistical comparison:
-                        [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.h,statsInfo(ii).GroupComparison.stats] = ranksum(x,y);                                                                    
+                        [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.h,statsInfo(ii).GroupComparison.stats] = ranksum(x,y);
+                    case 'KruskalWallis'
+                        disp('Performing Kruskal...')                       
+                        nIndepVars = {unique(obj.flatData.(obj.indepVars(1).indexName)), unique(obj.flatData.(obj.indepVars(2).indexName))};
+                        idxHas2PlusItems = ( cellfun(@numel,nIndepVars) > 1 );                                                
+                        % Segregate data into 3+ subsamples:                                                
+                        gVar = obj.flatData.(obj.indepVars(idxHas2PlusItems).indexName);                         
+                        gNames = obj.flatData.(obj.indepVars(idxHas2PlusItems).fieldName);
+                        gMap = containers.Map(unique(gVar),gNames);
+                        gVar = arrayfun(@(x) gMap(x),gVar, 'UniformOutput',false);                        
+                        x = obj.flatData.data(idxSplit);
+                        % Create ID for comparison:
+                        statsInfo(ii).GroupComparison.Name = strjoin(obj.flatData.(obj.indepVars(idxHas2PlusItems).fieldName), '_vs_'); 
+                        [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.ANOVAtab, statsInfo(ii).GroupComparison.stats] = kruskalwallis(x, gVar(idxSplit), 'off');
+                        % Perform postHoc test on KW output when a
+                        % difference was detected in the KW test:
+                        if statsInfo(ii).GroupComparison.p < obj.pAlpha
+                            c = multcompare(statsInfo(ii).GroupComparison.stats,'Alpha', obj.pAlpha,'CType', 'dunn-sidak', 'Display','off');
+                            statsInfo(ii).GroupComparison
+                            for kk = 1:size(c,1)                                
+                                statsInfo(ii).GroupComparison.postHocStats(kk).Name = strjoin({gMap(c(kk,1)), gMap(c(kk,2))}, '_vs_');
+                                statsInfo(ii).GroupComparison.postHocStats(kk).p = c(kk,end);
+                            end                            
+                        end                       
+                    
                 end
                 
             end
@@ -1086,6 +1112,7 @@ classdef StatsManager < handle
         
     end
 end
+
 
 
 

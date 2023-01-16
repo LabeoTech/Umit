@@ -97,7 +97,7 @@ PlotLongData(statMngr); % Plotting tool for scalar and time-series data types.
 %% Perform statistical analysis for scalar data
 % Average all acquisitions
 statMngr.setAcquisitionRange([3 4])
-statMngr.setStatsVariables({'Group','Acquisition'},'ROI')
+statMngr.setStatsVariables({'Subject','Group'},'ROI')
 statMngr.getStats
 
 
