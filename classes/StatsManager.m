@@ -44,7 +44,8 @@ classdef StatsManager < handle
             'fieldName',{'groupID','SubjectID','ObsID','AcquisitionID','EventID'},...
             'indexName',{'gIndx','sIndx','rIndx','aIndx','eIndx'},...
             'b_isRepeatedMeasure',{false,false,false,true,true});
-        list_of_tests = {'WilcoxPaired','WilcoxUnpaired','oneWayANOVA','twoWayANOVA'}; % List of currently available statistical tests
+        list_of_tests = {'WilcoxPaired','WilcoxUnpaired','oneWayANOVA','twoWayANOVA'}; % List of currently available statistical tests.
+        results_stats % structure containing the results of hypothesis tests between groups. 
     end
     
     methods
@@ -590,17 +591,18 @@ classdef StatsManager < handle
             
             % Validation:
             if ~obj.b_hasStatsToolbox
-                warning('Operation Aborter! "Statistics and Machine learning" toolbox is necessary!');
+                warning('Operation Aborted! "Statistics and Machine learning" toolbox is necessary!');
                 return
             end
             if ~strcmpi(obj.inputFeatures.dataType, 'scalar')
-                warning('Operation Aborter! Statistical Comparison available ONLY for "scalar" data types!');
+                warning('Operation Aborted! Statistical Comparison available ONLY for "scalar" data types!');
                 return
             end
             % Use the independent variables list ("indepVars") and the data
             % from "dataArr" to decide which statistical test to use.
             obj.chooseStatsTest;
-            %
+            % Run tests
+            obj.runHypothesisTest;
             
         end
         
@@ -1003,6 +1005,84 @@ classdef StatsManager < handle
             disp(repmat('-',1,100));
             disp('Done')
         end                  
+        
+        function runHypothesisTest(obj)
+            % This method performs the hypothesis test between groups using
+            % the information created by the method "chooseStatsTest".
+            % The results will be stored in the property "results_stats".
+            % The available tests are listed in the property
+            % "list_of_tests". 
+            %   **If a test is added or removed from this
+            %   `method, please update the "list_of_tests" array**.
+            
+            disp('Performing hypothesis tests...')            
+            % For each subset of groups in "splitVar", perform the
+            % statistical comparison:            
+            indxG = unique(obj.flatData.(obj.splitVar.indexName));
+            % Instantiate stats structure:
+            statsInfo = repmat(struct('subGroupName','','GroupComparison', struct('Name','None', 'h',[],'p',[],'stats',[],'postHocStats','none')),1,numel(indxG));
+            
+            for ii = 1:numel(indxG)
+                statsInfo(ii).subGroupName = obj.flatData.(obj.splitVar.fieldName){ii};
+                % Perform stats in data subset:
+                idxSplit = obj.flatData.(obj.splitVar.indexName) == indxG(ii);                
+                % Perform stats:
+                switch obj.curr_test
+                    case 'WilcoxonUnpaired'
+                        % Unpaired test with 2 groups:                                                                        
+                        % Loop across variable with two groups:
+                        nIndepVars = {unique(obj.flatData.(obj.indepVars(1).indexName)), unique(obj.flatData.(obj.indepVars(2).indexName))};
+                        idxHas2Items = ( cellfun(@numel,nIndepVars) == 2 );                                                
+                        % Segregate data into two subsamples:                        
+                        indxVar1 = ( obj.flatData.(obj.indepVars(idxHas2Items).indexName) == 1 );                        
+                        x = obj.flatData.data(idxSplit & indxVar1);
+                        y = obj.flatData.data(idxSplit & ~indxVar1);   
+                        % Create ID for comparison:
+                        statsInfo(ii).GroupComparison.Name = strjoin(obj.flatData.(obj.indepVars(idxHas2Items).fieldName), '_vs_');                        
+                        if isempty(x) || isempty(y)                            
+                            % Skip if one of the subsamples are missing:
+                            warning(['Skipped paired Wilcoxon test because of missing data on comparison :' statsInfo(ii).subGroupName ' --> ' statsInfo(ii).GroupComparison.Name]);
+                            continue
+                        end    
+                        
+                        % Perform statistical comparison:
+                        [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.h,statsInfo(ii).GroupComparison.stats] = ranksum(x,y);                                                
+                    case 'WilcoxonPaired'
+                        % Paired test with 2 groups:                                                                        
+                        
+                        % Loop across variable with two groups:
+                        nIndepVars = {unique(obj.flatData.(obj.indepVars(1).indexName)), unique(obj.flatData.(obj.indepVars(2).indexName))};
+                        idxHas2Items = ( cellfun(@numel,nIndepVars) == 2 );                                                
+                        % Segregate data into two subsamples:                        
+                        indxVar1 = ( obj.flatData.(obj.indepVars(idxHas2Items).indexName) == 1 );                        
+                        x = obj.flatData.data(idxSplit & indxVar1); 
+                        y = obj.flatData.data(idxSplit & ~indxVar1);
+                        % Sort x and y by subject index:
+                        [~,indxS] = sort(obj.flatData.sIndx(idxSplit & indxVar1));
+                        x = x(indxS); y = y(indxS);
+                        % Create ID for comparison:
+                        statsInfo(ii).GroupComparison.Name = strjoin(obj.flatData.(obj.indepVars(idxHas2Items).fieldName), '_vs_');                        
+                        if ( isempty(x) || isempty(y) ) | ( size(x) ~= size(y) )
+                            % Skip if one of the subsamples are missing:
+                            warning(['Skipped paired Wilcoxon test because of missing data on comparison :' statsInfo(ii).subGroupName ' --> ' statsInfo(ii).GroupComparison.Name]);
+                            continue                        
+                        end                        
+                        % Perform statistical comparison:
+                        [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.h,statsInfo(ii).GroupComparison.stats] = ranksum(x,y);                                                                    
+                end
+                
+            end
+            
+            disp('Done')
+            
+            
+            
+            
+            
+            
+        end
+            
+        
         
     end
 end

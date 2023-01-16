@@ -88,14 +88,16 @@ list_of_objs = protocol.extractFilteredObjects(3);
 % Get the list of observations contained in all files:
 obs_list = {'A_R','AL_R','AM_R','V1_L', 'M1_L', 'M2_L'};
 % Set a list of experimental groups for each item in the "list_of_obj":
-% list_of_groups = repmat({'Test'},size(list_of_objs));
-list_of_groups = repelem({'A','B'},length(list_of_objs)/2)';
+list_of_groups = repmat({'Test'},size(list_of_objs));
+% list_of_groups = repelem({'A','B'},length(list_of_objs)/2)';
 % Instantiate the "StatsManager" object:
 statMngr = StatsManager(list_of_objs, obs_list,list_of_groups, fileName);
 %% Plot grouped data
 PlotLongData(statMngr); % Plotting tool for scalar and time-series data types.
 %% Perform statistical analysis for scalar data
-statMngr.setStatsVariables({'Subject','Group'},'ROI')
+% Average all acquisitions
+statMngr.setAcquisitionRange([3 4])
+statMngr.setStatsVariables({'Group','Acquisition'},'ROI')
 statMngr.getStats
 
 
