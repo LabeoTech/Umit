@@ -274,14 +274,22 @@ classdef StatsManager < handle
             addRequired(p, 'obj');
             name_validation = @(x) all(ismember(x, {obj.indepVarInfo.Name}));
             addOptional(p, 'varNames', {'Acquisition','Group'},@(x) name_validation(x) & numel(x) == 2);
-            addOptional(p, 'groupVar', 'ROI',@(x) name_validation(x));            
+            addOptional(p, 'groupVar', 'ROI',@(x) name_validation(x));
+            addOptional(p, 'pairVar','',@(x) name_validation(x));
             parse(p, obj, varargin{:});
             varNames = p.Results.varNames;
-            groupVar = p.Results.groupVar;            
+            groupVar = p.Results.groupVar;
+            pairVar = p.Results.pairVar;
             % Further validation:
             if any(strcmpi(groupVar, varNames))
                 error('Grouping variable cannot be an independent variable');
-            end             
+            end 
+            if any(strcmpi(pairVar, {varNames, groupVar}))
+                error('Pairing variable cannot be an independent variable OR grouping variable');
+            end
+            if isempty(pairVar) && ~any(strcmpi('Subject',[varNames,{groupVar}]))
+                pairVar = 'Subject';
+            end            
             % Use this only for "scalar" data (FOR NOW):
             if ~strcmpi(obj.inputFeatures.dataType, 'scalar')
                 warning(['Statistical comparisons not available for data of type ' obj.inputFeatures.dataType]);
@@ -1060,10 +1068,7 @@ classdef StatsManager < handle
                         x = obj.flatData.data(idxSplit & dv(:,1));
                         y = obj.flatData.data(idxSplit & ~dv(:,1));
                         % Sort data by pairs:
-                        % Deduce by which dimension the data is paired:
                         
-                        %%%%% TO BE DONE %%%%%
-                                                
                         % Create ID for comparison:
                         statsInfo(ii).GroupComparison.Name = strjoin(obj.flatData.(obj.indepVars(idxIndep).fieldName), '_vs_');
                         if isempty(x) || isempty(y)
@@ -1071,7 +1076,8 @@ classdef StatsManager < handle
                             warning(['Skipped paired Wilcoxon test because of missing data on comparison :' statsInfo(ii).subGroupName ' --> ' statsInfo(ii).GroupComparison.Name]);
                             continue
                         end
-                        % Perform statistical comparison:                        
+                        % Perform statistical comparison:
+                        
                         [h,p,~,stats] = ttest2(x,y)
                         [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.h,statsInfo(ii).GroupComparison.stats] = ranksum(x,y);
                     case 'UnpairedTest'
