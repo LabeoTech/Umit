@@ -274,14 +274,14 @@ classdef StatsManager < handle
             addRequired(p, 'obj');
             name_validation = @(x) all(ismember(x, {obj.indepVarInfo.Name}));
             addOptional(p, 'varNames', {'Acquisition','Group'},@(x) name_validation(x) & numel(x) == 2);
-            addOptional(p, 'groupVar', 'ROI',@(x) name_validation(x));            
+            addOptional(p, 'groupVar', 'ROI',@(x) name_validation(x));
             parse(p, obj, varargin{:});
             varNames = p.Results.varNames;
-            groupVar = p.Results.groupVar;            
+            groupVar = p.Results.groupVar;
             % Further validation:
             if any(strcmpi(groupVar, varNames))
                 error('Grouping variable cannot be an independent variable');
-            end             
+            end
             % Use this only for "scalar" data (FOR NOW):
             if ~strcmpi(obj.inputFeatures.dataType, 'scalar')
                 warning(['Statistical comparisons not available for data of type ' obj.inputFeatures.dataType]);
@@ -295,6 +295,15 @@ classdef StatsManager < handle
             disp(repmat('-',1,100));
             obj.splitVar = obj.indepVarInfo(strcmpi(groupVar, {obj.indepVarInfo.Name}));
             disp('Done');
+        end
+        
+        function out = getStatsVariables(obj)
+            % This function gives the list of stats variables in the
+            % following order:
+            % 1 - independent variable 1
+            % 2 - independent variable 2
+            % 3 - split variable
+            out = {obj.indepVars.Name, obj.splitVar.Name};
         end
         
         function resetAvgIndex(obj)
@@ -588,9 +597,10 @@ classdef StatsManager < handle
             % IMPORTANT: !! currently, this method is available only for
             % "scalar" data!!
             % Output:
-            %   statsReport (optional): text containing a report of the
-            %   statistical comparison in the data.
+            %   statsInfo (optional): structure with the results of
+            %   hypothesis tests.
             
+            obj.results_stats = [];
             % Validation:
             if ~obj.b_hasStatsToolbox
                 warning('Operation Aborted! "Statistics and Machine learning" toolbox is necessary!');
@@ -603,25 +613,35 @@ classdef StatsManager < handle
             % Use the independent variables list ("indepVars") and the data
             % from "dataArr" to decide which statistical test to use.
             obj.chooseStatsTest;
+            if strcmpi(obj.curr_test, 'unknown')
+                warning('Operation Aborted! Failed to Identify Hypothesis test based on the data.')
+                return
+            end
             % Validate assumptions to use parametric tests;
-            if ~obj.checkNormality & any(contains(obj.curr_test, {'ANOVA','Repeated'}, 'IgnoreCase',true))
+            if ~obj.checkNormality && any(contains(obj.curr_test, {'Two','Repeated'}, 'IgnoreCase',true))
                 % If the data is not normal for ANOVA test, abort!
                 warning('The data does not follow a normal distribution. Statistical tests will not be applied!')
                 return
-            elseif ~obj.checkNormality 
+            elseif ~obj.checkNormality
                 % If is not normal for Paired and Unpaired 2-sampled data,
                 % switch comparison to non-parametric versions:
                 warning('The data does not follow a normal distribution. Non-parametric tests will be performed.')
+            end
+            if obj.checkHomogeneity && any(contains(obj.curr_test, {'Two','Repeated'}, 'IgnoreCase',true))
+                warning('The data does not contain homogeneous variances. Interpret results with caution!')
+                return
             elseif ~obj.checkHomogeneity
-                warning('The data does not contain homogeneous variances. Intepret results with caution!')
+                warning('The data does not contain homogeneous variances. Non-parametric tests will be performed.')
             else
                 disp(repmat('-',1,100))
                 disp('Data passed assumption testing!')
                 disp(repmat('-',1,100))
             end
             obj.runHypothesisTest;
-        end
-        
+            if nargout
+                varargout{1} = obj.results_stats;
+            end                        
+        end        
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     end
     
@@ -985,23 +1005,33 @@ classdef StatsManager < handle
                 disp(repmat('-',1,100));
                 return
             end
-            if (obj.indepVars(1).len == 2 && obj.indepVars(2).len == 1 && obj.indepVars(1).b_isRepeatedMeasure) || (obj.indepVars(1).len == 1 && obj.indepVars(2).len == 2 && obj.indepVars(2).b_isRepeatedMeasure)
+            if ( obj.indepVars(1).len == 2 && obj.indepVars(2).len == 1 && obj.indepVars(1).b_isRepeatedMeasure ) ||...
+                    ( obj.indepVars(1).len == 1 && obj.indepVars(2).len == 2 && obj.indepVars(2).b_isRepeatedMeasure )
                 % Paired two-sided test
-                disp('Comparison type: paired two-sided data.')                
+                disp('Comparison type: paired two-sided data.')
                 obj.curr_test = 'PairedTest';
-            elseif (obj.indepVars(1).len == 2 && obj.indepVars(2).len == 1 && ~obj.indepVars(1).b_isRepeatedMeasure) || (obj.indepVars(1).len == 1 && obj.indepVars(2).len == 2 && ~obj.indepVars(2).b_isRepeatedMeasure)
+            elseif ( obj.indepVars(1).len == 2 && obj.indepVars(2).len == 1 && ~obj.indepVars(1).b_isRepeatedMeasure ) ||...
+                    ( obj.indepVars(1).len == 1 && obj.indepVars(2).len == 2 && ~obj.indepVars(2).b_isRepeatedMeasure )
                 % Unpaired two-sided test
                 disp('Comparison type: unpaired two-sided data.')
                 obj.curr_test = 'UnpairedTest';
-            elseif (obj.indepVars(1).len == 1 && obj.indepVars(2).len > 2 && ~obj.indepVars(2).b_isRepeatedMeasure) || (obj.indepVars(1).len > 2 && obj.indepVars(2).len == 1 && ~obj.indepVars(1).b_isRepeatedMeasure)
+            elseif ( obj.indepVars(1).len == 1 && obj.indepVars(2).len > 2 && ~obj.indepVars(2).b_isRepeatedMeasure ) ||...
+                    ( obj.indepVars(1).len > 2 && obj.indepVars(2).len == 1 && ~obj.indepVars(1).b_isRepeatedMeasure )
                 % 3+ independent (unpaired) samples test
                 disp('Comparison type: data with 3+ independent samples.')
                 obj.curr_test = 'OneWayANOVA';
-            elseif (obj.indepVars(1).len == 1 && obj.indepVars(2).len > 2 && obj.indepVars(2).b_isRepeatedMeasure) || (obj.indepVars(1).len > 2 && obj.indepVars(2).len == 1 && obj.indepVars(1).b_isRepeatedMeasure)
+            elseif ( all(~[obj.indepVars.b_isRepeatedMeasure]) && ( obj.indepVars(1).len > 1 && obj.indepVars(2).len > 2 ) ) ||...
+                    ( obj.indepVars(1).len > 2 && obj.indepVars(2).len > 1 )
+                % 3+ independent (unpaired) samples test
+                disp('Comparison type: 2+ groups with 3+ independent samples.')
+                obj.curr_test = 'TwoWayANOVA';
+            elseif ( obj.indepVars(1).len == 1 && obj.indepVars(2).len > 2 && obj.indepVars(2).b_isRepeatedMeasure && ~obj.indepVars(1).b_isRepeatedMeasure ) ||...
+                    ( obj.indepVars(1).len > 2 && obj.indepVars(2).len == 1 && obj.indepVars(1).b_isRepeatedMeasure && ~obj.indepVars(2).b_isRepeatedMeasure )
                 % 3+ dependent (repeated measures) samples test
                 disp('Comparison type: data with 3+ dependent samples.')
                 obj.curr_test = 'OneWayRepeatedMeasures';
-            elseif (obj.indepVars(1).len > 1 && obj.indepVars(2).len > 2) || (obj.indepVars(1).len > 2 && obj.indepVars(2).len > 1) && (obj.indepVars(1).b_isRepeatedMeasure || obj.indepVars(1).b_isRepeatedMeasure )
+            elseif ( (obj.indepVars(1).len > 1 && obj.indepVars(2).len > 2) || (obj.indepVars(1).len > 2 && obj.indepVars(2).len > 1) ) &&...
+                    ( obj.indepVars(1).b_isRepeatedMeasure || obj.indepVars(1).b_isRepeatedMeasure )
                 % 3+ dependent (repeated measures) with 2+ experimental groups
                 obj.curr_test = 'TwoWayRepeatedMeasures';
             else
@@ -1028,7 +1058,7 @@ classdef StatsManager < handle
             disp('Done')
         end
         
-        function runHypothesisTest(obj)
+        function statsInfo = runHypothesisTest(obj)
             % This method performs the hypothesis test between groups using
             % the information created by the method "chooseStatsTest".
             % The results will be stored in the property "results_stats".
@@ -1053,55 +1083,73 @@ classdef StatsManager < handle
                 % Perform stats:
                 switch obj.curr_test
                     case 'PairedTest'
-                        % Paired test with 2 groups:                                                
+                        % Paired test with 2 groups:
                         idxIndep = [obj.indepVars.len] > 1;
                         dv = dummyvar(obj.flatData.(obj.indepVars(idxIndep).indexName));
-                        % Segregate data into two subsamples:                        
+                        % Segregate data into two subsamples:
                         x = obj.flatData.data(idxSplit & dv(:,1));
                         y = obj.flatData.data(idxSplit & ~dv(:,1));
-                        % Sort data by pairs:
-                        % Deduce by which dimension the data is paired:
+                        if ( isempty(x) || isempty(y) ) || ( ~isequal(length(x),length(y)) )
+                            % Skip if one of the subsamples are missing:
+                            warning(['Skipped Paired test because of missing data on comparison :' statsInfo(ii).subGroupName ' --> ' statsInfo(ii).GroupComparison.Name]);
+                            continue
+                        end
+                        % Pair data across the independent variable with
+                        % repeated measures making sure that the other
+                        % variables are ordered:
+                        otherVars = obj.indepVarInfo(~strcmpi(obj.indepVars(idxIndep).Name, {obj.indepVarInfo.Name}));
+                        indxList = arrayfun(@(x) obj.flatData.(x.indexName), otherVars, 'UniformOutput', false);
+                        indxList = horzcat(indxList{:});
+                        indxX = indxList(idxSplit & dv(:,1),:); indxY = indxList(idxSplit & ~dv(:,1),:);
+                        for jj = 1:size(indxX,2)
+                            % For X:
+                            [~, indxSort] = sort(indxX(:,jj));
+                            x = x(indxSort);
+                            indxX = indxX(indxSort,:);
+                            % For Y:
+                            [~, indxSort] = sort(indxY(:,jj));
+                            y = y(indxSort);
+                            indxY = indxY(indxSort,:);
+                        end
+                        clear indxSort indxX indxY otherVars
                         
-                        %%%%% TO BE DONE %%%%%
-                                                
+                        % Create ID for comparison:
+                        statsInfo(ii).GroupComparison.Name = strjoin(obj.flatData.(obj.indepVars(idxIndep).fieldName), '_vs_');                        
+                        % Perform statistical comparison:
+                        if obj.checkNormality
+                            % Parametric T-Test:
+                            [statsInfo(ii).GroupComparison.h,statsInfo(ii).GroupComparison.p,~,statsInfo(ii).GroupComparison.stats] = ttest(x,y,'Alpha',obj.pAlpha);
+                        else
+                            % Non-parametric Wilcoxon rank-sum test:
+                            [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.h,statsInfo(ii).GroupComparison.stats] = signrank(x,y,'alpha',obj.pAlpha);
+                        end
+                        
+                    case 'UnpairedTest'
+                        % Unpaired test with 2 groups:
+                        % Segregate data into two subsamples:
+                        idxIndep = [obj.indepVars.len] > 1;
+                        dv = dummyvar(obj.flatData.(obj.indepVars(idxIndep).indexName));
+                        x = obj.flatData.data(idxSplit & dv(:,1));
+                        y = obj.flatData.data(idxSplit & ~dv(:,1));
                         % Create ID for comparison:
                         statsInfo(ii).GroupComparison.Name = strjoin(obj.flatData.(obj.indepVars(idxIndep).fieldName), '_vs_');
                         if isempty(x) || isempty(y)
                             % Skip if one of the subsamples are missing:
-                            warning(['Skipped paired Wilcoxon test because of missing data on comparison :' statsInfo(ii).subGroupName ' --> ' statsInfo(ii).GroupComparison.Name]);
+                            warning(['Skipped UnPaired Wilcoxon test because of missing data on comparison :' statsInfo(ii).subGroupName ' --> ' statsInfo(ii).GroupComparison.Name]);
                             continue
                         end
-                        % Perform statistical comparison:                        
-                        [h,p,~,stats] = ttest2(x,y)
-                        [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.h,statsInfo(ii).GroupComparison.stats] = ranksum(x,y);
-                    case 'UnpairedTest'
-                        % Unpaired test with 2 groups:                                                                       
-                        % Segregate data into two subsamples:
-                        idxIndep = [obj.indepVars.len] > 1;                        
-                        dv = dummyvar(obj.flatData.(obj.indepVars(idxIndep).indexName));
-                        x = obj.flatData.data(idxSplit & dv(:,1));
-                        y = obj.flatData.data(idxSplit & ~dv(:,1));
-                        % Create ID for comparison:
-                        statsInfo(ii).GroupComparison.Name = strjoin(obj.flatData.(obj.indepVars(idxIndep).fieldName), '_vs_');
-                        if ( isempty(x) || isempty(y) ) || ( ~isequal(length(x),length(y)) )
-                            % Skip if one of the subsamples are missing:
-                            warning(['Skipped Unpaired T-test because of missing data on comparison :' statsInfo(ii).subGroupName ' --> ' statsInfo(ii).GroupComparison.Name]);
-                            continue
-                        end                        
                         % Compensate for unbalanced variances in T test:
-                        varMap = containers.Map([true,false], {'equal', 'unequal'});                        
+                        varMap = containers.Map([true,false], {'equal', 'unequal'});
                         % Perform statistical comparison:
-                        if obj.checkNormality                        
+                        if obj.checkNormality
                             % Parametric T-Test:
                             [statsInfo(ii).GroupComparison.h,statsInfo(ii).GroupComparison.p,~,statsInfo(ii).GroupComparison.stats] = ttest2(x,y,'Alpha',obj.pAlpha,'Vartype',varMap(obj.checkHomogeneity));
                         else
                             % Non-parametric Wilcoxon rank-sum test:
                             [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.h,statsInfo(ii).GroupComparison.stats] = ranksum(x,y,'Alpha',obj.pAlpha);
                         end
-                    case 'OneWayANOVA'
-                        disp('Performing Kruskal...')
-                        nIndepVars = {unique(obj.flatData.(obj.indepVars(1).indexName)), unique(obj.flatData.(obj.indepVars(2).indexName))};
-                        idxHas2PlusItems = ( cellfun(@numel,nIndepVars) > 1 );
+                    case 'OneWayANOVA'                        
+                        idxHas2PlusItems = [obj.indepVars.len] > 1;
                         % Segregate data into 3+ subsamples:
                         gVar = obj.flatData.(obj.indepVars(idxHas2PlusItems).indexName);
                         gNames = obj.flatData.(obj.indepVars(idxHas2PlusItems).fieldName);
@@ -1110,9 +1158,14 @@ classdef StatsManager < handle
                         x = obj.flatData.data(idxSplit);
                         % Create ID for comparison:
                         statsInfo(ii).GroupComparison.Name = strjoin(obj.flatData.(obj.indepVars(idxHas2PlusItems).fieldName), '_vs_');
-                        [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.ANOVAtab, statsInfo(ii).GroupComparison.stats] = kruskalwallis(x, gVar(idxSplit), 'off');
-                        % Perform postHoc test on KW output when a
-                        % difference was detected in the KW test:
+                        if obj.checkHomogeneity
+                            % Perform one-way ANOVA:
+                            [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.ANOVAtab, statsInfo(ii).GroupComparison.stats] = anova1(x, gVar(idxSplit), 'off');
+                        else
+                            % Perform Kruskal-Wallis:
+                            [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.ANOVAtab, statsInfo(ii).GroupComparison.stats] = kruskalwallis(x, gVar(idxSplit), 'off');
+                        end
+                        % Perform postHoc test when a difference was detected in the ANOVA test:
                         if statsInfo(ii).GroupComparison.p < obj.pAlpha
                             c = multcompare(statsInfo(ii).GroupComparison.stats,'Alpha', obj.pAlpha,'CType', 'dunn-sidak', 'Display','off');
                             statsInfo(ii).GroupComparison
@@ -1121,27 +1174,78 @@ classdef StatsManager < handle
                                 statsInfo(ii).GroupComparison.postHocStats(kk).p = c(kk,end);
                             end
                         end
-                    case 'RepeatedMeasures'
-                        disp('Friedman test...')
-                        % Find first independent variable with repeated
-                        % measures:                        
-                        
-                    case 'TwoWayRepeatedMeasures'
-                        %%% TBD %%%%
-                        
+                    case 'TwoWayANOVA'                        
+                        % Create groups for anovan function
+                        indxVar1 = obj.flatData.(obj.indepVars(1).indexName)(idxSplit);
+                        g1 = obj.flatData.(obj.indepVars(1).fieldName)(indxVar1);
+                        indxVar2 = obj.flatData.(obj.indepVars(2).indexName)(idxSplit);
+                        g2 = obj.flatData.(obj.indepVars(2).fieldName)(indxVar2);
+                        if size(g1)~=size(g2)
+                            g1 = g1';
+                        end
+                        data = obj.flatData.data(idxSplit);
+                        % Create GENERIC ID for comparison:
+                        statsInfo(ii).GroupComparison.Name = obj.curr_test;
+                        % Perform ANOVA:
+                        [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.ANOVAtab, statsInfo(ii).GroupComparison.stats] = ...
+                            anovan(data,{g1,g2}, 'model','interaction', 'varnames',{obj.indepVars.Name}, 'display','off');
+                        % Perform postHoc test when a difference was detected in the ANOVA test:
+                        if any(statsInfo(ii).GroupComparison.p < obj.pAlpha)
+                            c = multcompare(statsInfo(ii).GroupComparison.stats,'Alpha', obj.pAlpha,'CType', 'dunn-sidak', 'Display','off');
+                            statsInfo(ii).GroupComparison
+                            for kk = 1:size(c,1)
+                                statsInfo(ii).GroupComparison.postHocStats(kk).Name = strjoin({gMap(c(kk,1)), gMap(c(kk,2))}, '_vs_');
+                                statsInfo(ii).GroupComparison.postHocStats(kk).p = c(kk,end);
+                            end
+                        end                                               
+                    case {'OneWayRepeatedMeasures', 'TwoWayRepeatedMeasures'}
+                        % Create GENERIC ID for comparison:
+                        statsInfo(ii).GroupComparison.Name = obj.curr_test;
+                        % Get independent variable without repeated
+                        % measures:
+                        idxPred = obj.flatData.(obj.indepVars([obj.indepVars.b_isRepeatedMeasure] == 0).indexName)(idxSplit);   
+                        predNames = obj.flatData.(obj.indepVars([obj.indepVars.b_isRepeatedMeasure] == 0).fieldName)(idxPred);   
+                        % Get Within-Subject indices and names:
+                        idxWithin = obj.flatData.(obj.indepVars([obj.indepVars.b_isRepeatedMeasure] == 1).indexName)(idxSplit);
+                        predList = unique(idxPred);
+                        withinList = unique(idxWithin);
+                        withinNames = matlab.lang.makeValidName(obj.flatData.(obj.indepVars([obj.indepVars.b_isRepeatedMeasure] == 1).fieldName)(withinList));
+                        % Create tables for RepeatedMeasures Model fit:
+                        dataIn = obj.flatData.data(idxSplit);
+                        dataOut = nan(numel(idxWithin)/numel(withinList),numel(withinList));                                                
+                        predVar = cell(size(dataOut,1),1);
+                        % 
+                        nReps = numel(predList);
+                        cnt = 1;
+                        for jj = 1:length(predList)
+                            idx1 = idxPred == predList(jj);                            
+                            for kk = 1:length(withinList)
+                                idx2 = idxWithin == withinList(kk); 
+                                if kk == 1
+                                    predVar(cnt:cnt+nReps-1) = predNames(idx1 & idx2);
+                                end                                                              
+                                dataOut(cnt:cnt+nReps-1,kk) = dataIn(idx1 & idx2);
+                            end
+                            cnt = cnt+nReps;
+                        end
+                        dataOut = num2cell(dataOut); 
+                        t = cell2table([predVar,dataOut],'VariableNames',[{obj.indepVars([obj.indepVars.b_isRepeatedMeasure] == 0).Name}, withinNames]);
+                        rm = fitrm(t,[withinNames{1} '-' withinNames{end} ' ~ ' t.Properties.VariableNames{1}],...
+                            'WithinDesign',table(withinList,'VariableNames',{matlab.lang.makeValidName(obj.indepVars([obj.indepVars.b_isRepeatedMeasure] == 1).Name)}));
+                        statsInfo(ii).GroupComparison.ANOVAtab = ranova(rm);
                     otherwise
-                        error('invalid test')
+                        error('unknown hypothesis test!')
                 end
                 
-            end            
-            disp('Done')            
+            end
+            disp('Done')
         end
-                             
+        
         function status = checkNormality(obj)
             % Check for normality
             % Inputs:
             % idx (array | matrix): array of stats. groups indices to test.
-            % CheckName (str): {'normality', 'homoskedacity','sphericity'}            
+            % CheckName (str): {'normality', 'homoskedacity','sphericity'}
             indx = bin2dec([dec2bin(obj.flatData.(obj.splitVar.indexName)),...
                 dec2bin(obj.flatData.(obj.indepVars(1).indexName)), ...
                 dec2bin(obj.flatData.(obj.indepVars(2).indexName))]);
@@ -1155,11 +1259,11 @@ classdef StatsManager < handle
             end
             status = all(~status);
         end
-                
+        
         function status = checkHomogeneity(obj)
             % Check for homogeneity of variances for ANOVA
             % Here, use the 4:1 ratio as a maximum disparity of variances.
-            % For Repeated measures, sphericity WILL NOT BE TESTED HERE!            
+            % For Repeated measures, sphericity WILL NOT BE TESTED HERE!
             status = true;
             if any(strcmpi(obj.curr_test, 'PairedTest'))
                 return
@@ -1171,10 +1275,15 @@ classdef StatsManager < handle
                 % For one way ANOVA:
                 idxVar1 = obj.flatData.(obj.indepVars([obj.indepVars.len] == 1).indexName);varList1 = unique(idxVar1);
                 idxVar2 = obj.flatData.(obj.indepVars([obj.indepVars.len]>1).indexName);varList2 = unique(idxVar2);
-            else                
+            elseif strcmpi(obj.curr_test, 'TwoWayANOVA')
+                % For two way ANOVA:
+                % Use the order of variables in "indepVars".
+                idxVar1 = obj.flatData.(obj.indepVars(1).indexName); varList1 = unique(idxVar1);
+                idxVar2 = obj.flatData.(obj.indepVars(2).indexName); varList2 = unique(idxVar2);
+            else
                 idxVar1 = obj.flatData.(obj.indepVars(~[obj.indepVars.b_isRepeatedMeasure]).indexName);varList1 = unique(idxVar1);
                 idxVar2 = obj.flatData.(obj.indepVars([obj.indepVars.b_isRepeatedMeasure]).indexName);varList2 = unique(idxVar2);
-            end                       
+            end
             for ii = 1:length(gList)
                 for jj = 1:length(varList1)
                     groupVars = zeros(length(varList2),1);
