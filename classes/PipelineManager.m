@@ -824,7 +824,7 @@ classdef PipelineManager < handle
             opts_values = struct();
             
             disp('Creating Fcn list...');
-            list = dir(fullfile(obj.fcnDir, '\*\*.m'));
+            list = dir(fullfile(obj.fcnDir, '*','*.m'));
             for i = 1:length(list)
                 out = parseFuncFile(list(i));
                 % Validate if all input arguments from the function are

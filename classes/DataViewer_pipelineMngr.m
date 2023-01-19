@@ -485,7 +485,7 @@ classdef DataViewer_pipelineMngr < handle
             default_Output = '';
             default_opts = struct();
             opts_values = struct();
-            list = dir(fullfile(obj.fcnDir, '\*\*.m'));
+            list = dir(fullfile(obj.fcnDir, '*','*.m'));
             for i = 1:length(list)
                 out = parseFuncFile(list(i));
                 % Validate if all input arguments from the function are

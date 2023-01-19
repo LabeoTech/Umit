@@ -55,7 +55,7 @@ function tmpS = protocolFcn_template(obj)
 % Regular expression to find the raw data files:
 expLabeo = '(ai|img)_\d*.bin'; % For Labeo Data
 % Look for all folders containing .bin files:
-FolderNames = dir(fullfile(obj.MainDir, '**/*.bin'));
+FolderNames = dir(fullfile(obj.MainDir, '**','*.bin'));
 FolderNames = unique({FolderNames.folder});
 % Keep only folders that start with an uppercase "M" letter:
 idx = false(size(FolderNames));
@@ -125,7 +125,7 @@ for i = 1:length(uniqS)
         %%% Uncomment this section to look for meta data .MAT file
         %%% containing events info linked to the recording:
         %         % Look for metaDataFiles in RawData Folders:
-        %         matFileList = dir([folder '\*.mat']); matFileList = {matFileList.name};
+        %         matFileList = dir([folder filesep '*.mat']); matFileList = {matFileList.name};
         %         % Find .mat files that starts with the name of the current
         %         % recording folder:
         %         idx = startsWith(matFileList, recNames{i});
