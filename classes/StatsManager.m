@@ -35,6 +35,7 @@ classdef StatsManager < handle
         curr_test = ''; % Name of the current test from the list_of_tests.
         indepVars % Independent variables used to perform statistical comparisons.
         splitVar % Data dimension to use to split the data into subsets for statistical analysis.
+        results_stats % structure containing the results of hypothesis tests between groups.
     end
     properties (Access = private)
         stats_data  = {} % cell array containing all data and metaData created.
@@ -45,9 +46,7 @@ classdef StatsManager < handle
         indepVarInfo = struct('Name',{'Group','Subject','ROI','Acquisition', 'Event'}, ...
             'fieldName',{'groupID','SubjectID','ObsID','AcquisitionID','EventID'},...
             'indexName',{'gIndx','sIndx','rIndx','aIndx','eIndx'},...
-            'b_isRepeatedMeasure',{false,false,false,true,true});
-        results_stats % structure containing the results of hypothesis tests between groups.
-        b_isParametric = true; % If TRUE, use parametric tests. Otherwise, use non parametric ones.
+            'b_isRepeatedMeasure',{false,false,false,true,true});       
     end
     
     methods
@@ -631,17 +630,74 @@ classdef StatsManager < handle
                 warning('The data does not contain homogeneous variances. Interpret results with caution!')
                 return
             elseif ~obj.checkHomogeneity
-                warning('The data does not contain homogeneous variances. Non-parametric tests will be performed.')
-            else
-                disp(repmat('-',1,100))
-                disp('Data passed assumption testing!')
-                disp(repmat('-',1,100))
+                warning('The data does not contain homogeneous variances. Non-parametric tests will be performed.')           
             end
             obj.runHypothesisTest;
             if nargout
                 varargout{1} = obj.results_stats;
             end                        
-        end        
+        end 
+        
+        function genStatsReport(obj,filename)
+           % This method creates a .TXT file with the information from the
+           % "results_stats" property and saves it to a .PDF file.
+           
+           if isempty(obj.results_stats)
+               warning('Statistical results not found! Run statistical comparisons in order to generate a report');
+               return
+           end
+           
+           str = ''; % output text;
+           div = repmat('-',1,80);
+           % Add header with some general information about the data and
+           % the statistical comparisons performed:           
+           str = sprintf('-----------------------Statistical Hypothesis test report-----------------------\nRun date: %s\n\n',datestr(datetime('now')));
+                      
+           str = [str, sprintf(['The data was grouped by %d %s(s) vs %d %s(s) and split by a total of %d %s(s).\n\n'...
+               'The hypothesis test executed was "%s"\n%s\n'],...
+               obj.indepVars(1).len, obj.indepVars(1).Name,obj.indepVars(2).len, obj.indepVars(2).Name, ...
+               length(obj.results_stats), obj.splitVar.Name, obj.curr_test, div)];                      
+           % Write the results of each test.            
+           hypMap = containers.Map([true,false],{'Yes','No'});
+           for ii = 1:length(obj.results_stats)
+               % Add name of Split Variable:
+               str = [str, sprintf('Subgroup name: %s\n',obj.results_stats(ii).subGroupName)];
+               % Add outputs of statistical tests:
+               info = obj.results_stats(ii).GroupComparison;
+               switch obj.curr_test                    
+                    case {'PairedTest','UnpairedTest'}
+                        str = [str, sprintf('Groups compared: "%s"\nRejected null hypothesis: "%s"\np-value: %0.4f\nStats:\n',...
+                            info.Name, hypMap(info.p < obj.pAlpha),info.p)];  
+                            % Add "stats" fields:
+                            fn = fieldnames(info.stats);                            
+                            for kk = 1:length(fn)
+                                str = [str,sprintf('\t%s: %0.4f\n',fn{kk},info.stats.(fn{kk}))];
+                            end                                                                                                                    
+                    case {'OneWayANOVA', 'TwoWayANOVA'}
+                        disp('ANOVA...')
+                        str = [str, sprintf('Groups compared: "%s"\nStats:\n',info.Name)];
+                        str = [str, obj.tab2char(info.ANOVAtab)];
+                        if ~isempty(info.postHocTab)
+                            str = [str,sprintf('Post-hoc tests:\nTest name: "dunn-sidak"\nP-Value table:\n')];
+                            str = [str,obj.tab2char(info.postHocTab)];
+                        end                     
+                    case {'OneWayRepeatedMeasures', 'TwoWayRepeatedMeasures'}
+                        disp('RepeatedMeasures...')
+                        str = [str, sprintf('Groups compared: "%s"\nStats:\n',info.Name)];
+                        txt = obj.tab2char(info.ANOVAtab);
+                        str = [str, txt];
+                    otherwise
+                        error('unknown hypothesis test!')                                      
+               end
+               str = [str, sprintf('%s\n',div)];
+           end           
+           
+           % Save text to file:
+           fid = fopen(filename,'w');
+           fprintf(fid,'%s',str)           
+           fclose(fid)
+                                            
+        end
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     end
     
@@ -1058,7 +1114,7 @@ classdef StatsManager < handle
             disp('Done')
         end
         
-        function statsInfo = runHypothesisTest(obj)
+        function runHypothesisTest(obj)
             % This method performs the hypothesis test between groups using
             % the information created by the method "chooseStatsTest".
             % The results will be stored in the property "results_stats".
@@ -1073,7 +1129,7 @@ classdef StatsManager < handle
             indxG = unique(obj.flatData.(obj.splitVar.indexName));
             % Instantiate stats structure:
             statsInfo = repmat(struct('subGroupName','','GroupComparison', struct('Name','None', 'h',[],'p',[],'stats',[], 'ANOVAtab',[],...
-                'postHocStats',struct('Name','none','p',[]))),1,numel(indxG));
+                'postHocTab',[])),1,numel(indxG));
             
             for ii = 1:numel(indxG)
                 statsInfo(ii).subGroupName = obj.flatData.(obj.splitVar.fieldName){ii};
@@ -1165,14 +1221,18 @@ classdef StatsManager < handle
                             % Perform Kruskal-Wallis:
                             [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.ANOVAtab, statsInfo(ii).GroupComparison.stats] = kruskalwallis(x, gVar(idxSplit), 'off');
                         end
+                        % Transform ANOVAtab cell array into table:
+                        statsInfo(ii).GroupComparison.ANOVAtab = cell2table(statsInfo(ii).GroupComparison.ANOVAtab(2:end,2:end),'RowNames',statsInfo(ii).GroupComparison.ANOVAtab(2:end,1),...
+                            'VariableNames',matlab.lang.makeValidName(statsInfo(ii).GroupComparison.ANOVAtab(1,2:end))); 
                         % Perform postHoc test when a difference was detected in the ANOVA test:
                         if statsInfo(ii).GroupComparison.p < obj.pAlpha
-                            c = multcompare(statsInfo(ii).GroupComparison.stats,'Alpha', obj.pAlpha,'CType', 'dunn-sidak', 'Display','off');
-                            statsInfo(ii).GroupComparison
+                            % Prepare identifiers for pair-wise group comparison:                            
+                            Names = cell(length(gNames),1);                            
+                            c = multcompare(statsInfo(ii).GroupComparison.stats,'Alpha', obj.pAlpha,'CType', 'dunn-sidak', 'Display','off');                            
                             for kk = 1:size(c,1)
-                                statsInfo(ii).GroupComparison.postHocStats(kk).Name = strjoin({gMap(c(kk,1)), gMap(c(kk,2))}, '_vs_');
-                                statsInfo(ii).GroupComparison.postHocStats(kk).p = c(kk,end);
+                                Names{kk}= strjoin([gNames(c(kk,1)), gNames(c(kk,2))], '_vs_');                                
                             end
+                            statsInfo(ii).GroupComparison.postHocTab = table(Names,c(:,end),'VariableNames',{'ComparisonID','p_value'});                            
                         end
                     case 'TwoWayANOVA'                        
                         % Create groups for anovan function
@@ -1185,18 +1245,29 @@ classdef StatsManager < handle
                         end
                         data = obj.flatData.data(idxSplit);
                         % Create GENERIC ID for comparison:
-                        statsInfo(ii).GroupComparison.Name = obj.curr_test;
+                        statsInfo(ii).GroupComparison.Name = strjoin({obj.indepVars.Name},'_vs_');
                         % Perform ANOVA:
                         [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.ANOVAtab, statsInfo(ii).GroupComparison.stats] = ...
                             anovan(data,{g1,g2}, 'model','interaction', 'varnames',{obj.indepVars.Name}, 'display','off');
+                        % Transform ANOVAtab cell array into table:
+                        statsInfo(ii).GroupComparison.ANOVAtab = cell2table(statsInfo(ii).GroupComparison.ANOVAtab(2:end,2:end),'RowNames',statsInfo(ii).GroupComparison.ANOVAtab(2:end,1),...
+                            'VariableNames',matlab.lang.makeValidName(statsInfo(ii).GroupComparison.ANOVAtab(1,2:end)));                                                                        
                         % Perform postHoc test when a difference was detected in the ANOVA test:
+                        % Create table with postHoc info:                        
                         if any(statsInfo(ii).GroupComparison.p < obj.pAlpha)
-                            c = multcompare(statsInfo(ii).GroupComparison.stats,'Alpha', obj.pAlpha,'CType', 'dunn-sidak', 'Display','off');
-                            statsInfo(ii).GroupComparison
-                            for kk = 1:size(c,1)
-                                statsInfo(ii).GroupComparison.postHocStats(kk).Name = strjoin({gMap(c(kk,1)), gMap(c(kk,2))}, '_vs_');
-                                statsInfo(ii).GroupComparison.postHocStats(kk).p = c(kk,end);
+                            % Prepare identifiers for pair-wise group comparison:
+                            g1Names = unique(g1); g2Names = unique(g2);
+                            [m,n] = meshgrid([1:length(g1Names)],[1:length(g2Names)]); gPairs = [m(:),n(:)];
+                            gPairIDList = cell(size(gPairs,1),1);
+                            for kk = 1:size(gPairs,1)
+                                gPairIDList{kk} = strjoin([g1Names(gPairs(kk,1)), g2Names(gPairs(kk,2))],',_');
                             end
+                            c = multcompare(statsInfo(ii).GroupComparison.stats,'Alpha', obj.pAlpha,'CType', 'dunn-sidak', 'Display','off', 'Dimension',[1 2]);                            
+                            Names = cell(size(c,1),1);
+                            for kk = 1:size(c,1)
+                                Names{kk} = strjoin([gPairIDList(c(kk,1)), gPairIDList(c(kk,2))], '_vs_');                                
+                            end
+                            statsInfo(ii).GroupComparison.postHocTab = table(Names,c(:,end),'VariableNames',{'ComparisonID','p_value'});                            
                         end                                               
                     case {'OneWayRepeatedMeasures', 'TwoWayRepeatedMeasures'}
                         % Create GENERIC ID for comparison:
@@ -1206,37 +1277,46 @@ classdef StatsManager < handle
                         idxPred = obj.flatData.(obj.indepVars([obj.indepVars.b_isRepeatedMeasure] == 0).indexName)(idxSplit);   
                         predNames = obj.flatData.(obj.indepVars([obj.indepVars.b_isRepeatedMeasure] == 0).fieldName)(idxPred);   
                         % Get Within-Subject indices and names:
-                        idxWithin = obj.flatData.(obj.indepVars([obj.indepVars.b_isRepeatedMeasure] == 1).indexName)(idxSplit);
-                        predList = unique(idxPred);
+                        idxWithin = obj.flatData.(obj.indepVars([obj.indepVars.b_isRepeatedMeasure] == 1).indexName)(idxSplit);                       
                         withinList = unique(idxWithin);
+                        withinVarName = obj.indepVars([obj.indepVars.b_isRepeatedMeasure] == 1).Name;
+                        betweenVarName = obj.indepVars([obj.indepVars.b_isRepeatedMeasure] == 0).Name;
                         withinNames = matlab.lang.makeValidName(obj.flatData.(obj.indepVars([obj.indepVars.b_isRepeatedMeasure] == 1).fieldName)(withinList));
+                        % Get list of subject indices:
+                        idxSubj = obj.flatData.sIndx(idxSplit);                        
+                        subjList = unique(idxSubj);
                         % Create tables for RepeatedMeasures Model fit:
                         dataIn = obj.flatData.data(idxSplit);
-                        dataOut = nan(numel(idxWithin)/numel(withinList),numel(withinList));                                                
+                        dataOut = nan(numel(subjList),numel(withinList));                                                
                         predVar = cell(size(dataOut,1),1);
                         % 
-                        nReps = numel(predList);
-                        cnt = 1;
-                        for jj = 1:length(predList)
-                            idx1 = idxPred == predList(jj);                            
+                        for jj = 1:length(subjList)
+                            idx1 = idxSubj == subjList(jj);                            
                             for kk = 1:length(withinList)
-                                idx2 = idxWithin == withinList(kk); 
-                                if kk == 1
-                                    predVar(cnt:cnt+nReps-1) = predNames(idx1 & idx2);
-                                end                                                              
-                                dataOut(cnt:cnt+nReps-1,kk) = dataIn(idx1 & idx2);
-                            end
-                            cnt = cnt+nReps;
+                                idx2 = idxWithin == withinList(kk);
+                                predVar(jj) = predNames(idx1 & idx2);
+                                dataOut(jj,kk) = dataIn(idx1 & idx2);
+                            end                            
                         end
                         dataOut = num2cell(dataOut); 
-                        t = cell2table([predVar,dataOut],'VariableNames',[{obj.indepVars([obj.indepVars.b_isRepeatedMeasure] == 0).Name}, withinNames]);
-                        rm = fitrm(t,[withinNames{1} '-' withinNames{end} ' ~ ' t.Properties.VariableNames{1}],...
-                            'WithinDesign',table(withinList,'VariableNames',{matlab.lang.makeValidName(obj.indepVars([obj.indepVars.b_isRepeatedMeasure] == 1).Name)}));
+                        t = cell2table([predVar,dataOut],'VariableNames',[{betweenVarName}, withinNames]);
+                        
+                        if contains(obj.curr_test, 'oneway','IgnoreCase',true)
+                            notation = [withinNames{1} '-' withinNames{end} ' ~ 1'];
+                            postHocVar = withinVarName;
+                        else
+                            notation = [withinNames{1} '-' withinNames{end} ' ~ ' t.Properties.VariableNames{1}];
+                            postHocVar = betweenVarName;
+                        end
+                        rm = fitrm(t,notation,'WithinDesign',table(withinList,'VariableNames',{withinVarName}));
                         statsInfo(ii).GroupComparison.ANOVAtab = ranova(rm);
+                        % Post-hoc test:                           
+                        statsInfo(ii).GroupComparison.postHocTab.Name = ['by ' t.Properties.VariableNames{1}];
+                        statsInfo(ii).GroupComparison.postHocTab.p = multcompare(rm,postHocVar);                        
                     otherwise
                         error('unknown hypothesis test!')
                 end
-                
+                obj.results_stats = statsInfo;  
             end
             disp('Done')
         end
@@ -1296,6 +1376,35 @@ classdef StatsManager < handle
                 end
             end
             status = all(status);
+        end
+        
+        function out = tab2char(obj,tab)
+            % Transforms a table as text.
+            disp('Transforming table to text...');
+            % Transform table to cell array with strings:
+            txt = table2cell(tab);
+            txt = cellfun(@num2str,txt,'UniformOutput',false);
+            % Append headers and row names:
+            txt = [tab.Properties.RowNames,txt];            
+            if ~isempty(tab.Properties.RowNames)                
+                txt = vertcat([{''}, tab.Properties.VariableNames], txt);
+            else
+                txt = vertcat(tab.Properties.VariableNames, txt);
+            end
+            % Get largest number of charaters:
+            charLen = max(cellfun(@length,txt),[],'all');
+            txt = cellfun(@(x) pad(x,charLen,'right'),txt,'UniformOutput',false);
+            % Build table:
+            divV = ' | ';
+            divH = repmat('-',1,(charLen + length(divV))*size(txt,2));
+            
+            out = '';
+            for ii = 1:size(txt,1)
+                out = [out,sprintf('%s\n',strjoin(txt(ii,:),divV))];
+                if ii == 1 || ii == size(txt,1)
+                    out =[out,sprintf('%s\n',divH)];
+                end
+            end            
         end
     end
 end
