@@ -98,10 +98,10 @@ PlotLongData(statMngr); % Plotting tool for scalar and time-series data types.
 % Average all acquisitions
 statMngr.getAcqIndexList('original')
 statMngr.resetAvgIndex
-statMngr.setAcquisitionRange([3 4])
-statMngr.setStatsVariables({'ROI','Group'},'Acquisition')
-statMngr.runStats
-statMngr.genStatsReport('testOut.txt')
+statMngr.setAcquisitionRange([1 4])
+statMngr.setStatsVariables({'Group','Acquisition'},'ROI')
+[a,b,c] = statMngr.runStats(true);
+statMngr.exportReportToTXT('test')
 
 
 

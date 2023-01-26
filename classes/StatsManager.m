@@ -19,9 +19,7 @@ classdef StatsManager < handle
         % function.
         MfileArr       % Array of MATFILE objects.
         time_resolution = 'none' % Time resolution for grouping each observation
-        % Options: "none", "minute", "hour, "day", "week", "month".
-        %%%%% STATS PARAMETERS %%%%%
-        pAlpha = 0.05 % "Significance" threshold (Alpha) for statistical analysis.
+        % Options: "none", "minute", "hour, "day", "week", "month".        
     end
     properties (SetAccess = private)
         %         timestamp_list % List of timestamps associated with each object in list_of_objs.
@@ -36,11 +34,13 @@ classdef StatsManager < handle
         indepVars % Independent variables used to perform statistical comparisons.
         splitVar % Data dimension to use to split the data into subsets for statistical analysis.
         results_stats % structure containing the results of hypothesis tests between groups.
+        statsReport % Text-formatted version of "results_stats".
+        pAlpha = 0.05 % "Significance" threshold (Alpha) for statistical analysis.
     end
     properties (Access = private)
         stats_data  = {} % cell array containing all data and metaData created.
         avg_stats_data = {} % cell array similar to stats_data containing the average values of acquisitions. (See method averageData).
-        headers = {} % cell array with the _stats_data column names as keys and indices as values.
+        headers = {} % cell array with the _stats_data column names as keys and indices as values.        
         
         % Structure with information about all possible independent variables (see prop "indepVar") for statistics:
         indepVarInfo = struct('Name',{'Group','Subject','ROI','Acquisition', 'Event'}, ...
@@ -589,120 +589,94 @@ classdef StatsManager < handle
             obj.gen_dataArr;
         end
         %%% Stats functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        function varargout = runStats(obj)
+        function varargout = runStats(obj, varargin)
             % This function checks if the data can be used for statistical
             % analysis (using the available tests) and performs the
             % statistical analysis on the data.
             % IMPORTANT: !! currently, this method is available only for
             % "scalar" data!!
-            % Output:
-            %   statsInfo (optional): structure with the results of
-            %   hypothesis tests.
             
-            obj.results_stats = [];            
+            % Input:
+            %   b_verbose (optional): If TRUE, display messages and stats
+            %   report on Command Window.
+            % Output:
+            %   statsReport: structure with the results of
+            %       hypothesis tests.
+            %   testMsg: text with output from "chooseStatsTest"
+            %       method.
+            %   warnMsg: text of warning messages.
+            
+            %
+            p = inputParser;
+            addRequired(p,'obj');
+            addOptional(p,'b_verbose', false,@islogical);
+            parse(p, obj, varargin{:});
+            b_verbose = p.Results.b_verbose;
+            %            
+            warnMsg = [];            
+            obj.results_stats = []; obj.statsReport = '';           
             % Validation:
             if ~obj.b_hasStatsToolbox
-                varargout{1} = warning('Operation Aborted! "Statistics and Machine learning" toolbox is necessary!');
+                varargout{3} = warning('Operation Aborted! "Statistics and Machine learning" toolbox is necessary!');
                 return
             end
             if ~strcmpi(obj.inputFeatures.dataType, 'scalar')
-                varargout{1} = warning('Operation Aborted! Statistical Comparison available ONLY for "scalar" data types!');
+                varargout{3} = warning('Operation Aborted! Statistical Comparison available ONLY for "scalar" data types!');
                 return
             end
             % Use the independent variables list ("indepVars") and the data
-            % from "dataArr" to decide which statistical test to use.
-            obj.chooseStatsTest;
+            % from "dataArr" to decide which statistical test to use.            
+            testMsg = obj.chooseStatsTest;
+            if b_verbose
+                disp(testMsg)
+            end                
             if strcmpi(obj.curr_test, 'unknown')
-                varargout{1} = warning('Operation Aborted! Failed to Identify Hypothesis test based on the data.');
+                varargout{3} = warning('Operation Aborted! Failed to Identify Hypothesis test based on the data.');
                 return
             end
             % Validate assumptions to use parametric tests;
             if ~obj.checkNormality && any(contains(obj.curr_test, {'Two','Repeated'}, 'IgnoreCase',true))
                 % If the data is not normal for ANOVA test, abort!
-                varargout{1} = warning('The data does not follow a normal distribution. Statistical tests will not be applied!');
+                varargout{3} = warning('The data does not follow a normal distribution. Statistical tests will not be applied!');
                 return
             elseif ~obj.checkNormality
                 % If is not normal for Paired and Unpaired 2-sampled data,
                 % switch comparison to non-parametric versions:
-                ws = warning('The data does not follow a normal distribution. Non-parametric tests will be performed.');
+                warnMsg = warning('The data does not follow a normal distribution. Non-parametric tests will be performed.');
             end
             if obj.checkHomogeneity && any(contains(obj.curr_test, {'Two','Repeated'}, 'IgnoreCase',true))
-                ws = warning('The data does not contain homogeneous variances. Interpret results with caution!');               
+                warnMsg = warning('The data does not contain homogeneous variances. Interpret results with caution!');               
             elseif ~obj.checkHomogeneity
-                ws = warning('The data does not contain homogeneous variances. Non-parametric tests will be performed. Interpret results with caution!');         
+                warnMsg = warning('The data does not contain homogeneous variances. Non-parametric tests will be performed. Interpret results with caution!');         
             end
             obj.runHypothesisTest;
+            obj.genStatsReport;                          
+            if b_verbose
+                fprintf('\n\n');
+                disp(obj.statsReport)
+            end
+            
             if nargout
-                varargout{1} = obj.results_stats;
-                varargout{2} = ws;
-            end                        
-        end 
+                varargout{1} = obj.statsReport;
+                varargout{2} = testMsg;
+                varargout{3} = warnMsg;
+            end
+        end         
         
-        function genStatsReport(obj,filename)
-           % This method creates a .TXT file with the information from the
-           % "results_stats" property.
-           
-           if ~endsWith(filename,'.txt','IgnoreCase',true)
-               filename = [filename '.txt'];
-           end
-           
-           if isempty(obj.results_stats)
-               warning('Statistical results not found! Run statistical comparisons in order to generate a report');
-               return
-           end
-           
-           div = repmat('-',1,80);
-           % Add header with some general information about the data and
-           % the statistical comparisons performed:           
-           str = sprintf('-----------------------Statistical Hypothesis test report-----------------------\nRun date: %s\n\n',datestr(datetime('now')));
-                      
-           str = [str, sprintf(['The data was grouped by %d %s(s) vs %d %s(s) and split by a total of %d %s(s).\n\n'...
-               'The hypothesis test executed was "%s"\n%s\n'],...
-               obj.indepVars(1).len, obj.indepVars(1).Name,obj.indepVars(2).len, obj.indepVars(2).Name, ...
-               length(obj.results_stats), obj.splitVar.Name, obj.curr_test, div)];                      
-           % Write the results of each test.            
-           hypMap = containers.Map([true,false],{'Yes','No'});
-           for ii = 1:length(obj.results_stats)
-               % Add name of Split Variable:
-               str = [str, sprintf('Subgroup name: %s\n',obj.results_stats(ii).subGroupName)];
-               % Add outputs of statistical tests:
-               info = obj.results_stats(ii).GroupComparison;
-               switch obj.curr_test                    
-                    case {'PairedTest','UnpairedTest'}
-                        str = [str, sprintf('Comparison performed: "%s"\nRejected null hypothesis: "%s"\np-value: %0.4f\nStats:\n',...
-                            info.Name, hypMap(info.p < obj.pAlpha),info.p)];  
-                            % Add "stats" fields:
-                            fn = fieldnames(info.stats);                            
-                            for kk = 1:length(fn)
-                                str = [str,sprintf('\t%s: %0.4f\n',fn{kk},info.stats.(fn{kk}))];
-                            end                                                                                                                    
-                    case {'OneWayANOVA', 'TwoWayANOVA'}                        
-                        str = [str, sprintf('Comparison performed: "%s"\nStats:\n',info.Name)];
-                        str = [str, obj.tab2char(info.ANOVAtab)];
-                        if ~isempty(info.postHocTab)
-                            str = [str,sprintf('Post-hoc tests:\nTest name: "dunn-sidak"\nP-Value table:\n')];
-                            str = [str,obj.tab2char(info.postHocTab)];
-                        end                     
-                    case {'OneWayRepeatedMeasures', 'TwoWayRepeatedMeasures'}                        
-                        str = [str, sprintf('Comparison performed: "%s"\nStats:\n',info.Name)];
-                        txt = obj.tab2char(info.ANOVAtab);
-                        str = [str, txt];
-                        if ~isempty(info.postHocTab)
-                            str = [str,sprintf('Post-hoc tests:\nTest name: "tukey-kramer"\n%"s"\n', info.postHocTab.Name)];
-                            str = [str,obj.tab2char(info.postHocTab.p)];
-                        end             
-                    otherwise
-                        error('unknown hypothesis test!')                                      
-               end
-               str = [str, sprintf('%s\n',div)];
-           end           
-           
-           % Save text to file:
-           fid = fopen(filename,'w');
-           fprintf(fid,'%s',str);           
-           fclose(fid);
-           disp(['Report saved to file: ' filename]);                                 
-        end
+        function exportReportToTXT(obj,filename)
+            % This method exports the stats report to a .txt file.
+            
+            if ~endsWith(filename, '.txt', 'IgnoreCase',true)
+                filename = [filename, '.txt'];
+            end
+            % Check if stats report exists:
+            assert(~isempty(obj.statsReport), 'Stats report does not exist. Run the method "runStats" to generate a report!')
+            % Export to a .txt file:            
+            fid = fopen(filename,'w');
+            fprintf(fid,'%s',obj.statsReport);
+            fclose(fid);
+            disp(['Stats report exported to file "' filename '"']);
+        end        
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     end
     
@@ -1044,11 +1018,14 @@ classdef StatsManager < handle
             end
         end
         
-        function chooseStatsTest(obj)
+        function msg = chooseStatsTest(obj)
             % This method uses the current independent variables and the
             % size of the data in "dataArr" to decide which statistical test
             % to apply.
+            % Output:
+            %   msg (char): message to user about the test chosen
             
+            msg = '';
             obj.flatDataArr; % Prepare data for stats.
             disp('Choosing statistical test...')
             % Get first independent variable:
@@ -1056,14 +1033,12 @@ classdef StatsManager < handle
             % Secondary independent variable:
             obj.indepVars(2).len = length(unique(obj.flatData.(obj.indepVars(2).fieldName)));
             % Decide which test to use:
-            % One group: abort:
-            disp(repmat('-',1,100));
-            fprintf('The data is grouped by %d "%s"(s) and %d "%s"(s) across %d "%s"(s).\n',...
+            % One group: abort:            
+            msg = [msg,sprintf('The data is grouped by %d "%s"(s) and %d "%s"(s) across %d "%s"(s).\n',...
                 obj.indepVars(1).len, obj.indepVars(1).Name, obj.indepVars(2).len, obj.indepVars(2).Name,...
-                numel(unique(obj.flatData.(obj.splitVar.indexName))), obj.splitVar.Name)
+                numel(unique(obj.flatData.(obj.splitVar.indexName))), obj.splitVar.Name)];
             if obj.indepVars(1).len == 1 && obj.indepVars(2).len == 1
-                disp('No stats for one group with one independent sample')
-                disp(repmat('-',1,100));
+                msg = 'No stats for one group with one independent sample';
                 return
             end
             if ( obj.indepVars(1).len == 2 && obj.indepVars(2).len == 1 && obj.indepVars(1).b_isRepeatedMeasure ) ||...
@@ -1109,9 +1084,7 @@ classdef StatsManager < handle
             % Get the list of names of the split variable:
             obj.flatData.splitNames = obj.flatData.(obj.splitVar.fieldName);
             % Display messages:
-            fprintf('Hypothesis test chosen: %s.\n', obj.curr_test);
-            disp(repmat('-',1,100));
-            disp('Done')
+            msg = [msg,sprintf('Hypothesis test chosen: %s.\n', obj.curr_test)];                             
         end
         
         function runHypothesisTest(obj)
@@ -1128,7 +1101,7 @@ classdef StatsManager < handle
             % statistical comparison:
             indxG = unique(obj.flatData.(obj.splitVar.indexName));
             % Instantiate stats structure:
-            statsInfo = repmat(struct('subGroupName','','GroupComparison', struct('Name','None', 'h',[],'p',[],'stats',[], 'ANOVAtab',[],...
+            statsInfo = repmat(struct('subGroupName','','GroupComparison', struct('Name','None', 'p',[],'stats',[], 'ANOVAtab',[],...
                 'postHocTab',[])),1,numel(indxG));
             
             for ii = 1:numel(indxG)
@@ -1174,10 +1147,10 @@ classdef StatsManager < handle
                         % Perform statistical comparison:
                         if obj.checkNormality
                             % Parametric T-Test:
-                            [statsInfo(ii).GroupComparison.h,statsInfo(ii).GroupComparison.p,~,statsInfo(ii).GroupComparison.stats] = ttest(x,y,'Alpha',obj.pAlpha);
+                            [~,statsInfo(ii).GroupComparison.p,~,statsInfo(ii).GroupComparison.stats] = ttest(x,y,'Alpha',obj.pAlpha);
                         else
                             % Non-parametric Wilcoxon rank-sum test:
-                            [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.h,statsInfo(ii).GroupComparison.stats] = signrank(x,y,'alpha',obj.pAlpha);
+                            [statsInfo(ii).GroupComparison.p,~,statsInfo(ii).GroupComparison.stats] = signrank(x,y,'alpha',obj.pAlpha);
                         end
                         
                     case 'UnpairedTest'
@@ -1199,10 +1172,10 @@ classdef StatsManager < handle
                         % Perform statistical comparison:
                         if obj.checkNormality
                             % Parametric T-Test:
-                            [statsInfo(ii).GroupComparison.h,statsInfo(ii).GroupComparison.p,~,statsInfo(ii).GroupComparison.stats] = ttest2(x,y,'Alpha',obj.pAlpha,'Vartype',varMap(obj.checkHomogeneity));
+                            [~,statsInfo(ii).GroupComparison.p,~,statsInfo(ii).GroupComparison.stats] = ttest2(x,y,'Alpha',obj.pAlpha,'Vartype',varMap(obj.checkHomogeneity));
                         else
                             % Non-parametric Wilcoxon rank-sum test:
-                            [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.h,statsInfo(ii).GroupComparison.stats] = ranksum(x,y,'Alpha',obj.pAlpha);
+                            [statsInfo(ii).GroupComparison.p,~,statsInfo(ii).GroupComparison.stats] = ranksum(x,y,'Alpha',obj.pAlpha);
                         end
                     case 'OneWayANOVA'                        
                         idxHas2PlusItems = [obj.indepVars.len] > 1;
@@ -1222,7 +1195,7 @@ classdef StatsManager < handle
                             [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.ANOVAtab, statsInfo(ii).GroupComparison.stats] = kruskalwallis(x, gVar(idxSplit), 'off');
                         end                        
                         % Perform postHoc test when a difference was detected in the ANOVA test:
-                        if statsInfo(ii).GroupComparison.p < obj.pAlpha
+                        if statsInfo(ii).GroupComparison.p <= obj.pAlpha
                             % Prepare identifiers for pair-wise group comparison:                            
                             Names = cell(length(gNames),1);                            
                             c = multcompare(statsInfo(ii).GroupComparison.stats,'Alpha', obj.pAlpha,'CType', 'dunn-sidak', 'Display','off');                            
@@ -1248,7 +1221,7 @@ classdef StatsManager < handle
                             anovan(data,{g1,g2}, 'model','interaction', 'varnames',{obj.indepVars.Name}, 'display','off');                                                                                        
                         % Perform postHoc test when a difference was detected in the ANOVA test:
                         % Create table with postHoc info:                        
-                        if any(statsInfo(ii).GroupComparison.p < obj.pAlpha)
+                        if any(statsInfo(ii).GroupComparison.p <= obj.pAlpha)
                             % Prepare identifiers for pair-wise group comparison:
                             g1Names = unique(g1); g2Names = unique(g2);
                             [m,n] = meshgrid([1:length(g1Names)],[1:length(g2Names)]); gPairs = [m(:),n(:)];
@@ -1296,17 +1269,24 @@ classdef StatsManager < handle
                         t = cell2table([predVar,dataOut],'VariableNames',[{betweenVarName}, withinNames]);
                         
                         if contains(obj.curr_test, 'oneway','IgnoreCase',true)
+                            % For one way, we compare the "within"
+                            % variables.
                             notation = [withinNames{1} '-' withinNames{end} ' ~ 1'];
                             postHocVar = withinVarName;
                         else
+                            % For two way, we compare the "between"
+                            % variables.
                             notation = [withinNames{1} '-' withinNames{end} ' ~ ' t.Properties.VariableNames{1}];
                             postHocVar = betweenVarName;
                         end
                         rm = fitrm(t,notation,'WithinDesign',table(withinList,'VariableNames',{withinVarName}));
                         statsInfo(ii).GroupComparison.ANOVAtab = ranova(rm);
+                        % Copy content from "pValue" column to "p" field:                                                
                         pv_col = startsWith(statsInfo(ii).GroupComparison.ANOVAtab.Properties.VariableNames, 'pValue','IgnoreCase',true);
-                        pvals = cellfun(@(x) (x < obj.pAlpha), table2cell(statsInfo(ii).GroupComparison.ANOVAtab(:, pv_col)));
-                        if any(pvals,'all')
+                        statsInfo(ii).GroupComparison.p = table2array(statsInfo(ii).GroupComparison.ANOVAtab(:, pv_col));                                                
+                        % !! Here, we use all "pValue" types to decide to
+                        % perform the postHoc tests. !!
+                        if any(statsInfo(ii).GroupComparison.p <= obj.pAlpha,'all')
                             % Post-hoc test:
                             statsInfo(ii).GroupComparison.postHocTab.Name = ['Comparison by ' t.Properties.VariableNames{1}];
                             statsInfo(ii).GroupComparison.postHocTab.p = multcompare(rm,postHocVar);
@@ -1376,39 +1356,97 @@ classdef StatsManager < handle
             status = all(status);
         end
         
-        function out = tab2char(obj,tab)
+        function genStatsReport(obj)
+           % This method extracts the outputs of statistical tests and put them in text format.
+                                 
+           if isempty(obj.results_stats)
+               warning('Statistical results not found! Run statistical comparisons in order to generate a report');
+               return
+           end
+           
+           div = repmat('-',1,80);
+           % Add header with some general information about the data and
+           % the statistical comparisons performed:           
+           str = sprintf('-----------------------Statistical Hypothesis test report-----------------------\nRun date: %s\n\n',datestr(datetime('now')));
+                      
+           str = [str, sprintf(['The data was grouped by %d %s(s) vs %d %s(s) and split by a total of %d %s(s).\n\n'...
+               'The hypothesis test executed was "%s"\n%s\n'],...
+               obj.indepVars(1).len, obj.indepVars(1).Name,obj.indepVars(2).len, obj.indepVars(2).Name, ...
+               length(obj.results_stats), obj.splitVar.Name, obj.curr_test, div)];                      
+           % Write the results of each test.                       
+           for ii = 1:length(obj.results_stats)
+               % Add name of Split Variable:
+               str = [str, sprintf('Subgroup name: %s\n',obj.results_stats(ii).subGroupName)];
+               % Add outputs of statistical tests:
+               info = obj.results_stats(ii).GroupComparison;
+               switch obj.curr_test                    
+                    case {'PairedTest','UnpairedTest'}
+                        str = [str, sprintf('Comparison performed: "%s"\np-value: %0.4f\nStats:\n',...
+                            info.Name, info.p)];  
+                            % Add "stats" fields:
+                            fn = fieldnames(info.stats);                            
+                            for kk = 1:length(fn)
+                                str = [str,sprintf('\t%s: %0.4f\n',fn{kk},info.stats.(fn{kk}))];
+                            end                                                                                                                    
+                    case {'OneWayANOVA', 'TwoWayANOVA'}                        
+                        str = [str, sprintf('Comparison performed: "%s"\nStats:\n',info.Name)];
+                        str = [str, tab2char(info.ANOVAtab)];
+                        if ~isempty(info.postHocTab)
+                            str = [str,sprintf('Post-hoc tests:\nTest name: "dunn-sidak"\nP-Value table:\n')];
+                            str = [str,tab2char(info.postHocTab)];
+                        end                     
+                    case {'OneWayRepeatedMeasures', 'TwoWayRepeatedMeasures'}                        
+                        str = [str, sprintf('Comparison performed: "%s"\nStats:\n',info.Name)];
+                        txt = tab2char(info.ANOVAtab);
+                        str = [str, txt];
+                        if ~isempty(info.postHocTab)
+                            str = [str,sprintf('Post-hoc tests:\nTest name: "tukey-kramer"\n%"s"\n', info.postHocTab.Name)];
+                            str = [str,tab2char(info.postHocTab.p)];
+                        end             
+                    otherwise
+                        error('unknown hypothesis test!')                                      
+               end
+               str = [str, sprintf('%s\n',div)];
+           end
+           obj.statsReport = str;
+           %%%%% Local function %%%%%
+           function out = tab2char(tab)
             % Transforms a table as text.           
             % Parse table:
             if iscell(tab)
                 % Deal with info already in "cells"                 
-                txt = cellfun(@num2str,tab, 'UniformOutput',false);
+                tab_txt = cellfun(@num2str,tab, 'UniformOutput',false);
             else                
                 % Transform table to cell array with strings:
-                txt = table2cell(tab);
-                txt = cellfun(@num2str,txt,'UniformOutput',false);
+                tab_txt = table2cell(tab);
+                tab_txt = cellfun(@num2str,tab_txt,'UniformOutput',false);
                 % Append headers and row names:
-                txt = [tab.Properties.RowNames,txt];
+                tab_txt = [tab.Properties.RowNames,tab_txt];
                 if ~isempty(tab.Properties.RowNames)
-                    txt = vertcat([{''}, tab.Properties.VariableNames], txt);
+                    tab_txt = vertcat([{''}, tab.Properties.VariableNames], tab_txt);
                 else
-                    txt = vertcat(tab.Properties.VariableNames, txt);
+                    tab_txt = vertcat(tab.Properties.VariableNames, tab_txt);
                 end
             end
             % Get largest number of charaters:
-            charLen = max(cellfun(@length,txt),[],'all');
-            txt = cellfun(@(x) pad(x,charLen,'right'),txt,'UniformOutput',false);
+            charLen = max(cellfun(@length,tab_txt),[],'all');
+            tab_txt = cellfun(@(x) pad(x,charLen,'right'),tab_txt,'UniformOutput',false);
             % Build table:
             divV = ' | ';
-            divH = repmat('-',1,(charLen + length(divV))*size(txt,2));
+            divH = repmat('-',1,(charLen + length(divV))*size(tab_txt,2));
             
             out = '';
-            for ii = 1:size(txt,1)
-                out = [out,sprintf('%s\n',strjoin(txt(ii,:),divV))];
-                if ii == 1 || ii == size(txt,1)
+            for jj = 1:size(tab_txt,1)
+                out = [out,sprintf('%s\n',strjoin(tab_txt(jj,:),divV))];
+                if jj == 1 || jj == size(tab_txt,1)
                     out =[out,sprintf('%s\n',divH)];
                 end
             end            
         end
+           
+        end
+        
+        
     end
 end
 
