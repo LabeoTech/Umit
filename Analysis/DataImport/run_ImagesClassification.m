@@ -3,7 +3,7 @@ function outFile = run_ImagesClassification(RawFolder, SaveFolder, varargin)
 % IMAGESCLASSIFICATION from the IOI library (LabeoTech).
 
 % Defaults:
-default_Output = {'fluo_475.dat','fluo.dat', 'red.dat', 'green.dat', 'yellow.dat', 'speckle.dat'}; % This is here only as a reference for PIPELINEMANAGER.m. The real outputs will be stored in OUTFILE.
+default_Output = {'fluo_475.dat', 'fluo_567.dat','fluo.dat', 'red.dat', 'green.dat', 'yellow.dat', 'speckle.dat'}; % This is here only as a reference for PIPELINEMANAGER.m. The real outputs will be stored in OUTFILE.
 default_opts = struct('BinningSpatial', 1, 'BinningTemp', 1, 'b_IgnoreStim', false, 'StimChannel','Internal-main');
 opts_values = struct('BinningSpatial', 2.^[0:5], 'BinningTemp',2.^[0:5],'b_IgnoreStim',[false, true], 'StimChannel', {{'Internal-main', 'Internal-Aux','AI1', 'AI2','AI3','AI4','AI5','AI6','AI7','AI8'}'});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 % Arguments validation:
