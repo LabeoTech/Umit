@@ -221,7 +221,7 @@ classdef PipelineManager < handle
             disp(['Optional Parameters set for function : ' obj.funcList(idx).name]);
         end
         
-        function addTask(obj,func, varargin)
+        function state = addTask(obj,func, varargin)
             % This method adds an analysis function, or task, to the
             % pipeline. Here, we can choose to save the output of a given
             % task as a .DAT file. ADDTASK will create a string containing
@@ -234,14 +234,16 @@ classdef PipelineManager < handle
             %   datFileName(char): Optional. Name of the file to be saved.
             %       If not provided, the analysis function's default
             %       filename will be used.
-            
+            % Output:
+            %   state (bool): FALSE, if failed to add the task to the
+            %   pipeline.
             p = inputParser;
             addRequired(p, 'func', @(x) ischar(x) || isnumeric(x));
             addOptional(p, 'b_save2File', false, @islogical);
             addOptional(p, 'datFileName', '', @ischar);
             
             parse(p,func, varargin{:});
-            
+            state = false;
             % Check if the function name is valid:
             idx = obj.check_funcName(p.Results.func);
             if isempty(idx)
@@ -270,62 +272,62 @@ classdef PipelineManager < handle
             end
             
             % Look for first input file to the pipeline;
-            if isempty(obj.pipeFirstInput)
-                if isempty(obj.pipe)
-                    task.inputFileName = obj.getFirstInputFile(task);
-                    if task.inputFileName == 0
-                        disp('Operation Cancelled by User')
-                        return
-                    end
-                else
-                    % Control for multiple outputs from the previous step:
-                    % Here, we assume that functions with multiple outputs
-                    % create only "Files" and not "data".
-                    % Therefore, we will update the function string to load
-                    % one of the "Files" before running the task.
+            if isempty(obj.pipe)
+                task.inputFileName = obj.getFirstInputFile(task);
+                if task.inputFileName == 0
                     
-                    % Look from bottom to top of the pipeline for tasks with files
-                    % as outputs. This is necessary because not all analysis
-                    % functions have outputs.
-                    
-                    for i = length(obj.pipe):-1:1
-                        if ismember('outData', obj.pipe(i).argsOut)
-                            obj.pipeFirstInput = 'outData';
-                            break
-                        elseif any(strcmp(task.argsIn, 'data')) && any(strcmp('outFile', obj.pipe(i).argsOut))
-                            if iscell(obj.pipe(i).outFileName)
-                                % Ask user to select a file:
-                                disp('Controlling for multiple outputs')
-                                w = warndlg({[obj.pipe(i).name ' has multiple output files!'],...
-                                    'Please, select one to be analysed!'});
-                                waitfor(w);
-                                [indxFile, tf] = listdlg('ListString', obj.pipe(i).outFileName,...
-                                    'SelectionMode','single');
-                                if ~tf
-                                    disp('Operation cancelled by User')
-                                    return
-                                end
-                                task.inputFileName = obj.pipe(i).outFileName{indxFile};
-                            else
-                                task.inputFileName = obj.pipe(i).outFileName;
-                            end
-                            obj.pipeFirstInput = task.inputFileName;
-                        else
-                            if isempty(task.inputFileName)
-                                task.inputFileName = obj.getFirstInputFile(task);
-                            end
-                            if task.inputFileName == 0
-                                disp('Operation Cancelled by User')
+                    disp('Operation Aborted!')
+                    return
+                end
+            else
+                % Control for multiple outputs from the previous step:
+                % Here, we assume that functions with multiple outputs
+                % create only "Files" and not "data".
+                % Therefore, we will update the function string to load
+                % one of the "Files" before running the task.
+                
+                % Look from bottom to top of the pipeline for tasks with files
+                % as outputs. This is necessary because not all analysis
+                % functions have outputs.
+                
+                for i = length(obj.pipe):-1:1
+                    if ismember('outData', obj.pipe(i).argsOut)
+                        obj.pipeFirstInput = 'outData';
+                        break
+                    elseif any(strcmp(task.argsIn, 'data')) && any(strcmp('outFile', obj.pipe(i).argsOut))
+                        if iscell(obj.pipe(i).outFileName)
+                            % Ask user to select a file:
+                            disp('Controlling for multiple outputs')
+                            w = warndlg({[obj.pipe(i).name ' has multiple output files!'],...
+                                'Please, select one to be analysed!'});
+                            waitfor(w);
+                            [indxFile, tf] = listdlg('ListString', obj.pipe(i).outFileName,...
+                                'SelectionMode','single');
+                            if ~tf
+                                disp('Operation cancelled by User')
                                 return
                             end
+                            task.inputFileName = obj.pipe(i).outFileName{indxFile};
+                        else
+                            task.inputFileName = obj.pipe(i).outFileName;
+                        end
+                        obj.pipeFirstInput = task.inputFileName;
+                    else
+                        if isempty(task.inputFileName)
+                            task.inputFileName = obj.getFirstInputFile(task);
+                        end
+                        if task.inputFileName == 0
+                            disp('Operation Cancelled by User')
+                            return
                         end
                     end
                 end
             end
+            
             % Save to Pipeline:
             obj.pipe = [obj.pipe; task];
             disp(['Added "' task.name '" to pipeline.']);
-            
+            state = true;
             % Control for data to be saved as .DAT files for task:
             if ~p.Results.b_save2File
                 return
@@ -736,6 +738,10 @@ classdef PipelineManager < handle
             
             % Get target object:
             targetObj = getChildObj(obj,funcInfo.name);
+            if isempty(targetObj)
+                out = 0;
+                return
+            end
             % Display a list of files from the selected
             % object(targetObj):
             datFileList = dir(fullfile(targetObj.SaveFolder, '*.dat'));
@@ -755,7 +761,8 @@ classdef PipelineManager < handle
                 FileList = datFileList;
             end
             if isempty(FileList)
-                warndlg(['No valid Files found in ' targetObj.SaveFolder], 'pipeline warning!', 'modal')
+                w = warndlg(['No valid Files found in ' targetObj.SaveFolder], 'pipeline warning!', 'modal');
+                waitfor(w);
                 out = 0;
                 return
             else
@@ -842,18 +849,32 @@ classdef PipelineManager < handle
             function info = parseFuncFile(fcnStruct)
                 info = struct('argsIn', {},'argsOut', {}, 'outFileName', '', 'opts', [],...
                     'opts_def',[],'opts_vals',[]);
-                txt = fileread(fullfile(fcnStruct.folder, fcnStruct.name));
+                % Read the '.m' file content and exclude comments (lines
+                % starting with the "%" character):
+                fid = fopen(fullfile(fcnStruct.folder, fcnStruct.name),'r');
+                txt = '';
+                while 1
+                    tline = fgetl(fid);
+                    if tline == -1
+                        break
+                    end
+                    if ~startsWith(strip(tline),'%')
+                        txt=[txt,sprintf('%s\n',tline)];%#ok
+                    end                    
+                end
+                fclose(fid);
+                clear fid tline      
+                % Parse function header to get input and output variables:
                 funcStr = erase(regexp(txt, '(?<=function\s*).*?(?=\r*\n)', 'match', 'once'),' ');
                 outStr = regexp(funcStr,'.*(?=\=)', 'match', 'once');
-                out_args = regexp(outStr, '\[*(\w*)\,*(\w*)\]*', 'tokens', 'once');
-                idx_empty = cellfun(@isempty, out_args);
-                info(1).argsOut = out_args(~idx_empty);
+                out_args = regexp(outStr, '\[*(\w*)\,*(\w*)\]*', 'tokens', 'once');               
+                info(1).argsOut = out_args(~cellfun(@isempty, out_args));
                 [~,funcName,~] = fileparts(fcnStruct.name);
                 expInput = ['(?<=' funcName '\s*\().*?(?=\))'];
                 str = regexp(funcStr, expInput, 'match', 'once');
-                str = strip(split(str, ','));
-                idx_varargin = strcmp(str, 'varargin');
-                info.argsIn = str(~idx_varargin);
+                str = strip(split(str, ','));                
+                info.argsIn = str(~strcmp(str, 'varargin'));
+                % Get Default outputs:
                 expOutput = 'default_Output\s*=.*?(?=\n)';
                 str = regexp(txt, expOutput, 'match', 'once');
                 if isempty(str)
