@@ -707,13 +707,20 @@ classdef StatsManager < handle
             end
         end
         
-        function qMatrix = runStatsOnMatrix(obj)
-            %  TBD %
-                                    
-            % Create pairs of ROIs and use the pairs as indices in the
-            % dummy dimension "Event":
-             
-            
+        function [qMatrix, Report] = runStatsOnMatrix(obj)
+            %  This method performs non-parametric comparisons between
+            %  correlation matrices using False Discovery Rate (FDR) to
+            %  compensate for multiple comparisons.
+            %  Outputs:
+            %   qMatrix (matrix): matrix of Q values (FDR-corrected
+            %       pValues) of statistical comparisons. !! For ANOVAs, this
+            %       matrix represents the test itself. Post-hoc comparisons are
+            %       described in the stats "Report".
+            %   Report (char): Statistics report containing the postHoc
+            %       statistics for ANOVAs where the comparison of ROI pairs is
+            %       significant. 
+                         
+            Report = [];
             % Generate pairs of comparison for each ROI.
             rPairs = nchoosek(unique(vertcat(obj.dataArr.rIndx)),2);
             rPairsIndx = 1:size(rPairs,1);
@@ -747,7 +754,8 @@ classdef StatsManager < handle
                 obj.dataArr(ii).rIndx = rPairsIndx(~idxNaN)';             
             end
             % Create a flatData array with fake "ROIS":
-            obj.chooseStatsTest;
+            msg = obj.chooseStatsTest;
+            disp(msg);
             obj.flatData.ObsID = rPairNames;
             obj.flatData.splitNames = obj.flatData.ObsID;            
             % Run tests on each ROI pair with Non-Parametric tests only:
@@ -782,26 +790,24 @@ classdef StatsManager < handle
                     error('Unknown comparison type for Matrices.')
             end
             
-            % Now, we select the postHoc pair-wise comparisons
-            % between that are still significant after FDR
-            % correction.
-            qIndx = qList <= obj.pAlpha; % Keep significant values;
-            qList(~qIndx) = [];
-            obj.results_stats(~qIndx) = []; % Erase stats without significance.
-            if ~isempty(obj.results_stats)
-                % Create report to access Q values for each significant
-                % pair of ROIs.
-                obj.genStatsReport
-                
-            end
             % Create a pValue matrix:
             qMatrix = ones(numel(unique(vertcat(obj.dataArr.rIndx))));            
-            for ii = 1:length(obj.results_stats)
-                disp('Checking...')
+            for ii = 1:length(obj.results_stats)                
                 indx = strcmpi(rPairNames, obj.results_stats(ii).subGroupName);
                 % Put FDR values on matrix
                 qMatrix(rPairs(indx,1), rPairs(indx,2)) = qList(ii);
                 qMatrix(rPairs(indx,2), rPairs(indx,1)) = qList(ii);                                                
+            end            
+            % Now, we select the postHoc pair-wise comparisons
+            % between that are still significant after FDR
+            % correction.
+            qIndx = qList <= obj.pAlpha; % Keep significant values;            
+            obj.results_stats(~qIndx) = []; % Erase stats without significance.
+            if ~isempty(obj.results_stats)
+                % Create report to access Q values for each significant
+                % pair of ROIs.
+                obj.genStatsReport                
+                Report = obj.statsReport;
             end            
             disp('qMatrix created!')                                                                                                        
         end
@@ -1657,51 +1663,8 @@ classdef StatsManager < handle
                 end
             end
             
-        end
-        
+        end                
         
     end
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
