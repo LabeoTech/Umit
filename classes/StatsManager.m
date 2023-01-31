@@ -41,7 +41,7 @@ classdef StatsManager < handle
         stats_data  = {} % cell array containing all data and metaData created.
         avg_stats_data = {} % cell array similar to stats_data containing the average values of acquisitions. (See method averageData).
         headers = {} % cell array with the _stats_data column names as keys and indices as values.
-        cType = 'dunn-sidak'; % ANOVA post-hoc test type. {'dunn-sidak' OR 'lsd'};
+        cType = 'dunn-sidak'; % ANOVA post hoc test type. {'dunn-sidak' OR 'lsd'};
         % Structure with information about all possible independent variables (see prop "indepVar") for statistics:
         indepVarInfo = struct('Name',{'Group','Subject','ROI','Acquisition', 'Event'}, ...
             'fieldName',{'groupID','SubjectID','ObsID','AcquisitionID','EventID'},...
@@ -714,7 +714,7 @@ classdef StatsManager < handle
             %  Outputs:
             %   qMatrix (matrix): matrix of Q values (FDR-corrected
             %       pValues) of statistical comparisons. !! For ANOVAs, this
-            %       matrix represents the test itself. Post-hoc comparisons are
+            %       matrix represents the test itself. Post hoc comparisons are
             %       described in the stats "Report".
             %   Report (char): Statistics report containing the postHoc
             %       statistics for ANOVAs where the comparison of ROI pairs is
@@ -768,13 +768,9 @@ classdef StatsManager < handle
             % For each pair, perform rmANOVA, if "repeated measures" OR just
             % pair-wise comparisons
             switch obj.curr_test
-                case {'UnpairedTest', 'PairedTest'}                    
-                    qList = obj.calc_FDR(arrayfun(@(x) x.GroupComparison.p,obj.results_stats)');                    
-                    
-                case  'OneWayANOVA'
-                    disp('ONE WAY! TBD!')
-                    qList = obj.calc_FDR(arrayfun(@(x) x.GroupComparison.p,obj.results_stats)');  
-                    
+                case {'UnpairedTest', 'PairedTest', 'OneWayANOVA'}
+                    pList = arrayfun(@(x) x.GroupComparison.p,obj.results_stats)';
+                    qList = obj.calc_FDR(pList);                                                        
                 case {'OneWayRepeatedMeasures', 'TwoWayRepeatedMeasures'}                    
                     % !! Here, we use the Greenhouse-Geisser (pValueGG)!!
                     if startsWith(obj.curr_test, 'one','IgnoreCase',true)
@@ -792,7 +788,9 @@ classdef StatsManager < handle
                 otherwise
                     error('Unknown comparison type for Matrices.')
             end
-            
+            % Remove items from results_stats that contain pValues = NaN;
+            idxNaN = isnan(pList);
+            obj.results_stats(idxNaN) = [];
             % Create a pValue matrix:
             qMatrix = ones(numel(unique(vertcat(obj.dataArr.rIndx))));            
             for ii = 1:length(obj.results_stats)                
@@ -1496,7 +1494,7 @@ classdef StatsManager < handle
                             pVal = statsInfo(ii).GroupComparison.ANOVAtab.pValueGG(2);                            
                         end
                         if pVal <= obj.pAlpha
-                            % Post-hoc test:                            
+                            % Post hoc test:                            
                             statsInfo(ii).GroupComparison.postHocTab = multcompare(rm,postHocVar,'ComparisonType',obj.cType, 'By', compBy);
                             if b_useFDR
                                 idxPValCol = strcmpi(statsInfo(ii).GroupComparison.postHocTab.Properties.VariableNames,'pValue');
@@ -1607,7 +1605,7 @@ classdef StatsManager < handle
                         str = [str, sprintf('Comparison performed: "%s"\nStats:\n',info.Name)];
                         str = [str, tab2char(info.ANOVAtab)];
                         if ~isempty(info.postHocTab)
-                            str = [str,sprintf('Post-hoc tests:\nTest name: "%s"\nP-Value table:\n', obj.cType)];
+                            str = [str,sprintf('Post hoc tests:\nTest name: "%s"\nP-Value table:\n', obj.cType)];
                             str = [str,tab2char(info.postHocTab)];
                         end
                     case {'OneWayRepeatedMeasures', 'TwoWayRepeatedMeasures'}
@@ -1620,7 +1618,7 @@ classdef StatsManager < handle
                             else                                
                                 compStr = [info.stats.WithinFactorNames{:} ' by ' info.stats.BetweenFactorNames{:}];
                             end
-                            str = [str,sprintf('Post-hoc tests:\nTest name: "%s"\n%"s"\n',obj.cType, compStr)];
+                            str = [str,sprintf('Post hoc tests:\nTest name: "%s"\n%"s"\n',obj.cType, compStr)];
                             str = [str,tab2char(info.postHocTab)];
                         end
                     otherwise
@@ -1650,13 +1648,18 @@ classdef StatsManager < handle
                         tab_txt = vertcat(tab.Properties.VariableNames, tab_txt);
                     end
                 end
-                % Get largest number of charaters:
-                charLen = max(cellfun(@length,tab_txt),[],'all');
-                tab_txt = cellfun(@(x) pad(x,charLen,'right'),tab_txt,'UniformOutput',false);
                 % Build table:
                 divV = ' | ';
-                divH = repmat('-',1,(charLen + length(divV))*size(tab_txt,2));
-                
+                % Get largest number of charaters:
+                charLen = max(cellfun(@length,tab_txt),[],1);
+                for jnd = 1:size(tab_txt,2)
+                    tab_txt(:,jnd) = cellfun(@(x) pad(x,charLen(jnd),'right'),tab_txt(:,jnd),'UniformOutput',false);
+                end
+                % Recalculate text size after padding:
+                charLen = max(cellfun(@length,tab_txt),[],1);  
+                % Add Header and bottom division:
+                divH = repmat('-',1,sum(charLen) + length(divV)*size(tab_txt,2));
+                % Put table together:
                 out = '';
                 for jj = 1:size(tab_txt,1)
                     out = [out,sprintf('%s\n',strjoin(tab_txt(jj,:),divV))];
