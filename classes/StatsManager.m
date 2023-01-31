@@ -707,7 +707,7 @@ classdef StatsManager < handle
             end
         end
         
-        function [qMatrix, Report] = runStatsOnMatrix(obj)
+        function [qMatrix, Report, msg] = runStatsOnMatrix(obj)
             %  This method performs non-parametric comparisons between
             %  correlation matrices using False Discovery Rate (FDR) to
             %  compensate for multiple comparisons.
@@ -719,8 +719,9 @@ classdef StatsManager < handle
             %   Report (char): Statistics report containing the postHoc
             %       statistics for ANOVAs where the comparison of ROI pairs is
             %       significant. 
+            %   msg (char): message from "chooseStatsTest".
                          
-            Report = [];
+            Report = '';
             % Generate pairs of comparison for each ROI.
             rPairs = nchoosek(unique(vertcat(obj.dataArr.rIndx)),2);
             rPairsIndx = 1:size(rPairs,1);
@@ -755,7 +756,9 @@ classdef StatsManager < handle
             end
             % Create a flatData array with fake "ROIS":
             msg = obj.chooseStatsTest;
-            disp(msg);
+            if nargout < 3
+                disp(msg)
+            end        
             obj.flatData.ObsID = rPairNames;
             obj.flatData.splitNames = obj.flatData.ObsID;            
             % Run tests on each ROI pair with Non-Parametric tests only:
