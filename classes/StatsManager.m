@@ -688,7 +688,7 @@ classdef StatsManager < handle
                 % switch comparison to non-parametric versions:
                 warnMsg = warning('The data does not follow a normal distribution. Non-parametric tests will be performed.');
             end
-            if obj.checkHomogeneity && any(contains(obj.curr_test, {'Two','Repeated'}, 'IgnoreCase',true))
+            if ~obj.checkHomogeneity && any(contains(obj.curr_test, {'Two','Repeated'}, 'IgnoreCase',true))
                 warnMsg = warning('The data does not contain homogeneous variances. Interpret results with caution!');
             elseif ~obj.checkHomogeneity
                 warnMsg = warning('The data does not contain homogeneous variances. Non-parametric tests will be performed. Interpret results with caution!');
@@ -731,8 +731,7 @@ classdef StatsManager < handle
                 rPairNames{ii}= strjoin(obj.obs_list(rPairs(ii,:)), '_vs_');
             end            
             % Store local copy of "dataArr" property:            
-            dataArr_local = obj.dataArr;
-            
+            dataArr_local = obj.dataArr;            
             for ii = 1:length(obj.dataArr)
                 % Create fake matrix to account for matrices with less ROIs:            
                 mat = nan(max(rPairs,[],'all'));              
@@ -767,27 +766,15 @@ classdef StatsManager < handle
             obj.dataArr = dataArr_local; obj.flatData = [];
             % For each pair, perform rmANOVA, if "repeated measures" OR just
             % pair-wise comparisons
-            switch obj.curr_test
-                case {'UnpairedTest', 'PairedTest', 'OneWayANOVA'}
-                    pList = arrayfun(@(x) x.GroupComparison.p,obj.results_stats)';
-                    qList = obj.calc_FDR(pList);                                                        
-                case {'OneWayRepeatedMeasures', 'TwoWayRepeatedMeasures'}                    
-                    % !! Here, we use the Greenhouse-Geisser (pValueGG)!!
-                    if startsWith(obj.curr_test, 'one','IgnoreCase',true)
-                        % For One-Way Repeated measures, do the FDR on pValues
-                        % from "within" factor "Acquisitions":
-                        pList = arrayfun(@(x) x.GroupComparison.p(1,2),obj.results_stats);
-                    else
-                        % For Two-Way Repeated measures, do the FDR on pValues
-                        % from "between" factor "Groups":
-                        pList = arrayfun(@(x) x.GroupComparison.p(2,2),obj.results_stats);
-                    end
-                    % Perform the False discovery Rate correction and get the
-                    % significant values:
-                    qList = obj.calc_FDR(pList');                                                                                                                                                  
-                otherwise
-                    error('Unknown comparison type for Matrices.')
+            if strcmpi(obj.curr_test, 'TwoWayRepeatedMeasures')
+                % For Two-Way Repeated measures, do the FDR on pValues
+                % from "between" factor "Groups":
+                pList = arrayfun(@(x) x.GroupComparison.p(2),obj.results_stats);
+            else
+                pList = arrayfun(@(x) x.GroupComparison.p(1),obj.results_stats)';                
             end
+            qList = obj.calc_FDR(pList);
+            
             % Remove items from results_stats that contain pValues = NaN;
             idxNaN = isnan(pList);
             obj.results_stats(idxNaN) = [];
@@ -1479,22 +1466,38 @@ classdef StatsManager < handle
                             compBy = withinVarName;
                         end
                         rm = fitrm(t,notation,'WithinDesign',table(withinList,'VariableNames',{withinVarName}));
+                        statsInfo(ii).GroupComparison.stats = rm;                        
                         statsInfo(ii).GroupComparison.ANOVAtab = ranova(rm);
-                        statsInfo(ii).GroupComparison.stats = rm;
-                        % Copy content from "pValue" column to "p" field:
-                        pv_col = startsWith(statsInfo(ii).GroupComparison.ANOVAtab.Properties.VariableNames, 'pValue','IgnoreCase',true);
-                        statsInfo(ii).GroupComparison.p = table2array(statsInfo(ii).GroupComparison.ANOVAtab(1:end-1, pv_col));
-
-                        % !! Here, we use the Greenhouse-Geisser corrected pValue (pValueGG) to decide to
-                        % perform the postHoc tests. If One Way, the value corresponds to the "within" interactions. 
-                        % For the two-way, theo value correponds to the "between" interactions!!
-                        if contains(obj.curr_test, 'oneway','IgnoreCase',true)
-                            pVal = statsInfo(ii).GroupComparison.ANOVAtab.pValueGG(1);                            
+                        % Just keep "pValue" and "pValueGG" pValue columns
+                        % to simplify the ANOVA table:
+                        statsInfo(ii).GroupComparison.ANOVAtab.pValueHF = [];
+                        statsInfo(ii).GroupComparison.ANOVAtab.pValueLB = [];
+                        % Test for sphericity to pick which pValue to use
+                        % as threshold for post hoc testing:
+                        mtbl = mauchly(rm);
+                        b_sphericityPass = mtbl.pValue <= obj.pAlpha;
+                        if b_sphericityPass
+                            % Use "uncorrected" pValue:
+                            pCol = statsInfo(ii).GroupComparison.ANOVAtab.pValue;
+                            statsInfo(ii).GroupComparison.ANOVAtab.pValueGG = []; % Erase the other.
                         else
-                            pVal = statsInfo(ii).GroupComparison.ANOVAtab.pValueGG(2);                            
+                            % Use Greenhouse-Geisser-corrected pValue
+                            % instead:
+                            pCol = statsInfo(ii).GroupComparison.ANOVAtab.pValueGG;
+                            statsInfo(ii).GroupComparison.ANOVAtab.pValue = []; % Erase the other.
+                        end
+                        % Copy pValues to "p" field:
+                        statsInfo(ii).GroupComparison.p = table2array(statsInfo(ii).GroupComparison.ANOVAtab(:,end)); 
+                        
+                        % If One Way, pick the pValue that corresponds to the "within" interactions. 
+                        % For the two-way, theo value correponds to the "between" interactions":                                                                                                                     
+                        if contains(obj.curr_test, 'oneway','IgnoreCase',true)
+                            pVal = pCol(1);                            
+                        else
+                            pVal = pCol(2);                            
                         end
                         if pVal <= obj.pAlpha
-                            % Post hoc test:                            
+                            % Perform post hoc tests:                            
                             statsInfo(ii).GroupComparison.postHocTab = multcompare(rm,postHocVar,'ComparisonType',obj.cType, 'By', compBy);
                             if b_useFDR
                                 idxPValCol = strcmpi(statsInfo(ii).GroupComparison.postHocTab.Properties.VariableNames,'pValue');
@@ -1582,7 +1585,7 @@ classdef StatsManager < handle
             % the statistical comparisons performed:
             str = sprintf('-----------------------Statistical Hypothesis test report-----------------------\nRun date: %s\n\n',datestr(datetime('now')));
             
-            str = [str, sprintf(['The data was grouped by %d %s(s) vs %d %s(s) and split by a total of %d %s(s).\n\n'...
+            str = [str, sprintf(['This report summarizes the statistics of data grouped by\n %d %s(s) vs %d %s(s) across a total of %d subgroups of type "%s".\n\n'...
                 'The hypothesis test executed was "%s"\n%s\n'],...
                 obj.indepVars(1).len, obj.indepVars(1).Name,obj.indepVars(2).len, obj.indepVars(2).Name, ...
                 length(obj.results_stats), obj.splitVar.Name, obj.curr_test, div)];

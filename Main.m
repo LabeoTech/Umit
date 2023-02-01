@@ -27,7 +27,7 @@ protocol.clearFilterStruct
 % protocol.FilterStruct.Subject(2).Expression = 'M0005844209';
 % Query Acquisition and Modality:
 protocol.FilterStruct.Acquisition.PropName = 'ID';
-protocol.FilterStruct.Acquisition.Expression = 'SF'; % Leave empty to select all
+protocol.FilterStruct.Acquisition.Expression = 'RS'; % Leave empty to select all
 % protocol.FilterStruct.Acquisition.LogicalOperator ='OR';
 % protocol.FilterStruct.Acquisition(2).PropName = 'ID';
 % protocol.FilterStruct.Acquisition(2).Expression = 'RS'; % Leave empty to select all
@@ -81,29 +81,49 @@ pipe.run_pipeline
 % use the "StatsManager" class to group the data into one or more
 % experimental groups and gather the data for plotting.
 
-% Select .MAT file containing the data
-fileName = 'scalar.mat';
+% Select .MAT file containing the data:
+fileName = 'corrMatrix_avg_vs_avg.mat';
 % Get the list of objects containing the data
 list_of_objs = protocol.extractFilteredObjects(3);
 % Get the list of observations contained in all files:
 obs_list = {'A_R','AL_R','AM_R','V1_L', 'M1_L', 'M2_L'};
 % Set a list of experimental groups for each item in the "list_of_obj":
-% list_of_groups = repmat({'Test'},size(list_of_objs));
-list_of_groups = repelem({'A','B'},length(list_of_objs)/2)';
+list_of_groups = repmat({'Test'},size(list_of_objs));
 % Instantiate the "StatsManager" object:
 statMngr = StatsManager(list_of_objs, obs_list,list_of_groups, fileName);
 %% Plot grouped data
 PlotLongData(statMngr); % Plotting tool for scalar and time-series data types.
+%% Plot Correlation Matrices
+PlotCorrMatrix(statMngr) % Plotting tool for correlation matrices.
 %% Perform statistical analysis for scalar data
-% Average all acquisitions
+% Average acquisitions
 statMngr.getAcqIndexList('original')
-statMngr.resetAvgIndex
+statMngr.resetAvgIndex; % Reset to original Acquisitions 
+% Merge all
 statMngr.setAcquisitionRange([1 4])
-statMngr.setStatsVariables({'Group','Acquisition'},'ROI')
-[a,b,c] = statMngr.runStats(true);
-statMngr.exportReportToTXT('test')
-
-
+% Merge consecutive groups
+statMngr.setAcquisitionRange([1 2])
+statMngr.setAcquisitionRange([3 4])
+% Set statistical independent and grouping variables:
+statMngr.setStatsVariables({'ROI','Group'},'Acquisition')
+% Run stats:
+[a,b,c] = statMngr.runStatsOnScalar;
+% Generate stats report:
+statMngr.exportReportToTXT('reportMatrix.txt')
+%% Perform statistical analysis for correlation matrices
+[qMatrix, statsReport] = statMngr.runStatsOnMatrix;
+% Plot matrix:
+figure; 
+s1=subplot(121); 
+imagesc(s1,qMatrix,[0,1]);
+title(s1,'qValues');
+colormap(s1,'jet'); axis square;
+colorbar(s1,'eastoutside')
+s2=subplot(122);
+imagesc(s2,qMatrix<=statMngr.pAlpha);
+title(s2,['qValues \leq' num2str(statMngr.pAlpha)]); 
+colormap(s2,'gray'); axis square; colorbar(s2,'eastoutside')
+sgtitle('FDR-corrected p Values (q Values)'); 
 
 
 
