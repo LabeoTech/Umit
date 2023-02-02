@@ -20,6 +20,7 @@ classdef StatsManager < handle
         MfileArr       % Array of MATFILE objects.
         time_resolution = 'none' % Time resolution for grouping each observation
         % Options: "none", "minute", "hour, "day", "week", "month".
+        pAlpha = 0.05 % "Significance" threshold (Alpha) for statistical analysis.
     end
     properties (SetAccess = private)
         %         timestamp_list % List of timestamps associated with each object in list_of_objs.
@@ -33,19 +34,19 @@ classdef StatsManager < handle
         curr_test = ''; % Name of the current test from the list_of_tests.
         indepVars % Independent variables used to perform statistical comparisons.
         splitVar % Data dimension to use to split the data into subsets for statistical analysis.
+        results_stats % structure containing the results of hypothesis tests between groups.
+        statsReport % Text-formatted version of "results_stats".        
     end
     properties (Access = private)
         stats_data  = {} % cell array containing all data and metaData created.
         avg_stats_data = {} % cell array similar to stats_data containing the average values of acquisitions. (See method averageData).
         headers = {} % cell array with the _stats_data column names as keys and indices as values.
-        
+        cType = 'dunn-sidak'; % ANOVA post hoc test type. {'dunn-sidak' OR 'lsd'};
         % Structure with information about all possible independent variables (see prop "indepVar") for statistics:
         indepVarInfo = struct('Name',{'Group','Subject','ROI','Acquisition', 'Event'}, ...
             'fieldName',{'groupID','SubjectID','ObsID','AcquisitionID','EventID'},...
             'indexName',{'gIndx','sIndx','rIndx','aIndx','eIndx'},...
             'b_isRepeatedMeasure',{false,false,false,true,true});
-        list_of_tests = {'WilcoxPaired','WilcoxUnpaired','oneWayANOVA','twoWayANOVA'}; % List of currently available statistical tests.
-        results_stats % structure containing the results of hypothesis tests between groups. 
     end
     
     methods
@@ -267,32 +268,54 @@ classdef StatsManager < handle
             %   groupVar (char): name of the dimension to split the data.
             %   For instance, if the groupVar is "Observation", the statistical
             %   analysis will be performed for each one of them separately.
+            %   verbose (bool): If TRUE, displays messages on command
+            %   window
             
             p = inputParser;
             addRequired(p, 'obj');
             name_validation = @(x) all(ismember(x, {obj.indepVarInfo.Name}));
             addOptional(p, 'varNames', {'Acquisition','Group'},@(x) name_validation(x) & numel(x) == 2);
             addOptional(p, 'groupVar', 'ROI',@(x) name_validation(x));
+            addParameter(p, 'verbose', false,@islogical);
             parse(p, obj, varargin{:});
             varNames = p.Results.varNames;
             groupVar = p.Results.groupVar;
+            b_disp = p.Results.verbose;
+            clear p
             % Further validation:
             if any(strcmpi(groupVar, varNames))
-                error('groupVar cannot be part of varNames');
+                error('Grouping variable cannot be an independent variable');
             end
             % Use this only for "scalar" data (FOR NOW):
-            if ~strcmpi(obj.inputFeatures.dataType, 'scalar')
-                warning(['Statistical comparisons not available for data of type ' obj.inputFeatures.dataType]);
+            if ~any(strcmpi(obj.inputFeatures.dataType, {'scalar', 'matrix'}))
+                warning(['Statistical comparisons not available for data type "' obj.inputFeatures.dataType '"']);
                 return
             end
-            disp(repmat('-',1,100));
-            fprintf('Current independent variable(s) are "%s" and "%s".\n', varNames{:});
+            if strcmpi(obj.inputFeatures.dataType,'matrix') && ~strcmpi(strjoin([varNames,{groupVar}]), strjoin({'Acquisition','Group','ROI'}))
+                warning('Data type matrix allows only independent variables "Acquisition" &  "Group". Custom settings will be ignored.')
+                varNames = {'Acquisition', 'Group'}; groupVar = 'ROI';
+                % **Here, we use "ROI" as a dummy variable because the
+                % "ROIs" by definition are embedded in the matrices.**
+            end
             [~,lb] = ismember(varNames, {obj.indepVarInfo.Name});
             obj.indepVars = obj.indepVarInfo(lb);
-            fprintf('Statistical analysis will be applied to each "%s" item.\n', groupVar);
-            disp(repmat('-',1,100));
             obj.splitVar = obj.indepVarInfo(strcmpi(groupVar, {obj.indepVarInfo.Name}));
+            if b_disp
+                disp(repmat('-',1,100));
+                fprintf('Current independent variable(s) are "%s" and "%s".\n', varNames{:});              
+                fprintf('Statistical analysis will be applied to each "%s" item.\n', groupVar);
+                disp(repmat('-',1,100));                
+            end
             disp('Done');
+        end
+        
+        function out = getStatsVariables(obj)
+            % This function gives the list of stats variables in the
+            % following order:
+            % 1 - independent variable 1
+            % 2 - independent variable 2
+            % 3 - split variable
+            out = {obj.indepVars.Name, obj.splitVar.Name};
         end
         
         function resetAvgIndex(obj)
@@ -309,9 +332,8 @@ classdef StatsManager < handle
             % and 'resetAvgIndex'.
             
             % "dataArr" is a structure containing the data and meta data
-            % stored in this class. The data will average any acquisition with
+            % stored in this class. This method will average any acquisition with
             % the value in the column "indx_avg_data" higher than zero.
-            
             
             disp('updating data Array...')
             obj.dataArr = struct.empty(0,1);
@@ -367,7 +389,7 @@ classdef StatsManager < handle
             for ind = 1:length(obj.dataArr)
                 obj.dataArr(ind).gIndx = find(strcmp(obj.dataArr(ind).groupID, unique(obj.list_of_groups)));
                 obj.dataArr(ind).sIndx = find(strcmp(obj.dataArr(ind).SubjectID, unique({obj.dataArr.SubjectID})));
-                [idxObs, obj.dataArr(ind).rIndx] = ismember(obj.dataArr(ind).observationID, obj.obs_list);
+                [idxObs, obj.dataArr(ind).rIndx] = ismember(obj.dataArr(ind).observationID, obj.obs_list);                
                 if obj.dataArr(ind).b_hasEvents
                     % Flag if events exist:
                     [idxE,obj.dataArr(ind).eIndx] = ismember(obj.dataArr(ind).MatFile.eventNameList, obj.list_of_events);
@@ -418,6 +440,16 @@ classdef StatsManager < handle
                     obj.dataArr(ind).observationID(~idxObs) = [];
                 else
                     idxErase(ind) = true;
+                end
+                % SPECIAL CASE: For correlation matrices, with dimensions
+                % "O,O", also update the "labels" field and the 2nd
+                % dimension of "data" to have the same number and order of
+                % observations in "observationID" field.
+                if strcmpi(strjoin(obj.dataArr(ind).MatFile.dim_names),'O O')
+                    idxLab = ismember(obj.dataArr(ind).labels,obj.dataArr(ind).observationID);                    
+                    obj.dataArr(ind).labels(~idxLab) = []; % Update labels
+                    % Update data:
+                    obj.dataArr(ind).data = cellfun(@(x) x(idxLab), obj.dataArr(ind).data,'UniformOutput',false);
                 end
             end
             % Erase empty items from datArr:
@@ -491,21 +523,31 @@ classdef StatsManager < handle
             % This function flattens the data Array into one vector for
             % scalar data and a X by T matrix for time-series data. The
             % dimensions indices are also provided to retrieve the meta
-            % data information.
+            % data information. The flattened data is stored in the
+            % "flatData" property.
+            % The "flatData" is used to perform
+            % statistics and as input to some plotting apps from the
+            % umIToolbox.
             
-            if ( any(strcmpi(obj.inputFeatures.dataType,{'map','matrix'})) )
+            if ( any(strcmpi(obj.inputFeatures.dataType,{'map'})) )
                 error(['Operation aborted. Plot option not available for data type ' ...
                     obj.inputFeatures.dataType])
             end
             % Repackage data for plotting:
             disp('repackaging data...')
-            % Check for time-series:
-            %             [hasT,indxT] = ismember('T', obj.inputFeatures.dim_names);
-            indxT = find(strcmpi('t',obj.inputFeatures.dim_names));
+            % Get data Size:
             dataSize = arrayfun(@(x) cellfun(@(y) size(y), x.data, 'UniformOutput',false), obj.dataArr, 'UniformOutput', false)';
             dataSize = vertcat(dataSize{:}); dataSize = vertcat(dataSize{:});
+            % Check for time-series:
+            indxT = find(strcmpi('T',obj.inputFeatures.dim_names));
+            % Check for 'matrix':
+%             indxM = strcmpi(obj.inputFeatures.dataType,'matrix');
             if ( indxT )
+                % For time series
                 Xsz = max(dataSize(indxT,:));
+%             elseif indxM
+%                 % For matrix
+%                 Xsz = max(dataSize(:,2));
             else
                 Xsz = 1; % For scalar data.
             end
@@ -526,6 +568,7 @@ classdef StatsManager < handle
             for ii = 1:length(obj.dataArr)
                 % Concatenate the data:
                 dat = vertcat(obj.dataArr(ii).data{:});
+                datSz2 = 1;
                 if ( indxEv )
                     datSz1 = size(obj.dataArr(ii).data{1},indxEv) * numel(obj.dataArr(ii).data);
                     dat = reshape(permute(dat,[indxEv, setdiff(1:ndims(dat),indxEv)]),datSz1,[]); % Reshape data;
@@ -534,12 +577,16 @@ classdef StatsManager < handle
                 end
                 
                 if ( indxT )
-                    datSz2 = size(obj.dataArr(ii).data{1},indxT);
-                else
-                    datSz2 = 1;
+                    datSz2 = 1:size(obj.dataArr(ii).data{1},indxT);
                 end
-                % Add data to output array:
-                datOut(cnt:cnt+datSz1-1,1:datSz2) = dat;
+                
+%                 if ( indxM )
+%                     % For matrices, make sure that the matrix is
+%                     % symmetrical:
+%                     datSz2  = obj.dataArr(ii).rIndx;
+%                 end
+                datOut(cnt:cnt+datSz1-1,datSz2) = dat;
+                
                 % Get meta data:
                 RecStartDateTime = repmat({obj.dataArr(ii).RecStartDateTime},datSz1,1);
                 AcqNames = repmat({obj.dataArr(ii).AcquisitionID},datSz1,1);
@@ -579,31 +626,193 @@ classdef StatsManager < handle
             obj.gen_dataArr;
         end
         %%% Stats functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        function varargout = getStats(obj)
+        function testType = getStatTestType(obj)
+            % Just a wrapper of the "chooseStatTest" private method.
+            obj.chooseStatsTest;
+            testType = obj.curr_test;
+        end
+        
+        function varargout = runStatsOnScalar(obj, varargin)
             % This function checks if the data can be used for statistical
             % analysis (using the available tests) and performs the
             % statistical analysis on the data.
             % IMPORTANT: !! currently, this method is available only for
             % "scalar" data!!
-            % Output:
-            %   statsReport (optional): text containing a report of the
-            %   statistical comparison in the data.
             
+            % Input:
+            %   verbose (optional): If TRUE, display messages and stats
+            %   report on Command Window.
+            % Output:
+            %   statsReport: structure with the results of
+            %       hypothesis tests.
+            %   testMsg: text with output from "chooseStatsTest"
+            %       method.
+            %   warnMsg: text of warning messages.
+            
+            %
+            p = inputParser;
+            addRequired(p,'obj');
+            addOptional(p,'verbose', false,@islogical);
+            parse(p, obj, varargin{:});
+            b_verbose = p.Results.verbose;
+            %
+            warnMsg = [];
+            obj.results_stats = []; obj.statsReport = '';
             % Validation:
             if ~obj.b_hasStatsToolbox
-                warning('Operation Aborted! "Statistics and Machine learning" toolbox is necessary!');
+                varargout{3} = warning('Operation Aborted! "Statistics and Machine learning" toolbox is necessary!');
                 return
             end
-            if ~strcmpi(obj.inputFeatures.dataType, 'scalar')
-                warning('Operation Aborted! Statistical Comparison available ONLY for "scalar" data types!');
+            if ~any(strcmpi(obj.inputFeatures.dataType, {'scalar','matrix'}))
+                varargout{3} = warning('Operation Aborted! Statistical Comparison available ONLY for "scalar" data types!');
                 return
             end
+            
             % Use the independent variables list ("indepVars") and the data
             % from "dataArr" to decide which statistical test to use.
-            obj.chooseStatsTest;
-            % Run tests
+            testMsg = obj.chooseStatsTest;
+            if b_verbose
+                disp(testMsg)
+            end
+            if strcmpi(obj.curr_test, 'unknown')
+                varargout{3} = warning('Operation Aborted! Failed to Identify Hypothesis test based on the data.');
+                return
+            end
+            % Validate assumptions to use parametric tests;
+            if ~obj.checkNormality && any(contains(obj.curr_test, {'Two','Repeated'}, 'IgnoreCase',true))
+                % If the data is not normal for ANOVA test, abort!
+                varargout{3} = warning('The data does not follow a normal distribution. Statistical tests will not be applied!');
+                return
+            elseif ~obj.checkNormality
+                % If is not normal for Paired and Unpaired 2-sampled data,
+                % switch comparison to non-parametric versions:
+                warnMsg = warning('The data does not follow a normal distribution. Non-parametric tests will be performed.');
+            end
+            if ~obj.checkHomogeneity && any(contains(obj.curr_test, {'Two','Repeated'}, 'IgnoreCase',true))
+                warnMsg = warning('The data does not contain homogeneous variances. Interpret results with caution!');
+            elseif ~obj.checkHomogeneity
+                warnMsg = warning('The data does not contain homogeneous variances. Non-parametric tests will be performed. Interpret results with caution!');
+            end
             obj.runHypothesisTest;
+            obj.genStatsReport;
+            if b_verbose
+                fprintf('\n\n');
+                disp(obj.statsReport)
+            end
             
+            if nargout
+                varargout{1} = obj.statsReport;
+                varargout{2} = testMsg;
+                varargout{3} = warnMsg;
+            end
+        end
+        
+        function [qMatrix, Report, msg] = runStatsOnMatrix(obj)
+            %  This method performs non-parametric comparisons between
+            %  correlation matrices using False Discovery Rate (FDR) to
+            %  compensate for multiple comparisons.
+            %  Outputs:
+            %   qMatrix (matrix): matrix of Q values (FDR-corrected
+            %       pValues) of statistical comparisons. !! For ANOVAs, this
+            %       matrix represents the test itself. Post hoc comparisons are
+            %       described in the stats "Report".
+            %   Report (char): Statistics report containing the postHoc
+            %       statistics for ANOVAs where the comparison of ROI pairs is
+            %       significant. 
+            %   msg (char): message from "chooseStatsTest".
+                         
+            Report = '';
+            % Generate pairs of comparison for each ROI.
+            rPairs = nchoosek(unique(vertcat(obj.dataArr.rIndx)),2);
+            rPairsIndx = 1:size(rPairs,1);
+            % Create ID for each possible pair:
+            rPairNames = cell(1,size(rPairs,1));
+            for ii = rPairsIndx
+                rPairNames{ii}= strjoin(obj.obs_list(rPairs(ii,:)), '_vs_');
+            end            
+            % Store local copy of "dataArr" property:            
+            dataArr_local = obj.dataArr;            
+            for ii = 1:length(obj.dataArr)
+                % Create fake matrix to account for matrices with less ROIs:            
+                mat = nan(max(rPairs,[],'all'));              
+                newDat = nan(1,size(rPairs,1));               
+                % replace data with the values of pairs of ROIs:                
+                mat(obj.dataArr(ii).rIndx, obj.dataArr(ii).rIndx) = vertcat(obj.dataArr(ii).data{:});
+                for kk = rPairsIndx
+                    try
+                        newDat(kk) = mat(rPairs(kk,1),rPairs(kk,2));
+                    catch
+                        continue
+                    end
+                end                
+                % remove any NaNs:
+                idxNaN = isnan(newDat);
+                obj.dataArr(ii).observationID = rPairNames(~idxNaN);
+                % Replace with the new data:
+                obj.dataArr(ii).data = num2cell(newDat(~idxNaN))';
+                % Create  fake "ROI" ID:
+                obj.dataArr(ii).rIndx = rPairsIndx(~idxNaN)';             
+            end
+            % Create a flatData array with fake "ROIS":
+            msg = obj.chooseStatsTest;
+            if nargout < 3
+                disp(msg)
+            end        
+            obj.flatData.ObsID = rPairNames;
+            obj.flatData.splitNames = obj.flatData.ObsID;            
+            % Run tests on each ROI pair with Non-Parametric tests only:
+            obj.runHypothesisTest('forceNonParametric',true, 'useFDR',true);
+            % Put original data array back and erase fake flatData:
+            obj.dataArr = dataArr_local; obj.flatData = [];
+            % For each pair, perform rmANOVA, if "repeated measures" OR just
+            % pair-wise comparisons
+            if strcmpi(obj.curr_test, 'TwoWayRepeatedMeasures')
+                % For Two-Way Repeated measures, do the FDR on pValues
+                % from "between" factor "Groups":
+                pList = arrayfun(@(x) x.GroupComparison.p(2),obj.results_stats);
+            else
+                pList = arrayfun(@(x) x.GroupComparison.p(1),obj.results_stats)';                
+            end
+            qList = obj.calc_FDR(pList);
+            
+            % Remove items from results_stats that contain pValues = NaN;
+            idxNaN = isnan(pList);
+            obj.results_stats(idxNaN) = [];
+            % Create a pValue matrix:
+            qMatrix = ones(numel(unique(vertcat(obj.dataArr.rIndx))));            
+            for ii = 1:length(obj.results_stats)                
+                indx = strcmpi(rPairNames, obj.results_stats(ii).subGroupName);
+                % Put FDR values on matrix
+                qMatrix(rPairs(indx,1), rPairs(indx,2)) = qList(ii);
+                qMatrix(rPairs(indx,2), rPairs(indx,1)) = qList(ii);                                                
+            end            
+            % Now, we select the postHoc pair-wise comparisons
+            % between that are still significant after FDR
+            % correction.
+            qIndx = qList <= obj.pAlpha; % Keep significant values;            
+            obj.results_stats(~qIndx) = []; % Erase stats without significance.
+            if ~isempty(obj.results_stats)
+                % Create report to access Q values for each significant
+                % pair of ROIs.
+                obj.genStatsReport                
+                Report = obj.statsReport;
+            end            
+            disp('qMatrix created!')                                                                                                        
+        end
+        
+        function exportReportToTXT(obj,filename)
+            % This method exports the stats report to a .txt file.
+            
+            if ~endsWith(filename, '.txt', 'IgnoreCase',true)
+                filename = [filename, '.txt'];
+            end
+            % Check if stats report exists:
+            assert(~isempty(obj.statsReport), 'Stats report does not exist. Run the method "runStats" to generate a report!')
+            % Export to a .txt file:
+            fid = fopen(filename,'w');
+            fprintf(fid,'%s',obj.statsReport);
+            fclose(fid);
+            disp(['Stats report exported to file "' filename '"']);
         end
         
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -611,7 +820,6 @@ classdef StatsManager < handle
     
     methods(Access = private)
         %%% Validator Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        
         function validateObject(obj)
             % VALIDATEOBJECT checks if all objects in obj.list_of_objs
             % have obj.stats_filename in their respective SaveFolders.
@@ -737,9 +945,7 @@ classdef StatsManager < handle
             obj.inputFeatures.b_isExportable = all(cellfun(@(x) isequaln(prod(x{1}),max(x{1})),...
                 obj.stats_data(:,obj.hMap('dataSize'))));
             % Set input data type:
-            if ~obj.inputFeatures.b_hasSameDimNames
-                % If input data is heterogeneous, set data type as
-                % "unknown".
+            if ~obj.inputFeatures.b_hasSameDimNames              
                 return
             else
                 obj.inputFeatures.dim_names = obj.stats_data{1,obj.hMap('MatFile')}.dim_names;
@@ -915,7 +1121,7 @@ classdef StatsManager < handle
         end
         
         %%%%%%%%%%%%  Auxiliary Stats functions %%%%%%%%%%%%%%%%%%%%%%%%%%%
-                        
+        
         function out = calculateVariation(~,varType,data,dim)
             % CALCULATEVARIATION calculates one of the following variation
             % measures on "data":
@@ -947,43 +1153,70 @@ classdef StatsManager < handle
             end
         end
         
-        function chooseStatsTest(obj)
+        function fdr = calc_FDR(~, pList)
+            % This function calculates the positive False Discovery
+            % Rate(FDR) as in Benjamin & Hochberg (1995).
+            if size(pList,2) > size(pList,1)
+                pList = pList';
+            end
+            pList = pList(~isnan(pList));
+            fdr = zeros(size(pList));            
+            num_tests = numel(pList);
+            [p_sorted, idx] = sort(pList);
+            fdr_sorted =  p_sorted .* (num_tests ./(1:num_tests))';           
+            fdr_sorted = cummin(fdr_sorted, 'reverse');
+            fdr(idx) = fdr_sorted;            
+        end
+                    
+        function msg = chooseStatsTest(obj)
             % This method uses the current independent variables and the
             % size of the data in "dataArr" to decide which statistical test
             % to apply.
+            % Output:
+            %   msg (char): message to user about the test chosen
             
+            msg = '';
             obj.flatDataArr; % Prepare data for stats.
             disp('Choosing statistical test...')
             % Get first independent variable:
-            nIndpV1 = length(unique(obj.flatData.(obj.indepVars(1).fieldName)));
+            obj.indepVars(1).len = length(unique(obj.flatData.(obj.indepVars(1).fieldName)));
             % Secondary independent variable:
-            nIndpV2 = length(unique(obj.flatData.(obj.indepVars(2).fieldName)));
+            obj.indepVars(2).len = length(unique(obj.flatData.(obj.indepVars(2).fieldName)));
             % Decide which test to use:
             % One group: abort:
-            disp(repmat('-',1,100));
-            fprintf('The data is grouped by %d "%s"(s) and %d "%s"(s) across %d "%s"(s).\n',...
-                nIndpV1, obj.indepVars(1).Name, nIndpV2, obj.indepVars(2).Name,...
-                numel(unique(obj.flatData.(obj.splitVar.indexName))), obj.splitVar.Name)
-            if nIndpV1 == 1 && nIndpV2 == 1
-                disp('No stats for one group with one independent variable')
-                disp(repmat('-',1,100));
+            msg = [msg,sprintf('The data is grouped by %d "%s"(s) and %d "%s"(s) across %d "%s"(s).\n',...
+                obj.indepVars(1).len, obj.indepVars(1).Name, obj.indepVars(2).len, obj.indepVars(2).Name,...
+                numel(unique(obj.flatData.(obj.splitVar.indexName))), obj.splitVar.Name)];
+            if obj.indepVars(1).len == 1 && obj.indepVars(2).len == 1
+                msg = 'No stats for one group with one independent sample';
                 return
             end
-            if (nIndpV1 == 2 && nIndpV2 == 1 && obj.indepVars(1).b_isRepeatedMeasure) || (nIndpV1 == 1 && nIndpV2 == 2 && obj.indepVars(2).b_isRepeatedMeasure)
+            if ( obj.indepVars(1).len == 2 && obj.indepVars(2).len == 1 && obj.indepVars(1).b_isRepeatedMeasure ) ||...
+                    ( obj.indepVars(1).len == 1 && obj.indepVars(2).len == 2 && obj.indepVars(2).b_isRepeatedMeasure )
                 % Paired two-sided test
-                disp('Comparison type: paired two-sided data.')
-                obj.curr_test = 'WilcoxonPaired';
-            elseif (nIndpV1 == 2 && nIndpV2 == 1 && ~obj.indepVars(1).b_isRepeatedMeasure) || (nIndpV1 == 1 && nIndpV2 == 2 && ~obj.indepVars(2).b_isRepeatedMeasure)
+                obj.curr_test = 'PairedTest';
+            elseif ( obj.indepVars(1).len == 2 && obj.indepVars(2).len == 1 && ~obj.indepVars(1).b_isRepeatedMeasure ) ||...
+                    ( obj.indepVars(1).len == 1 && obj.indepVars(2).len == 2 && ~obj.indepVars(2).b_isRepeatedMeasure )
                 % Unpaired two-sided test
-                disp('Comparison type: unpaired two-sided data.')
-                obj.curr_test = 'WilcoxonUnpaired';
-            elseif (nIndpV1 == 1 && nIndpV2 > 2 && ~obj.indepVars(2).b_isRepeatedMeasure) || (nIndpV1 > 2 && nIndpV2 == 1 && ~obj.indepVars(1).b_isRepeatedMeasure)
+                obj.curr_test = 'UnpairedTest';
+            elseif ( obj.indepVars(1).len == 1 && obj.indepVars(2).len > 2 && ~obj.indepVars(2).b_isRepeatedMeasure ) ||...
+                    ( obj.indepVars(1).len > 2 && obj.indepVars(2).len == 1 && ~obj.indepVars(1).b_isRepeatedMeasure )
                 % 3+ independent (unpaired) samples test
-                disp('Comparison type: data with 3+ independent samples.')
-                obj.curr_test = 'KruskalWallis';
+                obj.curr_test = 'OneWayANOVA';
+            elseif ( all(~[obj.indepVars.b_isRepeatedMeasure]) ) && ( ( obj.indepVars(1).len > 1 && obj.indepVars(2).len > 2 ) ||...
+                    ( obj.indepVars(1).len > 2 && obj.indepVars(2).len > 1 ) )
+                % 3+ independent (unpaired) samples test
+                obj.curr_test = 'TwoWayANOVA';
+            elseif ( obj.indepVars(1).len == 1 && obj.indepVars(2).len > 2 && obj.indepVars(2).b_isRepeatedMeasure && ~obj.indepVars(1).b_isRepeatedMeasure ) ||...
+                    ( obj.indepVars(1).len > 2 && obj.indepVars(2).len == 1 && obj.indepVars(1).b_isRepeatedMeasure && ~obj.indepVars(2).b_isRepeatedMeasure )
+                % 3+ dependent (repeated measures) samples test
+                obj.curr_test = 'OneWayRepeatedMeasures';
+            elseif ( (obj.indepVars(1).len > 1 && obj.indepVars(2).len >= 2) && obj.indepVars(1).b_isRepeatedMeasure ) || ...
+                    ( (obj.indepVars(1).len >= 2 && obj.indepVars(2).len > 1) && obj.indepVars(2).b_isRepeatedMeasure )
+                % 3+ dependent (repeated measures) with 2+ experimental groups
+                obj.curr_test = 'TwoWayRepeatedMeasures';
             else
-                disp('Comparison type: data with 3+ dependent samples.')
-                obj.curr_test = 'Friedman';
+                obj.curr_test = 'Unknown';
             end
             % Update "flatData" with the list of names from stats grouping variables:
             
@@ -999,132 +1232,448 @@ classdef StatsManager < handle
                 obj.flatData.indPNames{ii} = names;
             end
             % Get the list of names of the split variable:
-            obj.flatData.splitNames = obj.flatData.(obj.splitVar.fieldName);            
+            obj.flatData.splitNames = obj.flatData.(obj.splitVar.fieldName);
             % Display messages:
-            fprintf('Hypothesis test chosen: %s.\n', obj.curr_test);
-            disp(repmat('-',1,100));
-            disp('Done')
-        end                  
+            msg = [msg,sprintf('Hypothesis test chosen: %s.\n', obj.curr_test)];
+        end        
         
-        function runHypothesisTest(obj)
+        function runHypothesisTest(obj, varargin)
             % This method performs the hypothesis test between groups using
             % the information created by the method "chooseStatsTest".
             % The results will be stored in the property "results_stats".
             % The available tests are listed in the property
-            % "list_of_tests". 
+            % "list_of_tests".
             %   **If a test is added or removed from this
             %   `method, please update the "list_of_tests" array**.
-            
-            disp('Performing hypothesis tests...')            
+            % Input (optional):
+            %   b_forceNonParametric (bool): If TRUE, ignore normality
+            %       check and use non-parametric tests. !! NOT AVAILABLE for
+            %   	woWay ANOVA and Repeated Measures !!
+            %   b_useFDR: If TRUE, use False Discovery Rate on ANOVA postHoc tests (ONLY!). 
+            %       This parameter is ignored for two-sampled test!
+            p = inputParser;
+            addRequired(p,'obj')
+            addParameter(p,'forceNonParametric',false,@islogical)
+            addParameter(p,'useFDR',false,@islogical)
+            parse(p,obj, varargin{:});
+            b_forceNonParametric = p.Results.forceNonParametric;
+            b_useFDR = p.Results.useFDR;
+            clear p
+                        
+            disp('Performing hypothesis tests...')
             % For each subset of groups in "splitVar", perform the
-            % statistical comparison:            
+            % statistical comparison:
             indxG = unique(obj.flatData.(obj.splitVar.indexName));
             % Instantiate stats structure:
-            statsInfo = repmat(struct('subGroupName','','GroupComparison', struct('Name','None', 'h',[],'p',[],'stats',[],'postHocStats','none')),1,numel(indxG));
+            statsInfo = repmat(struct('subGroupName','','GroupComparison', struct('Name','None', 'p',[],'stats',[], 'ANOVAtab',[],...
+                'postHocTab',[])),1,numel(indxG));
+            
+            % ANOVA params:
+            if b_useFDR
+                obj.cType = 'lsd';
+            else
+                obj.cType = 'dunn-sidak';
+            end
             
             for ii = 1:numel(indxG)
                 statsInfo(ii).subGroupName = obj.flatData.(obj.splitVar.fieldName){ii};
                 % Perform stats in data subset:
-                idxSplit = obj.flatData.(obj.splitVar.indexName) == indxG(ii);                
+                idxSplit = obj.flatData.(obj.splitVar.indexName) == indxG(ii);
+                
                 % Perform stats:
                 switch obj.curr_test
-                    case 'WilcoxonUnpaired'
-                        % Unpaired test with 2 groups:                                                                        
-                        % Loop across variable with two groups:
-                        nIndepVars = {unique(obj.flatData.(obj.indepVars(1).indexName)), unique(obj.flatData.(obj.indepVars(2).indexName))};
-                        idxHas2Items = ( cellfun(@numel,nIndepVars) == 2 );                                                
-                        % Segregate data into two subsamples:                        
-                        indxVar1 = ( obj.flatData.(obj.indepVars(idxHas2Items).indexName) == 1 );                        
-                        x = obj.flatData.data(idxSplit & indxVar1);
-                        y = obj.flatData.data(idxSplit & ~indxVar1);   
-                        % Create ID for comparison:
-                        statsInfo(ii).GroupComparison.Name = strjoin(obj.flatData.(obj.indepVars(idxHas2Items).fieldName), '_vs_');                        
-                        if isempty(x) || isempty(y)                            
+                    case 'PairedTest'
+                        % Paired test with 2 groups:
+                        idxIndep = [obj.indepVars.len] > 1;
+                        dv = dummyvar(obj.flatData.(obj.indepVars(idxIndep).indexName));
+                        % Segregate data into two subsamples:
+                        x = obj.flatData.data(idxSplit & dv(:,1));
+                        y = obj.flatData.data(idxSplit & ~dv(:,1));
+                        if ( isempty(x) || isempty(y) ) || ( ~isequal(length(x),length(y)) )
                             % Skip if one of the subsamples are missing:
-                            warning(['Skipped paired Wilcoxon test because of missing data on comparison :' statsInfo(ii).subGroupName ' --> ' statsInfo(ii).GroupComparison.Name]);
+                            warning(['Skipped Paired test because of missing data on comparison :' statsInfo(ii).subGroupName ' --> ' statsInfo(ii).GroupComparison.Name]);
                             continue
-                        end    
+                        end
+                        % Pair data across the independent variable making sure that the other
+                        % variables are ordered:
+                        otherVars = obj.indepVarInfo(~strcmpi(obj.indepVars(idxIndep).Name, {obj.indepVarInfo.Name}));
+                        indxList = arrayfun(@(x) obj.flatData.(x.indexName), otherVars, 'UniformOutput', false);
+                        indxList = horzcat(indxList{:});
+                        indxX = indxList(idxSplit & dv(:,1),:); indxY = indxList(idxSplit & ~dv(:,1),:);
+                        for jj = 1:size(indxX,2)
+                            % For X:
+                            [~, indxSort] = sort(indxX(:,jj));
+                            x = x(indxSort);
+                            indxX = indxX(indxSort,:);
+                            % For Y:
+                            [~, indxSort] = sort(indxY(:,jj));
+                            y = y(indxSort);
+                            indxY = indxY(indxSort,:);
+                        end
+                        clear indxSort indxX indxY otherVars
                         
-                        % Perform statistical comparison:
-                        [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.h,statsInfo(ii).GroupComparison.stats] = ranksum(x,y);                                                
-                    case 'WilcoxonPaired'
-                        % Paired test with 2 groups:                                                                        
-                        
-                        % Loop across variable with two groups:
-                        nIndepVars = {unique(obj.flatData.(obj.indepVars(1).indexName)), unique(obj.flatData.(obj.indepVars(2).indexName))};
-                        idxHas2Items = ( cellfun(@numel,nIndepVars) == 2 );                                                
-                        % Segregate data into two subsamples:                        
-                        indxVar1 = ( obj.flatData.(obj.indepVars(idxHas2Items).indexName) == 1 );                        
-                        x = obj.flatData.data(idxSplit & indxVar1); 
-                        y = obj.flatData.data(idxSplit & ~indxVar1);
-                        % Sort x and y by subject index:
-                        [~,indxS] = sort(obj.flatData.sIndx(idxSplit & indxVar1));
-                        x = x(indxS); y = y(indxS);
                         % Create ID for comparison:
-                        statsInfo(ii).GroupComparison.Name = strjoin(obj.flatData.(obj.indepVars(idxHas2Items).fieldName), '_vs_');                        
-                        if ( isempty(x) || isempty(y) ) | ( size(x) ~= size(y) )
-                            % Skip if one of the subsamples are missing:
-                            warning(['Skipped paired Wilcoxon test because of missing data on comparison :' statsInfo(ii).subGroupName ' --> ' statsInfo(ii).GroupComparison.Name]);
-                            continue                        
-                        end                        
+                        statsInfo(ii).GroupComparison.Name = strjoin(obj.flatData.(obj.indepVars(idxIndep).fieldName), '_vs_');
                         % Perform statistical comparison:
-                        [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.h,statsInfo(ii).GroupComparison.stats] = ranksum(x,y);                                                                    
+                        if ~b_forceNonParametric && obj.checkNormality
+                            % Parametric T-Test:
+                            [~,statsInfo(ii).GroupComparison.p,~,statsInfo(ii).GroupComparison.stats] = ttest(x,y,'Alpha',obj.pAlpha);
+                        else
+                            % Non-parametric Wilcoxon rank-sum test:
+                            [statsInfo(ii).GroupComparison.p,~,statsInfo(ii).GroupComparison.stats] = signrank(x,y,'alpha',obj.pAlpha);
+                        end
+                        
+                    case 'UnpairedTest'
+                        % Unpaired test with 2 groups:
+                        % Segregate data into two subsamples:
+                        idxIndep = [obj.indepVars.len] > 1;
+                        dv = dummyvar(obj.flatData.(obj.indepVars(idxIndep).indexName));
+                        x = obj.flatData.data(idxSplit & dv(:,1));
+                        y = obj.flatData.data(idxSplit & ~dv(:,1));
+                        % Create ID for comparison:
+                        statsInfo(ii).GroupComparison.Name = strjoin(obj.flatData.(obj.indepVars(idxIndep).fieldName), '_vs_');
+                        if isempty(x) || isempty(y)
+                            % Skip if one of the subsamples are missing:
+                            warning(['Skipped UnPaired Wilcoxon test because of missing data on comparison :' statsInfo(ii).subGroupName ' --> ' statsInfo(ii).GroupComparison.Name]);
+                            continue
+                        end
+                        % Compensate for unbalanced variances in T test:
+                        varMap = containers.Map([true,false], {'equal', 'unequal'});
+                        % Perform statistical comparison:
+                        if ~b_forceNonParametric && obj.checkNormality
+                            % Parametric T-Test:
+                            [~,statsInfo(ii).GroupComparison.p,~,statsInfo(ii).GroupComparison.stats] = ttest2(x,y,'Alpha',obj.pAlpha,'Vartype',varMap(obj.checkHomogeneity));
+                        else
+                            % Non-parametric Wilcoxon rank-sum test:
+                            [statsInfo(ii).GroupComparison.p,~,statsInfo(ii).GroupComparison.stats] = ranksum(x,y,'Alpha',obj.pAlpha);
+                        end
+                    case 'OneWayANOVA'
+                        idxHas2PlusItems = [obj.indepVars.len] > 1;
+                        % Segregate data into 3+ subsamples:
+                        gVar = obj.flatData.(obj.indepVars(idxHas2PlusItems).indexName);
+                        gNames = obj.flatData.(obj.indepVars(idxHas2PlusItems).fieldName);
+                        gMap = containers.Map(unique(gVar),gNames);
+                        gVar = arrayfun(@(x) gMap(x),gVar, 'UniformOutput',false);
+                        x = obj.flatData.data(idxSplit);
+                        % Create ID for comparison:
+                        statsInfo(ii).GroupComparison.Name = strjoin(obj.flatData.(obj.indepVars(idxHas2PlusItems).fieldName), '_vs_');
+                        if ~b_forceNonParametric && obj.checkNormality
+                            % Perform one-way ANOVA:
+                            [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.ANOVAtab, statsInfo(ii).GroupComparison.stats] = anova1(x, gVar(idxSplit), 'off');
+                        elseif b_forceNonParametric || ~obj.checkHomogeneity
+                            % Perform Kruskal-Wallis:
+                            [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.ANOVAtab, statsInfo(ii).GroupComparison.stats] = kruskalwallis(x, gVar(idxSplit), 'off');
+                        end
+                        % Perform postHoc test when a difference was detected in the ANOVA test:
+                        if statsInfo(ii).GroupComparison.p <= obj.pAlpha
+                            % Prepare identifiers for pair-wise group comparison:
+                            Names = {};                            
+                            c = multcompare(statsInfo(ii).GroupComparison.stats,'Alpha', obj.pAlpha,'CType', obj.cType, 'Display','off');
+                            for kk = 1:size(c,1)
+                                Names{kk}= strjoin([statsInfo(ii).GroupComparison.stats.gnames(c(kk,1)), statsInfo(ii).GroupComparison.stats.gnames(c(kk,2))], '_vs_');
+                            end
+                            if b_useFDR
+                                % Transform pValues using FDR:
+                                pVals = obj.calc_FDR(c(:,end));
+                                colName = 'qValue_FDR';
+                            else
+                                pVals = c(:,end); colName = 'pValue';
+                            end
+                            statsInfo(ii).GroupComparison.postHocTab = table(Names',pVals,'VariableNames',{'ComparisonID',colName});
+                        end
+                    case 'TwoWayANOVA'
+                        % Create groups for anovan function
+                        indxVar1 = obj.flatData.(obj.indepVars(1).indexName)(idxSplit);
+                        g1 = obj.flatData.(obj.indepVars(1).fieldName)(indxVar1);
+                        indxVar2 = obj.flatData.(obj.indepVars(2).indexName)(idxSplit);
+                        g2 = obj.flatData.(obj.indepVars(2).fieldName)(indxVar2);
+                        if size(g1)~=size(g2)
+                            g1 = g1';
+                        end
+                        data = obj.flatData.data(idxSplit);
+                        % Create GENERIC ID for comparison:
+                        statsInfo(ii).GroupComparison.Name = strjoin({obj.indepVars.Name},'_vs_');
+                        % Perform ANOVA:
+                        [statsInfo(ii).GroupComparison.p,statsInfo(ii).GroupComparison.ANOVAtab, statsInfo(ii).GroupComparison.stats] = ...
+                            anovan(data,{g1,g2}, 'model','interaction', 'varnames',{obj.indepVars.Name}, 'display','off');
+                        % Perform postHoc test when a difference was detected in the ANOVA test:
+                        % Create table with postHoc info:
+                        if any(statsInfo(ii).GroupComparison.p <= obj.pAlpha)
+                            % Prepare identifiers for pair-wise group comparison:
+                            g1Names = unique(g1,'stable'); g2Names = unique(g2,'stable');
+                            [m,n] = meshgrid([1:length(g1Names)],[1:length(g2Names)]); gPairs = [m(:),n(:)];
+                            gPairIDList = cell(size(gPairs,1),1);
+                            for kk = 1:size(gPairs,1)
+                                gPairIDList{kk} = strjoin([g1Names(gPairs(kk,1)), g2Names(gPairs(kk,2))],'_,_');
+                            end
+                            c = multcompare(statsInfo(ii).GroupComparison.stats,'Alpha', obj.pAlpha,'CType',obj.cType, 'Display','on', 'Dimension',[1 2]);
+                            Names = cell(size(c,1),1);
+                            for kk = 1:size(c,1)
+                                Names{kk} = strjoin([gPairIDList(c(kk,1)), gPairIDList(c(kk,2))], '_vs_');
+                            end
+                            if b_useFDR
+                                % Transform pValues using FDR:
+                                pVals = obj.calc_FDR(c(:,end));
+                                colName = 'qValue_FDR';
+                            else
+                                pVals = c(:,end); colName = 'pValue';
+                            end
+                            statsInfo(ii).GroupComparison.postHocTab = table(Names,pVals,'VariableNames',{'ComparisonID',colName});
+                        end
+                    case {'OneWayRepeatedMeasures', 'TwoWayRepeatedMeasures'}
+                        % Get independent variable without repeated
+                        % measures:
+                        idxPred = obj.flatData.(obj.indepVars([obj.indepVars.b_isRepeatedMeasure] == 0).indexName)(idxSplit);
+                        predNames = obj.flatData.(obj.indepVars([obj.indepVars.b_isRepeatedMeasure] == 0).fieldName)(idxPred);
+                        % Get Within-Subject indices and names:
+                        idxWithin = obj.flatData.(obj.indepVars([obj.indepVars.b_isRepeatedMeasure] == 1).indexName)(idxSplit);
+                        withinList = unique(idxWithin);
+                        withinVarName = obj.indepVars([obj.indepVars.b_isRepeatedMeasure] == 1).Name;
+                        betweenVarName = obj.indepVars([obj.indepVars.b_isRepeatedMeasure] == 0).Name;
+                        withinNames = matlab.lang.makeValidName(obj.flatData.(obj.indepVars([obj.indepVars.b_isRepeatedMeasure] == 1).fieldName)(withinList));
+                        % Create GENERIC ID for comparison:
+                        statsInfo(ii).GroupComparison.Name = [betweenVarName ' by ' withinVarName];
+                        % Get list of subject indices:
+                        idxSubj = obj.flatData.sIndx(idxSplit);
+                        subjList = unique(idxSubj);
+                        % Create tables for RepeatedMeasures Model fit:
+                        dataIn = obj.flatData.data(idxSplit);
+                        dataOut = nan(numel(subjList),numel(withinList));
+                        predVar = cell(size(dataOut,1),1);
+                        %
+                        for jj = 1:length(subjList)
+                            idx1 = idxSubj == subjList(jj);
+                            for kk = 1:length(withinList)
+                                idx2 = idxWithin == withinList(kk);
+                                predVar(jj) = predNames(idx1 & idx2);
+                                dataOut(jj,kk) = dataIn(idx1 & idx2);
+                            end
+                        end
+                        dataOut = num2cell(dataOut);
+                        t = cell2table([predVar,dataOut],'VariableNames',[{betweenVarName}, withinNames]);
+                        
+                        if contains(obj.curr_test, 'oneway','IgnoreCase',true)
+                            % For one way, we compare the "within"
+                            % variables.
+                            notation = [withinNames{1} '-' withinNames{end} ' ~ 1'];
+                            postHocVar = withinVarName;                            
+                            compBy = betweenVarName;
+                        else
+                            % For two way, we compare the "between"
+                            % variables.
+                            notation = [withinNames{1} '-' withinNames{end} ' ~ ' t.Properties.VariableNames{1}];
+                            postHocVar = betweenVarName;
+                            compBy = withinVarName;
+                        end
+                        rm = fitrm(t,notation,'WithinDesign',table(withinList,'VariableNames',{withinVarName}));
+                        statsInfo(ii).GroupComparison.stats = rm;                        
+                        statsInfo(ii).GroupComparison.ANOVAtab = ranova(rm);
+                        % Just keep "pValue" and "pValueGG" pValue columns
+                        % to simplify the ANOVA table:
+                        statsInfo(ii).GroupComparison.ANOVAtab.pValueHF = [];
+                        statsInfo(ii).GroupComparison.ANOVAtab.pValueLB = [];
+                        % Test for sphericity to pick which pValue to use
+                        % as threshold for post hoc testing:
+                        mtbl = mauchly(rm);
+                        b_sphericityPass = mtbl.pValue <= obj.pAlpha;
+                        if b_sphericityPass
+                            % Use "uncorrected" pValue:
+                            pCol = statsInfo(ii).GroupComparison.ANOVAtab.pValue;
+                            statsInfo(ii).GroupComparison.ANOVAtab.pValueGG = []; % Erase the other.
+                        else
+                            % Use Greenhouse-Geisser-corrected pValue
+                            % instead:
+                            pCol = statsInfo(ii).GroupComparison.ANOVAtab.pValueGG;
+                            statsInfo(ii).GroupComparison.ANOVAtab.pValue = []; % Erase the other.
+                        end
+                        % Copy pValues to "p" field:
+                        statsInfo(ii).GroupComparison.p = table2array(statsInfo(ii).GroupComparison.ANOVAtab(:,end)); 
+                        
+                        % If One Way, pick the pValue that corresponds to the "within" interactions. 
+                        % For the two-way, theo value correponds to the "between" interactions":                                                                                                                     
+                        if contains(obj.curr_test, 'oneway','IgnoreCase',true)
+                            pVal = pCol(1);                            
+                        else
+                            pVal = pCol(2);                            
+                        end
+                        if pVal <= obj.pAlpha
+                            % Perform post hoc tests:                            
+                            statsInfo(ii).GroupComparison.postHocTab = multcompare(rm,postHocVar,'ComparisonType',obj.cType, 'By', compBy);
+                            if b_useFDR
+                                idxPValCol = strcmpi(statsInfo(ii).GroupComparison.postHocTab.Properties.VariableNames,'pValue');
+                                % Transform pValues using FDR:
+                                statsInfo(ii).GroupComparison.postHocTab.pValue = obj.calc_FDR(statsInfo(ii).GroupComparison.postHocTab.pValue);
+                                statsInfo(ii).GroupComparison.postHocTab.Properties.VariableNames{idxPValCol} = 'qValue_FDR';
+                            end
+                        end
+                    otherwise
+                        error('unknown hypothesis test!')
                 end
-                
+                obj.results_stats = statsInfo;
+            end
+            disp('Done')
+        end
+        
+        function status = checkNormality(obj)
+            % Check for normality
+            % Inputs:
+            % idx (array | matrix): array of stats. groups indices to test.
+            % CheckName (str): {'normality', 'homoskedacity','sphericity'}
+            indx = bin2dec([dec2bin(obj.flatData.(obj.splitVar.indexName)),...
+                dec2bin(obj.flatData.(obj.indepVars(1).indexName)), ...
+                dec2bin(obj.flatData.(obj.indepVars(2).indexName))]);
+            indxList = unique(indx);
+            status = false(size(indxList,1),1);
+            for ii = 1:size(indxList,1)
+                data = obj.flatData.data(indx == indxList(ii,:));
+                if numel(data) >= 4
+                    status(ii) = lillietest(data);
+                end
+            end
+            status = all(~status);
+        end
+        
+        function status = checkHomogeneity(obj)
+            % Check for homogeneity of variances for ANOVA
+            % Here, use the 4:1 ratio as a maximum disparity of variances.
+            % For Repeated measures, sphericity WILL NOT BE TESTED HERE!
+            status = true;
+            if any(strcmpi(obj.curr_test, 'PairedTest'))
+                return
             end
             
-            disp('Done')
-            
-            
-            
-            
-            
-            
+            idxG = obj.flatData.(obj.splitVar.indexName);gList = unique(idxG);
+            status = false(length(gList),1);
+            if strcmpi(obj.curr_test, 'OneWayANOVA')
+                % For one way ANOVA:
+                idxVar1 = obj.flatData.(obj.indepVars([obj.indepVars.len] == 1).indexName);varList1 = unique(idxVar1);
+                idxVar2 = obj.flatData.(obj.indepVars([obj.indepVars.len]>1).indexName);varList2 = unique(idxVar2);
+            elseif strcmpi(obj.curr_test, 'TwoWayANOVA')
+                % For two way ANOVA:
+                % Use the order of variables in "indepVars".
+                idxVar1 = obj.flatData.(obj.indepVars(1).indexName); varList1 = unique(idxVar1);
+                idxVar2 = obj.flatData.(obj.indepVars(2).indexName); varList2 = unique(idxVar2);
+            else
+                idxVar1 = obj.flatData.(obj.indepVars(~[obj.indepVars.b_isRepeatedMeasure]).indexName);varList1 = unique(idxVar1);
+                idxVar2 = obj.flatData.(obj.indepVars([obj.indepVars.b_isRepeatedMeasure]).indexName);varList2 = unique(idxVar2);
+            end
+            for ii = 1:length(gList)
+                for jj = 1:length(varList1)
+                    groupVars = zeros(length(varList2),1);
+                    for kk = 1:length(varList2)
+                        groupVars(kk) = var(obj.flatData.data(idxG == gList(ii) & idxVar1 == varList1(jj) & idxVar2 == varList2(kk)));
+                    end
+                    if min(groupVars)/max(groupVars) > 0.25
+                        status(ii) = true;
+                    end
+                end
+            end
+            status = all(status);
         end
-            
         
+        function genStatsReport(obj)
+            % This method extracts the outputs of statistical tests and put them in text format.
+            
+            if isempty(obj.results_stats)
+                warning('Statistical results not found! Run statistical comparisons in order to generate a report');
+                return
+            end
+            obj.statsReport = []; % Erase current report.
+            disp('Creating stats report...')
+            div = repmat('-',1,80);
+            % Add header with some general information about the data and
+            % the statistical comparisons performed:
+            str = sprintf('-----------------------Statistical Hypothesis test report-----------------------\nRun date: %s\n\n',datestr(datetime('now')));
+            
+            str = [str, sprintf(['This report summarizes the statistics of data grouped by\n %d %s(s) vs %d %s(s) across a total of %d subgroups of type "%s".\n\n'...
+                'The hypothesis test executed was "%s"\n%s\n'],...
+                obj.indepVars(1).len, obj.indepVars(1).Name,obj.indepVars(2).len, obj.indepVars(2).Name, ...
+                length(obj.results_stats), obj.splitVar.Name, obj.curr_test, div)];
+            % Write the results of each test.
+            for ii = 1:length(obj.results_stats)
+                % Add name of Split Variable:
+                str = [str, sprintf('Subgroup name: %s\n',obj.results_stats(ii).subGroupName)];
+                % Add outputs of statistical tests:
+                info = obj.results_stats(ii).GroupComparison;
+                switch obj.curr_test
+                    case {'PairedTest','UnpairedTest'}
+                        str = [str, sprintf('Comparison performed: "%s"\np-value: %0.4f\nStats:\n',...
+                            info.Name, info.p)];
+                        % Add "stats" fields:
+                        fn = fieldnames(info.stats);
+                        for kk = 1:length(fn)
+                            str = [str,sprintf('\t%s: %0.4f\n',fn{kk},info.stats.(fn{kk}))];
+                        end
+                    case {'OneWayANOVA', 'TwoWayANOVA'}
+                        str = [str, sprintf('Comparison performed: "%s"\nStats:\n',info.Name)];
+                        str = [str, tab2char(info.ANOVAtab)];
+                        if ~isempty(info.postHocTab)
+                            str = [str,sprintf('Post hoc tests:\nTest name: "%s"\nP-Value table:\n', obj.cType)];
+                            str = [str,tab2char(info.postHocTab)];
+                        end
+                    case {'OneWayRepeatedMeasures', 'TwoWayRepeatedMeasures'}
+                        str = [str, sprintf('Comparison performed: "%s"\nStats:\n',info.Name)];
+                        txt = tab2char(info.ANOVAtab);
+                        str = [str, txt];
+                        if ~isempty(info.postHocTab)
+                            if startsWith(obj.curr_test,'one','IgnoreCase',true)
+                                compStr = ['By ' info.stats.WithinFactorNames{:}];
+                            else                                
+                                compStr = [info.stats.WithinFactorNames{:} ' by ' info.stats.BetweenFactorNames{:}];
+                            end
+                            str = [str,sprintf('Post hoc tests:\nTest name: "%s"\n%"s"\n',obj.cType, compStr)];
+                            str = [str,tab2char(info.postHocTab)];
+                        end
+                    otherwise
+                        error('unknown hypothesis test!')
+                end
+                str = [str, sprintf('%s\n',div)];
+            end
+            obj.statsReport = str;
+            disp('Stats Report generated!');
+            
+            %%%%% Local function %%%%%
+            function out = tab2char(tab)
+                % Transforms a table as text.
+                % Parse table:
+                if iscell(tab)
+                    % Deal with info already in "cells"
+                    tab_txt = cellfun(@num2str,tab, 'UniformOutput',false);
+                else
+                    % Transform table to cell array with strings:
+                    tab_txt = table2cell(tab);
+                    tab_txt = cellfun(@num2str,tab_txt,'UniformOutput',false);
+                    % Append headers and row names:
+                    tab_txt = [tab.Properties.RowNames,tab_txt];
+                    if ~isempty(tab.Properties.RowNames)
+                        tab_txt = vertcat([{''}, tab.Properties.VariableNames], tab_txt);
+                    else
+                        tab_txt = vertcat(tab.Properties.VariableNames, tab_txt);
+                    end
+                end
+                % Build table:
+                divV = ' | ';
+                % Get largest number of charaters:
+                charLen = max(cellfun(@length,tab_txt),[],1);
+                for jnd = 1:size(tab_txt,2)
+                    tab_txt(:,jnd) = cellfun(@(x) pad(x,charLen(jnd),'right'),tab_txt(:,jnd),'UniformOutput',false);
+                end
+                % Recalculate text size after padding:
+                charLen = max(cellfun(@length,tab_txt),[],1);  
+                % Add Header and bottom division:
+                divH = repmat('-',1,sum(charLen) + length(divV)*size(tab_txt,2));
+                % Put table together:
+                out = '';
+                for jj = 1:size(tab_txt,1)
+                    out = [out,sprintf('%s\n',strjoin(tab_txt(jj,:),divV))];
+                    if jj == 1 || jj == size(tab_txt,1)
+                        out =[out,sprintf('%s\n',divH)];
+                    end
+                end
+            end
+            
+        end                
         
     end
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

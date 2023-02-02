@@ -13,7 +13,7 @@ classdef DataViewer_pipelineMngr < handle
         % structure containing the info of each step of the pipeline:
         pipe = struct('argsIn', {},'argsOut',{},'outFileName','','opts',struct.empty,...
             'opts_vals',struct.empty,'opts_def',struct.empty, 'name','',...
-            'funcStr', '','b_save2File', logical.empty, 'datFileName', '');
+            'funcStr', '','b_save2File', logical.empty, 'datFileName', '', 'inputFileName','');
         data % numerical array containing imaging data
         metaData % structure or matfile containing meta data associated with "data".
         SaveFolder % folder where data created will be stored (Save Directory).
@@ -78,7 +78,8 @@ classdef DataViewer_pipelineMngr < handle
             
             if isempty(fieldnames(pipe)) || isempty(pipe)
                 pipe = struct('argsIn', {},'argsOut',{},'outFileName','','opts',struct.empty,...
-                    'opts_vals',struct.empty,'opts_def',struct.empty, 'name','','funcStr', '','b_save2File', logical.empty, 'datFileName', '');
+                    'opts_vals',struct.empty,'opts_def',struct.empty, 'name','','funcStr', '',...
+                    'b_save2File', logical.empty, 'datFileName', '','inputFileName','');
             end
             % Check if all fields exist:
             if ~all(ismember(fieldnames(pipe),fieldnames(obj.pipe)))
@@ -166,9 +167,12 @@ classdef DataViewer_pipelineMngr < handle
             disp(['Optional Parameters set for function : ' obj.funcList(idx).name]);
         end
         
-        function addTask(obj, func, varargin)
+        function state = addTask(obj, func, varargin)
             % This function adds an analysis function to the pipeline.
             
+            % Output:
+            %   state (bool): FALSE, if failed to add the task to the
+            %   pipeline.
             % Parse Inputs:
             p = inputParser;
             addRequired(p, 'func', @(x) ischar(x) || isnumeric(x));
@@ -176,6 +180,7 @@ classdef DataViewer_pipelineMngr < handle
             addOptional(p, 'datFileName', '', @ischar);
             parse(p, func, varargin{:});
             
+            state = false;
             % Check if the function name is valid:
             idx = obj.check_funcName(p.Results.func);
             if isempty(idx)
@@ -184,7 +189,7 @@ classdef DataViewer_pipelineMngr < handle
             % Create temporary structure with function info:
             funcInfo = obj.funcList(idx).info;
             funcInfo.name = obj.funcList(idx).name;
-            
+            funcInfo.inputFileName = '';
             % Replace Input argument names:
             argsIn = replace(funcInfo.argsIn, {'RawFolder', 'SaveFolder', 'data', 'metaData'}, ...
                 {['''' obj.RawFolder ''''], ['''' obj.SaveFolder ''''], 'obj.data', 'obj.metaData'});
@@ -239,13 +244,14 @@ classdef DataViewer_pipelineMngr < handle
                     % given file is located in the "SaveFolder".
                     str = ['[obj.data, obj.metaData] = loadDatFile(fullfile(obj.SaveFolder, '''...
                         obj.pipe(end).outFileName{indx} '''));'];
+                    funcInfo.inputFileName = obj.pipe(end).outFileName{indx};
                     funcInfo.funcStr = [str, funcInfo.funcStr];
                 end
             end
             
             % Add step to pipeline:
             obj.pipe = [obj.pipe; funcInfo];
-            
+            state = true;
             % Control for existing data to be saved for the current
             % function:
             if obj.pipe(end).b_save2File && any(strcmp('obj.data', argsOut))
@@ -316,9 +322,12 @@ classdef DataViewer_pipelineMngr < handle
                 end
                 txt = sprintf('Function name : %s\nOptional Parameters:\n',...
                     obj.pipe(i).name);
-                str = [str, txt, sprintf('\t%s : %s\n', opts{:})];
+                str = [str, txt, sprintf('\t%s : %s\n', opts{:})];                
                 if obj.pipe(i).b_save2File
                     str = [str, sprintf('Save to file: "%s"\n', fullfile(obj.SaveFolder, obj.pipe(i).datFileName))];
+                end
+                if ~isempty(obj.pipe(i).inputFileName)
+                    str = [str, sprintf('Input File Name : "%s"\n', obj.pipe(i).inputFileName)];
                 end
                 str = [str, sprintf('--------------------\n')];
             end
@@ -485,7 +494,7 @@ classdef DataViewer_pipelineMngr < handle
             default_Output = '';
             default_opts = struct();
             opts_values = struct();
-            list = dir(fullfile(obj.fcnDir, '\*\*.m'));
+            list = dir(fullfile(obj.fcnDir, '*','*.m'));
             for i = 1:length(list)
                 out = parseFuncFile(list(i));
                 % Validate if all input arguments from the function are
@@ -493,7 +502,7 @@ classdef DataViewer_pipelineMngr < handle
                 kwrds_args = {'data', 'metaData', 'SaveFolder', 'RawFolder', 'opts'};
                 kwrds_out = {'outFile', 'outData', 'metaData'};
                 if all(ismember(out.argsIn, kwrds_args)) && all(ismember(out.argsOut, kwrds_out))
-                    disp(list(i).name);
+%                     disp(list(i).name);
                     [~,list(i).name, ~] = fileparts(list(i).name);
                     list(i).info = out;
                     list(i).info.opts_def = list(i).info.opts; % Duplicate default params.
@@ -505,18 +514,32 @@ classdef DataViewer_pipelineMngr < handle
             function info = parseFuncFile(fcnStruct)
                 info = struct('argsIn', {},'argsOut', {}, 'outFileName', '', 'opts', [],...
                     'opts_def',[],'opts_vals',[]);
-                txt = fileread(fullfile(fcnStruct.folder, fcnStruct.name));
+                % Read the '.m' file content and exclude comments (lines
+                % starting with the "%" character):
+                fid = fopen(fullfile(fcnStruct.folder, fcnStruct.name),'r');
+                txt = '';
+                while 1
+                    tline = fgetl(fid);
+                    if tline == -1
+                        break
+                    end
+                    if ~startsWith(strip(tline),'%')
+                        txt=[txt,sprintf('%s\n',tline)];%#ok
+                    end                    
+                end
+                fclose(fid);
+                clear fid tline      
+                % Parse function header to get input and output variables:
                 funcStr = erase(regexp(txt, '(?<=function\s*).*?(?=\r*\n)', 'match', 'once'),' ');
                 outStr = regexp(funcStr,'.*(?=\=)', 'match', 'once');
-                out_args = regexp(outStr, '\[*(\w*)\,*(\w*)\]*', 'tokens', 'once');
-                idx_empty = cellfun(@isempty, out_args);
-                info(1).argsOut = out_args(~idx_empty);
+                out_args = regexp(outStr, '\[*(\w*)\,*(\w*)\]*', 'tokens', 'once');                
+                info(1).argsOut = out_args(~cellfun(@isempty, out_args));
                 [~,funcName,~] = fileparts(fcnStruct.name);
                 expInput = ['(?<=' funcName '\s*\().*?(?=\))'];
                 str = regexp(funcStr, expInput, 'match', 'once');
-                str = strip(split(str, ','));
-                idx_varargin = strcmp(str, 'varargin');
-                info.argsIn = str(~idx_varargin);
+                str = strip(split(str, ','));                
+                info.argsIn = str(~strcmp(str, 'varargin'));
+                % Get Default outputs:
                 expOutput = 'default_Output\s*=.*?(?=\n)';
                 str = regexp(txt, expOutput, 'match', 'once');
                 if isempty(str)
@@ -525,6 +548,7 @@ classdef DataViewer_pipelineMngr < handle
                     eval(str)
                 end
                 info.outFileName = default_Output;
+                % Parse default optional params struct:
                 expOpts = 'default_opts\s*=.*?(?=\n)';
                 str = regexp(txt, expOpts, 'match', 'once');
                 if ~isempty(str)
