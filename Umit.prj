@@ -1,0 +1,140 @@
+<deployment-project plugin="plugin.toolbox" plugin-version="1.0">
+  <configuration file="C:\Projets\LabeoTech\gitrepo\Umit\Umit.prj" location="C:\Projets\LabeoTech\gitrepo\Umit" name="Umit" target="target.toolbox" target-name="Package Toolbox">
+    <param.appname>Umit</param.appname>
+    <param.authnamewatermark>LabeoTech</param.authnamewatermark>
+    <param.email>info@labeotech.com</param.email>
+    <param.company>Labeo technologies inc.</param.company>
+    <param.summary>Universal Mesoscopic imaging Toolbox</param.summary>
+    <param.description>This toolbox can be used for in vivo imaging analysis (Fluorescence or intrinsic signal imaging). It is compatible with OiS 200 imager setup from Labeotech (labeotech.com). Source code can be found at: https://github.com/LabeoTech/Umit
+
+In memory of our friend and collegue Umit Keysan (1992-2019)</param.description>
+    <param.screenshot />
+    <param.version>1.4.0</param.version>
+    <param.output>${PROJECT_ROOT}\Umit.mltbx</param.output>
+    <param.products.name />
+    <param.products.id />
+    <param.products.version />
+    <param.platforms />
+    <param.guid>9fb2ddcb-b8a2-4383-afe1-d7d89e57b7ac</param.guid>
+    <param.exclude.filters />
+    <param.exclude.pcodedmfiles>true</param.exclude.pcodedmfiles>
+    <param.examples />
+    <param.demosxml />
+    <param.apps />
+    <param.registered.apps />
+    <param.docs>${PROJECT_ROOT}\docs\info.xml</param.docs>
+    <param.getting.started.guide />
+    <param.matlabpath.excludes>
+      <item>/IOIAnalysis/OldVersion</item>
+    </param.matlabpath.excludes>
+    <param.javaclasspath.excludes />
+    <param.exported.on.package>false</param.exported.on.package>
+    <param.required.addons />
+    <param.matlab.project.id />
+    <param.matlab.project.name />
+    <param.release.start />
+    <param.release.end />
+    <param.release.current.only>false</param.release.current.only>
+    <param.compatiblity.windows>true</param.compatiblity.windows>
+    <param.compatiblity.macos>false</param.compatiblity.macos>
+    <param.compatiblity.linux>true</param.compatiblity.linux>
+    <param.compatiblity.matlabonline>false</param.compatiblity.matlabonline>
+    <param.installation.map />
+    <param.additional.sw.names />
+    <param.additional.sw.licenses />
+    <param.additional.sw.win.url />
+    <param.additional.sw.mac.url />
+    <param.additional.sw.linux.url />
+    <unset>
+      <param.screenshot />
+      <param.output />
+      <param.products.name />
+      <param.products.id />
+      <param.products.version />
+      <param.platforms />
+      <param.exclude.filters />
+      <param.exclude.pcodedmfiles />
+      <param.examples />
+      <param.demosxml />
+      <param.apps />
+      <param.registered.apps />
+      <param.getting.started.guide />
+      <param.javaclasspath.excludes />
+      <param.exported.on.package />
+      <param.required.addons />
+      <param.matlab.project.id />
+      <param.matlab.project.name />
+      <param.release.start />
+      <param.release.end />
+      <param.release.current.only />
+      <param.compatiblity.windows />
+      <param.compatiblity.linux />
+      <param.installation.map />
+      <param.additional.sw.names />
+      <param.additional.sw.licenses />
+      <param.additional.sw.win.url />
+      <param.additional.sw.mac.url />
+      <param.additional.sw.linux.url />
+    </unset>
+    <fileset.rootdir>
+      <file>${PROJECT_ROOT}</file>
+    </fileset.rootdir>
+    <fileset.rootfiles>
+      <file>${PROJECT_ROOT}\.git</file>
+      <file>${PROJECT_ROOT}\.github</file>
+      <file>${PROJECT_ROOT}\.gitignore</file>
+      <file>${PROJECT_ROOT}\Analysis</file>
+      <file>${PROJECT_ROOT}\classes</file>
+      <file>${PROJECT_ROOT}\docs</file>
+      <file>${PROJECT_ROOT}\GUI</file>
+      <file>${PROJECT_ROOT}\IOIAnalysis</file>
+      <file>${PROJECT_ROOT}\LICENSE</file>
+      <file>${PROJECT_ROOT}\Main.m</file>
+      <file>${PROJECT_ROOT}\protocolFcn_template.m</file>
+      <file>${PROJECT_ROOT}\README.md</file>
+      <file>${PROJECT_ROOT}\subFunc</file>
+      <file>${PROJECT_ROOT}\test</file>
+      <file>${PROJECT_ROOT}\umIT_path_cleanup.m</file>
+      <file>${PROJECT_ROOT}\Umitoolbox_setup.m</file>
+    </fileset.rootfiles>
+    <fileset.depfun.included />
+    <fileset.depfun.excluded />
+    <fileset.package />
+    <build-deliverables>
+      <file location="${PROJECT_ROOT}" name="Umit.mltbx" optional="false">C:\Projets\LabeoTech\gitrepo\Umit\Umit.mltbx</file>
+    </build-deliverables>
+    <workflow />
+    <matlab>
+      <root>C:\Program Files\MATLAB\R2022a</root>
+      <toolboxes>
+        <toolbox name="fixedpoint" />
+        <toolbox name="neuralnetwork" />
+      </toolboxes>
+      <toolbox>
+        <fixedpoint>
+          <enabled>true</enabled>
+        </fixedpoint>
+      </toolbox>
+      <toolbox>
+        <neuralnetwork>
+          <enabled>true</enabled>
+        </neuralnetwork>
+      </toolbox>
+    </matlab>
+    <platform>
+      <unix>false</unix>
+      <mac>false</mac>
+      <windows>true</windows>
+      <win2k>false</win2k>
+      <winxp>false</winxp>
+      <vista>false</vista>
+      <linux>false</linux>
+      <solaris>false</solaris>
+      <osver>10.0</osver>
+      <os32>false</os32>
+      <os64>true</os64>
+      <arch>win64</arch>
+      <matlab>true</matlab>
+    </platform>
+  </configuration>
+</deployment-project>
