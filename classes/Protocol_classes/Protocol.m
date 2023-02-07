@@ -216,13 +216,16 @@ classdef Protocol < handle
             end            
             % Look for new data:
             [newArray,idxInfo] = obj.lookForNewData(false);             
-            %%% Updates the existing list:
+            %%% Update the existing list:
             % Add new Acquisitions:
             indSubj = find(cellfun(@any, idxInfo.iNewAcq));
-            for i = 1:length(indSubj)
-                indAcq = find(idxInfo.iNewAcq{indSubj(i)});
-                arrayfun(@(x) obj.Array.ObjList(indObj(indSubj(i))).Array.addObj(x.Array.ObjList(indAcq)), ...
-                    newArray(indNwArr(indSubj(i))));
+            for ii = 1:length(indSubj)
+                indAcq = find(idxInfo.iNewAcq{indSubj(ii)});
+                % Find subject in "protocol":
+                currSubj = obj.Array.ObjList(strcmpi(newArray(indSubj(ii)).ID, {obj.Array.ObjList.ID}));
+                % Add new acquisition(s) to the existing Subject:
+                arrayfun(@(x) currSubj.Array.addObj(x.Array.ObjList(indAcq)), ...
+                    newArray(indSubj(ii)));%#ok
             end
             %   Add new Subjects:
             if any(idxInfo.iNewSubj)
@@ -233,18 +236,16 @@ classdef Protocol < handle
             if discardData
                 %   Remove existing Acquisitions:
                 indSubj = find(cellfun(@(x) any(x), idxInfo.iMissAcq));
-                for i = 1:length(indSubj)
-                    indAcq = find(idxInfo.iMissAcq{indSubj(i)});
-                    remInfo = obj.Array.ObjList(indObj(indSubj(i))).Array.removeObj(indAcq);
+                for ii = 1:length(indSubj)
+                    indAcq = find(idxInfo.iMissAcq{indSubj(ii)});
+                    remInfo = obj.Array.ObjList(indSubj(ii)).Array.removeObj(indAcq);%#ok
                     obj.garbageList = [obj.garbageList; remInfo];
                 end
                 %   Remove existing Subjects:
                 if any(idxInfo.iMissSubj)
-                    remInfo = obj.Array.removeObj(find(idxInfo.iMissSubj));
+                    remInfo = obj.Array.removeObj(find(idxInfo.iMissSubj));%#ok
                     obj.garbageList = [obj.garbageList; remInfo];
-                end
-                %             else
-                %                 uiwait(warndlg('Keeping invalid Paths and/or files may cause problems later on during the analysis', 'Warning!', 'modal'));
+                end              
             end
                      
             % Update element's properties, if changes were made in the
