@@ -311,7 +311,14 @@ classdef Protocol < handle
             end
             
         end          
-        
+        function out = getSelectedItems(obj)
+            % This method generates a list of full IDs (Subject --
+            % Acquisition -- Modality) from the selected data stored in
+            % "Idx_filtered" property.
+           
+            items = obj.extractFilteredObjects(3);            
+            out = cellfun(@(x) strjoin({x.MyParent.MyParent.ID, x.MyParent.ID, x.ID},' -- '), items, 'UniformOutput',false);
+        end                            
         function [modHandle, AcqHandle] = manualAddModality(obj, modClass, modID, AcqID, subjHandle)
             % MANUALADDMODALITY creates a new Acquisition inside a "Subject" Object.
             % and adds the modality object of class "modClass" as it's child. The

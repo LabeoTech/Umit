@@ -51,7 +51,7 @@ pipe.showFuncList;
 pipe.setOpts(15)
 % Add "run_ImagesClassification" to the pipeline:
 % Example of adding tasks to pipeline using functions indices:
-pipe.addTask(3);
+pipe.addTask(8);
 pipe.addTask(7);
 pipe.addTask(4);
 % Example of adding tasks and saving outputs:

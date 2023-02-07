@@ -565,13 +565,12 @@ classdef PipelineManager < handle
             obj.pipe = struct();
             obj.pipeFirstInput = '';
             if strcmp(flag, 'all')
-                disp('Function list rebuilt');
                 obj.funcList = struct.empty;
                 obj.createFcnList;
             end
             % Clear current data,  metaData and File List:
             obj.current_data = []; obj.current_metaData = [];obj.current_outFile = {};
-            disp('Pipeline erased!')
+            disp('Pipeline erased 
         end
     end
     
@@ -700,10 +699,10 @@ classdef PipelineManager < handle
                 % Create dialog box so the User can choose the input file:
                 task.inputFileName = obj.selectInputFileName(task.inputFromFcn,task.name);
                 if task.inputFileName == 0
-                    % Return empyt if user cancelled:
-                    task = [];                    
-                end           
-                return
+                    % Return if user cancelled:
+                    task = [];
+                    return
+                end                                                
             end            
             % For a "sequential" pipeline, find the input data
             % automatically:
@@ -761,7 +760,7 @@ classdef PipelineManager < handle
                 end
                 % If the output is "outData", return, otherwise, create
                 % dialog box for file selection:
-                if any(strcmpi(funcInfo.argsOut, 'outData'))
+                if strcmpi(funcInfo.argsOut, 'outData')
                     filename = 'data';
                     return
                 end

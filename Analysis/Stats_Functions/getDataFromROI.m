@@ -1,4 +1,4 @@
-function outDataStat = getDataFromROI(data, metaData, varargin)
+function outData = getDataFromROI(data, metaData, varargin)
 % GETDATAFROMROI extracts and aggregates data from regions of interest
 % (ROIs) in imaging data using an "ROI_xxxxxx.mat" file located in
 % subject's folder.
@@ -7,7 +7,7 @@ function outDataStat = getDataFromROI(data, metaData, varargin)
 %   data: numerical matrix containing imaging data.
 %   metaData: .mat file with meta data associated with "data".
 % Output:
-%   outDataStat: structure containing stats-ready data extracted from ROIs.
+%   outData: structure containing stats-ready data extracted from ROIs.
 
 % Defaults:
 default_Output = 'ROI_data.mat'; %#ok This line is here just for Pipeline management.

@@ -1,4 +1,4 @@
-function outDataStat = genCorrelationMatrix(data, metaData, varargin)
+function outData = genCorrelationMatrix(data, metaData, varargin)
 % GENCORRELATIONMATRIX creates a correlation matrix from an Image time
 % series with dimensions Y,X,T using Regions of Interest (ROIs) stored in a
 % "ROImasks_xxxx.mat" file (created by the ROImanager App).
@@ -15,7 +15,7 @@ function outDataStat = genCorrelationMatrix(data, metaData, varargin)
 %   data (3D numerical matrix): Image time series with dimensions {'Y','X','T}.
 %   metaData (struct): structure containing smeta data associated with "data".
 % Output:
-%   outDataStat: structure containing the correlation values of each ROI.
+%   outData: structure containing the correlation values of each ROI.
 
 % Defaults: IMPORTANT, keep all default statements in one line each so the
 % Pipeline Managers will be able to read it!

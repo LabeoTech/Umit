@@ -1,4 +1,4 @@
-function outDataStat = calcResponsePeak(outDataStat, varargin)
+function outData = calcResponsePeak(data, varargin)
 % CALCRESPONSEPEAK calculates the amplitude, peak and onset latencies of a
 % response. Here, a "response" means a signal that crosses the "baseline"
 % level by a threshold (1 std by default). 
@@ -7,12 +7,12 @@ function outDataStat = calcResponsePeak(outDataStat, varargin)
 % representing the temporal response profile of each ROI to a given stimulus.
 
 % Inputs:
-%   dataStat: structure containing the data and meta data created by the
+%   data: structure containing the data and meta data created by the
 %       "getDataFromROI" function.
 %   Parameters:
-%       - 
+%       - !!TDB!!
 % Output:
-%   outDataStat: structure containing stats-ready data extracted from ROIs.
+%   outData: structure containing stats-ready data extracted from ROIs.
 
 % Defaults:
 default_Output = 'PeakStats.mat'; %#ok This line is here just for Pipeline management.
@@ -27,30 +27,30 @@ addOptional(p, 'opts', default_opts,@(x) isstruct(x));
 addOptional(p, 'object', default_object, @(x) isempty(x) || isa(x,'Acquisition') || isa(x,'Modality')); % Used by the umIToobox app ONLY.
 
 % Parse inputs:
-parse(p,outDataStat, varargin{:});
+parse(p,data, varargin{:});
 % Initialize Variables:
-outDataStat = p.Results.dataStat;
+outData = p.Results.dataStat;
 opts = p.Results.opts;
 object = p.Results.object;
 clear p
 %%%%%%%%%%%%%%%%
 % Check if the input data is "time vector split by events":
-assert(all(ismember(upper(outDataStat.dim_names), {'O','E','T'})),...
+assert(all(ismember(upper(outData.dim_names), {'O','E','T'})),...
     'Wrong input data type. Data must be a time vector split by event(s).');
 % For each ROI, calculate the average response and use the average time
 % vector to calculate the peak stats:
 ROIdata = struct();
-evntList = unique(outDataStat.eventID);
-for ii = 1:length(outDataStat.data)
+evntList = unique(outData.eventID);
+for ii = 1:length(outData.data)
         
     % Instantiate output arrays:
     PeakAmp_arr = nan(size(evntList),'single');
     PeakLat_arr = PeakAmp_arr; onsetAmp_arr = PeakAmp_arr; onsetLat_arr = PeakAmp_arr;
     
     for jj = 1:length(evntList)
-        idx = ( outDataStat.eventID == evntList(jj) );
+        idx = ( outData.eventID == evntList(jj) );
         % Calculate average response to the current event:
-        avgResp = squeeze(mean(outDataStat.data{ii}(:,idx,:),2,'omitnan'));
+        avgResp = squeeze(mean(outData.data{ii}(:,idx,:),2,'omitnan'));
         if strcmpi(opts.ResponsePolarity, 'negative')
             % Flip the data around its mean to make the response peak
             % positive:
@@ -58,7 +58,7 @@ for ii = 1:length(outDataStat.data)
         end
         % Calculate threshold as a multiple of the standard deviation of the 
         %   baseline period from the average response:
-        evntFr = round(outDataStat.preEventTime_sec*outDataStat.Freq);
+        evntFr = round(outData.preEventTime_sec*outData.Freq);
         avgBsln = mean(avgResp(1:evntFr),'omitnan'); % Average baseline amplitude        
         thr = avgBsln + opts.STD_threshold*std(avgResp(1:evntFr),0,1, 'omitnan');
         % Find the maximum ('peak') response value that crosses the
@@ -76,9 +76,9 @@ for ii = 1:length(outDataStat.data)
         % Calculate onset amplitude:
         onsetAmp_arr(jj) = avgResp(onsetIndx) - avgBsln;
         % Calculate the Peak latency:
-        PeakLat_arr(jj) = (indxPeak - evntFr)/outDataStat.Freq;
+        PeakLat_arr(jj) = (indxPeak - evntFr)/outData.Freq;
         % Calculate onset latency:        
-        onsetLat_arr(jj) = (onsetIndx - evntFr)/outDataStat.Freq;
+        onsetLat_arr(jj) = (onsetIndx - evntFr)/outData.Freq;
     end
     % Put data inside "ROIdata" structure:
     ROIdata(ii).PeakAmplitude = PeakAmp_arr;
@@ -87,9 +87,9 @@ for ii = 1:length(outDataStat.data)
     ROIdata(ii).OnsetLatency = onsetLat_arr;        
 end
 % Update meta data:
-outDataStat.eventID = evntList;
-outDataStat.label = outDataStat.eventNameList;
-outDataStat.data = ROIdata;
+outData.eventID = evntList;
+outData.label = outData.eventNameList;
+outData.data = ROIdata;
 
 
 
