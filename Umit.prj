@@ -16,12 +16,36 @@ In memory of our friend and collegue Umit Keysan (1992-2019)</param.description>
     <param.products.version />
     <param.platforms />
     <param.guid>9fb2ddcb-b8a2-4383-afe1-d7d89e57b7ac</param.guid>
-    <param.exclude.filters />
+    <param.exclude.filters>% List files contained in your toolbox folder that you would like to exclude
+% from packaging.  Excludes should be listed relative to the toolbox folder.
+% Some examples of how to specify excludes are provided below:
+%
+% A single file in the toolbox folder:
+% .svn
+%
+% A single file in a subfolder of the toolbox folder:
+% example/.svn
+%
+% All files in a subfolder of the toolbox folder:
+% example/*
+%
+% All files of a certain name in all subfolders of the toolbox folder:
+% **/.svn
+%
+% All files matching a pattern in all subfolders of the toolbox folder:
+% **/*.bak
+%
+.git/*
+.github/*</param.exclude.filters>
     <param.exclude.pcodedmfiles>true</param.exclude.pcodedmfiles>
     <param.examples />
     <param.demosxml />
     <param.apps />
-    <param.registered.apps />
+    <param.registered.apps>
+      <file>${PROJECT_ROOT}\GUI\DataViz\DataViewer.mlapp</file>
+      <file>${PROJECT_ROOT}\GUI\DataViz\ROImanager.mlapp</file>
+      <file>${PROJECT_ROOT}\GUI\umIToolbox.mlapp</file>
+    </param.registered.apps>
     <param.docs>${PROJECT_ROOT}\docs\info.xml</param.docs>
     <param.getting.started.guide />
     <param.matlabpath.excludes>
@@ -36,7 +60,7 @@ In memory of our friend and collegue Umit Keysan (1992-2019)</param.description>
     <param.release.end />
     <param.release.current.only>false</param.release.current.only>
     <param.compatiblity.windows>true</param.compatiblity.windows>
-    <param.compatiblity.macos>false</param.compatiblity.macos>
+    <param.compatiblity.macos>true</param.compatiblity.macos>
     <param.compatiblity.linux>true</param.compatiblity.linux>
     <param.compatiblity.matlabonline>false</param.compatiblity.matlabonline>
     <param.installation.map />
@@ -52,12 +76,10 @@ In memory of our friend and collegue Umit Keysan (1992-2019)</param.description>
       <param.products.id />
       <param.products.version />
       <param.platforms />
-      <param.exclude.filters />
       <param.exclude.pcodedmfiles />
       <param.examples />
       <param.demosxml />
       <param.apps />
-      <param.registered.apps />
       <param.getting.started.guide />
       <param.javaclasspath.excludes />
       <param.exported.on.package />
@@ -68,6 +90,7 @@ In memory of our friend and collegue Umit Keysan (1992-2019)</param.description>
       <param.release.end />
       <param.release.current.only />
       <param.compatiblity.windows />
+      <param.compatiblity.macos />
       <param.compatiblity.linux />
       <param.installation.map />
       <param.additional.sw.names />
@@ -85,10 +108,12 @@ In memory of our friend and collegue Umit Keysan (1992-2019)</param.description>
       <file>${PROJECT_ROOT}\.gitignore</file>
       <file>${PROJECT_ROOT}\Analysis</file>
       <file>${PROJECT_ROOT}\classes</file>
+      <file>${PROJECT_ROOT}\DesktopToolset.xml</file>
       <file>${PROJECT_ROOT}\docs</file>
       <file>${PROJECT_ROOT}\GUI</file>
       <file>${PROJECT_ROOT}\IOIAnalysis</file>
       <file>${PROJECT_ROOT}\LICENSE</file>
+      <file>${PROJECT_ROOT}\Main.asv</file>
       <file>${PROJECT_ROOT}\Main.m</file>
       <file>${PROJECT_ROOT}\protocolFcn_template.m</file>
       <file>${PROJECT_ROOT}\README.md</file>
