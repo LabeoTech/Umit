@@ -17,9 +17,7 @@ addRequired(p, 'data');
 parse(p,data, varargin{:});
 %Initialize Variables:
 data= p.Results.data;
-
-a =  getEventsFromTTL(data,10); % INDUCE ERROR HERE!!
-%%%%
+%%%
 % Run your code here:
 disp('This is a dummy function for Pipeline testing!');
 a = zeros(3,3, 'single');

@@ -32,8 +32,7 @@ classdef PipelineManager < handle
         current_data % Data available in the workspace during pipeline.
         current_metaData % MetaData associated with "current_data".
         current_outFile cell % List of file names created as output from some of the analysis functions.
-        b_state logical % True if a task of a pipeline was successfully executed.
-        pipeFirstInput = '' % Name of the first data to be used by the Pipeline.
+        b_state logical % True if a task of a pipeline was successfully executed.        
         % It can be the name of an existing file, or
         % "outFile" for a function that creates a file
         % such as "run_ImagesClassification".
@@ -510,7 +509,7 @@ classdef PipelineManager < handle
                         waitfor(qd);
                         thisSeq(jj).saveFileName = newFileName;
                     end
-                    lastFileNameList = [lastFileNameList,{thisSeq(jj).saveFileName}];
+                    lastFileNameList = [lastFileNameList,{thisSeq(jj).saveFileName}];%#ok
                     break
                 end
                 % Save changes to pipeline:
@@ -551,12 +550,15 @@ classdef PipelineManager < handle
             % SAVEPIPE saves the structure OBJ.PIPE in a .JSON file in the
             % folder PIPELINECONFIGFILES inside the SAVEDIR of OBJ.PROTOCOLOBJ.
             
+            if ~endsWith(filename,'.json')
+                filename = [filename,'.json'];
+            end
+            
             targetDir = fullfile(obj.ProtocolObj.SaveDir, 'PipeLineConfigFiles');
             [~,~] = mkdir(targetDir);
-            pipeStruct = obj.pipe;
-            pipeStruct(1).firstInput = obj.pipeFirstInput;
+            pipeStruct = obj.pipe;           
             txt = jsonencode(pipeStruct);
-            fid = fopen(fullfile(targetDir,[filename '.json']), 'w');
+            fid = fopen(fullfile(targetDir,filename), 'w');
             fprintf(fid, '%s', txt);
             fclose(fid);
             disp(['Pipeline saved as "' filename '" in ' targetDir]);
@@ -584,13 +586,24 @@ classdef PipelineManager < handle
             %%%----- RETROCOMPATIBILITY SECTION ---------------------------
             stale_fields = setdiff(fieldnames(new_pipe), fieldnames(obj.pipe));
             missing_fields = setdiff(fieldnames(obj.pipe), fieldnames(new_pipe));
-            if ~isempty(stale_fields) || ~isempty(missing_fields)                
+            if ~isempty(stale_fields) || ~isempty(missing_fields)   
+               w = warndlg('Deprecated pipeline file found. The file will be updated now!');                
+               waitfor(w);
+                
                 for ii = 1:length(new_pipe)
                     % Add inputFrom:
-                    obj.addTask(new_pipe(ii).name)
+                    if new_pipe(ii).b_save2File
+                        state = obj.addTask(new_pipe(ii).name,true,new_pipe(ii).datFileName);
+                    else
+                        state = obj.addTask(new_pipe(ii).name);
+                    end
+                    if ~state
+                        error('Failed to load pipeline!');
+                    end
                 end
                 % Overwrite old .JSON file:
-                obj.savePipe(pipeFile)
+                [~,filename,~] = fileparts(pipeFile);
+                obj.savePipe(filename);
                 obj.validatePipeline;
                 return
             end                                       
@@ -617,8 +630,7 @@ classdef PipelineManager < handle
             if nargin > 1
                 flag = varargin{:};
             end
-            obj.pipe = struct();
-            obj.pipeFirstInput = '';
+            obj.pipe = struct();           
             if strcmp(flag, 'all')
                 disp('Function list rebuilt');
                 obj.funcList = struct.empty;
@@ -735,8 +747,7 @@ classdef PipelineManager < handle
                     targetObj = obj.ProtocolObj.Array.ObjList(targetIdx(1)).Array.ObjList(targetIdx(2)).Array.ObjList(targetIdx(3));
             end
             obj.tmp_TargetObj = targetObj;
-        end
-        
+        end        
         %%%%%%--Helpers for "addTask" method -----------------------------
         
         function task = setInput(obj, task)
@@ -924,8 +935,7 @@ classdef PipelineManager < handle
             end
         end
                         
-        %%%%%%-------------------------------------------------------------
-        
+        %%%%%%-------------------------------------------------------------        
         function createFcnList(obj)
             % This function creates a structure containing all information
             % about the analysis functions inside the "Analysis" folder.
@@ -1290,7 +1300,7 @@ classdef PipelineManager < handle
                otherwise
                    disp('Cannot identify OS');
            end            
-        end
+        end        
         %%%%%%-- WAITBAR methods-------------------------------------------
         function setWaitBar(obj, tag, varargin)
             % This method creates two "waitbar" dialogs.
