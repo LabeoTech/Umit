@@ -51,17 +51,12 @@ pipe.showFuncList;
 pipe.setOpts(15)
 % Add "run_ImagesClassification" to the pipeline:
 % Example of adding tasks to pipeline using functions indices:
-pipe.addTask(8);
-pipe.addTask(7);
-pipe.addTask(4);
+pipe.addTask('run_ImagesClassification');
+pipe.addTask('GSR');
+pipe.addTask('spatialGaussFilt');
 % Example of adding tasks and saving outputs:
-pipe.addTask(1,true, 'testout');
-pipe.addTask(7, true, 'tempOut');
-% Example of pipeline construction with function names as input:
-pipe.addTask('alignFrames');
-pipe.addTask('calculateDF_F0');
-pipe.addTask('getEventsFromSingleChannel')
-pipe.addTask('SeedPixCorr')
+pipe.addTask('GSR',true, 'testout');
+pipe.addTask('alignFrames', true, 'tempOut');
 %% Overview of pipeline
 pipe.showPipeSummary
 %% Run pipeline
