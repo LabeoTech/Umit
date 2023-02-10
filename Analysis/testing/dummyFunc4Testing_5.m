@@ -1,4 +1,4 @@
-function out = dummyFunc4Testing_5(SaveFolder, varargin)
+function outData = dummyFunc4Testing_5(data, varargin)
 % FUNCTEMPLATE is a dummy function that serves as a template for creating
 % functions compatible with the toolbox.
 %
@@ -12,18 +12,13 @@ default_Output = 'dummyFile5.dat';
 %%% Arguments parsing and validation %%%
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder
-addRequired(p, 'RawFolder', @isfolder)% For Raw Folder as input
-% Save folder:
-addRequired(p, 'SaveFolder', @isfolder);
-% Output:
-addOptional(p, 'Output', default_Output);
+addRequired(p, 'data');
 % Parse inputs:
-parse(p,RawFolder, SaveFolder);
+parse(p,data, varargin{:});
 %Initialize Variables:
-RawFolder = p.Results.RawFolder;
-SaveFolder = p.Results.SaveFolder;
-Output = p.Results.Output;
+data= p.Results.data;
 
+a =  getEventsFromTTL(data,10); % INDUCE ERROR HERE!!
 %%%%
 % Run your code here:
 disp('This is a dummy function for Pipeline testing!');

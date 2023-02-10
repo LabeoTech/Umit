@@ -452,8 +452,7 @@ classdef PipelineManager < handle
                 if ~ishandle(obj.h_wbItem)
                     break
                 end
-            end
-            
+            end            
             % Remove "empty" rows from the Pipeline Summary Log table:
             idx_emptyRow = all(strcmp('None',table2cell(obj.PipelineSummary(:,1:5))),2);
             obj.PipelineSummary(idx_emptyRow,:) = [];
@@ -462,12 +461,14 @@ classdef PipelineManager < handle
             % Save Log Book to file:
             save(obj.ProtocolObj.LogBookFile, 'LogBook');
             % Show Pipeline Summary in command window:
-            disp(obj.PipelineSummary)            
+            disp(obj.PipelineSummary)             
             % Save Protocol Object:
             protocol = obj.ProtocolObj;
             save([obj.ProtocolObj.SaveDir obj.ProtocolObj.Name '.mat'], 'protocol');
             disp('Protocol object Saved!');
             delete([obj.h_wbItem, obj.h_wbTask]);            
+            % Request User permission to save error report:
+            obj.genErrorReport;
         end
         
          function validatePipeline(obj)
@@ -572,22 +573,38 @@ classdef PipelineManager < handle
             
             % erase current pipeline:
             obj.reset_pipe;
-            % Add first input file name, if applicable:
-            if ~isempty(new_pipe(1).firstInput)
-                obj.pipeFirstInput = new_pipe(1).firstInput;
+            % Check if all functions listed in "new_pipe" exist:
+            idx = ismember({new_pipe.name},{obj.funcList.name});            
+            if ~all(idx)
+                h = errordlg(['The following functions do not exist:' sprintf('\n"%s"',new_pipe(~idx).name)], ...
+                    'Failed to load pipeline!');
+                waitfor(h);
+                return
             end
+            %%%----- RETROCOMPATIBILITY SECTION ---------------------------
+            stale_fields = setdiff(fieldnames(new_pipe), fieldnames(obj.pipe));
+            missing_fields = setdiff(fieldnames(obj.pipe), fieldnames(new_pipe));
+            if ~isempty(stale_fields) || ~isempty(missing_fields)                
+                for ii = 1:length(new_pipe)
+                    % Add inputFrom:
+                    obj.addTask(new_pipe(ii).name)
+                end
+                % Overwrite old .JSON file:
+                obj.savePipe(pipeFile)
+                obj.validatePipeline;
+                return
+            end                                       
+            %%%------------------------------------------------------------
             % Add new tasks:
             fn = fieldnames(obj.pipe);
-            for i = 1:length(new_pipe)
-                indx_name = find(strcmp(new_pipe(i).name, {obj.funcList.name}));
-                % Update funcList with custom opts settings:
-                if ~isequaln(new_pipe(i).opts,obj.funcList(indx_name).info.opts)
-                    obj.funcList(indx_name).info.opts = new_pipe(i).opts;
-                end
+            for i = 1:length(new_pipe)                
                 for k = 1:numel(fn)
                     obj.pipe(i).(fn{k}) = new_pipe(i).(fn{k});
                 end
             end
+            disp('Pipeline loaded!')
+            % Validate loaded pipeline:
+            obj.validatePipeline;
         end
         
         function reset_pipe(obj, varargin)
@@ -678,7 +695,7 @@ classdef PipelineManager < handle
                 obj.updateDataHistory(task);
             catch ME
                 obj.b_state = false;
-                LastLog.Messages = {getReport(ME)};
+                LastLog.Messages = {getReport(ME,'extended', 'hyperlinks','off')};
                 LastLog.Messages_short = {getReport(ME, 'basic','hyperlinks','off')};
                 disp('FAILED!');
             end
@@ -1210,6 +1227,70 @@ classdef PipelineManager < handle
             end
         end
                         
+        function genErrorReport(obj)
+           % GENERRORREPORT saves the error messages from the Pipeline
+           % Summary table to a .txt file inside the folder
+           % "PipelineErrorLogs" folder in protocol's save folder.
+           
+           % Check if any error occurred in the pipeline
+           if ~any(obj.PipelineSummary.Completed)
+               return
+           end
+           
+           % Ask User if he/she wants to save the error log:
+           answer = questdlg('One or more steps of the pipeline failed. Generate error log file?',...
+               'Errors found!', 'Yes','No','Yes');
+           waitfor(answer);
+           if strcmpi(answer, 'no')
+               return         
+           end
+           % Repackage error messages into string:
+           str = sprintf(['-------------------- Pipeline error log --------------------\n'...
+               'Pipeline executed at:%s\nReport generated at: %s\nTotal number of failed tasks: %d\n%s\n'],...
+               datestr(datetime(obj.timeTag,'InputFormat','_ddMMyyyyHHmmss')),...
+               datestr(datetime('now')),sum(obj.PipelineSummary.Completed), repmat('-',1,60));           
+           % Get error messages in execution order:
+           errorTab = obj.PipelineSummary(~obj.PipelineSummary.Completed,:);
+           headers = errorTab.Properties.VariableNames;
+           for ii = 1:height(errorTab)
+               info = table2cell(errorTab(ii,:));               
+               id = [headers([1:5,9]);[info([1:5]) {datestr(info{9})}]];
+               % Trim error messsage to remove references to
+               % PipelineManager methods:
+               idx = strfind(info{10},'Error in PipelineManager');
+               msg = info{10}(1:idx(1)-1);
+               str = [str, sprintf('Recording Info:\n\t%s : %s\n\t%s : %s\n\t%s : %s\n\t%s : %s\n\t%s : %s\n\t%s : %s\n',id{:})];%#ok
+               str = [str, sprintf('Error Message:\n""\n%s\n""\n%s\n', msg,repmat('-',1,60))];%#ok
+           end
+           % Save to .txt file:
+           folder = fullfile(obj.ProtocolObj.SaveDir,'PipelineErrorLogs');
+           if ~exist(folder,'dir')
+               mkdir(folder);
+           end
+           filename = ['error_log_' datestr(datetime(obj.timeTag,'InputFormat','_ddMMyyyyHHmmss'),'dd_mm_yyyy_HH_MM'), '.txt'];
+           fid = fopen(fullfile(folder,filename), 'w');
+           fprintf(fid,'%s',str);
+           fclose(fid);
+           % 
+           answer = questdlg(['Error log saved in ' folder ' Open folder?'], 'Error log saved!','Yes','No','No');
+           if strcmpi(answer,'no')
+               return
+           end
+           % Open system's file explorer:
+           switch computer
+               case 'PCWIN64'
+                   % Windows
+                   winopen(folder);
+               case 'GLNXA64'
+                   % Linux
+                   system(['gnome-open ' folder]);
+               case 'MACI64'
+                   % MacOS
+                   system(['open ' folder]);
+               otherwise
+                   disp('Cannot identify OS');
+           end            
+        end
         %%%%%%-- WAITBAR methods-------------------------------------------
         function setWaitBar(obj, tag, varargin)
             % This method creates two "waitbar" dialogs.
