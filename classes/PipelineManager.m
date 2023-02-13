@@ -17,11 +17,11 @@ classdef PipelineManager < handle
         % the same changes to the property's set method.
         funcList struct % structure containing the info about each function in the "fcnDir".
         ProtocolObj Protocol % Protocol Object.
-    end
-    properties (Access = private)
+        fcnDir char % Directory of the analysis functions.
         ClassName char % Name of the class that the pipeline analysis functions will run.
         ClassLevel int16 % Level of the class in protocol's hierarchy (1 = Modality, 2 = Acquisition, 3= Subject);
-        fcnDir char % Directory of the analysis functions.
+    end
+    properties (Access = private)               
         b_taskState = false % Boolean indicating if the task in pipeline was successful (TRUE) or not (FALSE).
         tmp_LogBook % Temporarily stores the table from PROTOCOL.LOGBOOKFILE
         tmp_BranchPipeline % Temporarily stores LogBook from a Hierarchical branch.
@@ -43,7 +43,7 @@ classdef PipelineManager < handle
         % modality the full ID is:
         % SubjID--AcqID--ModID.
         timeTag % timestamp used as "tag" for temporary files created during the pipeline execution.
-        current_seq = 0 % index of current sequence in pipeline.
+        current_seq = 0 % index of current sequence in pipeline .
         current_seqIndx = 0 % index of step in current sequence in pipeline.
         b_newSeq = false; % boolean to indicate if a new sequence was created in the previous step.
         b_pipeIsValid = false % TRUE, if the pipeline passed all validations and is ready to execution.
@@ -381,7 +381,9 @@ classdef PipelineManager < handle
             if ~obj.b_pipeIsValid
                 warning('Pipeline execution aborted! Pipeline is invalid.')
                 return
-            end            
+            end
+            % Reset sequence counter:
+            obj.current_seq = 1;
             lbf = matfile(obj.ProtocolObj.LogBookFile);
             obj.tmp_LogBook = lbf.LogBook;
             obj.PipelineSummary = obj.ProtocolObj.createEmptyTable;            
@@ -401,12 +403,12 @@ classdef PipelineManager < handle
                     targetIdxArr = unique(obj.ProtocolObj.Idx_Filtered(:,1), 'rows');
             end
             
-            for i = 1:size(targetIdxArr,1)
+            for ii = 1:size(targetIdxArr,1)
                 % Clear current data,  metaData and File List before starting the pipeline:
                 obj.current_data = []; obj.current_metaData = [];obj.current_outFile = {};
                 obj.b_state = true;
                 % Get handle of current object:
-                obj.getTargetObj(targetIdxArr(i,:));
+                obj.getTargetObj(targetIdxArr(ii,:));
                 % Initialize Log table:
                 obj.tmp_TargetObj.LastLog = obj.ProtocolObj.createEmptyTable;
                 % Create Full ID of object:
@@ -420,38 +422,65 @@ classdef PipelineManager < handle
                 end
                 obj.targetObjFullID = strjoin(ID_list, ' -- ');
                 % Update waitbars:
-                obj.setWaitBar('UpdateItem', i, size(targetIdxArr,1));
+                obj.setWaitBar('UpdateItem', ii, size(targetIdxArr,1));
                 fprintf([repmat('-',1,50),'\n']);
                 fprintf('Object Name: %s\n\n', obj.targetObjFullID)
-                % Run pipeline in each target object:
-                for j = 1:length(obj.pipe)
-                    obj.current_task = obj.pipe(j);
-                    obj.setWaitBar('UpdateTask', j/length(obj.pipe));
-                    fprintf('Running task # %d/%d ----->>>>>\n',j,length(obj.pipe));
-                    obj.run_taskOnTarget;                    
-                    if ~obj.b_state
+                % Run one sequence at a time:
+                for jj = 1:max([obj.pipe.seq],[],'all')
+                    obj.current_seq = jj;
+                    % Get current pipeline sequence:
+                    thisSeq = obj.pipe(arrayfun(@(x) any(x.seq == obj.current_seq), obj.pipe));
+                    % Skip pipeline steps:
+                    if ~obj.b_ignoreLoggedFiles
+                        [thisSeq, skippedFcns,selFile] = obj.skipSteps(thisSeq,obj.tmp_TargetObj.SaveFolder);
+                        if isempty(thisSeq)
+                            % When all sequence is skipped:
+                            fprintf('All steps skipped from the current sequence\n')
+                            obj.PipelineSummary
+                            % Initialize empty Log for current object:
+                            LastLog = obj.ProtocolObj.createEmptyTable;
+                            % Fill out Log with Subject/Acquisition/Modality IDs :
+                            LastLog(1,1:3) = strsplit(obj.targetObjFullID, ' -- ');
+                            % Add class name to table:
+                            LastLog(1,[4:8]) = {obj.ClassName, ['Skipped Sequence #' num2str(obj.current_seq)],...
+                                'none',selFile,true};                            
+                            obj.PipelineSummary = [obj.PipelineSummary; LastLog];
+                        elseif ~isempty(skippedFcns)
+                            % When some steps are skipped:
+                            fprintf('The following steps will be skipped:\n')
+                            fprintf('\t"%s"\n',skippedFcns{:});
+                        end
+                    end
+                    % Run pipeline sequence in each target object:
+                    for kk = 1:length(thisSeq)
+                        obj.current_task = thisSeq(kk);
+                        obj.setWaitBar('UpdateTask', kk/length(thisSeq));
+                        fprintf('Running task # %d/%d ----->>>>>\n',kk,length(thisSeq));
+                        obj.run_taskOnTarget;
+                        if ~obj.b_state
+                            break
+                        end
+                        % Control for Pipeline cancelling by User:
+                        if getappdata(obj.h_wbItem, 'b_abortPipe')
+                            % Delete waitbars and abort inner loop:
+                            delete([obj.h_wbItem, obj.h_wbTask])
+                            break
+                        end
+                        % This pause is here to allow the WaitBar to update
+                        % during the execution of this method.
+                        pause(.001);
+                    end
+                    % Update Pipeline summary table:
+                    obj.PipelineSummary = [obj.PipelineSummary; obj.tmp_TargetObj.LastLog];
+                    fprintf([repmat('-',1,50),'\n']);
+                    % Remove temporary files with appended with the "timeTag":
+                    obj.deleteTemporaryFiles(obj.tmp_TargetObj.SaveFolder);
+                    % Abort outer loop if user cancels pipeline:
+                    if ~ishandle(obj.h_wbItem)
                         break
                     end
-                    % Control for Pipeline cancelling by User:
-                    if getappdata(obj.h_wbItem, 'b_abortPipe')
-                        % Delete waitbars and abort inner loop:
-                        delete([obj.h_wbItem, obj.h_wbTask])
-                        break
-                    end
-                    % This pause is here to allow the WaitBar to update
-                    % during the execution of this method.
-                    pause(.001);
-                end                
-                % Update Pipeline summary table:
-                obj.PipelineSummary = [obj.PipelineSummary; obj.tmp_TargetObj.LastLog];
-                fprintf([repmat('-',1,50),'\n']);
-                % Remove temporary files with appended with the "timeTag":
-                obj.deleteTemporaryFiles(obj.tmp_TargetObj.SaveFolder);
-                % Abort outer loop if user cancels pipeline:
-                if ~ishandle(obj.h_wbItem)
-                    break
                 end
-            end            
+            end
             % Remove "empty" rows from the Pipeline Summary Log table:
             idx_emptyRow = all(strcmp('None',table2cell(obj.PipelineSummary(:,1:5))),2);
             obj.PipelineSummary(idx_emptyRow,:) = [];
@@ -460,12 +489,12 @@ classdef PipelineManager < handle
             % Save Log Book to file:
             save(obj.ProtocolObj.LogBookFile, 'LogBook');
             % Show Pipeline Summary in command window:
-            disp(obj.PipelineSummary)             
+            disp(obj.PipelineSummary)
             % Save Protocol Object:
             protocol = obj.ProtocolObj;
             save([obj.ProtocolObj.SaveDir obj.ProtocolObj.Name '.mat'], 'protocol');
             disp('Protocol object Saved!');
-            delete([obj.h_wbItem, obj.h_wbTask]);            
+            delete([obj.h_wbItem, obj.h_wbTask]);
             % Request User permission to save error report:
             obj.genErrorReport;
         end
@@ -620,22 +649,10 @@ classdef PipelineManager < handle
             obj.validatePipeline;
         end
         
-        function reset_pipe(obj, varargin)
+        function reset_pipe(obj)
             % This function erases the pipe property and resets the funcList
-            % property to default parameter values.
-            % Input:
-            %   flag(char): (optional) type 'all' to reset function list in
-            %   addition to the pipeline.
-            flag = '';
-            if nargin > 1
-                flag = varargin{:};
-            end
-            obj.pipe = struct();           
-            if strcmp(flag, 'all')
-                disp('Function list rebuilt');
-                obj.funcList = struct.empty;
-                obj.createFcnList;
-            end
+            % property to default parameter values.            
+            obj.pipe = struct();                       
             % Clear current data,  metaData and File List:
             obj.current_data = []; obj.current_metaData = [];obj.current_outFile = {};
             % Reset sequence:
@@ -685,15 +702,7 @@ classdef PipelineManager < handle
                     assert(isfile(fullfile(obj.tmp_TargetObj.SaveFolder, task.inputFileName)),...
                         errID,errmsg);
                     obj.loadInputFile(task);
-                end
-                % Check for data already run and skip step if so:
-                b_skipStep = obj.checkDataHistory(task);                
-                if b_skipStep && ~obj.b_ignoreLoggedFiles
-                    disp(['Skipped function : "' task.name '"!']);
-                    LastLog.Messages_short = 'Skipped';
-                    LastLog.Completed = true;
-                    return
-                end
+                end                
                 fprintf('\tFunction Name: %s \n\n',task.name);
                 % Load options structure in the workspace.
                 opts = task.opts; %#ok the "opts" structure is used in the EVAL function.                
@@ -747,7 +756,147 @@ classdef PipelineManager < handle
                     targetObj = obj.ProtocolObj.Array.ObjList(targetIdx(1)).Array.ObjList(targetIdx(2)).Array.ObjList(targetIdx(3));
             end
             obj.tmp_TargetObj = targetObj;
-        end        
+        end   
+        
+        function [newSeq,skippedSteps, selFile] = skipSteps(obj,thisSeq,folderName)
+           % SKIPSTEPS looks in the folder "folderName" for .dat/.mat files 
+           % that can potentially replace the N first steps of the pipeline
+           % sequence "thisSeq".
+           % The criteria to replace the pipeline steps are:
+           %    1- Same creation date time of the functions.
+           %    2- Same function name
+           %    3- Same function "opts" parameters
+           %    4- No intermediate steps from the file is used as input to
+           %    other sequences
+           %    Inputs:
+           %        thisSeq (struct): current sequence of the pipeline.
+           %        folderName(char): full path to the folder containing
+           %            files.
+           %    Outputs:
+           %        newSeq (struct): updated sequence without the redundant
+           %            steps.
+           %        skippedSteps (cell): list of skipped function names from
+           %            "thisSeq".  
+                                           
+           % Get list of valid files in the folder:
+           fileList = getFileList(folderName, 'all');
+           %
+           newSeq = thisSeq; 
+           skippedSteps = {};
+           newSeqArr = cell(size(fileList));
+           selFile = '';
+           skippedStepsArr = newSeqArr;
+           % Compare dataHistory with pipeline sequence:
+           for ii = 1:length(fileList)
+               [newSeqArr{ii}, skippedStepsArr{ii}] = compareDataHistory(obj,thisSeq,fullfile(folderName,fileList{ii}));
+           end
+           % Check for matches:
+           if all(cellfun(@isempty,skippedStepsArr))
+               return
+           end
+              
+           % Select file with the largest number of steps:
+           % Check if there is a file that contains all sequence:
+           idxSkipAll = cellfun(@isempty,newSeqArr);
+           if any(idxSkipAll)
+              indxSkip = find(idxSkipAll,1,'first');
+              selFile = fileList{indxSkip};
+              step.inputFileName = selFile;
+              step.saveFileName = thisSeq(end).saveFileName;
+              step.name = thisSeq(end).name;
+              obj.loadInputFile(step);% Load step;
+              if ~strcmpi(fileList{indxSkip}, step.saveFileName)
+                obj.saveDataToFile(step,false) %Save to file 
+              end
+              newSeq = {}; skippedSteps = {'All'};
+              return
+           end
+           nSteps = cellfun(@numel,skippedStepsArr);
+           idxMax = find(nSteps == max(nSteps),1,'first');
+           selFile = fileList{idxMax};
+           newSeq = newSeqArr{idxMax};
+           skippedSteps = skippedStepsArr{idxMax};                      
+           %%%%%--Local function ------------------------------------------
+            function [outSeq,skipNames] = compareDataHistory(obj,seqIn, fileIn)
+                % COMPAREDATAHISTORY compares the dataHistory of "fileIn"
+                % with the pipeline sequence "seqIN" and outputs the
+                % updated sequence "outSeq" and the list of skipped steps
+                % "skipNames".                
+                outSeq = seqIn;
+                skipNames = {};
+                % Load data history:
+                [path,file,ext] = fileparts(fileIn);
+                a = load(fullfile(path,[file '.mat']),'dataHistory');
+                dataHistory = a.dataHistory; clear a
+                % Compare datetimes:
+                [~,locB] = ismember({dataHistory.name},{obj.funcList.name});
+                idxSameDate = cellfun(@(x,y) strcmpi(datestr(x),y),{dataHistory.creationDatetime},...
+                    {obj.funcList(locB).date});
+%                 if ~all(idxSameDate)
+%                     return
+%                 end
+                % Compare function names and optional parameters:
+                thisHistory = struct();
+                for jj = 1:length(seqIn)
+                    thisHistory(jj).name = seqIn(jj).name;
+                    thisHistory(jj).opts = seqIn(jj).opts;
+                end
+                % IF there is an input file, prepend the dataHistory to the current
+                % sequence:                
+                idxFromFile = find(~cellfun(@isempty,{seqIn.inputFileName}),1,'first');                
+                if idxFromFile > 0
+                    % Load the input file dataHistory:
+                    [~,inputFile,~] = fileparts(seqIn(idxFromFile).inputFileName);
+                    dh = load(fullfile(path,[inputFile,'.mat']),'dataHistory'); dh = dh.dataHistory;
+                    prepend_info = struct();
+                    for jj = 1:length(dh)
+                        prepend_info(jj).name = dh(jj).name;
+                        prepend_info(jj).opts = dh(jj).opts;
+                        thisHistory = horzcat(prepend_info,thisHistory(idxFromFile:end));
+                    end
+                    clear inputFile prepend_info
+                end
+                % Check for the existence of consecutive equal steps:
+                b_isEqual = false(size(dataHistory));                
+                for jj = 1:length(dataHistory)
+                    % Compare name and opts:
+                    b_isEqual(jj) = (strcmpi(thisHistory(jj).name, dataHistory(jj).name) && ...
+                        isequaln(thisHistory(jj).opts,dataHistory(jj).opts));
+                    if jj == length(thisHistory) || ~b_isEqual(jj)
+                        break
+                    end
+                end
+                if ~all(b_isEqual)
+                    return
+                end                                                                              
+                % Get indices of sequence corresponding to the dataHistory:
+                [~,indxEqual] = ismember({dataHistory(b_isEqual).name},{seqIn.name});indxEqual(indxEqual == 0) = [];
+                % If any consecutive steps were equal, check if the intermediate steps
+                % from dataHistory are inputs to other sequences:  
+                b_isInputFcn = arrayfun(@(x) numel(x) > 1, seqIn(indxEqual(1:end-1)));                                
+                if any(b_isInputFcn)
+                    return
+                end
+                % If all steps are to be skipped, the outSeq will return
+                % empty                
+                outSeq = seqIn;
+                outSeq(indxEqual) = []; % Erase first N steps corresponding to the dataHistory.
+                if ~isempty(outSeq)                   
+                    % If the sequence is partially skipped, update the
+                    % sequence:
+                    indx = find(~cellfun(@isempty,({outSeq.inputFrom})), 1,'first');
+                    outSeq(indx).inputFrom = '_LOCAL_';
+                    outSeq(indx).inputFileName = [file ext];
+                    % Reset sequence indices:
+                    for jj = 1:length(outSeq)
+                        outSeq(jj).seqIndx = jj;
+                    end
+                end
+                % Return steps to be skipped:
+                skipNames = {seqIn(indxEqual).name};                               
+            end                                 
+        end
+        
         %%%%%%--Helpers for "addTask" method -----------------------------
         
         function task = setInput(obj, task)
@@ -1082,7 +1231,7 @@ classdef PipelineManager < handle
             
             funcInfo = obj.funcList(strcmp(step.name, {obj.funcList.name}));
             % Create a local structure with the function's info:
-            curr_dtHist = genDataHistory(funcInfo, step.funcStr, step.opts,'none');
+            curr_dtHist = genDataHistory(funcInfo, step.funcStr, step.opts,'none', step.inputFileName);
             % First, we need to know if the output is a "data", a .DAT file or a .MAT file:
             if any(strcmp(step.argsOut, 'outFile'))
                 % In case the step ouput is .DAT file(s):
@@ -1098,11 +1247,11 @@ classdef PipelineManager < handle
                 
                 for i = 1:length(obj.current_outFile)
                     % Map existing metaData file to memory:
-                    mtD = matfile(strrep(obj.current_outFile{i}, '.dat', '.mat'));
+                    mtD = load(strrep(obj.current_outFile{i}, '.dat', '.mat'));
                     mtD.Properties.Writable = true;
                     % Create or update "dataHistory" structure:
                     if isprop(mtD, 'dataHistory')
-                        mtD.dataHistory = [mtD.dataHistory; curr_dtHist];
+                        mtD.dataHistory = appendDataHistory(mtD.dataHistory, curr_dtHist);
                     else
                         mtD.dataHistory = curr_dtHist;
                     end
@@ -1110,7 +1259,7 @@ classdef PipelineManager < handle
             elseif any(strcmp(step.argsOut, 'outDataStat'))
                 % In case of step output is .MAT file(s):
                 if isfield(obj.current_data, 'dataHistory')
-                    obj.current_data.dataHistory = [obj.current_data.dataHistory; curr_dtHist];
+                    obj.current_data.dataHistory = appendDataHistory(obj.current_data.dataHistory, curr_dtHist);
                 else
                     obj.current_data.dataHistory = curr_dtHist;
                 end
@@ -1118,47 +1267,25 @@ classdef PipelineManager < handle
             else
                 % In case of step output is a data array:
                 if isfield(obj.current_metaData, 'dataHistory')
-                    obj.current_metaData.dataHistory = [obj.current_metaData.dataHistory; curr_dtHist];
+                    obj.current_metaData.dataHistory = appendDataHistory(obj.current_metaData.dataHistory, curr_dtHist);
                 else
                     obj.current_metaData.dataHistory = curr_dtHist;
                 end
             end
-        end
-        
-        function b_skip = checkDataHistory(obj,step)
-            % This method verifies if the function to be run in "step" was
-            % already performed or not on the current data.
-            % If so, the pipeline step will be skipped.
-            % Input:
-            %   step (struct): structure containing the function information that
-            %   will run on the data.
-            % Output:
-            %   b_skip (bool): True if the step was already run on the
-            %   data and should be skipped.
-            
-            b_skip = false;
-            % Find function info in Function List:
-            fcnInfo = obj.funcList(strcmp(step.name, {obj.funcList.name}));
-            % Find step info in object's dataHistory:
-            
-            % For retro-compatibility with data created in previous
-            % versions of umIT:
-            if ~isfield(obj.current_metaData, 'dataHistory')
-                return
-            end
-            
-            dH = obj.current_metaData.dataHistory(strcmp(step.name,...
-                {obj.current_metaData.dataHistory.name}));
-            % If the function's creation date AND the function string AND optional parameters are
-            % the same, we consider that the current step was already run.
-            if isempty(dH)
-                return
-            elseif ( isequal(datetime(fcnInfo.datenum, 'ConvertFrom', 'datenum'), dH.creationDatetime) &&...
-                    strcmp(step.funcStr, dH.funcStr) ) && isequaln(step.opts, dH.opts)
-                b_skip = true;
+            %%%%%--Local function -----------------------------------------
+            function out = appendDataHistory(dh_original, new_dh)
+                % This function appends the data history "dh" to
+                % "current_dataHistory" property of obj.
+               
+                % Account for missing fields (FOR RETROCOMPATIBILITY)                
+                
+                fn = setdiff(fieldnames(new_dh),fieldnames(dh_original));
+                dh_original = cellfun(@(x) setfield(dh_original(1), x,[]),fn);
+                out = vertcat(dh_original,new_dh);
+                
             end
         end
-        
+                        
         function loadInputFile(obj,step)
             % This function loads the data and metaData (if applicable)
             % from a .DAT or .MAT file indicated by the inputFileName field
@@ -1243,7 +1370,7 @@ classdef PipelineManager < handle
            % "PipelineErrorLogs" folder in protocol's save folder.
            
            % Check if any error occurred in the pipeline
-           if ~any(obj.PipelineSummary.Completed)
+           if all(obj.PipelineSummary.Completed)
                return
            end
            
@@ -1280,12 +1407,7 @@ classdef PipelineManager < handle
            filename = ['error_log_' datestr(datetime(obj.timeTag,'InputFormat','_ddMMyyyyHHmmss'),'dd_mm_yyyy_HH_MM'), '.txt'];
            fid = fopen(fullfile(folder,filename), 'w');
            fprintf(fid,'%s',str);
-           fclose(fid);
-           % 
-           answer = questdlg(['Error log saved in ' folder ' Open folder?'], 'Error log saved!','Yes','No','No');
-           if strcmpi(answer,'no')
-               return
-           end
+           fclose(fid);          
            % Open system's file explorer:
            switch computer
                case 'PCWIN64'
@@ -1298,7 +1420,7 @@ classdef PipelineManager < handle
                    % MacOS
                    system(['open ' folder]);
                otherwise
-                   disp('Cannot identify OS');
+                   disp(['Error log saved at: ' folder]);
            end            
         end        
         %%%%%%-- WAITBAR methods-------------------------------------------

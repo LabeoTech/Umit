@@ -10,28 +10,25 @@ function fileList = getFileList(folder, extension)
 % Output:
 %   fileList (cell): list of valid filenames with file extension. Empty, if
 %       no valid files are found.
-datList = {};
+
 matFileList = dir(fullfile(folder, '*.mat'));
 % Check if "dataHistory" exists inside each file
 matFilesMap = arrayfun(@(x) matfile(fullfile(folder,x.name)), matFileList, 'UniformOutput',false);
 idxValid = cellfun(@(x) isprop(x, 'dataHistory'), matFilesMap);
 matList = {matFileList(idxValid).name}';
-
+[~,matNames,~] = cellfun(@(x) fileparts(x), matList, 'UniformOutput', false);
 if ~strcmpi(extension,'.mat')
     datFileList = dir(fullfile(folder, '*.dat'));
     [~,datNames,~] = arrayfun(@(x) fileparts(x.name), datFileList, 'UniformOutput', false);
-    [~,matNames,~] = cellfun(@(x) fileparts(x), matList, 'UniformOutput', false);
-    datList = {datFileList(ismember(datNames,matNames)).name}';
 end
 switch extension
     case '.mat'
-        fileList = matList;
+        fileList = cellfun(@(x) [x, '.mat'],setdiff(matNames,datNames), 'UniformOutput',false);
     case '.dat'
-        fileList = datList;
+        fileList = cellfun(@(x) [x, '.dat'],intersect(matNames,datNames), 'UniformOutput',false);
     otherwise
-        fileList = vertcat(datList,matList);
+        matList = cellfun(@(x) [x, '.mat'],setdiff(matNames,datNames), 'UniformOutput',false);
+        datList = cellfun(@(x) [x, '.dat'],intersect(matNames,datNames), 'UniformOutput',false);
+        fileList = vertcat(datList, matList);
 end
-
 end
-
-
