@@ -250,9 +250,9 @@ classdef PipelineManager < handle
             addRequired(p, 'func', @(x) ischar(x) || isnumeric(x));
             addOptional(p, 'b_save2File', false, @islogical);
             addOptional(p, 'saveFileName', '', @ischar);
-            addParameter(p, 'inputFrom','', @(x) ischar(x) || isnumeric(x));
-            parse(p,func, varargin{:});
-            
+            addParameter(p, 'inputFrom','', @ischar);
+            addParameter(p,'inputFileName','',@ischar);
+            parse(p,func, varargin{:});            
             %
             state = false;
             % Check if the function name is valid:
@@ -269,14 +269,21 @@ classdef PipelineManager < handle
             task.b_save2File = p.Results.b_save2File;
             task.saveFileName = p.Results.saveFileName;
             task.inputFrom = p.Results.inputFrom;
+            task.inputFileName = p.Results.inputFileName;
             
             % Control inputFrom:
             if ~isempty(task.inputFrom) && ~strcmpi(task.inputFrom, '_LOCAL_')
                 % Check if the task function needs data:
                 assert(any(strcmpi(task.argsIn, 'data')), ['The function "' task.name '" does not have "data" as input. Operation aborted!'])
-                % Check if the input function generates data:
-                assert(any(ismember({'outData','outFile'},obj.funcList(idxFunc).info.argsOut)),...
-                    ['The function "' task.inputFrom '" does not have "data" as input. Operation aborted!'])
+                idxInputFcn = strcmpi(task.inputFrom,{obj.funcList.name})
+                % Check if the input function generates data:                
+                assert(any(ismember({'outData','outFile'},obj.funcList(idxInputFcn).info.argsOut)),...
+                    ['The function "' task.inputFrom '" does not have any "data" as output. Operation aborted!'])
+                % Check if the inputFileName exists in the list of
+                % outFileNames from functions with "outFile":
+                if ~isempty(task.inputFileName) && any(strcmpi('outFile',{obj.funcList(idxinputfcn).info.argsOut}))
+                    assert(any(strcmpi(task.inputFileName, {obj.funcList(idxinputfcn).info.argsOut})),'Input file name is invalid!')
+                end
             end
             % Add branch and sequence index to the function:
             task = obj.setInput(task);
@@ -659,7 +666,10 @@ classdef PipelineManager < handle
             obj.current_seq = 0; obj.current_seqIndx = 0;
             disp('Pipeline erased!')
         end        
-       
+       %%%%% TESTING
+       function drawpipe(obj, ax)
+           obj.drawDAG(ax);
+       end
     end
     
     methods (Access = private)
@@ -897,6 +907,95 @@ classdef PipelineManager < handle
             end                                 
         end
         
+        %%%%%%--Pipeline Visualization methods ----------------------------
+        
+        function ax = drawDAG(obj, varargin)
+            % DRAWDAG creates a Directed Acyclic Graph (DAG) representation
+            % of the pipeline.
+            % Inputs:
+            %   ax (handle | optional): handle to the figure axis where the
+            %   DAG will be plotted
+            % Output:
+            %   ax (handle): idem
+            
+           p = inputParser;
+           addRequired(p,'obj')
+           addOptional(p,'ax',[],@ishandle)
+           parse(p,obj, varargin{:});
+           if isempty(p.Results.ax)
+               % Create figure when no axis is provided:
+               f = figure('Name','Pipeline Visualization');
+               ax = axes(f);
+           else
+               ax = p.Results.ax;
+           end
+           % Create sequences of function names as nodes and output file
+           % names as edges:
+           nSeq = 1:max([obj.pipe.seq], [],'all');
+           source = {};
+           target = {};
+           edgeLabels = {};
+           idxUniq = [];
+           nodeSeq = [];
+           for ii = nSeq
+               thisSeq = obj.pipe(arrayfun(@(x) any(x.seq == ii), obj.pipe));
+               otherSeq = obj.pipe(arrayfun(@(x) all(x.seq ~= ii),obj.pipe));               
+               if strcmpi(thisSeq(1).inputFrom, '_LOCAL_')
+                   source = [source,{'_LOCAL_'}];
+                   target = [target, {thisSeq(1).name}];
+                   edgeLabels = [edgeLabels, {thisSeq(1).inputFileName}];
+                   idxUniq = [idxUniq,false];
+               end
+               for jj = 1:length(thisSeq)
+                   
+                   % Check for duplicate names in other sequences:
+                   if any(strcmpi(thisSeq(jj).name,{otherSeq.name}))
+                       % append sequence number to function name:
+                       thisSeq(jj).name = [thisSeq(jj).name '_seq#' num2str(ii)];                       
+                   end
+               end               
+               nodeSeq = [nodeSeq; arrayfun(@(x) min(x.seq,[],'all'), thisSeq)];
+%                if length(thisSeq) == 1
+%                    source = [source, {thisSeq.name}];
+%                    target = source;
+%                    idxUniq = [idxUniq, true];
+%                else
+                   source = [source, {thisSeq(1:end-1).name}];
+                   target = [target {thisSeq(2:end).name}];
+%                    idxUniq = [idxUniq, false(1,length(thisSeq)-1)];
+                   edgeLabels = [edgeLabels, {thisSeq(2:end).inputFileName}];                   
+%                end
+           end
+           % Replace temporary filenames with "data" in edgeLabels:;
+           idxTag = contains(edgeLabels, num2str(obj.timeTag));
+           edgeLabels(idxTag) = repmat({'data'},1,sum(idxTag));
+           % Replace "_LOCAL_" by "Disk":
+           edgeLabels = strrep(edgeLabels, '_LOCAL_','Disk');
+           source = strrep(source, '_LOCAL_','Disk');
+           target = strrep(target, '_LOCAL_','Disk');
+           
+           % Create DAG:
+           G = digraph(source,target,'omitselfloops');
+           p = plot(G, 'Layout','layered', 'Parent',ax);           
+           labeledge(p,source, target,edgeLabels)
+           % Rearrange position of nodes:           
+%            xPos = arrayfun(@(x) min(x.seq),obj.pipe);   % Sequence number
+%            yPos = 1:length(obj.pipe) % execution order:
+           % Customize plot:
+           set(p, 'NodeFontSize',12,'EdgeFontSize', 10, 'MarkerSize',10,...
+               'NodeColor',[0 0.8 0], 'EdgeColor','k', 'ArrowPosition',0.3,...
+               'Interpreter','none');
+           ax.DataAspectRatio = [2 1 1];
+%            ax.XLimMode = 'auto';
+           view(ax,[-90 90])
+           % Hide axis:
+           axis(ax,'off')
+%            axis(ax,'image')           
+           
+        end
+        
+        %%%%%%-------------------------------------------------------------
+        
         %%%%%%--Helpers for "addTask" method -----------------------------
         
         function task = setInput(obj, task)
@@ -909,7 +1008,7 @@ classdef PipelineManager < handle
             
             b_hasDataIn = any(strcmpi('data',task.argsIn));
             b_hasDataOut = any(ismember({'outData','outFile'},task.argsOut));
-            
+            orig_seq = obj.current_seq;
             % For the first step of the pipeline:
             if obj.current_seq == 0
                 obj.current_seq = 1;
@@ -946,6 +1045,8 @@ classdef PipelineManager < handle
                     if ~any(idx)
                         % If there is no input function in the Sequence #1,
                         % abort:
+                        warning('Input function "%s" not found in sequence #1! Operation aborted.', task.inputFrom)
+                        obj.current_seq = orig_seq;
                         task = [];
                         return
                     end
@@ -970,6 +1071,7 @@ classdef PipelineManager < handle
                 task.seq = obj.current_seq;
                 task.seqIndx = obj.current_seqIndx;
                 if task.inputFileName == 0
+                    obj.current_seq = orig_seq;
                     task = [];
                 end
                 return
@@ -1004,6 +1106,7 @@ classdef PipelineManager < handle
             task.seq = obj.current_seq;
             task.seqIndx = obj.current_seqIndx;
             if task.inputFileName == 0
+                obj.current_seq = orig_seq;
                 task = [];
             end
         end
