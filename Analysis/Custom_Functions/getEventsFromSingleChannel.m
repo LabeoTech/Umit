@@ -80,16 +80,19 @@ if strcmp(opts.channel, 'auto')
 else
     sigChan = opts.channel;
 end
-f = fdesign.lowpass('N,F3dB', 4, 30, sr); % Apply low-pass filter @30Hz to remove high-frequency noise.
-lpass = design(f,'butter');
-signal = filtfilt(lpass.sosMatrix, lpass.ScaleValues, AnalogIN(:,sigChan)')';
+signal = AnalogIN(:,sigChan);
+% f = fdesign.lowpass('N,F3dB', 4, 30, sr); % Apply low-pass filter @30Hz to remove high-frequency noise.
+% lpass = design(f,'butter');
+% signal = filtfilt(lpass.sosMatrix, lpass.ScaleValues, AnalogIN(:,sigChan)')';
 % 
 if strcmp(opts.threshold, 'auto')
     opts.threshold =  min(signal) + ((max(signal) - min(signal))/2);
   fprintf('Automatic threshold selected!\n\tMin signal: %0.2f\n\tMax signal: %0.2f\n\tThreshold: %0.2f\n',...
       [min(signal), max(signal), opts.threshold])
 else
-    opts.threshold = str2double(opts.threshold);
+    if ischar(opts.threshold)
+        opts.threshold = str2double(opts.threshold);
+    end
 end
 disp('Finding events...')
 % Loading meta data file:
