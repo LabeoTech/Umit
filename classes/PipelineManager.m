@@ -13,7 +13,8 @@ classdef PipelineManager < handle
         pipe = struct('argsIn', {},'argsOut',{},'outFileName','',...
             'inputFileName', '', 'b_save2File', logical.empty, 'saveFileName',...
             '', 'opts',struct.empty,'opts_vals',struct.empty,...
-            'opts_def',struct.empty ,'name','', 'inputFrom','', 'seq',[],'seqIndx',[]);% !!If the fields are changed, please apply
+            'opts_def',struct.empty ,'name','', 'inputFrom','', 'seq',[],'seqIndx',[],...
+            'b_hasDataIn',false,'b_hasDataOut',false,'b_paramsSet',false);% !!If the fields are changed, please apply
         % the same changes to the property's set method.
         funcList struct % structure containing the info about each function in the "fcnDir".
         ProtocolObj Protocol % Protocol Object.
@@ -143,7 +144,8 @@ classdef PipelineManager < handle
                     'inputFileName', '','b_save2File', logical.empty, 'saveFileName',...
                     '', 'opts',struct.empty,'opts_vals',struct.empty,...
                     'opts_def',struct.empty ,'name','', 'inputFrom','',...
-                    'seq',[],'seqIndx',[]);
+                    'seq',[],'seqIndx',[],'b_hasDataIn',false,'b_hasDataOut',false,...
+                    'b_paramsSet',false);
             end
             % Check if all fields exist:
             if ~all(ismember(fieldnames(pipe),fieldnames(obj.pipe)))
@@ -225,7 +227,9 @@ classdef PipelineManager < handle
             % Save parameters to 'opts' structure:
             for i = 1:numel(fieldnames(obj.pipe(idxFunc).opts))
                 obj.pipe(idxFunc).opts.(out{i,1}) = out{i,2};
+                
             end
+            obj.pipe(idxFunc).b_paramsSet = true; % 
             disp(['Optional Parameters set for function : ' obj.pipe(idxFunc).name]);
         end
         
@@ -262,27 +266,28 @@ classdef PipelineManager < handle
             % Create "task" structure. This is the one that will be added
             % to the pipeline:
             task = obj.funcList(idxFunc).info;
-            task.name = obj.funcList(idxFunc).name;
-            task.inputFileName = '';
+            task.name = obj.funcList(idxFunc).name;            
             % Add default values for fields used to save the data: These
             % values will be updated later:
             task.b_save2File = p.Results.b_save2File;
             task.saveFileName = p.Results.saveFileName;
             task.inputFrom = p.Results.inputFrom;
             task.inputFileName = p.Results.inputFileName;
-            
+            task.b_paramsSet = false;
             % Control inputFrom:
-            if ~isempty(task.inputFrom) && ~strcmpi(task.inputFrom, '_LOCAL_')
+            if ~isempty(task.inputFrom)
                 % Check if the task function needs data:
                 assert(any(strcmpi(task.argsIn, 'data')), ['The function "' task.name '" does not have "data" as input. Operation aborted!'])
-                idxInputFcn = strcmpi(task.inputFrom,{obj.funcList.name})
-                % Check if the input function generates data:                
-                assert(any(ismember({'outData','outFile'},obj.funcList(idxInputFcn).info.argsOut)),...
-                    ['The function "' task.inputFrom '" does not have any "data" as output. Operation aborted!'])
-                % Check if the inputFileName exists in the list of
-                % outFileNames from functions with "outFile":
-                if ~isempty(task.inputFileName) && any(strcmpi('outFile',{obj.funcList(idxinputfcn).info.argsOut}))
-                    assert(any(strcmpi(task.inputFileName, {obj.funcList(idxinputfcn).info.argsOut})),'Input file name is invalid!')
+                if ~strcmpi(task.inputFrom, '_LOCAL_')
+                    idxInputFcn = strcmpi(task.inputFrom,{obj.funcList.name});
+                    % Check if the input function generates data:
+                    assert(any(ismember({'outData','outFile'},obj.funcList(idxInputFcn).info.argsOut)),...
+                        ['The function "' task.inputFrom '" does not have any "data" as output. Operation aborted!'])
+                    % Check if the inputFileName exists in the list of
+                    % outFileNames from functions with "outFile":
+                    if ~isempty(task.inputFileName) && any(strcmpi('outFile',{obj.funcList(idxinputfcn).info.argsOut}))
+                        assert(any(strcmpi(task.inputFileName, {obj.funcList(idxinputfcn).info.argsOut})),'Input file name is invalid!')
+                    end
                 end
             end
             % Add branch and sequence index to the function:
@@ -667,7 +672,10 @@ classdef PipelineManager < handle
             disp('Pipeline erased!')
         end        
        %%%%% TESTING
-       function drawpipe(obj, ax)
+       function drawpipe(obj, varargin)
+           if nargin == 1
+               ax = gca;
+           end
            obj.drawDAG(ax);
        end
     end
@@ -934,64 +942,170 @@ classdef PipelineManager < handle
            nSeq = 1:max([obj.pipe.seq], [],'all');
            source = {};
            target = {};
-           edgeLabels = {};
-           idxUniq = [];
-           nodeSeq = [];
+           edgeLabels = {};                      
            for ii = nSeq
                thisSeq = obj.pipe(arrayfun(@(x) any(x.seq == ii), obj.pipe));
-               otherSeq = obj.pipe(arrayfun(@(x) all(x.seq ~= ii),obj.pipe));               
-               if strcmpi(thisSeq(1).inputFrom, '_LOCAL_')
-                   source = [source,{'_LOCAL_'}];
-                   target = [target, {thisSeq(1).name}];
-                   edgeLabels = [edgeLabels, {thisSeq(1).inputFileName}];
-                   idxUniq = [idxUniq,false];
-               end
-               for jj = 1:length(thisSeq)
-                   
+               otherSeq = obj.pipe(arrayfun(@(x) all(x.seq ~= ii),obj.pipe));
+               % Rename functions to identify sequence:
+               for jj = 1:length(thisSeq)                   
                    % Check for duplicate names in other sequences:
                    if any(strcmpi(thisSeq(jj).name,{otherSeq.name}))
                        % append sequence number to function name:
-                       thisSeq(jj).name = [thisSeq(jj).name '_seq#' num2str(ii)];                       
+                       thisSeq(jj).name = [thisSeq(jj).name '_seq#' num2str(ii)];
                    end
-               end               
-               nodeSeq = [nodeSeq; arrayfun(@(x) min(x.seq,[],'all'), thisSeq)];
-%                if length(thisSeq) == 1
-%                    source = [source, {thisSeq.name}];
-%                    target = source;
-%                    idxUniq = [idxUniq, true];
-%                else
-                   source = [source, {thisSeq(1:end-1).name}];
-                   target = [target {thisSeq(2:end).name}];
-%                    idxUniq = [idxUniq, false(1,length(thisSeq)-1)];
-                   edgeLabels = [edgeLabels, {thisSeq(2:end).inputFileName}];                   
-%                end
+               end 
+               % List the source and targes of this sequence:
+               thisSource = [{'_LOCAL_'},{thisSeq(1:end-1).name}];
+               thisTarget = {thisSeq.name};
+               % Create list of dummy edge labels:
+               thisLabel = repmat({'none'},1,length(thisSource));
+               % Find steps where there is data IN and OUT, and update the
+               % "thisLabel" array:
+               dataSource = {thisSeq([thisSeq.b_hasDataIn] | [thisSeq.b_hasDataOut]).inputFrom};
+               dataTarget = {thisSeq([thisSeq.b_hasDataIn] | [thisSeq.b_hasDataOut]).name};
+               dataLabels = {thisSeq([thisSeq.b_hasDataIn] | [thisSeq.b_hasDataOut]).inputFileName};
+               % Find which sequences contain labels:
+               strSeq = cellfun(@(x,y) [x '--' y], thisSource, thisTarget, 'UniformOutput',false)';
+               strDat= cellfun(@(x,y) [x '--' y], dataSource, dataTarget, 'UniformOutput',false)';
+               [~,indxA,indxB] = intersect(strSeq,strDat, 'stable');
+               % Update labels:
+               thisLabel(indxA) = dataLabels(indxB); clear indxA indxB
+               % Append source, target and edge labels with steps where the
+               % data "skips" some functions:
+               [~,indxA] = setdiff(strDat,strSeq,'stable');
+               if ~isempty(indxA)
+                   thisSource = [thisSource, dataSource(indxA)];
+                   thisTarget = [thisTarget, dataTarget(indxA)];
+                   thisLabel = [thisLabel, dataLabels(indxA)];
+               end
+               clear indxA dataSource dataTarget dataLabels               
+               % Append lists:
+               source = [source, thisSource];
+               target = [target, thisTarget];
+               edgeLabels = [edgeLabels, thisLabel];                                             
+               %
            end
-           % Replace temporary filenames with "data" in edgeLabels:;
+           % Replace temporary filenames with "data" in edgeLabels:
            idxTag = contains(edgeLabels, num2str(obj.timeTag));
            edgeLabels(idxTag) = repmat({'data'},1,sum(idxTag));
            % Replace "_LOCAL_" by "Disk":
            edgeLabels = strrep(edgeLabels, '_LOCAL_','Disk');
            source = strrep(source, '_LOCAL_','Disk');
            target = strrep(target, '_LOCAL_','Disk');
-           
            % Create DAG:
            G = digraph(source,target,'omitselfloops');
-           p = plot(G, 'Layout','layered', 'Parent',ax);           
+           p = plot(G, 'Layout','layered', 'Parent',ax, 'UserData',G.Nodes.Name); 
+           layout(p, 'layered','Direction','right');
            labeledge(p,source, target,edgeLabels)
-           % Rearrange position of nodes:           
-%            xPos = arrayfun(@(x) min(x.seq),obj.pipe);   % Sequence number
-%            yPos = 1:length(obj.pipe) % execution order:
            % Customize plot:
            set(p, 'NodeFontSize',12,'EdgeFontSize', 10, 'MarkerSize',10,...
-               'NodeColor',[0 0.8 0], 'EdgeColor','k', 'ArrowPosition',0.3,...
-               'Interpreter','none');
-           ax.DataAspectRatio = [2 1 1];
-%            ax.XLimMode = 'auto';
-           view(ax,[-90 90])
+               'NodeColor',[.0 .8 0], 'EdgeColor','k', 'ArrowPosition',0.3, 'Interpreter','none');           
+           % Set nodes without params to gray:           
+           idxNoParams = [true arrayfun(@(x) isempty(x.opts), obj.pipe)'];
+           highlight(p,G.Nodes.Name(idxNoParams),'NodeColor',[.8 .8 .8]); 
+           % Set nodes with params not set to red:           
+           idxParams = ~[true obj.pipe.b_paramsSet];
+           highlight(p, G.Nodes.Name(idxParams & idxNoParams),'NodeColor',[.8 0 0]);           
+           % Add legend:
+           % Here, we create fake invisible dots to create custom legend:
+           hold(ax,'on')
+           Lb_1 = plot(p.XData(1),p.YData(1),'ro','MarkerFaceColor',[.8 0 0]);
+           Lb_2 = plot(p.XData(1),p.YData(1),'go','MarkerFaceColor',[0 .8 0]);
+           Lb_3 = plot(p.XData(1),p.YData(1),'ko','MarkerFaceColor',[.8 .8 .8]);
+           uistack([Lb_1, Lb_2, Lb_3],'bottom');
+           hold(ax,'off')
+           leg = legend([Lb_1, Lb_2, Lb_3], {'Params not set', 'Params set', 'No params'},'Location','best');          
+           figH = ancestor(leg,'figure'); leg.Color = figH.Color;
+           % Adjust axis:
+           ax.YLim = [floor(ax.YLim(1)), ceil(ax.YLim(2))];           
+           ax.DataAspectRatio = [1 2 1];      
+           disableDefaultInteractivity(ax);
            % Hide axis:
-           axis(ax,'off')
-%            axis(ax,'image')           
-           
+           axis(ax,'off') 
+           % Add DataTips:
+           dcm_obj = datacursormode(figH);
+           set(dcm_obj,'UpdateFcn',{@showParams,obj.pipe}, 'Enable','off', 'Interpreter','none');                  
+           % Add custom context menu
+           c = uicontextmenu('Parent',figH,'Callback',{@showUImenu,p});
+           p.UIContextMenu = c;
+           uimenu('Parent',c,'Label','Set Parameters','MenuSelectedFcn', {@setParams, p});           
+           %%%%%--Local callbacks------------------------------------------
+            function txt = showParams(~,evnt)
+               % UpdateFcn for datacursormode in DAG figure.
+               % It shows the parameters of the selected function in the
+               % GraphPlot.
+                       
+               % Get function name:               
+               indx = find(evnt.Target.XData == evnt.Position(1) & evnt.Target.YData == evnt.Position(2));
+               if strcmpi(evnt.Target.NodeLabel{indx},'Disk')
+                   % This means that the node is "Disk"
+                   txt = 'Local folder';
+                   return
+               end
+               fInfo = obj.pipe(indx-1);
+               if isempty(fInfo.opts)
+                   txt = sprintf('"%s"\nNo parameters',fInfo.name);
+                   return
+               end
+               % Get fieldnames and values to create text:
+               fn = fieldnames(fInfo.opts)';
+               % Transform boolean to "Yes", "No";
+               boolMap = containers.Map([true, false],{'Yes','No'});
+               for kk = 1:length(fn)
+                   if islogical(fInfo.opts.(fn{kk}))
+                       fInfo.opts.(fn{kk}) = boolMap(fInfo.opts.(fn{kk}));
+                   end
+               end
+               vals = cellfun(@(x) num2str(fInfo.opts.(x),3), fn,'UniformOutput',false);               
+               info = vertcat(fn,vals);
+               txt = sprintf('"%s"\n Parameters:', fInfo.name);
+               txt = [txt sprintf('\n\t%s: %s',info{:})];               
+            end
+            
+            function setParams(src,~,dat)
+                % This callback allows the user to interactively set the
+                % parameters of a function 
+                
+                % Get index of clicked Item:                
+                idx = src.Parent.UserData;
+                % Get pipeline info:
+                fInfo = obj.pipe(idx-1);
+                % Launch setOpts:
+                obj.setOpts(fInfo.name,fInfo.seq);
+                % update node color:
+                dat.NodeColor(idx,:) = [0 .8 0];                
+                disp('Menu clicked!')
+            end
+            
+            function showUImenu(src,~,dat)
+                % This callback checks if the selected function has any
+                % parameters to set. If so, the menu button will be
+                % enabled.                              
+                
+                % Get cursor coordinates:
+                AX = findobj(src.Parent,'Type','axes');
+                pt = get(AX, 'CurrentPoint');pt = pt(1,1:2);
+                % Calculate euclidean distance to all points in the
+                % GraphPlot                
+                x = dat.XData;
+                y = dat.YData;
+                dist = sqrt((x-pt(1)).^2 + (y-pt(2)).^2);
+                [lmin,idx] = min(dist);
+                tol = max(diff(AX.XLim),diff(AX.YLim))/20;
+                if lmin > tol || isempty(idx)
+                    delete(src)
+                    return
+                end
+                src.UserData = idx;
+                if isequal(dat.NodeColor(idx,:),[.8 .8 .8])
+                    src.Children.Enable = 'off'; % Disable menu
+                else
+                    src.Children.Enable = 'on';
+                end
+                    
+            end
+            
+                
         end
         
         %%%%%%-------------------------------------------------------------
@@ -1215,6 +1329,10 @@ classdef PipelineManager < handle
                     [~,list(i).name, ~] = fileparts(list(i).name);
                     list(i).info = out;
                     list(i).info.opts_def = list(i).info.opts; % Duplicate default params.
+                    % add boolean to indicate if the function as inputs and
+                    % outputs (This will be used by other methods)
+                    list(i).info.b_hasDataIn = any(contains(list(i).info.argsIn,'data','IgnoreCase',true));
+                    list(i).info.b_hasDataOut = any(contains(list(i).info.argsOut,{'data','file'},'IgnoreCase',true));                    
                     obj.funcList = [obj.funcList ; list(i)];
                 end
             end
@@ -1802,3 +1920,4 @@ end
         end
     end
 end
+
