@@ -1555,7 +1555,7 @@ for i = 1:length(fields)
             vo.Value = vo.Items(strcmp(listVals{i},currVals{i}));
         case 'charArrayMultiSelect'
             % Create uipanel with series of checkboxes:
-            idxDef = strcmp(listVals{i},currVals{i});
+            idxDef = ismember(listVals{i},currVals{i});
             glChar = uigridlayout(vo,[length(listVals{i}),1]);
             glChar.RowHeight = repmat({20},size(listVals{i}));
             glChar.Scrollable = 'on';
