@@ -1200,8 +1200,8 @@ classdef PipelineManager < handle
             xSpacing = 50; % Minimal distances between edges of buttons on X;
             ySpacing = 100; % Idem in Y.
             btnHeight = 40; % Button Height in points.
-            myRed = [1 0 0];
-            myGreen = [0 1 0];
+            myRed = [.85 0 0];
+            myGreen = [0 .85 0];
             myGray = [.8 .8 .8];
             % Create panel to be able to lock the figure during PushButton
             % Callback execution:
@@ -1231,14 +1231,8 @@ classdef PipelineManager < handle
                 btnArr(ii).Callback = {@callSetOpts,obj,pan}; % Call setOpts to set function's paramerets                
                 btnArr(ii).Position(3) =  btnArr(ii).Extent(3)+10; % Avoid word wrapping
                 btnArr(ii).Position(4) = btnHeight;
-                % Change button background color if parameters were set:
-                if isempty(obj.pipe(ii).opts)
-                    btnArr(ii).BackgroundColor = myGray; % Gray. No parameters.
-                elseif obj.pipe(ii).b_paramsSet
-                    btnArr(ii).BackgroundColor = myGreen; % Green. Parameters already set.
-                else
-                    btnArr(ii).BackgroundColor = myRed; % Red. Parameters not set.
-                end
+                btnArr(ii).BackgroundColor = fH.Color;
+               
                 % Create gradient of color o
                 % Add tooltips for each one:                
                 if ~isempty(pp(ii).opts)
@@ -1270,7 +1264,20 @@ classdef PipelineManager < handle
             % Make all buttons the same width;
             maxW = max(arrayfun(@(x) x.Position(3), btnArr));
             arrayfun(@(x) set(x, 'Position',[x.Position(1), x.Position(2), maxW, x.Position(4)]),btnArr);
-            
+            % Improve buttons appearences:
+            myGreen = obj.prettyfyBtn(myGreen,btnArr(1).Position([3 4]));
+            myRed = obj.prettyfyBtn(myRed,btnArr(1).Position([3 4]));
+            myGray = obj.prettyfyBtn(myGray,btnArr(1).Position([3 4]));
+            for ii = 1:length(pp)
+            % Change button background color if parameters were set:
+                if isempty(obj.pipe(ii).opts)
+                    btnArr(ii).CData = myGray; % Gray. No parameters.
+                elseif obj.pipe(ii).b_paramsSet
+                    btnArr(ii).CData = myGreen; % Green. Parameters already set.
+                else
+                    btnArr(ii).CData = myRed; % Red. Parameters not set.
+                end
+            end
             % Check if the figure is sufficiently large to accomodate all buttons
             % without overlap:
             btnX = arrayfun(@(x) x.Position(3), btnArr);
@@ -1424,7 +1431,7 @@ classdef PipelineManager < handle
                oldStr = src.Tooltip(1:strfind(src.Tooltip,'--')-1);               
                src.Tooltip = strrep(src.Tooltip,oldStr,obj.textifyOpts(obj.pipe(ppIndx).opts));
                % Change the button color to green:
-               src.BackgroundColor = myGreen;  
+               src.CData = myGreen;  
                % For some reason, the tooltip doesn't update until we
                % resize the figure...
                f = ancestor(src,'Figure');
@@ -2061,6 +2068,38 @@ classdef PipelineManager < handle
             end
             info = vertcat(fn,vals);
             txt = [sprintf('Parameters:\n'), sprintf('%s: "%s"\n',info{:})];
+        end
+        function rgb = prettyfyBtn(~, color, btnSz)
+            % This creates a CData with the given color (rgb triplet)
+            % that mimics a rounded button (
+            w = btnSz(1); % width
+            h = btnSz(2); % height
+            
+            % Choose the radius of the rounded corners
+            r = round(.05*w); % radius
+            
+            % Define the x and y grids using meshgrid
+            [x, y] = meshgrid(1:w, 1:h);
+            
+            % Define a mask for the rounded rectangle
+            mask = ((x <= r) & (y <= r) & (sqrt((x - r).^2 + (y - r).^2)) <= r) | ... % top left corner
+                ((x >= w - r) & (y <= r) & (sqrt((x - w + r).^2 + (y - r).^2)) <= r) | ... % top right corner
+                ((x <= r) & (y >= h - r) & (sqrt((x - r).^2 + (y - h + r).^2)) <= r) | ... % bottom left corner
+                ((x >= w - r) & (y >= h - r) & (sqrt((x - w + r).^2 + (y - h + r).^2)) <= r); % bottom right corner
+            
+            % Create the rounded rectangle
+            rect = ones(size(x));
+            rect(mask) = 0;
+            msk1 = zeros(size(x));
+            msk1(r:end-r,:) = 1;
+            msk1(:,r:end-r) = 1;
+            antiMsk = ~(~rect | msk1);
+            rim = bwmorph(~antiMsk,'remove');
+            r = repmat(color(1),h,w); r(antiMsk) = .94; r(rim) = 0;
+            g = repmat(color(2),h,w);g(antiMsk) = .94; g(rim) = 0;
+            b = repmat(color(3),h,w); b(antiMsk) = .94; b(rim) = 0;
+            rgb = cat(3,r,g,b);
+            
         end
     end
 end
