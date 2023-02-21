@@ -1200,14 +1200,15 @@ classdef PipelineManager < handle
             xSpacing = 50; % Minimal distances between edges of buttons on X;
             ySpacing = 100; % Idem in Y.
             btnHeight = 40; % Button Height in points.
-            myRed = [1, .2 .2];
-            myGreen = [.2 1 .2];
+            myRed = [1 0 0];
+            myGreen = [0 1 0];
             myGray = [.8 .8 .8];
             % Create panel to be able to lock the figure during PushButton
             % Callback execution:
             pan = uipanel('Parent', fH, 'Position',[0 0 1 1], 'Title','Setting parameter...','Visible','off');
             % Create "Disk" button at the middle of the figure:
-            diskBtn = uicontrol(fH,'Style','pushbutton','String','Disk','Enable','off', 'FontSize',12);            
+            diskBtn = uicontrol(fH,'Style','pushbutton','String','Disk','Enable','off', 'FontSize',12);      
+            diskBtn.Position(4) = btnHeight;
             % Re-calculate sequence indices for 2+ sequences for a better
             % display:
             if any([pp.seq]>1)
@@ -1238,6 +1239,7 @@ classdef PipelineManager < handle
                 else
                     btnArr(ii).BackgroundColor = myRed; % Red. Parameters not set.
                 end
+                % Create gradient of color o
                 % Add tooltips for each one:                
                 if ~isempty(pp(ii).opts)
                     tipTxt = obj.textifyOpts(pp(ii).opts);
@@ -1257,6 +1259,9 @@ classdef PipelineManager < handle
                     % Add input source to data tip:
                     tipTxt = [tipTxt, sprintf('\n%s',repmat('-',1,20)),sprintf('\nInput From: "%s"',source)];
                     if ~isempty(sourceFile)
+                        if contains(sourceFile, obj.timeTag, 'IgnoreCase',true)
+                            sourceFile = 'data';
+                        end
                         tipTxt = [tipTxt, sprintf('\nInput File: "%s"',sourceFile)];
                     end
                 end
@@ -1298,10 +1303,36 @@ classdef PipelineManager < handle
             if max(seqList) == 1
                 % If there is only one sequence, put it in the middle as well
                 ctrX(2:end) = ctrX(1);
-            else
+            else                                
+                seqPairs = zeros(length(pp),2);
+                for ii = 1:length(pp)
+                    % Check if the step input is from a different sequence,
+                    % if so, ensure that there are no arrow crossings by
+                    % rearranging the x positions:
+                    if isempty(pp(ii).inputFrom) || pp(ii).inputFrom == 0
+                        seqPairs(ii,:) = [pp(ii).seq(1,1), pp(ii).seq(1,1)];
+                    else
+                        seqPairs(ii,:) = [pp(pp(ii).inputFrom).seq(1,1), pp(ii).seq(1,1)];
+                    end
+                end
+                seqPairs = unique(seqPairs,'rows');
+                crossSeqs = seqPairs(seqPairs(:,1)~=seqPairs(:,2),:);
+                permIndx = seqList;
+                if ~isempty(crossSeqs)
+                    allPerms = perms(seqList);
+                    crossSum = zeros(size(allPerms,1),1);
+                    for ii = 1:size(allPerms,1)
+                        [~,idx_target] = ismember(crossSeqs(:,2), allPerms(ii,:));
+                        [~,idx_source] = ismember(crossSeqs(:,1), allPerms(ii,:));
+                        crossSum(ii) = sum(abs(idx_target - idx_source));
+                    end
+                    % Find sequence with minimal number of crossings:
+                    permIndx = allPerms(find(crossSum == min(crossSum),1,'last'),:);                    
+                end
                 % Get sequence X positions:
                 xPos = round(linspace(bounds(1), bounds(3),max(seqList)));
-                Xdict = containers.Map(seqList,xPos);
+                xPos = xPos(permIndx);                
+                Xdict = containers.Map(seqList,xPos);                
                 % Update ctrX, except "Disk":
                 for ii = 1:length(pp)
                     ctrX(ii+1) = Xdict(pp(ii).seq(1,1));
@@ -1334,8 +1365,7 @@ classdef PipelineManager < handle
                     an = annotation('arrow',[0,0],[1,1],'Units','pixels');
                     an.X = [arrX(1) arrX(seq(1)+1)];
                     if ~isequal(arrYsource(1), arrYtarget(seq(1)+1))
-                        % Create lines and arrow isntead of an angled
-                        % arrow:
+                        % Create arrows between columns
                         half_distY = (arrYsource(1) - arrYtarget(seq(1)+1))/2;
                         ln1 = annotation('line',[0,0],[1,1],'Units','pixels');
                         ln1.X = [an.X(1), an.X(1)];
@@ -1344,8 +1374,7 @@ classdef PipelineManager < handle
                         ln2.X = [an.X(1), an.X(2)];
                         ln2.Y = [arrYsource(1) - half_distY, arrYsource(1) - half_distY];
                         an.X = [an.X(2) an.X(2)];
-                        an.Y = [arrYsource(1) - half_distY, arrYtarget(seq(1)+1)];
-                        disp('Angled Arrow found!')
+                        an.Y = [arrYsource(1) - half_distY, arrYtarget(seq(1)+1)];                        
                     else
                         an.Y = [arrYsource(1) arrYtarget(seq(1)+1)];
                     end
@@ -1354,7 +1383,7 @@ classdef PipelineManager < handle
                     an = annotation('arrow',[0,0],[1,1],'Units','pixels');
                     an.X = [arrX(seq(jj)+1) arrX(seq(jj+1)+1)];                    
                     if ~isequal(arrYsource(seq(jj)+1), arrYtarget(seq(jj+1)+1))
-                        disp('Angled Arrow found!')
+                        % Create arrows between columns
                         half_distY = (arrYsource(seq(jj)+1) - arrYtarget(seq(jj+1)+1))/2;
                         ln1 = annotation('line',[0,0],[1,1],'Units','pixels');
                         ln1.X = [an.X(1), an.X(1)];
@@ -1366,8 +1395,7 @@ classdef PipelineManager < handle
                         an.Y = [arrYsource(seq(jj)+1) - half_distY, arrYtarget(seq(jj+1)+1)];
                     else
                         an.Y = [arrYsource(seq(jj)+1) arrYtarget(seq(jj+1)+1)];
-                    end
-                    %         annotation('arrow',[arrX(seq(jj)+1) arrX(seq(jj+1)+1)],[arrYsource(seq(jj)+1) arrYtarget(seq(jj+1)+1)]);
+                    end                    
                 end
             end
             % Put panel on top:
