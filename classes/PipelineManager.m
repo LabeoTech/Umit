@@ -27,8 +27,7 @@ classdef PipelineManager < handle
         tmp_LogBook % Temporarily stores the table from PROTOCOL.LOGBOOKFILE
         tmp_BranchPipeline % Temporarily stores LogBook from a Hierarchical branch.
         PipelineSummary % Shows the jobs run in the current Pipeline
-        tmp_TargetObj % % Temporarily stores an object (TARGEROBJ).
-        current_task % Task structure currently running.
+        tmp_TargetObj % % Temporarily stores an object (TARGEROBJ).        
         current_pipe % Pipeline currently running.
         current_data % Data available in the workspace during pipeline.
         current_metaData % MetaData associated with "current_data".
@@ -345,36 +344,36 @@ classdef PipelineManager < handle
             fprintf('Added "%s" to sequence #%d of the pipeline.\n',task.name, obj.current_seq)
             state = true;
         end
-        
-        function state = rmTask(obj,func,varargin)
-            % RMTASK removes a given function from the existing pipeline and
-            % updates the remaining steps in order to maintain the pipeline
-            % workflow.
-            % Inputs:
-            %   func (str || char):  name or index of the analysis function
-            %       contained in obj.funcList property.
-            %   fromSeq (positive integer): Optional. Sequence number of the input
-            %       function set in "inputFrom" parameter. If not provided, we
-            %       assume that the function comes from the sequence "1". This
-            %       parameter is ignored if the input comes from the disk.
-            % Output:
-            %   state (bool): FALSE, if failed to add the task to the
-            %   pipeline.
-            
-            p = inputParser;
-            addRequired(p,'func',@(x) ischar(x) || isnumeric(x));
-            addParameter(p,'fromSeq',1,@isPositiveIntegerValuedNumeric);
-            parse(p,func,varargin{:});
-            %
-            state = false;
-            % Check if the function exists in the pipeline sequence:
-            idxFunc = ( strcmpi(p.Results.func,{obj.pipe.name}) && arrayfun(@(x) any(x.seq == p.Results.fromSeq),obj.pipe) );
-            assert(any(idxFunc),['Operation aborted! The function "' p.Results.func '" does not exist!']);
-            %
-            %%%%% TBD %%%%%
-            
-            
-        end
+        %%%%% TO BE DONE --------------------------------------------------
+%         function state = rmTask(obj,func,varargin)
+%             % RMTASK removes a given function from the existing pipeline and
+%             % updates the remaining steps in order to maintain the pipeline
+%             % workflow.
+%             % Inputs:
+%             %   func (str || char):  name or index of the analysis function
+%             %       contained in obj.funcList property.
+%             %   fromSeq (positive integer): Optional. Sequence number of the input
+%             %       function set in "inputFrom" parameter. If not provided, we
+%             %       assume that the function comes from the sequence "1". This
+%             %       parameter is ignored if the input comes from the disk.
+%             % Output:
+%             %   state (bool): FALSE, if failed to add the task to the
+%             %   pipeline.
+%             
+%             p = inputParser;
+%             addRequired(p,'func',@(x) ischar(x) || isnumeric(x));
+%             addParameter(p,'fromSeq',1,@isPositiveIntegerValuedNumeric);
+%             parse(p,func,varargin{:});
+%             %
+%             state = false;
+%             % Check if the function exists in the pipeline sequence:
+%             idxFunc = ( strcmpi(p.Results.func,{obj.pipe.name}) && arrayfun(@(x) any(x.seq == p.Results.fromSeq),obj.pipe) );
+%             assert(any(idxFunc),['Operation aborted! The function "' p.Results.func '" does not exist!']);
+%             %
+%            
+%             
+%             
+%         end
         
         function varargout = showPipeSummary(obj)
             % This method creates a summary of the current pipeline.
@@ -471,7 +470,7 @@ classdef PipelineManager < handle
             end
             
             for ii = 1:size(targetIdxArr,1)
-                % Clear current data,  metaData and File List before starting the pipeline:
+                % Clear current data,  metaData and File List for each item in te pipeline:
                 obj.current_data = []; obj.current_metaData = [];obj.current_outFile = {};
                 obj.b_state = true;
                 % Get handle of current object:
@@ -502,8 +501,7 @@ classdef PipelineManager < handle
                         [thisSeq, skippedFcns,selFile] = obj.skipSteps(thisSeq,obj.tmp_TargetObj.SaveFolder);
                         if isempty(thisSeq)
                             % When all sequence is skipped:
-                            fprintf('All steps skipped from the current sequence\n')
-                            obj.PipelineSummary
+                            fprintf('All steps skipped from the current sequence!\n')                            
                             % Initialize empty Log for current object:
                             LastLog = obj.ProtocolObj.createEmptyTable;
                             % Fill out Log with Subject/Acquisition/Modality IDs :
@@ -520,10 +518,12 @@ classdef PipelineManager < handle
                     end
                     % Run pipeline sequence in each target object:
                     for kk = 1:length(thisSeq)
-                        obj.current_task = thisSeq(kk);
-                        obj.setWaitBar('UpdateTask', kk/length(thisSeq));
+                        task = thisSeq(kk);
+                        obj.setWaitBar('UpdateTask', kk/length(thisSeq),'taskName',task.name);
                         fprintf('Running task # %d/%d ----->>>>>\n',kk,length(thisSeq));
-                        obj.run_taskOnTarget;
+                        % Execute step on target object:
+                        obj.run_taskOnTarget(task);
+                        % If execution failed, abort.
                         if ~obj.b_state
                             break
                         end
@@ -542,8 +542,8 @@ classdef PipelineManager < handle
                     fprintf([repmat('-',1,50),'\n']);
                     % Remove temporary files with appended with the "timeTag":
                     obj.deleteTemporaryFiles(obj.tmp_TargetObj.SaveFolder);
-                    % Abort outer loop if user cancels pipeline:
-                    if ~ishandle(obj.h_wbItem)
+                    % Abort outer loop if user cancels pipeline or a pipeline execution failed:
+                    if ~ishandle(obj.h_wbItem) || ~obj.b_state
                         break
                     end
                 end
@@ -561,6 +561,7 @@ classdef PipelineManager < handle
             protocol = obj.ProtocolObj;
             save([obj.ProtocolObj.SaveDir obj.ProtocolObj.Name '.mat'], 'protocol');
             disp('Protocol object Saved!');
+            % Delete progress bars:
             delete([obj.h_wbItem, obj.h_wbTask]);
             % Request User permission to save error report:
             obj.genErrorReport;
@@ -722,450 +723,15 @@ classdef PipelineManager < handle
             % This function erases the pipe property and resets the funcList
             % property to default parameter values.
             obj.pipe = struct();
-            % Clear current data,  metaData and File List:
-            obj.current_data = []; obj.current_metaData = [];obj.current_outFile = {};
-            % Reset sequence:
+            % Reset some properties:
+            obj.current_data = []; obj.current_metaData = [];obj.current_outFile = {};            
             obj.current_seq = 0; obj.current_seqIndx = 0;
+            obj.b_pipeIsValid = false;            
+            %
             disp('Pipeline erased!')
         end
-        %%%%% TESTING
-        function drawPP(obj,varargin)
-            if nargin == 1
-                obj.drawPipe();
-            else
-                obj.drawPipe(varargin{:});
-            end
-        end
-    end
-    
-    methods (Access = private)
-        
-        function run_taskOnTarget(obj)
-            % RUN_TASKONTARGET runs a task in the pipeline structure array in
-            % TASK.
-            %   It checks if the command TASK.FUNCNAME was already
-            %   sucessfully performed by comparing it to the LOGBOOK from
-            %   the PROTOCOL object. Also, it appends the information of
-            %   the task on the object's LASTLOG.
-            
-            % Current task:
-            task = obj.current_task;
-            % Initialize empty Log for current object:
-            LastLog = obj.ProtocolObj.createEmptyTable;
-            % Fill out Log with Subject/Acquisition/Modality IDs :
-            LastLog(:,1:3) = strsplit(obj.targetObjFullID, ' -- ');
-            % Add class name to table:
-            LastLog(:,4) = {obj.ClassName};
-            LastLog(:,5) = {task.name};
-            %%%
-            % Create function string and update log table:
-            task.funcStr = createFcnString(obj, task);
-            LastLog.Job = {task.funcStr};
-            % Add full path of input file, if applicable:
-            b_hasInputFile = false;
-            if strcmpi(task.inputFileName,'data')
-                % Do nothing
-            elseif ~isempty(task.inputFileName)
-                b_hasInputFile = true;
-                LastLog.InputFile_Path = fullfile(obj.tmp_TargetObj.SaveFolder, task.inputFileName);
-            end
-            %  Execute the task:
-            try
-                % Control for missing input files:
-                if b_hasInputFile
-                    errID = 'MATLAB:Umitoolbox:PipelineManager:FileNotFound';
-                    errmsg = ['Input File for function ' task.name ' not found!'];
-                    assert(isfile(fullfile(obj.tmp_TargetObj.SaveFolder, task.inputFileName)),...
-                        errID,errmsg);
-                    obj.loadInputFile(task);
-                end
-                fprintf('\tFunction Name: %s \n\n',task.name);
-                % Load options structure in the workspace.
-                opts = task.opts; %#ok the "opts" structure is used in the EVAL function.
-                % Evaluate function string:
-                eval(task.funcStr);
-                % Update log table and tell other methods that the function
-                % was successfully run:
-                obj.b_state = true;
-                LastLog.Messages = 'No Errors';
-                % Update data history of current data with task:
-                obj.updateDataHistory(task);
-            catch ME
-                obj.b_state = false;
-                LastLog.Messages = {getReport(ME,'extended', 'hyperlinks','off')};
-                LastLog.Messages_short = {getReport(ME, 'basic','hyperlinks','off')};
-                disp('FAILED!');
-            end
-            % Save data to file:
-            if task.b_save2File && obj.b_state
-                % Look for tasks with output data from the current step and
-                % save the data to a .DAT or .MAT file:
-                obj.saveDataToFile(task,false)
-            elseif obj.b_saveDataBeforeFail && ~obj.b_state
-                % Look for tasks from the previous steps given that the
-                % current one failed and save it to a file:
-                indx = find(strcmp(task.name, {obj.pipe.name}));
-                if indx > 1
-                    obj.saveDataToFile(obj.pipe(indx-1),true);
-                end
-            end
-            % Update log table of target object:
-            LastLog.Completed = obj.b_state;
-            LastLog.RunDateTime = datetime('now');
-            obj.tmp_TargetObj.LastLog = [obj.tmp_TargetObj.LastLog; LastLog];
-            % Remove "empty" rows from the target Object Log table:
-            idx_emptyRow = all(strcmp('None',table2cell(obj.tmp_TargetObj.LastLog(:,1:5))),2);
-            obj.tmp_TargetObj.LastLog(idx_emptyRow,:) = [];
-        end
-        
-        function getTargetObj(obj,targetIdx)
-            % GETTARGETOBJ finds the object TARGETOBJ indicated by the
-            % index TARGETIDX inside PROTOCOL.
-            
-            tgtSz = size(targetIdx,2);
-            switch tgtSz
-                case 1
-                    targetObj = obj.ProtocolObj.Array.ObjList(targetIdx);
-                case 2
-                    targetObj = obj.ProtocolObj.Array.ObjList(targetIdx(1)).Array.ObjList(targetIdx(2));
-                case 3
-                    targetObj = obj.ProtocolObj.Array.ObjList(targetIdx(1)).Array.ObjList(targetIdx(2)).Array.ObjList(targetIdx(3));
-            end
-            obj.tmp_TargetObj = targetObj;
-        end
-        
-        function [newSeq,skippedSteps, selFile] = skipSteps(obj,thisSeq,folderName)
-            % SKIPSTEPS looks in the folder "folderName" for .dat/.mat files
-            % that can potentially replace the N first steps of the pipeline
-            % sequence "thisSeq".
-            % The criteria to replace the pipeline steps are:
-            %    1- Same creation date time of the functions.
-            %    2- Same function name
-            %    3- Same function "opts" parameters
-            %    4- No intermediate steps from the file is used as input to
-            %    other sequences
-            %    Inputs:
-            %        thisSeq (struct): current sequence of the pipeline.
-            %        folderName(char): full path to the folder containing
-            %            files.
-            %    Outputs:
-            %        newSeq (struct): updated sequence without the redundant
-            %            steps.
-            %        skippedSteps (cell): list of skipped function names from
-            %            "thisSeq".
-            
-            % Get list of valid files in the folder:
-            fileList = getFileList(folderName, 'all');
-            %
-            newSeq = thisSeq;
-            skippedSteps = {};
-            newSeqArr = cell(size(fileList));
-            selFile = '';
-            skippedStepsArr = newSeqArr;
-            % Compare dataHistory with pipeline sequence:
-            for ii = 1:length(fileList)
-                [newSeqArr{ii}, skippedStepsArr{ii}] = compareDataHistory(obj,thisSeq,fullfile(folderName,fileList{ii}));
-            end
-            % Check for matches:
-            if all(cellfun(@isempty,skippedStepsArr))
-                return
-            end
-            
-            % Select file with the largest number of steps:
-            % Check if there is a file that contains all sequence:
-            idxSkipAll = cellfun(@isempty,newSeqArr);
-            if any(idxSkipAll)
-                indxSkip = find(idxSkipAll,1,'first');
-                selFile = fileList{indxSkip};
-                step.inputFileName = selFile;
-                step.saveFileName = thisSeq(end).saveFileName;
-                step.name = thisSeq(end).name;
-                obj.loadInputFile(step);% Load step;
-                if ~strcmpi(fileList{indxSkip}, step.saveFileName)
-                    obj.saveDataToFile(step,false) %Save to file
-                end
-                newSeq = {}; skippedSteps = {'All'};
-                return
-            end
-            nSteps = cellfun(@numel,skippedStepsArr);
-            idxMax = find(nSteps == max(nSteps),1,'first');
-            selFile = fileList{idxMax};
-            newSeq = newSeqArr{idxMax};
-            skippedSteps = skippedStepsArr{idxMax};
-            %%%%%--Local function ------------------------------------------
-            function [outSeq,skipNames] = compareDataHistory(obj,seqIn, fileIn)
-                % COMPAREDATAHISTORY compares the dataHistory of "fileIn"
-                % with the pipeline sequence "seqIN" and outputs the
-                % updated sequence "outSeq" and the list of skipped steps
-                % "skipNames".
-                outSeq = seqIn;
-                skipNames = {};
-                % Load data history:
-                [path,file,ext] = fileparts(fileIn);
-                a = load(fullfile(path,[file '.mat']),'dataHistory');
-                dataHistory = a.dataHistory; clear a
-                % Compare datetimes:
-                [~,locB] = ismember({dataHistory.name},{obj.funcList.name});
-                idxSameDate = cellfun(@(x,y) strcmpi(datestr(x),y),{dataHistory.creationDatetime},...
-                    {obj.funcList(locB).date});
-                %                 if ~all(idxSameDate)
-                %                     return
-                %                 end
-                % Compare function names and optional parameters:
-                thisHistory = struct();
-                for jj = 1:length(seqIn)
-                    thisHistory(jj).name = seqIn(jj).name;
-                    thisHistory(jj).opts = seqIn(jj).opts;
-                end
-                % IF there is an input file, prepend the dataHistory to the current
-                % sequence:
-                idxFromFile = find(~cellfun(@isempty,{seqIn.inputFileName}),1,'first');
-                if idxFromFile > 0
-                    % Load the input file dataHistory:
-                    [~,inputFile,~] = fileparts(seqIn(idxFromFile).inputFileName);
-                    dh = load(fullfile(path,[inputFile,'.mat']),'dataHistory'); dh = dh.dataHistory;
-                    prepend_info = struct();
-                    for jj = 1:length(dh)
-                        prepend_info(jj).name = dh(jj).name;
-                        prepend_info(jj).opts = dh(jj).opts;
-                        thisHistory = horzcat(prepend_info,thisHistory(idxFromFile:end));
-                    end
-                    clear inputFile prepend_info
-                end
-                % Check for the existence of consecutive equal steps:
-                b_isEqual = false(size(dataHistory));
-                for jj = 1:length(dataHistory)
-                    % Compare name and opts:
-                    b_isEqual(jj) = (strcmpi(thisHistory(jj).name, dataHistory(jj).name) && ...
-                        isequaln(thisHistory(jj).opts,dataHistory(jj).opts));
-                    if jj == length(thisHistory) || ~b_isEqual(jj)
-                        break
-                    end
-                end
-                if ~all(b_isEqual)
-                    return
-                end
-                % Get indices of sequence corresponding to the dataHistory:
-                [~,indxEqual] = ismember({dataHistory(b_isEqual).name},{seqIn.name});indxEqual(indxEqual == 0) = [];
-                % If any consecutive steps were equal, check if the intermediate steps
-                % from dataHistory are inputs to other sequences:
-                b_isInputFcn = arrayfun(@(x) numel(x) > 1, seqIn(indxEqual(1:end-1)));
-                if any(b_isInputFcn)
-                    return
-                end
-                % If all steps are to be skipped, the outSeq will return
-                % empty
-                outSeq = seqIn;
-                outSeq(indxEqual) = []; % Erase first N steps corresponding to the dataHistory.
-                if ~isempty(outSeq)
-                    % If the sequence is partially skipped, update the
-                    % sequence:
-                    indx = find(~cellfun(@isempty,({outSeq.inputFrom})), 1,'first');
-                    outSeq(indx).inputFrom = '_LOCAL_';
-                    outSeq(indx).inputFileName = [file ext];
-                    % Reset sequence indices:
-                    for jj = 1:length(outSeq)
-                        outSeq(jj).seqIndx = jj;
-                    end
-                end
-                % Return steps to be skipped:
-                skipNames = {seqIn(indxEqual).name};
-            end
-        end
-        
-        %%%%%%--Pipeline Visualization methods ----------------------------
-        
-        function ax = drawDAG(obj, varargin)
-            % DRAWDAG creates a Directed Acyclic Graph (DAG) representation
-            % of the pipeline.
-            % Inputs:
-            %   ax (handle | optional): handle to the figure axis where the
-            %   DAG will be plotted
-            % Output:
-            %   ax (handle): idem
-            
-            p = inputParser;
-            addRequired(p,'obj')
-            addOptional(p,'ax',[],@(x) ishandle(x) | isempty(x))
-            parse(p,obj, varargin{:});
-            if isempty(p.Results.ax)
-                % Create figure when no axis is provided:
-                f = uifigure('Name','Pipeline Visualization');
-                ax = uiaxes(f, 'Position',[0 0 f.Position([3,4])]);
-            else
-                ax = p.Results.ax;
-            end
-            % Create sequences of function names as nodes and output file
-            % names as edges:
-            nSeq = 1:max([obj.pipe.seq], [],'all');
-            source = {};
-            target = {};
-            edgeLabels = {};
-            for ii = nSeq
-                thisSeq = obj.pipe(arrayfun(@(x) any(x.seq == ii), obj.pipe));
-                otherSeq = obj.pipe(arrayfun(@(x) all(x.seq ~= ii),obj.pipe));
-                % Rename functions to identify sequence:
-                for jj = 1:length(thisSeq)
-                    % Check for duplicate names in other sequences:
-                    if any(strcmpi(thisSeq(jj).name,{otherSeq.name}))
-                        % append sequence number to function name:
-                        thisSeq(jj).name = [thisSeq(jj).name '_seq#' num2str(ii)];
-                    end
-                end
-                % List the source and targes of this sequence:
-                thisSource = [{'_LOCAL_'},{thisSeq(1:end-1).name}];
-                thisTarget = {thisSeq.name};
-                % Create list of dummy edge labels:
-                thisLabel = repmat({'none'},1,length(thisSource));
-                % Find steps where there is data IN and OUT, and update the
-                % "thisLabel" array:
-                dataSource = {thisSeq([thisSeq.b_hasDataIn] | [thisSeq.b_hasDataOut]).inputFrom};
-                dataTarget = {thisSeq([thisSeq.b_hasDataIn] | [thisSeq.b_hasDataOut]).name};
-                dataLabels = {thisSeq([thisSeq.b_hasDataIn] | [thisSeq.b_hasDataOut]).inputFileName};
-                % Find which sequences contain labels:
-                strSeq = cellfun(@(x,y) [x '--' y], thisSource, thisTarget, 'UniformOutput',false)';
-                strDat= cellfun(@(x,y) [x '--' y], dataSource, dataTarget, 'UniformOutput',false)';
-                [~,indxA,indxB] = intersect(strSeq,strDat, 'stable');
-                % Update labels:
-                thisLabel(indxA) = dataLabels(indxB); clear indxA indxB
-                % Append source, target and edge labels with steps where the
-                % data "skips" some functions:
-                [~,indxA] = setdiff(strDat,strSeq,'stable');
-                if ~isempty(indxA)
-                    thisSource = [thisSource, dataSource(indxA)];
-                    thisTarget = [thisTarget, dataTarget(indxA)];
-                    thisLabel = [thisLabel, dataLabels(indxA)];
-                end
-                clear indxA dataSource dataTarget dataLabels
-                % Append lists:
-                source = [source, thisSource];
-                target = [target, thisTarget];
-                edgeLabels = [edgeLabels, thisLabel];
-                %
-            end
-            % Replace temporary filenames with "data" in edgeLabels:
-            idxTag = contains(edgeLabels, num2str(obj.timeTag));
-            edgeLabels(idxTag) = repmat({'data'},1,sum(idxTag));
-            % Replace "_LOCAL_" by "Disk":
-            edgeLabels = strrep(edgeLabels, '_LOCAL_','Disk');
-            source = strrep(source, '_LOCAL_','Disk');
-            target = strrep(target, '_LOCAL_','Disk');
-            % Create DAG:
-            G = digraph(source,target,'omitselfloops');
-            p = plot(G, 'Layout','layered', 'Parent',ax, 'UserData',G.Nodes.Name);
-            layout(p, 'layered','Direction','down');
-            labeledge(p,source, target,edgeLabels)
-            % Customize plot:
-            set(p, 'NodeFontSize',12,'EdgeFontSize', 10, 'MarkerSize',10,...
-                'NodeColor',[.0 .8 0], 'EdgeColor','k', 'ArrowPosition',0.3, 'Interpreter','none');
-            % Set nodes without params to gray:
-            idxNoParams = [true arrayfun(@(x) isempty(x.opts), obj.pipe)'];
-            highlight(p,G.Nodes.Name(idxNoParams),'NodeColor',[.8 .8 .8]);
-            % Set nodes with params not set to red:
-            idxParams = ~[true obj.pipe.b_paramsSet];
-            highlight(p, G.Nodes.Name(idxParams & idxNoParams),'NodeColor',[.8 0 0]);
-            % Add legend:
-            % Here, we create fake invisible dots to create custom legend:
-            hold(ax,'on')
-            Lb_1 = plot(ax,p.XData(1),p.YData(1),'ro','MarkerFaceColor',[.8 0 0]);
-            Lb_2 = plot(ax,p.XData(1),p.YData(1),'go','MarkerFaceColor',[0 .8 0]);
-            Lb_3 = plot(ax,p.XData(1),p.YData(1),'ko','MarkerFaceColor',[.8 .8 .8]);
-            uistack([Lb_1, Lb_2, Lb_3],'bottom');
-            hold(ax,'off')
-            leg = legend([Lb_1, Lb_2, Lb_3], {'Params not set', 'Params set', 'No params'},'Location','best');
-            figH = ancestor(leg,'figure'); leg.Color = figH.Color;
-            % Adjust axis:
-            ax.YLim = [floor(ax.YLim(1)), ceil(ax.YLim(2))];
-            %            ax.DataAspectRatio = [1 2 1];
-            disableDefaultInteractivity(ax);
-            % Hide axis:
-            axis(ax,'off')
-            % Add DataTips:
-            dcm_obj = datacursormode(figH);
-            set(dcm_obj,'UpdateFcn',{@showParams,obj.pipe}, 'Enable','off', 'Interpreter','none');
-            % Add custom context menu
-            c = uicontextmenu('Parent',figH,'Callback',{@showUImenu,p});
-            p.UIContextMenu = c;
-            uimenu('Parent',c,'Label','Set Parameters','MenuSelectedFcn', {@setParams, p});
-            %%%%%--Local callbacks------------------------------------------
-            function txt = showParams(~,evnt)
-                % UpdateFcn for datacursormode in DAG figure.
-                % It shows the parameters of the selected function in the
-                % GraphPlot.
-                
-                % Get function name:
-                indx = find(evnt.Target.XData == evnt.Position(1) & evnt.Target.YData == evnt.Position(2));
-                if strcmpi(evnt.Target.NodeLabel{indx},'Disk')
-                    % This means that the node is "Disk"
-                    txt = 'Local folder';
-                    return
-                end
-                fInfo = obj.pipe(indx-1);
-                if isempty(fInfo.opts)
-                    txt = sprintf('"%s"\nNo parameters',fInfo.name);
-                    return
-                end
-                % Get fieldnames and values to create text:
-                fn = fieldnames(fInfo.opts)';
-                % Transform boolean to "Yes", "No";
-                boolMap = containers.Map([true, false],{'Yes','No'});
-                for kk = 1:length(fn)
-                    if islogical(fInfo.opts.(fn{kk}))
-                        fInfo.opts.(fn{kk}) = boolMap(fInfo.opts.(fn{kk}));
-                    end
-                end
-                vals = cellfun(@(x) num2str(fInfo.opts.(x),3), fn,'UniformOutput',false);
-                info = vertcat(fn,vals);
-                txt = sprintf('"%s"\n Parameters:', fInfo.name);
-                txt = [txt sprintf('\n\t%s: %s',info{:})];
-            end
-            
-            function setParams(src,~,dat)
-                % This callback allows the user to interactively set the
-                % parameters of a function
-                
-                % Get index of clicked Item:
-                idx = src.Parent.UserData;
-                % Get pipeline info:
-                fInfo = obj.pipe(idx-1);
-                % Launch setOpts:
-                obj.setOpts(fInfo.name,fInfo.seq);
-                % update node color:
-                dat.NodeColor(idx,:) = [0 .8 0];
-                disp('Menu clicked!')
-            end
-            
-            function showUImenu(src,~,dat)
-                % This callback checks if the selected function has any
-                % parameters to set. If so, the menu button will be
-                % enabled.
-                
-                % Get cursor coordinates:
-                AX = findobj(src.Parent,'Type','axes');
-                pt = get(AX, 'CurrentPoint');pt = pt(1,1:2);
-                % Calculate euclidean distance to all points in the
-                % GraphPlot
-                x = dat.XData;
-                y = dat.YData;
-                dist = sqrt((x-pt(1)).^2 + (y-pt(2)).^2);
-                [lmin,idx] = min(dist);
-                tol = max(diff(AX.XLim),diff(AX.YLim))/20;
-                if lmin > tol || isempty(idx)
-                    delete(src)
-                    return
-                end
-                src.UserData = idx;
-                if isequal(dat.NodeColor(idx,:),[.8 .8 .8])
-                    src.Children.Enable = 'off'; % Disable menu
-                else
-                    src.Children.Enable = 'on';
-                end
-                
-            end
-            
-            
-        end
-        
+        %%%%%%--Pipeline Visualization  -----------------------------------
+               
         function fH = drawPipe(obj,varargin)
             % DRAWPIPE creates a Directed Acyclic Graph (DAG) representation
             % of the pipeline.
@@ -1177,7 +743,7 @@ classdef PipelineManager < handle
             %   fH (handle): handle to the figure with plotted DAG.
             p = inputParser;
             addRequired(p,'obj')
-            addOptional(p,'fH',[],@(x) ishandle(x) | isempty(x))
+            addOptional(p,'fH',[],@(x) isa(x,'matlab.ui.Figure') | isempty(x))
             parse(p,obj, varargin{:});
             if isempty(p.Results.fH)
                 % Create figure when no axis is provided:
@@ -1200,7 +766,7 @@ classdef PipelineManager < handle
             xSpacing = 50; % Minimal distances between edges of buttons on X;
             ySpacing = 100; % Idem in Y.
             btnHeight = 40; % Button Height in points.
-            myRed = [.85 0 0];
+            myRed = [.9 0 0];
             myGreen = [0 .85 0];
             myGray = [.8 .8 .8];
             % Create panel to be able to lock the figure during PushButton
@@ -1229,11 +795,8 @@ classdef PipelineManager < handle
                 % Add Push button callback:
                 btnArr(ii).UserData = ii; % Store pipeline index in UserData;
                 btnArr(ii).Callback = {@callSetOpts,obj,pan}; % Call setOpts to set function's paramerets                
-                btnArr(ii).Position(3) =  btnArr(ii).Extent(3)+10; % Avoid word wrapping
-                btnArr(ii).Position(4) = btnHeight;
-                btnArr(ii).BackgroundColor = fH.Color;
-               
-                % Create gradient of color o
+                btnArr(ii).Position([3,4]) = [btnArr(ii).Extent(3)+10 btnHeight];% Avoid word wrapping                
+                btnArr(ii).BackgroundColor = fH.Color; % Make button "invisible" the color will be given by the CData property.                               
                 % Add tooltips for each one:                
                 if ~isempty(pp(ii).opts)
                     tipTxt = obj.textifyOpts(pp(ii).opts);
@@ -1254,6 +817,7 @@ classdef PipelineManager < handle
                     tipTxt = [tipTxt, sprintf('\n%s',repmat('-',1,20)),sprintf('\nInput From: "%s"',source)];
                     if ~isempty(sourceFile)
                         if contains(sourceFile, obj.timeTag, 'IgnoreCase',true)
+                            % Replace temporary file names with "data"
                             sourceFile = 'data';
                         end
                         tipTxt = [tipTxt, sprintf('\nInput File: "%s"',sourceFile)];
@@ -1261,13 +825,13 @@ classdef PipelineManager < handle
                 end
                 btnArr(ii).Tooltip = tipTxt;
             end
-            % Make all buttons the same width;
+            % Make all buttons the same width
             maxW = max(arrayfun(@(x) x.Position(3), btnArr));
             arrayfun(@(x) set(x, 'Position',[x.Position(1), x.Position(2), maxW, x.Position(4)]),btnArr);
-            % Improve buttons appearences:
-            myGreen = obj.prettyfyBtn(myGreen,btnArr(1).Position([3 4]));
-            myRed = obj.prettyfyBtn(myRed,btnArr(1).Position([3 4]));
-            myGray = obj.prettyfyBtn(myGray,btnArr(1).Position([3 4]));
+            % Improve buttons appearance:
+            myGreen = obj.prettyfyBtn(myGreen,btnArr(1).Position([3 4]), fH.Color(1)); % Here, we assume that the figure's color is a tone of gray.
+            myRed = obj.prettyfyBtn(myRed,btnArr(1).Position([3 4]), fH.Color(1));
+            myGray = obj.prettyfyBtn(myGray,btnArr(1).Position([3 4]), fH.Color(1));
             for ii = 1:length(pp)
             % Change button background color if parameters were set:
                 if isempty(obj.pipe(ii).opts)
@@ -1292,9 +856,9 @@ classdef PipelineManager < handle
             end
             fH.Position(3) = newFigX;
             seqList = unique([pp.seq]);
-            % Do the same in Y. Here the Buttons have 20 pixes in height:
+            % Do the same in Y.
             nLvls = max(seqIndxList) + 1;
-            minYsize = nLvls*20 + (nLvls-1)*ySpacing;
+            minYsize = nLvls*btnHeight + (nLvls-1)*ySpacing;
             if minYsize > fH.Position(4)
                 fH.Position(4) = minYsize;
             end
@@ -1308,9 +872,11 @@ classdef PipelineManager < handle
             ctrX = zeros(1,length(items));
             ctrX(1) = bounds(1)+(bounds(3)-bounds(1))/2; % Put "Disk" on the middle;
             if max(seqList) == 1
-                % If there is only one sequence, put it in the middle as well
+                % If there is only one sequence, put it in the middle of
+                % the figure
                 ctrX(2:end) = ctrX(1);
-            else                                
+            else
+                % Spread sequences evenly across the figure width.
                 seqPairs = zeros(length(pp),2);
                 for ii = 1:length(pp)
                     % Check if the step input is from a different sequence,
@@ -1322,6 +888,7 @@ classdef PipelineManager < handle
                         seqPairs(ii,:) = [pp(pp(ii).inputFrom).seq(1,1), pp(ii).seq(1,1)];
                     end
                 end
+                % Minimize the number of arrows crossing sequences:
                 seqPairs = unique(seqPairs,'rows');
                 crossSeqs = seqPairs(seqPairs(:,1)~=seqPairs(:,2),:);
                 permIndx = seqList;
@@ -1360,17 +927,16 @@ classdef PipelineManager < handle
                 items(ii).Position(1) = ctrX(ii) - (items(ii).Position(3)/2);
                 items(ii).Position(2) = ctrY(ii) - (items(ii).Position(4)/2);
             end
-            % Add arrows between buttons:
-            arrX = ctrX;
+            % Add arrows between buttons:            
             arrYsource = arrayfun(@(x) x.Position(2), items);
             arrYtarget = arrayfun(@(x,y) x + y.Position(4)/2,ctrY,items);
             % Draw arrows and texts:
             for ii = seqList
                 seq = find(arrayfun(@(x) any(x.seq == ii),pp));
                 if pp(seq(1)).inputFrom == 0
-                    % For when the input comes from the Hard Drive:
+                    % For when the input comes from the "Disk":
                     an = annotation('arrow',[0,0],[1,1],'Units','pixels');
-                    an.X = [arrX(1) arrX(seq(1)+1)];
+                    an.X = [ctrX(1) ctrX(seq(1)+1)];
                     if ~isequal(arrYsource(1), arrYtarget(seq(1)+1))
                         % Create arrows between columns
                         half_distY = (arrYsource(1) - arrYtarget(seq(1)+1))/2;
@@ -1388,7 +954,7 @@ classdef PipelineManager < handle
                 end
                 for jj = 1:length(seq)-1                    
                     an = annotation('arrow',[0,0],[1,1],'Units','pixels');
-                    an.X = [arrX(seq(jj)+1) arrX(seq(jj+1)+1)];                    
+                    an.X = [ctrX(seq(jj)+1) ctrX(seq(jj+1)+1)];                    
                     if ~isequal(arrYsource(seq(jj)+1), arrYtarget(seq(jj+1)+1))
                         % Create arrows between columns
                         half_distY = (arrYsource(seq(jj)+1) - arrYtarget(seq(jj+1)+1))/2;
@@ -1443,7 +1009,241 @@ classdef PipelineManager < handle
         end
         
         %%%%%%-------------------------------------------------------------
+    end
+    
+    methods (Access = private)
         
+        function run_taskOnTarget(obj, task)
+            % RUN_TASKONTARGET runs a task in the pipeline structure array in
+            % TASK.      
+            % Input
+            %   task(struct): current step from "obj.pipe".
+                        
+            % Initialize empty Log for current object:
+            LastLog = obj.ProtocolObj.createEmptyTable;
+            % Fill out Log with Subject/Acquisition/Modality IDs :
+            LastLog(:,1:3) = strsplit(obj.targetObjFullID, ' -- ');
+            % Add class name to table:
+            LastLog(:,4) = {obj.ClassName};
+            LastLog(:,5) = {task.name};
+            %%%
+            % Create function string and update log table:
+            funcStr = createFcnString(obj, task);
+            LastLog.Job = {funcStr};
+            % Add full path of input file, if applicable:
+            b_hasInputFile = false;
+            if strcmpi(task.inputFileName,'data')
+                % Do nothing
+            elseif ~isempty(task.inputFileName)
+                b_hasInputFile = true;
+                LastLog.InputFile_Path = fullfile(obj.tmp_TargetObj.SaveFolder, task.inputFileName);
+            end
+            %  Execute the task:
+            try
+                % Control for missing input files:
+                if b_hasInputFile
+                    errID = 'MATLAB:Umitoolbox:PipelineManager:FileNotFound';
+                    errmsg = ['Input File for function ' task.name ' not found!'];
+                    assert(isfile(fullfile(obj.tmp_TargetObj.SaveFolder, task.inputFileName)),...
+                        errID,errmsg);
+                    obj.loadInputFile(task);
+                end
+                fprintf('\tFunction Name: %s \n\n',task.name);
+                % Load options structure in the workspace.
+                opts = task.opts; %#ok the "opts" structure is used in the EVAL function.
+                % Evaluate function string:
+                eval(funcStr);
+                % Update log table and tell other methods that the function
+                % was successfully run:
+                obj.b_state = true;
+                LastLog.Messages = 'No Errors';
+                % Update data history of current data with task:
+                obj.updateDataHistory(task);
+            catch ME
+                obj.b_state = false;
+                LastLog.Messages = {getReport(ME,'extended', 'hyperlinks','off')};
+                LastLog.Messages_short = {getReport(ME, 'basic','hyperlinks','off')};
+                disp('FAILED!');
+            end
+            % Save data to file:
+            if task.b_save2File && obj.b_state
+                % Look for tasks with output data from the current step and
+                % save the data to a .DAT or .MAT file:
+                obj.saveDataToFile(task,false)
+            elseif obj.b_saveDataBeforeFail && ~obj.b_state                
+                obj.saveDataToFile(task,true);
+            end
+            % Update log table of target object:
+            LastLog.Completed = obj.b_state;
+            LastLog.RunDateTime = datetime('now');
+            obj.tmp_TargetObj.LastLog = [obj.tmp_TargetObj.LastLog; LastLog];
+            % Remove "empty" rows from the target Object Log table:
+            idx_emptyRow = all(strcmp('None',table2cell(obj.tmp_TargetObj.LastLog(:,1:5))),2);
+            obj.tmp_TargetObj.LastLog(idx_emptyRow,:) = [];
+        end
+        
+        function getTargetObj(obj,targetIdx)
+            % GETTARGETOBJ finds the object TARGETOBJ indicated by the
+            % index TARGETIDX inside PROTOCOL.
+            
+            tgtSz = size(targetIdx,2);
+            switch tgtSz
+                case 1
+                    targetObj = obj.ProtocolObj.Array.ObjList(targetIdx);
+                case 2
+                    targetObj = obj.ProtocolObj.Array.ObjList(targetIdx(1)).Array.ObjList(targetIdx(2));
+                case 3
+                    targetObj = obj.ProtocolObj.Array.ObjList(targetIdx(1)).Array.ObjList(targetIdx(2)).Array.ObjList(targetIdx(3));
+            end
+            obj.tmp_TargetObj = targetObj;
+        end
+        
+        function [newSeq,skippedSteps, selFile] = skipSteps(obj,thisSeq,folderName)
+            % SKIPSTEPS looks in the folder "folderName" for .dat/.mat files
+            % that can potentially replace the N first steps of the pipeline
+            % sequence "thisSeq".
+            % The criteria to replace the pipeline steps are:
+            %    1- Same creation date time of the functions.
+            %    2- Same function name
+            %    3- Same function "opts" parameters
+            %    4- No intermediate steps from the file is used as input to
+            %    other sequences
+            %    Inputs:
+            %        thisSeq (struct): current sequence of the pipeline.
+            %        folderName(char): full path to the folder containing
+            %            files.
+            %    Outputs:
+            %        newSeq (struct): updated sequence without the redundant
+            %            steps.
+            %        skippedSteps (cell): list of skipped function names from
+            %            "thisSeq".
+            
+            % Get list of valid files in the folder:
+            fileList = getFileList(folderName, 'all');
+            %
+            newSeq = thisSeq;
+            skippedSteps = {};
+            newSeqArr = cell(size(fileList));
+            skippedStepsArr = newSeqArr;
+            selFile = '';
+            
+            % Compare dataHistory with pipeline sequence:
+            for ii = 1:length(fileList)
+                [newSeqArr{ii}, skippedStepsArr{ii}] = compareDataHistory(obj,thisSeq,fullfile(folderName,fileList{ii}));
+            end
+            % Check for matches:
+            if all(cellfun(@isempty,skippedStepsArr))
+                return
+            end
+            
+            % Select file with the largest number of steps:
+            
+            % Check if there is a file that contains all the sequence:
+            idxSkipAll = cellfun(@isempty,newSeqArr);
+            if any(idxSkipAll)
+                indxSkip = find(idxSkipAll,1,'first');
+                selFile = fileList{indxSkip};
+                % Copy file if the "saveFileName of the current sequence has a different "saveFileName"
+                for ii = length(thisSeq):-1:1
+                    if thisSeq(ii).saveFileName
+                        break
+                    end
+                end
+                thisSeq(ii).inputFileName = selFile;
+                obj.loadInputFile(thisSeq(ii));% Load step;                
+                if ~strcmpi(thisSeq(ii).saveFileName,selFile)
+                    obj.saveDataToFile(thisSeq(ii),false)
+                end                
+                newSeq = {}; skippedSteps = {'All'};
+                return
+            end
+            nSteps = cellfun(@numel,skippedStepsArr);
+            idxMax = find(nSteps == max(nSteps),1,'first');
+            selFile = fileList{idxMax};
+            newSeq = newSeqArr{idxMax};
+            skippedSteps = skippedStepsArr{idxMax};
+            %%%%%--Local function ------------------------------------------
+            function [outSeq,skipNames] = compareDataHistory(obj,seqIn, fileIn)
+                % COMPAREDATAHISTORY compares the dataHistory of "fileIn"
+                % with the pipeline sequence "seqIN" and outputs the
+                % updated sequence "outSeq" and the list of skipped steps
+                % "skipNames".
+                outSeq = seqIn;
+                skipNames = {};
+                % Load data history:
+                [path,file,ext] = fileparts(fileIn);
+                a = load(fullfile(path,[file '.mat']),'dataHistory');
+                dataHistory = a.dataHistory; clear a
+                % Compare datetimes:
+                [~,locB] = ismember({dataHistory.name},{obj.funcList.name});
+                idxSameDate = cellfun(@(x,y) strcmpi(datestr(x),y),{dataHistory.creationDatetime},...
+                    {obj.funcList(locB).date});
+                % %% SECTION COMMENTED FOR TESTING ONLY
+                %                 if ~all(idxSameDate)
+                %                     return
+                %                 end
+                % Compare function names and optional parameters:
+                thisHistory = struct();
+                for jj = 1:length(seqIn)
+                    thisHistory(jj).name = seqIn(jj).name;
+                    thisHistory(jj).opts = seqIn(jj).opts;
+                end
+                % IF there is an input file, prepend the dataHistory to the current
+                % sequence:
+                idxFromDisk = find(~cellfun(@isempty,{seqIn.inputFileName}) & strcmpi('_LOCAL_',{seqIn.inputFrom}),1,'first');
+                if ~isempty(idxFromDisk)> 0
+                    % Load the input file dataHistory:
+                    [~,inputFile,~] = fileparts(seqIn(idxFromDisk).inputFileName);
+                    dh = load(fullfile(path,[inputFile,'.mat']),'dataHistory'); dh = dh.dataHistory;
+                    prepend_info = struct();
+                    for jj = 1:length(dh)
+                        prepend_info(jj).name = dh(jj).name;
+                        prepend_info(jj).opts = dh(jj).opts;
+                        thisHistory = horzcat(prepend_info,thisHistory(idxFromDisk:end));
+                    end
+                    clear inputFile prepend_info
+                end
+                % Check for the existence of consecutive equal steps:
+                b_isEqual = false(size(dataHistory));
+                for jj = 1:length(dataHistory)
+                    % Compare name and opts:
+                    b_isEqual(jj) = (strcmpi(thisHistory(jj).name, dataHistory(jj).name) && ...
+                        isequaln(thisHistory(jj).opts,dataHistory(jj).opts));
+                    if jj == length(thisHistory) || ~b_isEqual(jj)
+                        break
+                    end
+                end
+                if ~all(b_isEqual)
+                    return
+                end
+                % Get indices of sequence corresponding to the dataHistory:
+                [~,indxEqual] = ismember({dataHistory(b_isEqual).name},{seqIn.name});indxEqual(indxEqual == 0) = [];
+                % If any consecutive steps were equal, check if the intermediate steps
+                % from dataHistory are inputs to other sequences:
+                b_isInputFcn = arrayfun(@(x) numel(x) > 1, seqIn(indxEqual(1:end-1)));
+                if any(b_isInputFcn)
+                    return
+                end
+                % If all steps are to be skipped, the outSeq will return
+                % empty
+                outSeq = seqIn;
+                outSeq(indxEqual) = []; % Erase first N steps corresponding to the dataHistory.
+                if ~isempty(outSeq)
+                    % If the sequence is partially skipped, update the
+                    % sequence:
+                    indx = find(~cellfun(@isempty,({outSeq.inputFrom})), 1,'first');
+                    outSeq(indx).inputFrom = '_LOCAL_';
+                    outSeq(indx).inputFileName = [file ext];
+                    % Reset sequence indices:
+                    for jj = 1:length(outSeq)
+                        outSeq(jj).seqIndx = jj;
+                    end
+                end
+                % Return steps to be skipped:
+                skipNames = {seqIn(indxEqual).name};
+            end
+        end
+                        
         %%%%%%--Helpers for "addTask" method -----------------------------
         
         function task = setInput(obj,task)
@@ -1790,58 +1590,52 @@ classdef PipelineManager < handle
             
             funcInfo = obj.funcList(strcmp(step.name, {obj.funcList.name}));
             % Create a local structure with the function's info:
-            curr_dtHist = genDataHistory(funcInfo, step.funcStr, step.opts,'none', step.inputFileName);
+            curr_dtHist = genDataHistory(funcInfo, step.opts, step.inputFileName, '');
             % First, we need to know if the output is a "data", a .DAT file or a .MAT file:
             if any(strcmp(step.argsOut, 'outFile'))
-                % In case the step ouput is .DAT file(s):
-                
-                % Get only filename instead of full path:
-                [~, filenames, ext] = cellfun(@(x) fileparts(x), obj.current_outFile,...
-                    'UniformOutput', false);
-                if size(filenames,2) > size(filenames,1)
-                    filenames = filenames';
-                    ext = ext';
-                end
-                curr_dtHist.outputFile_list = join([filenames,ext],'');
-                
+                curr_dtHist.outFileName = obj.current_outFile; % Update outFileName list with the actual files generated by the function in "step".
+               % In case the step ouput is .DAT file(s), update the
+               % dataHistory on each one:                                              
                 for i = 1:length(obj.current_outFile)
                     % Map existing metaData file to memory:
-                    mtD = load(strrep(obj.current_outFile{i}, '.dat', '.mat'));
-                    mtD.Properties.Writable = true;
-                    % Create or update "dataHistory" structure:
-                    if isprop(mtD, 'dataHistory')
-                        mtD.dataHistory = appendDataHistory(mtD.dataHistory, curr_dtHist);
+                    if endsWith(obj.current_outFile{i},'.dat','IgnoreCase',true)
+                        mtD = matfile(strrep(obj.current_outFile{i}, '.dat', '.mat'));                        
                     else
-                        mtD.dataHistory = curr_dtHist;
+                        mtD = matfile(obj.current_outFile{i});
                     end
+                    mtD.Properties.Writable = true;
+                    % Create or update "dataHistory" structure:                    
+                    mtD.dataHistory = appendDataHistory(mtD, curr_dtHist);
                 end
-            elseif any(strcmp(step.argsOut, 'outDataStat'))
-                % In case of step output is .MAT file(s):
-                if isfield(obj.current_data, 'dataHistory')
-                    obj.current_data.dataHistory = appendDataHistory(obj.current_data.dataHistory, curr_dtHist);
+            elseif any(strcmp(step.argsOut, 'outData'))                
+                if isstruct(obj.current_data)
+                    % In case of step output is .MAT file(s):
+                    obj.current_data.dataHistory = appendDataHistory(obj.current_data, curr_dtHist);
                 else
-                    obj.current_data.dataHistory = curr_dtHist;
+                    % In case of step output is a data array:
+                    obj.current_metaData.dataHistory = appendDataHistory(obj.current_metaData, curr_dtHist);
                 end
-                
-            else
-                % In case of step output is a data array:
-                if isfield(obj.current_metaData, 'dataHistory')
-                    obj.current_metaData.dataHistory = appendDataHistory(obj.current_metaData.dataHistory, curr_dtHist);
-                else
-                    obj.current_metaData.dataHistory = curr_dtHist;
-                end
-            end
+            end                                     
             %%%%%--Local function -----------------------------------------
-            function out = appendDataHistory(dh_original, new_dh)
+            function out = appendDataHistory(currData, new_dh)
                 % This function appends the data history "dh" to
-                % "current_dataHistory" property of obj.
-                
+                % "current_dataHistory" property of obj.                                
+                if ~isfield(currData,'dataHistory')
+                    out = new_dh;
+                    return
+                end
+                dh_original = currData.dataHistory;
                 % Account for missing fields (FOR RETROCOMPATIBILITY)
-                
                 fn = setdiff(fieldnames(new_dh),fieldnames(dh_original));
-                dh_original = cellfun(@(x) setfield(dh_original(1), x,[]),fn);
-                out = vertcat(dh_original,new_dh);
-                
+                for ii = 1:length(fn)
+                    dh_original(1).(fn{ii}) = [];
+                end
+                % Append fields
+                fn = setdiff(fieldnames(dh_original), fieldnames(new_dh));
+                for ii = 1:length(fn)
+                    new_dh(1).(fn{ii}) = [];
+                end                
+                out = vertcat(dh_original,new_dh);                
             end
         end
         
@@ -1877,32 +1671,58 @@ classdef PipelineManager < handle
             % .DAT or .MAT file.
             % Input:
             %    step(struct) : info of the current task in the pipeline.
-            %    b_failed (bool): If TRUE, this function will ignore the
-            %    "b_save2File" from "step" and save the data.
+            %    b_failed (bool): If TRUE, this means that the "step"
+            %       execution failed. In this case, we look for the previous
+            %       step that generated the "current_data" and save it. If
+            %       FALSE, we just save the data to a file with name
+            %       "step.saveFileName".
+            
             % Get the pipeline until the task in "step":
-            indx = find(strcmp(step.name, {obj.pipe.name}));
-            subPipe = obj.pipe(1:indx);
+            indx = obj.findStep(step);    
+            %%%% FOR TESTING
+            assert(~isempty(indx),'FAILED TO FIND STEP IN PIPELINE');
+            assert(numel(indx) == 1,'DUPLICATE STEPS FOUND IN PIPELINE! DEBUG!');
+            %%%%%
             % Look back in pipeline for steps with "data" or "stats data"
             % as output and save the current data using the task's info:
-            for i = length(subPipe):-1:1
-                task = subPipe(i);
-                % If the pipeline failed, and the saveFileName was not set,
-                % use the default file name to save the data:
-                if b_failed & isempty(task.saveFileName) & ischar(task.outFileName)
-                    task.saveFileName = task.outFileName;
-                end
-                
-                if endsWith(task.saveFileName, '.dat')
-                    save2Dat(fullfile(obj.tmp_TargetObj.SaveFolder,task.saveFileName),...
-                        obj.current_data, obj.current_metaData);
-                    return
-                elseif endsWith(task.saveFileName, '.mat')
-                    S = obj.current_data;
-                    save(fullfile(obj.tmp_TargetObj.SaveFolder,task.saveFileName),...
-                        '-struct', 'S', '-v7.3');
-                    return
+            if b_failed
+                % Ignore the current step index:
+                indx = indx-1;
+            end
+            if indx == 0
+                warning('First step of the pipeline failed! No previous data exists to be saved. Operation aborted!')
+                return
+            end
+            for ii = indx:-1:1
+                if obj.pipe(ii).b_hasDataOut
+                    % Skip step without data output
+                    break
                 end
             end
+            [~,name, ext] = fileparts(obj.pipe(ii).outFileName);
+            saveFailStr = [name '_recovered' ext]; % string to append to files saved before an error.
+            % If the pipeline failed, and the previous step was a fuction with data output, 
+            % use the default file name to save the data:            
+            if b_failed && isempty(obj.pipe(ii).saveFileName) && ischar(obj.pipe(ii).outFileName)
+                obj.pipe(ii).saveFileName = saveFailStr;
+            elseif b_failed && contains(obj.pipe(ii).saveFileName, obj.timeTag,'IgnoreCase',true) 
+                % If the previous step already saved a temporary file, just
+                % rename it.
+                movefile(fullfile(obj.tmp_TargetObj.SaveFolder,obj.pipe(ii).saveFileName),...
+                    fullfile(obj.tmp_TargetObj.SaveFolder,saveFailStr));
+                return
+            end
+            % Save data to file:
+            if strcmpi(ext, '.dat')
+                % For .dat files:
+                save2Dat(fullfile(obj.tmp_TargetObj.SaveFolder,obj.pipe(ii).saveFileName),...
+                    obj.current_data, obj.current_metaData);                
+            else
+                % For .mat files:
+                S = obj.current_data;
+                save(fullfile(obj.tmp_TargetObj.SaveFolder,task.saveFileName),...
+                    '-struct', 'S', '-v7.3');                
+            end            
         end
         
         function deleteTemporaryFiles(obj,folder)
@@ -1991,8 +1811,19 @@ classdef PipelineManager < handle
             % Inputs:
             %   tag (char): "Initialize" : creates the 2 waitbars.
             %               "UpdateItem" : updates bar1.
-            %               "UpdateTask" : updates bar2.
-            %   barVal (float): (Optional) fractional value of the bar.
+            %               "UpdateTask" : updates bar2.            
+            
+            p = inputParser;
+            addRequired(p,'obj')
+            addRequired(p,'tag',@ischar)
+            addOptional(p, 'currBarVal',0, @(x) isnumeric(x) & x >= 0)
+            addOptional(p, 'totalBarVal',1, @(x) isnumeric(x) & x >= 0)
+            addParameter(p,'taskName','',@ischar);
+            parse(p,obj,tag,varargin{:})
+            barVal = p.Results.currBarVal;
+            totalBarVal = p.Results.totalBarVal;
+            taskName = p.Results.taskName;
+            clear p
             
             % Control for invalid waitbar handles:
             if ~strcmp(tag, 'Initialize')
@@ -2016,11 +1847,11 @@ classdef PipelineManager < handle
                     obj.h_wbTask.Children(1).Title.Interpreter = 'none';
                     
                 case 'UpdateItem'
-                    waitbar(varargin{1}/varargin{2}, obj.h_wbItem, ['Item ' num2str(varargin{1})...
-                        '/' num2str(varargin{2})]);
+                    waitbar(barVal/totalBarVal, obj.h_wbItem, ['Item ' num2str(barVal)...
+                        '/' num2str(totalBarVal)]);
                     obj.h_wbTask.Name = obj.targetObjFullID;
                 case 'UpdateTask'
-                    waitbar(varargin{1}, obj.h_wbTask, ['Running "' obj.current_task.name '"']);
+                    waitbar(barVal, obj.h_wbTask, ['Running "' taskName '"']);
             end
             
             function DoNothing(~,~)
@@ -2069,24 +1900,21 @@ classdef PipelineManager < handle
             info = vertcat(fn,vals);
             txt = [sprintf('Parameters:\n'), sprintf('%s: "%s"\n',info{:})];
         end
-        function rgb = prettyfyBtn(~, color, btnSz)
+        
+        function rgb = prettyfyBtn(~, color, btnSz, bcgCol)
             % This creates a CData with the given color (rgb triplet)
-            % that mimics a rounded button (
-            w = btnSz(1); % width
-            h = btnSz(2); % height
-            
+            % that mimics a button with rounded corners.
+            w = round(btnSz(1)); % width
+            h = round(btnSz(2)); % height            
             % Choose the radius of the rounded corners
-            r = round(.05*w); % radius
-            
+            r = round(.05*w); % radius            
             % Define the x and y grids using meshgrid
-            [x, y] = meshgrid(1:w, 1:h);
-            
+            [x, y] = meshgrid(1:w, 1:h);            
             % Define a mask for the rounded rectangle
             mask = ((x <= r) & (y <= r) & (sqrt((x - r).^2 + (y - r).^2)) <= r) | ... % top left corner
                 ((x >= w - r) & (y <= r) & (sqrt((x - w + r).^2 + (y - r).^2)) <= r) | ... % top right corner
                 ((x <= r) & (y >= h - r) & (sqrt((x - r).^2 + (y - h + r).^2)) <= r) | ... % bottom left corner
-                ((x >= w - r) & (y >= h - r) & (sqrt((x - w + r).^2 + (y - h + r).^2)) <= r); % bottom right corner
-            
+                ((x >= w - r) & (y >= h - r) & (sqrt((x - w + r).^2 + (y - h + r).^2)) <= r); % bottom right corner            
             % Create the rounded rectangle
             rect = ones(size(x));
             rect(mask) = 0;
@@ -2095,11 +1923,25 @@ classdef PipelineManager < handle
             msk1(:,r:end-r) = 1;
             antiMsk = ~(~rect | msk1);
             rim = bwmorph(~antiMsk,'remove');
-            r = repmat(color(1),h,w); r(antiMsk) = .94; r(rim) = 0;
-            g = repmat(color(2),h,w);g(antiMsk) = .94; g(rim) = 0;
-            b = repmat(color(3),h,w); b(antiMsk) = .94; b(rim) = 0;
-            rgb = cat(3,r,g,b);
-            
+            r = repmat(color(1),h,w); r(antiMsk) = bcgCol; r(rim) = 0;
+            g = repmat(color(2),h,w);g(antiMsk) = bcgCol; g(rim) = 0;
+            b = repmat(color(3),h,w); b(antiMsk) = bcgCol; b(rim) = 0;
+            rgb = cat(3,r,g,b);            
+        end
+        
+        function indx = findStep(obj,step)
+           % This function gives the index of the task "step" in the pipeline "pipe"
+           % It compares all fields from the structure to identify the
+           % step.
+           
+           fn = fieldnames(step); 
+           % Exclude fields that may change during pipeline execution:
+           fn = setdiff(fn, {'seqIndx', 'inputFrom', 'b_save2File', 'inputFileName'});
+           idx = false(length(obj.pipe), length(fn));
+           for ii = 1:length(fn)
+               idx(:,ii) = arrayfun(@(x) isequaln(step.(fn{ii}),x.(fn{ii})),obj.pipe);
+           end
+           indx = find(all(idx,2));
         end
     end
 end
