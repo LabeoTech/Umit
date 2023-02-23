@@ -21,12 +21,12 @@ classdef PipelineManager < handle
         fcnDir char % Directory of the analysis functions.
         ClassName char % Name of the class that the pipeline analysis functions will run.
         ClassLevel int16 % Level of the class in protocol's hierarchy (1 = Modality, 2 = Acquisition, 3= Subject);
+        PipelineSummary % Shows the jobs run in the current Pipeline
     end
     properties (Access = private)
         b_taskState = false % Boolean indicating if the task in pipeline was successful (TRUE) or not (FALSE).
         tmp_LogBook % Temporarily stores the table from PROTOCOL.LOGBOOKFILE
-        tmp_BranchPipeline % Temporarily stores LogBook from a Hierarchical branch.
-        PipelineSummary % Shows the jobs run in the current Pipeline
+        tmp_BranchPipeline % Temporarily stores LogBook from a Hierarchical branch.        
         tmp_TargetObj % % Temporarily stores an object (TARGEROBJ).        
         current_pipe % Pipeline currently running.
         current_data % Data available in the workspace during pipeline.
@@ -649,17 +649,19 @@ classdef PipelineManager < handle
             % SAVEPIPE saves the structure OBJ.PIPE in a .JSON file in the
             % folder PIPELINECONFIGFILES inside the SAVEDIR of OBJ.PROTOCOLOBJ.
             
-            if ~endsWith(filename,'.json')
-                filename = [filename,'.json'];
+            if ~obj.b_pipeIsValid
+                obj.validatePipeline;
             end
-            
+            if ~obj.b_pipeIsValid
+                error('Failed to validate pipeline. Save Pipeline aborted!')
+            end
+            if ~endsWith(filename,'.pipe')
+                filename = [filename,'.pipe'];
+            end            
             targetDir = fullfile(obj.ProtocolObj.SaveDir, 'PipeLineConfigFiles');
             [~,~] = mkdir(targetDir);
-            pipeStruct = obj.pipe;
-            txt = jsonencode(pipeStruct);
-            fid = fopen(fullfile(targetDir,filename), 'w');
-            fprintf(fid, '%s', txt);
-            fclose(fid);
+            pipeStruct = obj.pipe;            
+            save(fullfile(targetDir,filename), 'pipeStruct','-mat');            
             disp(['Pipeline saved as "' filename '" in ' targetDir]);
         end
         
@@ -669,9 +671,19 @@ classdef PipelineManager < handle
             % Input:
             %   pipeFile(char): full path to the .JSON file containing the
             %   pipeline config.
-            txt = fileread(pipeFile);
-            new_pipe = jsondecode(txt);
-            
+            [path,filename, ~] = fileparts(pipeFile);
+            if isempty(path) && ~obj.ProtocolObj.b_isDummy
+                % Prepend path to "PipelineConfigFiles" in protocol's SaveDir
+                path = fullfile(obj.ProtocolObj.SaveDir,'PipeLineConfigFiles');
+            end                                       
+            % For retrocompatibility:
+            if exist(fullfile(path,[filename, '.json']),'file')
+                txt = fileread([pipeFile, '.json']);
+                new_pipe = jsondecode(txt);
+            else
+                a = load(fullfile(path,[filename '.pipe']),'-mat');
+                new_pipe = a.pipeStruct;                                
+            end
             % erase current pipeline:
             obj.reset_pipe;
             % Check if all functions listed in "new_pipe" exist:
@@ -761,19 +773,23 @@ classdef PipelineManager < handle
             end
             % Get original figure position:
             origPos = fH.Position;
-            % Set figure inner boundaries:
+            % GUI elements' paramters:
             bounds = [.2 .1 .8 .9]; % Normalized to facilitate editing.
             xSpacing = 50; % Minimal distances between edges of buttons on X;
-            ySpacing = 100; % Idem in Y.
-            btnHeight = 40; % Button Height in points.
+            ySpacing = 60; % Idem in Y.
+            btnHeight = 35; % Button Height in points.
+            btnFontSize = 11; % Button Font size
+            arrowHeadSz = 7; % Arrow head size in points;
+            % Button colors:
             myRed = [.9 0 0];
             myGreen = [0 .85 0];
             myGray = [.8 .8 .8];
+            
             % Create panel to be able to lock the figure during PushButton
             % Callback execution:
             pan = uipanel('Parent', fH, 'Position',[0 0 1 1], 'Title','Setting parameter...','Visible','off');
             % Create "Disk" button at the middle of the figure:
-            diskBtn = uicontrol(fH,'Style','pushbutton','String','Disk','Enable','off', 'FontSize',12);      
+            diskBtn = uicontrol(fH,'Style','pushbutton','String','Disk','Enable','off', 'FontSize',btnFontSize);      
             diskBtn.Position(4) = btnHeight;
             % Re-calculate sequence indices for 2+ sequences for a better
             % display:
@@ -791,7 +807,7 @@ classdef PipelineManager < handle
             end
             % Create buttons for each function:           
             for ii = 1:length(pp)                 
-                btnArr(ii) = uicontrol(fH,'Style','pushbutton','String',pp(ii).name, 'FontSize',12);                
+                btnArr(ii) = uicontrol(fH,'Style','pushbutton','String',pp(ii).name, 'FontSize',btnFontSize);                
                 % Add Push button callback:
                 btnArr(ii).UserData = ii; % Store pipeline index in UserData;
                 btnArr(ii).Callback = {@callSetOpts,obj,pan}; % Call setOpts to set function's paramerets                
@@ -935,7 +951,7 @@ classdef PipelineManager < handle
                 seq = find(arrayfun(@(x) any(x.seq == ii),pp));
                 if pp(seq(1)).inputFrom == 0
                     % For when the input comes from the "Disk":
-                    an = annotation('arrow',[0,0],[1,1],'Units','pixels');
+                    an = annotation('arrow',[0,0],[1,1],'Units','pixels', 'HeadWidth',arrowHeadSz);
                     an.X = [ctrX(1) ctrX(seq(1)+1)];
                     if ~isequal(arrYsource(1), arrYtarget(seq(1)+1))
                         % Create arrows between columns
@@ -953,7 +969,7 @@ classdef PipelineManager < handle
                     end
                 end
                 for jj = 1:length(seq)-1                    
-                    an = annotation('arrow',[0,0],[1,1],'Units','pixels');
+                    an = annotation('arrow',[0,0],[1,1],'Units','pixels', 'HeadWidth',arrowHeadSz);
                     an.X = [ctrX(seq(jj)+1) ctrX(seq(jj+1)+1)];                    
                     if ~isequal(arrYsource(seq(jj)+1), arrYtarget(seq(jj+1)+1))
                         % Create arrows between columns
@@ -1190,7 +1206,7 @@ classdef PipelineManager < handle
                 end
                 % IF there is an input file, prepend the dataHistory to the current
                 % sequence:
-                idxFromDisk = find(~cellfun(@isempty,{seqIn.inputFileName}) & strcmpi('_LOCAL_',{seqIn.inputFrom}),1,'first');
+                idxFromDisk = find(~cellfun(@isempty,{seqIn.inputFileName}) & [seqIn.inputFrom] == 0,1,'first');
                 if ~isempty(idxFromDisk)> 0
                     % Load the input file dataHistory:
                     [~,inputFile,~] = fileparts(seqIn(idxFromDisk).inputFileName);
