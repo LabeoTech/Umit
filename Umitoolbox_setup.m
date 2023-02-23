@@ -4,8 +4,7 @@ function Umitoolbox_setup
 
 % Get toolbox folder:
 saveDir = fileparts(mfilename('fullpath'));
-% Add toolbox to Path for the current Matlab session:
-addpath(saveDir);
+
 umIT_path_cleanup(saveDir); % Removes any folders from path containing the toolbox.
 % Edit info.xml file to be able to access the documentation through Matlab "doc":
 info_file = fileread(fullfile(saveDir,'docs','info.xml'));
@@ -33,6 +32,8 @@ catch
     disp('https://labotech.github.io/Umit/')
     disp(repmat('-', 1,100))
 end
+% Add toolbox to Path for the current Matlab session:
+addpath(genpath(saveDir));
 disp('Everything is set! You can start using the toolbox now!');
 end
 

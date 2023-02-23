@@ -22,12 +22,13 @@ classdef PipelineManager < handle
         ClassName char % Name of the class that the pipeline analysis functions will run.
         ClassLevel int16 % Level of the class in protocol's hierarchy (1 = Modality, 2 = Acquisition, 3= Subject);
         PipelineSummary % Shows the jobs run in the current Pipeline
+        current_seq = 0 % index of current sequence in pipeline .
     end
     properties (Access = private)
         b_taskState = false % Boolean indicating if the task in pipeline was successful (TRUE) or not (FALSE).
         tmp_LogBook % Temporarily stores the table from PROTOCOL.LOGBOOKFILE
-        tmp_BranchPipeline % Temporarily stores LogBook from a Hierarchical branch.        
-        tmp_TargetObj % % Temporarily stores an object (TARGEROBJ).        
+        tmp_BranchPipeline % Temporarily stores LogBook from a Hierarchical branch.
+        tmp_TargetObj % % Temporarily stores an object (TARGEROBJ).
         current_pipe % Pipeline currently running.
         current_data % Data available in the workspace during pipeline.
         current_metaData % MetaData associated with "current_data".
@@ -42,8 +43,7 @@ classdef PipelineManager < handle
         % For example, if the current object is a
         % modality the full ID is:
         % SubjID--AcqID--ModID.
-        timeTag % timestamp used as "tag" for temporary files created during the pipeline execution.
-        current_seq = 0 % index of current sequence in pipeline .
+        timeTag % timestamp used as "tag" for temporary files created during the pipeline execution.        
         current_seqIndx = 0 % index of step in current sequence in pipeline.
         b_newSeq = false; % boolean to indicate if a new sequence was created in the previous step.
         b_pipeIsValid = false % TRUE, if the pipeline passed all validations and is ready to execution.
@@ -185,7 +185,11 @@ classdef PipelineManager < handle
                 seq = input(['Type the sequence number of the function "' funcName '" :']);
             end
             % Check if the function exists in the selected pipeline sequence:
-            idxFunc = ( strcmpi(funcName, {obj.pipe.name}) & arrayfun(@(x) any(x.seq == seq),obj.pipe)' );
+            idxName = strcmpi(funcName, {obj.pipe.name}); idxSeq = arrayfun(@(x) any(x.seq == seq),obj.pipe);
+            if size(idxName,1)~= size(idxSeq,1)
+                idxSeq = idxSeq';
+            end
+            idxFunc = idxName & idxSeq;
             if ~any(idxFunc)
                 error(['The function "' funcName '" does not exist in pipeline sequence #' num2str(seq) '!']);
             end
@@ -218,14 +222,14 @@ classdef PipelineManager < handle
                         typeVals{i} = 'mixArray'; % Cell array of strings and numbers.
                     end
                 end
-                out = buildInputDlg(obj.pipe(idxFunc).name,fieldnames(obj.pipe(idxFunc).opts),currVals,defVals,listVals,typeVals);          
+                out = buildInputDlg(obj.pipe(idxFunc).name,fieldnames(obj.pipe(idxFunc).opts),currVals,defVals,listVals,typeVals);
             end
             if isempty(out)
                 return
             end
             % Save parameters to 'opts' structure:
             for i = 1:numel(fieldnames(obj.pipe(idxFunc).opts))
-                obj.pipe(idxFunc).opts.(out{i,1}) = out{i,2};                
+                obj.pipe(idxFunc).opts.(out{i,1}) = out{i,2};
             end
             obj.pipe(idxFunc).b_paramsSet = true; %
             disp(['Optional Parameters set for function : ' obj.pipe(idxFunc).name]);
@@ -267,6 +271,7 @@ classdef PipelineManager < handle
             addParameter(p,'fromSeq',1,@isPositiveIntegerValuedNumeric);
             parse(p,func, varargin{:});
             %
+            currSeq = obj.current_seq;
             state = false;
             % Check if the function name is valid:
             idxFunc = strcmpi(p.Results.func, {obj.funcList.name});
@@ -317,6 +322,8 @@ classdef PipelineManager < handle
             % Add branch and sequence index to the function:
             task = obj.setInput(task);
             if isempty(task)
+                % If failed, return
+                obj.current_seq = currSeq; % Reset current sequence
                 return
             end
             % Control for duplicate functions in the same sequence:
@@ -345,35 +352,35 @@ classdef PipelineManager < handle
             state = true;
         end
         %%%%% TO BE DONE --------------------------------------------------
-%         function state = rmTask(obj,func,varargin)
-%             % RMTASK removes a given function from the existing pipeline and
-%             % updates the remaining steps in order to maintain the pipeline
-%             % workflow.
-%             % Inputs:
-%             %   func (str || char):  name or index of the analysis function
-%             %       contained in obj.funcList property.
-%             %   fromSeq (positive integer): Optional. Sequence number of the input
-%             %       function set in "inputFrom" parameter. If not provided, we
-%             %       assume that the function comes from the sequence "1". This
-%             %       parameter is ignored if the input comes from the disk.
-%             % Output:
-%             %   state (bool): FALSE, if failed to add the task to the
-%             %   pipeline.
-%             
-%             p = inputParser;
-%             addRequired(p,'func',@(x) ischar(x) || isnumeric(x));
-%             addParameter(p,'fromSeq',1,@isPositiveIntegerValuedNumeric);
-%             parse(p,func,varargin{:});
-%             %
-%             state = false;
-%             % Check if the function exists in the pipeline sequence:
-%             idxFunc = ( strcmpi(p.Results.func,{obj.pipe.name}) && arrayfun(@(x) any(x.seq == p.Results.fromSeq),obj.pipe) );
-%             assert(any(idxFunc),['Operation aborted! The function "' p.Results.func '" does not exist!']);
-%             %
-%            
-%             
-%             
-%         end
+        %         function state = rmTask(obj,func,varargin)
+        %             % RMTASK removes a given function from the existing pipeline and
+        %             % updates the remaining steps in order to maintain the pipeline
+        %             % workflow.
+        %             % Inputs:
+        %             %   func (str || char):  name or index of the analysis function
+        %             %       contained in obj.funcList property.
+        %             %   fromSeq (positive integer): Optional. Sequence number of the input
+        %             %       function set in "inputFrom" parameter. If not provided, we
+        %             %       assume that the function comes from the sequence "1". This
+        %             %       parameter is ignored if the input comes from the disk.
+        %             % Output:
+        %             %   state (bool): FALSE, if failed to add the task to the
+        %             %   pipeline.
+        %
+        %             p = inputParser;
+        %             addRequired(p,'func',@(x) ischar(x) || isnumeric(x));
+        %             addParameter(p,'fromSeq',1,@isPositiveIntegerValuedNumeric);
+        %             parse(p,func,varargin{:});
+        %             %
+        %             state = false;
+        %             % Check if the function exists in the pipeline sequence:
+        %             idxFunc = ( strcmpi(p.Results.func,{obj.pipe.name}) && arrayfun(@(x) any(x.seq == p.Results.fromSeq),obj.pipe) );
+        %             assert(any(idxFunc),['Operation aborted! The function "' p.Results.func '" does not exist!']);
+        %             %
+        %
+        %
+        %
+        %         end
         
         function varargout = showPipeSummary(obj)
             % This method creates a summary of the current pipeline.
@@ -501,7 +508,7 @@ classdef PipelineManager < handle
                         [thisSeq, skippedFcns,selFile] = obj.skipSteps(thisSeq,obj.tmp_TargetObj.SaveFolder);
                         if isempty(thisSeq)
                             % When all sequence is skipped:
-                            fprintf('All steps skipped from the current sequence!\n')                            
+                            fprintf('All steps skipped from the current sequence!\n')
                             % Initialize empty Log for current object:
                             LastLog = obj.ProtocolObj.createEmptyTable;
                             % Fill out Log with Subject/Acquisition/Modality IDs :
@@ -645,9 +652,11 @@ classdef PipelineManager < handle
             end
         end
         
-        function savePipe(obj,filename)
-            % SAVEPIPE saves the structure OBJ.PIPE in a .JSON file in the
+        function savePipe(obj,pipeFile)
+            % SAVEPIPE saves the structure OBJ.PIPE in a .PIPE file in the
             % folder PIPELINECONFIGFILES inside the SAVEDIR of OBJ.PROTOCOLOBJ.
+            % If this function is called from DataViewer, it saves in
+            % DataViewer's folder set by the user.
             
             if ~obj.b_pipeIsValid
                 obj.validatePipeline;
@@ -655,14 +664,22 @@ classdef PipelineManager < handle
             if ~obj.b_pipeIsValid
                 error('Failed to validate pipeline. Save Pipeline aborted!')
             end
-            if ~endsWith(filename,'.pipe')
-                filename = [filename,'.pipe'];
-            end            
-            targetDir = fullfile(obj.ProtocolObj.SaveDir, 'PipeLineConfigFiles');
-            [~,~] = mkdir(targetDir);
-            pipeStruct = obj.pipe;            
-            save(fullfile(targetDir,filename), 'pipeStruct','-mat');            
-            disp(['Pipeline saved as "' filename '" in ' targetDir]);
+            [path, filename,ext] = fileparts(pipeFile);
+            if ~strcmpi(filename,'.pipe') || isempty(ext)
+                ext = '.pipe'; % Force extension.
+            end
+            % If the user did not enforce a path:
+            if isempty(path)
+                if ~obj.ProtocolObj.b_isDummy
+                    path = fullfile(obj.ProtocolObj.SaveDir, 'PipeLineConfigFiles');
+                    [~,~] = mkdir(path);
+                else
+                    path = obj.ProtocolObj.SaveDir;
+                end
+            end
+            pipeStruct = obj.pipe;
+            save(fullfile(path,[filename ext]), 'pipeStruct','-mat');
+            msgbox(['Pipeline saved as "' filename ext '" in ' path], 'modal');
         end
         
         function loadPipe(obj,pipeFile)
@@ -672,19 +689,27 @@ classdef PipelineManager < handle
             %   pipeFile(char): full path to the .JSON file containing the
             %   pipeline config.
             [path,filename, ~] = fileparts(pipeFile);
-            if isempty(path) && ~obj.ProtocolObj.b_isDummy
-                % Prepend path to "PipelineConfigFiles" in protocol's SaveDir
-                path = fullfile(obj.ProtocolObj.SaveDir,'PipeLineConfigFiles');
-            end                                       
-            % For retrocompatibility:
-            if exist(fullfile(path,[filename, '.json']),'file')
-                txt = fileread([pipeFile, '.json']);
-                new_pipe = jsondecode(txt);
-            else
-                a = load(fullfile(path,[filename '.pipe']),'-mat');
-                new_pipe = a.pipeStruct;                                
+            b_isOldFile = false;
+            if isempty(path)
+                if ~obj.ProtocolObj.b_isDummy
+                    % Prepend path to "PipelineConfigFiles" in protocol's SaveDir
+                    path = fullfile(obj.ProtocolObj.SaveDir,'PipeLineConfigFiles');
+                else
+                    path = obj.ProtocolObj.SaveDir;
+                end
             end
-            % erase current pipeline:
+            % Read Pipeline Config file:
+            if exist(fullfile(path,[filename, '.json']),'file')
+                % For retrocompatibility:
+                txt = fileread([filename, '.json']);
+                new_pipe = jsondecode(txt);
+                b_isOldFile = true;
+            else
+                % New version:
+                a = load(fullfile(path,[filename '.pipe']),'-mat');
+                new_pipe = a.pipeStruct;
+            end
+            % Reset current pipeline:
             obj.reset_pipe;
             % Check if all functions listed in "new_pipe" exist:
             idx = ismember({new_pipe.name},{obj.funcList.name});
@@ -695,30 +720,32 @@ classdef PipelineManager < handle
                 return
             end
             %%%----- RETROCOMPATIBILITY SECTION ---------------------------
-            stale_fields = setdiff(fieldnames(new_pipe), fieldnames(obj.pipe));
-            missing_fields = setdiff(fieldnames(obj.pipe), fieldnames(new_pipe));
-            if ~isempty(stale_fields) || ~isempty(missing_fields)
-                w = warndlg('Deprecated pipeline file found. The file will be updated now!');
-                waitfor(w);
-                
-                for ii = 1:length(new_pipe)
-                    % Add inputFrom:
-                    if new_pipe(ii).b_save2File
-                        state = obj.addTask(new_pipe(ii).name,true,new_pipe(ii).datFileName);
-                    else
-                        state = obj.addTask(new_pipe(ii).name);
+            if b_isOldFile
+                stale_fields = setdiff(fieldnames(new_pipe), fieldnames(obj.pipe));
+                missing_fields = setdiff(fieldnames(obj.pipe), fieldnames(new_pipe));
+                if ~isempty(stale_fields) || ~isempty(missing_fields)
+                    w = warndlg('Deprecated pipeline file found. The file will be updated now!');
+                    waitfor(w);
+                    
+                    for ii = 1:length(new_pipe)
+                        % Add inputFrom:
+                        if new_pipe(ii).b_save2File
+                            state = obj.addTask(new_pipe(ii).name,true,new_pipe(ii).datFileName);
+                        else
+                            state = obj.addTask(new_pipe(ii).name);
+                        end
+                        if ~state
+                            error('Failed to load pipeline!');
+                        end
                     end
-                    if ~state
-                        error('Failed to load pipeline!');
-                    end
+                    % Save updated pipeline in new file format and erase old .JSON file:
+                    obj.savePipe(filename);
+                    delete(fullfile(path,[filename '.json']));
+                    obj.validatePipeline;
+                    return
                 end
-                % Overwrite old .JSON file:
-                [~,filename,~] = fileparts(pipeFile);
-                obj.savePipe(filename);
-                obj.validatePipeline;
-                return
+                %%%------------------------------------------------------------               
             end
-            %%%------------------------------------------------------------
             % Add new tasks:
             fn = fieldnames(obj.pipe);
             for i = 1:length(new_pipe)
@@ -736,14 +763,14 @@ classdef PipelineManager < handle
             % property to default parameter values.
             obj.pipe = struct();
             % Reset some properties:
-            obj.current_data = []; obj.current_metaData = [];obj.current_outFile = {};            
+            obj.current_data = []; obj.current_metaData = [];obj.current_outFile = {};
             obj.current_seq = 0; obj.current_seqIndx = 0;
-            obj.b_pipeIsValid = false;            
+            obj.b_pipeIsValid = false;
             %
             disp('Pipeline erased!')
         end
         %%%%%%--Pipeline Visualization  -----------------------------------
-               
+        
         function fH = drawPipe(obj,varargin)
             % DRAWPIPE creates a Directed Acyclic Graph (DAG) representation
             % of the pipeline.
@@ -783,18 +810,18 @@ classdef PipelineManager < handle
             % Button colors:
             myRed = [.9 0 0];
             myGreen = [0 .85 0];
-            myGray = [.8 .8 .8];
+            myGray = [.92 .92 .92];
             
             % Create panel to be able to lock the figure during PushButton
             % Callback execution:
             pan = uipanel('Parent', fH, 'Position',[0 0 1 1], 'Title','Setting parameter...','Visible','off');
             % Create "Disk" button at the middle of the figure:
-            diskBtn = uicontrol(fH,'Style','pushbutton','String','Disk','Enable','off', 'FontSize',btnFontSize);      
+            diskBtn = uicontrol(fH,'Style','pushbutton','String','Disk','Enable','off', 'FontSize',btnFontSize);
             diskBtn.Position(4) = btnHeight;
             % Re-calculate sequence indices for 2+ sequences for a better
             % display:
             if any([pp.seq]>1)
-                for ii = 2:max([pp.seq])                  
+                for ii = 2:max([pp.seq])
                     seqPos = find(arrayfun(@(x) any(x.seq == ii),pp));
                     if pp(seqPos(1)).inputFrom == 0
                         continue
@@ -802,18 +829,18 @@ classdef PipelineManager < handle
                     for jj = 2:length(seqPos)
                         seqIndxPos = pp(seqPos(jj)).seq == ii;
                         pp(seqPos(jj)).seqIndx(seqIndxPos) = max([pp(seqPos).seqIndx]) + 1;
-                    end                                          
+                    end
                 end
             end
-            % Create buttons for each function:           
-            for ii = 1:length(pp)                 
-                btnArr(ii) = uicontrol(fH,'Style','pushbutton','String',pp(ii).name, 'FontSize',btnFontSize);                
+            % Create buttons for each function:
+            for ii = 1:length(pp)
+                btnArr(ii) = uicontrol(fH,'Style','pushbutton','String',pp(ii).name, 'FontSize',btnFontSize);
                 % Add Push button callback:
                 btnArr(ii).UserData = ii; % Store pipeline index in UserData;
-                btnArr(ii).Callback = {@callSetOpts,obj,pan}; % Call setOpts to set function's paramerets                
-                btnArr(ii).Position([3,4]) = [btnArr(ii).Extent(3)+10 btnHeight];% Avoid word wrapping                
-                btnArr(ii).BackgroundColor = fH.Color; % Make button "invisible" the color will be given by the CData property.                               
-                % Add tooltips for each one:                
+                btnArr(ii).Callback = {@callSetOpts,obj,pan}; % Call setOpts to set function's paramerets
+                btnArr(ii).Position([3,4]) = [btnArr(ii).Extent(3)+10 btnHeight];% Avoid word wrapping
+                btnArr(ii).BackgroundColor = fH.Color; % Make button "invisible" the color will be given by the CData property.
+                % Add tooltips for each one:
                 if ~isempty(pp(ii).opts)
                     tipTxt = obj.textifyOpts(pp(ii).opts);
                     if ~isempty(pp(ii).saveFileName)
@@ -849,7 +876,7 @@ classdef PipelineManager < handle
             myRed = obj.prettyfyBtn(myRed,btnArr(1).Position([3 4]), fH.Color(1));
             myGray = obj.prettyfyBtn(myGray,btnArr(1).Position([3 4]), fH.Color(1));
             for ii = 1:length(pp)
-            % Change button background color if parameters were set:
+                % Change button background color if parameters were set:
                 if isempty(obj.pipe(ii).opts)
                     btnArr(ii).CData = myGray; % Gray. No parameters.
                 elseif obj.pipe(ii).b_paramsSet
@@ -917,12 +944,12 @@ classdef PipelineManager < handle
                         crossSum(ii) = sum(abs(idx_target - idx_source));
                     end
                     % Find sequence with minimal number of crossings:
-                    permIndx = allPerms(find(crossSum == min(crossSum),1,'last'),:);                    
+                    permIndx = allPerms(find(crossSum == min(crossSum),1,'last'),:);
                 end
                 % Get sequence X positions:
                 xPos = round(linspace(bounds(1), bounds(3),max(seqList)));
-                xPos = xPos(permIndx);                
-                Xdict = containers.Map(seqList,xPos);                
+                xPos = xPos(permIndx);
+                Xdict = containers.Map(seqList,xPos);
                 % Update ctrX, except "Disk":
                 for ii = 1:length(pp)
                     ctrX(ii+1) = Xdict(pp(ii).seq(1,1));
@@ -943,7 +970,7 @@ classdef PipelineManager < handle
                 items(ii).Position(1) = ctrX(ii) - (items(ii).Position(3)/2);
                 items(ii).Position(2) = ctrY(ii) - (items(ii).Position(4)/2);
             end
-            % Add arrows between buttons:            
+            % Add arrows between buttons:
             arrYsource = arrayfun(@(x) x.Position(2), items);
             arrYtarget = arrayfun(@(x,y) x + y.Position(4)/2,ctrY,items);
             % Draw arrows and texts:
@@ -963,14 +990,14 @@ classdef PipelineManager < handle
                         ln2.X = [an.X(1), an.X(2)];
                         ln2.Y = [arrYsource(1) - half_distY, arrYsource(1) - half_distY];
                         an.X = [an.X(2) an.X(2)];
-                        an.Y = [arrYsource(1) - half_distY, arrYtarget(seq(1)+1)];                        
+                        an.Y = [arrYsource(1) - half_distY, arrYtarget(seq(1)+1)];
                     else
                         an.Y = [arrYsource(1) arrYtarget(seq(1)+1)];
                     end
                 end
-                for jj = 1:length(seq)-1                    
+                for jj = 1:length(seq)-1
                     an = annotation('arrow',[0,0],[1,1],'Units','pixels', 'HeadWidth',arrowHeadSz);
-                    an.X = [ctrX(seq(jj)+1) ctrX(seq(jj+1)+1)];                    
+                    an.X = [ctrX(seq(jj)+1) ctrX(seq(jj+1)+1)];
                     if ~isequal(arrYsource(seq(jj)+1), arrYtarget(seq(jj+1)+1))
                         % Create arrows between columns
                         half_distY = (arrYsource(seq(jj)+1) - arrYtarget(seq(jj+1)+1))/2;
@@ -984,43 +1011,43 @@ classdef PipelineManager < handle
                         an.Y = [arrYsource(seq(jj)+1) - half_distY, arrYtarget(seq(jj+1)+1)];
                     else
                         an.Y = [arrYsource(seq(jj)+1) arrYtarget(seq(jj+1)+1)];
-                    end                    
+                    end
                 end
             end
             % Put panel on top:
             uistack(pan, 'top');
             % Reposition the figure so the top-left corner is in the same
-            % position as the original figure:            
+            % position as the original figure:
             fH.Position(1) = origPos(1);
             fH.Position(2) = origPos(4) + origPos(2) - fH.Position(4);
             %%%%% Push Button Callback ------------------------------------
             function callSetOpts(src,~,obj,panel)
-               % This callback calls the method "setOpts" and changes the
-               % color of the button when parameters were changed.
-                              
-               % Get pipeline index:
-               ppIndx = src.UserData;
-               fcnInfo = obj.pipe(ppIndx);
-               if isempty(fcnInfo.opts)
-                   % Abort, if no parameters exist
-                   return
-               end
-               % Block figure interaction by turning uipanel visible
-               panel.Visible = 'on';
-               % Call "setOpts"
-               obj.setOpts(fcnInfo.name, fcnInfo.seq(1,1));
-               % Update button's tooltip text:
-               oldStr = src.Tooltip(1:strfind(src.Tooltip,'--')-1);               
-               src.Tooltip = strrep(src.Tooltip,oldStr,obj.textifyOpts(obj.pipe(ppIndx).opts));
-               % Change the button color to green:
-               src.CData = myGreen;  
-               % For some reason, the tooltip doesn't update until we
-               % resize the figure...
-               f = ancestor(src,'Figure');
-               f.Position(3) = f.Position(3) + 1;
-               f.Position(3) = f.Position(3) - 1;
-               % Show figure content
-               panel.Visible = 'off';
+                % This callback calls the method "setOpts" and changes the
+                % color of the button when parameters were changed.
+                
+                % Get pipeline index:
+                ppIndx = src.UserData;
+                fcnInfo = obj.pipe(ppIndx);
+                if isempty(fcnInfo.opts)
+                    % Abort, if no parameters exist
+                    return
+                end
+                % Block figure interaction by turning uipanel visible
+                panel.Visible = 'on';
+                % Call "setOpts"
+                obj.setOpts(fcnInfo.name, fcnInfo.seq(1,1));
+                % Update button's tooltip text:
+                oldStr = src.Tooltip(1:strfind(src.Tooltip,'--')-1);
+                src.Tooltip = strrep(src.Tooltip,oldStr,obj.textifyOpts(obj.pipe(ppIndx).opts));
+                % Change the button color to green:
+                src.CData = myGreen;
+                % For some reason, the tooltip doesn't update until we
+                % resize the figure...
+                f = ancestor(src,'Figure');
+                f.Position(3) = f.Position(3) + 1;
+                f.Position(3) = f.Position(3) - 1;
+                % Show figure content
+                panel.Visible = 'off';
             end
         end
         
@@ -1031,10 +1058,10 @@ classdef PipelineManager < handle
         
         function run_taskOnTarget(obj, task)
             % RUN_TASKONTARGET runs a task in the pipeline structure array in
-            % TASK.      
+            % TASK.
             % Input
             %   task(struct): current step from "obj.pipe".
-                        
+            
             % Initialize empty Log for current object:
             LastLog = obj.ProtocolObj.createEmptyTable;
             % Fill out Log with Subject/Acquisition/Modality IDs :
@@ -1086,7 +1113,7 @@ classdef PipelineManager < handle
                 % Look for tasks with output data from the current step and
                 % save the data to a .DAT or .MAT file:
                 obj.saveDataToFile(task,false)
-            elseif obj.b_saveDataBeforeFail && ~obj.b_state                
+            elseif obj.b_saveDataBeforeFail && ~obj.b_state
                 obj.saveDataToFile(task,true);
             end
             % Update log table of target object:
@@ -1166,10 +1193,10 @@ classdef PipelineManager < handle
                     end
                 end
                 thisSeq(ii).inputFileName = selFile;
-                obj.loadInputFile(thisSeq(ii));% Load step;                
+                obj.loadInputFile(thisSeq(ii));% Load step;
                 if ~strcmpi(thisSeq(ii).saveFileName,selFile)
                     obj.saveDataToFile(thisSeq(ii),false)
-                end                
+                end
                 newSeq = {}; skippedSteps = {'All'};
                 return
             end
@@ -1259,7 +1286,7 @@ classdef PipelineManager < handle
                 skipNames = {seqIn(indxEqual).name};
             end
         end
-                        
+        
         %%%%%%--Helpers for "addTask" method -----------------------------
         
         function task = setInput(obj,task)
@@ -1610,20 +1637,20 @@ classdef PipelineManager < handle
             % First, we need to know if the output is a "data", a .DAT file or a .MAT file:
             if any(strcmp(step.argsOut, 'outFile'))
                 curr_dtHist.outFileName = obj.current_outFile; % Update outFileName list with the actual files generated by the function in "step".
-               % In case the step ouput is .DAT file(s), update the
-               % dataHistory on each one:                                              
+                % In case the step ouput is .DAT file(s), update the
+                % dataHistory on each one:
                 for i = 1:length(obj.current_outFile)
                     % Map existing metaData file to memory:
                     if endsWith(obj.current_outFile{i},'.dat','IgnoreCase',true)
-                        mtD = matfile(strrep(obj.current_outFile{i}, '.dat', '.mat'));                        
+                        mtD = matfile(strrep(obj.current_outFile{i}, '.dat', '.mat'));
                     else
                         mtD = matfile(obj.current_outFile{i});
                     end
                     mtD.Properties.Writable = true;
-                    % Create or update "dataHistory" structure:                    
+                    % Create or update "dataHistory" structure:
                     mtD.dataHistory = appendDataHistory(mtD, curr_dtHist);
                 end
-            elseif any(strcmp(step.argsOut, 'outData'))                
+            elseif any(strcmp(step.argsOut, 'outData'))
                 if isstruct(obj.current_data)
                     % In case of step output is .MAT file(s):
                     obj.current_data.dataHistory = appendDataHistory(obj.current_data, curr_dtHist);
@@ -1631,11 +1658,11 @@ classdef PipelineManager < handle
                     % In case of step output is a data array:
                     obj.current_metaData.dataHistory = appendDataHistory(obj.current_metaData, curr_dtHist);
                 end
-            end                                     
+            end
             %%%%%--Local function -----------------------------------------
             function out = appendDataHistory(currData, new_dh)
                 % This function appends the data history "dh" to
-                % "current_dataHistory" property of obj.                                
+                % "current_dataHistory" property of obj.
                 if ~isfield(currData,'dataHistory')
                     out = new_dh;
                     return
@@ -1650,8 +1677,8 @@ classdef PipelineManager < handle
                 fn = setdiff(fieldnames(dh_original), fieldnames(new_dh));
                 for ii = 1:length(fn)
                     new_dh(1).(fn{ii}) = [];
-                end                
-                out = vertcat(dh_original,new_dh);                
+                end
+                out = vertcat(dh_original,new_dh);
             end
         end
         
@@ -1694,7 +1721,7 @@ classdef PipelineManager < handle
             %       "step.saveFileName".
             
             % Get the pipeline until the task in "step":
-            indx = obj.findStep(step);    
+            indx = obj.findStep(step);
             %%%% FOR TESTING
             assert(~isempty(indx),'FAILED TO FIND STEP IN PIPELINE');
             assert(numel(indx) == 1,'DUPLICATE STEPS FOUND IN PIPELINE! DEBUG!');
@@ -1717,11 +1744,11 @@ classdef PipelineManager < handle
             end
             [~,name, ext] = fileparts(obj.pipe(ii).outFileName);
             saveFailStr = [name '_recovered' ext]; % string to append to files saved before an error.
-            % If the pipeline failed, and the previous step was a fuction with data output, 
-            % use the default file name to save the data:            
+            % If the pipeline failed, and the previous step was a fuction with data output,
+            % use the default file name to save the data:
             if b_failed && isempty(obj.pipe(ii).saveFileName) && ischar(obj.pipe(ii).outFileName)
                 obj.pipe(ii).saveFileName = saveFailStr;
-            elseif b_failed && contains(obj.pipe(ii).saveFileName, obj.timeTag,'IgnoreCase',true) 
+            elseif b_failed && contains(obj.pipe(ii).saveFileName, obj.timeTag,'IgnoreCase',true)
                 % If the previous step already saved a temporary file, just
                 % rename it.
                 movefile(fullfile(obj.tmp_TargetObj.SaveFolder,obj.pipe(ii).saveFileName),...
@@ -1732,13 +1759,13 @@ classdef PipelineManager < handle
             if strcmpi(ext, '.dat')
                 % For .dat files:
                 save2Dat(fullfile(obj.tmp_TargetObj.SaveFolder,obj.pipe(ii).saveFileName),...
-                    obj.current_data, obj.current_metaData);                
+                    obj.current_data, obj.current_metaData);
             else
                 % For .mat files:
                 S = obj.current_data;
                 save(fullfile(obj.tmp_TargetObj.SaveFolder,task.saveFileName),...
-                    '-struct', 'S', '-v7.3');                
-            end            
+                    '-struct', 'S', '-v7.3');
+            end
         end
         
         function deleteTemporaryFiles(obj,folder)
@@ -1827,7 +1854,7 @@ classdef PipelineManager < handle
             % Inputs:
             %   tag (char): "Initialize" : creates the 2 waitbars.
             %               "UpdateItem" : updates bar1.
-            %               "UpdateTask" : updates bar2.            
+            %               "UpdateTask" : updates bar2.
             
             p = inputParser;
             addRequired(p,'obj')
@@ -1921,16 +1948,16 @@ classdef PipelineManager < handle
             % This creates a CData with the given color (rgb triplet)
             % that mimics a button with rounded corners.
             w = round(btnSz(1)); % width
-            h = round(btnSz(2)); % height            
+            h = round(btnSz(2)); % height
             % Choose the radius of the rounded corners
-            r = round(.05*w); % radius            
+            r = round(.05*w); % radius
             % Define the x and y grids using meshgrid
-            [x, y] = meshgrid(1:w, 1:h);            
+            [x, y] = meshgrid(1:w, 1:h);
             % Define a mask for the rounded rectangle
             mask = ((x <= r) & (y <= r) & (sqrt((x - r).^2 + (y - r).^2)) <= r) | ... % top left corner
                 ((x >= w - r) & (y <= r) & (sqrt((x - w + r).^2 + (y - r).^2)) <= r) | ... % top right corner
                 ((x <= r) & (y >= h - r) & (sqrt((x - r).^2 + (y - h + r).^2)) <= r) | ... % bottom left corner
-                ((x >= w - r) & (y >= h - r) & (sqrt((x - w + r).^2 + (y - h + r).^2)) <= r); % bottom right corner            
+                ((x >= w - r) & (y >= h - r) & (sqrt((x - w + r).^2 + (y - h + r).^2)) <= r); % bottom right corner
             % Create the rounded rectangle
             rect = ones(size(x));
             rect(mask) = 0;
@@ -1942,22 +1969,22 @@ classdef PipelineManager < handle
             r = repmat(color(1),h,w); r(antiMsk) = bcgCol; r(rim) = 0;
             g = repmat(color(2),h,w);g(antiMsk) = bcgCol; g(rim) = 0;
             b = repmat(color(3),h,w); b(antiMsk) = bcgCol; b(rim) = 0;
-            rgb = cat(3,r,g,b);            
+            rgb = cat(3,r,g,b);
         end
         
         function indx = findStep(obj,step)
-           % This function gives the index of the task "step" in the pipeline "pipe"
-           % It compares all fields from the structure to identify the
-           % step.
-           
-           fn = fieldnames(step); 
-           % Exclude fields that may change during pipeline execution:
-           fn = setdiff(fn, {'seqIndx', 'inputFrom', 'b_save2File', 'inputFileName'});
-           idx = false(length(obj.pipe), length(fn));
-           for ii = 1:length(fn)
-               idx(:,ii) = arrayfun(@(x) isequaln(step.(fn{ii}),x.(fn{ii})),obj.pipe);
-           end
-           indx = find(all(idx,2));
+            % This function gives the index of the task "step" in the pipeline "pipe"
+            % It compares all fields from the structure to identify the
+            % step.
+            
+            fn = fieldnames(step);
+            % Exclude fields that may change during pipeline execution:
+            fn = setdiff(fn, {'seqIndx', 'inputFrom', 'b_save2File', 'inputFileName'});
+            idx = false(length(obj.pipe), length(fn));
+            for ii = 1:length(fn)
+                idx(:,ii) = arrayfun(@(x) isequaln(step.(fn{ii}),x.(fn{ii})),obj.pipe);
+            end
+            indx = find(all(idx,2));
         end
     end
 end

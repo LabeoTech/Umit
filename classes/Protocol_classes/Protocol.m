@@ -14,32 +14,35 @@ classdef Protocol < handle
         % where the Subjects and Acquisition data are created.
         Array % List of Subjects. Default: empty ObjectListManager.
         garbageList % Table with a list of removed elements
-        Idx_Filtered % Array containing indices of Subject/Acquisition/Modality after using a Query Filter as OBJ.QUERYFILTER
+        Idx_Filtered  = []% Array containing indices of Subject/Acquisition/Modality after using a Query Filter as OBJ.QUERYFILTER
         FilterStruct % Structure containing strings used to filter objects. Used by OBJ.QUERYFILTER.
     end
     properties (SetAccess = {?PipelineManager})
         LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
     end
+    properties (SetAccess = private)
+       b_isDummy  = false % Used by DataViewer as standalone ONLY!!      
+    end
     properties (Dependent)
         LogBookFile char % MAT file with a table containing information about the Pipeline Operations run by PIPELINEMANAGER.
     end
     methods
-        function obj = Protocol(Name, MainDir, SaveDir, ProtoFunc, Array)
+        function obj = Protocol(Name, MainDir, SaveDir, ProtoFunc, varargin)
             % Class constructor.
             %   This function initiates the object "Protocol" with the
             %   properties: MainDir, SaveDir, ProtoFunc and Array.
             %   All first inputs must be provided. If Array is empty,
             %   the function creates an emtpy Array.
+            
             if nargin > 0
                 obj.Name = Name;
                 obj.Array = Array;
                 obj.MainDir = MainDir;
                 obj.SaveDir = SaveDir;
                 obj.ProtoFunc = ProtoFunc;
-            else
-                obj.Array = [];
+                obj.b_isDummy = varargin{:};
             end
-            obj.Idx_Filtered = {};
+            %            
             obj.createLogBookFile
             obj.createFilterStruct
         end
@@ -85,12 +88,13 @@ classdef Protocol < handle
             % Set function for Array property.
             %   Accepts "ObjectListManager" or "Subject" objects as input. If
             %   empty, creates an default "ObjectListManager" object.
+            obj.Array = ObjectListManager([],obj);
             if isa(Array, 'Subject')
                 obj.Array.addObj(Array);
             elseif isa(Array, 'ObjectListManager')
                 obj.Array = Array;
-            else
-                obj.Array = ObjectListManager([],obj);
+%             else
+%                 obj.Array = ObjectListManager([],obj);
             end
         end
         %%% Property Get functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -344,9 +348,7 @@ classdef Protocol < handle
             if any(strcmp(AcqID, obj.Array.ObjList(idxS).Array.listProp('ID')))                
                 warning('Acquisition already exists in the selected Subject! Operation aborted.')
                 return
-            end
-            %%%
-            
+            end                       
             % Create Acquisition:
             AcqHandle = Acquisition(); 
             AcqHandle.ID = AcqID;
