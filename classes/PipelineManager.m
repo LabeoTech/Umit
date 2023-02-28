@@ -5,16 +5,18 @@ classdef PipelineManager < handle
     
     properties
         b_ignoreLoggedFiles  = false %(bool) If true, PIPELINEMANAGER will ignore identical jobs previously run.
-        b_saveDataBeforeFail = false %(bool) If true, the more recent data ("current_data") in the pipeline will be...
-        % saved to a file when an error occurs.
+        b_saveDataBeforeFail = false %(bool) If true, the more recent data ("current_data") in the pipeline will be saved to a file when an error occurs.
+        b_overwriteFiles = false %(bool) If true, the pipeline will overwrite existing files with same names. If false, a "_n"umber will be appended to the new file name.
     end
-    properties (SetAccess = private)
+    properties (SetAccess = {?DataViewer})
         % Structure array containing steps of the pipeline:
         pipe = struct('argsIn', {},'argsOut',{},'outFileName','',...
             'inputFileName', '', 'b_save2File', logical.empty, 'saveFileName',...
             '', 'opts',struct.empty,'opts_vals',struct.empty,...
             'opts_def',struct.empty ,'name','', 'inputFrom','', 'seq',[],'seqIndx',[],...
-            'b_hasDataIn',false,'b_hasDataOut',false,'b_paramsSet',false);% !!If the fields are changed, please apply
+            'b_hasDataIn',false,'b_hasDataOut',false,'b_hasFileOut',false,'b_paramsSet',false);% !!If the fields are changed, please apply to the "set" method as well.
+    end
+    properties (SetAccess = private)               
         % the same changes to the property's set method.
         funcList struct % structure containing the info about each function in the "fcnDir".
         ProtocolObj Protocol % Protocol Object.
@@ -24,14 +26,17 @@ classdef PipelineManager < handle
         PipelineSummary % Shows the jobs run in the current Pipeline
         current_seq = 0 % index of current sequence in pipeline .
     end
+    properties (GetAccess = {?DataViewer})
+        current_data % Data available in the workspace during pipeline.
+        current_metaData % MetaData associated with "current_data".
+        dv_originalMetaData % Copy of current_metaData from the input file.
+    end
     properties (Access = private)
         b_taskState = false % Boolean indicating if the task in pipeline was successful (TRUE) or not (FALSE).
         tmp_LogBook % Temporarily stores the table from PROTOCOL.LOGBOOKFILE
         tmp_BranchPipeline % Temporarily stores LogBook from a Hierarchical branch.
         tmp_TargetObj % % Temporarily stores an object (TARGEROBJ).
-        current_pipe % Pipeline currently running.
-        current_data % Data available in the workspace during pipeline.
-        current_metaData % MetaData associated with "current_data".
+        current_pipe % Pipeline currently running.        
         current_outFile cell % List of file names created as output from some of the analysis functions.
         b_state logical % True if a task of a pipeline was successfully executed.
         % It can be the name of an existing file, or
@@ -119,7 +124,7 @@ classdef PipelineManager < handle
             
             obj.ClassName = p.Results.ClassName;
             if isdeployed
-                [obj.fcnDir,~,~] = fileparts(which('funcTemplate.m'));
+                [obj.fcnDir,~,~] = fileparts(which('run_ImagesClassification.m'));
                 a = load(fullfile(obj.fcnDir,'deployFcnList.mat'));
                 obj.funcList = a.out; % Get the structure "out" created inside the function "umitFcnReader".
             else
@@ -130,8 +135,8 @@ classdef PipelineManager < handle
                 obj.fcnDir = fullfile(rootDir, 'Analysis');
                 obj.createFcnList;
             end
-            obj.b_ignoreLoggedFiles = false;
-            obj.b_saveDataBeforeFail = false;
+%             obj.b_ignoreLoggedFiles = false;
+%             obj.b_saveDataBeforeFail = false;
         end
         % SETTERS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function set.pipe(obj,pipe)
@@ -144,7 +149,7 @@ classdef PipelineManager < handle
                     '', 'opts',struct.empty,'opts_vals',struct.empty,...
                     'opts_def',struct.empty ,'name','', 'inputFrom','',...
                     'seq',[],'seqIndx',[],'b_hasDataIn',false,'b_hasDataOut',false,...
-                    'b_paramsSet',false);
+                    'b_hasFileOut',false,'b_paramsSet',false);
             end
             % Check if all fields exist:
             if ~all(ismember(fieldnames(pipe),fieldnames(obj.pipe)))
@@ -314,11 +319,30 @@ classdef PipelineManager < handle
             else
                 % Control for cases where the User sets an input file name
                 % without setting the "inputFrom" parameter. In this case,
-                % we set the "inputFrom" to "_LOCAL_".
+                % we force set the "inputFrom" to the disk.
                 if ~isempty(task.inputFileName)
                     task.inputFrom = 0;
                 end
             end
+            %%% SPECIAL CASE - DataViewer
+            % For the first step of the pipeline avoid asking for an input
+            % file:
+            if obj.ProtocolObj.b_isDummy && obj.current_seq == 0
+                obj.current_seq = 1;
+                obj.current_seqIndx = 1;
+                task.seq = 1;task.seqIndx = 1; task.inputFrom = -1; % Set inputFrom to "-1" the data from DataViewer.
+                if ~isempty(obj.current_data)
+                    task.inputFileName = obj.dv_originalMetaData.datFile; % Get name of the input file in DataViewer.
+                end
+                obj.pipe = [obj.pipe; task];
+                fprintf('Added "%s" to sequence #%d of the pipeline.\n',task.name, obj.current_seq)
+                state = true;
+                return
+            end
+                
+                
+            
+            %%%------------------------------------------------------------
             % Add branch and sequence index to the function:
             task = obj.setInput(task);
             if isempty(task)
@@ -446,7 +470,13 @@ classdef PipelineManager < handle
         
         function run_pipeline(obj)
             % RUN_PIPELINE runs the tasks in OBJ.PIPE
+             
+%             if obj.ProtocolObj.b_isDummy && isempty(obj.current_data)
+%                 % Check for DataViewer interface.
+%                 return
+%             end
             
+            %%%% Force saving sequences' last steps (Except for DataViewer)
             if ~obj.b_pipeIsValid
                 obj.validatePipeline; % Run pipeline validation
             end
@@ -455,10 +485,15 @@ classdef PipelineManager < handle
                 warning('Pipeline execution aborted! Pipeline is invalid.')
                 return
             end
+            
+            %%% -----------------------------------------------------------
+            
             % Reset sequence counter:
             obj.current_seq = 1;
-            lbf = matfile(obj.ProtocolObj.LogBookFile);
-            obj.tmp_LogBook = lbf.LogBook;
+            if ~obj.ProtocolObj.b_isDummy
+                lbf = matfile(obj.ProtocolObj.LogBookFile);
+                obj.tmp_LogBook = lbf.LogBook;
+            end
             obj.PipelineSummary = obj.ProtocolObj.createEmptyTable;
             % Initialize waitbars:
             obj.setWaitBar('Initialize')
@@ -478,7 +513,9 @@ classdef PipelineManager < handle
             
             for ii = 1:size(targetIdxArr,1)
                 % Clear current data,  metaData and File List for each item in te pipeline:
-                obj.current_data = []; obj.current_metaData = [];obj.current_outFile = {};
+                if ~obj.ProtocolObj.b_isDummy
+                    obj.current_data = []; obj.current_metaData = [];obj.current_outFile = {};              
+                end                
                 obj.b_state = true;
                 % Get handle of current object:
                 obj.getTargetObj(targetIdxArr(ii,:));
@@ -557,17 +594,20 @@ classdef PipelineManager < handle
             end
             % Remove "empty" rows from the Pipeline Summary Log table:
             idx_emptyRow = all(strcmp('None',table2cell(obj.PipelineSummary(:,1:5))),2);
-            obj.PipelineSummary(idx_emptyRow,:) = [];
+            obj.PipelineSummary(idx_emptyRow,:) = [];            
             % Update LogBook with Pipeline Summary table:
-            LogBook = [obj.tmp_LogBook; obj.PipelineSummary];
-            % Save Log Book to file:
-            save(obj.ProtocolObj.LogBookFile, 'LogBook');
+            if ~obj.ProtocolObj.b_isDummy
+                LogBook = [obj.tmp_LogBook; obj.PipelineSummary];
+                % Save Log Book to file:
+                save(obj.ProtocolObj.LogBookFile, 'LogBook');
+                % Save Protocol Object:
+                protocol = obj.ProtocolObj;
+                save([obj.ProtocolObj.SaveDir obj.ProtocolObj.Name '.mat'], 'protocol');
+                disp('Protocol object Saved!');
+            end
+           
             % Show Pipeline Summary in command window:
-            disp(obj.PipelineSummary)
-            % Save Protocol Object:
-            protocol = obj.ProtocolObj;
-            save([obj.ProtocolObj.SaveDir obj.ProtocolObj.Name '.mat'], 'protocol');
-            disp('Protocol object Saved!');
+            disp(obj.PipelineSummary)           
             % Delete progress bars:
             delete([obj.h_wbItem, obj.h_wbTask]);
             % Request User permission to save error report:
@@ -596,11 +636,19 @@ classdef PipelineManager < handle
                         % generate data as output.
                         continue
                     end
-                    % Force saving last step of the sequence:
-                    if ~thisSeq(jj).b_save2File
+                    % Force saving last step of the sequence (Except for DataViewer):
+                    if ~thisSeq(jj).b_save2File && ~obj.ProtocolObj.b_isDummy
                         thisSeq(jj).b_save2File = true;
                         thisSeq(jj).saveFileName = thisSeq(jj).outFileName;
                     end
+                    
+                    if obj.ProtocolObj.b_isDummy && ~thisSeq(jj).b_save2File
+                       % DATAVIEWER: Skip duplicate save file names for
+                       % steps that will not be saved.
+                        break
+                    end
+                        
+                    
                     % Check for output files with the same name
                     idxDuplicate = strcmpi(thisSeq(jj).saveFileName,lastFileNameList);
                     if any(idxDuplicate)
@@ -753,6 +801,8 @@ classdef PipelineManager < handle
                     obj.pipe(i).(fn{k}) = new_pipe(i).(fn{k});
                 end
             end
+            % Update current sequence index:
+            obj.current_seq = max([obj.pipe.seq],[],'all');
             disp('Pipeline loaded!')
             % Validate loaded pipeline:
             obj.validatePipeline;
@@ -763,7 +813,10 @@ classdef PipelineManager < handle
             % property to default parameter values.
             obj.pipe = struct();
             % Reset some properties:
-            obj.current_data = []; obj.current_metaData = [];obj.current_outFile = {};
+            if ~obj.ProtocolObj.b_isDummy
+                obj.current_data = []; obj.current_metaData = [];
+            end
+            obj.current_outFile = {};
             obj.current_seq = 0; obj.current_seqIndx = 0;
             obj.b_pipeIsValid = false;
             %
@@ -798,6 +851,11 @@ classdef PipelineManager < handle
             if isempty(pp)
                 return
             end
+            if obj.ProtocolObj.b_isDummy
+                dskName = 'DataViewer';
+            else
+                dskName = 'Disk';
+            end
             % Get original figure position:
             origPos = fH.Position;
             % GUI elements' paramters:
@@ -811,13 +869,16 @@ classdef PipelineManager < handle
             myRed = [.9 0 0];
             myGreen = [0 .85 0];
             myGray = [.92 .92 .92];
-            
+            % Create UIContext Menu for extra options:
+            cm = uicontextmenu(fH);
+            uimenu('Parent',cm,'Label','Save to file','Callback',{@chooseSaveFileName,obj}); % Menu to change save filename.
             % Create panel to be able to lock the figure during PushButton
             % Callback execution:
             pan = uipanel('Parent', fH, 'Position',[0 0 1 1], 'Title','Setting parameter...','Visible','off');
             % Create "Disk" button at the middle of the figure:
-            diskBtn = uicontrol(fH,'Style','pushbutton','String','Disk','Enable','off', 'FontSize',btnFontSize);
-            diskBtn.Position(4) = btnHeight;
+            diskBtn = uicontrol(fH,'Style','pushbutton','String',dskName,'Enable','off', 'FontSize',btnFontSize, 'Tag','origin');
+            diskBtn.Position([3 4]) = [diskBtn.Extent(3) btnHeight];
+%             diskBtn.Position(4) = btnHeight;
             % Re-calculate sequence indices for 2+ sequences for a better
             % display:
             if any([pp.seq]>1)
@@ -840,33 +901,11 @@ classdef PipelineManager < handle
                 btnArr(ii).Callback = {@callSetOpts,obj,pan}; % Call setOpts to set function's paramerets
                 btnArr(ii).Position([3,4]) = [btnArr(ii).Extent(3)+10 btnHeight];% Avoid word wrapping
                 btnArr(ii).BackgroundColor = fH.Color; % Make button "invisible" the color will be given by the CData property.
-                % Add tooltips for each one:
-                if ~isempty(pp(ii).opts)
-                    tipTxt = obj.textifyOpts(pp(ii).opts);
-                    if ~isempty(pp(ii).saveFileName)
-                        tipTxt = [tipTxt, sprintf('\n%s',repmat('-',1,20)),  sprintf('\nSave to file: "%s"',pp(ii).saveFileName)];
-                    end
-                else
-                    tipTxt = 'No Parameters';
+                if pp(ii).b_hasDataOut & any(~contains(pp(ii).argsOut, 'outFile','IgnoreCase',true))
+                    % Add context menu for functions with output data.
+                    btnArr(ii).UIContextMenu = cm; 
                 end
-                if ~isempty(pp(ii).inputFrom)
-                    sourceFile = pp(ii).inputFileName;
-                    if pp(ii).inputFrom == 0
-                        source = 'Disk';
-                    else
-                        source = pp(pp(ii).inputFrom).name;
-                    end
-                    % Add input source to data tip:
-                    tipTxt = [tipTxt, sprintf('\n%s',repmat('-',1,20)),sprintf('\nInput From: "%s"',source)];
-                    if ~isempty(sourceFile)
-                        if contains(sourceFile, obj.timeTag, 'IgnoreCase',true)
-                            % Replace temporary file names with "data"
-                            sourceFile = 'data';
-                        end
-                        tipTxt = [tipTxt, sprintf('\nInput File: "%s"',sourceFile)];
-                    end
-                end
-                btnArr(ii).Tooltip = tipTxt;
+               btnArr(ii).Tooltip = obj.genToolTipTxt(pp(ii));
             end
             % Make all buttons the same width
             maxW = max(arrayfun(@(x) x.Position(3), btnArr));
@@ -878,7 +917,7 @@ classdef PipelineManager < handle
             for ii = 1:length(pp)
                 % Change button background color if parameters were set:
                 if isempty(obj.pipe(ii).opts)
-                    btnArr(ii).CData = myGray; % Gray. No parameters.
+                    btnArr(ii).CData = myGray; % Gray. No parameters.                    
                 elseif obj.pipe(ii).b_paramsSet
                     btnArr(ii).CData = myGreen; % Green. Parameters already set.
                 else
@@ -925,7 +964,7 @@ classdef PipelineManager < handle
                     % Check if the step input is from a different sequence,
                     % if so, ensure that there are no arrow crossings by
                     % rearranging the x positions:
-                    if isempty(pp(ii).inputFrom) || pp(ii).inputFrom == 0
+                    if isempty(pp(ii).inputFrom) || pp(ii).inputFrom == 0 || pp(ii).inputFrom == -1
                         seqPairs(ii,:) = [pp(ii).seq(1,1), pp(ii).seq(1,1)];
                     else
                         seqPairs(ii,:) = [pp(pp(ii).inputFrom).seq(1,1), pp(ii).seq(1,1)];
@@ -976,8 +1015,8 @@ classdef PipelineManager < handle
             % Draw arrows and texts:
             for ii = seqList
                 seq = find(arrayfun(@(x) any(x.seq == ii),pp));
-                if pp(seq(1)).inputFrom == 0
-                    % For when the input comes from the "Disk":
+                if pp(seq(1)).inputFrom == 0 ||  pp(seq(1)).inputFrom == -1
+                    % For when the input comes from the "Disk" or "DataViewer":
                     an = annotation('arrow',[0,0],[1,1],'Units','pixels', 'HeadWidth',arrowHeadSz);
                     an.X = [ctrX(1) ctrX(seq(1)+1)];
                     if ~isequal(arrYsource(1), arrYtarget(seq(1)+1))
@@ -1020,7 +1059,9 @@ classdef PipelineManager < handle
             % position as the original figure:
             fH.Position(1) = origPos(1);
             fH.Position(2) = origPos(4) + origPos(2) - fH.Position(4);
-            %%%%% Push Button Callback ------------------------------------
+            %%%%% Local functions -----------------------------------------
+            
+            %%%%% Figure Callbacks ----------------------------------------
             function callSetOpts(src,~,obj,panel)
                 % This callback calls the method "setOpts" and changes the
                 % color of the button when parameters were changed.
@@ -1037,21 +1078,65 @@ classdef PipelineManager < handle
                 % Call "setOpts"
                 obj.setOpts(fcnInfo.name, fcnInfo.seq(1,1));
                 % Update button's tooltip text:
-                oldStr = src.Tooltip(1:strfind(src.Tooltip,'--')-1);
-                src.Tooltip = strrep(src.Tooltip,oldStr,obj.textifyOpts(obj.pipe(ppIndx).opts));
+                src.Tooltip = obj.genToolTipTxt(obj.pipe(ppIndx));
                 % Change the button color to green:
-                src.CData = myGreen;
-                % For some reason, the tooltip doesn't update until we
-                % resize the figure...
-                f = ancestor(src,'Figure');
-                f.Position(3) = f.Position(3) + 1;
-                f.Position(3) = f.Position(3) - 1;
+                src.CData = myGreen;  
+                jiggleFig(ancestor(src, 'figure')) % Update tooltips
                 % Show figure content
                 panel.Visible = 'off';
             end
-        end
-        
+            
+            function chooseSaveFileName(src,~,obj)
+                % Create input dialog to select/change SaveFileName
+                btn = gco;
+                idxFcn = btn.UserData;
+                step = obj.pipe(idxFcn);
+                % Create input dialog box:
+                if isempty(step.saveFileName)
+                    defName = step.outFileName;
+                else
+                   defName = step.saveFileName;
+                end
+                [~,~,ext] = fileparts(defName);
+                answer = inputdlg('Type file name:','Save step as',[1 50],{defName});
+                if isempty(answer)
+                    disp('Operation cancelled by User')
+                    return
+                end
+                [~,newName,~] = fileparts(answer{1});
+                % Update saveFileName in pipeline:
+                obj.pipe(idxFcn).b_save2File = true;
+                obj.pipe(idxFcn).saveFileName = [newName, ext];
+                % Update tooltips:
+                figH = ancestor(src,'figure');                
+                btnList = findobj(figH,'Type','uicontrol');
+                btn = btnList([btnList.UserData] == idxFcn);
+                btn.Tooltip = obj.genToolTipTxt(obj.pipe(idxFcn));
+                jiggleFig(ancestor(src, 'figure')) 
+            end          
+            function jiggleFig(figH)
+                 % For some reason, the tooltip doesn't update until we
+                % resize the figure...                
+                figH.Position(3) = figH.Position(3) + 1;
+                figH.Position(3) = figH.Position(3) - 1;
+            end
+                
+        end                      
+        %%%%%-- Methods for interfacing with DataViewer -------------------
+        function loadDataFromDummyProtocol(obj, data,metaData)
+            % This methods imports the imaging data from DataViewer to this
+            % class.
+            
+            if ~obj.ProtocolObj.b_isDummy
+                % Exclusive to "dummy" protocol instance.
+                return
+            end
+            obj.current_data = data;
+            obj.current_metaData = metaData;     
+            obj.dv_originalMetaData = metaData; % Store original metaData structure for comparisons during pipeline execution.
+        end                     
         %%%%%%-------------------------------------------------------------
+        
     end
     
     methods (Access = private)
@@ -1075,7 +1160,7 @@ classdef PipelineManager < handle
             LastLog.Job = {funcStr};
             % Add full path of input file, if applicable:
             b_hasInputFile = false;
-            if strcmpi(task.inputFileName,'data')
+            if strcmpi(task.inputFileName,'data') || task.inputFrom <= 0
                 % Do nothing
             elseif ~isempty(task.inputFileName)
                 b_hasInputFile = true;
@@ -1194,7 +1279,7 @@ classdef PipelineManager < handle
                 end
                 thisSeq(ii).inputFileName = selFile;
                 obj.loadInputFile(thisSeq(ii));% Load step;
-                if ~strcmpi(thisSeq(ii).saveFileName,selFile)
+                if ~strcmpi(thisSeq(ii).saveFileName,selFile) && ~obj.ProtocolObj.b_isDummy
                     obj.saveDataToFile(thisSeq(ii),false)
                 end
                 newSeq = {}; skippedSteps = {'All'};
@@ -1218,8 +1303,13 @@ classdef PipelineManager < handle
                 a = load(fullfile(path,[file '.mat']),'dataHistory');
                 dataHistory = a.dataHistory; clear a
                 % Compare datetimes:
-                [~,locB] = ismember({dataHistory.name},{obj.funcList.name});
-                idxSameDate = cellfun(@(x,y) strcmpi(datestr(x),y),{dataHistory.creationDatetime},...
+                [idx,locB] = ismember({dataHistory.name},{obj.funcList.name});
+                locB(locB == 0) = []; % Remove non-existent functions.
+                if isempty(locB)
+                    % If none of the functions exist, abort.
+                    return
+                end
+                idxSameDate = cellfun(@(x,y) strcmpi(datestr(x),y),{dataHistory(idx).creationDatetime},...
                     {obj.funcList(locB).date});
                 % %% SECTION COMMENTED FOR TESTING ONLY
                 %                 if ~all(idxSameDate)
@@ -1233,8 +1323,9 @@ classdef PipelineManager < handle
                 end
                 % IF there is an input file, prepend the dataHistory to the current
                 % sequence:
-                idxFromDisk = find(~cellfun(@isempty,{seqIn.inputFileName}) & [seqIn.inputFrom] == 0,1,'first');
-                if ~isempty(idxFromDisk)> 0
+                idxFromDisk = find(~cellfun(@isempty,{seqIn.inputFileName}) & [seqIn.inputFrom] == 0,1,'first');                
+                
+                if any(idxFromDisk > 0)
                     % Load the input file dataHistory:
                     [~,inputFile,~] = fileparts(seqIn(idxFromDisk).inputFileName);
                     dh = load(fullfile(path,[inputFile,'.mat']),'dataHistory'); dh = dh.dataHistory;
@@ -1246,6 +1337,20 @@ classdef PipelineManager < handle
                     end
                     clear inputFile prepend_info
                 end
+                %%% Special case: Look inside the current meta Data when
+                %%% working with DataViewer:
+                idxFromDataViewer = find([seqIn.inputFrom] == -1,1,'first');
+                if any(idxFromDataViewer > 0) && ~isempty(obj.dv_originalMetaData)
+                    % Load the dataHistory from the input file meta Data:                    
+                    dh = obj.dv_originalMetaData.dataHistory;
+                    prepend_info = struct();
+                    for jj = 1:length(dh)
+                        prepend_info(jj).name = dh(jj).name;
+                        prepend_info(jj).opts = dh(jj).opts;
+                        thisHistory = horzcat(prepend_info,thisHistory(idxFromDataViewer:end));
+                    end                    
+                end
+                %%%%%% ----------------------------------------------------
                 % Check for the existence of consecutive equal steps:
                 b_isEqual = false(size(dataHistory));
                 for jj = 1:length(dataHistory)
@@ -1275,7 +1380,7 @@ classdef PipelineManager < handle
                     % If the sequence is partially skipped, update the
                     % sequence:
                     indx = find(~cellfun(@isempty,({outSeq.inputFrom})), 1,'first');
-                    outSeq(indx).inputFrom = '_LOCAL_';
+                    outSeq(indx).inputFrom = 0; % Input from Disk.
                     outSeq(indx).inputFileName = [file ext];
                     % Reset sequence indices:
                     for jj = 1:length(outSeq)
@@ -1513,7 +1618,8 @@ classdef PipelineManager < handle
                     % add boolean to indicate if the function as inputs and
                     % outputs (This will be used by other methods)
                     list(i).info.b_hasDataIn = any(contains(list(i).info.argsIn,'data','IgnoreCase',true));
-                    list(i).info.b_hasDataOut = any(contains(list(i).info.argsOut,{'data','file'},'IgnoreCase',true));
+                    list(i).info.b_hasDataOut = any(contains(list(i).info.argsOut,'outData','IgnoreCase',true));
+                    list(i).info.b_hasFileOut = any(contains(list(i).info.argsOut,'outFile','IgnoreCase',true));
                     obj.funcList = [obj.funcList ; list(i)];
                 end
             end
@@ -1742,12 +1848,31 @@ classdef PipelineManager < handle
                     break
                 end
             end
-            [~,name, ext] = fileparts(obj.pipe(ii).outFileName);
-            saveFailStr = [name '_recovered' ext]; % string to append to files saved before an error.
+            % Change save file name if the user decides not to overwrite
+            % the data:
+            [~,name, ext] = fileparts(obj.pipe(ii).saveFileName);           
+            if ~obj.b_overwriteFiles                
+                fList = getFileList(obj.tmp_TargetObj.SaveFolder,ext);
+                cnt = 2;
+                newName = name;
+                while 1
+                    if any(strcmpi([newName, ext],fList))
+                        newName = [name '_' num2str(cnt)];
+                    else                        
+                        break
+                    end
+                    cnt = cnt + 1;
+                end
+                % Save new filename to pipeline:
+                saveFileName = [newName ext];                  
+            else
+                saveFileName = obj.pipe(ii).saveFileName;
+            end
+            
             % If the pipeline failed, and the previous step was a fuction with data output,
             % use the default file name to save the data:
             if b_failed && isempty(obj.pipe(ii).saveFileName) && ischar(obj.pipe(ii).outFileName)
-                obj.pipe(ii).saveFileName = saveFailStr;
+                saveFileName = [name '_recovered' ext]; % string to append to files saved before an error.;
             elseif b_failed && contains(obj.pipe(ii).saveFileName, obj.timeTag,'IgnoreCase',true)
                 % If the previous step already saved a temporary file, just
                 % rename it.
@@ -1758,13 +1883,15 @@ classdef PipelineManager < handle
             % Save data to file:
             if strcmpi(ext, '.dat')
                 % For .dat files:
-                save2Dat(fullfile(obj.tmp_TargetObj.SaveFolder,obj.pipe(ii).saveFileName),...
+                save2Dat(fullfile(obj.tmp_TargetObj.SaveFolder,saveFileName),...
                     obj.current_data, obj.current_metaData);
             else
                 % For .mat files:
+                disp('Writing data to .MAT file ...')
                 S = obj.current_data;
-                save(fullfile(obj.tmp_TargetObj.SaveFolder,task.saveFileName),...
+                save(fullfile(obj.tmp_TargetObj.SaveFolder,saveFileName),...
                     '-struct', 'S', '-v7.3');
+                disp(['Data saved in : "' fullfile(obj.tmp_TargetObj.SaveFolder,saveFileName) '"'])
             end
         end
         
@@ -1822,7 +1949,12 @@ classdef PipelineManager < handle
                 str = [str, sprintf('Error Message:\n""\n%s\n""\n%s\n', msg,repmat('-',1,60))];%#ok
             end
             % Save to .txt file:
-            folder = fullfile(obj.ProtocolObj.SaveDir,'PipelineErrorLogs');
+            if obj.ProtocolObj.b_isDummy
+                % For DataViewer:
+                folder = obj.ProtocolObj.SaveDir;
+            else                
+                folder = fullfile(obj.ProtocolObj.SaveDir,'PipelineErrorLogs');
+            end
             if ~exist(folder,'dir')
                 mkdir(folder);
             end
@@ -1942,6 +2074,38 @@ classdef PipelineManager < handle
             end
             info = vertcat(fn,vals);
             txt = [sprintf('Parameters:\n'), sprintf('%s: "%s"\n',info{:})];
+        end
+        
+        function tipTxt = genToolTipTxt(obj,step)
+            % Add tooltips for each one:
+            if ~isempty(step.opts)
+                tipTxt = obj.textifyOpts(step.opts);
+                if ~isempty(step.saveFileName)
+                    tipTxt = [tipTxt, sprintf('\n%s',repmat('-',1,20)),  sprintf('\nSave to file: "%s"',step.saveFileName)];
+                end
+            else
+                tipTxt = 'No Parameters';
+            end
+            if ~isempty(step.inputFrom)
+                sourceFile = step.inputFileName;
+                if step.inputFrom == 0 
+                    source = 'Disk';
+                elseif step.inputFrom == -1
+                    % SPECIAL CASE for DataViewer
+                    source = 'DataViewer';
+                else
+                    source = obj.pipe(step.inputFrom).name;
+                end
+                % Add input source to data tip:
+                tipTxt = [tipTxt, sprintf('\n%s',repmat('-',1,20)),sprintf('\nInput From: "%s"',source)];
+                if ~isempty(sourceFile)
+                    if contains(sourceFile, obj.timeTag, 'IgnoreCase',true)
+                        % Replace temporary file names with "data"
+                        sourceFile = 'data';
+                    end
+                    tipTxt = [tipTxt, sprintf('\nInput File: "%s"',sourceFile)];
+                end
+            end            
         end
         
         function rgb = prettyfyBtn(~, color, btnSz, bcgCol)

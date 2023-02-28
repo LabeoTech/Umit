@@ -27,7 +27,7 @@ classdef Protocol < handle
         LogBookFile char % MAT file with a table containing information about the Pipeline Operations run by PIPELINEMANAGER.
     end
     methods
-        function obj = Protocol(Name, MainDir, SaveDir, ProtoFunc, varargin)
+        function obj = Protocol(Name, MainDir, SaveDir, ProtoFunc, Array, varargin)
             % Class constructor.
             %   This function initiates the object "Protocol" with the
             %   properties: MainDir, SaveDir, ProtoFunc and Array.
@@ -42,8 +42,10 @@ classdef Protocol < handle
                 obj.ProtoFunc = ProtoFunc;
                 obj.b_isDummy = varargin{:};
             end
-            %            
-            obj.createLogBookFile
+            %
+            if ~obj.b_isDummy
+                obj.createLogBookFile
+            end
             obj.createFilterStruct
         end
         %%% Property Set Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

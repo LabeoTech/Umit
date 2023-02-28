@@ -12,28 +12,39 @@ function out = findMyROIfile(filename,source)
 if ~endsWith(filename, '.mat')
     filename = [filename '.mat'];
 end
-
+% Get protocol handle:
+protObj = source;
+if ~isempty(protObj)
+    while 1
+        protObj = protObj .MyParent;
+        if ~isprop(protObj, 'MyParent')
+            break
+        end
+    end
+end
 % Parse File path to find subject folder:
-if isa(source,'Acquisition') || isa(source,'Modality')
-    % If a umIT's valid object is provided, it means that the function is being run by
-    % PipelineManager. In this case, find the subject's folder an try to
-    % find the ROI file there:
+if isempty(protObj) || protObj.b_isDummy
+    % If the protocol object is "dummy", this means that it was created by
+    % DataViewer. In this case, look for the ROI file inside the object's
+    % save folder:
+    path = fileparts(filename);
+    if isempty(path) && ~isempty(protObj)
+        out = fullfile(protObj.SaveDir, filename);
+    elseif isempty(path) && isempty(protObj)
+        out = fullfile(pwd, filename);
+    else
+        out = filename;
+    end    
+else
+    % If the protocol object is not "dummy", look for the ROI file inside
+    % the Subject's folder.
     tmp_obj = source;
     idx = false;
     while ~idx
         tmp_obj = tmp_obj.MyParent;
         idx = isa(tmp_obj, 'Subject');
     end
-    out = fullfile(tmp_obj.SaveFolder, filename);        
-elseif isempty(source)
-    path = fileparts(filename);
-    if isempty(path)
-        out = fullfile(pwd,filename);
-    else
-        out = filename;
-    end
-       else 
-    error('Umitoolbox:findMyROIfile:WrongInput', 'Invalid Input. Source must be an "Acquisition" or "Modality" object');    
+    out = fullfile(tmp_obj.SaveFolder, filename);
 end
 
 % Throw error if the file does not exist in Subject's folder:

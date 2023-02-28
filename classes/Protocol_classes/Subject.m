@@ -78,6 +78,10 @@ classdef Subject < handle
         %%% Property Get functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function out = get.SaveFolder(obj)
             % Get function for depentend property SaveFolder.
+            if obj.MyParent.b_isDummy
+                out = obj.MyParent.SaveDir;
+                return
+            end
             out = fullfile(obj.MyParent.SaveDir, obj.ID);
             msgID = 'umIToolbox:FolderNotFound';
             msg = 'Subject SaveFolder doesnt exist.';
