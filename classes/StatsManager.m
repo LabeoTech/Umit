@@ -58,7 +58,8 @@ classdef StatsManager < handle
             obj.list_of_objs = list_of_objs;
             obj.obs_list = obs_list; obj.obs_list_original = obs_list;
             obj.list_of_groups = list_of_groups;
-            obj.stats_filename = stats_filename;
+            [~,filename,ext] = fileparts(stats_filename);
+            obj.stats_filename = [filename ext];
             % Check if inputs are correct and Generate list of MatFile
             % handles:
             obj.validateObject;
@@ -544,7 +545,7 @@ classdef StatsManager < handle
 %             indxM = strcmpi(obj.inputFeatures.dataType,'matrix');
             if ( indxT )
                 % For time series
-                Xsz = max(dataSize(indxT,:));
+                Xsz = max(dataSize(:,indxT));
 %             elseif indxM
 %                 % For matrix
 %                 Xsz = max(dataSize(:,2));
