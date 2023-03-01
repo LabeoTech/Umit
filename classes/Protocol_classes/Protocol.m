@@ -568,6 +568,7 @@ classdef Protocol < handle
             s.LastLog = obj.LastLog;
             s.Idx_Filtered = obj.Idx_Filtered;
             s.FilterStruct = obj.FilterStruct;
+            s.b_isDummy = obj.b_isDummy;
         end
     end
     methods (Access = private)
@@ -641,17 +642,22 @@ classdef Protocol < handle
     methods (Static)
         function obj = loadobj(s)
             if isstruct(s)
-                if ( ~isfile(fullfile(s.SaveDir, [s.Name, '.mat'])) )
+                if isfile(fullfile(s.SaveDir, [s.Name, '.prt']))
+                    ext = '.prt';
+                else
+                    % For retrocompatibility
+                    ext = '.mat';
+                end                
+                if ( ~isfile(fullfile(s.SaveDir, [s.Name, ext])) )
                     % Update Save Directory based on the current location
                     % of the protocol file:                                              
-                    s.SaveDir = fileparts(which([s.Name, '.mat']));                    
+                    s.SaveDir = fileparts(which([s.Name, ext]));                    
                 end
                 newObj = Protocol;
                 newObj.Name = s.Name;
                 % Check MainDir and SaveDir existance:
                 errID = 'umIToolbox:Protocol:InvalidInput';
                 errMsg = ' is not an existing folder!';
-%                 assert(isfolder(s.MainDir),errID, [strrep(s.MainDir,filesep, repmat(filesep,1,2)), errMsg]);
                 assert(isfolder(s.SaveDir),errID, [strrep(s.MainDir,filesep, repmat(filesep,1,2)), errMsg]);
                 %%%
                 newObj.MainDir = s.MainDir;
@@ -662,6 +668,10 @@ classdef Protocol < handle
                 newObj.LastLog = s.LastLog;
                 newObj.Idx_Filtered = s.Idx_Filtered;
                 newObj.FilterStruct = s.FilterStruct;
+                if isfield(s,'b_isDummy')
+                    % For retrocompatibility
+                    newObj.b_isDummy = s.b_isDummy;
+                end
                 obj = newObj;
             else
                 obj = s;
