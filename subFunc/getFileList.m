@@ -13,14 +13,30 @@ function fileList = getFileList(folder, extension)
 
 matFileList = dir(fullfile(folder, '*.mat'));
 % Check if "dataHistory" exists inside each file
-matFilesMap = arrayfun(@(x) matfile(fullfile(folder,x.name)), matFileList, 'UniformOutput',false);
-idxValid = cellfun(@(x) isprop(x, 'dataHistory'), matFilesMap);
+idxValid = false(size(matFileList));
+warning('off')
+for ii = 1:length(matFileList)
+    try 
+        a = load(fullfile(folder, matFileList(ii).name), 'dataHistory');
+        idxValid(ii) = true;    
+    catch
+        %%% EMPTY %%
+    end
+end
+clear a
+warning('on')
+if ~any(idxValid)
+    fileList = {};
+    return
+end
+% matFilesMap = arrayfun(@(x) matfile(fullfile(folder,x.name)), matFileList, 'UniformOutput',false);
+% idxValid = cellfun(@(x) isprop(x, 'dataHistory'), matFilesMap);
 matList = {matFileList(idxValid).name}';
 [~,matNames,~] = cellfun(@(x) fileparts(x), matList, 'UniformOutput', false);
-if ~strcmpi(extension,'.mat')
-    datFileList = dir(fullfile(folder, '*.dat'));
-    [~,datNames,~] = arrayfun(@(x) fileparts(x.name), datFileList, 'UniformOutput', false);
-end
+
+datFileList = dir(fullfile(folder, '*.dat'));
+[~,datNames,~] = arrayfun(@(x) fileparts(x.name), datFileList, 'UniformOutput', false);
+
 switch extension
     case '.mat'
         fileList = cellfun(@(x) [x, '.mat'],setdiff(matNames,datNames), 'UniformOutput',false);
