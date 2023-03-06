@@ -642,17 +642,16 @@ classdef Protocol < handle
     methods (Static)
         function obj = loadobj(s)
             if isstruct(s)
-                if isfile(fullfile(s.SaveDir, [s.Name, '.prt']))
+                % Update Save Directory based on the current location
+                    % of the protocol file:   
+                if isfile(which([s.Name, '.prt']))                    
                     ext = '.prt';
-                else
+                    s.SaveDir = fileparts(which([s.Name, ext]));               
+                elseif isfile(which([s.Name, '.mat']))                                        
                     % For retrocompatibility
                     ext = '.mat';
-                end                
-                if ( ~isfile(fullfile(s.SaveDir, [s.Name, ext])) )
-                    % Update Save Directory based on the current location
-                    % of the protocol file:                                              
-                    s.SaveDir = fileparts(which([s.Name, ext]));                    
-                end
+                    s.SaveDir = fileparts(which([s.Name, ext]));
+                end               
                 newObj = Protocol;
                 newObj.Name = s.Name;
                 % Check MainDir and SaveDir existance:
