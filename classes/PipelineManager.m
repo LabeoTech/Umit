@@ -314,8 +314,7 @@ classdef PipelineManager < handle
                     % Set "inputFrom" to zero when the input comes from the
                     % disk.
                     task.inputFrom = 0;
-                end
-                
+                end                
             else
                 % Control for cases where the User sets an input file name
                 % without setting the "inputFrom" parameter. In this case,
@@ -339,9 +338,12 @@ classdef PipelineManager < handle
                 state = true;
                 return
             end
-                
-                
-            
+            % Check if the new function needs another one to work:
+            if task.dependency
+                task = obj.addDependency(task);
+            end
+            % Remove dependency field from "task")
+            task = rmfield(task, 'dependency');
             %%%------------------------------------------------------------
             % Add branch and sequence index to the function:
             task = obj.setInput(task);
@@ -400,9 +402,6 @@ classdef PipelineManager < handle
         %             % Check if the function exists in the pipeline sequence:
         %             idxFunc = ( strcmpi(p.Results.func,{obj.pipe.name}) && arrayfun(@(x) any(x.seq == p.Results.fromSeq),obj.pipe) );
         %             assert(any(idxFunc),['Operation aborted! The function "' p.Results.func '" does not exist!']);
-        %             %
-        %
-        %
         %
         %         end
         
@@ -470,24 +469,17 @@ classdef PipelineManager < handle
         
         function run_pipeline(obj)
             % RUN_PIPELINE runs the tasks in OBJ.PIPE
-             
-%             if obj.ProtocolObj.b_isDummy && isempty(obj.current_data)
-%                 % Check for DataViewer interface.
-%                 return
-%             end
-            
-            %%%% Force saving sequences' last steps (Except for DataViewer)
+                                   
             if ~obj.b_pipeIsValid
+                % Force saving sequences' last steps (Except for DataViewer)
                 obj.validatePipeline; % Run pipeline validation
             end
             % Recheck:
             if ~obj.b_pipeIsValid
                 warning('Pipeline execution aborted! Pipeline is invalid.')
                 return
-            end
-            
-            %%% -----------------------------------------------------------
-            
+            end            
+           
             % Reset sequence counter:
             obj.current_seq = 1;
             if ~obj.ProtocolObj.b_isDummy
@@ -1392,8 +1384,7 @@ classdef PipelineManager < handle
             end
         end
         
-        %%%%%%--Helpers for "addTask" method -----------------------------
-        
+        %%%%%%--Helpers for "addTask" method -----------------------------        
         function task = setInput(obj,task)
             % SETINPUT selects the input to the function in "task". It
             % controls for multiple outputs and for functions with no
@@ -1585,8 +1576,31 @@ classdef PipelineManager < handle
                 end
                 filename = fileList{indxFile};
             end
-        end
+        end 
         
+        function task = addDependency(obj,task)
+           % ADDDEPENDENCY adds a step to the pipeline before the new "task" 
+           % with the function necessary to run the "task".
+           
+           % Check if the dependency function exists:           
+           if ~any(strcmpi(task.dependency,{obj.funcList.name}))
+               % Abort, if the dependency fcn doesn't exist.
+               error(['Failed to add ' task.name 'to the pipeline. The dependency function ' task.dependency ' does not exist!'])
+           end
+           % Check if it already exist in the pipeline:
+           if any(strcmpi(task.dependency, {obj.pipe.name}))
+               % Cancel operation if the dependency function already exists
+               % in the pipeline.
+               return
+           end
+           % Add dependency function to the current sequence
+           if obj.current_seq > 0
+               obj.addTask(task.dependency,'fromSeq',obj.current_seq)
+           else
+               obj.addTask(task.dependency)
+           end
+                        
+        end
         %%%%%%-------------------------------------------------------------
         function createFcnList(obj)
             % This function creates a structure containing all information
@@ -1626,7 +1640,7 @@ classdef PipelineManager < handle
             disp('Function list created!');
             function info = parseFuncFile(fcnStruct)
                 info = struct('argsIn', {},'argsOut', {}, 'outFileName', '', 'opts', [],...
-                    'opts_def',[],'opts_vals',[]);
+                    'opts_def',[],'opts_vals',[], 'dependency','');
                 % Read the '.m' file content and exclude comments (lines
                 % starting with the "%" character):
                 fid = fopen(fullfile(fcnStruct.folder, fcnStruct.name),'r');
@@ -1661,6 +1675,13 @@ classdef PipelineManager < handle
                     eval(str)
                 end
                 info.outFileName = default_Output;
+                % Get dependent function:                
+                dependency = '';
+                depStr = regexp(txt, 'dependency\s*=.*?(?=\n)', 'match', 'once');
+                if ~isempty(depStr)                    
+                    eval(depStr)                    
+                end
+                info.dependency = dependency;                
                 % Parse default optional params struct:
                 expOpts = 'default_opts\s*=.*?(?=\n)';
                 str = regexp(txt, expOpts, 'match', 'once');
@@ -1887,7 +1908,7 @@ classdef PipelineManager < handle
                     obj.current_data, obj.current_metaData);
             else
                 % For .mat files:
-                disp('Writing data to .MAT file ...')
+                disp('Writing data to .MAT file ...')                               
                 S = obj.current_data;
                 save(fullfile(obj.tmp_TargetObj.SaveFolder,saveFileName),...
                     '-struct', 'S', '-v7.3');
@@ -2047,7 +2068,7 @@ classdef PipelineManager < handle
                 setappdata(obj.h_wbItem, 'b_abortPipe', 1);
             end
         end
-        %%%%%%-------------------------------------------------------------
+        %%%%%%---Pipeline Viz helper methods ------------------------------
         function txt = textifyOpts(~,opts)
             % TEXTIFYOPTS creates a formatted text version of the "opts"
             % structure.
@@ -2135,7 +2156,7 @@ classdef PipelineManager < handle
             b = repmat(color(3),h,w); b(antiMsk) = bcgCol; b(rim) = 0;
             rgb = cat(3,r,g,b);
         end
-        
+        %%%%%%-------------------------------------------------------------        
         function indx = findStep(obj,step)
             % This function gives the index of the task "step" in the pipeline "pipe"
             % It compares all fields from the structure to identify the
@@ -2150,6 +2171,7 @@ classdef PipelineManager < handle
             end
             indx = find(all(idx,2));
         end
+        %%%%%%---Pipeline Viz helper methods ------------------------------
     end
 end
 
