@@ -16,12 +16,8 @@ matFileList = dir(fullfile(folder, '*.mat'));
 idxValid = false(size(matFileList));
 warning('off')
 for ii = 1:length(matFileList)
-    try 
-        a = load(fullfile(folder, matFileList(ii).name), 'dataHistory');
-        idxValid(ii) = true;    
-    catch
-        %%% EMPTY %%
-    end
+    a = load(fullfile(folder, matFileList(ii).name), 'dataHistory');
+    idxValid(ii) = ~isempty(fieldnames(a));
 end
 clear a
 warning('on')
