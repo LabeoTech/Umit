@@ -126,6 +126,5 @@ labels{2} = sf_list;
 labels{3} = areas;
 dim_names = {'X','Y','O'};
 % Save to .MAT file:
-% save2Mat(fullfile(SaveFolder, outFile), data, labels{3}, dim_names) % for testing...
 save(fullfile(SaveFolder, outFile), 'data', 'labels', 'dim_names');
 end

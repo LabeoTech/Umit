@@ -5,7 +5,7 @@ classdef StatsManager < handle
     % hypothesis tests, normality tests and other options.
     % Inputs:
     %  list_of_objs : cell array of elements from "Protocol" object.
-    %  stats_filename: filename of .MAT file saved using "save2Mat.m"
+    %  stats_filename: filename of .MAT file saved using "genDataMetaStructure.m"
     %  function.
     
     properties
@@ -15,7 +15,7 @@ classdef StatsManager < handle
         list_of_events % current list of event Names from all objects.
         % !!If the input data has no events, the list will contain the string"NoEvents" !!
         list_of_subjects % Current list of Subject Names.
-        stats_filename % Filename of .MAT file saved using "save2Mat.m"
+        stats_filename % Filename of .MAT file saved using "genDataMetaStructure.m"
         % function.
         MfileArr       % Array of MATFILE objects.
         time_resolution = 'none' % Time resolution for grouping each observation

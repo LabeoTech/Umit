@@ -1,6 +1,6 @@
 function outData = transformDat2Mat(data, metaData)
 % TRANSFORMDAT2MAT creates a .MAT file compatible with the "Analysis" tab of the
-% "umIToolbox" app from a .DAT file containing any Imaging data. 
+% "umIToolbox" app from a .DAT file containing any Imaging data.
 % The data is stored under a "dummy observation".
 
 default_Output = 'datFile_transf.mat'; %#ok This line is here just for Pipeline management.
@@ -14,5 +14,5 @@ data = p.Results.data;
 metaData = p.Results.metaData;
 %%%%
 dim_names = [metaData.dim_names, {'O'}];
-outData = save2Mat('', {data} ,{'genericObs'}, dim_names, 'appendMetaData', metaData,'genFile', false);
+outData = genDataMetaStructure({data}, {'genericObs'}, dim_names, metaData);
 end

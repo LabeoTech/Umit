@@ -29,7 +29,7 @@ addRequired(p, 'obsID', @iscell);
 addRequired(p, 'dim_names', @iscell);
 addRequired(p, 'metaData', @isstruct);
 addParameter(p, 'label', 'val', @(x) (iscell(x) && ischar([x{:}])) || (ischar(x)));
-parse(p, MatFileName, data, obsID, dim_names, metaData, varargin{:});
+parse(p, data, obsID, dim_names, metaData, varargin{:});
 % Instantiate input variables:
 data = p.Results.data;
 obsID = p.Results.obsID;
@@ -39,7 +39,7 @@ label = p.Results.label;
 clear p
 
 % Further validate data:
-errID = 'Umitoolbox:save2Mat:IncompatibleSize';
+errID = 'Umitoolbox:genDataMetaStructure:IncompatibleSize';
 errMsg = 'The length of data is different from the number of observations.';
 assert(isequaln(length(data),length(obsID)), errID, errMsg);
 % Get the size of the largest dataset from "data":
@@ -54,14 +54,14 @@ max_data_size = vertcat(max_data_size{:});
 max_data_size = max(max_data_size,[],1);
 % Verify if the number of non-singleton dimensions in data match the
 % number of dimensions names, exept "O":
-errID = 'Umitoolbox:save2Mat:IncompatibleSize';
+errID = 'Umitoolbox:genDataMetaStructure:IncompatibleSize';
 errMsg = 'The number of dimensions of data is different from the number of dimension names.';
 assert(isequaln(sum(max_data_size~=1),length(dim_names(2:end))), errID, errMsg);
 % Further validate dim_names:
 root = fileparts(mfilename('fullpath'));
 dim_names_info = load(fullfile(root, 'dimension_names.mat'));
 %
-errID = 'Umitoolbox:save2Mat:InvalidName';
+errID = 'Umitoolbox:genDataMetaStructure:InvalidName';
 errMsg = 'List of dimension names contain invalid values.';
 assert(all(ismember(dim_names, dim_names_info.dims_dict)), errID, errMsg);
 % Merge data and meta data:
@@ -79,7 +79,7 @@ if ismember('E', dim_names)
     % struct:
     dim_label = find(strcmpi('E',dim_names));
     fn = fieldnames(out);
-    errID = 'Umitoolbox:save2Mat:MissingInfo';
+    errID = 'Umitoolbox:genDataMetaStructure:MissingInfo';
     errMsg = 'An event dimension name ("E") was detected but no event info ("eventID" and "eventNameList") was found in metaData.';
     assert(all(ismember({'eventID', 'eventNameList'}, fn)), errID, errMsg);
     disp('Creating labels for Events...')
@@ -96,7 +96,7 @@ elseif strcmpi(label,'val')
     label = arrayfun(@(x) strjoin({label, num2str(x)}, '_'), 1:size(out.data{1},dim_label), 'UniformOutput', 0);
 end
 % Check if "label" has the same length of data:
-errID = 'Umitoolbox:save2Mat:IncompatibleSize';
+errID = 'Umitoolbox:genDataMetaStructure:IncompatibleSize';
 errMsg = 'The length of "labels" is different from the length of "data".';
 assert(isequaln(size(out.data{1},dim_label),length(label)), errID, errMsg);
 % Add "label":

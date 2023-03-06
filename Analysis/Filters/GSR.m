@@ -1,4 +1,4 @@
-function outData = GSR(data, metaData, varargin)
+function outData = GSR(data, metaData, SaveFolder, varargin)
 % GSR performs global signal regression to data in order to remove global fluctuations from signal.
 % Limitations:
 % The data must be an Image time series with dimensions
@@ -22,22 +22,21 @@ function outData = GSR(data, metaData, varargin)
 default_Output = 'GSR.dat'; %#ok. This line is here just for Pipeline management.
 default_opts = struct('b_UseMask', false, 'MaskFile','ImagingReferenceFrame.mat');
 opts_values = struct('b_UseMask', [true,false], 'MaskFile',{{'ImagingReferenceFrame.mat'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
-default_object = ''; % This line is here just for Pipeline management to be able to detect this input.
 %%% Arguments parsing and validation %%%
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder
 addRequired(p,'data',@(x) isnumeric(x) & ndims(x) == 3); % Validate if the input is a 3-D numerical matrix:
 addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
+addRequired(p, 'SaveFolder', @isfolder);
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
-addOptional(p, 'object', default_object, @(x) isempty(x) || isa(x,'Acquisition') || isa(x,'Modality'));
 
 % Parse inputs:
-parse(p,data, metaData, varargin{:});
+parse(p,data, metaData, SaveFolder, varargin{:});
 %Initialize Variables:
 outData = p.Results.data;
 metaData = p.Results.metaData;
+SaveFolder = p.Results.SaveFolder;
 opts = p.Results.opts;
-object = p.Results.object;
 clear p data
 %%%%
 % Validate if "data" is an Image Time Series:
@@ -46,7 +45,11 @@ errMsg = 'Wrong Input Data type. Data must be an Image time series with dimensio
 assert(all(ismember(metaData.dim_names,{'Y', 'X', 'T'})), errID, errMsg);
 if opts.b_UseMask
     % Retrieve file containing logical mask
-    opts.MaskFile = findMyROIfile(opts.MaskFile,object);
+    % Check if ROImasks file exist:
+    [~,ROIfilename,~] = fileparts(opts.MaskFile);
+    opts.MaskFile = fullfile(SaveFolder, [ROIfilename,'.mat']);
+    folder = strrep(SaveFolder, '\', '\\');
+    assert(isfile(opts.MaskFile),'Umitoolbox:GSR:FileNotFound',['ROI file not found in ' folder]);    
     a = load(opts.MaskFile, 'logical_mask');
     if isempty(fieldnames(a))
         msg = 'Variable "logical_mask" not found in mask file!';

@@ -1,4 +1,4 @@
-function outData = genCorrelationMatrix(data, metaData, varargin)
+function outData = genCorrelationMatrix(data, metaData,SaveFolder, varargin)
 % GENCORRELATIONMATRIX creates a correlation matrix from an Image time
 % series with dimensions Y,X,T using Regions of Interest (ROIs) stored in a
 % "ROImasks_xxxx.mat" file (created by the ROImanager App).
@@ -20,31 +20,32 @@ function outData = genCorrelationMatrix(data, metaData, varargin)
 % Defaults: IMPORTANT, keep all default statements in one line each so the
 % Pipeline Managers will be able to read it!
 default_Output = 'corrMatrix.mat'; %#ok This line is here just for Pipeline management.
-default_opts = struct('ROImasks_filename', 'ROImasks_data.mat', 'CorrAlgorithm', 'centroid_vs_centroid', 'SpatialAggFcn', 'mean','b_FisherZ_transform', false, 'b_genSPCMaps', false);
-opts_values = struct('ROImasks_filename', {{'ROImasks_data.mat'}}, 'CorrAlgorithm',{{'centroid_vs_centroid','centroid_vs_agg', 'avg_vs_avg'}}, 'SpatialAggFcn', {{'mean', 'max', 'min', 'median'}},'b_FisherZ_transform',[true,false],'b_genSPCMaps',[true,false]);%  % This is here only as a reference for PIPELINEMANAGER.m.
-
-default_object = ''; % This line is here just for Pipeline management to be able to detect this input.
+default_opts = struct('ROImasks_filename', 'ROImasks_data.mat', 'CorrAlgorithm', 'centroid_vs_centroid', 'SpatialAggFcn', 'mean','b_FisherZ_transform', false, 'SPCMapFileName', 'none');
+opts_values = struct('ROImasks_filename', {{'ROImasks_data.mat'}}, 'CorrAlgorithm',{{'centroid_vs_centroid','centroid_vs_agg', 'avg_vs_avg'}}, 'SpatialAggFcn', {{'mean', 'max', 'min', 'median'}},'b_FisherZ_transform',[true,false],'SPCMapFileName',{{'none'}});%  % This is here only as a reference for PIPELINEMANAGER.m.
 %%% Arguments parsing and validation %%%
 p = inputParser;
 addRequired(p,'data',@(x) isnumeric(x)); % Validate if the input is a 3-D numerical matrix:
 addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
+addRequired(p, 'SaveFolder', @isfolder);
 % Optional Parameters:
 % Validation criteria for optinal params:
 valid_spatAgg = @(x) ismember(x.SpatialAggFcn, opts_values.SpatialAggFcn);
 valid_corrAlg = @(x) ismember(x.CorrAlgorithm, opts_values.CorrAlgorithm);
 % Add optional params:
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && valid_spatAgg(x) && valid_corrAlg(x));
-addOptional(p, 'object', default_object, @(x) isempty(x) || isa(x,'Acquisition') || isa(x,'Modality'));
 % Initialize Variables:
-parse(p, data, metaData, varargin{:});
+parse(p, data, metaData,SaveFolder, varargin{:});
 data = p.Results.data;
 metaData = p.Results.metaData;
+SaveFolder = p.Results.SaveFolder;
 opts = p.Results.opts;
-object = p.Results.object;
 clear p
 %%%%
-% Find ROI file:
-opts.ROImasks_filename = findMyROIfile(opts.ROImasks_filename,object);
+% Check if ROImasks file exist:
+[~,ROIfilename,~] = fileparts(opts.ROImasks_filename);
+opts.ROImasks_filename = fullfile(SaveFolder, [ROIfilename,'.mat']);
+folder = strrep(SaveFolder, '\', '\\');
+assert(isfile(opts.ROImasks_filename),'Umitoolbox:genCorrelationMatrix:FileNotFound',['ROI file not found in ' folder]);
 
 % Validate data dimensions
 errID = 'Umitoolbox:genCorrelationMatrix:WrongFormat';
@@ -65,7 +66,7 @@ centroid_list = arrayfun(@(x) find(bwmorph(x.Stats.ROI_binary_mask,'shrink',Inf)
 % In cases where there are non-contiguous ROIs, get first centroid (Arbitrary decision here!):
 centroid_list = cellfun(@(x) x(1),centroid_list);
 % Create SPCMaps for each centroid:
-if opts.b_genSPCMaps
+if ~strcmpi(opts.SPCMapFileName,'none')
     SPCMaps = cell(length(centroid_list),1);
     w = waitbar(0,'Creating SPCMaps...');
     for i = 1:length(centroid_list)
@@ -151,19 +152,14 @@ for i = 1:size(B,1)
 end
 % Create new dimension names as {'O', 'O'}:
 dim_names = {'O','O'};
-outData = save2Mat('', out ,roi_names, dim_names, 'label',roi_names ,...
-    'appendMetaData', metaData,'genFile', false);
+outData = genDataMetaStructure(out, roi_names, dim_names, metaData, 'label',roi_names);
 % Create .MAT files with SPCMaps:
 if exist('SPCMaps', 'var')
     dim_names = {'Y', 'X','O'};
-    if isempty(object)
-        % When the function is called from DataViewer
-        save2Mat(fullfile(pwd, 'corrMat_SPCMaps.mat'), SPCMaps ,roi_names,...
-            dim_names, 'appendMetaData', metaData,'genFile', true);
-    else
-        save2Mat(fullfile(object.SaveFolder, 'corrMat_SPCMaps.mat'), SPCMaps ,roi_names,...
-            dim_names, 'appendMetaData', metaData,'genFile', true);
-    end
+    % When the function is called from DataViewer
+    out = genDataMetaStructure(SPCMaps, roi_names, dim_names, metaData);
+    [~,outName,~] = fileparts(opts.SPCMapFileName);
+    save(fullfile(SaveFolder,[outName '.mat']),'-struct','out','-v7.3');
 end
 end
 
