@@ -787,7 +787,7 @@ classdef PipelineManager < handle
                 %%%------------------------------------------------------------               
             end
             % Add new tasks:
-            fn = fieldnames(obj.pipe);
+            fn = intersect(fieldnames(obj.pipe), fieldnames(new_pipe));
             for i = 1:length(new_pipe)
                 for k = 1:numel(fn)
                     obj.pipe(i).(fn{k}) = new_pipe(i).(fn{k});
@@ -1007,7 +1007,7 @@ classdef PipelineManager < handle
             % Draw arrows and texts:
             for ii = seqList
                 seq = find(arrayfun(@(x) any(x.seq == ii),pp));
-                if pp(seq(1)).inputFrom == 0 ||  pp(seq(1)).inputFrom == -1
+                if pp(seq(1)).inputFrom == 0 |  pp(seq(1)).inputFrom == -1 %#ok Failed with double pipes!
                     % For when the input comes from the "Disk" or "DataViewer":
                     an = annotation('arrow',[0,0],[1,1],'Units','pixels', 'HeadWidth',arrowHeadSz);
                     an.X = [ctrX(1) ctrX(seq(1)+1)];
@@ -1595,9 +1595,9 @@ classdef PipelineManager < handle
            end
            % Add dependency function to the current sequence
            if obj.current_seq > 0
-               obj.addTask(task.dependency,'fromSeq',obj.current_seq)
+               obj.addTask(task.dependency,'fromSeq',obj.current_seq);
            else
-               obj.addTask(task.dependency)
+               obj.addTask(task.dependency);
            end
                         
         end
@@ -1658,17 +1658,17 @@ classdef PipelineManager < handle
                 clear fid tline
                 % Parse function header to get input and output variables:
                 funcStr = erase(regexp(txt, '(?<=function\s*).*?(?=\r*\n)', 'match', 'once'),' ');
-                outStr = regexp(funcStr,'.*(?=\=)', 'match', 'once');
-                out_args = regexp(outStr, '\[*(\w*)\,*(\w*)\]*', 'tokens', 'once');
+                outStr = regexpi(funcStr,'.*(?=\=)', 'match', 'once');
+                out_args = regexpi(outStr, '\[*(\w*)\,*(\w*)\]*', 'tokens', 'once');
                 info(1).argsOut = out_args(~cellfun(@isempty, out_args));
                 [~,funcName,~] = fileparts(fcnStruct.name);
                 expInput = ['(?<=' funcName '\s*\().*?(?=\))'];
-                str = regexp(funcStr, expInput, 'match', 'once');
+                str = regexpi(funcStr, expInput, 'match', 'once');
                 str = strip(split(str, ','));
                 info.argsIn = str(~strcmp(str, 'varargin'));
                 % Get Default outputs:
                 expOutput = 'default_Output\s*=.*?(?=\n)';
-                str = regexp(txt, expOutput, 'match', 'once');
+                str = regexpi(txt, expOutput, 'match', 'once');
                 if isempty(str)
                     default_Output = '';
                 else
@@ -1677,21 +1677,21 @@ classdef PipelineManager < handle
                 info.outFileName = default_Output;
                 % Get dependent function:                
                 dependency = '';
-                depStr = regexp(txt, 'dependency\s*=.*?(?=\n)', 'match', 'once');
+                depStr = regexpi(txt, 'dependency\s*=.*?(?=\n)', 'match', 'once');
                 if ~isempty(depStr)                    
                     eval(depStr)                    
                 end
                 info.dependency = dependency;                
                 % Parse default optional params struct:
                 expOpts = 'default_opts\s*=.*?(?=\n)';
-                str = regexp(txt, expOpts, 'match', 'once');
+                str = regexpi(txt, expOpts, 'match', 'once');
                 if ~isempty(str)
                     eval(str)
                     info.opts = default_opts;
                     info.argsIn{end+1} = 'opts';
                     % Parse optional params values struct:
                     optsVals = 'opts_values\s*=.*?(?=\n)';
-                    str_opts = regexp(txt, optsVals, 'match', 'once');
+                    str_opts = regexpi(txt, optsVals, 'match', 'once');
                     if ~isempty(str_opts)
                         eval(str_opts)
                         info.opts_vals = opts_values;
@@ -1699,11 +1699,11 @@ classdef PipelineManager < handle
                 end
                 % SPECIAL CASE. Look for "object"s as optional arguments in
                 % function first lines:
-                expObj = 'default_object\s*=';
-                str = regexp(txt, expObj, 'match', 'once');
-                if ~isempty(str)
-                    info.argsIn{end+1} = 'object';
-                end
+%                 expObj = 'default_object\s*=';
+%                 str = regexpi(txt, expObj, 'match', 'once');
+%                 if ~isempty(str)
+%                     info.argsIn{end+1} = 'object';
+%                 end
             end
         end
         
