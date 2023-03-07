@@ -327,12 +327,25 @@ classdef PipelineManager < handle
             % For the first step of the pipeline avoid asking for an input
             % file:
             if obj.ProtocolObj.b_isDummy && obj.current_seq == 0
-                obj.current_seq = 1;
-                obj.current_seqIndx = 1;
-                task.seq = 1;task.seqIndx = 1; task.inputFrom = -1; % Set inputFrom to "-1" the data from DataViewer.
+                task.inputFrom = -1;% Set inputFrom to "-1" the data from DataViewer.
+                if task.dependency
+                    obj.current_seqIndx = 0;                    
+                    task = obj.addDependency(task);
+                    task.seq = obj.current_seq;
+                    task.seqIndx = obj.current_seqIndx + 1;
+                    task.inputFrom = length(obj.pipe);
+                    disp('Second!')
+                else
+                    obj.current_seq = 1;
+                    obj.current_seqIndx = 1;
+                    task.seq = obj.current_seq; task.seqIndx = obj.current_seqIndx; 
+                end               
                 if ~isempty(obj.current_data)
                     task.inputFileName = obj.dv_originalMetaData.datFile; % Get name of the input file in DataViewer.
-                end
+                end                               
+                % Remove dependency field from "task")
+                task = rmfield(task, 'dependency');                               
+                % Add task to pipeline:
                 obj.pipe = [obj.pipe; task];
                 fprintf('Added "%s" to sequence #%d of the pipeline.\n',task.name, obj.current_seq)
                 state = true;
