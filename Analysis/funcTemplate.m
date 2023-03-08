@@ -1,3 +1,9 @@
+%% Templates for creating functions in umIT
+
+% Below are N dummy functions that can be used as templates to build your 
+% own function in umIT:
+% 
+
 function outFile = funcTemplate(File, SaveFolder, opts)
 % FUNCTEMPLATE is a dummy function that serves as a template for creating
 % functions compatible with the toolbox.
