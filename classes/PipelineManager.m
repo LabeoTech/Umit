@@ -124,7 +124,7 @@ classdef PipelineManager < handle
             
             obj.ClassName = p.Results.ClassName;
             if isdeployed
-                [obj.fcnDir,~,~] = fileparts(which('run_ImagesClassification.m'));
+                [obj.fcnDir,~,~] = fileparts(which('funcTemplate.m'));
                 a = load(fullfile(obj.fcnDir,'deployFcnList.mat'));
                 obj.funcList = a.out; % Get the structure "out" created inside the function "umitFcnReader".
             else
