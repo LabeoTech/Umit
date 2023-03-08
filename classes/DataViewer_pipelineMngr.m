@@ -13,13 +13,16 @@ classdef DataViewer_pipelineMngr < handle
         % structure containing the info of each step of the pipeline:
         pipe = struct('argsIn', {},'argsOut',{},'outFileName','','opts',struct.empty,...
             'opts_vals',struct.empty,'opts_def',struct.empty, 'name','',...
-            'funcStr', '','b_save2File', logical.empty, 'datFileName', '', 'inputFileName','');
+            'funcStr', '','b_save2File', logical.empty, 'saveFileName', '',...
+            'inputFileName','', 'seq',[],'seqIndx',[]);
         data % numerical array containing imaging data
         metaData % structure or matfile containing meta data associated with "data".
         SaveFolder % folder where data created will be stored (Save Directory).
         RawFolder % folder where the Raw data are stored (Pertinent for Data Import functions only!)
         outFile % list of file names created by some functions that generate .DAT files instead of data as outputs (e.g. run_ImagesClassification)
         dataHistory % structure containing the History of analysis functions applied to the current data.
+        current_seq = 1 % index of current sequence in pipeline .
+        current_seqIndx = 0 % index of step in current sequence in pipeline.
     end
     
     methods
@@ -79,7 +82,8 @@ classdef DataViewer_pipelineMngr < handle
             if isempty(fieldnames(pipe)) || isempty(pipe)
                 pipe = struct('argsIn', {},'argsOut',{},'outFileName','','opts',struct.empty,...
                     'opts_vals',struct.empty,'opts_def',struct.empty, 'name','','funcStr', '',...
-                    'b_save2File', logical.empty, 'datFileName', '','inputFileName','');
+                    'b_save2File', logical.empty, 'saveFileName', '','inputFileName','',...
+                    'seq',[],'seqIndx',[]);
             end
             % Check if all fields exist:
             if ~all(ismember(fieldnames(pipe),fieldnames(obj.pipe)))
@@ -177,7 +181,8 @@ classdef DataViewer_pipelineMngr < handle
             p = inputParser;
             addRequired(p, 'func', @(x) ischar(x) || isnumeric(x));
             addOptional(p, 'b_save2File', false, @islogical);
-            addOptional(p, 'datFileName', '', @ischar);
+            addOptional(p, 'saveFileName', '', @ischar);
+            addParameter(p, 'inputFrom','', @(x) ischar(x) || isnumeric(x));
             parse(p, func, varargin{:});
             
             state = false;
@@ -200,7 +205,7 @@ classdef DataViewer_pipelineMngr < handle
             funcInfo.funcStr = ['[' strjoin(argsOut, ',') ']=' funcInfo.name '('...
                 strjoin(argsIn, ',') ');']; funcInfo.funcStr = erase(funcInfo.funcStr, '[]=');
             % Add optional fields to funcInfo structure:
-            funcInfo.b_save2File = p.Results.b_save2File; funcInfo.datFileName = p.Results.datFileName;
+            funcInfo.b_save2File = p.Results.b_save2File; funcInfo.saveFileName = p.Results.saveFileName;
             % Add step to pipeline:
             if isempty(obj.pipe)
                 % Check if all input arguments exist. If not, throw an error:
@@ -250,6 +255,9 @@ classdef DataViewer_pipelineMngr < handle
             end
             
             % Add step to pipeline:
+            funcInfo.seq = 1;
+            obj.current_seqIndx = obj.current_seqIndx + 1;
+            funcInfo.seqIndx = obj.current_seqIndx;
             obj.pipe = [obj.pipe; funcInfo];
             state = true;
             % Control for existing data to be saved for the current
@@ -257,15 +265,15 @@ classdef DataViewer_pipelineMngr < handle
             if obj.pipe(end).b_save2File && any(strcmp('obj.data', argsOut))
                 %  If a custom filename was not provided, use the
                 %  default one:
-                if isempty(obj.pipe(end).datFileName)
-                    obj.pipe(end).datFileName = obj.pipe(end).outFileName;
+                if isempty(obj.pipe(end).saveFileName)
+                    obj.pipe(end).saveFileName = obj.pipe(end).outFileName;
                 else
                     % Add .DAT extension, if user just provided the
                     % filename:
-                    [~,~,ext]= fileparts(obj.pipe(end).datFileName);
+                    [~,~,ext]= fileparts(obj.pipe(end).saveFileName);
                     [~,~,ext_def] = fileparts(obj.pipe(end).outFileName);
                     if isempty(ext)
-                        obj.pipe(end).datFileName = [obj.pipe(end).datFileName, ext_def];
+                        obj.pipe(end).saveFileName = [obj.pipe(end).saveFileName, ext_def];
                     end
                 end
             elseif obj.pipe(end).b_save2File && ~any(strcmp('obj.data', argsOut))
@@ -324,7 +332,7 @@ classdef DataViewer_pipelineMngr < handle
                     obj.pipe(i).name);
                 str = [str, txt, sprintf('\t%s : %s\n', opts{:})];                
                 if obj.pipe(i).b_save2File
-                    str = [str, sprintf('Save to file: "%s"\n', fullfile(obj.SaveFolder, obj.pipe(i).datFileName))];
+                    str = [str, sprintf('Save to file: "%s"\n', fullfile(obj.SaveFolder, obj.pipe(i).saveFileName))];
                 end
                 if ~isempty(obj.pipe(i).inputFileName)
                     str = [str, sprintf('Input File Name : "%s"\n', obj.pipe(i).inputFileName)];
@@ -379,7 +387,7 @@ classdef DataViewer_pipelineMngr < handle
                     obj.updateDataHistory(obj.pipe(i));
                     % If user wants, save the output to a file:
                     if obj.pipe(i).b_save2File
-                        save2Dat(fullfile(obj.SaveFolder, obj.pipe(i).datFileName), obj.data, obj.metaData);
+                        save2Dat(fullfile(obj.SaveFolder, obj.pipe(i).saveFileName), obj.data, obj.metaData);
                     end
                     outMsg = 'Pipeline Finished.';
                 catch ME
@@ -447,6 +455,8 @@ classdef DataViewer_pipelineMngr < handle
             % Input:
             %   flag(char): (optional) type 'all' to reset function list in
             %   addition to the pipeline.
+            obj.current_seq = 1; obj.current_seqIndx = 0;
+            
             flag = '';
             if nargin > 1
                 flag = varargin{:};
@@ -500,8 +510,13 @@ classdef DataViewer_pipelineMngr < handle
                 % "valid" inputs keywords:
                 kwrds_args = {'data', 'metaData', 'SaveFolder', 'RawFolder', 'opts'};
                 kwrds_out = {'outFile', 'outData', 'metaData'};
-                if all(ismember(out.argsIn, kwrds_args)) && all(ismember(out.argsOut, kwrds_out))
-%                     disp(list(i).name);
+                if ischar(out.outFileName)
+                    [~,~,ext] = fileparts(out.outFileName);
+                else
+                    [~,~,ext] = fileparts(out.outFileName{1});
+                end
+                if all(ismember(out.argsIn, kwrds_args)) && all(ismember(out.argsOut, kwrds_out)) && strcmpi(ext, '.dat')
+                    % Here, we exclude all "stats" functions that output .mat files!        
                     [~,list(i).name, ~] = fileparts(list(i).name);
                     list(i).info = out;
                     list(i).info.opts_def = list(i).info.opts; % Duplicate default params.
@@ -577,17 +592,31 @@ classdef DataViewer_pipelineMngr < handle
             disp('Building Data History...')
             funcInfo = obj.funcList(strcmp(step.name, {obj.funcList.name}));
             % Create a local structure with the function's info:
-            curr_dtHist = genDataHistory(funcInfo, step.funcStr, step.opts,'none');
+            curr_dtHist = genDataHistory(funcInfo, step.funcStr, step.opts,'none', step.inputFileName);
             
             % First, we need to know if the output is a "data" or a file:
             if any(strcmp(step.argsOut, 'outFile'))
-                curr_dtHist.outputFile_list = obj.outFile;
+                % Remove full path from outFileList:
+                [~,filenames, ext] = cellfun(@(x) fileparts(x), obj.outFile, 'UniformOutput',false);
+                fileList = cellfun(@(x,y) [x,y],filenames, ext, 'UniformOutput',false);
+                % Update outputFileList:
+                curr_dtHist.outputFile_list = fileList;
                 for i = 1:length(obj.outFile)
                     % Map existing metaData file to memory:
                     mtD = matfile(strrep(obj.outFile{i}, '.dat', '.mat'));
                     mtD.Properties.Writable = true;
                     % Create or update "dataHistory" structure:
                     if isprop(mtD, 'dataHistory')
+                        % For retrocompatibility;
+                        newFn = setdiff(fieldnames(curr_dtHist),fieldnames(mtD.dataHistory));
+                        if ~isempty(newFn)
+                            tmpDh = mtD.dataHistory;
+                            for ii = 1:length(newFn)
+                                tmpDh(1).(newFn{ii}) = '';
+                            end
+                            mtD.dataHistory = tmpDh;
+                            clear tmpDh
+                        end
                         mtD.dataHistory = [mtD.dataHistory; curr_dtHist];
                     else
                         mtD.dataHistory = curr_dtHist;
@@ -595,6 +624,12 @@ classdef DataViewer_pipelineMngr < handle
                 end
             else
                 if isfield(obj.metaData, 'dataHistory')
+                    % For retrocompatibility;
+                    newFn = setdiff(fieldnames(curr_dtHist),fieldnames(obj.metaData.dataHistory));
+                    for ii = 1:length(newFn)
+                        obj.metaData.dataHistory(1).(newFn{ii}) = '';
+                    end
+                    %                                        
                     obj.metaData.dataHistory = [obj.metaData.dataHistory; curr_dtHist];
                 else
                     obj.metaData.dataHistory = curr_dtHist;
