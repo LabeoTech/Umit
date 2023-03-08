@@ -1,3 +1,4 @@
+Analysis/testing/
 Analysis/Experimental/testFcn4Batch.m
 test/test_runImagesClassification/exp_outFiles/AcqInfos.mat
 test/test_runImagesClassification/exp_outFiles/fluo.dat
