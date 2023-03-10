@@ -1,0 +1,234 @@
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../css/master.css">
+    <style media="screen">
+        ul {
+            line-height: 1.5;
+        }
+
+        .collapsible {
+            background-color: #eeeeee;
+            color: black;
+            cursor: pointer;
+            padding: 18px;
+            width: 100%;
+            border: none;
+            text-align: left;
+            outline: none;
+            font-size: 15px;
+            margin-bottom: 10px;
+        }
+
+        .active,
+        .collapsible:hover {
+            background-color: #888;
+        }
+
+        .content {
+            padding: 0 18px;
+            display: none;
+            overflow: hidden;
+            background-color: #fff;
+            border: 1px solid black;
+            margin-bottom: 10px;
+        }
+    </style>
+    <title>split data by event</title>
+</head>
+
+<body>
+    <h2>How to create custom functions in <b><i>umIT</i></b></h2>
+    <hr>
+    <p>
+        The <b><i>umIToolbox</i></b> was designed to allow the integration of custom functions to its pipeline
+        management system. In this section, we describe how the toolbox identifies the analysis functions and how to
+        adapt your code to create a custom function.
+    </p>
+    <h3 id="how-it-works">How it works</h3>
+    <hr>
+    <p>
+        All functions are located under the <b>Analysis</b> folder in the toolbox path and are organized into different
+        subfolders separated by category ('Data import', 'Data export','Filters' etc). The <b>PipelineManager</b> class
+        reads the content of all <samp>.m</samp> files inside the <b>Analysis</b> folder and identifies the compatible
+        functions based on a set of keywords representing the function's inputs and outputs. Here is the list of all
+        valid keywords:
+    </p>
+    <h4>Inputs</h4>
+    <hr>
+    <table>
+        <tr>
+            <th style="width:130px" align="left">Keyword</th>
+            <th align="left">Description</th>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">data</td>
+            <td>numeric array (format <samp>single</samp>) OR structure with input data</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">metaData</td>
+            <td>structure containing the meta data associated with <samp>data</samp> (if <samp>data</samp> is a numeric
+                array)</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">RawFolder</td>
+            <td>Path to the folder containing the raw data</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">SaveFolder</td>
+            <td>Path to the folder containing the transformed data</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">opts</td>
+            <td>structure containing extra parameters for the function</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">object</td>
+            <td>handle of the <i>protocol</i> object (<i>Subject, Acquisition or Modality</i>)</td>
+        </tr>
+    </table>
+    <h4>Outputs</h4>
+    <hr>
+    <table>
+        <tr>
+            <th style="width:130px" align="left">Keyword</th>
+            <th align="left">Description</th>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">outData</td>
+            <td>numeric array (format <samp>single</samp>) OR structure with output data</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">metaData</td>
+            <td>structure containing the meta data associated with <samp>outData</samp> (if <samp>outData</samp> is a
+                numeric array)</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">outFile</td>
+            <td>cell array of characters containing the file names of files created in the function</td>
+        </tr>
+    </table>
+    <hr>
+    <br>
+    <div class="infonote">
+        <p><strong>Limitations</strong><br></p>
+        <ul>
+            <li>Currently, the <b>PipelineManager</b> class handles the sequential processing of single data. This means
+                that the analysis functions can only have <b>one</b> data as input and/or output. However, for analysis
+                functions, the output data structure can contain multiple measures.</li>
+            <li>When performing multiple measures, the dimensions of the values must be the same (see example #N below).
+            </li>
+        </ul>
+    </div>
+    <h3 id="two-types-of-files">Two types of files</h3>
+    <hr>
+    <p>
+        The <b><i>umIToolbox</i></b> deals with numeric data with distinct dimensions (from scalar to multidimensional
+        arrays). The data can be stored in binary files with a <samp>.dat</samp> format or as a <samp>.mat</samp> file.
+        The <samp>.dat</samp> files are usually dedicated to store the imported raw data and preprocessed data (e.g.,
+        raw imaging data that was filtered and normalized). The <samp>.mat</samp> files are dedicated to store the
+        results of the analysis performed in the preprocessed data when a significant dimension reduction is observed.
+        For instance, for an image time series, a function that calculates the average response amplitude of a subset of
+        pixels should be stored in a <samp>.mat</samp> file. In this particular case, the original data consists of a
+        3-dimensional array while the average response amplitude consists of a single value (scalar) associated with a
+        part of the array (i.e., region of interest).
+    </p>
+    <p>
+        In the <b><i>umIToolbox</i></b> app, the results of the analysis functions stored in <samp>.mat</samp> files can
+        be grouped for visualization and statistical comparisons.
+    </p>
+    <p>
+        The data saved in a <samp>.dat </samp> format must have an associated <samp>.mat</samp> file containing the meta
+        data. In contrast, the <samp>.mat</samp> files with the analysis results contain both the data and meta data (click <a href="./mat-files-organization.html">here</a> to see a description of the <samp>.mat</samp> file variables). 
+    </p>
+    <p>
+        A set of auxiliary functions (located in the <b>subFunc</b> folder) is dedicated to the generation of the files. Here is a list of auxiliary functions necessary for saving and loading the data files used in <b><i>umIT</i></b> (please, check each function's docstring for details):
+    </p>
+    <table>
+        <tr>
+            <th style="width: 160px" align="left">Function Name</th>
+            <th align="left">Description</th>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">genMetaData</td>
+            <td>creates a structure with meta data</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">save2Dat</td>
+            <td>saves numeric data to a <samp>.dat</samp> file</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">genDataMetaStructure</td>
+            <td>merges the data and meta data into a single structure. Use this function to create the data to be saved as a <samp>.mat</samp> file</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">loadDatFile</td>
+            <td>loads the data from the <samp>.dat</samp> file and meta data from its associated <samp>.mat</samp> file into memory</td>
+        </tr>
+    </table>
+    <h3 id="data-dimensions">Data dimensions</h3>
+    <hr>
+    <p>
+        The dimensions of the data are listed in a cell array of single capital letters stored in the variable <samp>dim_names</samp> in the meta data structure. This variable is used by different classes and apps in <b><i>umIT</i></b> to identify the type of recording and to locate the dimensions to perform calculations on.
+    </p>
+    <p>
+        The dimension name list is stored in the <samp>dimension_names.mat</samp> file in the <b>subFunc</b> folder. Here is the current list:
+    </p>
+    <table>
+        <tr>
+            <th style="width: 130px" align="left">Dimension Name</th>
+            <th align="left">Description</th>
+        </tr>
+        <tr>
+            <td class="add_font_monospace" align="center">X</td>
+            <td>X axis from an imaging data</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace" align="center">Y</td>
+            <td>Y axis from an imaging data</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace" align="center">Z</td>
+            <td>Z axis from a multi-stack imaging data</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace" align="center">T</td>
+            <td>time dimension</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace" align="center">S</td>
+            <td>dimension used in seed-pixel correlation maps indicating the "S"eed index</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace" align="center">E</td>
+            <td>event dimension. Indicates the event(or trial)</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace" align="center">P</td>
+            <td> stands for "P"ixel . Used to store pixel values without any spatial (X,Y) information</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace" align="center">F</td>
+            <td>stands for "F"requency dimension. Used to indicate the frequency in Fourier-transformed datasets</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace" align="center">O</td>
+            <td>stands for "O"bservation. This is the first dimension used in data created with the <samp>genDataMetaStructure</samp> function</td>
+        </tr>
+    </table>
+    <h3 id="">Examples</h3>
+    <hr>
+    <p>
+        
+    </p>
+
+
+
+
+
+
+    <hr>
+</body>
+
+</html>
