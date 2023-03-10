@@ -16,8 +16,8 @@ function outFile = funcTemplate1(RawFolder, SaveFolder, varargin)
 
 % Defaults: !Important. Each default variable should be stated in a single line!
 default_Output = {'file1.dat', 'file2.dat','fileN.dat'}; %#ok This is here only as a reference for PIPELINEMANAGER.m. The real outputs will be stored in OUTFILE.
-default_opts = struct('ParamNum', 1, 'ParamStr', 'val', 'ParamBool', false, 'ParamMultiChoice','Option1');
-opts_values = struct('ParamNum', [1:5], 'ParamStr',{{'val'}},'ParamBool',[false, true], 'ParamMultiChoice', {{'Option1', 'Option2','Option3'}'});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
+default_opts = struct('ParamNum', 1, 'ParamStr', 'val', 'ParamBool', false, 'ParamMultiChoice','Option1', 'ParamSingleChoice','Option1');
+opts_values = struct('ParamNum', [1:5], 'ParamStr',{{'val'}},'ParamBool',[false, true], 'ParamMultiChoice', {{'Option1', 'Option2','Option3'}'},'ParamSingleChoice',{{'Option1', 'Option2','Option3'}}));%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 %
 
 %%% Arguments parsing and validation %%%

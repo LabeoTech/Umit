@@ -140,10 +140,14 @@
     </p>
     <p>
         The data saved in a <samp>.dat </samp> format must have an associated <samp>.mat</samp> file containing the meta
-        data. In contrast, the <samp>.mat</samp> files with the analysis results contain both the data and meta data (click <a href="./mat-files-organization.html">here</a> to see a description of the <samp>.mat</samp> file variables). 
+        data. In contrast, the <samp>.mat</samp> files with the analysis results contain both the data and meta data
+        (click <a href="./mat-files-organization.html">here</a> to see a description of the <samp>.mat</samp> file
+        variables).
     </p>
     <p>
-        A set of auxiliary functions (located in the <b>subFunc</b> folder) is dedicated to the generation of the files. Here is a list of auxiliary functions necessary for saving and loading the data files used in <b><i>umIT</i></b> (please, check each function's docstring for details):
+        A set of auxiliary functions (located in the <b>subFunc</b> folder) is dedicated to the generation of the files.
+        Here is a list of auxiliary functions necessary for saving and loading the data files used in <b><i>umIT</i></b>
+        (please, check each function's docstring for details):
     </p>
     <table>
         <tr>
@@ -160,20 +164,25 @@
         </tr>
         <tr>
             <td class="add_font_monospace">genDataMetaStructure</td>
-            <td>merges the data and meta data into a single structure. Use this function to create the data to be saved as a <samp>.mat</samp> file</td>
+            <td>merges the data and meta data into a single structure. Use this function to create the data to be saved
+                as a <samp>.mat</samp> file</td>
         </tr>
         <tr>
             <td class="add_font_monospace">loadDatFile</td>
-            <td>loads the data from the <samp>.dat</samp> file and meta data from its associated <samp>.mat</samp> file into memory</td>
+            <td>loads the data from the <samp>.dat</samp> file and meta data from its associated <samp>.mat</samp> file
+                into memory</td>
         </tr>
     </table>
     <h3 id="data-dimensions">Data dimensions</h3>
     <hr>
     <p>
-        The dimensions of the data are listed in a cell array of single capital letters stored in the variable <samp>dim_names</samp> in the meta data structure. This variable is used by different classes and apps in <b><i>umIT</i></b> to identify the type of recording and to locate the dimensions to perform calculations on.
+        The dimensions of the data are listed in a cell array of single capital letters stored in the variable
+        <samp>dim_names</samp> in the meta data structure. This variable is used by different classes and apps in
+        <b><i>umIT</i></b> to identify the type of recording and to locate the dimensions to perform calculations on.
     </p>
     <p>
-        The dimension name list is stored in the <samp>dimension_names.mat</samp> file in the <b>subFunc</b> folder. Here is the current list:
+        The dimension name list is stored in the <samp>dimension_names.mat</samp> file in the <b>subFunc</b> folder.
+        Here is the current list:
     </p>
     <table>
         <tr>
@@ -214,21 +223,144 @@
         </tr>
         <tr>
             <td class="add_font_monospace" align="center">O</td>
-            <td>stands for "O"bservation. This is the first dimension used in data created with the <samp>genDataMetaStructure</samp> function</td>
+            <td>stands for "O"bservation. This is the first dimension used in data created with the
+                <samp>genDataMetaStructure</samp> function</td>
         </tr>
     </table>
-    <h3 id="">Examples</h3>
+    <h3 id="basic-rules">Basic rules</h3>
+    <hr>
+    <p>
+        The <samp>funcTemplate.m</samp> file located in the <b>Analysis</b> folder contains some templates that can be used to build your custom function. Here, we go through the basic rules that need to be followed to successfully create and run a function in <b><i>umIT</i></b>.
+    </p>
+    <h4 id="1-use-the-valid-keywords">1. Use the valid keywords</h4>
+    <p>
+        As stated above, the toolbox is capable of recognizing the functions that contain input and output variables with specific names (keywords listed above). Some input variables such as <samp>opts</samp>, can be passed as a variable-lenght input argument (<samp>varargin</samp>):
+    </p>
+    <div class ='codeinput'>
+        <pre>
+            function [outData, metaData] = MyCustomFcn(data,metaData,varargin); 
+        </pre>
+    </div>
+    <h4 id="2-define-defaults">2. Define defaults</h4>
+    <p>
+        This should be the first part of the functions code (right below the function's docstring). The <b>PipelineManager</b> class reads this section to create the pipelines and set the function's parameters passed using the <samp>opts</samp> structure (if applicable). There are two default parameters that need to be set: the output file name(s) and the function's optional parameters (if applicable).
+    </p>
+    <div class="warnnote">
+        <p><strong>Important</strong><br>
+            Each variable in the "Default" section should be stated should be stated in a single line. Line breaks using <b><font class= 'stringformat'>[...]</font></b> is not allowed:
+            <div class="black-box">
+                <pre>
+                    <code class="code-block">
+% This is not allowed:
+default_Output = {'file1.dat',...
+'file2.dat'};
+
+% Do this instead:
+default_Output = {'file1.dat','file2.dat'};
+                    </code>
+                </pre>
+            </div>
+        </p>
+    </div>
+    <h5>Default output file name(s)</h5>
+    <p>
+        If the function output is a <samp>outData</samp>, means that there is a single data is created. In this case, the <samp>default_Output</samp> variable is a the name of the file with it's <samp>.dat</samp> or <samp>.mat</samp> extension:
+    </p>
+    <div class ='codeinput'>
+        <pre>
+            function [outData, metaData] = MyCustomFcn(data,metaData,varargin); 
+            % MYCUSTOMFCN. This is the docstring.
+
+            % Defaults:
+            default_Output = 'myFileName.dat';            
+        </pre>
+    </div>
+    <p>
+        If your function saves multiple files, list all possible file names in the <samp>default_Output</samp> variable as a cell array:
+    </p>
+    <div class ='codeinput'>
+        <pre>default_Output = {'myFileName1.dat', 'myFileName2.dat', 'myFileName3.dat', 'myFileName4.dat'};</pre>
+    </div>
+    <br>
+    <div class="infonote">
+        <p><strong>Note</strong><br>
+            The list of the files created during the execution are not necessarily the same as the list in <samp>default_Output</samp>. Use the output variable <samp>outFile</samp> to store the actual list of files created.
+        </p>
+    </div>
+    <h5>Default options</h5>
+    <p>
+        Functions using the <samp>opts</samp> parameters structures, need to set the default options. Two structures need to be created: <samp>default_opts</samp> and <samp>opts_values</samp>. The <samp>default_opts</samp> structure contains the default values for each parameter of the function. The <samp>opts_values</samp> contains the range of possible values for each parameter. You can use the <samp>opts_values</samp> structure to limit the type of values (characters, numeric) and their range (list of characters, positive/negative values, finite range of numeric values etc.)
+    </p>
+    <p>
+        The way in which the parameters are displayed in the GUI from <b>PipelineManager</b> is dependent on how you set up the field values in the <samp>opts_values</samp> structure. Here is an example:
+    </p>
+    <div class="codeinput">
+        <pre>
+            default_opts = struct('ParamIntRange', 1,'ParamStr', 'val','ParamBool', false);
+            opts_values = struct('ParamIntRange', [1:5],'ParamStr',{{'val'}},'ParamBool',[false, true]);
+        </pre>
+    </div>
+    <p>
+        The code above sets three different parameters. The first is an integer that varies from one to five, the second is a string and the third is a boolean. The <b>PipelineManager</b> will show the options as so:
+    </p>
+    <p style="text-align: center;"><img src="../assets/gifs/custom_def_opts_example1.gif" alt="custom_def_opts_example1" width="360"></p>
+    <p>
+        Here is a summary of different ways of setting the <samp>opts_values</samp> field values and how they will be interpreted by <b>PipelineManager</b>:        
+    </p>
+    <table>
+        <tr>
+            <th align="left">Type</th>
+            <th style="width: 130px"align="left">Syntax</th>
+            <th align="left">GUI element</th>            
+        </tr>
+        <tr>
+            <td>List of  numbers</td>
+            <td class="add_font_monospace">[-1, 0, 1, 2, 3]</td>
+            <td>Drop-down menu</td>
+        </tr>
+        <tr>
+            <td>Range of numbers (float)</td>
+            <td class="add_font_monospace">[-Inf,Inf]</td>
+            <td>Numeric edit field (without limits)</td>
+        </tr>
+        <tr>
+            <td>Range of positive numbers (float)</td>
+            <td class="add_font_monospace">[eps,Inf]</td>
+            <td>Numeric edit field (with inferior limit)</td>
+        </tr>
+        <tr>
+            <td>Range of non-negative numbers (float)</td>
+            <td class="add_font_monospace">[0,Inf]</td>
+            <td>Numeric edit field (with inferior limit)</td>
+        </tr>        
+        <tr>
+            <td>List of words (single-selection)</td>
+            <td class="add_font_monospace">{{'Option1','Option2','Option3'}}</td>
+            <td>Drop-down menu</td>
+        </tr>
+        <tr>
+            <td>List of words (multi-selection)</td>
+            <td class="add_font_monospace">{{'Option1','Option2','Option3'}'}</td>
+            <td>Check box list. <b>*Just transpose the cell array to change from single to multi-selection</b></td>
+        </tr>
+        <tr>
+            <td>Boolean</td>
+            <td class="add_font_monospace">[false,true]</td>
+            <td>Drop-down menu with "No" and "Yes" for false and true respectively</td>
+        </tr>
+        <tr>
+            <td>Free string input </td>
+            <td class="add_font_monospace">{{'def'}}</td>
+            <td>Edit field<b>. Cell array with single item. *This can be used to input either numeric OR text. Single word or scalar ONLY.</b></td>
+        </tr>
+    </table>
+    <h4 id="3-format-output-data">3. Format output data</h4>
     <hr>
     <p>
         
     </p>
 
-
-
-
-
-
-    <hr>
+<br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br>
 </body>
 
 </html>
