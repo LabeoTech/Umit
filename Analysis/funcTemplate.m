@@ -167,9 +167,59 @@ clear p
 %%%%%----------------------------------------------------------------------
 % Run your code here:
 % Create a list of names of regions of interest:
-obsID = {'ROI1','ROI2','ROI3','ROIN'};
+obsID = {'ROI1','ROI2','ROI3','ROIn'};
 % Calculate the data for each region of interest:
 dataOut = {10,12,11,30};
+% Create the new dimensions of the data. Here, the first dimension should
+% be always "O" (observation).
+dim_name = {'O'}; %
+%%%%%----------------------------------------------------------------------
+
+%%%%%----------------------------------------------------------------------
+% Create the output data. The function "genDataMetaStructure" merges the
+% data for each observation and the content of "metaData" in a single
+% structure.
+outData = genDataMetaStructure(dataOut,obsID,dim_name,metaData);
+%%%%%----------------------------------------------------------------------
+end
+
+function outData = funcTemplate3(data, metaData)
+% FUNCTEMPLATE3A represents a data analysis function. Here, a "data
+% analysis" function will use the input data (e.g., imaging data such as
+% image time series) and perform calculations on regions of interests. 
+
+% In this case, the output "outData" is created using the function
+% "genDataMetaStructure". It consists of a structure that contain the meta
+% data information and the data segregated by region of interest.
+
+% Defaults:
+default_Output = 'DEFAULT_FILENAME.mat'; %#ok This line is here just for Pipeline management.
+%
+
+%%% Arguments parsing and validation %%%
+p = inputParser;
+% The input of the function must be a File , RawFolder or SaveFolder
+addRequired(p, 'data')% The input data. Here, you can add a validation function to ensure that data has the necessary properties.
+addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
+% Parse inputs:
+parse(p,data, metaData);
+%Initialize Variables:
+data = p.Results.data;
+metaData = p.Results.metaData;
+clear p
+%%%%
+
+%%%%%----------------------------------------------------------------------
+% Run your code here:
+% Create a list of names of regions of interest:
+obsID = {'ROI1','ROI2','ROI3','ROIn'};
+% Calculate different measures for each region of interest:
+dataOut = struct('measure1',[],'measure2',[],'measure3',[]);
+for ii = 1:length(obsID)
+    dataOut(ii).measure1 = randi([0,10])
+    dataOut(ii).measure2 = randi([0,10])
+    dataOut(ii).measure3 = randi([0,10])
+end
 % Create the new dimensions of the data. Here, the first dimension should
 % be always "O" (observation).
 dim_name = {'O'}; %

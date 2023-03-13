@@ -349,18 +349,65 @@ default_Output = {'file1.dat','file2.dat'};
             <td>Drop-down menu with "No" and "Yes" for false and true respectively</td>
         </tr>
         <tr>
-            <td>Free string input </td>
+            <td>Text/numeric input </td>
             <td class="add_font_monospace">{{'def'}}</td>
-            <td>Edit field<b>. Cell array with single item. *This can be used to input either numeric OR text. Single word or scalar ONLY.</b></td>
+            <td>Edit field<b>. Cell array with single item. *This can be used to input either numeric OR text. Single word or scalar values ONLY.</b></td>
         </tr>
     </table>
     <h4 id="3-format-output-data">3. Format output data</h4>
     <hr>
     <p>
-        
+        Be sure to create or update all meta data associated with the created/processed data. For functions that generate <samp>.dat</samp> files, use the <samp>genMetaData</samp> to create the meta data structure. For functions that generate <samp>.mat</samp> files, use the <samp>genDataMetaStructure</samp> function.    
     </p>
-
-<br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br>
+    <p>
+        Here is an example of a function that creates a <samp>.dat</samp> file:
+    </p>
+    <div class="codeinput">
+        <pre>
+            % Create data:
+            data = ...;            
+            % Set the data dimension names
+            data_dimensions = {'Y','X','T'}; 
+            % Create the meta data structure:
+            metaData = genMetaData(data,data_dimensions);
+        </pre>
+    </div>
+    <p>
+        For functions that create <samp>.mat</samp> files, the output data is a structure containing the data from one or more <b>observations</b> (e.g., regions of interest). There area two ways of formatting the data: if the function performs a single measure, you can store the data in a cell array as so:
+    </p>
+    <div class="codeinput">
+        <pre>
+            % Create a list of names of regions of interest:
+            obsID = {'ROI1','ROI2','ROI3','ROIn'};
+            % Calculate the data for each region of interest:
+            dataOut = {10,12,11,30};
+            % Set dimension names:            
+            dim_name = {'O'}; %            
+            % Create the output structure. 
+            outData = genDataMetaStructure(dataOut,obsID,dim_name,metaData);
+        </pre>
+    </div>
+    <p>
+        For multiple measures, you can store the data in a structure and set the fieldnames with the measure ID:
+    </p>
+    <div class="codeinput">
+        <pre style="white-space: pre-wrap";>           
+% Create a list of names of regions of interest:
+obsID = {'ROI1','ROI2','ROI3','ROIn'};
+% Calculate different measures for each region of interest:
+dataOut = struct('measure1',[],'measure2',[],'measure3',[]);
+for ii = 1:length(obsID)
+    dataOut(ii).measure1 = randi([0,10])
+    dataOut(ii).measure2 = randi([0,10])
+    dataOut(ii).measure3 = randi([0,10])
+end
+% Set dimension names:            
+dim_name = {'O'}; %            
+% Create the output structure. 
+outData = genDataMetaStructure(dataOut,obsID,dim_name,metaData);
+        </pre>
+    </div>
+    <hr>
 </body>
 
 </html>
