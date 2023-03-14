@@ -291,7 +291,7 @@ classdef PipelineManager < handle
             task.saveFileName = p.Results.saveFileName;
             task.inputFileName = p.Results.inputFileName;
             task.b_paramsSet = false;
-            task.inputFrom = [];
+            task.inputFrom = '';
             % Control inputFrom:
             if ~isempty(p.Results.inputFrom)
                 % Check if the task function needs data:
@@ -341,7 +341,8 @@ classdef PipelineManager < handle
                     task.seq = obj.current_seq; task.seqIndx = obj.current_seqIndx; 
                 end               
                 if ~isempty(obj.current_data)
-                    task.inputFileName = obj.dv_originalMetaData.datFile; % Get name of the input file in DataViewer.
+                    [~,file,ext] = fileparts(obj.dv_originalMetaData.datFile);
+                    task.inputFileName = [file ext]; % Get name of the input file in DataViewer.
                 end                               
                 % Remove dependency field from "task")
                 task = rmfield(task, 'dependency');                               
@@ -595,6 +596,10 @@ classdef PipelineManager < handle
                     if ~ishandle(obj.h_wbItem) || ~obj.b_state
                         break
                     end
+                end
+                % Abort outer loop if user cancels pipeline or a pipeline execution failed:
+                if ~ishandle(obj.h_wbItem) || ~obj.b_state
+                    break
                 end
             end
             % Remove "empty" rows from the Pipeline Summary Log table:
@@ -1165,11 +1170,11 @@ classdef PipelineManager < handle
             LastLog.Job = {funcStr};
             % Add full path of input file, if applicable:
             b_hasInputFile = false;
-            if strcmpi(task.inputFileName,'data') || task.inputFrom <= 0
-                % Do nothing
-            elseif ~isempty(task.inputFileName)
+            if ~strcmpi(task.inputFileName,'data') && ~isempty(task.inputFileName)
                 b_hasInputFile = true;
                 LastLog.InputFile_Path = fullfile(obj.tmp_TargetObj.SaveFolder, task.inputFileName);
+            elseif strcmpi(task.inputFileName,'data') || task.inputFrom <= 0
+                % Do nothing
             end
             %  Execute the task:
             try
@@ -1712,11 +1717,11 @@ classdef PipelineManager < handle
                 end
                 % SPECIAL CASE. Look for "object"s as optional arguments in
                 % function first lines:
-%                 expObj = 'default_object\s*=';
-%                 str = regexpi(txt, expObj, 'match', 'once');
-%                 if ~isempty(str)
-%                     info.argsIn{end+1} = 'object';
-%                 end
+                expObj = 'default_object\s*=';
+                str = regexpi(txt, expObj, 'match', 'once');
+                if ~isempty(str)
+                    info.argsIn{end+1} = 'object';
+                end
             end
         end
         
