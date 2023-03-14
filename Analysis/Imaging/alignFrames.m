@@ -102,8 +102,7 @@ switch lower(opts.UseFile)
                 ['Cannot find "' opts.UseFile '" in object''s SaveFolder']);
             addCause(ME, causeException);
             rethrow(ME)
-        end
-        error('Invalid target file name');
+        end        
 end
 
 % Load Reference Frame;
