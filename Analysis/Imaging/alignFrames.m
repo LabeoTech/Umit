@@ -92,7 +92,7 @@ switch lower(opts.UseFile)
         % Load the filename in "opts.UseFile"        
         try
             targetDat = mapDatFile(fullfile(object.SaveFolder, opts.UseFile));
-            if ndims(targetDat) == 3
+            if ndims(targetDat.Data.data) == 3
                 targetFr = targetDat.Data.data(:,:,1);
             else
                 targetFr = targetDat.Data.data;
