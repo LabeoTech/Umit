@@ -216,9 +216,9 @@ obsID = {'ROI1','ROI2','ROI3','ROIn'};
 % Calculate different measures for each region of interest:
 dataOut = struct('measure1',[],'measure2',[],'measure3',[]);
 for ii = 1:length(obsID)
-    dataOut(ii).measure1 = randi([0,10])
-    dataOut(ii).measure2 = randi([0,10])
-    dataOut(ii).measure3 = randi([0,10])
+    dataOut(ii).measure1 = randi([0,10]);
+    dataOut(ii).measure2 = randi([0,10]);
+    dataOut(ii).measure3 = randi([0,10]);
 end
 % Create the new dimensions of the data. Here, the first dimension should
 % be always "O" (observation).
