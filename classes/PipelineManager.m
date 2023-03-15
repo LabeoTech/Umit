@@ -1170,7 +1170,7 @@ classdef PipelineManager < handle
             LastLog.Job = {funcStr};
             % Add full path of input file, if applicable:
             b_hasInputFile = false;
-            if ~strcmpi(task.inputFileName,'data') && ~isempty(task.inputFileName)
+            if ~strcmpi(task.inputFileName,'data') && task.inputFrom ~= -1
                 b_hasInputFile = true;
                 LastLog.InputFile_Path = fullfile(obj.tmp_TargetObj.SaveFolder, task.inputFileName);
             elseif strcmpi(task.inputFileName,'data') || task.inputFrom <= 0
