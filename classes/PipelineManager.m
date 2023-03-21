@@ -832,8 +832,7 @@ classdef PipelineManager < handle
             %
             disp('Pipeline erased!')
         end
-        %%%%%%--Pipeline Visualization  -----------------------------------
-        
+        %%%%%%--Pipeline Visualization  -----------------------------------        
         function fH = drawPipe(obj,varargin)
             % DRAWPIPE creates a Directed Acyclic Graph (DAG) representation
             % of the pipeline.
@@ -1400,8 +1399,7 @@ classdef PipelineManager < handle
                 % Return steps to be skipped:
                 skipNames = {seqIn(indxEqual).name};
             end
-        end
-        
+        end        
         %%%%%%--Helpers for "addTask" method -----------------------------        
         function task = setInput(obj,task)
             % SETINPUT selects the input to the function in "task". It

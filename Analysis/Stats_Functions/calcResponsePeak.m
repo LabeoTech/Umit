@@ -76,13 +76,14 @@ for ii = 1:length(outData.data)
         onsetLat_arr(jj) = (onsetIndx - evntFr)/outData.Freq;
     end
     % Put data inside "ROIdata" structure:
-    ROIdata(ii).PeakAmplitude = PeakAmp_arr;
-    ROIdata(ii).PeakLatency = PeakLat_arr;
-    ROIdata(ii).OnsetAmplitude = onsetAmp_arr;
-    ROIdata(ii).OnsetLatency = onsetLat_arr;        
+    ROIdata(ii).PeakAmplitude = PeakAmp_arr';
+    ROIdata(ii).PeakLatency = PeakLat_arr';
+    ROIdata(ii).OnsetAmplitude = onsetAmp_arr';
+    ROIdata(ii).OnsetLatency = onsetLat_arr';        
 end
 % Update metaData:
 outData.eventID = evntList;
 outData.label = outData.eventNameList;
 outData.data = ROIdata;
+outData.dim_names = {'O','E'};
 end
