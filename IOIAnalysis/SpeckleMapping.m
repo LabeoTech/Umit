@@ -69,8 +69,7 @@ DatOut = stdfilt(dat,Kernel);
 DatOut = single(DatOut);
 
 %Remove outliers
-pOutlier = prctile(DatOut(:), 99);
-DatOut(DatOut>pOutlier) = pOutlier;
+DatOut = remOutlier(DatOut);
 % Get the average speckle contrast map:
 DatOut = mean(DatOut./mean(dat,3),3);
 
@@ -108,4 +107,19 @@ if( bSaveMap )
     write(obj, DatOut);
 end
 disp('Done');
+end
+
+function data = remOutlier(data)
+% Custom function to remove outliers from data by imputing the value of the
+% 99th percentile to higher values.
+dataSort = data;
+dataSort(isnan(dataSort)) = []; % remove NaNs
+dataSort = sort(dataSort(:)); % sort data in ascending order
+idx99 = .99*length(dataSort);
+if round(idx99) == idx99
+    val99th = dataSort(idx99+1);
+else
+    val99th = (dataSort(floor(idx99+1))+dataSort(ceil(idx99+1)))/2;
+end
+data(data>val99th) = val99th;
 end
