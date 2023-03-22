@@ -65,12 +65,26 @@ Stim = 0;
 CamTrig = find((AnalogIN(1:(end-1),1) < 1.25) & (AnalogIN(2:end,1) >= 1.25))+1;
 % Detect Stimulation triggers in channel 2:
 % StimTrig is on the second channel (except if slave):
-if( ~isfield(Infos, 'Stimulation1_Amplitude') )
-    Infos.Stimulation1_Amplitude = 5;
+if stimChan > 3
+    % If the stim channel is external, set the amplitude as the half of the
+    % signal amplitude:
+    thr = min(AnalogIN(:,stimChan)) + ((max(AnalogIN(:,stimChan)) - min(AnalogIN(:,stimChan)))/2);
+    % Also, we filter the signal to remove high-frequency noise. This is
+    % common with photodiodes, for instance:
+    f = fdesign.lowpass('N,F3dB', 4, 200, 10000); % Apply low-pass filter @200Hz to remove high-frequency noise.
+    lpass = design(f,'butter');
+    AnalogIN(:,stimChan) = filtfilt(lpass.sosMatrix, lpass.ScaleValues, AnalogIN(:,stimChan)')';    
+elseif ( ~isfield(Infos, 'Stimulation1_Amplitude') )
+    % Set threshold amplitude for internal channels to 2.5V when the amplitude
+    % value is not available (retrocompatibility issue)
+%     Infos.Stimulation1_Amplitude = 5;
+    thr = 2.5;
+else
+    thr = Infos.Stimulation1_Amplitude/2;
 end
-
-StimTrig = find((AnalogIN(1:(end-1), stimChan) < Infos.Stimulation1_Amplitude/2) &...
-    (AnalogIN(2:end, stimChan) >= Infos.Stimulation1_Amplitude/2))+1;
+  
+StimTrig = find((AnalogIN(1:(end-1), stimChan) < thr) &...
+    (AnalogIN(2:end, stimChan) >= thr))+1;
 if isempty(StimTrig)
     if isfield(Infos,['AICh' num2str(stimChan)])
         str = Infos.(['AICh' num2str(stimChan)]);
@@ -80,7 +94,6 @@ if isempty(StimTrig)
     disp(['Missing triggers in channel ' str '!'])
     return
 end
-
 % Add Stimulation field for retrocompatibility:
 if( ~isfield(Infos, 'Stimulation') )
     Infos.Stimulation = 1;
@@ -92,8 +105,8 @@ if Infos.Stimulation == 1
     StimLim = find(diff(StimTrig)>20000);
     NbStim = length(StimLim)+1;
     if( NbStim == length(StimTrig) ) %Single Pulse trigged Stims
-        StimLim = find((AnalogIN(1:(end-1), stimChan) >Infos.Stimulation1_Amplitude/2) &...
-            (AnalogIN(2:end, stimChan) <= Infos.Stimulation1_Amplitude/2))+1;
+        StimLim = find((AnalogIN(1:(end-1), stimChan) >thr) &...
+            (AnalogIN(2:end, stimChan) <= thr))+1;
         StimLength = mean(StimLim - StimTrig)./Infos.AISampleRate;
         if StimLength < (CamTrig(2) - CamTrig(1))/Infos.AISampleRate
             StimLength = 3*(CamTrig(2) - CamTrig(1))/Infos.AISampleRate;
