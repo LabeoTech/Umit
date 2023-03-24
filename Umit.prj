@@ -58,7 +58,7 @@ test</param.exclude.filters>
          &lt;file type="thumbnail"/&gt;
       &lt;/example&gt;
       &lt;example name="Analysis function template" type="html"&gt;
-         &lt;file type="source"/&gt;
+         &lt;file type="source"&gt;/Analysis/html/funcTemplate.html&lt;/file&gt;
          &lt;file type="main"&gt;/Analysis/funcTemplate.m&lt;/file&gt;
          &lt;file type="thumbnail"/&gt;
       &lt;/example&gt;

@@ -1,11 +1,12 @@
-<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
-<!-- saved from url=(0092)file:///C:/Users/bofsp/Documents/PostDoc_UdeM/LabeoTech/Umit/Analysis/html/funcTemplate.html -->
-<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-      
+
+<!DOCTYPE html
+  PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
    <!--
 This HTML was auto-generated from MATLAB code.
 To make changes, update the MATLAB code and republish this document.
-      --><title>funcTemplate</title><meta name="generator" content="MATLAB 9.6"><link rel="schema.DC" href="http://purl.org/dc/elements/1.1/"><meta name="DC.date" content="2023-03-24"><meta name="DC.source" content="funcTemplate.m"><style type="text/css">
+      --><title>Templates for creating functions in umIT</title><meta name="generator" content="MATLAB 9.6"><link rel="schema.DC" href="http://purl.org/dc/elements/1.1/"><meta name="DC.date" content="2023-03-24"><meta name="DC.source" content="funcTemplate.m"><style type="text/css">
 html,body,div,span,applet,object,iframe,h1,h2,h3,h4,h5,h6,p,blockquote,pre,a,abbr,acronym,address,big,cite,code,del,dfn,em,font,img,ins,kbd,q,s,samp,small,strike,strong,sub,sup,tt,var,b,u,i,center,dl,dt,dd,ol,ul,li,fieldset,form,label,legend,table,caption,tbody,tfoot,thead,tr,th,td{margin:0;padding:0;border:0;outline:0;font-size:100%;vertical-align:baseline;background:transparent}body{line-height:1}ol,ul{list-style:none}blockquote,q{quotes:none}blockquote:before,blockquote:after,q:before,q:after{content:'';content:none}:focus{outine:0}ins{text-decoration:none}del{text-decoration:line-through}table{border-collapse:collapse;border-spacing:0}
 
 html { min-height:100%; margin-bottom:1px; }
@@ -65,84 +66,455 @@ table td { padding:7px 5px; text-align:left; vertical-align:top; border:1px soli
 
 
 
-  </style></head><body><div class="content"><h2>Contents</h2><div><ul><li><a href="file:///C:/Users/bofsp/Documents/PostDoc_UdeM/LabeoTech/Umit/Analysis/html/funcTemplate.html#3">Arguments parsing and validation %</a></li><li><a href="file:///C:/Users/bofsp/Documents/PostDoc_UdeM/LabeoTech/Umit/Analysis/html/funcTemplate.html#4">Optional Parameters:</a></li><li><a href="file:///C:/Users/bofsp/Documents/PostDoc_UdeM/LabeoTech/Umit/Analysis/html/funcTemplate.html#5">Run your code here:</a></li><li><a href="file:///C:/Users/bofsp/Documents/PostDoc_UdeM/LabeoTech/Umit/Analysis/html/funcTemplate.html#6">Save data using save2dat.m function</a></li></ul></div><pre class="codeinput"><span class="keyword">function</span> outFile = funcTemplate(File, SaveFolder, opts)
-</pre><pre class="codeinput"><span class="comment">% FUNCTEMPLATE is a dummy function that serves as a template for creating</span>
-<span class="comment">% functions compatible with the toolbox.</span>
+  </style></head><body><div class="content"><h1>Templates for creating functions in umIT</h1><!--introduction--><p>Below are some templates that can be used to build your own function in umIT: For more details, please refer to the documentation.</p><pre class="codeoutput error">Error using dbstatus
+Error: File: C:\Users\bofsp\Documents\PostDoc_UdeM\LabeoTech\Umit\Analysis\funcTemplate.m Line: 20 Column: 200
+Invalid expression. When calling a function or indexing a variable, use parentheses. Otherwise, check for mismatched delimiters.
+</pre><!--/introduction--><h2>Contents</h2><div><ul><li><a href="#1">Template #1: Data import</a></li><li><a href="#2">Template #2a: Data processing</a></li><li><a href="#3">Template #2b: Data processing</a></li><li><a href="#4">Template #3: Data analysis</a></li></ul></div><h2 id="1">Template #1: Data import</h2><pre class="codeinput"><span class="keyword">function</span> outFile = funcTemplate1(RawFolder, SaveFolder, varargin)
+<span class="comment">% FUNCTEMPLATE1 can be used to create a data import function where the raw</span>
+<span class="comment">% data is accessed in the "RawFolder" and saved in the "SaveFolder". The</span>
+<span class="comment">% output "outFile" is a list of files created by the function (e.g.,</span>
+<span class="comment">% fluo.dat, red.dat ...)</span>
+<span class="comment">%  Optional inputs (varargin):</span>
+<span class="comment">% Here, we can add parameters to the function using a structure named "opts".</span>
 <span class="comment">%</span>
-<span class="comment">% The arguments have to be stated in the following order:</span>
-<span class="comment">% 1 - Input : keywords are {File, RawFolder or SaveFolder}</span>
-<span class="comment">% 2 - SaveIn: save directory (fullpath).</span>
-<span class="comment">% 3 - opts: structure containing optional parameters for the function.</span>
+
+<span class="comment">% Defaults: !Important. Each default variable should be stated in a single line!</span>
+default_Output = {<span class="string">'file1.dat'</span>, <span class="string">'file2.dat'</span>,<span class="string">'fileN.dat'</span>}; <span class="comment">%#ok This is here only as a reference for PIPELINEMANAGER.m. The real outputs will be stored in OUTFILE.</span>
+default_opts = struct(<span class="string">'ParamNum'</span>, 1, <span class="string">'ParamStr'</span>, <span class="string">'val'</span>, <span class="string">'ParamBool'</span>, false, <span class="string">'ParamMultiChoice'</span>,<span class="string">'Option1'</span>, <span class="string">'ParamSingleChoice'</span>,<span class="string">'Option1'</span>);
+opts_values = struct(<span class="string">'ParamNum'</span>, [1:5], <span class="string">'ParamStr'</span>,{{<span class="string">'val'</span>}},<span class="string">'ParamBool'</span>,[false, true], <span class="string">'ParamMultiChoice'</span>, {{<span class="string">'Option1'</span>, <span class="string">'Option2'</span>,<span class="string">'Option3'</span>}'},<span class="string">'ParamSingleChoice'</span>,{{<span class="string">'Option1'</span>, <span class="string">'Option2'</span>,<span class="string">'Option3'</span>}}));<span class="comment">%#ok  % This is here only as a reference for PIPELINEMANAGER.m.</span>
 <span class="comment">%</span>
-</pre><h2 id="3">Arguments parsing and validation %</h2><pre class="codeinput">p = inputParser;
+
+<span class="comment">% Arguments parsing and validation %%%</span>
+p = inputParser;
 <span class="comment">% The input of the function must be a File , RawFolder or SaveFolder</span>
-addRequired(p,<span class="string">'File'</span>,@isfile)<span class="comment">% For a file as input.</span>
 addRequired(p, <span class="string">'RawFolder'</span>, @isfolder)<span class="comment">% For Raw Folder as input</span>
-<span class="comment">% Save folder:</span>
-addRequired(p, <span class="string">'SaveFolder'</span>, @isfolder);
-</pre><h2 id="4">Optional Parameters:</h2><p>opts structure</p><pre class="codeinput">default_opts = struct(<span class="string">'Output'</span>, default_Output, <span class="string">'Option1'</span>, <span class="string">'value_Option1'</span>, <span class="string">'OptionN'</span>, <span class="string">'value_OptionN'</span>);
+addRequired(p, <span class="string">'SaveFolder'</span>, @isfolder); <span class="comment">% For Save Folder as input</span>
 addOptional(p, <span class="string">'opts'</span>, default_opts,@(x) isstruct(x) &amp;&amp; ~isempty(x));
 <span class="comment">% Parse inputs:</span>
-parse(p,File/RawFolder, SaveIn, varargin{:});
+parse(p,RawFolder, SaveFikder, varargin{:});
 <span class="comment">%Initialize Variables:</span>
-File = p.Results.File;
-<span class="comment">% OR</span>
 RawFolder = p.Results.RawFolder;
 SaveFolder = p.Results.SaveFolder;
 opts = p.Results.opts;
-Output = opts.Output;
+clear <span class="string">p</span>
 <span class="comment">%%%%</span>
-</pre><pre class="codeoutput error">Undefined function or variable 'default_Output'.
 
-Error in funcTemplate (line 19)
-default_opts = struct('Output', default_Output, 'Option1', 'value_Option1', 'OptionN', 'value_OptionN');
-</pre><h2 id="5">Run your code here:</h2><h2 id="6">Save data using save2dat.m function</h2><pre class="codeinput">save2Dat(datFile, data);
-<span class="comment">% Output file names</span>
-outFile = Output;
-</pre><pre class="codeinput"><span class="keyword">end</span>
-</pre><p class="footer"><br><a href="https://www.mathworks.com/products/matlab/">Published with MATLAB® R2019a</a><br></p></div><!--
+<span class="comment">%%%%%----------------------------------------------------------------------</span>
+<span class="comment">% Run your code here:</span>
+<span class="comment">%%%%%----------------------------------------------------------------------</span>
+
+<span class="comment">%%%%%----------------------------------------------------------------------</span>
+<span class="comment">% To save imaging data to a .dat file, use the save2Dat function as:</span>
+<span class="comment">% Create the data using your code and create a "metaData" structure using:</span>
+new_dimensions = {<span class="string">'Y'</span>,<span class="string">'X'</span>,<span class="string">'T'</span>}; <span class="comment">% Example of data containing image time series.</span>
+metaData = genMetaData(data,new_dimensions);
+<span class="comment">% Create the full path of the new file to be saved:</span>
+newFile = fullpath(SaveFolder,<span class="string">'file1.dat'</span>);
+<span class="comment">% Save the file</span>
+save2Dat(newFile, data, metaData);
+<span class="comment">% Repeat this for each file.</span>
+<span class="comment">%%%%%----------------------------------------------------------------------</span>
+
+<span class="comment">% Create the list of files generated by the function:</span>
+outFile = {<span class="string">'file1.dat'</span>,<span class="string">'file2.dat'</span>};
+
+<span class="keyword">end</span>
+</pre><h2 id="2">Template #2a: Data processing</h2><pre class="codeinput"><span class="keyword">function</span> outData = funcTemplate2a(data, metaData)
+<span class="comment">% FUNCTEMPLATE2a represents a simple case where an input data is processed</span>
+<span class="comment">% and gives an output with the same dimensions as "data". Optional</span>
+<span class="comment">% parameters can be added using as "varargin" (see template #1).</span>
+
+<span class="comment">% Defaults:</span>
+default_Output = <span class="string">'DEFAULT_FILENAME.dat'</span>; <span class="comment">%#ok. This line is here just for Pipeline management.</span>
+<span class="comment">%</span>
+
+<span class="comment">% Arguments parsing and validation %</span>
+p = inputParser;
+<span class="comment">% The input of the function must be a File , RawFolder or SaveFolder</span>
+addRequired(p, <span class="string">'data'</span>)<span class="comment">% The input data. Here, you can add a validation function to ensure that data has the necessary properties.</span>
+addRequired(p,<span class="string">'metaData'</span>, @(x) isa(x,<span class="string">'matlab.io.MatFile'</span>) | isstruct(x)); <span class="comment">% MetaData associated to "data".</span>
+<span class="comment">% Parse inputs:</span>
+parse(p,data, metaData);
+<span class="comment">%Initialize Variables:</span>
+data = p.Results.data;
+metaData = p.Results.metaData;
+clear <span class="string">p</span>
+<span class="comment">%%%%</span>
+
+<span class="comment">%%%%%----------------------------------------------------------------------</span>
+<span class="comment">% Run your code here:</span>
+<span class="comment">%%%%%----------------------------------------------------------------------</span>
+
+<span class="comment">%%%%%----------------------------------------------------------------------</span>
+<span class="comment">% Create the output data. For example:</span>
+outData = data./mean(data,<span class="string">'all'</span>,<span class="string">'omitnan'</span>);
+<span class="comment">%%%%%----------------------------------------------------------------------</span>
+
+<span class="keyword">end</span>
+</pre><h2 id="3">Template #2b: Data processing</h2><pre class="codeinput"><span class="keyword">function</span> [outData, metaData] = funcTemplate2b(data, metaData)
+<span class="comment">% FUNCTEMPLATE2b represents a case where an input data is processed</span>
+<span class="comment">% and gives an output data with different dimensions as "data". Optional</span>
+<span class="comment">% parameters can be added using as "varargin" (see template #1).</span>
+
+<span class="comment">% Defaults:</span>
+default_Output = <span class="string">'DEFAULT_FILENAME.dat'</span>; <span class="comment">%#ok. This line is here just for Pipeline management.</span>
+<span class="comment">%</span>
+
+<span class="comment">% Arguments parsing and validation %%%</span>
+p = inputParser;
+<span class="comment">% The input of the function must be a File , RawFolder or SaveFolder</span>
+addRequired(p, <span class="string">'data'</span>)<span class="comment">% The input data. Here, you can add a validation function to ensure that data has the necessary properties.</span>
+addRequired(p,<span class="string">'metaData'</span>, @(x) isa(x,<span class="string">'matlab.io.MatFile'</span>) | isstruct(x)); <span class="comment">% MetaData associated to "data".</span>
+<span class="comment">% Parse inputs:</span>
+parse(p,data, metaData);
+<span class="comment">%Initialize Variables:</span>
+data = p.Results.data;
+metaData = p.Results.metaData;
+clear <span class="string">p</span>
+<span class="comment">%%%%</span>
+
+<span class="comment">%%%%%----------------------------------------------------------------------</span>
+<span class="comment">% Run your code here:</span>
+<span class="comment">%%%%%----------------------------------------------------------------------</span>
+
+<span class="comment">%%%%%----------------------------------------------------------------------</span>
+<span class="comment">% Create the output data. For example:</span>
+outData = data./mean(data,<span class="string">'all'</span>,<span class="string">'omitnan'</span>);
+<span class="comment">% Create the metaData associated with "outData":</span>
+new_dimensions = {<span class="string">'Y'</span>,<span class="string">'X'</span>};
+metaData = genMetaData(outData, new_dimensions);
+<span class="comment">%%%%%----------------------------------------------------------------------</span>
+<span class="keyword">end</span>
+</pre><h2 id="4">Template #3: Data analysis</h2><p>Here, the data analysis means that calculations that are performed on regions of interest generating results with reduced dimensions, meaning that the output data will contain a smaller amount of information than the original data. This reduction in dimensionality can be achieved through techniques such as feature extraction or dimensionality reduction, and allows for easier interpretation and analysis of the data. Ultimately, the function's goal is to extract meaningful information from the imaging data that can be used for further analysis or visualization.</p><pre class="codeinput"><span class="keyword">function</span> outData = funcTemplate3(data, metaData)
+<span class="comment">% FUNCTEMPLATE3A represents a data analysis function. Here, a "data</span>
+<span class="comment">% analysis" function will use the input data (e.g., imaging data such as</span>
+<span class="comment">% image time series) and perform calculations on regions of interests.</span>
+
+<span class="comment">% In this case, the output "outData" is created using the function</span>
+<span class="comment">% "genDataMetaStructure". It consists of a structure that contain the meta</span>
+<span class="comment">% data information and the data segregated by region of interest.</span>
+
+<span class="comment">% Defaults:</span>
+default_Output = <span class="string">'DEFAULT_FILENAME.mat'</span>; <span class="comment">%#ok This line is here just for Pipeline management.</span>
+<span class="comment">%</span>
+
+<span class="comment">% Arguments parsing and validation %%%</span>
+p = inputParser;
+<span class="comment">% The input of the function must be a File , RawFolder or SaveFolder</span>
+addRequired(p, <span class="string">'data'</span>)<span class="comment">% The input data. Here, you can add a validation function to ensure that data has the necessary properties.</span>
+addRequired(p,<span class="string">'metaData'</span>, @(x) isa(x,<span class="string">'matlab.io.MatFile'</span>) | isstruct(x)); <span class="comment">% MetaData associated to "data".</span>
+<span class="comment">% Parse inputs:</span>
+parse(p,data, metaData);
+<span class="comment">%Initialize Variables:</span>
+data = p.Results.data;
+metaData = p.Results.metaData;
+clear <span class="string">p</span>
+<span class="comment">%%%%</span>
+
+<span class="comment">%%%%%----------------------------------------------------------------------</span>
+<span class="comment">% Run your code here:</span>
+<span class="comment">% Create a list of names of regions of interest:</span>
+obsID = {<span class="string">'ROI1'</span>,<span class="string">'ROI2'</span>,<span class="string">'ROI3'</span>,<span class="string">'ROIn'</span>};
+<span class="comment">% Calculate the data for each region of interest:</span>
+dataOut = {10,12,11,30};
+<span class="comment">% Create the new dimensions of the data. Here, the first dimension should</span>
+<span class="comment">% be always "O" (observation).</span>
+dim_name = {<span class="string">'O'</span>}; <span class="comment">%</span>
+<span class="comment">%%%%%----------------------------------------------------------------------</span>
+
+<span class="comment">%%%%%----------------------------------------------------------------------</span>
+<span class="comment">% Create the output data. The function "genDataMetaStructure" merges the</span>
+<span class="comment">% data for each observation and the content of "metaData" in a single</span>
+<span class="comment">% structure.</span>
+outData = genDataMetaStructure(dataOut,obsID,dim_name,metaData);
+<span class="comment">%%%%%----------------------------------------------------------------------</span>
+<span class="keyword">end</span>
+
+<span class="keyword">function</span> outData = funcTemplate3(data, metaData)
+<span class="comment">% FUNCTEMPLATE3A represents a data analysis function. Here, a "data</span>
+<span class="comment">% analysis" function will use the input data (e.g., imaging data such as</span>
+<span class="comment">% image time series) and perform calculations on regions of interests.</span>
+
+<span class="comment">% In this case, the output "outData" is created using the function</span>
+<span class="comment">% "genDataMetaStructure". It consists of a structure that contain the meta</span>
+<span class="comment">% data information and the data segregated by region of interest.</span>
+
+<span class="comment">% Defaults:</span>
+default_Output = <span class="string">'DEFAULT_FILENAME.mat'</span>; <span class="comment">%#ok This line is here just for Pipeline management.</span>
+<span class="comment">%</span>
+
+<span class="comment">% Arguments parsing and validation %%%</span>
+p = inputParser;
+<span class="comment">% The input of the function must be a File , RawFolder or SaveFolder</span>
+addRequired(p, <span class="string">'data'</span>)<span class="comment">% The input data. Here, you can add a validation function to ensure that data has the necessary properties.</span>
+addRequired(p,<span class="string">'metaData'</span>, @(x) isa(x,<span class="string">'matlab.io.MatFile'</span>) | isstruct(x)); <span class="comment">% MetaData associated to "data".</span>
+<span class="comment">% Parse inputs:</span>
+parse(p,data, metaData);
+<span class="comment">%Initialize Variables:</span>
+data = p.Results.data;
+metaData = p.Results.metaData;
+clear <span class="string">p</span>
+<span class="comment">%%%%</span>
+
+<span class="comment">%%%%%----------------------------------------------------------------------</span>
+<span class="comment">% Run your code here:</span>
+<span class="comment">% Create a list of names of regions of interest:</span>
+obsID = {<span class="string">'ROI1'</span>,<span class="string">'ROI2'</span>,<span class="string">'ROI3'</span>,<span class="string">'ROIn'</span>};
+<span class="comment">% Calculate different measures for each region of interest:</span>
+dataOut = struct(<span class="string">'measure1'</span>,[],<span class="string">'measure2'</span>,[],<span class="string">'measure3'</span>,[]);
+<span class="keyword">for</span> ii = 1:length(obsID)
+    dataOut(ii).measure1 = randi([0,10]);
+    dataOut(ii).measure2 = randi([0,10]);
+    dataOut(ii).measure3 = randi([0,10]);
+<span class="keyword">end</span>
+<span class="comment">% Create the new dimensions of the data. Here, the first dimension should</span>
+<span class="comment">% be always "O" (observation).</span>
+dim_name = {<span class="string">'O'</span>}; <span class="comment">%</span>
+<span class="comment">%%%%%----------------------------------------------------------------------</span>
+
+<span class="comment">%%%%%----------------------------------------------------------------------</span>
+<span class="comment">% Create the output data. The function "genDataMetaStructure" merges the</span>
+<span class="comment">% data for each observation and the content of "metaData" in a single</span>
+<span class="comment">% structure.</span>
+outData = genDataMetaStructure(dataOut,obsID,dim_name,metaData);
+<span class="comment">%%%%%----------------------------------------------------------------------</span>
+<span class="keyword">end</span>
+</pre><p class="footer"><br><a href="https://www.mathworks.com/products/matlab/">Published with MATLAB&reg; R2019a</a><br></p></div><!--
 ##### SOURCE BEGIN #####
-function outFile = funcTemplate(File, SaveFolder, opts)
-% FUNCTEMPLATE is a dummy function that serves as a template for creating
-% functions compatible with the toolbox.
+%% Templates for creating functions in umIT
 %
-% The arguments have to be stated in the following order:
-% 1 - Input : keywords are {File, RawFolder or SaveFolder}
-% 2 - SaveIn: save directory (fullpath).
-% 3 - opts: structure containing optional parameters for the function.
+% Below are some templates that can be used to build your own function in umIT:
+% For more details, please refer to the documentation.
 %
-%% Arguments parsing and validation %
+
+%% Template #1: Data import
+function outFile = funcTemplate1(RawFolder, SaveFolder, varargin)
+% FUNCTEMPLATE1 can be used to create a data import function where the raw
+% data is accessed in the "RawFolder" and saved in the "SaveFolder". The
+% output "outFile" is a list of files created by the function (e.g.,
+% fluo.dat, red.dat ...)
+%  Optional inputs (varargin):
+% Here, we can add parameters to the function using a structure named "opts".
+%
+
+% Defaults: !Important. Each default variable should be stated in a single line!
+default_Output = {'file1.dat', 'file2.dat','fileN.dat'}; %#ok This is here only as a reference for PIPELINEMANAGER.m. The real outputs will be stored in OUTFILE.
+default_opts = struct('ParamNum', 1, 'ParamStr', 'val', 'ParamBool', false, 'ParamMultiChoice','Option1', 'ParamSingleChoice','Option1');
+opts_values = struct('ParamNum', [1:5], 'ParamStr',{{'val'}},'ParamBool',[false, true], 'ParamMultiChoice', {{'Option1', 'Option2','Option3'}'},'ParamSingleChoice',{{'Option1', 'Option2','Option3'}}));%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
+%
+
+% Arguments parsing and validation %%%
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder
-addRequired(p,'File',@isfile)% For a file as input.
 addRequired(p, 'RawFolder', @isfolder)% For Raw Folder as input
-% Save folder:
-addRequired(p, 'SaveFolder', @isfolder);
-%% Optional Parameters:
-% opts structure
-default_opts = struct('Output', default_Output, 'Option1', 'value_Option1', 'OptionN', 'value_OptionN');
+addRequired(p, 'SaveFolder', @isfolder); % For Save Folder as input
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
 % Parse inputs:
-parse(p,File/RawFolder, SaveIn, varargin{:});
+parse(p,RawFolder, SaveFikder, varargin{:});
 %Initialize Variables:
-File = p.Results.File; 
-% OR
 RawFolder = p.Results.RawFolder;
 SaveFolder = p.Results.SaveFolder;
 opts = p.Results.opts;
-Output = opts.Output;
+clear p
 %%%%
 
-%% Run your code here:
-%
+%%%%%REPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASH
+% Run your code here:
+%%%%%REPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASH
 
-%% Save data using save2dat.m function
-save2Dat(datFile, data);
-% Output file names
-outFile = Output;
+%%%%%REPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASH
+% To save imaging data to a .dat file, use the save2Dat function as:
+% Create the data using your code and create a "metaData" structure using:
+new_dimensions = {'Y','X','T'}; % Example of data containing image time series.
+metaData = genMetaData(data,new_dimensions);
+% Create the full path of the new file to be saved:
+newFile = fullpath(SaveFolder,'file1.dat');
+% Save the file
+save2Dat(newFile, data, metaData);
+% Repeat this for each file.
+%%%%%REPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASH
+
+% Create the list of files generated by the function:
+outFile = {'file1.dat','file2.dat'};
+
 end
 
+%% Template #2a: Data processing
+function outData = funcTemplate2a(data, metaData)
+% FUNCTEMPLATE2a represents a simple case where an input data is processed
+% and gives an output with the same dimensions as "data". Optional
+% parameters can be added using as "varargin" (see template #1).
 
+% Defaults:
+default_Output = 'DEFAULT_FILENAME.dat'; %#ok. This line is here just for Pipeline management.
+%
+
+% Arguments parsing and validation %
+p = inputParser;
+% The input of the function must be a File , RawFolder or SaveFolder
+addRequired(p, 'data')% The input data. Here, you can add a validation function to ensure that data has the necessary properties.
+addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
+% Parse inputs:
+parse(p,data, metaData);
+%Initialize Variables:
+data = p.Results.data;
+metaData = p.Results.metaData;
+clear p
+%%%%
+
+%%%%%REPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASH
+% Run your code here:
+%%%%%REPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASH
+
+%%%%%REPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASH
+% Create the output data. For example:
+outData = data./mean(data,'all','omitnan');
+%%%%%REPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASH
+
+end
+
+%% Template #2b: Data processing
+function [outData, metaData] = funcTemplate2b(data, metaData)
+% FUNCTEMPLATE2b represents a case where an input data is processed
+% and gives an output data with different dimensions as "data". Optional
+% parameters can be added using as "varargin" (see template #1).
+
+% Defaults:
+default_Output = 'DEFAULT_FILENAME.dat'; %#ok. This line is here just for Pipeline management.
+%
+
+% Arguments parsing and validation %%%
+p = inputParser;
+% The input of the function must be a File , RawFolder or SaveFolder
+addRequired(p, 'data')% The input data. Here, you can add a validation function to ensure that data has the necessary properties.
+addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
+% Parse inputs:
+parse(p,data, metaData);
+%Initialize Variables:
+data = p.Results.data;
+metaData = p.Results.metaData;
+clear p
+%%%%
+
+%%%%%REPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASH
+% Run your code here:
+%%%%%REPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASH
+
+%%%%%REPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASH
+% Create the output data. For example:
+outData = data./mean(data,'all','omitnan');
+% Create the metaData associated with "outData":
+new_dimensions = {'Y','X'};
+metaData = genMetaData(outData, new_dimensions);
+%%%%%REPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASH
+end
+
+%% Template #3: Data analysis
+% Here, the data analysis means that calculations that are performed on
+% regions of interest generating results with reduced dimensions, meaning
+% that the output data will contain a smaller amount of information than
+% the original data. 
+% This reduction in dimensionality can be achieved through techniques
+% such as feature extraction or dimensionality reduction, and allows 
+% for easier interpretation and analysis of the data. 
+% Ultimately, the function's goal is to extract meaningful information from 
+% the imaging data that can be used for further analysis or visualization.
+
+
+function outData = funcTemplate3(data, metaData)
+% FUNCTEMPLATE3A represents a data analysis function. Here, a "data
+% analysis" function will use the input data (e.g., imaging data such as
+% image time series) and perform calculations on regions of interests. 
+
+% In this case, the output "outData" is created using the function
+% "genDataMetaStructure". It consists of a structure that contain the meta
+% data information and the data segregated by region of interest.
+
+% Defaults:
+default_Output = 'DEFAULT_FILENAME.mat'; %#ok This line is here just for Pipeline management.
+%
+
+% Arguments parsing and validation %%%
+p = inputParser;
+% The input of the function must be a File , RawFolder or SaveFolder
+addRequired(p, 'data')% The input data. Here, you can add a validation function to ensure that data has the necessary properties.
+addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
+% Parse inputs:
+parse(p,data, metaData);
+%Initialize Variables:
+data = p.Results.data;
+metaData = p.Results.metaData;
+clear p
+%%%%
+
+%%%%%REPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASH
+% Run your code here:
+% Create a list of names of regions of interest:
+obsID = {'ROI1','ROI2','ROI3','ROIn'};
+% Calculate the data for each region of interest:
+dataOut = {10,12,11,30};
+% Create the new dimensions of the data. Here, the first dimension should
+% be always "O" (observation).
+dim_name = {'O'}; %
+%%%%%REPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASH
+
+%%%%%REPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASH
+% Create the output data. The function "genDataMetaStructure" merges the
+% data for each observation and the content of "metaData" in a single
+% structure.
+outData = genDataMetaStructure(dataOut,obsID,dim_name,metaData);
+%%%%%REPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASH
+end
+
+function outData = funcTemplate3(data, metaData)
+% FUNCTEMPLATE3A represents a data analysis function. Here, a "data
+% analysis" function will use the input data (e.g., imaging data such as
+% image time series) and perform calculations on regions of interests. 
+
+% In this case, the output "outData" is created using the function
+% "genDataMetaStructure". It consists of a structure that contain the meta
+% data information and the data segregated by region of interest.
+
+% Defaults:
+default_Output = 'DEFAULT_FILENAME.mat'; %#ok This line is here just for Pipeline management.
+%
+
+% Arguments parsing and validation %%%
+p = inputParser;
+% The input of the function must be a File , RawFolder or SaveFolder
+addRequired(p, 'data')% The input data. Here, you can add a validation function to ensure that data has the necessary properties.
+addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
+% Parse inputs:
+parse(p,data, metaData);
+%Initialize Variables:
+data = p.Results.data;
+metaData = p.Results.metaData;
+clear p
+%%%%
+
+%%%%%REPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASH
+% Run your code here:
+% Create a list of names of regions of interest:
+obsID = {'ROI1','ROI2','ROI3','ROIn'};
+% Calculate different measures for each region of interest:
+dataOut = struct('measure1',[],'measure2',[],'measure3',[]);
+for ii = 1:length(obsID)
+    dataOut(ii).measure1 = randi([0,10]);
+    dataOut(ii).measure2 = randi([0,10]);
+    dataOut(ii).measure3 = randi([0,10]);
+end
+% Create the new dimensions of the data. Here, the first dimension should
+% be always "O" (observation).
+dim_name = {'O'}; %
+%%%%%REPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASH
+
+%%%%%REPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASH
+% Create the output data. The function "genDataMetaStructure" merges the
+% data for each observation and the content of "metaData" in a single
+% structure.
+outData = genDataMetaStructure(dataOut,obsID,dim_name,metaData);
+%%%%%REPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASHREPLACE_WITH_DASH_DASH
+end
 
 
 ##### SOURCE END #####

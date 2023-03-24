@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<toolset id="user_apps_toolset" template="false">
+   <tool app_file_path="GUI/DataViz/ROImanager.mlapp" handler_class="com.mathworks.deployment.desktop.toolstrip.ToolboxToolSetExtensionHandler" id="9fb2ddcb-b8a2-4383-afe1-d7d89e57b7ac:GUI/DataViz/ROImanager.mlapp" label="ROImanager_Main" quick_access_eligible="false" toolset_id="user_apps_toolset">
+      <callback>ROImanager</callback>
+      <icon filename="matlab_app_generic_icon_24"/>
+      <icon filename="matlab_app_generic_icon_16"/>
+      <parent_tool id="my_apps" toolset_id="apps_toolset"/>
+   </tool>
+   <tool app_file_path="GUI/umIToolbox.mlapp" handler_class="com.mathworks.deployment.desktop.toolstrip.ToolboxToolSetExtensionHandler" id="9fb2ddcb-b8a2-4383-afe1-d7d89e57b7ac:GUI/umIToolbox.mlapp" label="lsaToolboxGUI" quick_access_eligible="false" toolset_id="user_apps_toolset">
+      <callback>umIToolbox</callback>
+      <icon filename="matlab_app_generic_icon_24"/>
+      <icon filename="matlab_app_generic_icon_16"/>
+      <parent_tool id="my_apps" toolset_id="apps_toolset"/>
+   </tool>
+   <tool app_file_path="GUI/DataViz/DataViewer.mlapp" handler_class="com.mathworks.deployment.desktop.toolstrip.ToolboxToolSetExtensionHandler" id="9fb2ddcb-b8a2-4383-afe1-d7d89e57b7ac:GUI/DataViz/DataViewer.mlapp" label="DataViewer" quick_access_eligible="false" toolset_id="user_apps_toolset">
+      <callback>DataViewer</callback>
+      <icon filename="matlab_app_generic_icon_24"/>
+      <icon filename="matlab_app_generic_icon_16"/>
+      <parent_tool id="my_apps" toolset_id="apps_toolset"/>
+   </tool>
+</toolset>

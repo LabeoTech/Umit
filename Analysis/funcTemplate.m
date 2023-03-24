@@ -20,7 +20,7 @@ default_opts = struct('ParamNum', 1, 'ParamStr', 'val', 'ParamBool', false, 'Par
 opts_values = struct('ParamNum', [1:5], 'ParamStr',{{'val'}},'ParamBool',[false, true], 'ParamMultiChoice', {{'Option1', 'Option2','Option3'}'},'ParamSingleChoice',{{'Option1', 'Option2','Option3'}}));%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 %
 
-%%% Arguments parsing and validation %%%
+% Arguments parsing and validation %%%
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder
 addRequired(p, 'RawFolder', @isfolder)% For Raw Folder as input
@@ -66,7 +66,7 @@ function outData = funcTemplate2a(data, metaData)
 default_Output = 'DEFAULT_FILENAME.dat'; %#ok. This line is here just for Pipeline management.
 %
 
-%%% Arguments parsing and validation %%%
+% Arguments parsing and validation %
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder
 addRequired(p, 'data')% The input data. Here, you can add a validation function to ensure that data has the necessary properties.
@@ -100,7 +100,7 @@ function [outData, metaData] = funcTemplate2b(data, metaData)
 default_Output = 'DEFAULT_FILENAME.dat'; %#ok. This line is here just for Pipeline management.
 %
 
-%%% Arguments parsing and validation %%%
+% Arguments parsing and validation %%%
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder
 addRequired(p, 'data')% The input data. Here, you can add a validation function to ensure that data has the necessary properties.
@@ -151,7 +151,7 @@ function outData = funcTemplate3(data, metaData)
 default_Output = 'DEFAULT_FILENAME.mat'; %#ok This line is here just for Pipeline management.
 %
 
-%%% Arguments parsing and validation %%%
+% Arguments parsing and validation %%%
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder
 addRequired(p, 'data')% The input data. Here, you can add a validation function to ensure that data has the necessary properties.
@@ -196,7 +196,7 @@ function outData = funcTemplate3(data, metaData)
 default_Output = 'DEFAULT_FILENAME.mat'; %#ok This line is here just for Pipeline management.
 %
 
-%%% Arguments parsing and validation %%%
+% Arguments parsing and validation %%%
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder
 addRequired(p, 'data')% The input data. Here, you can add a validation function to ensure that data has the necessary properties.
