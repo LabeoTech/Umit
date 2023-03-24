@@ -14,33 +14,38 @@ classdef Protocol < handle
         % where the Subjects and Acquisition data are created.
         Array % List of Subjects. Default: empty ObjectListManager.
         garbageList % Table with a list of removed elements
-        Idx_Filtered % Array containing indices of Subject/Acquisition/Modality after using a Query Filter as OBJ.QUERYFILTER
+        Idx_Filtered  = []% Array containing indices of Subject/Acquisition/Modality after using a Query Filter as OBJ.QUERYFILTER
         FilterStruct % Structure containing strings used to filter objects. Used by OBJ.QUERYFILTER.
     end
     properties (SetAccess = {?PipelineManager})
         LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
     end
+    properties (SetAccess = private)
+       b_isDummy  = false % Used by DataViewer as standalone ONLY!!      
+    end
     properties (Dependent)
         LogBookFile char % MAT file with a table containing information about the Pipeline Operations run by PIPELINEMANAGER.
     end
     methods
-        function obj = Protocol(Name, MainDir, SaveDir, ProtoFunc, Array)
+        function obj = Protocol(Name, MainDir, SaveDir, ProtoFunc, Array, varargin)
             % Class constructor.
             %   This function initiates the object "Protocol" with the
             %   properties: MainDir, SaveDir, ProtoFunc and Array.
             %   All first inputs must be provided. If Array is empty,
             %   the function creates an emtpy Array.
+            
             if nargin > 0
                 obj.Name = Name;
                 obj.Array = Array;
                 obj.MainDir = MainDir;
                 obj.SaveDir = SaveDir;
                 obj.ProtoFunc = ProtoFunc;
-            else
-                obj.Array = [];
+                obj.b_isDummy = varargin{:};
             end
-            obj.Idx_Filtered = {};
-            obj.createLogBookFile
+            %
+            if ~obj.b_isDummy
+                obj.createLogBookFile
+            end
             obj.createFilterStruct
         end
         %%% Property Set Functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -85,12 +90,13 @@ classdef Protocol < handle
             % Set function for Array property.
             %   Accepts "ObjectListManager" or "Subject" objects as input. If
             %   empty, creates an default "ObjectListManager" object.
+            obj.Array = ObjectListManager([],obj);
             if isa(Array, 'Subject')
                 obj.Array.addObj(Array);
             elseif isa(Array, 'ObjectListManager')
                 obj.Array = Array;
-            else
-                obj.Array = ObjectListManager([],obj);
+%             else
+%                 obj.Array = ObjectListManager([],obj);
             end
         end
         %%% Property Get functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -312,7 +318,14 @@ classdef Protocol < handle
             end
             
         end          
-        
+        function out = getSelectedItems(obj)
+            % This method generates a list of full IDs (Subject --
+            % Acquisition -- Modality) from the selected data stored in
+            % "Idx_filtered" property.
+           
+            items = obj.extractFilteredObjects(3);            
+            out = cellfun(@(x) strjoin({x.MyParent.MyParent.ID, x.MyParent.ID, x.ID},' -- '), items, 'UniformOutput',false);
+        end                            
         function [modHandle, AcqHandle] = manualAddModality(obj, modClass, modID, AcqID, subjHandle)
             % MANUALADDMODALITY creates a new Acquisition inside a "Subject" Object.
             % and adds the modality object of class "modClass" as it's child. The
@@ -338,9 +351,7 @@ classdef Protocol < handle
             if any(strcmp(AcqID, obj.Array.ObjList(idxS).Array.listProp('ID')))                
                 warning('Acquisition already exists in the selected Subject! Operation aborted.')
                 return
-            end
-            %%%
-            
+            end                       
             % Create Acquisition:
             AcqHandle = Acquisition(); 
             AcqHandle.ID = AcqID;
@@ -558,6 +569,7 @@ classdef Protocol < handle
             s.LastLog = obj.LastLog;
             s.Idx_Filtered = obj.Idx_Filtered;
             s.FilterStruct = obj.FilterStruct;
+            s.b_isDummy = obj.b_isDummy;
         end
     end
     methods (Access = private)
@@ -631,17 +643,21 @@ classdef Protocol < handle
     methods (Static)
         function obj = loadobj(s)
             if isstruct(s)
-                if ( ~isfile(fullfile(s.SaveDir, [s.Name, '.mat'])) )
-                    % Update Save Directory based on the current location
-                    % of the protocol file:                                              
-                    s.SaveDir = fileparts(which([s.Name, '.mat']));                    
-                end
+                % Update Save Directory based on the current location
+                    % of the protocol file:   
+                if isfile(which([s.Name, '.prt']))                    
+                    ext = '.prt';
+                    s.SaveDir = fileparts(which([s.Name, ext]));               
+                elseif isfile(which([s.Name, '.mat']))                                        
+                    % For retrocompatibility
+                    ext = '.mat';
+                    s.SaveDir = fileparts(which([s.Name, ext]));
+                end               
                 newObj = Protocol;
                 newObj.Name = s.Name;
                 % Check MainDir and SaveDir existance:
                 errID = 'umIToolbox:Protocol:InvalidInput';
                 errMsg = ' is not an existing folder!';
-%                 assert(isfolder(s.MainDir),errID, [strrep(s.MainDir,filesep, repmat(filesep,1,2)), errMsg]);
                 assert(isfolder(s.SaveDir),errID, [strrep(s.MainDir,filesep, repmat(filesep,1,2)), errMsg]);
                 %%%
                 newObj.MainDir = s.MainDir;
@@ -652,6 +668,10 @@ classdef Protocol < handle
                 newObj.LastLog = s.LastLog;
                 newObj.Idx_Filtered = s.Idx_Filtered;
                 newObj.FilterStruct = s.FilterStruct;
+                if isfield(s,'b_isDummy')
+                    % For retrocompatibility
+                    newObj.b_isDummy = s.b_isDummy;
+                end
                 obj = newObj;
             else
                 obj = s;

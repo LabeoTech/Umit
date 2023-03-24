@@ -403,7 +403,7 @@ classdef DataViewer_pipelineMngr < handle
             
             [file, Path] = uiputfile('*.json', 'Save Pipeline as ...', 'pipeConfigFile');
             if file == 0
-                disp('Operation Cancelled by User.')
+                disp('Operation Cancelled by User.')                                
                 return
             end
             pipeStruct = obj.pipe;
@@ -411,7 +411,7 @@ classdef DataViewer_pipelineMngr < handle
             fid = fopen(fullfile(Path, file), 'w');
             fprintf(fid, '%s', txt);
             fclose(fid);
-            disp(['Pipeline saved as "' file '" in ' Path]);
+            disp(['Pipeline saved as "' file '" in ' Path]);                        
         end
         
         function loadPipe(obj, pipeFile)
@@ -428,16 +428,15 @@ classdef DataViewer_pipelineMngr < handle
             obj.reset_pipe;
             
             % Add new tasks:
+            fn = fieldnames(obj.pipe);
             for i = 1:length(new_pipe)
                 indx_name = find(strcmp(new_pipe(i).name, {obj.funcList.name}));
+                % Update funcList with custom opts settings:
                 if ~isequaln(new_pipe(i).opts,obj.funcList(indx_name).info.opts)
                     obj.funcList(indx_name).info.opts = new_pipe(i).opts;
                 end
-                
-                if new_pipe(i).b_save2File
-                    obj.addTask(indx_name, true, new_pipe(i).datFileName);
-                else
-                    obj.addTask(indx_name);
+                for k = 1:numel(fn)
+                    obj.pipe(i).(fn{k}) = new_pipe(i).(fn{k});
                 end
             end
         end

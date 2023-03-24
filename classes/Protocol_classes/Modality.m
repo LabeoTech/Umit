@@ -116,7 +116,10 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         
         function out = get.RawFolder(obj)
             % Get function of RAWFOLDER property.
-            
+            if obj.MyParent.MyParent.MyParent.b_isDummy
+                out = obj.MyParent.MyParent.MyParent.MainDir;
+                return
+            end
             [out,~,~]  = fileparts(obj.RawFiles_FP{1});
         end
         
@@ -128,6 +131,10 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         
         function out = get.SaveFolder(obj)
             % Get function for depentend property SaveFolder.
+            if obj.MyParent.MyParent.MyParent.b_isDummy
+                out = obj.MyParent.MyParent.MyParent.SaveDir;
+                return
+            end
             out = fullfile(obj.MyParent.MyParent.MyParent.SaveDir, obj.MyParent.MyParent.ID, obj.MyParent.ID, obj.ID);
             msgID = 'UMIToolbox:FolderNotFound';
             msg = 'Modality SaveFolder doesnt exist.';

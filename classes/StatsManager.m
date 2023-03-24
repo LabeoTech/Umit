@@ -5,7 +5,7 @@ classdef StatsManager < handle
     % hypothesis tests, normality tests and other options.
     % Inputs:
     %  list_of_objs : cell array of elements from "Protocol" object.
-    %  stats_filename: filename of .MAT file saved using "save2Mat.m"
+    %  stats_filename: filename of .MAT file saved using "genDataMetaStructure.m"
     %  function.
     
     properties
@@ -15,12 +15,13 @@ classdef StatsManager < handle
         list_of_events % current list of event Names from all objects.
         % !!If the input data has no events, the list will contain the string"NoEvents" !!
         list_of_subjects % Current list of Subject Names.
-        stats_filename % Filename of .MAT file saved using "save2Mat.m"
+        stats_filename % Filename of .MAT file saved using "genDataMetaStructure.m"
         % function.
         MfileArr       % Array of MATFILE objects.
         time_resolution = 'none' % Time resolution for grouping each observation
         % Options: "none", "minute", "hour, "day", "week", "month".
         pAlpha = 0.05 % "Significance" threshold (Alpha) for statistical analysis.
+        selMeasure = 'data' % Selected measure. This is pertinent for stats files that contain multiple measures. The selected measure will be used for statistical comparisons.
     end
     properties (SetAccess = private)
         %         timestamp_list % List of timestamps associated with each object in list_of_objs.
@@ -58,7 +59,8 @@ classdef StatsManager < handle
             obj.list_of_objs = list_of_objs;
             obj.obs_list = obs_list; obj.obs_list_original = obs_list;
             obj.list_of_groups = list_of_groups;
-            obj.stats_filename = stats_filename;
+            [~,filename,ext] = fileparts(stats_filename);
+            obj.stats_filename = [filename ext];
             % Check if inputs are correct and Generate list of MatFile
             % handles:
             obj.validateObject;
@@ -163,8 +165,13 @@ classdef StatsManager < handle
             uniqLabels = unique(labelList, 'stable'); % Sort unique labels in alphabetical order.
             % Get observations's labels from the stats_data structure:
             if strcmp(tableType, 'raw')
-                tableArr = cellfun(@(x) obj.getObsData(x, uniqLabels), obj.obs_list,'UniformOutput',false);
-                out = vertcat(tableArr{:});
+                fn = fieldnames(obj.dataArr(1).data(1));
+                out = [];
+                for ii = 1:length(fn)
+                    tableArr = cellfun(@(x) obj.getObsData(x, uniqLabels,fn{ii}), obj.obs_list,'UniformOutput',false);
+                    out = vertcat(out,tableArr{:});
+                end
+                
             else
                 disp('No!')
             end
@@ -182,7 +189,7 @@ classdef StatsManager < handle
             [data, labels] = obj.createTable;
             % Transform data table to cell array to avoid invalid variable names from labels:
             varNames = data.Properties.VariableNames;
-            varNames(7:end) = labels;
+            varNames(8:end) = labels;
             data = table2cell(data);
             data = vertcat(varNames, data);
             % Write to .csv file:
@@ -400,8 +407,12 @@ classdef StatsManager < handle
                         % Automatically average any event repetitions in
                         % data:
                         disp('Averaging events ...');
-                        for jnd = 1:numel(obj.dataArr(ind).data)
-                            obj.dataArr(ind).data{jnd} = averageEvents(obj.dataArr(ind).data{jnd});
+                        for jnd = 1:numel(obj.dataArr(ind).data)                                                            
+                            obj.dataArr(ind).data(jnd) = averageEvents(obj.dataArr(ind).data(jnd));
+                            if jnd == 1 
+                                % Update dataSize field in dataArr:
+                                obj.dataArr(ind).dataSize = size(obj.dataArr(ind).data(jnd).(obj.selMeasure));
+                            end
                         end
                     end
                 else
@@ -413,16 +424,18 @@ classdef StatsManager < handle
                     if  any(idxE)
                         indxE = find(strcmp(obj.dataArr(ind).MatFile.dim_names,'E'));
                         permE = [indxE, setdiff(1:numel(obj.dataArr(ind).MatFile.dim_names), indxE)];
-                        
+                        fn = fieldnames(obj.dataArr(ind).data(1));
                         % Remove data corresponding to missing events:
-                        for kk = 1:length(obj.dataArr(ind).data)
-                            tmp = permute(obj.dataArr(ind).data{kk},permE);
-                            sz = size(tmp);
-                            tmp = reshape(tmp,sz(1),[]);
-                            tmp(~idxE,:) = []; % Erase missing events
-                            sz(1) = sum(idxE);
-                            tmp = reshape(tmp,sz);
-                            obj.dataArr(ind).data{kk} = ipermute(tmp,permE);
+                        for jnd = 1:length(obj.dataArr(ind).data)
+                            for kk = 1:length(fn)
+                                tmp = permute(obj.dataArr(ind).data(jnd).(fn{kk}),permE);
+                                sz = size(tmp);
+                                tmp = reshape(tmp,sz(1),[]);
+                                tmp(~idxE,:) = []; % Erase missing events
+                                sz(1) = sum(idxE);
+                                tmp = reshape(tmp,sz);
+                                obj.dataArr(ind).data(jnd).(fn{kk}) = ipermute(tmp,permE);
+                            end
                         end
                         % Update meta data:
                         obj.dataArr(ind).eIndx(~idxE) = [];
@@ -449,7 +462,12 @@ classdef StatsManager < handle
                     idxLab = ismember(obj.dataArr(ind).labels,obj.dataArr(ind).observationID);                    
                     obj.dataArr(ind).labels(~idxLab) = []; % Update labels
                     % Update data:
-                    obj.dataArr(ind).data = cellfun(@(x) x(idxLab), obj.dataArr(ind).data,'UniformOutput',false);
+                    for knd = 1:length(obj.dataArr(ind).data)
+                       fn = fieldnames(obj.dataArr(ind).data);
+                       for mnd = 1:1:length(fn)
+                           obj.dataArr(ind).data(knd).(fn{mnd}) = obj.dataArr(ind).data(knd).(fn{mnd})(idxLab);
+                       end                       
+                    end
                 end
             end
             % Erase empty items from datArr:
@@ -480,25 +498,33 @@ classdef StatsManager < handle
                 % Average the data per observation:
                 obsList = unique(vertcat(dataIn{:,obj.hMap('observationID')}), 'stable');
                 %
-                dimCat = numel(dataIn{1,obj.hMap('MatFile')}.dim_names) + 1;
-                avg = {};
+                dimCat = numel(dataIn{1,obj.hMap('MatFile')}.dim_names) + 1;                                
                 currObs = {};
-                for iOb = 1:length(obsList)
+                fNames = fieldnames(dataIn{1,obj.hMap('data')});
+                avg = struct();
+                for ii = 1:length(fNames)
+                    avg.(fNames{ii}) = [];
+                end
+                for iOb = 1:length(obsList)                    
+                    tmpAvg = struct();
                     % Loop across each observation and average the data:
                     idxOb = cellfun(@(x) ismember(x, obsList(iOb)),...
                         dataIn(:,obj.hMap('observationID')), 'UniformOutput',false);
                     dat = cellfun(@(x,y) x(y),dataIn(:,obj.hMap('data')), idxOb, 'UniformOutput',false);
-                    idxEmpty = cellfun(@isempty,dat);
+                    idxEmpty = cellfun(@(x) isempty(x.(obj.selMeasure)),dat);                    
                     if all(idxEmpty)
                         continue
-                    else
-                        dat = [dat{~idxEmpty}]';
-                        % Calculate average:
-                        avg = [avg; {mean(cat(dimCat,dat{:}),dimCat,'omitnan')}];%#ok
-                        currObs = [currObs; obsList(iOb)];%#ok
                     end
+                    %                     
+                    dat = [dat{~idxEmpty}]';                    
+                    for iFn = 1:length(fNames)                                                                                                
+                        % Calculate average:
+                        tmpAvg.(fNames{iFn}) = mean(cat(dimCat,dat.(fNames{iFn})),dimCat,'omitnan');%                        
+                    end
+                    currObs = [currObs; obsList(iOb)];%#ok
+                    avg = [avg,tmpAvg];
                 end
-                out.data = avg;
+                out.data = avg(2:end);
                 out.observationID = currObs;
                 out.AcquisitionID = ['AverageAcq_' num2str(dataIn{1,obj.hMap('indx_avg_data')})];
                 out.AcquisitionIndx = min([dataIn{:,obj.hMap('AcquisitionIndx')}]);
@@ -506,16 +532,21 @@ classdef StatsManager < handle
             end
             function out = averageEvents(dataIn)
                 % AVERAGEEVENTS averages the event repetitions in "dataIn".
-                newOrder = [dimE, setdiff(1:ndims(dataIn),dimE)];
-                dataIn = permute(dataIn, newOrder);
-                datsz = size(dataIn);
-                dataIn = reshape(dataIn, datsz(1), []);
-                out = zeros([numel(evNames), size(dataIn,2)], 'single');
-                for jj = 1:numel(evNames)
-                    out(jj,:) = mean(dataIn(evID == jj,:), 1,'omitnan');
+                
+                out = struct();
+                fN = fieldnames(dataIn);
+                newOrder = [dimE, setdiff(1:ndims(dataIn.(fN{1})),dimE)];
+                for iFn = 1:length(fN)
+                    dataIn.(fN{iFn}) = permute(dataIn.(fN{iFn}), newOrder);
+                    datsz = size(dataIn.(fN{iFn}));
+                    dataIn.(fN{iFn}) = reshape(dataIn.(fN{iFn}), datsz(1), []);
+                    outData = zeros([numel(evNames), size(dataIn.(fN{iFn}),2)], 'single');
+                    for jj = 1:numel(evNames)
+                        outData(jj,:) = mean(dataIn.(fN{iFn})(evID == jj,:), 1,'omitnan');
+                    end
+                    outData = reshape(outData, [numel(evNames), datsz(2:end)]);
+                    out.(fN{iFn}) = ipermute(outData, newOrder);
                 end
-                out = reshape(out, [numel(evNames), datsz(2:end)]);
-                out = ipermute(out, newOrder);
             end
         end
         
@@ -528,6 +559,8 @@ classdef StatsManager < handle
             % The "flatData" is used to perform
             % statistics and as input to some plotting apps from the
             % umIToolbox.
+            % ! Important!: The data processed here is determined by the
+            % "selMeasure" property.
             
             if ( any(strcmpi(obj.inputFeatures.dataType,{'map'})) )
                 error(['Operation aborted. Plot option not available for data type ' ...
@@ -535,16 +568,17 @@ classdef StatsManager < handle
             end
             % Repackage data for plotting:
             disp('repackaging data...')
-            % Get data Size:
-            dataSize = arrayfun(@(x) cellfun(@(y) size(y), x.data, 'UniformOutput',false), obj.dataArr, 'UniformOutput', false)';
-            dataSize = vertcat(dataSize{:}); dataSize = vertcat(dataSize{:});
+            %             
+           % Get data Size:
+           dataSize = arrayfun(@(x) x.dataSize,obj.dataArr,'UniformOutput',false);
+           dataSize = vertcat(dataSize{:});           
             % Check for time-series:
             indxT = find(strcmpi('T',obj.inputFeatures.dim_names));
             % Check for 'matrix':
 %             indxM = strcmpi(obj.inputFeatures.dataType,'matrix');
             if ( indxT )
                 % For time series
-                Xsz = max(dataSize(indxT,:));
+                Xsz = max(dataSize(:,indxT));
 %             elseif indxM
 %                 % For matrix
 %                 Xsz = max(dataSize(:,2));
@@ -555,7 +589,8 @@ classdef StatsManager < handle
             nRec = numel(obj.dataArr);
             nEv = numel(obj.list_of_events);
             nROI = numel(obj.obs_list);
-            datOut = nan(prod([nRec,nEv,nROI]), Xsz, 'single');
+            datOut = nan(prod([nRec,nEv,nROI]), Xsz, 'single'); % Use Infs to preallocate. This will be used to remove unused rows.
+            idxOut = false(size(datOut)); % This logical matrix will be used to remove unused rows in datOut.
             % Populate output data structure:
             obj.flatData = struct('data',[],'gIndx', [],'sIndx', [],'rIndx',[],'eIndx',[],'aIndx',[],...
                 'groupID',{},'SubjectID',{},'ObsID',{},'EventID',{},'AcquisitionID', {},...
@@ -567,25 +602,27 @@ classdef StatsManager < handle
             cnt = 1;
             for ii = 1:length(obj.dataArr)
                 % Concatenate the data:
-                dat = vertcat(obj.dataArr(ii).data{:});
+                dat = vertcat(obj.dataArr(ii).data.(obj.selMeasure));
                 datSz2 = 1;
                 if ( indxEv )
-                    datSz1 = size(obj.dataArr(ii).data{1},indxEv) * numel(obj.dataArr(ii).data);
+%                     datSz1 = size(obj.dataArr(ii).data{1},indxEv) * numel(obj.dataArr(ii).data);
+                    datSz1 = size(obj.dataArr(ii).data(1).(obj.selMeasure),indxEv) * numel(obj.dataArr(ii).data);
                     dat = reshape(permute(dat,[indxEv, setdiff(1:ndims(dat),indxEv)]),datSz1,[]); % Reshape data;
                 else
                     datSz1 =  length(obj.dataArr(ii).data);
                 end
                 
                 if ( indxT )
-                    datSz2 = 1:size(obj.dataArr(ii).data{1},indxT);
-                end
-                
+%                     datSz2 = 1:size(obj.dataArr(ii).data{1},indxT);
+                    datSz2 = 1:size(obj.dataArr(ii).data(1).(obj.selMeasure),indxT);
+                end                
 %                 if ( indxM )
 %                     % For matrices, make sure that the matrix is
 %                     % symmetrical:
 %                     datSz2  = obj.dataArr(ii).rIndx;
 %                 end
                 datOut(cnt:cnt+datSz1-1,datSz2) = dat;
+                idxOut(cnt:cnt+datSz1-1,datSz2) = true;
                 
                 % Get meta data:
                 RecStartDateTime = repmat({obj.dataArr(ii).RecStartDateTime},datSz1,1);
@@ -604,8 +641,8 @@ classdef StatsManager < handle
                 obj.flatData.AcquisitionNames = [obj.flatData.AcquisitionNames; AcqNames];
                 obj.flatData.RecStartDateTime = [obj.flatData.RecStartDateTime; RecStartDateTime];
                 cnt = cnt + datSz1;
-            end
-            obj.flatData.data = datOut(~all(isnan(datOut),2),:);
+            end 
+            obj.flatData.data = datOut(~all(~idxOut,2),:);
             obj.flatData.groupID = unique(obj.list_of_groups);
             obj.flatData.SubjectID = obj.list_of_subjects;
             obj.flatData.ObsID = obj.obs_list;
@@ -883,7 +920,8 @@ classdef StatsManager < handle
             % Instantiate "inputFeatures" structure:
             obj.inputFeatures = struct('b_hasSameAcqN',false,'b_hasSameDimNames',false,...
                 'b_AcqHasSameDimSize',false, 'b_SubjHasSameDimSize', false,  'b_isExportable',false,...
-                'b_hasSameObs',false,'b_hasValidEvent',false, 'dataType', 'unknown', 'dim_names', {'unknown'});
+                'b_hasSameObs',false,'b_hasValidEvent',false, 'b_hasMultipleMeasures',false,...
+                'dataType', 'unknown', 'dim_names', {'unknown'});
             
             % Check #1 - are there is an equal number of acquisitions per
             % subject per group?
@@ -918,8 +956,8 @@ classdef StatsManager < handle
             b_equalAcqSize = false(size(sNames));
             for ii = 1:numel(sNames)
                 idxS = strcmp(obj.stats_data(:,obj.hMap('SubjectID')), sNames{ii});
-                dim_sizes = obj.stats_data(idxS,obj.hMap('dataSize')); dim_sizes = vertcat(dim_sizes{:});
-                if isscalar(dim_sizes)
+                dim_sizes = obj.stats_data(idxS,obj.hMap('dataSize'));                
+                if size(vertcat(dim_sizes{:}),1) == 1
                     b_equalAcqSize(ii) = true;
                 else
                     b_equalAcqSize(ii) = isequaln(dim_sizes{:});
@@ -931,18 +969,17 @@ classdef StatsManager < handle
             % Check #6 - Do the input data have the same size across all
             % Subjects?
             if obj.inputFeatures.b_AcqHasSameDimSize
-                dim_sizes = obj.stats_data(:,obj.hMap('dataSize')); dim_sizes = vertcat(dim_sizes{:});
-                if isscalar(dim_sizes)
+                dim_sizes = obj.stats_data(:,obj.hMap('dataSize')); %
+                if size(vertcat(dim_sizes{:}),1) == 1                    
                     obj.inputFeatures.b_SubjHasSameDimSize = true;
                 else
                     obj.inputFeatures.b_SubjHasSameDimSize = isequaln(dim_sizes{:});
-                    obj.inputFeatures.b_SubjHasSameDimSize;
                 end
             end
             % Check if the data is exportable to a .CSV file:
             % Here, two criteria are applied: 1) the data must be a 1xN
             % vector or a matrix; 2) the labels must be the same across
-            obj.inputFeatures.b_isExportable = all(cellfun(@(x) isequaln(prod(x{1}),max(x{1})),...
+            obj.inputFeatures.b_isExportable = all(cellfun(@(x) isequaln(prod(x),max(x)),...
                 obj.stats_data(:,obj.hMap('dataSize'))));
             % Set input data type:
             if ~obj.inputFeatures.b_hasSameDimNames              
@@ -952,22 +989,21 @@ classdef StatsManager < handle
             end
             % For homogeneous data, guess type of data from first element
             % of "stats_data" array:
+            fn = fieldnames(obj.stats_data{1, obj.hMap('data')}(1));
+            if numel(fn)>1
+                obj.inputFeatures.b_hasMultipleMeasures = true;
+            end
             if sum(strcmp(obj.inputFeatures.dim_names, 'O')) == 2
                 obj.inputFeatures.dataType = 'matrix'; % Correlation Matrix with dimensions {'O','O'};
-            elseif ( isscalar(obj.stats_data{1,obj.hMap('data')}{1}) ||...
-                    ( isequaln(prod(obj.stats_data{1, obj.hMap('dataSize')}{1}),max(obj.stats_data{1, obj.hMap('dataSize')}{1})) && ...
+            elseif ( isscalar(obj.stats_data{1,obj.hMap('data')}(1).(fn{1})) ||...
+                    ( isequaln(prod(obj.stats_data{1, obj.hMap('dataSize')}),max(obj.stats_data{1, obj.hMap('dataSize')})) && ...
                     numel(setdiff(obj.inputFeatures.dim_names, {'E'})) == 1 ) )
                 obj.inputFeatures.dataType = 'scalar'; % Single value per observation.
-            elseif all(ismember(obj.inputFeatures.dim_names, {'O', 'T'})) || all(ismember(obj.inputFeatures.dim_names, {'O', 'T', 'E'}))
+            elseif all(ismember({'O', 'T'}, obj.inputFeatures.dim_names)) || all(ismember({'O', 'T', 'E'}, obj.inputFeatures.dim_names))
                 obj.inputFeatures.dataType = 'time-vector';
-            elseif all(ismember(obj.inputFeatures.dim_names, {'Y', 'X', 'O', 'E'}))
-                obj.inputFeatures.dataType = 'map'; % Map with dimensions {'Y','X'} per observations.
-                %             elseif all(ismember(obj.inputFeatures.dim_names, {'Y', 'X', 'T','O'}))
-                %                 obj.inputFeatures.dataType = 'time-series';
-                %             elseif all(ismember(obj.inputFeatures.dim_names, {'Y', 'X', 'T', 'E','O'}))
-                %                 obj.inputFeatures.dataType = 'time-series-by-event';
-                %             elseif all(ismember(obj.inputFeatures.dim_names, {'Y', 'X', 'E','O'}))
-                %                 obj.inputFeatures.dataType = 'map-by-event';
+            elseif all(ismember({'Y', 'X', 'O'}, obj.inputFeatures.dim_names)) ||...
+                    all(ismember({'Y', 'X', 'O', 'E'}, obj.inputFeatures.dim_names))
+                obj.inputFeatures.dataType = 'map'; % Map with dimensions {'Y','X'} per observations.                
             else
                 obj.inputFeatures.dataType = 'unknown';
             end
@@ -996,10 +1032,25 @@ classdef StatsManager < handle
                 indx = find(ismember(obj.MfileArr{i}.obsID, obj.obs_list)); % Get observations listed in "obs_list" prop.
                 obsID = obj.MfileArr{i}.obsID;
                 data = obj.MfileArr{i}.data;
+                % Transform data if it is cell array to struct:
+                if iscell(data)  
+                    newData = struct();
+                    for ii = 1:length(data)
+                        newData(ii).data = data{ii};
+                    end
+                    data = newData; clear newData ii
+                end
+                % Set the "selMeasure" property as the first measure in
+                % "data":
+                fn = fieldnames(data(1));
+                obj.selMeasure = fn{1};
+                %
                 obj.stats_data{i,9} = obsID(indx,:); % observation ID
-                obj.stats_data{i,10}= data(indx,:); % observation data
-                obj.stats_data{i,11}= cellfun(@(x) size(squeeze(x)), ...
-                    obj.stats_data{i,10}, 'UniformOutput', false);% size of observation data
+                obj.stats_data{i,10}= data(indx); % observation data
+
+%                 obj.stats_data{i,11} = arrayfun(@(x) size(squeeze(x)), ...
+%                     obj.stats_data{i,10}(1).(fn{1}), 'UniformOutput', false);% size of observation data
+                obj.stats_data{i,11} = size(obj.stats_data{i,10}(1).(fn{1}));% size of each observation data                                 
                 obj.stats_data{i,obj.hMap('b_hasEvents')} = ( isprop(obj.MfileArr{i}, 'eventID') && isprop(obj.MfileArr{i}, 'eventNameList') );
             end
             
@@ -1042,13 +1093,14 @@ classdef StatsManager < handle
             end
         end
         
-        function out = getObsData(obj,obs_ID,labelList)
+        function out = getObsData(obj,obs_ID,labelList,fieldName)
             % This function retrieves the observation data from all
             % recordings containing the observation "obs_ID".
             % Input
             %   obs_ID (char) = Name of observation.
             %   labelList(cell array of char): list of all possible labels in
             %       "dataArr".
+            %   fieldName(char): name of the field in "data".
             % Outputs:
             %   out (table) : table containing the recording
             %       information and numerical data of the observation
@@ -1072,24 +1124,25 @@ classdef StatsManager < handle
             data = nan(length(stats_info),length(labelList));
             for i = 1:length(stats_info)
                 [~,locB] = ismember(stats_info(i).labels,labelList);
-                data(i,locB) = stats_info(i).data{indx_obs(i)};
+                data(i,locB) = stats_info(i).data(indx_obs(i)).(fieldName);
             end
             % Prepare data to be added to "out" table:
             data = num2cell(data);
             % Prepare metaData to be added to "out" table:
             % Build table:
-            out = table('Size', [length(stats_info), 6 + size(data,2)],...
+            out = table('Size', [length(stats_info), 7 + size(data,2)],...
                 'VariableTypes',...
-                [{'cellstr', 'cellstr', 'cellstr', 'cellstr', 'datetime', 'cellstr'}...
+                [{'cellstr', 'cellstr', 'cellstr', 'cellstr', 'datetime', 'cellstr', 'cellstr'}...
                 repmat({obj.MfileArr{1}.Datatype},1,size(data,2))]);
             out(:,1:5) = [{stats_info.groupID}', {stats_info.SubjectID}', {stats_info.AcquisitionID}', ...
                 {stats_info.ModalityID}' arrayfun(@(x) datetime(x.RecStartDateTime), stats_info, 'UniformOutput',false)'];
             out(:,6) = repmat({obs_ID},length(stats_info),1);
-            out(:,7:end) = data;
+            out(:,7) = repmat({fieldName}, length(stats_info),1);
+            out(:,8:end) = data;
             % Set table header:
             generic_label = arrayfun(@(x) ['Val_' num2str(x)], 1:size(data,2), 'UniformOutput',false);
             out.Properties.VariableNames = [{'GroupName','Subject', 'Acquisition', 'Modality',...
-                'RecordingTime', 'ObsID'}, generic_label];
+                'RecordingTime', 'ObsID', 'MeasureID'}, generic_label];
         end
         
         function getEventList(obj)

@@ -30,7 +30,7 @@ data = randn(5,n);
 % Create Meta Data variables:
 labels{1} = {'var1', 'var2', 'var3', 'var4', 'var5'};
 dim_names = {'O','X'};
+metaData = genMetaData(data, dim_names);
 % Save to .MAT file:
-save2Mat(fullfile(SaveFolder, outFile), single(data), labels, dim_names);
-out = outFile;
+out = genDataMetaStructure(single(data), labels, dim_names, metaData);
 end

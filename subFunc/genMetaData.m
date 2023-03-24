@@ -10,11 +10,11 @@ function metaData = genMetaData(data, dim_names, varargin)
 %       "Y" = y axis;
 %       "Z" = z axis;
 %       "T" = time;
-%       "E" = events; 
+%       "E" = events;
 %   extraParams(struct) Optional: structure containing extra fields to add
 %       to "metaData". Fields from extraParams that already exist in data's
 %       metaData will be ignored!
-    
+
 %   Here are the default fields and values for a metaData file:
 %       datName(str) : 'data';
 %       dim_names(cell array of char): dim_names;
@@ -22,7 +22,7 @@ function metaData = genMetaData(data, dim_names, varargin)
 %       datSize(double) 1x2 : size of 1st and 2nd dimension of "data";
 %       datLength(double) 1xN : size of the 3rd + dimensions of "data";
 %       Datatype(str) : class of "data";
-%       
+%
 % Output:
 %   metaData (struct): structure containing the minimal variables to work
 %   with the umIToolbox.

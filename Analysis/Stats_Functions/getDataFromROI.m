@@ -1,4 +1,4 @@
-function outDataStat = getDataFromROI(data, metaData, varargin)
+function outData = getDataFromROI(data, metaData, varargin)
 % GETDATAFROMROI extracts and aggregates data from regions of interest
 % (ROIs) in imaging data using an "ROI_xxxxxx.mat" file located in
 % subject's folder.
@@ -7,12 +7,12 @@ function outDataStat = getDataFromROI(data, metaData, varargin)
 %   data: numerical matrix containing imaging data.
 %   metaData: .mat file with meta data associated with "data".
 % Output:
-%   outDataStat: structure containing stats-ready data extracted from ROIs.
+%   outData: structure containing stats-ready data extracted from ROIs.
 
 % Defaults:
 default_Output = 'ROI_data.mat'; %#ok This line is here just for Pipeline management.
 default_opts = struct('ROImasks_filename', 'ROImasks_data.mat', 'SpatialAggFcn', 'mean');
-opts_values = struct('ROImasks_filename', {{'ROImasks_data.mat'}}, 'SpatialAggFcn',{{'none','mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}});% This is here only as a reference for PIPELINEMANAGER.m.
+opts_values = struct('ROImasks_filename', {{'ROImasks_data.mat'}}, 'SpatialAggFcn',{{'none','mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}});% This is here only as a reference for PIPELINEMANAGER.
 default_object = ''; % This line is here just for Pipeline management to be able to detect this input.
 %%% Arguments parsing and validation %%%
 p = inputParser;
@@ -33,9 +33,8 @@ object = p.Results.object;
 clear p
 %%%%%%%%%%%%%%%%
 
-% Parse File path to find subject folder:
-opts.ROImasks_filename = findMyROIfile(opts.ROImasks_filename,object);
-
+% Check if ROImasks file exist:
+opts.ROImasks_filename = findMyROIfile(opts.ROImasks_filename, object);
 % Load ROI file:
 roi_data = load(opts.ROImasks_filename);
 % locate "X" and "Y" dimensions in metaData and in ROI info:
@@ -85,15 +84,7 @@ if isa(metaData, 'matlab.io.MatFile')
     metaData.Properties.Writable = true;
 end
 metaData.ROIfile = opts.ROImasks_filename;
-if isempty(object)
-    outDataStat = save2Mat('', roi_pixVals, roi_names,...
-        new_dim_names, 'appendMetaData', metaData, 'genFile', false);
-else
-    outDataStat = save2Mat('', roi_pixVals, roi_names,...
-        new_dim_names, 'appendMetaData', metaData, 'genFile', false,...
-        'appendObjectInfo',object);
-end
-
+outData = genDataMetaStructure(roi_pixVals, roi_names, new_dim_names,metaData);
 end
 
 % Local function:

@@ -16,21 +16,18 @@ function [outData, metaData] = genVSM(SaveFolder, varargin)
 default_Output = 'VSM.dat'; %#ok. This line is here just for Pipeline management.
 default_opts = struct('SpatialFilter_Sigma', 0, 'b_CreateROIs', false, 'ROIfileName', 'VisualCtxAreas.mat', 'b_UseMask', false, 'MaskFile','ImagingReferenceFrame.mat');
 opts_values = struct('SpatialFilter_Sigma', [0, Inf], 'b_CreateROIs', [true; false], 'ROIfileName', {{'VisualCtxAreas.mat'}},'b_UseMask', [true,false], 'MaskFile',{{'ImagingReferenceFrame.mat'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
-default_object = ''; % This line is here just for Pipeline management to be able to detect this input.
 % Notes on Spatial filter:
 % - A value of zero indicates that no filters will apply!
 %%% Arguments parsing and validation %%%
 p = inputParser;
 addRequired(p, 'SaveFolder', @isfolder);
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
-addOptional(p, 'object', default_object, @(x) isempty(x) || isa(x,'Modality'));
 % Parse inputs:
 parse(p,SaveFolder, varargin{:});
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Initialize Variables and remove inputParser object:
 SaveFolder = p.Results.SaveFolder;
 opts = p.Results.opts;
-object = p.Results.object;
 clear p
 %%%%
 % Further input validation:
@@ -67,13 +64,13 @@ metaData = genMetaData(outData,{'Y','X'}, metaData);
 disp('Finished creating VSM');
 % Segment the Visual Sign Map and create a labeled matrix:
 if opts.b_CreateROIs
-    genVAmask(outData, metaData, SaveFolder, opts, object)
+    genVAmask(outData, metaData, SaveFolder, opts)
 end
 end
 
 % Local function
 
-function genVAmask(vsm, metaData, SaveFolder, opts, object)
+function genVAmask(vsm, metaData, SaveFolder, opts)
 % GENVAMASK generates a ROImasks file with the ROIs from the segmented 
 % Visual Sign Map created using the function "genVSM.m".
 % Inputs:
@@ -104,19 +101,21 @@ errID = 'umIToolbox:genVAmask:InvalidInput';
 errMsg = 'Wrong Input Data type. Data must be an Image with dimensions "Y", "X".';
 assert(all(ismember(metaData.dim_names,{'Y', 'X'})), errID, errMsg);
 if opts.b_UseMask
-    if isempty(fileparts(opts.MaskFile))
-        % Update path for mask file:
-        opts.MaskFile = fullfile(SaveFolder, opts.MaskFile);
-    end
-    % Retrieve file containing logical mask
-    opts.MaskFile = findMyROIfile(opts.MaskFile,object);
+    % Check if ROImasks file exist:
+    [~,MaskFile,~] = fileparts(opts.MaskFile);
+    opts.MaskFile = fullfile(SaveFolder, [MaskFile,'.mat']);    
+    if ~isfile(opts.MaskFile)
+        folder = strrep(SaveFolder, '\', '\\');
+         ME = MException('Umitoolbox:GSR:FileNotFound',['ROI file not found in ' folder]);
+             throwAsCaller(ME)
+    end       
     a = load(opts.MaskFile, 'logical_mask');
     if isempty(fieldnames(a))
         msg = 'Variable "logical_mask" not found in mask file!';
         msgID = 'umIToolbox:genVAmask:MissingInput';
         error(msgID,msg);
     end
-    disp(['Using logical mask from file: ' opts.MaskFile ]);
+    disp(['Using logical mask from file: ' opts.MaskFile]);
     logical_mask = a.logical_mask;
     % Check if the logical mask has the same frame size than the data:
     assert(isequal(size(logical_mask), metaData.datSize), 'umIToolbox:genVAmask:InvalidInput',...

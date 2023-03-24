@@ -1,4 +1,4 @@
-function out = dummyFunc4Testing_5(SaveFolder, varargin)
+function outData = dummyFunc4Testing_5(data, varargin)
 % FUNCTEMPLATE is a dummy function that serves as a template for creating
 % functions compatible with the toolbox.
 %
@@ -9,22 +9,19 @@ function out = dummyFunc4Testing_5(SaveFolder, varargin)
 % 4 - opts: structure containing optional parameters for the function.
 %
 default_Output = 'dummyFile5.dat';
+default_opts = struct('ParamIntRange', 1,'ParamStr', 'val','ParamBool', false);
+opts_values = struct('ParamIntRange', [1:5],'ParamStr',{{'val'}},'ParamBool',[false, true]);
+% default_opts = struct('ParamIntRange', 1,'ParamNum',1,'ParamPosNum',1, 'ParamStr', 'val', 'ParamBool', false, 'ParamMultiChoice','Option1', 'ParamSingleChoice','Option1');
+% opts_values = struct('ParamIntRange', [1:5],'ParamNum',[-Inf,Inf],'ParamPosNum',[eps, Inf], 'ParamStr',{{'val'}},'ParamBool',[false, true], 'ParamMultiChoice', {{'Option1', 'Option2','Option3'}'},'ParamSingleChoice',{{'Option1', 'Option2','Option3'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 %%% Arguments parsing and validation %%%
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder
-addRequired(p, 'RawFolder', @isfolder)% For Raw Folder as input
-% Save folder:
-addRequired(p, 'SaveFolder', @isfolder);
-% Output:
-addOptional(p, 'Output', default_Output);
+addRequired(p, 'data');
 % Parse inputs:
-parse(p,RawFolder, SaveFolder);
+parse(p,data, varargin{:});
 %Initialize Variables:
-RawFolder = p.Results.RawFolder;
-SaveFolder = p.Results.SaveFolder;
-Output = p.Results.Output;
-
-%%%%
+data= p.Results.data;
+%%%
 % Run your code here:
 disp('This is a dummy function for Pipeline testing!');
 a = zeros(3,3, 'single');

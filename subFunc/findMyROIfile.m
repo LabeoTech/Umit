@@ -9,33 +9,37 @@ function out = findMyROIfile(filename,source)
 %   out (str): full path to the ROI file.
 
 % Append extension to filename, if not already provided:
-if ~endsWith(filename, '.mat')
-    filename = [filename '.mat'];
+[~,filename,~] = fileparts(filename);
+filename = [filename '.mat'];
+% Get protocol handle:
+protObj = source;
+if ~isempty(protObj)
+    while 1
+        protObj = protObj.MyParent;
+        if ~isprop(protObj, 'MyParent')
+            break
+        end
+    end
 end
-
 % Parse File path to find subject folder:
-if isa(source,'Acquisition') || isa(source,'Modality')
-    % If a umIT's valid object is provided, it means that the function is being run by
-    % PipelineManager. In this case, find the subject's folder an try to
-    % find the ROI file there:
-    tmp_obj = source;
-    idx = false;
-    while ~idx
-        tmp_obj = tmp_obj.MyParent;
-        idx = isa(tmp_obj, 'Subject');
+if isempty(protObj) || protObj.b_isDummy
+    % If the protocol object is "dummy", this means that it was created by
+    % DataViewer. In this case, look for the ROI file inside the object's
+    % save folder:
+    out = fullfile(source.SaveFolder, filename);    
+else
+    % If the protocol object is not "dummy", look for the ROI file inside
+    % the Subject's folder.
+    tmp_obj = source;    
+    while 1
+        if isa(tmp_obj, 'Subject')
+            break
+        end
+        tmp_obj = tmp_obj.MyParent;        
     end
-    out = fullfile(tmp_obj.SaveFolder, filename);        
-elseif isempty(source)
-    path = fileparts(filename);
-    if isempty(path)
-        out = fullfile(pwd,filename);
-    else
-        out = filename;
-    end
-       else 
-    error('Umitoolbox:findMyROIfile:WrongInput', 'Invalid Input. Source must be an "Acquisition" or "Modality" object');    
+    out = fullfile(tmp_obj.SaveFolder, filename);
 end
-
+clear tmp_obj protObj
 % Throw error if the file does not exist in Subject's folder:
 if ~isfile(out)
     errID = 'Umitoolbox:findMyROIfile:FileNotFound';
