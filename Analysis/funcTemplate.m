@@ -7,14 +7,14 @@ function outFile = funcTemplate(File, SaveFolder, opts)
 % 2 - SaveIn: save directory (fullpath).
 % 3 - opts: structure containing optional parameters for the function.
 %
-%%% Arguments parsing and validation %%%
+%% Arguments parsing and validation %
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder
 addRequired(p,'File',@isfile)% For a file as input.
 addRequired(p, 'RawFolder', @isfolder)% For Raw Folder as input
 % Save folder:
 addRequired(p, 'SaveFolder', @isfolder);
-% Optional Parameters:
+%% Optional Parameters:
 % opts structure
 default_opts = struct('Output', default_Output, 'Option1', 'value_Option1', 'OptionN', 'value_OptionN');
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
@@ -29,10 +29,10 @@ opts = p.Results.opts;
 Output = opts.Output;
 %%%%
 
-% Run your code here:
+%% Run your code here:
 %
 
-%Save data using save2dat.m function
+%% Save data using save2dat.m function
 save2Dat(datFile, data);
 % Output file names
 outFile = Output;

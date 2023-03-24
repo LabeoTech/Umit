@@ -1,0 +1,149 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<!-- saved from url=(0092)file:///C:/Users/bofsp/Documents/PostDoc_UdeM/LabeoTech/Umit/Analysis/html/funcTemplate.html -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+      
+   <!--
+This HTML was auto-generated from MATLAB code.
+To make changes, update the MATLAB code and republish this document.
+      --><title>funcTemplate</title><meta name="generator" content="MATLAB 9.6"><link rel="schema.DC" href="http://purl.org/dc/elements/1.1/"><meta name="DC.date" content="2023-03-24"><meta name="DC.source" content="funcTemplate.m"><style type="text/css">
+html,body,div,span,applet,object,iframe,h1,h2,h3,h4,h5,h6,p,blockquote,pre,a,abbr,acronym,address,big,cite,code,del,dfn,em,font,img,ins,kbd,q,s,samp,small,strike,strong,sub,sup,tt,var,b,u,i,center,dl,dt,dd,ol,ul,li,fieldset,form,label,legend,table,caption,tbody,tfoot,thead,tr,th,td{margin:0;padding:0;border:0;outline:0;font-size:100%;vertical-align:baseline;background:transparent}body{line-height:1}ol,ul{list-style:none}blockquote,q{quotes:none}blockquote:before,blockquote:after,q:before,q:after{content:'';content:none}:focus{outine:0}ins{text-decoration:none}del{text-decoration:line-through}table{border-collapse:collapse;border-spacing:0}
+
+html { min-height:100%; margin-bottom:1px; }
+html body { height:100%; margin:0px; font-family:Arial, Helvetica, sans-serif; font-size:10px; color:#000; line-height:140%; background:#fff none; overflow-y:scroll; }
+html body td { vertical-align:top; text-align:left; }
+
+h1 { padding:0px; margin:0px 0px 25px; font-family:Arial, Helvetica, sans-serif; font-size:1.5em; color:#d55000; line-height:100%; font-weight:normal; }
+h2 { padding:0px; margin:0px 0px 8px; font-family:Arial, Helvetica, sans-serif; font-size:1.2em; color:#000; font-weight:bold; line-height:140%; border-bottom:1px solid #d6d4d4; display:block; }
+h3 { padding:0px; margin:0px 0px 5px; font-family:Arial, Helvetica, sans-serif; font-size:1.1em; color:#000; font-weight:bold; line-height:140%; }
+
+a { color:#005fce; text-decoration:none; }
+a:hover { color:#005fce; text-decoration:underline; }
+a:visited { color:#004aa0; text-decoration:none; }
+
+p { padding:0px; margin:0px 0px 20px; }
+img { padding:0px; margin:0px 0px 20px; border:none; }
+p img, pre img, tt img, li img, h1 img, h2 img { margin-bottom:0px; } 
+
+ul { padding:0px; margin:0px 0px 20px 23px; list-style:square; }
+ul li { padding:0px; margin:0px 0px 7px 0px; }
+ul li ul { padding:5px 0px 0px; margin:0px 0px 7px 23px; }
+ul li ol li { list-style:decimal; }
+ol { padding:0px; margin:0px 0px 20px 0px; list-style:decimal; }
+ol li { padding:0px; margin:0px 0px 7px 23px; list-style-type:decimal; }
+ol li ol { padding:5px 0px 0px; margin:0px 0px 7px 0px; }
+ol li ol li { list-style-type:lower-alpha; }
+ol li ul { padding-top:7px; }
+ol li ul li { list-style:square; }
+
+.content { font-size:1.2em; line-height:140%; padding: 20px; }
+
+pre, code { font-size:12px; }
+tt { font-size: 1.2em; }
+pre { margin:0px 0px 20px; }
+pre.codeinput { padding:10px; border:1px solid #d3d3d3; background:#f7f7f7; }
+pre.codeoutput { padding:10px 11px; margin:0px 0px 20px; color:#4c4c4c; }
+pre.error { color:red; }
+
+@media print { pre.codeinput, pre.codeoutput { word-wrap:break-word; width:100%; } }
+
+span.keyword { color:#0000FF }
+span.comment { color:#228B22 }
+span.string { color:#A020F0 }
+span.untermstring { color:#B20000 }
+span.syscmd { color:#B28C00 }
+
+.footer { width:auto; padding:10px 0px; margin:25px 0px 0px; border-top:1px dotted #878787; font-size:0.8em; line-height:140%; font-style:italic; color:#878787; text-align:left; float:none; }
+.footer p { margin:0px; }
+.footer a { color:#878787; }
+.footer a:hover { color:#878787; text-decoration:underline; }
+.footer a:visited { color:#878787; }
+
+table th { padding:7px 5px; text-align:left; vertical-align:middle; border: 1px solid #d6d4d4; font-weight:bold; }
+table td { padding:7px 5px; text-align:left; vertical-align:top; border:1px solid #d6d4d4; }
+
+
+
+
+
+  </style></head><body><div class="content"><h2>Contents</h2><div><ul><li><a href="file:///C:/Users/bofsp/Documents/PostDoc_UdeM/LabeoTech/Umit/Analysis/html/funcTemplate.html#3">Arguments parsing and validation %</a></li><li><a href="file:///C:/Users/bofsp/Documents/PostDoc_UdeM/LabeoTech/Umit/Analysis/html/funcTemplate.html#4">Optional Parameters:</a></li><li><a href="file:///C:/Users/bofsp/Documents/PostDoc_UdeM/LabeoTech/Umit/Analysis/html/funcTemplate.html#5">Run your code here:</a></li><li><a href="file:///C:/Users/bofsp/Documents/PostDoc_UdeM/LabeoTech/Umit/Analysis/html/funcTemplate.html#6">Save data using save2dat.m function</a></li></ul></div><pre class="codeinput"><span class="keyword">function</span> outFile = funcTemplate(File, SaveFolder, opts)
+</pre><pre class="codeinput"><span class="comment">% FUNCTEMPLATE is a dummy function that serves as a template for creating</span>
+<span class="comment">% functions compatible with the toolbox.</span>
+<span class="comment">%</span>
+<span class="comment">% The arguments have to be stated in the following order:</span>
+<span class="comment">% 1 - Input : keywords are {File, RawFolder or SaveFolder}</span>
+<span class="comment">% 2 - SaveIn: save directory (fullpath).</span>
+<span class="comment">% 3 - opts: structure containing optional parameters for the function.</span>
+<span class="comment">%</span>
+</pre><h2 id="3">Arguments parsing and validation %</h2><pre class="codeinput">p = inputParser;
+<span class="comment">% The input of the function must be a File , RawFolder or SaveFolder</span>
+addRequired(p,<span class="string">'File'</span>,@isfile)<span class="comment">% For a file as input.</span>
+addRequired(p, <span class="string">'RawFolder'</span>, @isfolder)<span class="comment">% For Raw Folder as input</span>
+<span class="comment">% Save folder:</span>
+addRequired(p, <span class="string">'SaveFolder'</span>, @isfolder);
+</pre><h2 id="4">Optional Parameters:</h2><p>opts structure</p><pre class="codeinput">default_opts = struct(<span class="string">'Output'</span>, default_Output, <span class="string">'Option1'</span>, <span class="string">'value_Option1'</span>, <span class="string">'OptionN'</span>, <span class="string">'value_OptionN'</span>);
+addOptional(p, <span class="string">'opts'</span>, default_opts,@(x) isstruct(x) &amp;&amp; ~isempty(x));
+<span class="comment">% Parse inputs:</span>
+parse(p,File/RawFolder, SaveIn, varargin{:});
+<span class="comment">%Initialize Variables:</span>
+File = p.Results.File;
+<span class="comment">% OR</span>
+RawFolder = p.Results.RawFolder;
+SaveFolder = p.Results.SaveFolder;
+opts = p.Results.opts;
+Output = opts.Output;
+<span class="comment">%%%%</span>
+</pre><pre class="codeoutput error">Undefined function or variable 'default_Output'.
+
+Error in funcTemplate (line 19)
+default_opts = struct('Output', default_Output, 'Option1', 'value_Option1', 'OptionN', 'value_OptionN');
+</pre><h2 id="5">Run your code here:</h2><h2 id="6">Save data using save2dat.m function</h2><pre class="codeinput">save2Dat(datFile, data);
+<span class="comment">% Output file names</span>
+outFile = Output;
+</pre><pre class="codeinput"><span class="keyword">end</span>
+</pre><p class="footer"><br><a href="https://www.mathworks.com/products/matlab/">Published with MATLAB® R2019a</a><br></p></div><!--
+##### SOURCE BEGIN #####
+function outFile = funcTemplate(File, SaveFolder, opts)
+% FUNCTEMPLATE is a dummy function that serves as a template for creating
+% functions compatible with the toolbox.
+%
+% The arguments have to be stated in the following order:
+% 1 - Input : keywords are {File, RawFolder or SaveFolder}
+% 2 - SaveIn: save directory (fullpath).
+% 3 - opts: structure containing optional parameters for the function.
+%
+%% Arguments parsing and validation %
+p = inputParser;
+% The input of the function must be a File , RawFolder or SaveFolder
+addRequired(p,'File',@isfile)% For a file as input.
+addRequired(p, 'RawFolder', @isfolder)% For Raw Folder as input
+% Save folder:
+addRequired(p, 'SaveFolder', @isfolder);
+%% Optional Parameters:
+% opts structure
+default_opts = struct('Output', default_Output, 'Option1', 'value_Option1', 'OptionN', 'value_OptionN');
+addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
+% Parse inputs:
+parse(p,File/RawFolder, SaveIn, varargin{:});
+%Initialize Variables:
+File = p.Results.File; 
+% OR
+RawFolder = p.Results.RawFolder;
+SaveFolder = p.Results.SaveFolder;
+opts = p.Results.opts;
+Output = opts.Output;
+%%%%
+
+%% Run your code here:
+%
+
+%% Save data using save2dat.m function
+save2Dat(datFile, data);
+% Output file names
+outFile = Output;
+end
+
+
+
+
+##### SOURCE END #####
+--></body></html>

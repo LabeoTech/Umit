@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<demos>
+    <name>umIT</name>
+    <type>toolbox</type>
+    <icon>HelpIcon.DEMOS</icon>
+    <description>Templates for creation of custom protocol and analysis functions</description>
+    <website><a href="https://github.com/LabeoTech/Umit">Our Git repository</a></website>
+
+    <demosection>
+        <label>Templates</label>
+        <demoitem>
+            <label>Protocol function template</label>
+            <type>M-file</type>
+            <source>protocolFcn_template</source>
+        </demoitem>
+        <demoitem>
+            <label>Analysis function template</label>
+            <type>M-file</type>
+            <source>funcTemplate</source>
+        </demoitem>
+    </demosection>
+
+</demos>

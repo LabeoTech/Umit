@@ -1,0 +1,363 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<!-- saved from url=(0118)file:///C:/Users/bofsp/AppData/Roaming/MathWorks/MATLAB%20Add-Ons/Toolboxes/Umit%282%29/html/protocolFcn_template.html -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+      
+   <!--
+This HTML was auto-generated from MATLAB code.
+To make changes, update the MATLAB code and republish this document.
+      --><title>protocolFcn_template</title><meta name="generator" content="MATLAB 9.6"><link rel="schema.DC" href="http://purl.org/dc/elements/1.1/"><meta name="DC.date" content="2023-03-24"><meta name="DC.source" content="protocolFcn_template.m"><style type="text/css">
+html,body,div,span,applet,object,iframe,h1,h2,h3,h4,h5,h6,p,blockquote,pre,a,abbr,acronym,address,big,cite,code,del,dfn,em,font,img,ins,kbd,q,s,samp,small,strike,strong,sub,sup,tt,var,b,u,i,center,dl,dt,dd,ol,ul,li,fieldset,form,label,legend,table,caption,tbody,tfoot,thead,tr,th,td{margin:0;padding:0;border:0;outline:0;font-size:100%;vertical-align:baseline;background:transparent}body{line-height:1}ol,ul{list-style:none}blockquote,q{quotes:none}blockquote:before,blockquote:after,q:before,q:after{content:'';content:none}:focus{outine:0}ins{text-decoration:none}del{text-decoration:line-through}table{border-collapse:collapse;border-spacing:0}
+
+html { min-height:100%; margin-bottom:1px; }
+html body { height:100%; margin:0px; font-family:Arial, Helvetica, sans-serif; font-size:10px; color:#000; line-height:140%; background:#fff none; overflow-y:scroll; }
+html body td { vertical-align:top; text-align:left; }
+
+h1 { padding:0px; margin:0px 0px 25px; font-family:Arial, Helvetica, sans-serif; font-size:1.5em; color:#d55000; line-height:100%; font-weight:normal; }
+h2 { padding:0px; margin:0px 0px 8px; font-family:Arial, Helvetica, sans-serif; font-size:1.2em; color:#000; font-weight:bold; line-height:140%; border-bottom:1px solid #d6d4d4; display:block; }
+h3 { padding:0px; margin:0px 0px 5px; font-family:Arial, Helvetica, sans-serif; font-size:1.1em; color:#000; font-weight:bold; line-height:140%; }
+
+a { color:#005fce; text-decoration:none; }
+a:hover { color:#005fce; text-decoration:underline; }
+a:visited { color:#004aa0; text-decoration:none; }
+
+p { padding:0px; margin:0px 0px 20px; }
+img { padding:0px; margin:0px 0px 20px; border:none; }
+p img, pre img, tt img, li img, h1 img, h2 img { margin-bottom:0px; } 
+
+ul { padding:0px; margin:0px 0px 20px 23px; list-style:square; }
+ul li { padding:0px; margin:0px 0px 7px 0px; }
+ul li ul { padding:5px 0px 0px; margin:0px 0px 7px 23px; }
+ul li ol li { list-style:decimal; }
+ol { padding:0px; margin:0px 0px 20px 0px; list-style:decimal; }
+ol li { padding:0px; margin:0px 0px 7px 23px; list-style-type:decimal; }
+ol li ol { padding:5px 0px 0px; margin:0px 0px 7px 0px; }
+ol li ol li { list-style-type:lower-alpha; }
+ol li ul { padding-top:7px; }
+ol li ul li { list-style:square; }
+
+.content { font-size:1.2em; line-height:140%; padding: 20px; }
+
+pre, code { font-size:12px; }
+tt { font-size: 1.2em; }
+pre { margin:0px 0px 20px; }
+pre.codeinput { padding:10px; border:1px solid #d3d3d3; background:#f7f7f7; }
+pre.codeoutput { padding:10px 11px; margin:0px 0px 20px; color:#4c4c4c; }
+pre.error { color:red; }
+
+@media print { pre.codeinput, pre.codeoutput { word-wrap:break-word; width:100%; } }
+
+span.keyword { color:#0000FF }
+span.comment { color:#228B22 }
+span.string { color:#A020F0 }
+span.untermstring { color:#B20000 }
+span.syscmd { color:#B28C00 }
+
+.footer { width:auto; padding:10px 0px; margin:25px 0px 0px; border-top:1px dotted #878787; font-size:0.8em; line-height:140%; font-style:italic; color:#878787; text-align:left; float:none; }
+.footer p { margin:0px; }
+.footer a { color:#878787; }
+.footer a:hover { color:#878787; text-decoration:underline; }
+.footer a:visited { color:#878787; }
+
+table th { padding:7px 5px; text-align:left; vertical-align:middle; border: 1px solid #d6d4d4; font-weight:bold; }
+table td { padding:7px 5px; text-align:left; vertical-align:top; border:1px solid #d6d4d4; }
+
+
+
+
+
+  </style></head><body><div class="content"><pre class="codeinput"><span class="keyword">function</span> tmpS = protocolFcn_template(obj)
+<span class="comment">% User-defined function. This Function is used inside "Protocol" object to generate the</span>
+<span class="comment">% list of Subjects, Acquisitions and Modalities. This template can be used</span>
+<span class="comment">% to read recordings from LabeoTech's optical imaging systems.</span>
+
+<span class="comment">% This function will be used to update the content of the obj.MainDir (Folder where the Data is).</span>
+<span class="comment">% Input:</span>
+<span class="comment">% obj (Protocol class) = self referring handle of Protocol class.</span>
+<span class="comment">% Output:</span>
+<span class="comment">% tmpS (Subject class) = array of objects from Subject class containing Acquisition and</span>
+<span class="comment">% Modalities.</span>
+
+<span class="comment">% This is a template for creating a protocol function.</span>
+<span class="comment">% This template reads mesoscale imaging datasets created with the imaging</span>
+<span class="comment">% systems from Labeo Technologies Inc. The imaging raw data are stored in a</span>
+<span class="comment">% series of binary files (.bin). This template function scans a directory</span>
+<span class="comment">% (obj.MainDir) containing folders with the imaging data and a text file</span>
+<span class="comment">% with the recording information.</span>
+<span class="comment">% The folder tree is organized as :</span>
+<span class="comment">%      MainDir --</span>
+<span class="comment">%                |</span>
+<span class="comment">%                |--RECORDINGFOLDER-- (ex. "M2D_RS_20210401")</span>
+<span class="comment">%                                                   |</span>
+<span class="comment">%                                                   |-xxxx.bin</span>
+<span class="comment">%                                                   |-xxxx.bin</span>
+<span class="comment">%                                                   |-xxxx.bin</span>
+<span class="comment">%                                                      ...</span>
+<span class="comment">%                                                   |-xxxx.bin</span>
+<span class="comment">%                                                   |-info.txt</span>
+
+<span class="comment">% The names of subjects (Subject ID) and acquisitions (Acquisition ID) are encoded in the</span>
+<span class="comment">% folder names separated by an underscore as SUBJID "_" ACQID. For example:</span>
+<span class="comment">% Lets take the example folder above (M2D_RS_20210401), here we have:</span>
+<span class="comment">% Subject ID: "M2D"</span>
+<span class="comment">% Acquisition ID: "RS_20210401</span>
+
+<span class="comment">% Minimal information required:</span>
+<span class="comment">%   In order to make this function work, we need to set the following properties</span>
+<span class="comment">%   for each object created in this function:</span>
+<span class="comment">%       Subject:</span>
+<span class="comment">%               -ID (str)</span>
+<span class="comment">%       Acquisition:</span>
+<span class="comment">%               -ID (str)</span>
+<span class="comment">%               -Start_datetime (datetime): Timestamp of the beginning of</span>
+<span class="comment">%               the recording.</span>
+<span class="comment">%       Modality:</span>
+<span class="comment">%               -ID (str)</span>
+<span class="comment">%               -RawFolder (str): Full path for an existing folder</span>
+<span class="comment">%                containing raw data from a given modality.</span>
+<span class="comment">%               -RawFiles (cell): list of raw file names with the file extensions.</span>
+<span class="comment">% * Other properties can be set as well. Please, check the documentation</span>
+<span class="comment">% for the classes "Subject", "Acquisition", "Modality" and those derived</span>
+<span class="comment">% from it.</span>
+
+<span class="comment">% Regular expression to find the raw data files:</span>
+expLabeo = <span class="string">'(ai|img)_\d*.bin'</span>; <span class="comment">% For Labeo Data</span>
+<span class="comment">% Look for all folders containing .bin files:</span>
+FolderNames = dir(fullfile(obj.MainDir, <span class="string">'**'</span>,<span class="string">'*.bin'</span>));
+FolderNames = unique({FolderNames.folder});
+<span class="comment">% Keep only folders that start with an uppercase "M" letter:</span>
+idx = false(size(FolderNames));
+recNames = cell(size(FolderNames));
+<span class="keyword">for</span> i = 1:numel(FolderNames)
+    str = strsplit(FolderNames{i}, filesep);
+    recNames(i) = str(end);
+    <span class="keyword">if</span> startsWith(recNames{i},<span class="string">'M'</span>)
+        idx(i) = true;
+    <span class="keyword">end</span>
+<span class="keyword">end</span>
+FolderNames = FolderNames(idx);
+recNames = recNames(idx);
+<span class="comment">% Parse the list of recording folders (recNames) to obtain:</span>
+<span class="comment">%   - Subject ID (characters between the first and second underscores)</span>
+<span class="comment">%   - Acquisition ID (characters between the second and last underscores)</span>
+sID = cell(size(recNames)); acqID = sID;
+<span class="keyword">for</span> i = 1:numel(recNames)
+    str = strsplit(recNames{i}, <span class="string">'_'</span>);
+    sID{i} = str{1}; <span class="comment">% Subject ID</span>
+    <span class="comment">% rebuild Acquisition ID using all strings after subject ID.</span>
+    acqID{i} = strjoin(str(2:end), <span class="string">'_'</span>);
+<span class="keyword">end</span>
+<span class="comment">% Here, we create an array of subjects based on the IDs extracted from the</span>
+<span class="comment">% folder names:</span>
+uniqS = unique(sID); <span class="comment">% Get the list of all subjects.</span>
+<span class="comment">% Create an array of empty Subject objects:</span>
+tmpS = Subject.empty(0,numel(uniqS));
+<span class="comment">% Loop across all folders and populate Subject objects with with Acquisition and modality objects:</span>
+<span class="keyword">for</span> i = 1:length(uniqS)
+    <span class="comment">% Index of the current Subject:</span>
+    indx_s = find(strcmp(uniqS{i}, sID));
+    <span class="comment">% Add Subject ID and Group ID to current subject object:</span>
+    tmpS(i) = Subject(uniqS{i},<span class="string">'def'</span>, []);
+
+    <span class="comment">% Add Aquisitions to the current Subject:</span>
+    <span class="keyword">for</span> j = 1:length(indx_s)
+        <span class="comment">% Create Acquisition object to the current subject:</span>
+        tmpA = Acquisition(acqID{indx_s(j)}, []);
+        <span class="comment">% Add empty FluorescenceImaging object to the Acquisition object:</span>
+        tmpA.Array.addObj(FluorescenceImaging());
+        folder = FolderNames{indx_s(j)};
+        <span class="comment">% Get info for creation of FluorescenceImaging object:</span>
+        recSys = <span class="string">'LabeoTech-OpticalImaging-System'</span>;
+        files = getNamesFromDir(folder, expLabeo, 0, <span class="string">'match'</span>);
+
+        <span class="comment">% Add Imaging modality info:</span>
+        tmpA.Array.ObjList(end).ID = <span class="string">'CtxImg'</span>; <span class="comment">% Modality ID</span>
+        tmpA.Array.ObjList(end).RecordingSystem = recSys;  <span class="comment">% Name of recording system</span>
+        tmpA.Array.ObjList(end).RawFiles_FP = files; <span class="comment">% List of full paths of LabeoTech's raw imaging data.</span>
+        <span class="comment">% Use Labeotech's "info.txt" file to gather more information about</span>
+        <span class="comment">% the recording:</span>
+        infoFile = fullfile(folder, <span class="string">'info.txt'</span>);
+        <span class="keyword">if</span> isfile(infoFile)
+            txt = fileread(infoFile);
+            DateTime = regexp(txt, <span class="string">'(?&lt;=DateTime:\s*)\S+'</span>,<span class="string">'match'</span>, <span class="string">'once'</span>);
+            DateTime = datetime(DateTime, <span class="string">'InputFormat'</span>, <span class="string">'yyyyMMdd_HHmmss'</span>);
+            numChan = numel(regexp(txt, <span class="string">'Illumination'</span>, <span class="string">'match'</span>));
+            sr = str2double(regexp(txt, <span class="string">'(?&lt;=FrameRateHz:\s+)\d+\.*\d*'</span>, <span class="string">'match'</span>));
+            <span class="comment">% Add info to FluorescenceImaging object:</span>
+            tmpA.Array.ObjList(end).SampleRateHz = sr; <span class="comment">% Recording sample rate</span>
+            tmpA.Array.ObjList(end).NumberOfChannels = numChan; <span class="comment">% number of color channels</span>
+            <span class="comment">% Add Timestamp of the beginning of the recording to</span>
+            <span class="comment">% Acquisition object:</span>
+            tmpA.Start_datetime = DateTime;
+        <span class="keyword">end</span>
+        <span class="comment">% Uncomment this section to look for meta data .MAT file</span>
+        <span class="comment">% containing events info linked to the recording:</span>
+        <span class="comment">%         % Look for metaDataFiles in RawData Folders:</span>
+        <span class="comment">%         matFileList = dir([folder filesep '*.mat']); matFileList = {matFileList.name};</span>
+        <span class="comment">%         % Find .mat files that starts with the name of the current</span>
+        <span class="comment">%         % recording folder:</span>
+        <span class="comment">%         idx = startsWith(matFileList, recNames{i});</span>
+        <span class="comment">%         if sum(idx) &gt; 0</span>
+        <span class="comment">%             indx = find(idx);</span>
+        <span class="comment">%             matFile = matFileList{indx(1)}; % Picks the first one, but I assume that there is only one file per folder.</span>
+        <span class="comment">%             tmpA.Array.ObjList(end).MetaDataFileName = matFile;</span>
+        <span class="comment">%         end</span>
+
+        <span class="comment">% Add Acquisition Object to Subject</span>
+        tmpS(i).Array.addObj(tmpA);
+    <span class="keyword">end</span>
+
+<span class="keyword">end</span>
+
+<span class="keyword">end</span>
+</pre><pre class="codeoutput error">Not enough input arguments.
+
+Error in protocolFcn_template (line 58)
+FolderNames = dir(fullfile(obj.MainDir, '**','*.bin'));
+</pre><p class="footer"><br><a href="https://www.mathworks.com/products/matlab/">Published with MATLAB® R2019a</a><br></p></div><!--
+##### SOURCE BEGIN #####
+function tmpS = protocolFcn_template(obj)
+% User-defined function. This Function is used inside "Protocol" object to generate the
+% list of Subjects, Acquisitions and Modalities. This template can be used
+% to read recordings from LabeoTech's optical imaging systems.
+
+% This function will be used to update the content of the obj.MainDir (Folder where the Data is).
+% Input:
+% obj (Protocol class) = self referring handle of Protocol class.
+% Output:
+% tmpS (Subject class) = array of objects from Subject class containing Acquisition and
+% Modalities.
+
+% This is a template for creating a protocol function.
+% This template reads mesoscale imaging datasets created with the imaging
+% systems from Labeo Technologies Inc. The imaging raw data are stored in a
+% series of binary files (.bin). This template function scans a directory
+% (obj.MainDir) containing folders with the imaging data and a text file
+% with the recording information.
+% The folder tree is organized as :
+%      MainDir REPLACE_WITH_DASH_DASH
+%                |
+%                |REPLACE_WITH_DASH_DASHRECORDINGFOLDERREPLACE_WITH_DASH_DASH (ex. "M2D_RS_20210401")
+%                                                   |
+%                                                   |-xxxx.bin
+%                                                   |-xxxx.bin
+%                                                   |-xxxx.bin
+%                                                      ...
+%                                                   |-xxxx.bin
+%                                                   |-info.txt
+
+% The names of subjects (Subject ID) and acquisitions (Acquisition ID) are encoded in the
+% folder names separated by an underscore as SUBJID "_" ACQID. For example:
+% Lets take the example folder above (M2D_RS_20210401), here we have:
+% Subject ID: "M2D"
+% Acquisition ID: "RS_20210401
+
+% Minimal information required:
+%   In order to make this function work, we need to set the following properties
+%   for each object created in this function:
+%       Subject:
+%               -ID (str)
+%       Acquisition:
+%               -ID (str)
+%               -Start_datetime (datetime): Timestamp of the beginning of
+%               the recording.
+%       Modality:
+%               -ID (str)
+%               -RawFolder (str): Full path for an existing folder
+%                containing raw data from a given modality.
+%               -RawFiles (cell): list of raw file names with the file extensions.
+% * Other properties can be set as well. Please, check the documentation
+% for the classes "Subject", "Acquisition", "Modality" and those derived
+% from it.
+
+% Regular expression to find the raw data files:
+expLabeo = '(ai|img)_\d*.bin'; % For Labeo Data
+% Look for all folders containing .bin files:
+FolderNames = dir(fullfile(obj.MainDir, '**','*.bin'));
+FolderNames = unique({FolderNames.folder});
+% Keep only folders that start with an uppercase "M" letter:
+idx = false(size(FolderNames));
+recNames = cell(size(FolderNames));
+for i = 1:numel(FolderNames)
+    str = strsplit(FolderNames{i}, filesep);
+    recNames(i) = str(end);
+    if startsWith(recNames{i},'M')
+        idx(i) = true;
+    end
+end
+FolderNames = FolderNames(idx);
+recNames = recNames(idx);
+% Parse the list of recording folders (recNames) to obtain:
+%   - Subject ID (characters between the first and second underscores)
+%   - Acquisition ID (characters between the second and last underscores)
+sID = cell(size(recNames)); acqID = sID;
+for i = 1:numel(recNames)
+    str = strsplit(recNames{i}, '_');
+    sID{i} = str{1}; % Subject ID
+    % rebuild Acquisition ID using all strings after subject ID.
+    acqID{i} = strjoin(str(2:end), '_');
+end
+% Here, we create an array of subjects based on the IDs extracted from the
+% folder names:
+uniqS = unique(sID); % Get the list of all subjects.
+% Create an array of empty Subject objects:
+tmpS = Subject.empty(0,numel(uniqS));
+% Loop across all folders and populate Subject objects with with Acquisition and modality objects:
+for i = 1:length(uniqS)
+    % Index of the current Subject:
+    indx_s = find(strcmp(uniqS{i}, sID));
+    % Add Subject ID and Group ID to current subject object:
+    tmpS(i) = Subject(uniqS{i},'def', []);
+    
+    % Add Aquisitions to the current Subject:
+    for j = 1:length(indx_s)
+        % Create Acquisition object to the current subject:
+        tmpA = Acquisition(acqID{indx_s(j)}, []);
+        % Add empty FluorescenceImaging object to the Acquisition object:
+        tmpA.Array.addObj(FluorescenceImaging());
+        folder = FolderNames{indx_s(j)};
+        % Get info for creation of FluorescenceImaging object:
+        recSys = 'LabeoTech-OpticalImaging-System';
+        files = getNamesFromDir(folder, expLabeo, 0, 'match');
+        
+        % Add Imaging modality info:
+        tmpA.Array.ObjList(end).ID = 'CtxImg'; % Modality ID
+        tmpA.Array.ObjList(end).RecordingSystem = recSys;  % Name of recording system
+        tmpA.Array.ObjList(end).RawFiles_FP = files; % List of full paths of LabeoTech's raw imaging data.
+        % Use Labeotech's "info.txt" file to gather more information about
+        % the recording:
+        infoFile = fullfile(folder, 'info.txt');
+        if isfile(infoFile)
+            txt = fileread(infoFile);
+            DateTime = regexp(txt, '(?<=DateTime:\s*)\S+','match', 'once');
+            DateTime = datetime(DateTime, 'InputFormat', 'yyyyMMdd_HHmmss');
+            numChan = numel(regexp(txt, 'Illumination', 'match'));
+            sr = str2double(regexp(txt, '(?<=FrameRateHz:\s+)\d+\.*\d*', 'match'));
+            % Add info to FluorescenceImaging object:
+            tmpA.Array.ObjList(end).SampleRateHz = sr; % Recording sample rate
+            tmpA.Array.ObjList(end).NumberOfChannels = numChan; % number of color channels
+            % Add Timestamp of the beginning of the recording to
+            % Acquisition object:
+            tmpA.Start_datetime = DateTime;
+        end
+        % Uncomment this section to look for meta data .MAT file
+        % containing events info linked to the recording:
+        %         % Look for metaDataFiles in RawData Folders:
+        %         matFileList = dir([folder filesep '*.mat']); matFileList = {matFileList.name};
+        %         % Find .mat files that starts with the name of the current
+        %         % recording folder:
+        %         idx = startsWith(matFileList, recNames{i});
+        %         if sum(idx) > 0
+        %             indx = find(idx);
+        %             matFile = matFileList{indx(1)}; % Picks the first one, but I assume that there is only one file per folder.
+        %             tmpA.Array.ObjList(end).MetaDataFileName = matFile;
+        %         end
+        
+        % Add Acquisition Object to Subject
+        tmpS(i).Array.addObj(tmpA);
+    end
+    
+end
+
+end
+##### SOURCE END #####
+--></body></html>

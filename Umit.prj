@@ -1,5 +1,5 @@
 <deployment-project plugin="plugin.toolbox" plugin-version="1.0">
-  <configuration file="C:\Projets\LabeoTech\gitrepo\Umit\Umit.prj" location="C:\Projets\LabeoTech\gitrepo\Umit" name="Umit" target="target.toolbox" target-name="Package Toolbox">
+  <configuration build-checksum="3403560805" file="C:\Users\bofsp\Documents\PostDoc_UdeM\LabeoTech\Umit\Umit.prj" location="C:\Users\bofsp\Documents\PostDoc_UdeM\LabeoTech\Umit" name="Umit" target="target.toolbox" target-name="Package Toolbox">
     <param.appname>Umit</param.appname>
     <param.authnamewatermark>LabeoTech</param.authnamewatermark>
     <param.email>info@labeotech.com</param.email>
@@ -11,9 +11,18 @@ In memory of our friend and collegue Umit Keysan (1992-2019)</param.description>
     <param.screenshot />
     <param.version>1.4.0</param.version>
     <param.output>${PROJECT_ROOT}\Umit.mltbx</param.output>
-    <param.products.name />
-    <param.products.id />
-    <param.products.version />
+    <param.products.name>
+      <item>Image Processing Toolbox</item>
+      <item>Statistics and Machine Learning Toolbox</item>
+    </param.products.name>
+    <param.products.id>
+      <item>17</item>
+      <item>19</item>
+    </param.products.id>
+    <param.products.version>
+      <item>10.4</item>
+      <item>11.5</item>
+    </param.products.version>
     <param.platforms />
     <param.guid>9fb2ddcb-b8a2-4383-afe1-d7d89e57b7ac</param.guid>
     <param.exclude.filters>% List files contained in your toolbox folder that you would like to exclude
@@ -35,29 +44,43 @@ In memory of our friend and collegue Umit Keysan (1992-2019)</param.description>
 % All files matching a pattern in all subfolders of the toolbox folder:
 % **/*.bak
 %
-.git/*
-.github/*</param.exclude.filters>
+.gitignore
+.git
+.github
+test</param.exclude.filters>
     <param.exclude.pcodedmfiles>true</param.exclude.pcodedmfiles>
-    <param.examples />
+    <param.examples>&lt;?xml version="1.0" encoding="utf-8"?&gt;
+&lt;examples&gt;
+   &lt;exampleCategory name="Templates"&gt;
+      &lt;example name="Protocol function template" type="html"&gt;
+         &lt;file type="source"/&gt;
+         &lt;file type="main"&gt;/protocolFcn_template.m&lt;/file&gt;
+         &lt;file type="thumbnail"/&gt;
+      &lt;/example&gt;
+      &lt;example name="Analysis function template" type="html"&gt;
+         &lt;file type="source"/&gt;
+         &lt;file type="main"&gt;/Analysis/funcTemplate.m&lt;/file&gt;
+         &lt;file type="thumbnail"/&gt;
+      &lt;/example&gt;
+   &lt;/exampleCategory&gt;
+&lt;/examples&gt;</param.examples>
     <param.demosxml />
     <param.apps />
     <param.registered.apps>
+      <file>${PROJECT_ROOT}\GUI\umIToolbox.mlapp</file>
       <file>${PROJECT_ROOT}\GUI\DataViz\DataViewer.mlapp</file>
       <file>${PROJECT_ROOT}\GUI\DataViz\ROImanager.mlapp</file>
-      <file>${PROJECT_ROOT}\GUI\umIToolbox.mlapp</file>
     </param.registered.apps>
-    <param.docs>${PROJECT_ROOT}\docs\info.xml</param.docs>
+    <param.docs>${PROJECT_ROOT}\info.xml</param.docs>
     <param.getting.started.guide />
-    <param.matlabpath.excludes>
-      <item>/IOIAnalysis/OldVersion</item>
-    </param.matlabpath.excludes>
+    <param.matlabpath.excludes />
     <param.javaclasspath.excludes />
     <param.exported.on.package>false</param.exported.on.package>
     <param.required.addons />
     <param.matlab.project.id />
     <param.matlab.project.name />
-    <param.release.start />
-    <param.release.end />
+    <param.release.start>R2019a</param.release.start>
+    <param.release.end>latest</param.release.end>
     <param.release.current.only>false</param.release.current.only>
     <param.compatiblity.windows>true</param.compatiblity.windows>
     <param.compatiblity.macos>true</param.compatiblity.macos>
@@ -72,22 +95,17 @@ In memory of our friend and collegue Umit Keysan (1992-2019)</param.description>
     <unset>
       <param.screenshot />
       <param.output />
-      <param.products.name />
-      <param.products.id />
-      <param.products.version />
       <param.platforms />
       <param.exclude.pcodedmfiles />
-      <param.examples />
       <param.demosxml />
       <param.apps />
       <param.getting.started.guide />
+      <param.matlabpath.excludes />
       <param.javaclasspath.excludes />
       <param.exported.on.package />
       <param.required.addons />
       <param.matlab.project.id />
       <param.matlab.project.name />
-      <param.release.start />
-      <param.release.end />
       <param.release.current.only />
       <param.compatiblity.windows />
       <param.compatiblity.macos />
@@ -103,42 +121,42 @@ In memory of our friend and collegue Umit Keysan (1992-2019)</param.description>
       <file>${PROJECT_ROOT}</file>
     </fileset.rootdir>
     <fileset.rootfiles>
-      <file>${PROJECT_ROOT}\.git</file>
-      <file>${PROJECT_ROOT}\.github</file>
-      <file>${PROJECT_ROOT}\.gitignore</file>
       <file>${PROJECT_ROOT}\Analysis</file>
       <file>${PROJECT_ROOT}\classes</file>
       <file>${PROJECT_ROOT}\DesktopToolset.xml</file>
       <file>${PROJECT_ROOT}\docs</file>
       <file>${PROJECT_ROOT}\GUI</file>
+      <file>${PROJECT_ROOT}\info.xml</file>
       <file>${PROJECT_ROOT}\IOIAnalysis</file>
       <file>${PROJECT_ROOT}\LICENSE</file>
-      <file>${PROJECT_ROOT}\Main.asv</file>
       <file>${PROJECT_ROOT}\Main.m</file>
       <file>${PROJECT_ROOT}\protocolFcn_template.m</file>
       <file>${PROJECT_ROOT}\README.md</file>
       <file>${PROJECT_ROOT}\subFunc</file>
-      <file>${PROJECT_ROOT}\test</file>
-      <file>${PROJECT_ROOT}\umIT_path_cleanup.m</file>
-      <file>${PROJECT_ROOT}\Umitoolbox_setup.m</file>
     </fileset.rootfiles>
     <fileset.depfun.included />
     <fileset.depfun.excluded />
     <fileset.package />
     <build-deliverables>
-      <file location="${PROJECT_ROOT}" name="Umit.mltbx" optional="false">C:\Projets\LabeoTech\gitrepo\Umit\Umit.mltbx</file>
+      <file location="${PROJECT_ROOT}" name="Umit.mltbx" optional="false">C:\Users\bofsp\Documents\PostDoc_UdeM\LabeoTech\Umit\Umit.mltbx</file>
     </build-deliverables>
     <workflow />
     <matlab>
-      <root>C:\Program Files\MATLAB\R2022a</root>
+      <root>C:\Program Files\MATLAB\R2019a</root>
       <toolboxes>
-        <toolbox name="fixedpoint" />
+        <toolbox name="matlabcoder" />
+        <toolbox name="gpucoder" />
         <toolbox name="neuralnetwork" />
       </toolboxes>
       <toolbox>
-        <fixedpoint>
+        <matlabcoder>
           <enabled>true</enabled>
-        </fixedpoint>
+        </matlabcoder>
+      </toolbox>
+      <toolbox>
+        <gpucoder>
+          <enabled>true</enabled>
+        </gpucoder>
       </toolbox>
       <toolbox>
         <neuralnetwork>
