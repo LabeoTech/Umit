@@ -1024,7 +1024,7 @@ classdef PipelineManager < handle
             % Draw arrows and texts:
             for ii = seqList
                 seq = find(arrayfun(@(x) any(x.seq == ii),pp));
-                if pp(seq(1)).inputFrom == 0 |  pp(seq(1)).inputFrom == -1 %#ok Failed with double pipes!
+                if pp(seq(1)).inputFrom == 0 |  pp(seq(1)).inputFrom == -1 %#ok 
                     % For when the input comes from the "Disk" or "DataViewer":
                     an = annotation('arrow',[0,0],[1,1],'Units','pixels', 'HeadWidth',arrowHeadSz);
                     an.X = [ctrX(1) ctrX(seq(1)+1)];
@@ -1062,6 +1062,7 @@ classdef PipelineManager < handle
                     end
                 end
             end
+            drawnow;
             % Put panel on top:
             uistack(pan, 'top');
             % Reposition the figure so the top-left corner is in the same
@@ -1419,8 +1420,8 @@ classdef PipelineManager < handle
                 task.seqIndx = obj.current_seqIndx;
                 if task.b_hasDataOut && task.b_hasDataIn
                     task.inputFrom = 0; % Set input index to zero when the data comes from the Hard Drive.
-                    task.inputFileName = obj.selectInputFileName(task.inputFrom, task.name);
-                elseif task.b_hasDataOut && ~task.b_hasDataIn
+                    task.inputFileName = obj.selectInputFileName(task.inputFrom, task.name);                
+                elseif (task.b_hasDataOut || task.b_hasFileOut ) && ~task.b_hasDataIn
                     task.inputFrom = 0;
                 end
                 if task.inputFileName == 0
