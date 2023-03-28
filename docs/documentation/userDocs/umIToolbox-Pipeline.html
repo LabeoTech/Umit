@@ -23,7 +23,7 @@
       <li><a href="#options-panel">Options panel</a></li>
     </ul>
     <p>
-      For information on how to create and edit pipelines, refer to the <a href="pipeline_configuration_tool.html">Pipeline Configuration</a> tool documentation.
+      For information on how to create and edit pipelines, refer to the <a href="./pipeline_configuration_tool.html">Pipeline Configuration</a> tool documentation.
     </p>
     <h3 id="tab-s-components">Tab components</h3>
     <hr>
@@ -35,12 +35,12 @@
     <p>
       Here, one can create/edit an analysis pipeline and apply it to the selected objects.
     </p>
-    <ul>
-      <li><b><i>Launch Pipeline Config:</i></b> opens the <a href="pipeline_configuration_tool.html">pipeline configuration tool</a>.</li>
-      <li><b><i>Run Pipeline:</i></b> Applies the analysis pipeline on the selected objects.</li>
-      <li><b><i>Ignore Logged Tasks:</i></b> Check this box to rerun a pipeline over the selected objects. By default, this option is disabled. Thus, analysis functions that were already applied to a file will be skipped.</li>
-      <li><b><i>Save Data before error:</i></b> This option automatically saves the last data created when an error occurs during the pipeline execution. This option is enabled by default.</li>
-    </ul>
+    <ol type ="a">
+      <li><b><i>Configure pipeline:</i></b> opens the <a href="./pipeline_configuration_tool.html">pipeline configuration tool</a>.</li>
+      <li><b><i>Re-run Pipeline:</i></b> applies the current analysis pipeline on the selected objects.</li>
+      <li><b><i>Edit parameters:</i></b> opens the <i>pipeline workflow window</i> to allow editing the parameters of the functions from the current pipeline.</li>
+    </ol>
+
     <h4 id="2-status-panel">2. Status panel</h4>
     <p>
       This panel shows a summary of the pipeline steps and its parameters as well as the start and end timestamps of pipeline execution.
@@ -56,11 +56,7 @@
     <p align="center">
       <img alt="PipelineCtlSummaryTabExample" src="../assets/img/mainGUI_pipeline_summarytab.png" width="660"> <br>
       <i>Example of <b>summary table</b> after a pipeline execution.</i>
-    </p>
-    <h3 id="options-panel">Options Panel</h3>
-    <hr>
-    <p>
-      Here, the available buttons are used to <b>select</b> and <b>undo selection</b> of the highlighted objects from the <i>object tree</i>. To select the data to be processed in the pipeline, highlight the items in the object tree and click on <i>Select</i> button.
-    </p>
+    </p> 
+    <hr>   
   </body>
 </html>
