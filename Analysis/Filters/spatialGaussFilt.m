@@ -14,7 +14,7 @@ opts_values = struct('Sigma',[0,Inf]);%#ok  % This is here only as a reference f
 %%% Arguments parsing and validation %%%
 p = inputParser;
 % The input of the function must be a File , RawFolder or SaveFolder
-addRequired(p,'data',@(x) isnumeric(x) & ndims(x) == 3); % Validate if the input is a 3-D numerical matrix:
+addRequired(p,'data',@(x) isnumeric(x)); % Validate if the input is a 3-D numerical matrix:
 addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
 addOptional(p,'opts', default_opts, @(x) isstruct(x) && ~isempty(x));
 % Parse inputs:
@@ -27,18 +27,22 @@ clear p
 %%%%
 % Validate if "data" is an Image Time Series:
 errID = 'umIToolbox:spatialGaussFilt:InvalidInput';
-errMsg = ['Wrong Input Data type. Data must be an Image time series with ' ...
-    'dimensions "X", "Y", "T".'];
-assert(all(ismember(metaData.dim_names,{'Y', 'X', 'T'})), errID, errMsg);
+errMsg = 'Wrong Input Data type. Data must contain dimensions "X" and "Y"';
+assert(all(ismember({'Y', 'X'}, metaData.dim_names)), errID, errMsg);
 assert(opts.Sigma>0, errID,'Sigma must be a positive value!');
 % Apply gaussian filter:
 disp('Filtering frames...')
-w = waitbar(0,'Filtering frames...');
-for i = 1:size(outData,3)
-    waitbar(i/size(outData,3),w);
-    outData(:,:,i) = imgaussfilt(outData(:,:,i), opts.Sigma, 'FilterDomain', 'spatial'); % Forced FilterDomain to "spatial" to avoid problems when the data has Infs or NaNs.);
+% Permute the data so the X and Y are the 1st and 2nd dimensions:
+[~,xyIndx] = ismember({'Y','X'},metaData.dim_names);
+permIndx = [xyIndx, setdiff(1:length(metaData.dim_names),xyIndx)];
+outData = permute(outData,permIndx);
+dataSz = size(outData);
+outData = reshape(outData,dataSz(1), dataSz(2), []);
+for ii = 1:size(outData,3)
+    outData(:,:,ii) = imgaussfilt(outData(:,:,ii), opts.Sigma, 'FilterDomain', 'spatial'); % Forced FilterDomain to "spatial" to avoid problems when the data has Infs or NaNs.);
 end
-close(w)
+outData = reshape(outData,dataSz);
+outData = ipermute(outData,permIndx);
 disp('Finished with Spatial Gaussian filter.')      
 end
 
