@@ -9,7 +9,7 @@
 
 In memory of our friend and collegue Umit Keysan (1992-2019)</param.description>
     <param.screenshot />
-    <param.version>1.4.0</param.version>
+    <param.version>2.0.0</param.version>
     <param.output>${PROJECT_ROOT}\Umit.mltbx</param.output>
     <param.products.name>
       <item>Image Processing Toolbox</item>
@@ -58,7 +58,7 @@ test</param.exclude.filters>
          &lt;file type="thumbnail"/&gt;
       &lt;/example&gt;
       &lt;example name="Analysis function template" type="html"&gt;
-         &lt;file type="source"&gt;/Analysis/html/funcTemplate.html&lt;/file&gt;
+         &lt;file type="source"/&gt;
          &lt;file type="main"&gt;/Analysis/funcTemplate.m&lt;/file&gt;
          &lt;file type="thumbnail"/&gt;
       &lt;/example&gt;
