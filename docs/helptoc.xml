@@ -21,10 +21,8 @@
         <tocitem target="./documentation/rec_sys_requirements.html">
           Software and hardware requirements
         </tocitem>
-        <tocitem target="./documentation/user_doc_index.html">Apps and functions</tocitem>
-        <!-- TO BE UNCOMMENTED LATER WHEN THE SECTION IS CREATED
-        <tocitem target="#">Documentation for advanced users</tocitem>
-        -->
+        <tocitem target="./documentation/user_doc_index.html">Apps and functions</tocitem>        
+        <tocitem target="./documentation/advanced_user_doc_index.html">Documentation for advanced users</tocitem>        
         <!-- Optional link or links to your or other Web sites -->
         <tocitem target="https://labeotech.github.io/Umit/">visit umIT's Wiki Page!</tocitem>
     </tocitem>

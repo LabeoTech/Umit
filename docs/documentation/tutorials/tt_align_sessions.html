@@ -20,7 +20,7 @@
       <li>How to perform manual image registration of a given recording session.</li>
     </ul>
     <p>
-      The raw data consists of multi-channel (fluorescence and reflectance) recordings of an anesthetized mouse expressing GCaMP6 calcium indicator in cortical neurons. The data that we will align consists of four resting state recordings (see <a href="./tt_creating_connectivity_maps.html">this tutorial</a> to learn how to process resting state data) of one mouse acquired over a period of 2 months. Here is the processing workflow of this example:
+      The raw data consists of multi-channel (fluorescence and reflectance) recordings of an anesthetized mouse expressing GCaMP6 calcium indicator in cortical neurons. The data that we will align consists of four resting state recordings (see <a href="./tt_creating_connectivity_maps.html">this tutorial</a> to learn how to process resting state data) of one mouse acquired over a period of 2 months. Here is the processing workflow of this example (the part described in this tutorial is highlighted):
     </p>
     <p align="center"><i>Recording alignment workflow</i></p>
     <p align="center">
@@ -28,8 +28,7 @@
     </p>
     <h3>Sections</h3>
     <hr>
-    <ul>
-      <li><a href="#import-and-preprocess-data">Import and preprocess the data</a>: Import the raw data and perform the hemodynamic correction on the fluorescence signal.</li>
+    <ul>     
       <li><a href="#create-img-reference">Create the imaging reference frame</a>: use the <i>ROImanager</i> app to create the image to be used as reference for the alignment.</li>
       <li><a href="#intro-alignment">Recording alignment</a>:</li>
         <ul>
@@ -41,39 +40,11 @@
       <p><strong>Important</strong><br>
         The automatic and manual alignement tools are currently available <b>only</b> in the main GUI (<samp>umIToolbox</samp>)!
       </p>
-    </div>
-
-    <h3 id="import-and-preprocess-data">Import and preprocess the data</h3>
-    <hr>
-    <p>
-      Here, we assume that the project file was created. For more info on how to create a project file click <a href="tt_creating_a_new_project.html">here</a>.
-      To open a project file, call the <samp>umIToolbox</samp> app with the full path to your project file as input as:
-    </p>
-    <div class="codeinput">
-      <pre>
-        umIToolbox(<font class="stringformat">'C:/FOLDER/projectfile.mat'</font>);
-      </pre>
-    </div>
-
-    <p>
-      In the main GUI, go to the <i>Pipeline control panel tab</i> and select the recordings to be processed (steps 1 and 2) and launch the <i>Pipeline Configuration</i> app (step 3). Here, we will align all four recordings from the mouse <b>M4D</b>:
-    </p>
-    <img src="../assets/img/align_tt_selectdata.png" alt="align_tt_selectdata" width = "660">
-    <p>
-      Select the <i>FluorescenceImaging</i> object from the list of available objects:
-    </p>
-    <img src="../assets/img/align_tt_select_objtype.png" alt="align_tt_select_objtype" width = "220">
-    <p>
-      In the <i>Pipeline Configuration</i> app, add the data import function <samp>run_ImagesClassification</samp> and the hemodynamic correction function <samp>run_HemoCorrection</samp>. In this case, we will use the default parameters from both of them. Finally, click on the green button "Save Config" to finish creating the pipeline:
-    </p>
-    <img src="../assets/img/align_tt_dataimport_ppline.png" alt="align_tt_dataimport_ppline" width = "660">
-    <p>
-      Back in the main GUI, click on <i>Run Pipeline</i> to import the raw data from the selected recordings. Once the data import is finished, we move on to the creation of the reference frame.
-    </p>
+    </div>    
     <h3 id="create-img-reference">Create the imaging reference frame</h3>
     <hr>
     <p>
-      In the previous section, we imported the fluorescence and reflectance data, and used the latter to separate the hemodynamic signal from the fluorescence one. The corrected fluorescence data is stored in the file <samp>hemoCorr_fluo.dat</samp>. Now, we will choose one of the four recordings to create the reference frame for the alignment.
+      The imported fluorescence and reflectance (red, green and amber) data are used to create the corrected fluorescence file <samp>hemoCorr_fluo.dat</samp>. Now, we will choose one of the four recordings to create the reference frame for the alignment.
     </p>
     <div class="tipnote">
       <p><strong>Tip</strong><br>
@@ -88,14 +59,6 @@
       Below is a snapshot of the <i>ROImanager</i> interface with a sample frame of the fluorescence data file <samp>fluo.dat</samp>:
     </p>
     <img src="../assets/img/align_tt_roimanager_fig1.png" alt="align_tt_roimanager_fig1" width = "660">
-    <div class="infonote">
-      <p><strong>Note</strong><br>
-        The <i>Imaging Reference Frame</i> file carries more than a simple image frame used for alignment. For instance, one can use this file to store information such as the image's pixel ratio (in px/mm), the coordinantes of a reference point (e.g. in mice, generally the <i>Bregma</i> is used as reference point). In addition, one can also create and store a logical mask used in other analysis functions when one needs to exclude pixels that lie outside the region of interest. In this example, we will go through the steps to create and store the all the available information in our <i>Imaging Reference Frame</i> file.
-      </p>
-      <p>
-        Creating an image reference frame for alignment is only one of the features of the <i>ROImanager</i> app. For more in-depth information on the app, check it's documentation <a href="../userDocs/ROImanager.html">here</a>!
-      </p>
-    </div>
     <p>Here are the next steps that will be performed to create the <i>Imaging Reference Frame</i> file:</p>
     <ol>
       <li>Set the reference point.</li>
@@ -104,6 +67,14 @@
       <li>Create a logical mask.</li>
       <li>Export the data to the <i>Imaging Reference Frame</i> file</li>
     </ol>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        The <i>Imaging Reference Frame</i> file carries more than a simple image frame used for alignment. For instance, one can use this file to store information such as the image's pixel ratio (in px/mm), the coordinantes of a reference point (e.g. in mice, generally the <i>Bregma</i> is used as reference point). In addition, one can also create and store a logical mask used in other analysis functions when one needs to exclude pixels that lie outside the region of interest. In this example, we will go through the steps to create and store the all the available information in our <i>Imaging Reference Frame</i> file.
+      </p>
+      <p>
+        Creating an image reference frame for alignment is only one of the features of the <i>ROImanager</i> app. For more in-depth information on the app, check it's documentation <a href="../userDocs/ROImanager.html">here</a>!
+      </p>
+    </div>
     <h4>1. Set the reference Point</h4>
     <p>
       To draw a new reference point, go to <i>Image &gt;&gt; Set origin &gt;&gt; New</i>. Follow the instructions to select the point. Here, we selected the Bregma as our reference point:
@@ -172,27 +143,10 @@
     <hr>
     <p>
       For the automatic alignment, in the main GUI, go to the <i>Pipeline control panel</i> tab, select the recordings to be aligned and launch the Pipeline Configuration app (as performed for the raw data <a href="#import-and-preprocess-data">import and preprocessing</a>):
-    </p>
-    <img src="../assets/img/align_tt_selectdata.png" alt="align_tt_selectdata" width = "660">
+    </p>    
     <p>
-      Select the <i>FluorescenceImaging</i> object from the list of available objects:
-    </p>
-    <img src="../assets/img/align_tt_select_objtype.png" alt="align_tt_select_objtype" width = "220">
-    <p>
-      In the <i>Pipeline Configuration</i> app, add the alignment function <samp>alignFrames</samp> to the pipeline. Click on the green button "Save Config" to finish creating the pipeline:
-    </p>
-    <img src="../assets/img/align_tt_select_alignFcn.png" alt="align_tt_select_alignFcn" width = "660">
-    <p>
-      Here, you will be asked to give a file as input to the <samp>alignFrames</samp> function. First, select the object type that contains the file. In this case, it is the <i>FluorescenceImaging</i> object:
-    </p>
-    <img src="../assets/img/align_tt_pipelineBuilder_select_inputObj.png" alt="align_tt_pipelineBuilder_select_inputObj" width = "660">
-    <p>
-      Then, select the input file to the alignment function. The input file will be the one to be aligned. In this case, select the <samp>hemoCorr_fluo.dat</samp> file and confirm:
-    </p>
-    <img src="../assets/img/align_tt_pipelineBuilder_select_inputFile.png" alt="align_tt_pipelineBuilder_select_inputFile" width = "660">
-    <p>
-      Back in the main GUI, click on <i>Run Pipeline</i> to execute the  alignment. The aligned data will be saved as <samp>mov_aligned.dat</samp>:
-    </p>
+      In the <i>Pipeline Configuration</i> app, add the alignment function <samp>alignFrames</samp> to the pipeline. Here, you will be asked to give a file as input to the <samp>alignFrames</samp> function. In this case, we will align the frames of the data stored in the <samp>hemoCorr_fluo.dat</samp> file. Finally, click on the green "Run!" button to execute the pipeline.
+    </p>        
     <h4>Alignment quality control</h4>
     <p>
       The automatic alignment algorithm provides quantitative and qualitative criteria for the assessment of the quality of the alignment. Here, we use the <i>Mutual Information</i> (<a href="https://en.wikipedia.org/wiki/Mutual_information">MI</a>) as quantitative criterion. In brief, high MI values indicate a good image registration while low MI values correspond to poorly registered images. In addition, the alignment function outputs an interactive figure that can be used to assess qualitatively the registration. You can hover the cursor over the images to verify if landmarks (such as blood vessels and skull sutures) are properly registered with the reference frame.
@@ -245,5 +199,6 @@
       Finally, a confirmation message showing the path of the aligned data is displayed when the aligment is finished:
     </p>
     <img src="../assets/img/align_tt_manualalign_alignfinished.png" alt="align_tt_manualalign_alignfinished">
+    <hr>
   </body>
 </html>
