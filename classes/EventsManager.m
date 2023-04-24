@@ -2,22 +2,24 @@ classdef EventsManager < handle
     % EVENTSMANAGER. A class to manage triggers and meta data (event IDs)
     % in order to create an "events.mat" file to be used by umIT.
     properties
-        trigThr single {mustBeNumeric} = 2.5; % Trigger detection Threshold in volts (Default = 2.5 V).
+        trigThr = 'auto'; % Trigger detection Threshold in volts (Default = 'auto'). The 'auto' means that the threshold will be at 70% of the signal amplitude.
         trigType char {mustBeMember(trigType,{'EdgeSet','EdgeToggle'})} = 'EdgeSet' % Trigger type.
-        trigChanName char  = 'Internal-main'; % Default name of AI channel containing the triggers.
+        trigChanName = 'Internal-main'; % Default name of AI channel containing the triggers.
+        minInterStim single {mustBeNonnegative} = 2 % Minimal inter stim time (in seconds). This param. is used to identify Bursts in analogIN. !This value should be higher than the inter-burst value to work!
     end
     properties (SetAccess = private)
-        dictAIChan cell = {'Internal-main', 'Internal-Aux','AI1', 'AI2','AI3','AI4','AI5','AI6','AI7','AI8'}; %  List of all available channels from Imaging system:
+        dictAIChan cell = {'CameraTrig','Internal-main', 'Internal-Aux','AI1', 'AI2','AI3','AI4','AI5','AI6','AI7','AI8'}; %  List of all available channels from Imaging system:
         DataFolder char % Folder containing the ai_xxxx.bin and (optionally) the meta data file.
         EventFileName char % Name of the meta data file containing events information (.csv, .txt, .vpixx ...).
         AcqInfo struct % Content of the info.txt file as a structure.
         AnalogIN single % Array of analog input data.
-        sr = 10000; % Sample rate of analog input channels in Hz.
+        sr single {mustBePositive} = 10000; % Sample rate of analog input channels in Hz.
         timestamps single {mustBeNonnegative} % Time stamps in seconds of triggers.
-        state uint8 {mustBeNonnegative}% State of triggers (1= ON, 0 = OFF)
+        state uint8 {mustBeNonnegative} % State of triggers (1= ON, 0 = OFF)
         eventID uint16 {mustBePositive} % Index of each condition (1, 2, 3 ...)
-        eventNameList cell% Name of each condition.
-        minInterStim = 1.5 % Minimal inter stim time (in seconds). This param. is used to identify Bursts in analogIN. !This value should be higher than the inter-burst value to work!
+        eventNameList cell % Name of each condition.
+        b_isDigital logical = false; % TRUE for digital stimulation using OiS200 as master.
+        minTrigAmp single {mustBePositive} = .5; % Minimal signal amplitude (in Volts). Used when the trigger threshold is "auto". Ignored otherwise.
     end
     
     methods
@@ -38,47 +40,69 @@ classdef EventsManager < handle
             % Set data from info.txt file:
             obj.setInfo;
             % Set Analog inputs:
-            obj.setAnalogIN;
-            %
+            obj.setAnalogIN;            
         end
         
-        function plotAnalogIN(obj)
+        function out = get.trigChanName(obj)
+            if ischar(obj.trigChanName)
+                out = {obj.trigChanName};
+            else
+                out = obj.trigChanName;
+            end
+        end
+            
+        
+        function plotAnalogIN(obj, varargin)
             % PLOTANALOGIN plots the Analog input signals and overlays the
             % threshold as well as the detected triggers, if existent.
-            
+            p = inputParser;
+            addRequired(p,'obj');
+            addOptional(p, 'chanName','',@(x) isempty(x) || all(ismember(lower(x),lower(obj.dictAIChan))));
+            parse(p,obj,varargin{:});
+            chanName = p.Results.chanName;            
             if isempty(obj.AnalogIN)
                 return
             end
-            % Show 4 plot per figure:
-            nFigs = mod(size(obj.AnalogIN,2),4);
-            cnt = 1;
+            if isempty(chanName)
+                chanIndx = 1:size(obj.AnalogIN,2);
+            else
+                [~,chanIndx] = ismember(chanName,obj.dictAIChan);
+            end                         
+            
             xVec = [0:size(obj.AnalogIN,1)-1]./obj.sr;% Use X-axis in seconds.
             axYSize = [min(obj.AnalogIN(:)), max(obj.AnalogIN(:))];
             % Get list of titles for each channel:
-            fn = fieldnames(obj.AcqInfo);
-            fn = fn(startsWith(fn,'AICh'));
+            fn = fieldnames(obj.AcqInfo);            
+            fn = fn(startsWith(fn,'AICh', 'IgnoreCase',true));
+            fn = fn(chanIndx);
+            % Show 4 plot per figure:
+            nFigs = ceil(mod(length(fn)/4,4));
+            cnt = 1;   
+            b_trigsPlotted= false;
             for ii = 1:nFigs
                 f(ii) = figure('Name',sprintf('Analog Inputs %d/%d',ii,nFigs),...
                     'Visible','off','NumberTitle','off', 'Position',[0 0 560 720],...
-                    'CreateFcn',{@movegui,'center'},'CloseRequestFcn', @closeAllFigs);
+                    'CreateFcn',{@movegui,'center'},'CloseRequestFcn', @closeAllFigs);                
                 for jj = 1:4
-                    if cnt > size(obj.AnalogIN,2)
+                    if cnt > length(fn)
                         break
                     end
                     s(cnt) = subplot(4,1,jj,'Parent',f(ii));
                     % Plot analogIN traces:
-                    plot(s(cnt),xVec,obj.AnalogIN(:,cnt),'ko-','MarkerSize',2, 'Color',[.8 .8 .8], 'MarkerEdgeColor','k');
+                    plot(s(cnt),xVec,obj.AnalogIN(:,chanIndx(cnt)),'ko-','MarkerSize',2, 'Color',[.8 .8 .8], 'MarkerEdgeColor','k');
                     if jj == 1
                         % Set axes labels:
                         s(cnt).XLabel.String = 'time (s)';
                         s(cnt).YLabel.String = 'amp.(V)';
                     end
                     % Plot detected triggers and threshold lines,
-                    if cnt == 2
+                    if ~b_trigsPlotted
                         hold(s(cnt),'on');
                         % Plot threshold line:
-                        ln = line([xVec(1) xVec(end)],[obj.trigThr obj.trigThr],'Color','r');
-                        ln.Tag = 'thrLn';
+                        if ~ischar(obj.trigThr)
+                            ln = line([xVec(1) xVec(end)],[obj.trigThr obj.trigThr],'Color','r');
+                            ln.Tag = 'thrLn';
+                        end
                         % Plot Trigger patches:
                         if ~isempty(obj.timestamps)
                             idx = unique(obj.eventID);
@@ -95,7 +119,7 @@ classdef EventsManager < handle
                             end
                         end
                         hold(s(cnt),'off');
-                    elseif cnt > 2
+                    else
                         % copy the content of the first axis
                         if exist('ln','var')
                             copyobj(ln,s(cnt));
@@ -105,11 +129,10 @@ classdef EventsManager < handle
                         end
                     end
                     title(s(cnt), obj.AcqInfo.(fn{cnt}));
-                    cnt = cnt+1;
-                end
+                    cnt = cnt+1;                    
+                end                
             end
-            
-            
+                        
             for ii = 1:length(f)
                 f(ii).UserData = f;
                 f(ii).Visible = 'on';
@@ -122,23 +145,77 @@ classdef EventsManager < handle
             function closeAllFigs(src,~)
                 h = src.UserData;
                 delete(h)
-            end
-            
+            end            
         end
         
         function getTriggers(obj,varargin)
-            % GETTRIGGERS detects the triggers from the analog IN channels.
+            % GETTRIGGERS detects the triggers from one or more analog IN channels.
             % It records the timestamps and state of each event.
             
+            p = inputParser;
+            addRequired(p,'obj');
+            addOptional(p,'TriggerChannelName','Internal-main',@(x) ischar(x) || (iscell(x) && ischar(x{1})));
+            parse(p,obj,varargin{:})
+            obj.trigChanName = p.Results.TriggerChannelName;
+            % Reset event info:
+            obj.timestamps = [];
+            obj.state = [];
+            obj.eventID = [];
+            obj.eventNameList = {};            
+            for ii = 1:length(obj.trigChanName)
+                idxCh = strcmpi(obj.trigChanName{ii},obj.dictAIChan);
+                [tmstmp,chanState] = obj.detectTrig(obj.AnalogIN(:,idxCh));               
+                obj.timestamps = [obj.timestamps;tmstmp];
+                obj.state = [obj.state;chanState];
+                % Create dummy event ID:
+                obj.eventID = [obj.eventID; ones(length(tmstmp),1).*ii];
+                % Control for failed detections:
+                if isempty(obj.timestamps)
+                    warning(['Failed to detect triggers in channel ' obj.trigChanName{ii}])
+                else
+                    disp(['Triggers detected in channel ' obj.trigChanName{ii}]);
+                end
+            end 
             
-            [obj.timestamps, obj.state] = obj.detectTrig(obj.AnalogIN(:,2));
-            obj.eventID = ones(size(obj.state));
-            obj.eventNameList = {'1'};
-                       
+            % Create dummy list of event names:
+            obj.eventNameList = arrayfun(@num2str,unique(obj.eventID),'UniformOutput',false);
             
-        end
-        
-        
+            [obj.timestamps,indx] = sort(obj.timestamps);
+            obj.state = obj.state(indx);
+            % Populate event ID and event Name lists:
+            
+            % For digital stimulation:
+            if obj.b_isDigital
+                % Overwrite dummy eventIDs with real ones from the info.txt.
+                obj.eventID = ones(size(obj.state));   
+                obj.eventID(obj.state == 1) = obj.AcqInfo.Events_Order;
+                obj.eventID(obj.state == 0) = obj.AcqInfo.Events_Order;
+                fn = regexp(fieldnames(obj.AcqInfo),'Stim\d+','match','once');
+                fn(cellfun(@isempty,fn)) = [];                
+                IDs = cellfun(@(x) obj.AcqInfo.(x).ID,fn);
+                Names = cellfun(@(x) obj.AcqInfo.(x).ID,fn, 'UniformOutput',false);
+                [~,idx] = sort(IDs);
+                obj.eventNameList = Names(idx);
+                disp('Trigger timestamps generated!');
+                return
+            end
+            
+            % For Analog stimulation:
+            
+            % Case # 1: Multiple channels:
+            if length(obj.trigChanName) > 1
+                % Keep dummy event IDs and create eventNameList with
+                % channel names:
+                [~,idx] = ismember(lower(obj.trigChanName), lower(obj.dictAIChan));
+                obj.eventNameList = obj.dictAIChan(idx);                                                
+                disp('Trigger timestamps generated!')
+                return
+            end                                         
+            % Case # 2: Single channel with event list from text file:
+            
+            % TBD
+            
+        end               
     end
     
     methods (Access = private)
@@ -152,12 +229,16 @@ classdef EventsManager < handle
             if exist(fullfile(obj.DataFolder, 'AcqInfos.mat'), 'file')
                 a = load(fullfile(obj.DataFolder, 'AcqInfos.mat'));
                 obj.AcqInfo = a.AcqInfoStream;
-                return
+            else
+                % Read Info file:
+                obj.AcqInfo = ReadInfoFile(obj.DataFolder);
             end
-            % Read Info file:
-            obj.AcqInfo = ReadInfoFile(obj.DataFolder);
             % Update Analog input sample rate:
             obj.sr = obj.AcqInfo.AISampleRate;
+            % Check if the stimulation is digital:
+            if any(startsWith(fieldnames(obj.AcqInfo),'event','IgnoreCase',true))
+                obj.b_isDigital = true;                
+            end            
         end
         
         function setAnalogIN(obj)
@@ -168,8 +249,7 @@ classdef EventsManager < handle
             if isempty(aiFilesList)
                 warning(['Analog Input files (ai_xxxx.bin) not found in "' obj.DataFolder '"'])
                 return
-            end
-            
+            end            
             disp('Reading analog inputs...')
             % Opening of the files:
             obj.AnalogIN = [];
@@ -183,15 +263,14 @@ classdef EventsManager < handle
                 obj.AnalogIN = [obj.AnalogIN; tmp];
             end
             % Crop to first and last camera triggers:
-            camT = diff(AnalogIN(:,1) > 2.5); camT = [camT;NaN];
+            camT = diff(obj.AnalogIN(:,1) > 2.5); camT = [camT;NaN];
             camTOn = find(camT == 1,1,'first');
             camTOff = find(camT == -1,1,'last');
-            AnalogIN = AnalogIN(camTOn:camTOff,:);
+            obj.AnalogIN = obj.AnalogIN(camTOn:camTOff,:);
             disp('Done')
         end
         
-        % Trigger detection methods
-        
+        % Trigger detection methods        
         function [timestamps, state] = detectTrig(obj,data)
             % DETECTTRIGGERS detects the triggers from a given signal and
             % outputs the timestamps and state. THis function is called by
@@ -199,22 +278,35 @@ classdef EventsManager < handle
             
             % Input:
             %    data(1xN num. vector): vector containing the triggers.
-            
-            p = inputParser;
-            addRequired(p,'obj');
-            addRequired(p, 'data', @(x) isnumeric(x) && isvector(x));
-            parse(p,obj, data);
-            % Initialize variables:
-            data = p.Results.data;
-            thr = obj.trigThr;
-            clear p
+            timestamps = single.empty();
+            state = uint8.empty();
+            % Check if "data" is a vector;
+            validateattributes(data,{'single','double'},{'vector'});
             %
             if size(data,1) > size(data,2)
                 data = data';
             end
+            if strcmpi(obj.trigThr, 'auto')
+                trigAmp = (.7*(max(data(:)) - min(data(:))));
+                % Control for the minimal amplitude for trigger detection
+                if trigAmp < obj.minTrigAmp
+                    warning('Operation Aborted! Trigger Amplitude threshold too low! Manually set a threshold and try again.');
+                    return
+                end
+                % Update trigger threshold:
+                obj.trigThr = (.7*(max(data(:)) - min(data(:)))) + min(data(:));
+            end
+            
             % Find samples that cross the threshold (rising and falling):            
-            tmRise = find(data < thr & [data(2:end) nan] > thr);
-            tmFall = find(data > thr & [data(2:end) nan] < thr);            
+            tmRise = find(data < obj.trigThr & [data(2:end) nan] > obj.trigThr);
+            tmFall = find(data > obj.trigThr & [data(2:end) nan] < obj.trigThr);            
+            if isempty(tmRise)
+                disp('Triggers not found!')
+                return
+            elseif numel(tmRise) ~= numel(tmFall)
+                disp('Number of rising and falling edges are not equal!')
+                return
+            end
             timestamps = single([tmRise tmFall]./obj.sr);
             state = [ones(1,numel(tmRise), 'uint8') zeros(1,numel(tmFall), 'uint8')];
             % Sort arrays by time and flip:
@@ -230,29 +322,74 @@ classdef EventsManager < handle
                 state = ones(sum(state),1,'uint8');
                 state(2:2:end) = 0;
             end
+            
             % Deal with bursts stimuli:
             StimLim = find(diff(timestamps(state ==1)) >= obj.minInterStim); %             
             NbStim = length(StimLim)+1;
-            if NbStim < sum(state)
-                disp('Burst stim detected!')
-                BurstStim = find(diff(timestamps(state == 1)) < obj.minInterStim);
-                
-                plot(data);
-                hold on
-                plot(tmRise(StimLim), data(StimLim),'gx')
-                plot(tmFall(StimLim),data(StimLim), 'go')
-                plot(tmRise(BurstStim), data(BurstStim),'rx')
-                plot(tmFall(BurstStim), data(BurstStim),'ro')
-                
-                
-                
-            end
-            
-            
-            
-            
-            
+            if NbStim < sum(state) && ~obj.b_isDigital
+                disp('Burst stim detected!')                                                  
+                BurstOff = [StimLim; length(tmFall)]; 
+                BurstOn = [1; StimLim+1];
+                % Update timestamps and state:                
+                tmRise = tmRise(BurstOn);
+                tmFall = tmFall(BurstOff); 
+                % Recalculate the timestamps and state:
+                timestamps = single([tmRise tmFall]./obj.sr);
+                state = [ones(1,numel(tmRise), 'uint8') zeros(1,numel(tmFall), 'uint8')];
+                % Sort arrays by time and flip:
+                [timestamps,idx] = sort(timestamps);
+                timestamps = timestamps';
+                state = state(idx)';
+            end                 
+            % Update timestamps and states for digital stim. Digital stim
+            % will only have a toggle marking the stim onset and the
+            % duration (in seconds) is recorded in the "info.txt" file.
+            if obj.b_isDigital
+                disp('Digital stim found!')
+                fn = regexp(fieldnames(obj.AcqInfo),'Stim\d+','match','once');
+                fn(cellfun(@isempty,fn)) = [];  
+                stimInfo = cellfun(@(x) obj.AcqInfo.(x), fn);
+                durationMap = containers.Map([stimInfo.ID],[stimInfo.Duration]);
+                durationOrder = arrayfun(@(x) durationMap(x), obj.AcqInfo.Events_Order);                
+                timestamps = reshape([timestamps(state == 1)'; timestamps(state ==1)' + durationOrder],numel(state),[]);               
+            end                       
         end
+        
+        % Event File parsers:                
+        function out = readDefaultFile(obj)
+            % READDEFAULTFILE reads a .CSV file with column headers ID and
+            % NAME.
+            out = readtable(fullfile(obj.DataFolder ,obj.EventFileName));
+            out.Properties.VariableNames = upper(tab.Properties.VariableNames);            
+        end
+        
+        function out = readVpixxFile(obj)
+            % READVPIXXFILE extracts the condition ID, name and timestamps (if applicable)
+            % from the RAW DATA section of a .txt or .vpixx file.
+            
+            % Extract only the part of the text containing the real sequence of
+            % conditions (RAW DATA section):
+            filetext = fileread(fullfile(obj.DataFolder,obj.EventFileName));
+            [~,idx_start] = regexp(filetext, 'RAW DATA');
+            idx_stop = regexp(filetext, 'SORTED');
+            filetext = strip(filetext(idx_start+1:idx_stop-1));
+            tab = strsplit(filetext, '\n')';
+            % Get stimulus ID and order. Ignore Event and Time columns for now!
+            out = {};
+            myCols = [2 3]; % Keep just Condition and Stimulus.
+            for i = 2:length(tab)
+                str = strsplit(tab{i},'\t');
+                if isempty(str{1})
+                    % Skip Event rows.
+                    continue
+                end
+                out = [out;str(myCols)];
+            end            
+            out(:,1) = cellfun(@str2double, out(:,1), 'UniformOutput',false);
+            out = cell2table(out);
+            out.Properties.VariableNames = {'ID','NAME'};
+        end
+        
         
     end
 end
