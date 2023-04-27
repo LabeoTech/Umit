@@ -11,6 +11,7 @@ classdef EventsManager < handle
         dictAIChan cell = {'CameraTrig','Internal-main', 'Internal-Aux','AI1', 'AI2','AI3','AI4','AI5','AI6','AI7','AI8'}; %  List of all available channels from Imaging system:
         DataFolder char % Folder containing the ai_xxxx.bin and (optionally) the meta data file.
         EventFileName char % Name of the meta data file containing events information (.csv, .txt, .vpixx ...).
+        EventFileParseMethod char % Name of the method to read the Event File. {'default','vpixx'};
         AcqInfo struct % Content of the info.txt file as a structure.
         AnalogIN single % Array of analog input data.
         sr single {mustBePositive} = 10000; % Sample rate of analog input channels in Hz.
@@ -32,11 +33,13 @@ classdef EventsManager < handle
             % Input validation:
             p = inputParser;
             addRequired(p,'DataFolder',@isfolder)
-            addOptional(p,'EventFileName','',@isfile);
+            addOptional(p,'EventFileName','',@(x) isfile(fullfile(DataFolder,x)));
+            addParameter(p, 'ParseMethod','default',@(x) ismember(lower(x),{'default','vpixx'}));
             parse(p,DataFolder,varargin{:});
             % Set main properties:
             obj.DataFolder = p.Results.DataFolder;
             obj.EventFileName = p.Results.EventFileName;
+            obj.EventFileParseMethod = p.Results.ParseMethod;
             % Set data from info.txt file:
             obj.setInfo;
             % Set Analog inputs:
@@ -109,13 +112,17 @@ classdef EventsManager < handle
                             % Create semi-transparent patches to represent HIGH state of triggers:                          
                             % Trigger color code
                             colorArr = jet(64);
-                            colorArr = colorArr(round(linspace(1,32,numel(obj.eventNameList))),:);
+                            colorArr = colorArr(round(linspace(1,64,numel(obj.eventNameList))),:);
                             for kk = 1:length(idx)
                                 xOn = obj.timestamps(obj.eventID == idx(kk) & obj.state == 1);
                                 xOff = obj.timestamps(obj.eventID == idx(kk) & obj.state == 0);
                                 x = [xOn xOff xOff xOn];
                                 y = repmat([axYSize(1) axYSize(1) axYSize(2) axYSize(2)], size(xOn));
-                                ptc = patch(s(cnt), x',y',colorArr(kk,:), 'FaceAlpha', .5, 'EdgeColor', 'none', 'Tag','TrigPatch');
+                                ptc(kk) = patch(s(cnt), x',y',colorArr(kk,:), 'FaceAlpha', .5, 'EdgeColor', 'none', 'Tag','TrigPatch');
+                            end
+                            % Put legend on the first plot:
+                            if jj == 1
+                                legend(s(cnt),ptc,obj.eventNameList,'Location','best')
                             end
                         end
                         hold(s(cnt),'off');
@@ -154,9 +161,10 @@ classdef EventsManager < handle
             
             p = inputParser;
             addRequired(p,'obj');
-            addOptional(p,'TriggerChannelName','Internal-main',@(x) ischar(x) || (iscell(x) && ischar(x{1})));
+            addOptional(p,'TriggerChannelName','Internal-main',@(x) ischar(x) || (iscell(x) && ischar(x{1})));            
             parse(p,obj,varargin{:})
             obj.trigChanName = p.Results.TriggerChannelName;
+            
             % Reset event info:
             obj.timestamps = [];
             obj.state = [];
@@ -212,9 +220,19 @@ classdef EventsManager < handle
                 return
             end                                         
             % Case # 2: Single channel with event list from text file:
-            
-            % TBD
-            
+            if ~isempty(obj.EventFileName)
+                switch lower(obj.EventFileParseMethod)
+                    case 'default'
+                        [obj.eventID, obj.eventNameList] = obj.readDefaultFile;
+                    case 'vpixx'
+                        [obj.eventID, obj.eventNameList] = obj.readVpixxFile;
+                    otherwise
+                        error(['Unknown event file parsing method ' obj.EventFileParseMethod]);
+                end
+                % Repeat each event ID item to account for the offset (state == 0)
+                obj.eventID = repelem(obj.eventID,2);
+                disp(['Event ID list read from file "' obj.EventFileName '"']);
+            end                  
         end               
     end
     
@@ -233,6 +251,15 @@ classdef EventsManager < handle
                 % Read Info file:
                 obj.AcqInfo = ReadInfoFile(obj.DataFolder);
             end
+            % For retrocompatibility:
+            if ~any(startsWith(fieldnames(obj.AcqInfo),'AICh', 'IgnoreCase',true))
+                obj.AcqInfo.AICh1 = 'CameraTrig';
+                obj.AcqInfo.AICh2 = 'StimAna1';
+                for ii = 3:obj.AcqInfo.AINChannels
+                    obj.AcqInfo.(['AICh' num2str(ii)]) = ['AI' num2str(ii-2)];
+                end
+            end
+            
             % Update Analog input sample rate:
             obj.sr = obj.AcqInfo.AISampleRate;
             % Check if the stimulation is digital:
@@ -356,14 +383,21 @@ classdef EventsManager < handle
         end
         
         % Event File parsers:                
-        function out = readDefaultFile(obj)
-            % READDEFAULTFILE reads a .CSV file with column headers ID and
-            % NAME.
-            out = readtable(fullfile(obj.DataFolder ,obj.EventFileName));
-            out.Properties.VariableNames = upper(tab.Properties.VariableNames);            
+        function [eventID, eventNameList] = readDefaultFile(obj)
+            % READDEFAULTFILE reads a .CSV file with a single column containing
+            % the event names in the presentation order. (NO HEADER!)
+            
+            opts = delimitedTextImportOptions('Delimiter',',','VariableTypes','char', 'VariableNames','NAME');
+            out = readtable(fullfile(obj.DataFolder ,obj.EventFileName),opts);                        
+            eventNameList = unique(out.NAME); % Get list of event names in ascending order
+            nameMap = containers.Map(eventNameList,1:length(eventNameList)); 
+            eventID = zeros(height(out),1);
+            for ii = 1:length(out.NAME)
+                eventID(ii) = nameMap(out.NAME{ii});
+            end 
         end
         
-        function out = readVpixxFile(obj)
+        function [eventID, eventNameList] = readVpixxFile(obj)
             % READVPIXXFILE extracts the condition ID, name and timestamps (if applicable)
             % from the RAW DATA section of a .txt or .vpixx file.
             
@@ -386,8 +420,13 @@ classdef EventsManager < handle
                 out = [out;str(myCols)];
             end            
             out(:,1) = cellfun(@str2double, out(:,1), 'UniformOutput',false);
-            out = cell2table(out);
-            out.Properties.VariableNames = {'ID','NAME'};
+            eventID = [out{:,1}]';
+            IDs = unique(eventID);
+            eventNameList = cell(length(IDs),1);            
+            for ii = 1:length(IDs)
+                idx = find(eventID == IDs(ii),1,'first');
+                eventNameList(ii) = out(idx,2);
+            end
         end
         
         
