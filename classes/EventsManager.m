@@ -230,7 +230,9 @@ classdef EventsManager < handle
                         error(['Unknown event file parsing method ' obj.EventFileParseMethod]);
                 end
                 % Repeat each event ID item to account for the offset (state == 0)
-                obj.eventID = repelem(obj.eventID,2);
+                if length(obj.eventID) < length(obj.state)
+                    obj.eventID = repelem(obj.eventID,2);
+                end
                 disp(['Event ID list read from file "' obj.EventFileName '"']);
             end                  
         end               
