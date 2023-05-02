@@ -1289,7 +1289,7 @@ classdef PipelineManager < handle
                 end
                 thisSeq(ii).inputFileName = selFile;
                 obj.loadInputFile(thisSeq(ii));% Load step;
-                if ~strcmpi(thisSeq(ii).saveFileName,selFile) && ~obj.ProtocolObj.b_isDummy
+                if ~isempty(thisSeq(ii).saveFileName) && ~strcmpi(thisSeq(ii).saveFileName,selFile) && ~obj.ProtocolObj.b_isDummy
                     obj.saveDataToFile(thisSeq(ii),false)
                 end
                 newSeq = {}; skippedSteps = {'All'};
