@@ -8,13 +8,14 @@ classdef DataViewer_pipelineMngr < handle
         fcnDir char % Directory of the analysis functions.
         funcList struct % structure containing the info about each function in the "fcnDir"
     end
-    
-    properties (SetAccess = private)
+    properties (SetAccess = ?PipelineConfig_dlgBox)
         % structure containing the info of each step of the pipeline:
         pipe = struct('argsIn', {},'argsOut',{},'outFileName','','opts',struct.empty,...
             'opts_vals',struct.empty,'opts_def',struct.empty, 'name','',...
             'funcStr', '','b_save2File', logical.empty, 'saveFileName', '',...
-            'inputFileName','', 'seq',[],'seqIndx',[]);
+            'inputFileName','', 'seq',[],'seqIndx',[]); 
+    end
+    properties (SetAccess = private)       
         data % numerical array containing imaging data
         metaData % structure or matfile containing meta data associated with "data".
         SaveFolder % folder where data created will be stored (Save Directory).
@@ -94,7 +95,7 @@ classdef DataViewer_pipelineMngr < handle
         end
         
         %%%%%%%%%%%%%%%%%%
-        function setOpts(obj, func)
+        function setOpts(obj, func,varargin)
             % SETOPTS opens an INPUTDLG for entry of optional variables
             % (OPTS) of methods in the Pipeline.
             
@@ -103,10 +104,12 @@ classdef DataViewer_pipelineMngr < handle
             if isempty(idx)
                 return
             end
+            % Look for the function in the current pipeline:
+            idx = strcmpi(obj.funcList(idx).name,{obj.pipe.name});
             % Check if the function has optional parameters:
-            S = obj.funcList(idx).info;
+            S = obj.pipe(idx);
             if isempty(S.opts)
-                disp(['The function ' obj.funcList(idx).name ' does not have any optional parameters.']);
+                disp(['The function ' S.name ' does not have any optional parameters.']);
                 return
             end
             
@@ -132,7 +135,7 @@ classdef DataViewer_pipelineMngr < handle
                         typeVals{i} = 'mixArray'; % Cell array of strings and numbers.
                     end
                 end
-                out = buildInputDlg(obj.funcList(idx).name,fieldnames(S.opts),currVals,defVals,listVals,typeVals);
+                out = buildInputDlg(S.name,fieldnames(S.opts),currVals,defVals,listVals,typeVals);
             else
                 % Older version of fcn params input dialog:
                 fields = fieldnames(S.opts);
@@ -146,7 +149,7 @@ classdef DataViewer_pipelineMngr < handle
                     end
                 end
                 prompt = fields;
-                dlgtitle = ['Set optional parameters for ' obj.funcList(idx).name];
+                dlgtitle = ['Set optional parameters for ' S.name];
                 dims = [1 35];
                 definput = structfun(@(x) {num2str(x)}, S.opts);
                 opts.Resize = 'on';
@@ -165,10 +168,10 @@ classdef DataViewer_pipelineMngr < handle
                 out = horzcat(fieldnames(S.opts),out);
             end
             % Save parameters to 'opts' structure:
-            for i = 1:numel(fieldnames(obj.funcList(idx).info.opts))
-                obj.funcList(idx).info.opts.(out{i,1}) = out{i,2};
+            for i = 1:numel(fieldnames(obj.pipe(idx).opts))
+                obj.pipe(idx).opts.(out{i,1}) = out{i,2};
             end
-            disp(['Optional Parameters set for function : ' obj.funcList(idx).name]);
+            disp(['Optional Parameters set for function : ' obj.pipe(idx).name]);
         end
         
         function state = addTask(obj, func, varargin)

@@ -8,13 +8,15 @@ classdef PipelineManager < handle
         b_saveDataBeforeFail = false %(bool) If true, the more recent data ("current_data") in the pipeline will be...
         % saved to a file when an error occurs.
     end
-    properties (SetAccess = private)
+    properties (SetAccess = ?PipelineConfig_dlgBox)
         % Structure array containing steps of the pipeline:
         pipe = struct('argsIn', {},'argsOut',{},'outFileName','',...
             'inputFileName', '', 'b_save2File', logical.empty, 'saveFileName',...
             '', 'opts',struct.empty,'opts_vals',struct.empty,...
             'opts_def',struct.empty ,'name','', 'inputFrom','', 'seq',[],'seqIndx',[]);% !!If the fields are changed, please apply
-        % the same changes to the property's set method.
+        % the same changes to the property's set method. 
+    end
+    properties (SetAccess = private)       
         funcList struct % structure containing the info about each function in the "fcnDir".
         ProtocolObj Protocol % Protocol Object.
         fcnDir char % Directory of the analysis functions.
@@ -622,13 +624,19 @@ classdef PipelineManager < handle
                 for ii = 1:length(new_pipe)
                     % Add inputFrom:
                     if new_pipe(ii).b_save2File
-                        state = obj.addTask(new_pipe(ii).name,true,new_pipe(ii).datFileName);
+                        try
+                            state = obj.addTask(new_pipe(ii).name,true,new_pipe(ii).datFileName);
+                        catch
+                            state = obj.addTask(new_pipe(ii).name,true,new_pipe(ii).saveFileName);
+                        end
                     else
                         state = obj.addTask(new_pipe(ii).name);
                     end
                     if ~state
                         error('Failed to load pipeline!');
                     end
+                    % Update parameters
+                    obj.pipe(end).opts = new_pipe(ii).opts;
                 end
                 % Overwrite old .JSON file:
                 [~,filename,~] = fileparts(pipeFile);
