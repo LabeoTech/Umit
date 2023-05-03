@@ -7,6 +7,7 @@ classdef PipelineManager < handle
         b_ignoreLoggedFiles  = false %(bool) If true, PIPELINEMANAGER will ignore identical jobs previously run.
         b_saveDataBeforeFail = false %(bool) If true, the more recent data ("current_data") in the pipeline will be...
         % saved to a file when an error occurs.
+        PipelineSummary % Shows the jobs run in the current Pipeline
     end
     properties (SetAccess = ?PipelineConfig_dlgBox)
         % Structure array containing steps of the pipeline:
@@ -26,8 +27,7 @@ classdef PipelineManager < handle
     properties (Access = private)               
         b_taskState = false % Boolean indicating if the task in pipeline was successful (TRUE) or not (FALSE).
         tmp_LogBook % Temporarily stores the table from PROTOCOL.LOGBOOKFILE
-        tmp_BranchPipeline % Temporarily stores LogBook from a Hierarchical branch.
-        PipelineSummary % Shows the jobs run in the current Pipeline
+        tmp_BranchPipeline % Temporarily stores LogBook from a Hierarchical branch.        
         tmp_TargetObj % % Temporarily stores an object (TARGEROBJ).
         current_task % Task structure currently running.
         current_pipe % Pipeline currently running.
@@ -376,9 +376,9 @@ classdef PipelineManager < handle
         function run_pipeline(obj)
             % RUN_PIPELINE runs the tasks in OBJ.PIPE
             
-            if ~obj.b_pipeIsValid
-               	obj.validatePipeline; % Run pipeline validation
-            end
+            
+            obj.validatePipeline; % Run pipeline validation
+            
             % Recheck:
             if ~obj.b_pipeIsValid
                 warning('Pipeline execution aborted! Pipeline is invalid.')
@@ -437,8 +437,7 @@ classdef PipelineManager < handle
                         [thisSeq, skippedFcns,selFile] = obj.skipSteps(thisSeq,obj.tmp_TargetObj.SaveFolder);
                         if isempty(thisSeq)
                             % When all sequence is skipped:
-                            fprintf('All steps skipped from the current sequence\n')
-                            obj.PipelineSummary
+                            fprintf('All steps skipped from the current sequence\n')                            
                             % Initialize empty Log for current object:
                             LastLog = obj.ProtocolObj.createEmptyTable;
                             % Fill out Log with Subject/Acquisition/Modality IDs :
@@ -802,7 +801,6 @@ classdef PipelineManager < handle
            if all(cellfun(@isempty,skippedStepsArr))
                return
            end
-              
            % Select file with the largest number of steps:
            % Check if there is a file that contains all sequence:
            idxSkipAll = cellfun(@isempty,newSeqArr);
@@ -835,34 +833,43 @@ classdef PipelineManager < handle
                 % Load data history:
                 [path,file,ext] = fileparts(fileIn);
                 a = load(fullfile(path,[file '.mat']),'dataHistory');
+                if isempty(fieldnames(a))
+                    return
+                end
                 dataHistory = a.dataHistory; clear a
                 % Compare datetimes:
                 [~,locB] = ismember({dataHistory.name},{obj.funcList.name});
                 idxSameDate = cellfun(@(x,y) strcmpi(datestr(x),y),{dataHistory.creationDatetime},...
                     {obj.funcList(locB).date});
-%                 if ~all(idxSameDate)
-%                     return
-%                 end
+                if ~all(idxSameDate)
+                    return
+                end
                 % Compare function names and optional parameters:
                 thisHistory = struct();
                 for jj = 1:length(seqIn)
                     thisHistory(jj).name = seqIn(jj).name;
                     thisHistory(jj).opts = seqIn(jj).opts;
                 end
-                % IF there is an input file, prepend the dataHistory to the current
-                % sequence:                
+                % If there is an input file in the first step of the pipeline sequence,
+                % prepend the dataHistory to the current sequence:                
                 idxFromFile = find(~cellfun(@isempty,{seqIn.inputFileName}),1,'first');                
-                if idxFromFile > 0
+                if idxFromFile == 1
                     % Load the input file dataHistory:
                     [~,inputFile,~] = fileparts(seqIn(idxFromFile).inputFileName);
-                    dh = load(fullfile(path,[inputFile,'.mat']),'dataHistory'); dh = dh.dataHistory;
-                    prepend_info = struct();
-                    for jj = 1:length(dh)
-                        prepend_info(jj).name = dh(jj).name;
-                        prepend_info(jj).opts = dh(jj).opts;
-                        thisHistory = horzcat(prepend_info,thisHistory(idxFromFile:end));
+                    try
+                        dh = load(fullfile(path,[inputFile,'.mat']),'dataHistory'); dh = dh.dataHistory;
+                        
+                        prepend_info = struct();
+                        for jj = 1:length(dh)
+                            prepend_info(jj).name = dh(jj).name;
+                            prepend_info(jj).opts = dh(jj).opts;
+                            thisHistory = horzcat(prepend_info,thisHistory(idxFromFile:end));
+                        end
+                        clear inputFile prepend_info
+                    catch
+                        %
                     end
-                    clear inputFile prepend_info
+                    
                 end
                 % Check for the existence of consecutive equal steps:
                 b_isEqual = false(size(dataHistory));                
@@ -1255,7 +1262,7 @@ classdef PipelineManager < handle
                 
                 for i = 1:length(obj.current_outFile)
                     % Map existing metaData file to memory:
-                    mtD = load(strrep(obj.current_outFile{i}, '.dat', '.mat'));
+                    mtD = matfile(strrep(obj.current_outFile{i}, '.dat', '.mat'));
                     mtD.Properties.Writable = true;
                     % Create or update "dataHistory" structure:
                     if isprop(mtD, 'dataHistory')
@@ -1288,7 +1295,9 @@ classdef PipelineManager < handle
                 % Account for missing fields (FOR RETROCOMPATIBILITY)                
                 
                 fn = setdiff(fieldnames(new_dh),fieldnames(dh_original));
-                dh_original = cellfun(@(x) setfield(dh_original(1), x,[]),fn);
+                if ~isempty(fn)
+                    dh_original = cellfun(@(x) setfield(dh_original(1), x,[]),fn);
+                end
                 out = vertcat(dh_original,new_dh);
                 
             end
