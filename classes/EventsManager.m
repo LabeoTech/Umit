@@ -20,7 +20,7 @@ classdef EventsManager < handle
         eventID uint16 {mustBePositive} % Index of each condition (1, 2, 3 ...)
         eventNameList cell % Name of each condition.
         b_isDigital logical = false; % TRUE for digital stimulation using OiS200 as master.
-        minTrigAmp single {mustBePositive} = .5; % Minimal signal amplitude (in Volts). Used when the trigger threshold is "auto". Ignored otherwise.
+        minTrigAmp single {mustBePositive} = .15; % Minimal signal amplitude (in Volts). Used when the trigger threshold is "auto". Ignored otherwise.
     end
     
     methods
@@ -43,7 +43,11 @@ classdef EventsManager < handle
             % Set data from info.txt file:
             obj.setInfo;
             % Set Analog inputs:
-            obj.setAnalogIN;            
+            obj.setAnalogIN;   
+            % Get event info if the stim is digital:
+            if obj.b_isDigital
+                obj.getTriggers;
+            end
         end
         
         function out = get.trigChanName(obj)
@@ -53,8 +57,7 @@ classdef EventsManager < handle
                 out = obj.trigChanName;
             end
         end
-            
-        
+                    
         function plotAnalogIN(obj, varargin)
             % PLOTANALOGIN plots the Analog input signals and overlays the
             % threshold as well as the detected triggers, if existent.
@@ -201,7 +204,7 @@ classdef EventsManager < handle
                 fn = regexp(fieldnames(obj.AcqInfo),'Stim\d+','match','once');
                 fn(cellfun(@isempty,fn)) = [];                
                 IDs = cellfun(@(x) obj.AcqInfo.(x).ID,fn);
-                Names = cellfun(@(x) obj.AcqInfo.(x).ID,fn, 'UniformOutput',false);
+                Names = cellfun(@(x) obj.AcqInfo.(x).Name,fn, 'UniformOutput',false);
                 [~,idx] = sort(IDs);
                 obj.eventNameList = Names(idx);
                 disp('Trigger timestamps generated!');
@@ -343,8 +346,7 @@ classdef EventsManager < handle
             timestamps = timestamps';
             state = state(idx)';
             % For Toggle type triggers:
-            if strcmpi(obj.trigType, 'edgetoggle')
-                disp('Setting toggle...');
+            if strcmpi(obj.trigType, 'edgetoggle')                
                 % Use 2nd signal onset as the trial "OFF" state:
                 timestamps = timestamps(state==1);
                 % Overwite state:
@@ -380,7 +382,7 @@ classdef EventsManager < handle
                 stimInfo = cellfun(@(x) obj.AcqInfo.(x), fn);
                 durationMap = containers.Map([stimInfo.ID],[stimInfo.Duration]);
                 durationOrder = arrayfun(@(x) durationMap(x), obj.AcqInfo.Events_Order);                
-                timestamps = reshape([timestamps(state == 1)'; timestamps(state ==1)' + durationOrder],numel(state),[]);               
+                timestamps = reshape([timestamps(state == 1)'; timestamps(state ==1)' + durationOrder],numel(state),[]); % Create timestamps to mark the end of the stim (trigger + duration_sec);               
             end                       
         end
         
@@ -430,8 +432,7 @@ classdef EventsManager < handle
                 eventNameList(ii) = out(idx,2);
             end
         end
-        
-        
+                
     end
 end
 
