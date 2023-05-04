@@ -259,6 +259,15 @@ end
 close(h);
 % Save File management:
 if( bSave )
+    % Delete existing HbO and HbR files in folder before creating new ones:
+    warning('off')
+    delete([SaveFolder 'HbO.dat']);
+    delete([SaveFolder 'HbO.mat']);
+   
+    delete([SaveFolder 'HbR.dat']);
+    delete([SaveFolder 'HbR.mat']);
+    warning('on')
+    
     % Save HbO:    
     % Save .DAT file:
     fidHbO = fopen([SaveFolder 'HbO.dat'],'W');

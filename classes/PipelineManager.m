@@ -445,7 +445,7 @@ classdef PipelineManager < handle
                             % Add class name to table:
                             LastLog(1,[4:8]) = {obj.ClassName, ['Skipped Sequence #' num2str(obj.current_seq)],...
                                 'none',selFile,true};                            
-                            obj.PipelineSummary = [obj.PipelineSummary; LastLog];
+                            obj.tmp_TargetObj.LastLog = [obj.tmp_TargetObj.LastLog; LastLog];
                         elseif ~isempty(skippedFcns)
                             % When some steps are skipped:
                             fprintf('The following steps will be skipped:\n')
@@ -471,9 +471,7 @@ classdef PipelineManager < handle
                         % during the execution of this method.
                         pause(.001);
                     end
-                    % Update Pipeline summary table:
-                    obj.PipelineSummary = [obj.PipelineSummary; obj.tmp_TargetObj.LastLog];
-                    fprintf([repmat('-',1,50),'\n']);
+                    
                     % Remove temporary files with appended with the "timeTag":
                     obj.deleteTemporaryFiles(obj.tmp_TargetObj.SaveFolder);
                     % Abort outer loop if user cancels pipeline:
@@ -481,6 +479,9 @@ classdef PipelineManager < handle
                         break
                     end
                 end
+                % Update Pipeline summary table:
+                obj.PipelineSummary = [obj.PipelineSummary; obj.tmp_TargetObj.LastLog];
+                fprintf([repmat('-',1,50),'\n']);
             end
             % Remove "empty" rows from the Pipeline Summary Log table:
             idx_emptyRow = all(strcmp('None',table2cell(obj.PipelineSummary(:,1:5))),2);
@@ -727,17 +728,18 @@ classdef PipelineManager < handle
                 LastLog.Messages_short = {getReport(ME, 'basic','hyperlinks','off')};
                 disp('FAILED!');
             end
+            thisSeq = obj.pipe([obj.pipe.seq] == obj.current_seq);
+            indx = find(strcmp(task.name, {thisSeq.name}));
             % Save data to file:
             if task.b_save2File && obj.b_state
                 % Look for tasks with output data from the current step and
                 % save the data to a .DAT or .MAT file:
-                obj.saveDataToFile(task,false)
+                obj.saveDataToFile(thisSeq,indx,false)
             elseif obj.b_saveDataBeforeFail && ~obj.b_state
                 % Look for tasks from the previous steps given that the
-                % current one failed and save it to a file:
-                indx = find(strcmp(task.name, {obj.pipe.name}));
+                % current one failed and save it to a file:                
                 if indx > 1
-                    obj.saveDataToFile(obj.pipe(indx-1),true);
+                    obj.saveDataToFile(thisSeq,indx-1,true);
                 end
             end            
             % Update log table of target object:
@@ -811,8 +813,8 @@ classdef PipelineManager < handle
               step.saveFileName = thisSeq(end).saveFileName;
               step.name = thisSeq(end).name;
               obj.loadInputFile(step);% Load step;
-              if ~strcmpi(fileList{indxSkip}, step.saveFileName)
-                obj.saveDataToFile(step,false) %Save to file 
+              if ~isempty(step.saveFileName) && ~strcmpi(fileList{indxSkip}, step.saveFileName)
+                obj.saveDataToFile(thisSeq, length(thisSeq),false); %Save to file 
               end
               newSeq = {}; skippedSteps = {'All'};
               return
@@ -841,9 +843,9 @@ classdef PipelineManager < handle
                 [~,locB] = ismember({dataHistory.name},{obj.funcList.name});
                 idxSameDate = cellfun(@(x,y) strcmpi(datestr(x),y),{dataHistory.creationDatetime},...
                     {obj.funcList(locB).date});
-                if ~all(idxSameDate)
-                    return
-                end
+%                 if ~all(idxSameDate)
+%                     return
+%                 end
                 % Compare function names and optional parameters:
                 thisHistory = struct();
                 for jj = 1:length(seqIn)
@@ -1259,7 +1261,7 @@ classdef PipelineManager < handle
                     ext = ext';
                 end
                 curr_dtHist.outputFile_list = join([filenames,ext],'');
-                
+                                             
                 for i = 1:length(obj.current_outFile)
                     % Map existing metaData file to memory:
                     mtD = matfile(strrep(obj.current_outFile{i}, '.dat', '.mat'));
@@ -1318,6 +1320,8 @@ classdef PipelineManager < handle
                 %If the InputFile is a .DAT file:
                 [obj.current_data, obj.current_metaData] = ...
                     loadDatFile(fullfile(obj.tmp_TargetObj.SaveFolder, step.inputFileName));
+                
+                
             else
                 % If the InputFile is a .MAT file
                 obj.current_data = load(fullfile(obj.tmp_TargetObj.SaveFolder,...
@@ -1329,17 +1333,19 @@ classdef PipelineManager < handle
             
         end
         
-        function saveDataToFile(obj, step, b_failed)
-            % This methods looks back in the pipeline from "step" for tasks
+        function saveDataToFile(obj, seq, indxStep, b_failed)
+            % This methods looks back in the pipeline sequence from "step" for tasks
             % with "data" or "stats data" as output and saves the current data to a
             % .DAT or .MAT file.
             % Input:
-            %    step(struct) : info of the current task in the pipeline.
+            %    seq(struct) : pipeline sequence with the current task in the pipeline.
+            %    indxStep(scalar): index of the step of the sequence "seq"
+            %    to be saved.
             %    b_failed (bool): If TRUE, this function will ignore the
             %    "b_save2File" from "step" and save the data.
             % Get the pipeline until the task in "step":
-            indx = find(strcmp(step.name, {obj.pipe.name}));
-            subPipe = obj.pipe(1:indx);
+            indx = find(strcmp(seq(indxStep).name, {seq.name}));
+            subPipe = seq(1:indx);
             % Look back in pipeline for steps with "data" or "stats data"
             % as output and save the current data using the task's info:
             for i = length(subPipe):-1:1
