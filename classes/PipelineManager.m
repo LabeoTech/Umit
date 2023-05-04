@@ -481,6 +481,10 @@ classdef PipelineManager < handle
                 % Update Pipeline summary table:
                 obj.PipelineSummary = [obj.PipelineSummary; obj.tmp_TargetObj.LastLog];
                 fprintf([repmat('-',1,50),'\n']);
+                % Abort outer loop if user cancels pipeline:
+                if ~ishandle(obj.h_wbItem)
+                    break
+                end                                
             end
             % Remove "empty" rows from the Pipeline Summary Log table:
             idx_emptyRow = all(strcmp('None',table2cell(obj.PipelineSummary(:,1:5))),2);
@@ -1295,15 +1299,18 @@ classdef PipelineManager < handle
             function out = appendDataHistory(dh_original, new_dh)
                 % This function appends the data history "dh" to
                 % "current_dataHistory" property of obj.
-               
-                % Account for missing fields (FOR RETROCOMPATIBILITY)                
-                
+                               
+                % Account for missing fields (FOR RETROCOMPATIBILITY)
                 fn = setdiff(fieldnames(new_dh),fieldnames(dh_original));
-                if ~isempty(fn)
-                    dh_original = cellfun(@(x) setfield(dh_original(1), x,[]),fn);
+                for ii = 1:length(fn)
+                    dh_original(1).(fn{ii}) = [];
+                end
+                % Append fields
+                fn = setdiff(fieldnames(dh_original), fieldnames(new_dh));
+                for ii = 1:length(fn)
+                    new_dh(1).(fn{ii}) = [];
                 end
                 out = vertcat(dh_original,new_dh);
-                
             end
         end
                         
