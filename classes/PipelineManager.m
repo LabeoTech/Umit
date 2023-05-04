@@ -375,8 +375,7 @@ classdef PipelineManager < handle
         
         function run_pipeline(obj)
             % RUN_PIPELINE runs the tasks in OBJ.PIPE
-            
-            
+                        
             obj.validatePipeline; % Run pipeline validation
             
             % Recheck:
@@ -841,11 +840,14 @@ classdef PipelineManager < handle
                 dataHistory = a.dataHistory; clear a
                 % Compare datetimes:
                 [~,locB] = ismember({dataHistory.name},{obj.funcList.name});
-                idxSameDate = cellfun(@(x,y) strcmpi(datestr(x),y),{dataHistory.creationDatetime},...
-                    {obj.funcList(locB).date});
-%                 if ~all(idxSameDate)
-%                     return
-%                 end
+                if locB
+                    idxSameDate = cellfun(@(x,y) strcmpi(datestr(x),y),{dataHistory.creationDatetime},...
+                        {obj.funcList(locB).date});
+                    
+                    %                 if ~all(idxSameDate)
+                    %                     return
+                    %                 end
+                end
                 % Compare function names and optional parameters:
                 thisHistory = struct();
                 for jj = 1:length(seqIn)
