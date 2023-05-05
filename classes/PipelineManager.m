@@ -572,15 +572,15 @@ classdef PipelineManager < handle
                         obj.setWaitBar('UpdateTask', kk/length(thisSeq),'taskName',task.name);
                         fprintf('Running task # %d/%d ----->>>>>\n',kk,length(thisSeq));
                         % Execute step on target object:
-                        obj.run_taskOnTarget(task);
-                        % If execution failed, abort.
-                        if ~obj.b_state
-                            break
-                        end
+                        obj.run_taskOnTarget(task);                        
                         % Control for Pipeline cancelling by User:
                         if getappdata(obj.h_wbItem, 'b_abortPipe')
                             % Delete waitbars and abort inner loop:
                             delete([obj.h_wbItem, obj.h_wbTask])
+                            break
+                        end
+                        % If execution failed, abort.
+                        if ~obj.b_state
                             break
                         end
                         % This pause is here to allow the WaitBar to update
@@ -597,8 +597,8 @@ classdef PipelineManager < handle
                         break
                     end
                 end
-                % Abort outer loop if user cancels pipeline or a pipeline execution failed:
-                if ~ishandle(obj.h_wbItem) || ~obj.b_state
+                % Abort outer loop if user cancels pipeline:
+                if ~ishandle(obj.h_wbItem) 
                     break
                 end
             end
@@ -1173,7 +1173,7 @@ classdef PipelineManager < handle
             if ( ~isempty(task.inputFileName) && ~strcmpi(task.inputFileName,'data') ) && task.inputFrom ~= -1
                 b_hasInputFile = true;
                 LastLog.InputFile_Path = fullfile(obj.tmp_TargetObj.SaveFolder, task.inputFileName);
-            elseif strcmpi(task.inputFileName,'data') || task.inputFrom <= 0
+            elseif strcmpi(task.inputFileName,'data') | task.inputFrom <= 0
                 % Do nothing
             end
             %  Execute the task:
@@ -1418,7 +1418,7 @@ classdef PipelineManager < handle
                 obj.current_seqIndx = 1;
                 task.seq = obj.current_seq;
                 task.seqIndx = obj.current_seqIndx;
-                if task.b_hasDataOut && task.b_hasDataIn
+                if task.b_hasDataIn
                     task.inputFrom = 0; % Set input index to zero when the data comes from the Hard Drive.
                     task.inputFileName = obj.selectInputFileName(task.inputFrom, task.name);                
                 elseif (task.b_hasDataOut || task.b_hasFileOut ) && ~task.b_hasDataIn
