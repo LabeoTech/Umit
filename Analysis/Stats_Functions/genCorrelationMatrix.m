@@ -155,14 +155,10 @@ outData = genDataMetaStructure(out, roi_names, dim_names, metaData, 'label',roi_
 % Create .MAT files with SPCMaps:
 if exist('SPCMaps', 'var')
     dim_names = {'Y', 'X','O'};
-    if isempty(object)
-        % When the function is called from DataViewer
-        save2Mat(fullfile(pwd, 'corrMat_SPCMaps.mat'), SPCMaps ,roi_names,...
-            dim_names, 'appendMetaData', metaData,'genFile', true);
-    else
-        save2Mat(fullfile(object.SaveFolder, 'corrMat_SPCMaps.mat'), SPCMaps ,roi_names,...
-            dim_names, 'appendMetaData', metaData,'genFile', true);
-    end
+    % When the function is called from DataViewer
+    out = genDataMetaStructure(SPCMaps, roi_names, dim_names, metaData);
+    [~,outName,~] = fileparts(opts.SPCMapFileName);
+    save(fullfile(SaveFolder,[outName '.mat']),'-struct','out','-v7.3');
 end
 end
 

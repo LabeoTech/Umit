@@ -74,7 +74,7 @@ end
 % Local function
 
 function genVAmask(vsm, metaData, SaveFolder, opts, object)
-% GENVAMASK generates a ROImasks file with the ROIs from the segmented 
+% GENVAMASK generates a .mat file with the ROIs from the segmented 
 % Visual Sign Map created using the function "genVSM.m".
 % Inputs:
 %   data: numerical matrix containing the visual sign map (with dimensions "Y", "X").
