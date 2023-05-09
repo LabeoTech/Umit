@@ -165,6 +165,11 @@ classdef Protocol < handle
             
             idxStruc = struct('iNewSubj',{},'iMissSubj', {}, 'iNewAcq', {},'iMissAcq',{});            
             objArray = obj.ProtoFunc(obj);
+            if isempty(objArray)
+                warning('The protocol function returned an empty output! Is the raw folder empty?')
+                return
+            end
+                
             % Delete objects listed in OBJ.GARBAGELIST from NEWARRAY
             objArray = obj.removeGarbage(objArray);
             
@@ -221,7 +226,10 @@ classdef Protocol < handle
                 discardData = varargin{1};
             end            
             % Look for new data:
-            [newArray,idxInfo] = obj.lookForNewData(false);             
+            [newArray,idxInfo] = obj.lookForNewData(false);   
+            if isempty(newArray)
+                return
+            end
             %%% Update the existing list:
             % Add new Acquisitions:
             indSubj = find(cellfun(@any, idxInfo.iNewAcq));
