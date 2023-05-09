@@ -823,7 +823,19 @@ classdef PipelineManager < handle
               return
            end
            nSteps = cellfun(@numel,skippedStepsArr);
-           idxMax = find(nSteps == max(nSteps),1,'first');
+           % Find file(s) with the maximum number of steps to be skipped:
+           idxMax = find(nSteps == max(nSteps));
+           if length(idxMax) > 1
+               % When more than one file exist, try to find the one with
+               % the same name as the inputFileName(s) in the current
+               % sequence.  IF none is found, just pick the first one that has the same dataHistory.
+               for ii = length(idxMax):-1:1
+                   if any(arrayfun(@(x) strcmp(fileList{idxMax(ii)},x.inputFileName),thisSeq))
+                       break
+                   end
+               end
+               idxMax = idxMax(ii);
+           end
            selFile = fileList{idxMax};
            newSeq = newSeqArr{idxMax};
            skippedSteps = skippedStepsArr{idxMax};                      
