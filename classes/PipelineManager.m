@@ -333,8 +333,7 @@ classdef PipelineManager < handle
                     task = obj.addDependency(task);
                     task.seq = obj.current_seq;
                     task.seqIndx = obj.current_seqIndx + 1;
-                    task.inputFrom = length(obj.pipe);
-                    disp('Second!')
+                    task.inputFrom = length(obj.pipe);                    
                 else
                     obj.current_seq = 1;
                     obj.current_seqIndx = 1;
