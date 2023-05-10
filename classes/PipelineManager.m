@@ -1380,9 +1380,11 @@ classdef PipelineManager < handle
                         obj.current_data, obj.current_metaData);
                     return
                 elseif endsWith(task.saveFileName, '.mat')
+                    disp('Writing data to .MAT file ...');
                     S = obj.current_data;
                     save(fullfile(obj.tmp_TargetObj.SaveFolder,task.saveFileName),...
                         '-struct', 'S', '-v7.3');
+                    disp(['Data saved in : "' fullfile(obj.tmp_TargetObj.SaveFolder,task.saveFileName) '"']);
                     return
                 end
             end
