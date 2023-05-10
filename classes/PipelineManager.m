@@ -1753,21 +1753,19 @@ classdef PipelineManager < handle
             
             % Create analysis function string:
             fcnStr = '';
-            % Replace input argument names:
-            % Important! Put "dataStat" and "outDataStat" first in the string list, otherwise
-            % the replace function will create a non-existant property name:
+            % Replace input argument names:                        
             if isprop(obj.tmp_TargetObj, 'RawFolder')
-                argsIn = replace(task.argsIn, ["RawFolder", "SaveFolder", "dataStat","metaData", "object", "data"],...
+                argsIn = replace(task.argsIn, ["RawFolder", "SaveFolder", "data","metaData", "object"],...
                     {['''' obj.tmp_TargetObj.RawFolder ''''],['''' obj.tmp_TargetObj.SaveFolder ''''], 'obj.current_data',...
-                    'obj.current_metaData', 'obj.tmp_TargetObj', 'obj.current_data'});
+                    'obj.current_metaData', 'obj.tmp_TargetObj'});
             else
-                argsIn = replace(task.argsIn, [ "SaveFolder", "dataStat","metaData", "object", "data"],...
+                argsIn = replace(task.argsIn, [ "SaveFolder", "data","metaData", "object"],...
                     {['''' obj.tmp_TargetObj.SaveFolder ''''], 'obj.current_data',...
-                    'obj.current_metaData', 'obj.tmp_TargetObj', 'obj.current_data'});
+                    'obj.current_metaData', 'obj.tmp_TargetObj'});
             end
             
-            argsOut = replace(task.argsOut, ["outDataStat", "metaData", "outData", "outFile"],...
-                {'obj.current_data', 'obj.current_metaData', 'obj.current_data', 'obj.current_outFile'});
+            argsOut = replace(task.argsOut, ["outData", "metaData","outFile"],...
+                {'obj.current_data', 'obj.current_metaData', 'obj.current_outFile'});
             if isempty(argsOut)
                 fcnStr = [fcnStr ';' task.name '(' strjoin(argsIn,',') ');'];
             else
