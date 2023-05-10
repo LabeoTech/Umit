@@ -163,6 +163,11 @@ classdef Protocol < handle
             %   msg (char): If "b_verbose" is TRUE, contains a text with
             %       total number of new/missing items in "protocol".
             
+            iNewSubj = {};
+            iMissSubj = {};
+            iNewAcq = {};
+            iMissAcq = {}; 
+             
             idxStruc = struct('iNewSubj',{},'iMissSubj', {}, 'iNewAcq', {},'iMissAcq',{});            
             objArray = obj.ProtoFunc(obj);
             if isempty(objArray)
@@ -179,19 +184,21 @@ classdef Protocol < handle
             
             % 2nd, control for new or deleted Acquisitions from each Subject:
             indNwArr = find(~iNewSubj);
-            % Locate the sujects from "newArray" in "obj":
-            [~,indObj] = ismember({objArray(indNwArr).ID},{obj.Array.ObjList.ID});
-            % Get new Acquisitions from existing Subjects:
-            iNewAcq = arrayfun(@(a,b) ~ismember({a.Array.ObjList.ID}, {b.Array.ObjList.ID}),...
-                objArray(indNwArr), obj.Array.ObjList(indObj), 'UniformOutput', false);
-            % Get missing Acquisitions from existing Subjects:
-            iMissAcq = arrayfun(@(a,b) ~ismember({b.Array.ObjList.ID}, {a.Array.ObjList.ID}),...
-                objArray(indNwArr), obj.Array.ObjList(indObj), 'UniformOutput', false);
-            % Exclude "virtual" acquisitions from the missing list:
-            indSubj = find(cellfun(@any, iMissAcq));
-            for ii = 1:length(indSubj)
-                % REMOVE virtual ACQS:
-                iMissAcq{indSubj(ii)} = iMissAcq{indSubj(ii)} & ~[obj.Array.ObjList(indObj(indSubj(ii))).Array.ObjList.b_isVirtual];                
+            if indNwArr
+                % Locate the sujects from "newArray" in "obj":
+                [~,indObj] = ismember({objArray(indNwArr).ID},{obj.Array.ObjList.ID});
+                % Get new Acquisitions from existing Subjects:
+                iNewAcq = arrayfun(@(a,b) ~ismember({a.Array.ObjList.ID}, {b.Array.ObjList.ID}),...
+                    objArray(indNwArr), obj.Array.ObjList(indObj), 'UniformOutput', false);
+                % Get missing Acquisitions from existing Subjects:
+                iMissAcq = arrayfun(@(a,b) ~ismember({b.Array.ObjList.ID}, {a.Array.ObjList.ID}),...
+                    objArray(indNwArr), obj.Array.ObjList(indObj), 'UniformOutput', false);
+                % Exclude "virtual" acquisitions from the missing list:
+                indSubj = find(cellfun(@any, iMissAcq));
+                for ii = 1:length(indSubj)
+                    % REMOVE virtual ACQS:
+                    iMissAcq{indSubj(ii)} = iMissAcq{indSubj(ii)} & ~[obj.Array.ObjList(indObj(indSubj(ii))).Array.ObjList.b_isVirtual];
+                end
             end
             % Create message with total number of new/missing items:
             if b_verbose                                
@@ -400,7 +407,7 @@ classdef Protocol < handle
             if isempty(iRem)
                 return
             end
-            if p.Results.b_delFolder && ~isempty(iRem(3))
+            if p.Results.b_delFolder && iRem(3) ~= ""
                 answer = questdlg(['Delete Folder "' iRem(3) '" and it''s contents?'],...
                     'Delete Save Folder?', 'Yes', 'No', 'No');
                 if strcmp(answer, 'Yes')
@@ -423,7 +430,12 @@ classdef Protocol < handle
                         end
                         newObj(idxS) = [];
                     case 'Acquisition'                        
-                        str = split(gbList(i,3), filesep);
+                        str = split(gbList(i,3), filesep); % Get subject ID from parsing the folder path.
+                        if str == ""
+                            % skip if the folder doesn't exist. This should
+                            % not be reached.
+                            continue
+                        end
                         subjID = str{end-1};
                         idxS = strcmp(subjID, {newObj.ID});
                         if isempty(idxS)
