@@ -21,7 +21,7 @@ opts_values = struct('STD_threshold',[eps Inf], 'ResponsePolarity', {{'positive'
 default_object = ''; % This line is here just for Pipeline management to be able to detect this input.
 %%% Arguments parsing and validation %%%
 p = inputParser;
-addRequired(p,'dataStat',@(x) isstruct(x)); % Validate if the input is a structure:
+addRequired(p,'data',@(x) isstruct(x)); % Validate if the input is a structure:
 % Optional Parameters:
 addOptional(p, 'opts', default_opts,@(x) isstruct(x));
 addOptional(p, 'object', default_object, @(x) isempty(x) || isa(x,'Acquisition') || isa(x,'Modality')); % Used by the umIToobox app ONLY.
@@ -29,7 +29,7 @@ addOptional(p, 'object', default_object, @(x) isempty(x) || isa(x,'Acquisition')
 % Parse inputs:
 parse(p,data, varargin{:});
 % Initialize Variables:
-outData = p.Results.dataStat;
+outData = p.Results.data;
 opts = p.Results.opts;
 object = p.Results.object;
 clear p
