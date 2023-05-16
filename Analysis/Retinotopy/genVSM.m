@@ -1,5 +1,5 @@
 function [outData, metaData] = genVSM(SaveFolder, varargin)
-% GENVSM creates a Visual Sign Map (Sereno et al. 1994,1995)
+% GENVSM creates a Visual Sign Map (Sereno et al. 1994,1995; Zhuang et al. 2017)
 % from the phase component of the Azimuth and Elevation maps created with
 % the function "genRetinotopyMaps.m".
 % Inputs:
@@ -13,9 +13,9 @@ function [outData, metaData] = genVSM(SaveFolder, varargin)
 %   "data".
 
 % Defaults:
-default_Output = 'VSM.dat'; %#ok. This line is here just for Pipeline management.
-default_opts = struct('SpatialFilter_Sigma', 0, 'b_CreateROIs', false, 'ROIfileName', 'VisualCtxAreas.mat', 'b_UseMask', false, 'MaskFile','ImagingReferenceFrame.mat');
-opts_values = struct('SpatialFilter_Sigma', [0, Inf], 'b_CreateROIs', [true; false], 'ROIfileName', {{'VisualCtxAreas.mat'}},'b_UseMask', [true,false], 'MaskFile',{{'ImagingReferenceFrame.mat'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
+default_Output = 'visualSignMap.dat'; %#ok. This line is here just for Pipeline management.
+default_opts = struct('PhaseMapFilter_Sigma', 0,'VSMFilter_Sigma',0, 'b_CreatePatches', false, 'PatchFileName', 'VisualCtxAreas.mat', 'b_UseMask', false, 'MaskFile','ImagingReferenceFrame.mat');
+opts_values = struct('PhaseMapFilter_Sigma', [0, Inf], 'VSMFilter_Sigma', [0, Inf], 'b_CreatePatches', [true; false], 'PatchFileName', {{'VisualCtxAreas.mat'}},'b_UseMask', [true,false], 'MaskFile',{{'ImagingReferenceFrame.mat'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 default_object = ''; % This line is here just for Pipeline management to be able to detect this input.
 % Notes on Spatial filter:
 % - A value of zero indicates that no filters will apply!
@@ -50,6 +50,12 @@ phaseEl = elMap(:,:,2);
 % Remove NaNs from phase maps:
 phaseAz(isnan(phaseAz)) = 1000;
 phaseEl(isnan(phaseAz)) = 1000;
+% Filter Phase masps
+if opts.PhaseMapFilter_Sigma > 0
+    disp('Filtering phase maps...')
+    phaseAz = imgaussfilt(phaseAz, opts.PhaseMapFilter_Sigma);
+    phaseEl = imgaussfilt(phaseEl, opts.PhaseMapFilter_Sigma);
+end
 disp('Calculating visual sign map...');
 [gradAzx, gradAzy] = gradient(phaseAz);
 [gradElx, gradEly] = gradient(phaseEl);
@@ -58,15 +64,16 @@ gradDirEl = atan2(gradEly, gradElx);
 
 outData = sin(angle(exp(1i.*gradDirAz).*exp(-1i.*gradDirEl)));
 outData(isnan(outData)) = 0;
-% Filter map
-if opts.SpatialFilter_Sigma > 0
-    outData = imgaussfilt(outData, opts.SpatialFilter_Sigma);
+% Filter Visual Sign Map
+if opts.VSMFilter_Sigma > 0
+    disp('Filtering phase maps...')
+    outData = imgaussfilt(outData, opts.VSMFilter_Sigma);    
 end
 % Create meta data:
 metaData = genMetaData(outData,{'Y','X'}, metaData);
 disp('Finished creating VSM');
 % Segment the Visual Sign Map and create a labeled matrix:
-if opts.b_CreateROIs
+if opts.b_CreatePatches
     genVAmask(outData, metaData, SaveFolder, opts, object)
 end
 end
@@ -95,8 +102,8 @@ function genVAmask(vsm, metaData, SaveFolder, opts, object)
             
 %%% Arguments parsing and validation %%%
 
-if ~endsWith(opts.ROIfileName, '.mat')
-    opts.ROIfileName = [opts.ROIfileName, '.mat'];
+if ~endsWith(opts.PatchFileName, '.mat')
+    opts.PatchFileName = [opts.PatchFileName, '.mat'];
 end
     
 % Validate if "data" is an Image Time Series:
@@ -152,7 +159,7 @@ patchBorder = bwmorph(patchBorder, 'spur',Inf); % Remove small edges from the bo
 patches = imfill(patchBorder,'holes') & ~patchBorder;
 patches = bwlabel(patches,4);
 % Save patches to ".mat" file:
-filename = fullfile(SaveFolder, opts.ROIfileName);
+filename = fullfile(SaveFolder, opts.PatchFileName);
 save(filename, 'patches');
 disp(['Patches saved as ' filename]);
 end
