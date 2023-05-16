@@ -107,7 +107,7 @@ targetFr = imwarp(targetFr, tform,'nearest', 'OutputView', Rfixed);
 str = split(object.SaveFolder, filesep);
 str = str(2:end); % Remove root folder.
 fig = figure('Name', strjoin(str, '-'), 'WindowState', 'maximized', ...
-    'WindowButtonMotionFcn', @moveDot);
+    'WindowButtonMotionFcn', @moveDot, 'Visible','off');
 s1=subplot(2,2,(1:2));imshowpair(refFr, targetFr);
 s2=subplot(223); imagesc(s2,refFr); colormap(s2,'gray');axis(s2,'off')
 s3=subplot(224); imagesc(s3,targetFr); colormap(s3,'gray');axis(s3,'off')
@@ -123,7 +123,7 @@ hold(s2,'on');
 plot(s2,1,1,'g+', 'Tag', 'gDot'); hold(s2,'off');
 hold(s3,'on');
 plot(s3,1,1,'rx', 'Tag', 'rDot'); hold(s3,'off');
-
+fig.Visible = 'on';
 waitfor(fig)
 %%%%%%
 answer = questdlg('Are you satisfied with the registration?',...
@@ -189,7 +189,7 @@ metaData = genMetaData(warp_data, extraParams.dim_names, extraParams);
 fcnInfo = dir([mfilename('fullpath') '.m']);
 fcnInfo.name = fcnInfo.name(1:end-2); % remove .m;
 dtHist = genDataHistory(fcnInfo,['out = manual_alignFrames(object,''' applyToFile ''');'],...
-    [],'none');
+    [],'none',applyToFile);
 if isfield(metaData,'dataHistory')
     metaData.dataHistory = [metaData.dataHistory; dtHist];
 else
