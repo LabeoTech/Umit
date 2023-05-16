@@ -232,7 +232,7 @@ opts.folderList = folderList;
 opts.merge_type = merge_type;
 opts.merge_order = merge_order;
 opts.b_IgnoreStim = b_IgnoreStim;
-dH = genDataHistory(myInfo,[SaveFilename ' = mergeRecordings(opts);'], opts, {SaveFilename});
+dH = genDataHistory(myInfo,[SaveFilename ' = mergeRecordings(opts);'], opts, {SaveFilename},'');
 mOut.dataHistory = dH;
 % Save meta data to file:
 save(strrep(SaveFilename, '.dat', '.mat'), '-struct', 'mOut');   
