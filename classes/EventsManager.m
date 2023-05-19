@@ -287,11 +287,11 @@ classdef EventsManager < handle
                         obj.AIChanList(1) = {'CameraTrig'};                        
                         idx = 2;
                     case {2,6,10}
-                        % Cage (n=2) or OiS200 (n=6) system. Camera and single internal trigger:
+                        % Cage (n=2) or OiS200 (n=6,10) system. Camera and single internal trigger:
                         obj.AIChanList(1:2) = {'CameraTrig', 'StimAna1'};                                                                  
                         idx = 3;
                     case {3,7,11}
-                        % Cage (n=3) or OiS200 (n=7) system. Camera and double internal triggers:
+                        % Cage (n=3) or OiS200 (n=7,11) system. Camera and double internal triggers:
                         obj.AIChanList(1:3) = {'CameraTrig', 'StimAna1', 'StimAna2'};                                                                                                              
                         idx = 4;
                     otherwise

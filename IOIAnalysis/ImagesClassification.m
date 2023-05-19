@@ -64,11 +64,11 @@ imgFilesList = dir([DataFolder 'img*.bin']);
 %details):
 header = memmapfile([DataFolder imgFilesList(1).name], ...
     'Offset', 0, 'Format', {'int32', hWima, 'header'; 'uint64', 1, 'frame'}, 'repeat', 1);
-Version = header.Data.header(1); %Data format version
+% Version = header.Data.header(1); %Data format version
 nx = double(header.Data.header(2)); %Number of pixel along X axis
 ny = double(header.Data.header(3)); %Number of pixel along Y axis
-FrameSz = header.Data.header(4); %Number of int32 saved for each image
-NbImsPefFile = single(header.Data.header(5)); %Number of images contained in each "img_" file.
+% FrameSz = header.Data.header(4); %Number of int32 saved for each image
+% NbImsPefFile = single(header.Data.header(5)); %Number of images contained in each "img_" file.
 
 %Header format for each individual image:
 frameFormat = {'uint64', 3, 'framej';'uint16', [double(nx), double(ny)], 'imgj'};
@@ -78,7 +78,7 @@ SizeImage = nx*ny*2 + 3*8;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % SubROI...
 if( b_SubROI )
-    fprintf('Redifining Region Of Interest post-process: \n');
+    fprintf('Redefining Region Of Interest post-process: \n');
      %Dialog (there are different options to determine the new ROI):
     ButtonName = questdlg('Would you like to use a pre-defined ROI?', ...
         'ROI', ...
@@ -90,7 +90,7 @@ if( b_SubROI )
                 disp('User pressed cancel')
                 Pos = [1 1 ImRes_XY(1) ImRes_XY(2)];
             else
-                load([pathname filesep filename]);
+                load([pathname filesep filename]);%#ok
             end
         case 'Draw' %Select ROI directly on a frame:
             dat = memmapfile([DataFolder...
@@ -119,7 +119,7 @@ Rx = round((LimX(2) - LimX(1) + 1)/BinningSpatial);
 Ry = round((LimY(2) - LimY(1) + 1)/BinningSpatial);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%How many colors and in which order?
+% How many colors and in which order?
 fprintf('Sorting images per channels. \n');
 if( AcqInfoStream.MultiCam )
     Tags = fieldnames(AcqInfoStream);
@@ -196,19 +196,12 @@ else
 end
 
     function ChannelsSort(fList, colors)               
-        % Load Stim info:
-        if( ~b_IgnoreStim )
-            Stim = load([SaveFolder 'StimParameters.mat']);                       
-        else            
-            Stim.Stim = 0;
-        end
-        stim_fn = fieldnames(Stim);
-        stim_fn = stim_fn(startsWith(stim_fn, 'stim_', 'IgnoreCase', true));
+        % CHANNELSORT performs the classification of the raw data into the
+        % existing colors and saves the data into separate .dat files.
         
-        % for each color, initialise output files:
+        % For each color, initialise output files:
         fColor = {};
         fid = [];
-        stimPos = 0;
         subNbColors = size(colors,2);
         
         for indC = 1:size(colors,2)
@@ -216,8 +209,8 @@ end
                 hTag = [lower(colors(indC).Color) '.mat'];
                 dTag = [lower(colors(indC).Color) '.dat'];
             elseif( contains(colors(indC).Color, 'amber', 'IgnoreCase', true) )
-                hTag = ['yellow.mat'];
-                dTag = ['yellow.dat'];                
+                hTag = 'yellow.mat';
+                dTag = 'yellow.dat';                
             elseif( contains(colors(indC).Color, 'fluo', 'IgnoreCase', true) )
                 waveTag = regexp(colors(indC).Color, '[0-9]{3}','match');
                 if( ~isempty(waveTag) )
@@ -237,11 +230,7 @@ end
             end
             fColor{indC} = matfile([SaveFolder hTag], 'Writable', true);
             fColor{indC}.datFile = dTag; 
-            fColor{indC}.datSize = [Ry, Rx]; % Flipped datSize
-            fColor{indC}.Stim = Stim.Stim;
-            for ii = 1:length(stim_fn)
-                fColor{indC}.(stim_fn{ii}) = [];
-            end
+            fColor{indC}.datSize = [Ry, Rx]; 
             fColor{indC}.datLength = 0;
             fColor{indC}.FirstDim = 'y';
             fColor{indC}.Datatype = 'single';
@@ -252,7 +241,7 @@ end
             fid(indC) = fopen([SaveFolder dTag],'w'); 
         end
         
-        %Opening Images Files:
+        % Opening Images Files:
         oIm = [];
         Cnt = 0;        
         for indF = 1:size(fList,1)
@@ -316,20 +305,8 @@ end
             Images = iData(:,:,1:(size(iData,3)-overflow));
             clear iData hData overflow;
             
-            if( (~b_IgnoreStim) && (sum(Stim.Stim) ~= 0) )
-                SubStim = [];
-                for ii = 1:length(stim_fn)
-                    SubStim(ii,:) = Stim.(stim_fn{ii})(stimPos + (1:size(Images,3)));
-                end
-                stimPos = stimPos + size(SubStim,2);
-            else
-                SubStim = zeros(1,size(Images,3),'single');
-            end
-            
             Images = reshape(Images, ImRes_XY(2), ImRes_XY(1), subNbColors, []);
-            SubStim = reshape(SubStim,size(SubStim,1), subNbColors, BinningTemp, []);
-            SubStim = ceil(mean(SubStim, 3));
-            SubStim = reshape(SubStim, size(SubStim,1), subNbColors,[]);
+
             for indC = 1:size(colors,2)
                 Ims = squeeze(Images(:, :, indC, :));
                 if( any(sum(sum(Ims,1),2) == 0) )
@@ -350,9 +327,6 @@ end
                 %Spatial Binning
                 if( BinningSpatial > 1 )
                     Ims = imresize(Ims,1/BinningSpatial);
-                end
-                for ii = 1:length(stim_fn)
-                    fColor{indC}.(stim_fn{ii}) = [fColor{indC}.(stim_fn{ii}); squeeze(SubStim(ii,indC,:))];
                 end
                 
                 fwrite(fid(indC), single(Ims), 'single');
