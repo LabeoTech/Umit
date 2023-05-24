@@ -6,7 +6,7 @@ classdef EventsManager < handle
     properties
         trigThr = 'auto'; % Trigger detection Threshold in volts (Default = 'auto'). The 'auto' means that the threshold will be at 70% of the signal amplitude.
         trigType char {mustBeMember(trigType,{'EdgeSet','EdgeToggle'})} = 'EdgeSet' % Trigger type.
-        trigChanName = 'StimAna1'; % Default name of AI channel containing the triggers.
+        trigChanName = {''}; % Name of AI channel(s) containing the triggers.
         minInterStim single {mustBeNonnegative} = 2 % Minimal inter stim time (in seconds). This param. is used to identify Bursts in analogIN. !This value should be higher than the inter-burst value to work!
     end
     properties (SetAccess = private)
@@ -49,22 +49,21 @@ classdef EventsManager < handle
             obj.setInfo;
             % Set AnalogIN property:
             obj.setAnalogIN;   
-            % Get event info if the stim is digital:
-            if obj.b_isDigital
-                % Set the trigger channel name to "StimDig" and detect the
-                % triggers:
-                obj.trigChanName = 'StimDig';
-                obj.getTriggers;
+            % Detect internally-generated triggers:            
+            if ~isempty([obj.trigChanName{:}])
+                obj.getTriggers;            
             end
         end
         
-        function out = get.trigChanName(obj)
-            % Get method for trigger channel name. 
-            % Forces the output to a cell.
-            if ischar(obj.trigChanName)
-                out = {obj.trigChanName};
+        function set.trigChanName(obj, trigName)
+            % Set method for trigger channel name. 
+            % Forces the property to a cell.
+            if ischar(trigName)                
+                obj.trigChanName = {trigName};
+            elseif iscell(trigName)
+                obj.trigChanName = trigName;
             else
-                out = obj.trigChanName;
+                error(['Format ' class(trigName) ' not supported! It must be char or cell array of chars.'])
             end
         end
                     
@@ -86,18 +85,18 @@ classdef EventsManager < handle
             end
             if isempty(chanName)
                 chanIndx = 1:size(obj.AnalogIN,2);
+                chanName = obj.AIChanList;
             else
-                [~,chanIndx] = ismember(chanName,obj.AIChanList);
+                [~,chanIndx] = ismember(chanName,obj.AIChanList);                
             end                         
+            
+            
+            
             
             xVec = [0:size(obj.AnalogIN,1)-1]./obj.sr;% Use X-axis in seconds.
             axYSize = [min(obj.AnalogIN(:)), max(obj.AnalogIN(:))];
-            % Get list of titles for each channel:
-            fn = fieldnames(obj.AcqInfo);            
-            fn = fn(startsWith(fn,'AICh', 'IgnoreCase',true));
-            fn = fn(chanIndx);
             % Show 4 plot per figure:
-            nFigs = ceil(mod(length(fn)/4,4));
+            nFigs = ceil(mod(length(chanName)/4,4));
             cnt = 1;   
             b_trigsPlotted= false;
             for ii = 1:nFigs
@@ -105,7 +104,7 @@ classdef EventsManager < handle
                     'Visible','off','NumberTitle','off', 'Position',[0 0 560 720],...
                     'CreateFcn',{@movegui,'center'},'CloseRequestFcn', @closeAllFigs);                
                 for jj = 1:4
-                    if cnt > length(fn)
+                    if cnt > length(chanName)
                         break
                     end
                     s(cnt) = subplot(4,1,jj,'Parent',f(ii));
@@ -152,8 +151,8 @@ classdef EventsManager < handle
                         if exist('ptc','var')
                             copyobj(ptc,s(cnt));
                         end
-                    end
-                    title(s(cnt), obj.AcqInfo.(fn{cnt}));
+                    end                    
+                    title(s(cnt), chanName{cnt});
                     cnt = cnt+1;                    
                 end                
             end
@@ -178,9 +177,13 @@ classdef EventsManager < handle
             % GETTRIGGERS detects the triggers from one or more analog IN channels 
             %   with names stored in the "trigChanName" property.
             % It records the timestamps and state of each event.                         
-
-            if ~isempty(obj.timestamps)
-                warning('Event triggers already detected!');
+% 
+%             if ~isempty(obj.timestamps)
+%                 warning('Event triggers already detected! Trigger detection aborted.');
+%                 return
+%             end
+            if isempty([obj.trigChanName{:}])
+                warning('Trigger channel name not set! Trigger detection aborted.')
                 return
             end
             % Reset event info:
@@ -190,6 +193,10 @@ classdef EventsManager < handle
             obj.eventNameList = {};            
             for ii = 1:length(obj.trigChanName)
                 idxCh = strcmpi(obj.trigChanName{ii},obj.AIChanList);
+                if ~any(idxCh)
+                    warning(['Channel ' obj.trigChanName{ii} ' not found!'])
+                    continue
+                end
                 [tmstmp,chanState] = obj.detectTrig(obj.AnalogIN(:,idxCh));               
                 obj.timestamps = [obj.timestamps;tmstmp];
                 obj.state = [obj.state;chanState];
@@ -201,16 +208,28 @@ classdef EventsManager < handle
                 else
                     disp(['Triggers detected in channel ' obj.trigChanName{ii}]);
                 end
+                % Special Case: For internal analog triggers, use the
+                % "Name" field of the channel instead of the channel ID.
+                if startsWith(obj.trigChanName{ii}, 'StimAna')
+                    num = erase(obj.trigChanName{ii}, 'StimAna');                   
+                    try
+                        obj.eventNameList{ii} = obj.AcqInfo.(['Stimulation' num '_Name']);
+                    catch
+                        %%% Do Nothing
+                    end
+                else
+                    obj.eventNameList{ii}= obj.trigChanName{ii};
+                end
             end 
-            
-            % Create dummy list of event names:
-            obj.eventNameList = arrayfun(@num2str,unique(obj.eventID),'UniformOutput',false);
-            
+            if isempty(obj.timestamps)
+                disp('No triggers detected!')
+                return
+            end                
             [obj.timestamps,indx] = sort(obj.timestamps);
             obj.state = obj.state(indx);
-            % Populate event ID and event Name lists:
-            
-            % For digital stimulation:
+            obj.eventID = obj.eventID(indx);
+                              
+            % For digital stimulation, update event ID and event Name lists:                        
             if obj.b_isDigital
                 % Overwrite dummy eventIDs with real ones from the info.txt.
                 obj.eventID = ones(size(obj.state));   
@@ -226,18 +245,8 @@ classdef EventsManager < handle
                 return
             end
             
-            % For Analog stimulation:
-            
-            % Case # 1: Multiple channels:
-            if length(obj.trigChanName) > 1
-                % Keep dummy event IDs and create eventNameList with
-                % channel names:
-                [~,idx] = ismember(lower(obj.trigChanName), lower(obj.dictAIChan));
-                obj.eventNameList = obj.dictAIChan(idx);                                                
-                disp('Trigger timestamps generated!')
-                return
-            end                                         
-            % Case # 2: Single channel with event list from text file:
+            % For Analog stimulation with event list from text file, update
+            % eventID and eventNameList:
             if ~isempty(obj.EventFileName)
                 switch lower(obj.EventFileParseMethod)
                     case 'default'
@@ -261,7 +270,9 @@ classdef EventsManager < handle
         function setInfo(obj)
             % SETINFO calls the "ReadInfoFile.m" function or simply loads
             %   the AcqInfo.m file from the DataFolder and stores the
-            %   structure in the "AcqInfo" property.
+            %   structure in the "AcqInfo" property. In addition, it uses
+            %   the information to update the properties: 
+            %   "sr" and "trigChanName" (for internal triggers only).
             
             % Load existing info:
             if exist(fullfile(obj.DataFolder, 'AcqInfos.mat'), 'file')
@@ -297,13 +308,18 @@ classdef EventsManager < handle
                     otherwise
                         error('Failed to infer channel names from "info.txt" file!')
                 end
-                for ii = idx:obj.AcqInfo.AINChannels
+                for ii = 0:obj.AcqInfo.AINChannels-idx
                     % Fill the rest of the channel names with the analog IN
-                    obj.AIChanList{ii} = ['AICh', num2str(ii)];
+                    obj.AIChanList{ii+idx} = ['AI', num2str(ii+1)];
+                end
+                % Add fields to AcqInfo property:
+                for ii = 1:length(obj.AIChanList)
+                    obj.AcqInfo.(['AICh' num2str(ii)]) = obj.AIChanList{ii};
                 end
             else                
                 obj.AIChanList = cellfun(@(x) obj.AcqInfo.(x),fn(idxChan),'UniformOutput',false);
             end
+            
             % Validate if the list of channel names match the number of
             % channels:
             assert(isequaln(length(obj.AIChanList),obj.AcqInfo.AINChannels),...
@@ -314,23 +330,42 @@ classdef EventsManager < handle
             % Update Analog input sample rate:
             obj.sr = obj.AcqInfo.AISampleRate;
             
-            % Check if the stimulation is digital:
+            % Update trigger names:            
             if any(startsWith(fn,'event','IgnoreCase',true))
-                obj.b_isDigital = true;                
+                % For digital stimulation:
+                obj.b_isDigital = true;
+                obj.trigChanName = 'StimDig';
+                return
             end
-            %%%% TBD %%%%
-%             % Check for burst delay time info to update the "minInterStim"
-%             % property to be:
-%             idx_Delay = endsWith(fn,'burst_delay','IgnoreCase',true);
-%             idx_Repeat = endsWith(fn,'burst_repeat','IgnoreCase',true);
-%             if any(idx_Delay) && any(idx_Repeat)
-%                 if obj.AcqInfo.(fn{find(idx_Repeat,1,'first')}) > 1
-%                     % Set the minimal inter-stim interval as 1.2 times the
-%                     %   inter burst delay (in seconds):
-%                      obj.minInterStim = ;
-%                 end
-%             end
-            %%%%%%%%%%%%
+            % Update trigger names for Analog Stims:
+            b_hasStim1 = any(cellfun(@any,regexpi(fn,'stimulation1_')));
+            b_hasStim2 = any(cellfun(@any,regexpi(fn,'stimulation2_')));                            
+            if ~any([b_hasStim1, b_hasStim2])
+                return
+            end
+            names = {'StimAna1','StimAna2'};                
+            obj.trigChanName = names([b_hasStim1, b_hasStim2]);            
+            % Use the pulse information from analog stim to update the
+            % minimal interStim interval for detection of bursts stim.
+            % blocks. We set the minimal interstim as the largest pulse
+            % interstim with an extra 15%.
+            idxBurst = contains(fn,'burst_delay','IgnoreCase',true);
+            idxPeriod = contains(fn,'_period','IgnoreCase',true);
+            idxFreq = contains(fn,'_frequency','IgnoreCase',true);
+            if any(idxBurst) && obj.AcqInfo.(fn{find(idxBurst,1,'first')}) > 0
+                % Use burst delay 
+                burst_delay = obj.AcqInfo.(fn{find(idxBurst,1,'first')});
+                stim_period = obj.AcqInfo.(fn{find(idxPeriod,1,'first')});
+                obj.minInterStim = 1.15*(burst_delay + stim_period)/1000; % Add 15% to the value of the burst delay                
+            elseif any(idxPeriod)
+                % Use the pulse period
+                obj.minInterStim = 1.15*(obj.AcqInfo.(fn{find(idxPeriod,1,'first')}))/1000;% Add 15% to the value of the pulse period
+            else
+                % Calculate the pulse period from frequency (older
+                % "info.txt" versions)
+                obj.minInterStim = 1.15*(1/obj.AcqInfo.(fn{find(idxFreq,1,'first')}));% Add 15% to the value of the pulse period                
+            end
+
         end
         
         function setAnalogIN(obj)
