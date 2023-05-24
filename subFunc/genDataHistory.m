@@ -3,8 +3,7 @@ function out = genDataHistory(fcnInfo, optsStruct, inputFileName, outFileName)
 % analysis function. This structure will be added to the metaData of the
 % data analysed. 
 % This function is called by the "updateHistory" methods in
-% "PipelineManager" and "DataViewer_pipelineMngr" classes, as well as by
-% "manual_alignFrames" function.
+% "PipelineManager" class and by "manual_alignFrames" function.
 
 % Inputs:
 %   fcnInfo (struct): structure containing the function's basic informations with
