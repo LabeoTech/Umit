@@ -13,7 +13,6 @@ function out = genDataHistory(fcnInfo, optsStruct, inputFileName, outFileName)
 %           -folder (char): path where the analysis function file is located.
 %           -creationDatetime(datetime): timestamp of the creation of the
 %               analysis function file.
-%   fcnStr (char): string of the analysis function called by an EVAL function.
 %   optsStruct (struct): structure containing optional parameters of the
 %       analysis function.
 %   inputFileName(cell|char): name of the input file(s) to the function. 
