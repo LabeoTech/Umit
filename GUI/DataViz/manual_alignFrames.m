@@ -188,8 +188,7 @@ metaData = genMetaData(warp_data, extraParams.dim_names, extraParams);
 
 fcnInfo = dir([mfilename('fullpath') '.m']);
 fcnInfo.name = fcnInfo.name(1:end-2); % remove .m;
-dtHist = genDataHistory(fcnInfo,['out = manual_alignFrames(object,''' applyToFile ''');'],...
-    [],'none',applyToFile);
+dtHist = genDataHistory(fcnInfo,[],'none',applyToFile);
 if isfield(metaData,'dataHistory')
     metaData.dataHistory = [metaData.dataHistory; dtHist];
 else
