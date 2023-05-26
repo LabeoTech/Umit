@@ -8,8 +8,8 @@ classdef EventsManager < handle
         trigType char {mustBeMember(trigType,{'EdgeSet','EdgeToggle'})} = 'EdgeSet' % Trigger type.
         trigChanName = {''}; % Name of AI channel(s) containing the triggers.
         minInterStim single {mustBeNonnegative} = 2 % Minimal inter stim time (in seconds). This param. is used to identify Bursts in analogIN. !This value should be higher than the inter-burst value to work!
-        EventFileName char % Name of the event file containing events information (.csv, .txt, .vpixx ...).
-        EventFileParseMethod char % Name of the method to read the Event File. {'default','vpixx'};
+        
+        EventFileParseMethod char % Name of the method to read the Event File. {'CSV','vpixx'};
     end
     properties (SetAccess = private)
         dictAIChan cell = {'CameraTrig', 'CameraTrig2', 'InputTrigger',...
@@ -27,8 +27,9 @@ classdef EventsManager < handle
         b_isDigital logical = false; % TRUE for digital stimulation using OiS200 as master.
         minTrigAmp single {mustBePositive} = .15; % Minimal signal amplitude (in Volts). Used when the trigger threshold is "auto". Ignored otherwise.        
     end
-    properties (Hidden)
+    properties (Access = private)
         warnOrigState % original state of Matlab's warnings. This will be restored at this class destruction.
+        EventFileName char % Name of the event file containing events information (.csv, .txt, .vpixx ...).
     end
     
     methods
@@ -40,9 +41,8 @@ classdef EventsManager < handle
             
             % Input validation:
             p = inputParser;
-            addRequired(p,'DataFolder',@isfolder)
-            addOptional(p,'EventFileName','',@(x) isfile(fullfile(DataFolder,x)));
-            addParameter(p, 'ParseMethod','default',@(x) ismember(lower(x),{'default','vpixx'}));
+            addRequired(p,'DataFolder',@isfolder)            
+            addOptional(p, 'ParseMethod','none',@(x) ismember(lower(x),{'none','csv','vpixx'}));
             parse(p,DataFolder,varargin{:});
             
             % Disable backtrace warnings:
@@ -50,9 +50,8 @@ classdef EventsManager < handle
             warning('off', 'backtrace');
             
             % Set main properties:
-            obj.DataFolder = p.Results.DataFolder;
-            obj.EventFileName = p.Results.EventFileName;
-            obj.EventFileParseMethod = p.Results.ParseMethod;
+            obj.DataFolder = p.Results.DataFolder;            
+            obj.EventFileParseMethod = lower(p.Results.ParseMethod);
             
             % Set properties based on the info.txt file:
             obj.setInfo;
@@ -76,22 +75,108 @@ classdef EventsManager < handle
                 error(['Format ' class(trigName) ' not supported! It must be char or cell array of chars.'])
             end
         end
-        
-        function out = get.EventFileName(obj)
-            % Provides full path of EventsFileName            
-            if isempty(fileparts(obj.EventFileName))
-                out = fullpath(obj.DataFolder,obj.EventFileName);
-            else
-                out = obj.EventFileName;
-            end
+
+        function readEventFile(obj, varargin)
+           % READEVENTFILE reads the content of an event file containing a
+           % list of event Names. The file will be parsed using one of the
+           % parsing methods available in this class (e.g., for .CSV,
+           % .vpixx) and set by the "EventFileParseMethod" property. This
+           % property is set at the class construction.
+           % If the "EventFileName" is not provided, this function will
+           % look for the file with the valid extension (.csv,
+           % .vpixx) inside the "DataFolder" and parse it. Override this by
+           % giving the full path of the "EventsFileName" as input.
+           % For .CSV files, the list of events should be arranged in a
+           % column with a HEADER (a header is necessary!) in the first row.
+           % Multiple columns will be merged as a single event per row. 
+           % It is possible to select  a subset of columns by providing the 
+           % names of the columns "CSVcolNames" as input (Case sensitive!).
+           % 
+           % Inputs (Optional):
+           %   EventFileName (char): full path to a valid file containing
+           %    the event IDs/Names to be parsed using the parse method set
+           %    in the "EventFileParseMethod" property.
+           %   CSVcolNames (cell): name of column(s) from a .CSV file to be
+           %    read. If more than one column is provided, each row will
+           %    be merged into a single one (this parameter is ignored for
+           %    other parsing methods).           
+           %
+           % Examples:
+           %  1 - Automatic search for a .CSV file with a single column:
+           %    readEventFile();
+           %  2 - Read an specific .CSV file:
+           %    readEventFile('C:/FULLPATH/FILENAME.CSV');
+           %  3 - Read a subset of columns from a .CSV file:
+           %    readEventFile('CSVcolNames',{'Col1'',Col2','Col5'};
+           %  4 - Read a subset o columns from an specific .CSV file:
+           %    readEventFile('C:/FULLPATH/FILENAME.CSV','CSVcolNames'{'ThisOne'});
+           
+           p = inputParser;
+           addRequired(p,'obj')
+           addOptional(p,'EventFileName','',@(x) ischar(x) | isempty(x));
+           addParameter(p,'CSVcols',{''},@(x) iscell(x) & ischar([x{:}]));
+           parse(p,obj,varargin{:});
+           %
+           evFile = p.Results.EventFileName;
+           colNames = p.Results.CSVcols;
+           %
+           if strcmpi(obj.EventFileParseMethod,'none')
+               return
+           end
+           if ~isempty(evFile)
+               % For a specific event file:
+               if isempty(fileparts(evFile))
+                   evFile = fullfile(obj.DataFolder,evFile);
+               end
+           else
+               % For automatic detection of event files:
+               fList = [dir(fullfile(obj.DataFolder,'*.csv'));...
+                   dir(fullfile(obj.DataFolder,'*.vpixx'));...
+                   dir(fullfile(obj.DataFolder,'*.txt'))];
+               evFile = fullfile({fList.folder},{fList.name});
+           end
+           if isempty([evFile{:}])
+               warning('Event list not found! Event IDs and names will not be updated!')
+               return
+           end
+           % Try to parse files until it works:
+           evID = []; evNames = {};
+           for ii = 1:length(evFile)
+               obj.EventFileName = evFile{ii};
+               try % try-catch is here just to avoid errors when non-event files are read.
+                   if strcmpi(obj.EventFileParseMethod,'csv') & endsWith(obj.EventFileName, '.csv')
+                       [evID, evNames] = obj.readCSVfile(colNames);
+                   elseif strcmpi(obj.EventFileParseMethod,'vpixx') & (endsWith(obj.EventFileName, '.vpixx') | endsWith(obj.EventFileName, '.txt'))
+                       [evID, evNames] = obj.readVpixxFile;
+                       
+                       
+                       % Add more elseif statements when new parsing methods
+                       % are added.
+                       %                elseif
+                       %
+                   else
+                       continue
+                   end
+               catch                  
+                   %%% Do nothing
+               end
+               if ~isempty(evID)
+                   disp(['Event list updated from file " ' obj.EventFileName '"'])
+                   break
+               end
+           end
+           
+           assert(~isempty(evID),'Failed to read Event File!')
+           
+           obj.eventID = evID;
+           obj.eventNameList = evNames;
            
         end
-        
                     
         function plotAnalogIN(obj, varargin)
             % PLOTANALOGIN plots the Analog input signals and overlays the
             % threshold as well as the detected triggers, if existent.
-            
+            %
             % Input (optional):
             %   chanName (char|cell): Channel name or list of names to
             %   plot. If not provided, all channels will de displayed.
@@ -101,6 +186,7 @@ classdef EventsManager < handle
             addOptional(p, 'chanName','',@(x) isempty(x) || all(ismember(lower(x),lower(obj.dictAIChan))));
             parse(p,obj,varargin{:});
             chanName = p.Results.chanName;            
+            
             if isempty(obj.AnalogIN)
                 return
             end
@@ -110,10 +196,7 @@ classdef EventsManager < handle
             else
                 [~,chanIndx] = ismember(chanName,obj.AIChanList);                
             end                         
-            
-            
-            
-            
+                        
             xVec = [0:size(obj.AnalogIN,1)-1]./obj.sr;% Use X-axis in seconds.
             axYSize = [min(obj.AnalogIN(:)), max(obj.AnalogIN(:))];
             % Show 4 plot per figure:
@@ -304,7 +387,7 @@ classdef EventsManager < handle
             disp('--------------------------------')                     
         end
         
-        function genEventsFile(obj,saveFolder)
+        function saveEvents(obj,saveFolder)
             % GENEVENTSFILE creates the file "events.mat" in the
             % SaveFolder. This file is used by umIT to split the data into
             % trials.
@@ -569,36 +652,30 @@ classdef EventsManager < handle
                                      
             % Set CSV reading rules:                       
             opts = detectImportOptions(obj.EventFileName);
-            if nargin < 2
-                
-                % Read first column without header:                
-                opts.DataLines = 1;
+            if nargin < 2 || isempty([colName{:}])                                
                 opts.VariableNames = {'DEFAULT'};
                 colName = 'DEFAULT';
-            else
-                % Skip header row;                
-                opts.DataLines= 2;
+            else                
                 opts.SelectedVariableNames = colName; % Select the input columns only.
             end
+            opts.DataLines = 2; %Start reading at 2nd row.
             opts.VariableTypes = repmat({'char'},size(opts.VariableTypes)); % Force data to characters.
             opts.MissingRule = 'omitrow'; % Remove rows with missing values.
             opts.ExtraColumnsRule = 'ignore'; % Ignore empty columns.
             % Read .CSV file:
-            out = readtable(fullfile(obj.DataFolder ,obj.EventFileName),opts);                        
+            out = table2cell(readtable(obj.EventFileName,opts));                        
             % Merge multiple columns into a single one:
-            
-            
-            
-            
-            %%%%%% TBD %%%%%
-%             
-%             eventNameList = unique(out.NAME); % Get list of event names in ascending order
-%             nameMap = containers.Map(eventNameList,1:length(eventNameList)); 
-%             eventID = zeros(height(out),1);
-%             for ii = 1:length(out.NAME)
-%                 Generate event ID from event name index.
-%                 eventID(ii) = nameMap(out.NAME{ii});
-%             end 
+            nameList = cell(size(out,1),1);            
+            for ii = 1:size(out,1)                
+                    nameList{ii} = strjoin(reshape(vertcat(colName,out(ii,:)),1,[]),'-');
+            end            
+            eventNameList = unique(nameList);%             
+            nameMap = containers.Map(eventNameList,1:length(eventNameList)); 
+            eventID = zeros(length(nameList),1);
+            for ii = 1:length(nameList)
+                % Generate event ID from event name index.
+                eventID(ii) = nameMap(nameList{ii});
+            end 
         end
         
         function [eventID, eventNameList] = readVpixxFile(obj)
@@ -607,10 +684,13 @@ classdef EventsManager < handle
             
             % Extract only the part of the text containing the real sequence of
             %   conditions (RAW DATA section):
-            filetext = fileread(fullfile(obj.DataFolder,obj.EventFileName));
+            filetext = fileread(obj.EventFileName);
             [~,idx_start] = regexp(filetext, 'RAW DATA');
-            idx_stop = regexp(filetext, 'SORTED');
+            idx_stop = regexp(filetext, 'SORTED');            
             filetext = strip(filetext(idx_start+1:idx_stop-1));
+            if isempty(filetext)
+                return
+            end
             tab = strsplit(filetext, '\n')';
             % Get stimulus ID and order. Ignore Event and Time columns for now!
             out = {};
@@ -624,13 +704,16 @@ classdef EventsManager < handle
                 out = [out;str(myCols)];
             end            
             out(:,1) = cellfun(@str2double, out(:,1), 'UniformOutput',false);
-            eventID = [out{:,1}]';
+            eventID = [out{:,1}]';            
             IDs = unique(eventID);
             eventNameList = cell(length(IDs),1);            
             for ii = 1:length(IDs)
                 idx = find(eventID == IDs(ii),1,'first');
                 eventNameList(ii) = out(idx,2);
             end
+            % Duplicate the eventID to account for low state (considering
+            % that there is no overlap between conditions).
+            eventID = repelem(eventID,2);
         end
                 
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%                        
