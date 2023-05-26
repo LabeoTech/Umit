@@ -90,17 +90,21 @@ clear iC2_* fid
 % These following lines are only in the specific case where camera 2 image
 % is flipped (mirrored) compare to camera 1 image.
 % To be executed only in that case!!!
-InitialT =affine2d( [-1 0 0; 0 1 0; size(iC2,1) 0 1]);
+InitialT =affine2d( [-1.0 0 0; 0 1.0 0; size(iC2,1) 0 1]);
 %Value of InitialT when there is no flip:
-% InitialT = affine2d([1 0 0; 0 1 0; 0 0 1]);
+%InitialT = affine2d([1 0 0; 0 1 0; 0 0 1]);
 %end of WARNING
 
 [opt, met] = imregconfig("multimodal");
 opt.GrowthFactor = 1.05;
-opt.Epsilon = 1.5e-6;
-opt.InitialRadius = 2.5e-3;
-opt.MaximumIterations = 100;
+opt.Epsilon = 1.0e-8;
+opt.InitialRadius = 1e-3;
+opt.MaximumIterations = 200;
 
+%% Optional Step: Contrast adjustment
+
+iC1 = adapthisteq( (iC1-min(iC1(:)))./(max(iC1(:)) - min(iC1(:))) );
+iC2 = adapthisteq( (iC2-min(iC2(:)))./(max(iC2(:)) - min(iC2(:))) );
 %% Coregistration 
 figure(1); 
 imshowpair(imwarp(iC2, InitialT, 'OutputView', imref2d(size(iC2))), iC1);
