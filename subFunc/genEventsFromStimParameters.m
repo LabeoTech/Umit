@@ -34,8 +34,13 @@ eventID = [];
 state = [];
 timestamps = [];
 % eventNameList = {};
+try
+    freq = stimFile.Freq;
+catch 
+    freq = stimFile.FrameRateHz;
+end
 for ii = 1:length(stimVar)
-    [ID,chanState,tmstmp] = getEventFromChannel(stimFile.(stimVar{ii}), stimFile.Freq);
+    [ID,chanState,tmstmp] = getEventFromChannel(stimFile.(stimVar{ii}), freq);
     eventID = [eventID;ID];
     state = [state;chanState];
     timestamps = [timestamps;tmstmp];    
@@ -57,7 +62,7 @@ for i = 1:length(id_list)
     off_indx = find(data(1:end-1)>.5 & data(2:end)<.5 & data(1:end-1) == id_list(i));
     timestamps =[timestamps; (sort([on_indx;off_indx]))./FrameRateHz];
     state =[state; repmat([true;false], numel(on_indx),1)];
-    ID = [ID; repmat(id_list(i),length([on_indx,off_indx]),1)];
+    ID = [ID; repmat(id_list(i),numel([on_indx,off_indx]),1)];
 end
 % Rearrange arrays by chronological order:
 [timestamps,idxTime] = sort(timestamps);
