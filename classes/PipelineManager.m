@@ -1332,6 +1332,11 @@ classdef PipelineManager < handle
                 [path,file,ext] = fileparts(fileIn);
                 a = load(fullfile(path,[file '.mat']),'dataHistory');
                 dataHistory = a.dataHistory; clear a
+                %%% For retrocompatibility
+                if ~strcmpi(fieldnames(dataHistory(1)), 'inputFileName')
+                    dataHistory(1).inputFileName = '';
+                end
+                
                 % Compare datetimes:
                 [idx,locB] = ismember({dataHistory.name},{obj.funcList.name});
                 locB(locB == 0) = []; % Remove non-existent functions.
