@@ -70,9 +70,7 @@
       </p>
     </div>
     <p>
-      The alignment procedure provides a quantitative metrics as well as a figure to visually assess the quality of the
-      alignment. The quantitative metrics provided is the <b>Mutual Information</b> (MI). In brief, low MI values correspond
-      to poor alignment while high values indicate a good alignment. The section below describes the validation figure.
+      The alignment procedure provides a figure to visually assess the quality of the alignment.
     </p>
     <button title="click to expand" type="button" class="collapsible">
       <span class="iconplus"></span>
@@ -86,7 +84,7 @@
         This function applies two registration methods: first, it uses phase correlation to align the images (for more information click <a href="https://www.mathworks.com/help/images/ref/imregcorr.html?searchHighlight=imregcorr&s_tid=srchtitle_imregcorr_1">here</a>). If this first alignment yields a MI value lower than the non-registered image, the function will ignore this alignment and go direct to the next step. Otherwise, it will use this first approximation as input to the next step.
       </p>
       <p>
-        Secondly, an intensity-based registration algorithm (for more information click <a href="https://www.mathworks.com/help/images/ref/imregister.html?s_tid=doc_ta">here</a>) is used to improve the first alignment (by phase correlation). The registration is run up to four times with different parameters with increasing accuracy (for more information click <a href="https://www.mathworks.com/help/images/ref/registration.optimizer.oneplusoneevolutionary.html">here</a>) in order to optimize the aligment. The parameters yielding the largest MI value are used in the final alignment.
+        Secondly, an intensity-based registration algorithm (for more information click <a href="https://www.mathworks.com/help/images/ref/imregister.html?s_tid=doc_ta">here</a>) is used to improve the first alignment (by phase correlation). The registration is run up to four times with different parameters with increasing accuracy (for more information click <a href="https://www.mathworks.com/help/images/ref/registration.optimizer.oneplusoneevolutionary.html">here</a>) in order to optimize the aligment. The quality of the aligment is measured using the <b>Mutual Information</b> (MI, see link below for more info). The parameters yielding the largest MI value are used in the final alignment.
       </p>
       <p>
         Finally, the geometric transformations used in the previous registration are applied to all frames of the input data.
