@@ -410,8 +410,10 @@ classdef PipelineManager < handle
                 obj.b_state = true;
                 % Get handle of current object:
                 obj.getTargetObj(targetIdxArr(ii,:));
-                % Initialize Log table:
-                obj.tmp_TargetObj.LastLog = obj.ProtocolObj.createEmptyTable;
+                if isempty(obj.tmp_TargetObj.LastLog)
+                    % Initialize Log table:
+                    obj.tmp_TargetObj.LastLog = obj.ProtocolObj.createEmptyTable;
+                end
                 % Create Full ID of object:
                 ID_list = repmat({'null'}, 1,3);
                 if isa(obj.tmp_TargetObj, 'Modality')
@@ -442,9 +444,13 @@ classdef PipelineManager < handle
                             % Fill out Log with Subject/Acquisition/Modality IDs :
                             LastLog(1,1:3) = strsplit(obj.targetObjFullID, ' -- ');
                             % Add class name to table:
-                            LastLog(1,[4:8]) = {obj.ClassName, ['Skipped Sequence #' num2str(obj.current_seq)],...
-                                'none',selFile,true};                            
-                            obj.tmp_TargetObj.LastLog = [obj.tmp_TargetObj.LastLog; LastLog];
+                            txt = sprintf('The file %s contains the following steps:',selFile);
+                            txt = [txt,sprintf('\n%s', skippedFcns{:})];
+                            LastLog(1,[4:8,11]) = {obj.ClassName, ['Skipped Sequence #' num2str(obj.current_seq)],...
+                                'none',selFile,true, txt};  
+                            
+%                             obj.updateTargetObjLog(LastLog);
+                            obj.PipelineSummary = [obj.PipelineSummary; LastLog];
                         elseif ~isempty(skippedFcns)
                             % When some steps are skipped:
                             fprintf('The following steps will be skipped:\n')
@@ -478,8 +484,8 @@ classdef PipelineManager < handle
                         break
                     end
                 end
-                % Update Pipeline summary table:
-                obj.PipelineSummary = [obj.PipelineSummary; obj.tmp_TargetObj.LastLog];
+%                 % Update Pipeline summary table:
+%                 obj.PipelineSummary = [obj.PipelineSummary; obj.tmp_TargetObj.LastLog];
                 fprintf([repmat('-',1,50),'\n']);
                 % Abort outer loop if user cancels pipeline:
                 if ~ishandle(obj.h_wbItem)
@@ -745,13 +751,17 @@ classdef PipelineManager < handle
                     obj.saveDataToFile(thisSeq,indx-1,true);
                 end
             end            
-            % Update log table of target object:
+            
             LastLog.Completed = obj.b_state;
             LastLog.RunDateTime = datetime('now');
-            obj.tmp_TargetObj.LastLog = [obj.tmp_TargetObj.LastLog; LastLog];
-            % Remove "empty" rows from the target Object Log table:
-            idx_emptyRow = all(strcmp('None',table2cell(obj.tmp_TargetObj.LastLog(:,1:5))),2);
-            obj.tmp_TargetObj.LastLog(idx_emptyRow,:) = [];
+            % Remove "empty" rows from LastLog:
+            idx_emptyRow = all(strcmp('None',table2cell(LastLog(:,1:5))),2);
+            LastLog(idx_emptyRow,:) = [];
+            % Update log table of target object:
+            obj.updateTargetObjLog(LastLog);
+            % Update Pipeline summary table:
+            obj.PipelineSummary = [obj.PipelineSummary; LastLog];
+            
         end
         
         function getTargetObj(obj, targetIdx)
@@ -819,7 +829,7 @@ classdef PipelineManager < handle
               if ~isempty(step.saveFileName) && ~strcmpi(fileList{indxSkip}, step.saveFileName)
                 obj.saveDataToFile(thisSeq, length(thisSeq),false); %Save to file 
               end
-              newSeq = {}; skippedSteps = {'All'};
+              newSeq = {}; skippedSteps = skippedStepsArr{indxSkip};
               return
            end
            nSteps = cellfun(@numel,skippedStepsArr);
@@ -864,10 +874,11 @@ classdef PipelineManager < handle
                     %                     return
                     %                 end
                 end
-                % Compare function names and optional parameters:
+                % Compare function names, inputFile and optional parameters :
                 thisHistory = struct();
                 for jj = 1:length(seqIn)
                     thisHistory(jj).name = seqIn(jj).name;
+                    thisHistory(jj).inputFileName = seqIn(jj).inputFileName;
                     thisHistory(jj).opts = seqIn(jj).opts;
                 end
                 % If there is an input file in the first step of the pipeline sequence,
@@ -882,6 +893,7 @@ classdef PipelineManager < handle
                         prepend_info = struct();
                         for jj = 1:length(dh)
                             prepend_info(jj).name = dh(jj).name;
+                            prepend_info(jj).inputFileName = dh(jj).inputFileName;
                             prepend_info(jj).opts = dh(jj).opts;
                             thisHistory = horzcat(prepend_info,thisHistory(idxFromFile:end));
                         end
@@ -896,6 +908,7 @@ classdef PipelineManager < handle
                 for jj = 1:length(dataHistory)
                     % Compare name and opts:
                     b_isEqual(jj) = (strcmpi(thisHistory(jj).name, dataHistory(jj).name) && ...
+                        strcmpi(thisHistory(jj).inputFileName, dataHistory(jj).inputFileName) && ...
                         isequaln(thisHistory(jj).opts,dataHistory(jj).opts));
                     if jj == length(thisHistory) || ~b_isEqual(jj)
                         break
@@ -1323,6 +1336,23 @@ classdef PipelineManager < handle
                 out = vertcat(dh_original,new_dh);
             end
         end
+        
+        function updateTargetObjLog(obj, LastLog)
+           % UPDTETARGETOBJLOG appends the Log of the current pipeline to 
+           % the object's "LastLog" property up to 500 rows. When the 500
+           % rows are filled, each row added removes the last row.
+           
+           if height(obj.tmp_TargetObj.LastLog) + height(LastLog) < 500
+               obj.tmp_TargetObj.LastLog = [obj.tmp_TargetObj.LastLog; LastLog];
+               return
+           end
+           
+           % For each new row, remove one from the object's "LastLog"
+           % table:           
+           obj.tmp_TargetObj.LastLog = [obj.tmp_TargetObj.LastLog; LastLog];
+           obj.tmp_TargetObj.LastLog(1:height(obj.tmp_TargetObj.LastLog)-500,:) = [];
+        end
+        
                         
         function loadInputFile(obj,step)
             % This function loads the data and metaData (if applicable)
