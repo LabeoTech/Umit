@@ -789,7 +789,7 @@ classdef PipelineManager < handle
                     for ii = 1:length(new_pipe)
                         % Add inputFrom:
                         if new_pipe(ii).b_save2File
-                            if any(strcmpi(fieldnames(new_pipe),'datFileName'));
+                            if any(strcmpi(fieldnames(new_pipe),'datFileName'))
                                 state = obj.addTask(new_pipe(ii).name,true,new_pipe(ii).datFileName);
                             else
                                 state = obj.addTask(new_pipe(ii).name,true,new_pipe(ii).saveFileName);
