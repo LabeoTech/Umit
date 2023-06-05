@@ -45,17 +45,34 @@
       This function performs the automatic alignment of an imaging recording to an <i>Imaging Reference frame</i>. The creation of the reference frame is performed by the <samp>ROImanager</samp> app and is described <a href="./ROImanager.html">here</a>. The function uses an imaging recording (stored in a <samp>.dat</samp> file) to align with the <i>reference frame</i> and applies the geometric transformation to the input file.
     </p>
     <h3>Input</h3>
-    <hr>
-    <p>
+    <hr><p>
       This function accepts only images (with dimensions Y,X) or image time series (with dimensions Y,X,T) as input.
     </p>
     <h3 id="the-algorithm"> The algorithm</h3>
     <hr>
     <p>
-      This function uses a <i>reference frame</i> stored in a <samp>.mat</samp> file, a <i>target <samp>.dat</samp> file</i> and the input data. The alignment algorithm works in two main steps: in the first step, the function gets the first frame of the <i>target file</i> and aligns it with the <i>reference frame</i>. Secondly, it uses the geometric transformations created to align the images in the first step and applies it to all the frames of the input data.
-    </p>
+      This function uses a <i>reference frame</i> stored in a <samp>.mat</samp> file, a <i>target <samp>.dat</samp> file</i>
+      and the input data. The alignment algorithm works in two steps:</p>
+    <ol>
+      <li> The function gets the first frame of the <i>target file</i> and aligns it with the <i>reference frame</i>.</li>
+      <li> It uses the geometric transformations created to align the images in the first step and applies it to all the
+        frames of the input data.</li>
+    </ol>
+    <div class="warnnote">
+      <p><strong>Important</strong><br>
+        The function variable <samp>UseFile</samp> contains the name of the <i>target</i> <samp>.dat</samp> file. If the <samp>UseFile</samp> is set to <samp>auto</samp>, the function will use the file with the same name as the one used to create the <i>reference frame</i> by the <samp>ROImanager</samp> app. If you used another source (e.g., .PNG image) to create the <i>reference frame</i>, instead of <samp>auto</samp>, type the name of the file that you want to register with it.
+      </p>
+    </div>
+    <br>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        This function assumes that the <i>target file</i> is located in the same folder as the input file. If no files are found, the function will raise an error.
+      </p>
+    </div>
     <p>
-      The alignment procedure provides a quantitative metrics as well as a figure to visually assess the quality of the alignment. The quantitative metrics provided is the <b>Mutual Information</b> (MI). In brief, low MI values correspond to poor alignment while high values indicate a good alignment. The section below describes the validation figure.
+      The alignment procedure provides a quantitative metrics as well as a figure to visually assess the quality of the
+      alignment. The quantitative metrics provided is the <b>Mutual Information</b> (MI). In brief, low MI values correspond
+      to poor alignment while high values indicate a good alignment. The section below describes the validation figure.
     </p>
     <button title="click to expand" type="button" class="collapsible">
       <span class="iconplus"></span>
@@ -69,7 +86,7 @@
         This function applies two registration methods: first, it uses phase correlation to align the images (for more information click <a href="https://www.mathworks.com/help/images/ref/imregcorr.html?searchHighlight=imregcorr&s_tid=srchtitle_imregcorr_1">here</a>). If this first alignment yields a MI value lower than the non-registered image, the function will ignore this alignment and go direct to the next step. Otherwise, it will use this first approximation as input to the next step.
       </p>
       <p>
-        Secondly, an intensity-based registration algorithm (for more information click <a href="https://www.mathworks.com/help/images/ref/imregister.html?s_tid=doc_ta">here</a>) is used to ìmprove the first alignment (by phase correlation). The registration is run up to four times with different parameters with increasing accuracy (for more information click <a href="https://www.mathworks.com/help/images/ref/registration.optimizer.oneplusoneevolutionary.html">here</a>) in order to optimize the aligment. The parameters yielding the largest MI value are used in the final alignment.
+        Secondly, an intensity-based registration algorithm (for more information click <a href="https://www.mathworks.com/help/images/ref/imregister.html?s_tid=doc_ta">here</a>) is used to improve the first alignment (by phase correlation). The registration is run up to four times with different parameters with increasing accuracy (for more information click <a href="https://www.mathworks.com/help/images/ref/registration.optimizer.oneplusoneevolutionary.html">here</a>) in order to optimize the aligment. The parameters yielding the largest MI value are used in the final alignment.
       </p>
       <p>
         Finally, the geometric transformations used in the previous registration are applied to all frames of the input data.
@@ -104,17 +121,7 @@
       </p>
       <p>
         If set to <b>"auto"</b>, the function will use a file with the same name as the <samp>.dat</samp> file used to create the <i>Imaging reference frame</i>. This information is stored in the variable <samp>datFile</samp> inside the <i>Imaging reference file</i>. Alternatively, type the name of the file to be used to register with the <i>reference frame</i>.
-      </p>
-      <div class="infonote">
-        <p><strong>Note</strong><br>
-          The <samp>datFile</samp> will contain the name of the file used to create the <i>reference frame</i> <b>only</b> if it was used as input to the <samp>ROImanager</samp> app. If not, this variable will be empty and the <samp>alignFrames</samp> function will raise an error. In this case, type the target file name instead.
-        </p>
-      </div>
-      <div class="infonote">
-        <p><strong>Note</strong><br>
-          This function assumes that the <i>target file</i> is located in the same folder as the input file. If no files are found, the function will raise an error.
-        </p>
-      </div>
+      </p>      
     </div>
 
     <button title="click to expand" type="button" class="collapsible">
