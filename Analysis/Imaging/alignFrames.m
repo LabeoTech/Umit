@@ -171,7 +171,6 @@ for i = 1:4
         idx = i;
     end
 end
-fprintf('Maximum Mutual Information obtained: %.4f\n',MI)
 % Re-calculate tform from best optimizer params:
 optimizer.GrowthFactor = GF(idx);
 optimizer.Epsilon = Eps(idx);
@@ -196,7 +195,7 @@ s2=subplot(223); imagesc(s2,refFr_mask); colormap(s2,'gray');axis(s2,'off')
 s3=subplot(224); imagesc(s3,targetFr_mask); colormap(s3,'gray');axis(s3,'off')
 set(s2, 'DataAspectRatio', [1 1 1], 'DataAspectRatioMode', 'manual');
 set(s3, 'DataAspectRatio', [1 1 1], 'DataAspectRatioMode', 'manual');
-title(s1,['Mutual Information = ' num2str(MI)]);
+title(s1,'Merged');
 title(s2, 'Reference');
 title(s3, 'Registered');
 % draw dots

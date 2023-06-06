@@ -590,18 +590,22 @@ classdef PipelineManager < handle
             % SAVEPIPE saves the structure OBJ.PIPE in a .JSON file in the
             % folder PIPELINECONFIGFILES inside the SAVEDIR of OBJ.PROTOCOLOBJ.
             
-            if ~endsWith(filename,'.json')
-                filename = [filename,'.json'];
+            [path, file,ext] = fileparts(filename);
+            if strcmpi(ext,'.json')
+                ext = '.json';
             end
-            
-            targetDir = fullfile(obj.ProtocolObj.SaveDir, 'PipeLineConfigFiles');
-            [~,~] = mkdir(targetDir);
+            if isempty(path)
+                path = fullfile(obj.ProtocolObj.SaveDir, 'PipeLineConfigFiles');
+            end
+            if ~exist(path,'dir')
+                [~,~] = mkdir(targetDir);
+            end
             pipeStruct = obj.pipe;           
             txt = jsonencode(pipeStruct);
-            fid = fopen(fullfile(targetDir,filename), 'w');
+            fid = fopen(fullfile(path,[filename ext]), 'w');
             fprintf(fid, '%s', txt);
             fclose(fid);
-            disp(['Pipeline saved as "' filename '" in ' targetDir]);
+            disp(['Pipeline saved as "' file '" in ' path]);
         end
         
         function loadPipe(obj, pipeFile)
@@ -864,6 +868,11 @@ classdef PipelineManager < handle
                     return
                 end
                 dataHistory = a.dataHistory; clear a
+                %%% For retrocompatibility
+                if ~strcmpi(fieldnames(dataHistory(1)), 'inputFileName')
+                    dataHistory(1).inputFileName = '';
+                end
+                %%%
                 % Compare datetimes:
                 [~,locB] = ismember({dataHistory.name},{obj.funcList.name});
                 if locB
