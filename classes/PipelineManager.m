@@ -651,8 +651,7 @@ classdef PipelineManager < handle
                     % Update parameters
                     obj.pipe(end).opts = new_pipe(ii).opts;
                 end
-                % Overwrite old .JSON file:
-                [~,filename,~] = fileparts(pipeFile);
+                % Overwrite old .JSON file:                
                 obj.savePipe(filename);
                 obj.validatePipeline;
                 return
