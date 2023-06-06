@@ -109,7 +109,7 @@ classdef EventsManager < handle
            %  3 - Read a subset of columns from a .CSV file:
            %    readEventFile('CSVcolNames',{'Col1'',Col2','Col5'};
            %  4 - Read a subset o columns from an specific .CSV file:
-           %    readEventFile('C:/FULLPATH/FILENAME.CSV','CSVcolNames'{'ThisOne'});
+           %    readEventFile('C:/FULLPATH/FILENAME.CSV','CSVcolNames',{'ThisOne'});
            
            p = inputParser;
            addRequired(p,'obj')
@@ -149,7 +149,6 @@ classdef EventsManager < handle
                    elseif strcmpi(obj.EventFileParseMethod,'vpixx') & (endsWith(obj.EventFileName, '.vpixx') | endsWith(obj.EventFileName, '.txt'))
                        [evID, evNames] = obj.readVpixxFile;
                        
-                       
                        % Add more elseif statements when new parsing methods
                        % are added.
                        %                elseif
@@ -157,7 +156,8 @@ classdef EventsManager < handle
                    else
                        continue
                    end
-               catch                  
+               catch  ME
+                   rethrow(ME)
                    %%% Do nothing
                end
                if ~isempty(evID)
@@ -165,9 +165,11 @@ classdef EventsManager < handle
                    break
                end
            end
-           
+           % 
            assert(~isempty(evID),'Failed to read Event File!')
-           
+           % Check if the eventID has the same length as the timestamps:
+           assert(isequaln(length(obj.timestamps), length(evID)), 'Failed to update events. Event ID list should have the same length as the timestamps')
+           % Save event ID and name lists:
            obj.eventID = evID;
            obj.eventNameList = evNames;
            
@@ -190,13 +192,18 @@ classdef EventsManager < handle
             if isempty(obj.AnalogIN)
                 return
             end
+            
             if isempty(chanName)
                 chanIndx = 1:size(obj.AnalogIN,2);
                 chanName = obj.AIChanList;
-            else
-                [~,chanIndx] = ismember(chanName,obj.AIChanList);                
-            end                         
+            end
+            
+            if ischar(chanName)
+                chanName = {chanName};
+            end
                         
+            [~,chanIndx] = ismember(chanName,obj.AIChanList);
+            
             xVec = [0:size(obj.AnalogIN,1)-1]./obj.sr;% Use X-axis in seconds.
             axYSize = [min(obj.AnalogIN(:)), max(obj.AnalogIN(:))];
             % Show 4 plot per figure:
@@ -388,7 +395,7 @@ classdef EventsManager < handle
         end
         
         function saveEvents(obj,saveFolder)
-            % GENEVENTSFILE creates the file "events.mat" in the
+            % SAVEEVENTSFILE creates the file "events.mat" in the
             % SaveFolder. This file is used by umIT to split the data into
             % trials.
             
@@ -652,13 +659,12 @@ classdef EventsManager < handle
                                      
             % Set CSV reading rules:                       
             opts = detectImportOptions(obj.EventFileName);
-            if nargin < 2 || isempty([colName{:}])                                
-                opts.VariableNames = {'DEFAULT'};
-                colName = 'DEFAULT';
-            else                
+            if ~isempty([colName{:}])
                 opts.SelectedVariableNames = colName; % Select the input columns only.
-            end
-            opts.DataLines = 2; %Start reading at 2nd row.
+            else
+                colName = opts.VariableNames;
+            end            
+%             opts.DataLines = 2; %Start reading at 2nd row.
             opts.VariableTypes = repmat({'char'},size(opts.VariableTypes)); % Force data to characters.
             opts.MissingRule = 'omitrow'; % Remove rows with missing values.
             opts.ExtraColumnsRule = 'ignore'; % Ignore empty columns.
@@ -676,6 +682,9 @@ classdef EventsManager < handle
                 % Generate event ID from event name index.
                 eventID(ii) = nameMap(nameList{ii});
             end 
+            % Duplicate the eventID to account for low state (considering
+            % that there is no overlap between conditions).
+            eventID = repelem(eventID,2);
         end
         
         function [eventID, eventNameList] = readVpixxFile(obj)
