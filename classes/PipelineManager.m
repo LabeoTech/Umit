@@ -591,7 +591,7 @@ classdef PipelineManager < handle
             % folder PIPELINECONFIGFILES inside the SAVEDIR of OBJ.PROTOCOLOBJ.
             
             [path, file,ext] = fileparts(filename);
-            if strcmpi(ext,'.json')
+            if ~strcmpi(ext,'.json')
                 ext = '.json';
             end
             if isempty(path)
@@ -602,7 +602,7 @@ classdef PipelineManager < handle
             end
             pipeStruct = obj.pipe;           
             txt = jsonencode(pipeStruct);
-            fid = fopen(fullfile(path,[filename ext]), 'w');
+            fid = fopen(fullfile(path,[file ext]), 'w');
             fprintf(fid, '%s', txt);
             fclose(fid);
             disp(['Pipeline saved as "' file '" in ' path]);
