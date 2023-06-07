@@ -1,4 +1,10 @@
 function ReadDMDevents(object,SaveFolder, varargin)
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% THIS FUNCTION IS NOW OBSOLETE AND WILL BE EVENTUALLY REPLACED BY 
+% THE "EVENTSMANAGER" CLASS!
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % READDMDEVENTS creates an event .MAT file in SAVEFOLDER
 % from Analog signals using the DMD system from LabeoTech.
 % 

@@ -9,7 +9,7 @@ classdef EventsManager < handle
         trigChanName = {''}; % Name of AI channel(s) containing the triggers.
         minInterStim single {mustBeNonnegative} = 2 % Minimal inter stim time (in seconds). This param. is used to identify Bursts in analogIN. !This value should be higher than the inter-burst value to work!
         
-        EventFileParseMethod char % Name of the method to read the Event File. {'CSV','vpixx'};
+%         EventFileParseMethod char % Name of the method to read the Event File. {'CSV','vpixx'};
     end
     properties (SetAccess = private)
         dictAIChan cell = {'CameraTrig', 'CameraTrig2', 'InputTrigger',...
@@ -30,7 +30,13 @@ classdef EventsManager < handle
     properties (Access = private)
         warnOrigState % original state of Matlab's warnings. This will be restored at this class destruction.
         EventFileName char % Name of the event file containing events information (.csv, .txt, .vpixx ...).
+        ParseMethods = {'none','csv','vpixx'}; % List of valid parse methods.
+        privateEventFileParseMethod;
     end
+    properties (Dependent)
+        EventFileParseMethod char % Name of the method to read the Event File. {'CSV','vpixx'};
+    end
+    
     
     methods
         function obj = EventsManager(DataFolder,varargin)
@@ -42,7 +48,7 @@ classdef EventsManager < handle
             % Input validation:
             p = inputParser;
             addRequired(p,'DataFolder',@isfolder)            
-            addOptional(p, 'ParseMethod','none',@(x) ismember(lower(x),{'none','csv','vpixx'}));
+            addOptional(p, 'ParseMethod','none',@(x) ismember(lower(x),obj.ParseMethods));            
             parse(p,DataFolder,varargin{:});
             
             % Disable backtrace warnings:
@@ -51,8 +57,7 @@ classdef EventsManager < handle
             
             % Set main properties:
             obj.DataFolder = p.Results.DataFolder;            
-            obj.EventFileParseMethod = lower(p.Results.ParseMethod);
-            
+            obj.EventFileParseMethod = lower(p.Results.ParseMethod);            
             % Set properties based on the info.txt file:
             obj.setInfo;
             % Set AnalogIN property:
@@ -61,9 +66,31 @@ classdef EventsManager < handle
             if ~isempty([obj.trigChanName{:}])
                 obj.getTriggers;            
             end
+            % Force EventFileParseMethod to "none" if the stimulus is
+            % digital. In this case, the event info should already be
+            % stated in the "info.txt" file (to be confirmed)
+            if obj.b_isDigital && ~strcmpi(obj.EventFileParseMethod, 'none')
+                warning('Event file parsing method set to "none" because the stimulus is digital.')
+                obj.EventFileParseMethod = 'none';
+            end
+        end
+        function set.EventFileParseMethod(obj,parseMethod)
+            % Set method for event file parse method. Just checks if the
+            % input is valid. Valid parsing methods are stored in the
+            % property "ParseMethods".
             
+            parseMethod = convertStringsToChars(parseMethod);
+            validateattributes(parseMethod,{'char'},{'scalartext'}, 'set.EventFileParseMethod');
+            msg = [sprintf('Invalid parse method "%s". It must be one of the following:',parseMethod),...
+                sprintf('\n%s',obj.ParseMethods{:})];
+            assert(ismember(parseMethod,obj.ParseMethods),msg);
+            obj.privateEventFileParseMethod = parseMethod;                        
         end
         
+        function out = get.EventFileParseMethod(obj)
+           out = obj.privateEventFileParseMethod; 
+        end
+               
         function set.trigChanName(obj, trigName)
             % Set method for trigger channel name. 
             % Forces the property to a cell.
@@ -126,24 +153,31 @@ classdef EventsManager < handle
            if ~isempty(evFile)
                % For a specific event file:
                if isempty(fileparts(evFile))
-                   evFile = fullfile(obj.DataFolder,evFile);
+                   evFile = fullfile(obj.DataFolder,evFile);                   
                end
+               % Check if the file exists. If not, raise a warning and
+               % return:
+               if ~exist(evFile,'file')                   
+                   warning('Operation aborted. Events file "%s" does not exist!',evFile);
+                   return
+               end
+               evFile = {evFile};
            else
                % For automatic detection of event files:
                fList = [dir(fullfile(obj.DataFolder,'*.csv'));...
                    dir(fullfile(obj.DataFolder,'*.vpixx'));...
                    dir(fullfile(obj.DataFolder,'*.txt'))];
                evFile = fullfile({fList.folder},{fList.name});
-           end
-           if isempty([evFile{:}])
-               warning('Event list not found! Event IDs and names will not be updated!')
-               return
-           end
+               if isempty([evFile{:}])
+                   warning('Event list not found! Event IDs and names will not be updated!')
+                   return
+               end
+           end           
            % Try to parse files until it works:
            evID = []; evNames = {};
            for ii = 1:length(evFile)
                obj.EventFileName = evFile{ii};
-               try % try-catch is here just to avoid errors when non-event files are read.
+               try % try-catch is here just to supress errors from private functiosn when non-event files are read. Errors or warnings will be raised here instead.
                    if strcmpi(obj.EventFileParseMethod,'csv') & endsWith(obj.EventFileName, '.csv')
                        [evID, evNames] = obj.readCSVfile(colNames);
                    elseif strcmpi(obj.EventFileParseMethod,'vpixx') & (endsWith(obj.EventFileName, '.vpixx') | endsWith(obj.EventFileName, '.txt'))
@@ -156,23 +190,26 @@ classdef EventsManager < handle
                    else
                        continue
                    end
-               catch  ME
-                   rethrow(ME)
+               catch                    
                    %%% Do nothing
                end
                if ~isempty(evID)
-                   disp(['Event list updated from file " ' obj.EventFileName '"'])
+                   disp(['Event list updated from file "' obj.EventFileName '"'])
                    break
                end
            end
-           % 
-           assert(~isempty(evID),'Failed to read Event File!')
+           % Throw warning if no event file was specified and no file was
+           % successfully read:
+           if isempty(p.Results.EventFileName) && isempty(evID)
+               warning('Event File parsing aborted! Failed to parse "%s" file(s) in "%s".\nDo they exist in the Data Folder?',upper(obj.EventFileParseMethod), obj.DataFolder)
+               return
+           end
+           assert(~isempty(evID),'Failed to parse "%s"! \nIs this a valid Event file?',obj.EventFileName)
            % Check if the eventID has the same length as the timestamps:
-           assert(isequaln(length(obj.timestamps), length(evID)), 'Failed to update events. Event ID list should have the same length as the timestamps')
+           assert(isequaln(length(obj.timestamps), length(evID)), 'Failed to update events in file "%s". Event ID list must have the same length as the timestamps', obj.EventFileName)
            % Save event ID and name lists:
            obj.eventID = evID;
-           obj.eventNameList = evNames;
-           
+           obj.eventNameList = evNames;           
         end
                     
         function plotAnalogIN(obj, varargin)

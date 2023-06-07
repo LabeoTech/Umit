@@ -1,5 +1,11 @@
 function getEventsFromSingleChannel(object, SaveFolder, varargin)
-% GET_EVENTSFROMSINGLECHANNEL creates an event .MAT file in SAVEFOLDER
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% THIS FUNCTION IS NOW OBSOLETE AND WILL BE EVENTUALLY REPLACED BY 
+% THE "EVENTSMANAGER" CLASS!
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%GET_EVENTSFROMSINGLECHANNEL creates an event .MAT file in SAVEFOLDER
 % from Analog signals recorded from ONE CHANNEL of LabeoTech Imaging
 % systems. 
 % 
