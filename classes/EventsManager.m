@@ -352,9 +352,9 @@ classdef EventsManager < handle
                 obj.eventID = [obj.eventID; ones(length(tmstmp),1).*ii];
                 % Control for failed detections:
                 if isempty(obj.timestamps)
-                    warning(['Failed to detect triggers in channel "' obj.trigChanName{ii} '"'])
+                    warning(['Failed to detect triggers in channel "' obj.trigChanName{ii} '".'])
                 else
-                    disp(['Triggers detected in channel "' obj.trigChanName{ii} '"']);
+                    disp(['Triggers detected in channel "' obj.trigChanName{ii} '".']);
                 end
                 % Special Case: For internal analog triggers, use the
                 % "Name" field of the channel instead of the channel ID.
@@ -369,8 +369,7 @@ classdef EventsManager < handle
                     obj.eventNameList{ii}= obj.trigChanName{ii};
                 end
             end 
-            if isempty(obj.timestamps)
-                disp('No triggers detected!')
+            if isempty(obj.timestamps)                
                 return
             end                
             [obj.timestamps,indx] = sort(obj.timestamps);
@@ -617,21 +616,20 @@ classdef EventsManager < handle
                 data = data';
             end
             if strcmpi(obj.trigThr, 'auto')
-                trigAmp = (.7*(max(data(:)) - min(data(:))));
+                trigAmp = (.8*(max(data(:)) - min(data(:))));
                 % Control for the minimal amplitude for trigger detection
                 if trigAmp < obj.minTrigAmp
                     warning('Operation Aborted! The trigger amplitude is too low for automatic detection! Manually set a threshold and try again.');
                     return
                 end
-                % Update trigger threshold:
-                obj.trigThr = (.7*(max(data(:)) - min(data(:)))) + min(data(:));
+                % Update trigger threshold value:
+                obj.trigThr = trigAmp + min(data(:));
             end
             
             % Find samples that cross the threshold (rising and falling):            
             tmRise = find(data < obj.trigThr & [data(2:end) nan] > obj.trigThr);
             tmFall = find(data > obj.trigThr & [data(2:end) nan] < obj.trigThr);            
-            if isempty(tmRise)
-                disp('Triggers not found!')
+            if isempty(tmRise)                
                 return
             elseif numel(tmRise) ~= numel(tmFall)
                 % Need to decide what to do in this case. For now, throw a
