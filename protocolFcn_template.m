@@ -121,20 +121,7 @@ for i = 1:length(uniqS)
             % Add Timestamp of the beginning of the recording to
             % Acquisition object:
             tmpA.Start_datetime = DateTime;
-        end
-        %%% Uncomment this section to look for meta data .MAT file
-        %%% containing events info linked to the recording:
-        %         % Look for metaDataFiles in RawData Folders:
-        %         matFileList = dir([folder filesep '*.mat']); matFileList = {matFileList.name};
-        %         % Find .mat files that starts with the name of the current
-        %         % recording folder:
-        %         idx = startsWith(matFileList, recNames{i});
-        %         if sum(idx) > 0
-        %             indx = find(idx);
-        %             matFile = matFileList{indx(1)}; % Picks the first one, but I assume that there is only one file per folder.
-        %             tmpA.Array.ObjList(end).MetaDataFileName = matFile;
-        %         end
-        
+        end       
         % Add Acquisition Object to Subject
         tmpS(i).Array.addObj(tmpA);
     end
