@@ -8,8 +8,6 @@ classdef EventsManager < handle
         trigType char {mustBeMember(trigType,{'EdgeSet','EdgeToggle'})} = 'EdgeSet' % Trigger type.
         trigChanName = {''}; % Name of AI channel(s) containing the triggers.
         minInterStim single {mustBeNonnegative} = 2 % Minimal inter stim time (in seconds). This param. is used to identify Bursts in analogIN. !This value should be higher than the inter-burst value to work!
-        
-%         EventFileParseMethod char % Name of the method to read the Event File. {'CSV','vpixx'};
     end
     properties (SetAccess = private)
         dictAIChan cell = {'CameraTrig', 'CameraTrig2', 'InputTrigger',...
@@ -36,14 +34,19 @@ classdef EventsManager < handle
     properties (Dependent)
         EventFileParseMethod char % Name of the method to read the Event File. {'CSV','vpixx'};
     end
-    
-    
+        
     methods
         function obj = EventsManager(DataFolder,varargin)
             % This is the constructor method.
             % It instantiates the object and sets the values for the
             % DataFolder and EventFileName properties.
             % It reads the analog IN channels and the info.txt as well.
+            % Inputs:
+            %   DataFolder (char): path to the folder containing the
+            %       ai_xxxx.bin data and "info.txt" file.
+            %   ParseMethod (optional, char): Name of the parsing method to
+            %   apply to the event file containing the list of event
+            %   IDs:{'none'(default),'csv','vpixx'}.
             
             % Input validation:
             p = inputParser;
@@ -178,9 +181,9 @@ classdef EventsManager < handle
            for ii = 1:length(evFile)
                obj.EventFileName = evFile{ii};
                try % try-catch is here just to supress errors from private functiosn when non-event files are read. Errors or warnings will be raised here instead.
-                   if strcmpi(obj.EventFileParseMethod,'csv') & endsWith(obj.EventFileName, '.csv')
+                   if strcmpi(obj.EventFileParseMethod,'csv') && endsWith(obj.EventFileName, '.csv')
                        [evID, evNames] = obj.readCSVfile(colNames);
-                   elseif strcmpi(obj.EventFileParseMethod,'vpixx') & (endsWith(obj.EventFileName, '.vpixx') | endsWith(obj.EventFileName, '.txt'))
+                   elseif strcmpi(obj.EventFileParseMethod,'vpixx') && (endsWith(obj.EventFileName, '.vpixx') || endsWith(obj.EventFileName, '.txt'))
                        [evID, evNames] = obj.readVpixxFile;
                        
                        % Add more elseif statements when new parsing methods
@@ -230,8 +233,7 @@ classdef EventsManager < handle
                 return
             end
             
-            if isempty(chanName)
-                chanIndx = 1:size(obj.AnalogIN,2);
+            if isempty(chanName)                
                 chanName = obj.AIChanList;
             end
             
@@ -431,7 +433,7 @@ classdef EventsManager < handle
         end
         
         function saveEvents(obj,saveFolder)
-            % SAVEEVENTSFILE creates the file "events.mat" in the
+            % SAVEEVENTS creates the file "events.mat" in the
             % SaveFolder. This file is used by umIT to split the data into
             % trials.
             
@@ -601,12 +603,15 @@ classdef EventsManager < handle
         end
                      
         function [timestamps, state] = detectTrig(obj,data)
-            % DETECTTRIGGERS detects the triggers from a given signal and
+            % DETECTTRIG detects the triggers from a given signal and
             %   outputs the timestamps and state. THis function is called by
-            %   the method "getTriggers".
-            
+            %   the method "getTriggers".            
             % Input:
             %    data(1xN num. vector): vector containing the triggers.
+            % Outputs:
+            %    timestamps (num vect.): time delay (in seconds) of triggers detected.
+            %    state (num vect.): state of the trigger: 1 = rising; 0 = falling.
+            
             timestamps = single.empty();
             state = uint8.empty();
             % Check if "data" is a vector;
@@ -691,7 +696,14 @@ classdef EventsManager < handle
             % rows of the given column. If 2 or more column names are
             % provided, the values of the column names are concatenated
             % with a hiphen ("-"). 
-                                     
+            % Input:
+            %    colName(optional, char|cell): column name(s) to be read
+            %    from the CSV file.
+            % Outputs:
+            %    eventID (num vect.): list of indices of the events listed
+            %    in "eventNameList".
+            %    eventNameList (cell): list of event names in alphabetical
+            %    order.            
             % Set CSV reading rules:                       
             opts = detectImportOptions(obj.EventFileName);
             if ~isempty([colName{:}])
@@ -725,6 +737,11 @@ classdef EventsManager < handle
         function [eventID, eventNameList] = readVpixxFile(obj)
             % READVPIXXFILE extracts the condition ID, name and timestamps (if applicable)
             %   from the RAW DATA section of a .txt or .vpixx file.
+            % Outputs:
+            %    eventID (num vect.): list of indices of the events listed
+            %    in "eventNameList".
+            %    eventNameList (cell): list of event names in alphabetical
+            %    order. 
             
             % Extract only the part of the text containing the real sequence of
             %   conditions (RAW DATA section):
