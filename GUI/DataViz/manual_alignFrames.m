@@ -191,6 +191,17 @@ fcnInfo.name = fcnInfo.name(1:end-2); % remove .m;
 dtHist = genDataHistory(fcnInfo,['out = manual_alignFrames(object,''' applyToFile ''');'],...
     [],'none',applyToFile);
 if isfield(metaData,'dataHistory')
+    % Account for missing fields (FOR RETROCOMPATIBILITY)
+    fn = setdiff(fieldnames(dtHist),fieldnames(metaData.dataHistory));
+    % Create missing fields in original dataHistory:
+    for ii = 1:length(fn)
+        metaData.dataHistory(1).(fn{ii}) = [];
+    end
+    % Append fields
+    fn = setdiff(fieldnames(metaData.dataHistory), fieldnames(dtHist));
+    for ii = 1:length(fn)
+        dtHist(1).(fn{ii}) = [];
+    end    
     metaData.dataHistory = [metaData.dataHistory; dtHist];
 else
     metaData.dataHistory = dtHist;
