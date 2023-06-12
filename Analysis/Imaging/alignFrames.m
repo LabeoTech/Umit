@@ -53,7 +53,7 @@ try
     refFile = fullfile(ParentObj.SaveFolder, opts.RefFile);
     if ~endsWith(refFile, '.mat')
         refFile = [refFile, '.mat'];
-    end        
+    end
     if ~isfile(refFile)
         error('umIToolbox:alignFrames:FileNotFound', 'Imaging reference file not found in Subject folder!');
     end
@@ -65,13 +65,13 @@ catch ME
     rethrow(ME)
 end
 % Load frame from file to compare with reference image:
-switch lower(opts.UseFile)    
+switch lower(opts.UseFile)
     case 'auto'
         % Look for a file with the same name as the one used to create the
         % "ImagingReferenceFrame.mat" file:
         if isempty(ref_frame_info.datFile)
             error('umIToolbox:alignFrames:MissingInput',...
-                ['Failed to locate reference file. Was the reference frame generated from an existing .dat file?' ...                
+                ['Failed to locate reference file. Was the reference frame generated from an existing .dat file?' ...
                 'Type the file name to use instead of "auto".']);
         end
         [~,filename,ext] = fileparts(ref_frame_info.datFile);
@@ -88,7 +88,7 @@ switch lower(opts.UseFile)
         if ~endsWith(opts.UseFile, '.dat')
             opts.UseFile = [opts.UseFile , '.dat'];
         end
-        % Load the filename in "opts.UseFile"        
+        % Load the filename in "opts.UseFile"
         try
             targetDat = mapDatFile(fullfile(object.SaveFolder, opts.UseFile));
             if ndims(targetDat.Data.data) == 3
@@ -101,7 +101,7 @@ switch lower(opts.UseFile)
                 ['Cannot find "' opts.UseFile '" in object''s SaveFolder']);
             addCause(ME, causeException);
             rethrow(ME)
-        end        
+        end
 end
 
 % Load Reference Frame;
@@ -162,7 +162,7 @@ for i = 1:4
     end
     counts = histcounts2(refFr_mask(:), tmpFr(:),metric.NumberOfHistogramBins);
     tmpMI = mutual_information(counts);
-    if tmpMI<=MI
+    if tmpMI <= MI
         idx = i-1;
         disp('Optimization stopped here!');
         break
@@ -188,11 +188,15 @@ disp('Done.')
 %%%%%
 
 % For Visual quality control of alignment:
-fig = figure('Name', strjoin({object.MyParent.MyParent.ID object.MyParent.ID object.ID}, '-'),...
-    'WindowButtonMotionFcn', @moveDot, 'Visible', 'off');
-s1=subplot(2,2,(1:2));imshowpair(refFr_mask, targetFr_mask);
-s2=subplot(223); imagesc(s2,refFr_mask); colormap(s2,'gray');axis(s2,'off')
-s3=subplot(224); imagesc(s3,targetFr_mask); colormap(s3,'gray');axis(s3,'off')
+myID = strjoin({object.MyParent.MyParent.ID object.MyParent.ID object.ID}, '-');
+fig = figure('Name', myID, 'WindowButtonMotionFcn', @moveDot, 'Visible', 'off',...
+    'UserData',struct('ID',myID, 'Folder',object.SaveFolder, 'ListFile',''), 'Tag','alignFig');
+uicontrol('Style','pushbutton','String','Mark as misaligned','Tooltip','Save the name of the recording to a text file', ...
+    'Parent',fig,'Position',[10 10 120,30], 'BackgroundColor',[.8 0.2 0.2],...
+    'FontSize',10,'Callback', @save2List)
+s1 = subplot(2,2,(1:2));imshowpair(refFr_mask, targetFr_mask);
+s2 = subplot(223); imagesc(s2,refFr_mask); colormap(s2,'gray');axis(s2,'off')
+s3 = subplot(224); imagesc(s3,targetFr_mask); colormap(s3,'gray');axis(s3,'off')
 set(s2, 'DataAspectRatio', [1 1 1], 'DataAspectRatioMode', 'manual');
 set(s3, 'DataAspectRatio', [1 1 1], 'DataAspectRatioMode', 'manual');
 title(s1,'Merged');
@@ -228,16 +232,16 @@ metaData = genMetaData(outData, extraParams.dim_names, extraParams);
 % Show Figure
 fig.Visible = 'on';
 end
-
 % Figure callbacks:
 
 function moveDot(src,~)
 %
 % disp('moving...')
-for i = 1:length(src.Children)
-    coords = get(src.Children(i), 'CurrentPoint');
+myAx = findobj(src, 'Type','axes');
+for i = 1:length(myAx)
+    coords = get(myAx(i), 'CurrentPoint');
     coords = round(coords(1,1:2));
-    b_in = getBounds(coords, src.Children(i));
+    b_in = getBounds(coords, myAx(i));
     if b_in
         break
     end
@@ -270,3 +274,48 @@ b_in_bounds = (pt(1) >= x_lims(1)) && ...
     (pt(2) <= y_lims(2));
 end
 
+function save2List(src,~)
+% SAVE2LIST appends the name of the folder to a .TXT file. This is useful
+% for the user to make a list of failed alignments.
+
+% Check for other opened figures:
+h = findall(0,'Tag','alignFig');
+% Look for a text file stored in the "UserData" property of those figures:
+txtFileName = arrayfun(@(x) x.UserData.ListFile,h,'UniformOutput',false);
+txtFileName(cellfun(@isempty,txtFileName)) = [];
+% Open dialog to save file:
+if isempty(txtFileName)
+    defName = fullfile(src.Parent.UserData.Folder,['alignFrameList_' datestr(now(),'yyyy-mm-dd') '.csv']);
+    [file,path] = uiputfile('*.csv','Create or choose file to save to list',defName);
+else
+    defName = fullfile(src.Parent.UserData.Folder,txtFileName{1});
+    [file,path] = uigetfile('*.csv','Choose existing file to save to list',defName);
+end
+
+if file == 0
+    return
+end
+info = cell2table({src.Parent.UserData.ID, src.Parent.UserData.Folder, datestr(now(),'yyyy-mm-dd HH:MM:SS')});
+info.Properties.VariableNames = {'ID','Folder','DateAdded'};
+txt = [];
+% Read the selected file or create a new one:
+saveFile = fullfile(path,file);
+if exist(saveFile, 'file')
+    txt = readtable(saveFile);
+end
+% Create/append the folder and name:
+if isempty(txt)
+    txt = info;
+else
+    txt = [txt;info]; % Append info.
+end
+writetable(txt,saveFile);
+% Change button color to indicate that the data was saved:
+figure(src.Parent);
+src.BackgroundColor = [.2 .8 .2];
+src.String = 'Added to list!';
+pause(1);
+src.BackgroundColor = [.7 .7 .7];
+% Put file name into UserData:
+src.Parent.UserData.ListFile = fullfile(path,file);
+end
