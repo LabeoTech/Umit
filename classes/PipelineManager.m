@@ -1360,34 +1360,36 @@ classdef PipelineManager < handle
                 % IF there is an input file, prepend the dataHistory to the current
                 % sequence:
                 idxFromDisk = find(~cellfun(@isempty,{seqIn.inputFileName}) & [seqIn.inputFrom] == 0,1,'first');                
-                
+                idxFromDataViewer = find([seqIn.inputFrom] == -1,1,'first');
                 if any(idxFromDisk > 0)
+                    idxFrom = idxFromDisk;
                     % Load the input file dataHistory:
                     [~,inputFile,~] = fileparts(seqIn(idxFromDisk).inputFileName);
                     dh = load(fullfile(path,[inputFile,'.mat']),'dataHistory'); dh = dh.dataHistory;
-                    prepend_info = struct();
-                    for jj = 1:length(dh)
-                        prepend_info(jj).name = dh(jj).name;
-                        prepend_info(jj).inputFileName = dh(jj).inputFileName;
-                        prepend_info(jj).opts = dh(jj).opts;
-                        thisHistory = horzcat(prepend_info,thisHistory(idxFromDisk:end));
-                    end
-                    clear inputFile prepend_info
-                end
-                %%% Special case: Look inside the current meta Data when
-                %%% working with DataViewer:
-                idxFromDataViewer = find([seqIn.inputFrom] == -1,1,'first');
-                if any(idxFromDataViewer > 0) && ~isempty(obj.dv_originalMetaData)
+                    
+                elseif  any(idxFromDataViewer > 0) && ~isempty(obj.dv_originalMetaData)
+                    idxFrom = idxFromDataViewer;
+                    %%% Special case: Look inside the current meta Data when
+                    %%% working with DataViewer:
                     % Load the dataHistory from the input file meta Data:                    
-                    dh = obj.dv_originalMetaData.dataHistory;
-                    prepend_info = struct();
-                    for jj = 1:length(dh)
-                        prepend_info(jj).name = dh(jj).name;
-                        prepend_info(jj).inputFileName = dh(jj).inputFileName;
-                        prepend_info(jj).opts = dh(jj).opts;
-                        thisHistory = horzcat(prepend_info,thisHistory(idxFromDataViewer:end));
-                    end                    
+                    dh = obj.dv_originalMetaData.dataHistory;                   
                 end
+                %%%% For retrocompatibility
+                fNames = {'name','inputFileName','opts'};
+                for kk = 1:length(fNames)
+                    if ~isfield(dh,fNames{kk})
+                        dh(1).(fNames{kk}) = [];
+                    end
+                end
+                %%%%%                                
+                prepend_info = struct();
+                for jj = 1:length(dh)
+                    prepend_info(jj).name = dh(jj).name;
+                    prepend_info(jj).inputFileName = dh(jj).inputFileName;
+                    prepend_info(jj).opts = dh(jj).opts;
+                end
+                thisHistory = horzcat(prepend_info,thisHistory(idxFromDataViewer:end));
+                                                
                 %%%%%% ----------------------------------------------------
                 % Check for the existence of consecutive equal steps:
                 b_isEqual = false(size(dataHistory));
