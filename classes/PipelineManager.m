@@ -738,7 +738,7 @@ classdef PipelineManager < handle
             end
             pipeStruct = obj.pipe;
             save(fullfile(path,[filename ext]), 'pipeStruct','-mat');
-            msgbox(['Pipeline saved as "' filename ext '" in ' path], 'modal');
+            disp(['Pipeline saved as "' filename ext '" in ' path]);
         end
         
         function loadPipe(obj,pipeFile)
@@ -746,27 +746,19 @@ classdef PipelineManager < handle
             % it to OBJ.PIPE property.
             % Input:
             %   pipeFile(char): full path to the .JSON file containing the
-            %   pipeline config.
-            [path,filename, ~] = fileparts(pipeFile);
-            b_isOldFile = false;
-            if isempty(path)
-                if ~obj.ProtocolObj.b_isDummy
-                    % Prepend path to "PipelineConfigFiles" in protocol's SaveDir
-                    path = fullfile(obj.ProtocolObj.SaveDir,'PipeLineConfigFiles');
-                else
-                    path = obj.ProtocolObj.SaveDir;
-                end
-            end
+            %   pipeline config.           
+                        
             % Read Pipeline Config file:
-            if exist(fullfile(path,[filename, '.json']),'file')
+            if endsWith(pipeFile, '.json', 'IgnoreCase',true)
                 % For retrocompatibility:
-                txt = fileread([filename, '.json']);
+                txt = fileread(pipeFile);
                 new_pipe = jsondecode(txt);
                 b_isOldFile = true;
             else
                 % New version:
-                a = load(fullfile(path,[filename '.pipe']),'-mat');
+                a = load(pipeFile,'-mat');
                 new_pipe = a.pipeStruct;
+                b_isOldFile = false;
             end
             % Reset current pipeline:
             obj.reset_pipe;
@@ -783,7 +775,7 @@ classdef PipelineManager < handle
                 stale_fields = setdiff(fieldnames(new_pipe), fieldnames(obj.pipe));
                 missing_fields = setdiff(fieldnames(obj.pipe), fieldnames(new_pipe));
                 if ~isempty(stale_fields) || ~isempty(missing_fields)
-                    w = warndlg('Deprecated pipeline file found. The file will be updated now!');
+                    w = warndlg('Deprecated pipeline file found. The file will be updated now! A copy with extension".pipe" will be created with the updated version.');
                     waitfor(w);
                     
                     for ii = 1:length(new_pipe)
@@ -801,20 +793,28 @@ classdef PipelineManager < handle
                             error('Failed to load pipeline!');
                         end
                     end
+                    % Update opts fields in the current pipeline:
+                    fn = intersect(fieldnames(new_pipe),{'opts', 'opts_vals','opts_def'});
+                    for i = 1:length(new_pipe)
+                        for k = 1:numel(fn)
+                            obj.pipe(i).(fn{k}) = new_pipe(i).(fn{k});
+                        end
+                        obj.pipe(i).b_paramsSet = true; % Assume that the parameters were already set
+                    end
                     % Save updated pipeline in new file format and erase old .JSON file:
-                    obj.savePipe(filename);
-                    delete(fullfile(path,[filename '.json']));
+                    obj.savePipe(pipeFile);
+%                     delete(fullfile(path,[filename '.json']));
                     obj.validatePipeline;
                     return
                 end
                 %%%------------------------------------------------------------               
             end
-            % Add new tasks:
-            fn = intersect(fieldnames(obj.pipe), fieldnames(new_pipe));
+            fn = intersect(fieldnames(new_pipe),{'opts', 'opts_vals','opts_def'});
             for i = 1:length(new_pipe)
                 for k = 1:numel(fn)
                     obj.pipe(i).(fn{k}) = new_pipe(i).(fn{k});
                 end
+                obj.pipe(i).b_paramsSet = true; % Assume that the parameters were already set
             end
             % Update current sequence index:
             obj.current_seq = max([obj.pipe.seq],[],'all');
@@ -1374,22 +1374,24 @@ classdef PipelineManager < handle
                     % Load the dataHistory from the input file meta Data:                    
                     dh = obj.dv_originalMetaData.dataHistory;                   
                 end
-                %%%% For retrocompatibility
-                fNames = {'name','inputFileName','opts'};
-                for kk = 1:length(fNames)
-                    if ~isfield(dh,fNames{kk})
-                        dh(1).(fNames{kk}) = [];
+                
+                if exist('dh','var')
+                    %%%% For retrocompatibility
+                    fNames = {'name','inputFileName','opts'};
+                    for kk = 1:length(fNames)
+                        if ~isfield(dh,fNames{kk})
+                            dh(1).(fNames{kk}) = [];
+                        end
                     end
+                    %%%%%
+                    prepend_info = struct();
+                    for jj = 1:length(dh)
+                        prepend_info(jj).name = dh(jj).name;
+                        prepend_info(jj).inputFileName = dh(jj).inputFileName;
+                        prepend_info(jj).opts = dh(jj).opts;
+                    end
+                    thisHistory = horzcat(prepend_info,thisHistory(idxFrom:end));
                 end
-                %%%%%                                
-                prepend_info = struct();
-                for jj = 1:length(dh)
-                    prepend_info(jj).name = dh(jj).name;
-                    prepend_info(jj).inputFileName = dh(jj).inputFileName;
-                    prepend_info(jj).opts = dh(jj).opts;
-                end
-                thisHistory = horzcat(prepend_info,thisHistory(idxFromDataViewer:end));
-                                                
                 %%%%%% ----------------------------------------------------
                 % Check for the existence of consecutive equal steps:
                 b_isEqual = false(size(dataHistory));
