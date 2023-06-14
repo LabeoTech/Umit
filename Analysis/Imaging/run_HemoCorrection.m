@@ -38,5 +38,6 @@ list = fields(idx)';
 % Run HemoCorrection function from IOI library:
 disp('Performing hemodynamic correction in fluo channel...')
 outData = HemoCorrection(p.Results.SaveFolder, p.Results.data, p.Results.metaData, list);
+
 disp('Finished hemodynamic correction.')
 end
