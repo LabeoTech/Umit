@@ -809,13 +809,14 @@ classdef PipelineManager < handle
                 end
                 %%%------------------------------------------------------------               
             end
-            fn = intersect(fieldnames(new_pipe),{'opts', 'opts_vals','opts_def'});
-            for i = 1:length(new_pipe)
-                for k = 1:numel(fn)
-                    obj.pipe(i).(fn{k}) = new_pipe(i).(fn{k});
-                end
-                obj.pipe(i).b_paramsSet = true; % Assume that the parameters were already set
-            end
+%             fn = intersect(fieldnames(new_pipe),{'opts', 'opts_vals','opts_def'});
+%             for i = 1:length(new_pipe)
+%                 for k = 1:numel(fn)
+%                     obj.pipe(i).(fn{k}) = new_pipe(i).(fn{k});
+%                 end
+%                 obj.pipe(i).b_paramsSet = true; % Assume that the parameters were already set
+%             end
+            obj.pipe = new_pipe;
             % Update current sequence index:
             obj.current_seq = max([obj.pipe.seq],[],'all');
             disp('Pipeline loaded!')
