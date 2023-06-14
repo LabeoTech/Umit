@@ -1,29 +1,33 @@
-function varargout = HemoCorrection(Folder, varargin)
+function varargout = HemoCorrection(Folder, fData, fMetaData, varargin)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % General Infos:
 %
 % This function is used to remove the hemodynamic fluctuations from any
-% fluorescence signal. 
+% fluorescence signal.
 %
 % Inputs:
 % 1. Folder: Folder contaning the dataset to work with.
-% 2. Varargin -> if empty: a dialog box will be prompt to ask user which
+% 2. fData (3D num. array): Image time series (with dimensions "Y","X","T") 
+%       with the fluorescence channel to be corrected.
+% 3. fMetaData(struct): meta data structure (from .mat) file associated
+%       with the "fluoData".
+% 4. Varargin -> if empty: a dialog box will be prompt to ask user which
 %                   channels to use to do the correction.
 %             -> cell array of string: to specify which channels to use.
 %                   Ex: HemoCorrection(pwd, {'Red', 'Green'});
-% 3. Optional: lowpass filter 
+% 3. Optional: lowpass filter
 %           -> Value of the cutoff frequency to use on a lowpass filter
 %           applied to intrinsic signals. THIS PARAMETER IS OPTIONAL
-%           To keep the data as is, just use the function with 2 parameters
+%           To keep the data as is, just use the function with 3 parameters
 % Ouput:
 % - If an output is set, the result of the correction will be given back
 % through this output. All the data in the folder will remain unchanged.
-% - If no output is specified, the fChan.dat files in Folder will be overwritten
+% - If no output is specified, the file with the "fData" will be overwritten
 % with the corrected data.
-% 
+%
 % Exemples:
 %
-% 1- HemoCorrection(pwd); 
+% 1- HemoCorrection(pwd);
 % The fluorescence dat files in the folder will be overwriten and a dialog
 % box will be used in order to select which channels must be used to
 % compute the correction.
@@ -49,8 +53,8 @@ if( nargin <= 1 )
     end
     
     [idx, tf] = listdlg('PromptString',{'Select channels to be used to',...
-    'compute hemodynamic correction.',''},...
-    'ListString',fn);
+        'compute hemodynamic correction.',''},...
+        'ListString',fn);
     
     if( tf == 0 )
         return;
@@ -85,41 +89,34 @@ else
         end
     end
 end
-fList = dir([Folder 'fluo*.mat']);
-if( isempty( fList ) )
-    fList = dir([Folder 'Data_Fluo*.mat']);
-end
-idx = arrayfun(@(x) contains(fList(x).name,'splitAndNorm'), 1:size(fList,1));
-fList(idx) = [];
 
-Infos = matfile([Folder fList(1).name]);
-NbFrames = Infos.datLength; 
-HemoData = zeros(size(fn,2), prod(Infos.datSize), NbFrames, 'single');
+NbFrames = fMetaData.datLength;
+HemoData = zeros(size(fn,2), prod(fMetaData.datSize), NbFrames, 'single');
 
-if( nargin <= 2 )
+if( nargin <= 4 )
     bFilt = false;
-    sFreq = Infos.Freq/2;
+    sFreq = fMetaData.Freq/2;
 else
     sFreq = varargin{2};
     bFilt = true;
-    if( sFreq >= Infos.Freq/2 )
+    if( sFreq >= fMetaData.Freq/2 )
         bFilt = false;
-        sFreq = Infos.Freq/2;
+        sFreq = fMetaData.Freq/2;
     end
 end
-%Reading Hemo file:
+% Reading Hemo file:
 for ind = 1:size(fn,2)
     fprintf('Opening: %s \n', fn{ind});
     eval(['fid = fopen(''' Folder fn{ind} ''');']);
     tmp = fread(fid, inf, '*single');
-    tmp = reshape(tmp, Infos.datSize(1,1)*Infos.datSize(1,2), []);
+    tmp = reshape(tmp, fMetaData.datSize(1,1)*fMetaData.datSize(1,2), []);
     if( bFilt )
         fprintf('Time Filtering...\n');
-        f = fdesign.lowpass('N,F3dB', 4, sFreq, Infos.Freq);
+        f = fdesign.lowpass('N,F3dB', 4, sFreq, fMetaData.Freq);
         lpass = design(f,'butter');
         tmp = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(tmp')))';
     end
-    tmp = reshape(tmp, Infos.datSize(1,1), Infos.datSize(1,2), []);
+    tmp = reshape(tmp, fMetaData.datSize(1,1), fMetaData.datSize(1,2), []);
     fprintf('Spatial Filtering...\n');
     tmp = imgaussfilt(tmp,1, 'Padding', 'symmetric');
     tmp = reshape(tmp, [], size(tmp,3));
@@ -128,57 +125,42 @@ for ind = 1:size(fn,2)
     fprintf('Done.\n');
     fclose(fid);
 end
-if( size(HemoData, 2) ~= Infos.datLength )
+if( size(HemoData, 2) ~= fMetaData.datLength )
     sz = size(HemoData);
     dimCanaux = find(sz == size(fn,2));
-    dimPix = find(sz == prod(Infos.datSize));
-    dimTime = find(sz == prod(Infos.datLength));
+    dimPix = find(sz == prod(fMetaData.datSize));
+    dimTime = find(sz == prod(fMetaData.datLength));
     
     HemoData = permute(HemoData,[dimCanaux, dimPix, dimTime]);
 end
 clear tmp fn fid ind NbPts
 
-%Correction:
-fList = dir([Folder 'fluo*.dat']);
-if( isempty( fList ) )
-    fList = dir([Folder 'fChan*.dat']);
+% Correction:
+fData = reshape(fData,prod(fMetaData.datSize),[]);
+m_fData = mean(fData,2);
+fData = (fData - m_fData)./m_fData;
+fprintf('Hemodynamic Correction: ');
+warning('off', 'MATLAB:rankDeficientMatrix');
+h = waitbar(0, 'Fitting Hemodyn on Fluorescence');
+for indF = 1:size(fData,1)
+    X = [ones(1, size(fData,2)); linspace(0,1,size(fData,2)); reshape(HemoData(:,indF,:),sz(dimCanaux), sz(dimTime))];
+    B = X'\fData(indF,:)';
+    fData(indF,:) = fData(indF,:) - (X'*B)';
+    waitbar(indF/size(fData,1), h);
 end
-idx = arrayfun(@(x) contains(fList(x).name,'splitAndNorm'), 1:size(fList,1));
-fList(idx) = [];
-for ind = 1:size(fList,1)
-    fprintf('Opening fluo data: %s \n', fList(ind).name);
-    eval(['fid = fopen(''' Folder fList(ind).name ''');']);
-    fData = fread(fid, inf, '*single');
+close(h);
+warning('on', 'MATLAB:rankDeficientMatrix');
+clear B X;
+fData = bsxfun(@times, fData, m_fData) + m_fData;
+fData = reshape(fData, fMetaData.datSize(1,1), fMetaData.datSize(1,2), []);
+if( nargout == 0 )
+    [~,filename,ext] = fileparts(fMetaData.datFile);
+    eval(['fid = fopen(''' Folder filename ext ''', ''w'');']);
+    fwrite(fid, fData, 'single');
     fclose(fid);
-    fData = reshape(fData, prod(Infos.datSize), []);
-    m_fData = mean(fData,2);
-    fData = (fData - m_fData)./m_fData;
-    
-    fprintf('Hemodynamic Correction: ');
-    warning('off', 'MATLAB:rankDeficientMatrix');
-    h = waitbar(0, 'Fitting Hemodyn on Fluorescence');
-
-    for indF = 1:size(fData,1)       
-        X = [ones(1, size(fData,2)); linspace(0,1,size(fData,2)); reshape(HemoData(:,indF,:),sz(dimCanaux), sz(dimTime))];      
-        B = X'\fData(indF,:)';
-        A(indF,:) = B;
-        fData(indF,:) = fData(indF,:) - (X'*B)';
-        waitbar(indF/size(fData,1), h);
-    end
-    close(h);
-    warning('on', 'MATLAB:rankDeficientMatrix');
-    clear B X locHemoDyn;
-    
-    fData = bsxfun(@times, fData, m_fData) + m_fData;
-    
-    fData = reshape(fData, Infos.datSize(1,1), Infos.datSize(1,2), []);
-    if( nargout == 0 )
-        eval(['fid = fopen(''' Folder fList(ind).name ''', ''w'');']);
-        fwrite(fid, fData, 'single');
-        fclose(fid);
-    else
-        varargout{ind} = fData;
-    end 
+else
+    varargout{:} = fData;
 end
 
+fprintf('Finished Hemodyn on Fluorescence.\n')
 end
