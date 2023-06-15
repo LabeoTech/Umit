@@ -1114,9 +1114,14 @@ classdef PipelineManager < handle
                     return
                 end
                 [~,newName,~] = fileparts(answer{1});
-                % Update saveFileName in pipeline:
-                obj.pipe(idxFcn).b_save2File = true;
-                obj.pipe(idxFcn).saveFileName = [newName, ext];
+                if isempty(newName)
+                    obj.pipe(idxFcn).b_save2File = false;
+                    obj.pipe(idxFcn).saveFileName = '';
+                else
+                    % Update saveFileName in pipeline:
+                    obj.pipe(idxFcn).b_save2File = true;
+                    obj.pipe(idxFcn).saveFileName = [newName, ext];
+                end
                 % Update tooltips:
                 figH = ancestor(src,'figure');
                 btnList = findobj(figH,'Type','uicontrol');
@@ -1141,6 +1146,7 @@ classdef PipelineManager < handle
                 % Exclusive to "dummy" protocol instance.
                 return
             end
+            % 
             obj.current_data = data;
             obj.current_metaData = metaData;
             obj.dv_originalMetaData = metaData; % Store original metaData structure for comparisons during pipeline execution.
