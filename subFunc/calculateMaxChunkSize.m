@@ -22,13 +22,13 @@ switch computer
         bytesAvailable = sys.PhysicalMemory.Available;
     case 'GLNXA64'
         [status, result] = system('free -b | grep Mem | awk ''{print $7}''');
-        if ~status
+        if status
             error('Failed to retrieve RAM information in Linux System!')
         end
         bytesAvailable = str2double(result);
     case 'MACI64'
         [status, result] = system('vm_stat | grep "Pages free" | awk ''{print $3}''');
-        if ~status
+        if status
             error('Failed to retrieve RAM information in MacOS!')
         end
         page_size = str2double(system('getconf PAGESIZE'));
