@@ -80,6 +80,7 @@ if b_HasEvents
     dimorder = [dimorder(idxE), dimorder(~idxE)];
     outData = permute(outData, dimorder);
     for i = 1:size(outData,1)
+        disp(['Filtering Event #' num2str(i) '/' size(outData,1) '...']);
         outData(i,:,:,:) = NormalisationFiltering(pwd, squeeze(outData(i,:,:,:)), opts.LowCutOffHz, opts.HighCutOffHz, ...
             opts.Normalize,opts.bApplyExpFit, metaData.Freq);
     end
