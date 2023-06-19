@@ -30,6 +30,7 @@ classdef PipelineManager < handle
         current_data % Data available in the workspace during pipeline.
         current_metaData % MetaData associated with "current_data".
         dv_originalMetaData % Copy of current_metaData from the input file.
+        b_state logical % True if a task of a pipeline was successfully executed.
     end
     properties (Access = private)
         b_taskState = false % Boolean indicating if the task in pipeline was successful (TRUE) or not (FALSE).
@@ -37,8 +38,7 @@ classdef PipelineManager < handle
         tmp_BranchPipeline % Temporarily stores LogBook from a Hierarchical branch.
         tmp_TargetObj % % Temporarily stores an object (TARGEROBJ).
         current_pipe % Pipeline currently running.
-        current_outFile cell % List of file names created as output from some of the analysis functions.
-        b_state logical % True if a task of a pipeline was successfully executed.
+        current_outFile cell % List of file names created as output from some of the analysis functions.        
         % It can be the name of an existing file, or
         % "outFile" for a function that creates a file
         % such as "run_ImagesClassification".
@@ -1331,7 +1331,11 @@ classdef PipelineManager < handle
                 skipNames = {};
                 % Load data history:
                 [path,file,ext] = fileparts(fileIn);
-                a = load(fullfile(path,[file '.mat']),'dataHistory');
+                try
+                    a = load(fullfile(path,[file '.mat']),'dataHistory');                   
+                catch                   
+                    return
+                end
                 dataHistory = a.dataHistory; clear a
                 %%% For retrocompatibility
                 if ~strcmpi(fieldnames(dataHistory(1)), 'inputFileName')
@@ -1345,12 +1349,14 @@ classdef PipelineManager < handle
                     % If none of the functions exist, abort.
                     return
                 end
-                idxSameDate = cellfun(@(x,y) strcmpi(datestr(x),y),{dataHistory(idx).creationDatetime},...
-                    {obj.funcList(locB).date});
-                % %% SECTION COMMENTED FOR TESTING ONLY
-                %                 if ~all(idxSameDate)
-                %                     return
-                %                 end
+               
+                % %% SECTION COMMENTED FOR NOW. Not sure if addinf the
+                % function's creationDateTime as parameter is a good idea. 
+%                  idxSameDate = cellfun(@(x,y) strcmpi(datestr(x),y),{dataHistory(idx).creationDatetime},...
+%                     {obj.funcList(locB).date});
+%                                 if ~all(idxSameDate)
+%                                     return
+%                                 end
                 % Compare function names and optional parameters:
                 thisHistory = struct();
                 for jj = 1:length(seqIn)
@@ -1366,32 +1372,34 @@ classdef PipelineManager < handle
                     idxFrom = idxFromDisk;
                     % Load the input file dataHistory:
                     [~,inputFile,~] = fileparts(seqIn(idxFromDisk).inputFileName);
-                    dh = load(fullfile(path,[inputFile,'.mat']),'dataHistory'); dh = dh.dataHistory;
+                    dh = load(fullfile(path,[inputFile,'.mat']));
                     
                 elseif  any(idxFromDataViewer > 0) && ~isempty(obj.dv_originalMetaData)
                     idxFrom = idxFromDataViewer;
                     %%% Special case: Look inside the current meta Data when
                     %%% working with DataViewer:
                     % Load the dataHistory from the input file meta Data:
-                    dh = obj.dv_originalMetaData.dataHistory;
+                    dh = obj.dv_originalMetaData;
                 end
                 
                 if exist('dh','var')
-                    %%%% For retrocompatibility
-                    fNames = {'name','inputFileName','opts'};
-                    for kk = 1:length(fNames)
-                        if ~isfield(dh,fNames{kk})
-                            dh(1).(fNames{kk}) = [];
+                    if isfield(dh,'dataHistory')
+                        %%%% For retrocompatibility
+                        fNames = {'name','inputFileName','opts'};
+                        for kk = 1:length(fNames)
+                            if ~isfield(dh,fNames{kk})
+                                dh(1).(fNames{kk}) = [];
+                            end
                         end
+                        %%%%%
+                        prepend_info = struct();
+                        for jj = 1:length(dh)
+                            prepend_info(jj).name = dh(jj).name;
+                            prepend_info(jj).inputFileName = dh(jj).inputFileName;
+                            prepend_info(jj).opts = dh(jj).opts;
+                        end
+                        thisHistory = horzcat(prepend_info,thisHistory(idxFrom:end));
                     end
-                    %%%%%
-                    prepend_info = struct();
-                    for jj = 1:length(dh)
-                        prepend_info(jj).name = dh(jj).name;
-                        prepend_info(jj).inputFileName = dh(jj).inputFileName;
-                        prepend_info(jj).opts = dh(jj).opts;
-                    end
-                    thisHistory = horzcat(prepend_info,thisHistory(idxFrom:end));
                 end
                 %%%%%% ----------------------------------------------------
                 % Check for the existence of consecutive equal steps:
