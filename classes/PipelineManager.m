@@ -1267,6 +1267,11 @@ classdef PipelineManager < handle
             
             % Get list of valid files in the folder:
             fileList = getFileList(folderName, 'all');
+            if obj.ProtocolObj.b_isDummy
+                % For DataViewer, also, look at the dataHistory of the
+                % current data.
+                fileList = [fileList;'self'];
+            end
             %
             newSeq = thisSeq;
             skippedSteps = {};
@@ -1296,8 +1301,10 @@ classdef PipelineManager < handle
                         break
                     end
                 end
-                thisSeq(ii).inputFileName = selFile;
-                obj.loadInputFile(thisSeq(ii));% Load step;
+                if ~strcmpi(selFile,'self')
+                    thisSeq(ii).inputFileName = selFile;
+                    obj.loadInputFile(thisSeq(ii));% Load step;
+                end
                 if ~isempty(thisSeq(ii).saveFileName) && ~strcmpi(thisSeq(ii).saveFileName,selFile) && ~obj.ProtocolObj.b_isDummy
                     obj.saveDataToFile(thisSeq(ii),false)
                 end
@@ -1310,9 +1317,9 @@ classdef PipelineManager < handle
             if length(idxMax) > 1
                 % When more than one file exist, try to find the one with
                 % the same name as the inputFileName(s) in the current
-                % sequence.  IF none is found, just pick the first one that has the same dataHistory.
+                % sequence. If none is found, just pick the first one that has the same dataHistory.
                 for ii = length(idxMax):-1:1
-                    if any(arrayfun(@(x) strcmp(fileList{idxMax(ii)},x.inputFileName),thisSeq))
+                    if any(arrayfun(@(x) strcmp(fileList{idxMax(ii)},x.inputFileName),thisSeq)) || strcmpi(fileList{idxMax(ii)},'self')
                         break
                     end
                 end
@@ -1321,6 +1328,11 @@ classdef PipelineManager < handle
             selFile = fileList{idxMax};
             newSeq = newSeqArr{idxMax};
             skippedSteps = skippedStepsArr{idxMax};
+            % For DataViewer, when the data is already in RAM:
+            if strcmpi(selFile, 'self')                
+                newSeq(1).inputFileName = '';
+                newSeq(1).inputFrom = -1;
+            end
             %%%%%--Local function ------------------------------------------
             function [outSeq,skipNames] = compareDataHistory(obj,seqIn, fileIn)
                 % COMPAREDATAHISTORY compares the dataHistory of "fileIn"
@@ -1331,19 +1343,23 @@ classdef PipelineManager < handle
                 skipNames = {};
                 % Load data history:
                 [path,file,ext] = fileparts(fileIn);
-                try
-                    a = load(fullfile(path,[file '.mat']),'dataHistory');                   
-                catch                   
-                    return
+                if ~strcmpi(file, 'self')
+                    try
+                        a = load(fullfile(path,[file '.mat']),'dataHistory');
+                    catch
+                        return
+                    end
+                    dataHistory = a.dataHistory; clear a
+                else
+                    dataHistory = obj.dv_originalMetaData.dataHistory;
                 end
-                dataHistory = a.dataHistory; clear a
                 %%% For retrocompatibility
                 if ~strcmpi(fieldnames(dataHistory(1)), 'inputFileName')
                     dataHistory(1).inputFileName = '';
                 end
                 
                 % Compare datetimes:
-                [idx,locB] = ismember({dataHistory.name},{obj.funcList.name});
+                [~,locB] = ismember({dataHistory.name},{obj.funcList.name});
                 locB(locB == 0) = []; % Remove non-existent functions.
                 if isempty(locB)
                     % If none of the functions exist, abort.
@@ -1372,18 +1388,19 @@ classdef PipelineManager < handle
                     idxFrom = idxFromDisk;
                     % Load the input file dataHistory:
                     [~,inputFile,~] = fileparts(seqIn(idxFromDisk).inputFileName);
-                    dh = load(fullfile(path,[inputFile,'.mat']));
+                    fileMetaData = load(fullfile(path,[inputFile,'.mat']));
                     
                 elseif  any(idxFromDataViewer > 0) && ~isempty(obj.dv_originalMetaData)
                     idxFrom = idxFromDataViewer;
                     %%% Special case: Look inside the current meta Data when
                     %%% working with DataViewer:
                     % Load the dataHistory from the input file meta Data:
-                    dh = obj.dv_originalMetaData;
+                    fileMetaData = obj.dv_originalMetaData;
                 end
                 
-                if exist('dh','var')
-                    if isfield(dh,'dataHistory')
+                if exist('fileMetaData','var')
+                    if isfield(fileMetaData,'dataHistory')
+                        dh = fileMetaData.dataHistory;
                         %%%% For retrocompatibility
                         fNames = {'name','inputFileName','opts'};
                         for kk = 1:length(fNames)
