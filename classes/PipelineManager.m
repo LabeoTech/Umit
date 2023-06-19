@@ -1267,7 +1267,7 @@ classdef PipelineManager < handle
             
             % Get list of valid files in the folder:
             fileList = getFileList(folderName, 'all');
-            if obj.ProtocolObj.b_isDummy
+            if obj.ProtocolObj.b_isDummy && ~isempty(obj.current_metaData)
                 % For DataViewer, also, look at the dataHistory of the
                 % current data.
                 fileList = [fileList;'self'];
