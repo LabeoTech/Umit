@@ -75,25 +75,19 @@ for ind = 1:numel(evntInfo.eventNameList)
             error('Could not compute a valid baseline period! Does the recording have interstimulus time? If not, set the option "b_useAverageMovie" to FALSE.');
         end
         trial_len = round(mean(framestamps(indxOff) - framestamps(indxOn)));
-        avg_mov = zeros([metaData.datSize, trial_len + bsln_len],'single');
+        avg_mov = zeros([metaData.datSize, trial_len],'single');
         disp(['Creating average Delta R movie for direction ' evntInfo.eventNameList{ind}]);
         for ii = 1:length(indxOn)
-            DeltaR = data(:,:,framestamps(indxOn(ii)) - bsln_len : framestamps(indxOn(ii)) + trial_len -1) - ...
+            DeltaR = data(:,:,framestamps(indxOn(ii)): framestamps(indxOn(ii)) + trial_len -1) - ...
                 median(data(:,:,framestamps(indxOn(ii)) - bsln_len: framestamps(indxOn(ii)) - 1), 3,'omitnan'); % trial period minus the intertrial period.
             avg_mov = [avg_mov + DeltaR];
         end
         avg_mov = avg_mov/length(indxOn); % Average DeltaR movie.
         % Calculate FFT of average movie:
         fDat = fft(avg_mov,[],3);
-    else
-        % Get all frames that the current stimulus was presented (i.e. exclude
-        % inter stim frames):
-        frOn = [];
-        for ii = 1:length(indxOn)
-            frOn = [frOn, framestamps(indxOn(ii)):framestamps(indxOff(ii))-1];
-        end
+    else        
         % Calculate FFT of whole stimulus:
-        fDat = fft(data(:,:,frOn),[],3);
+        fDat = fft(data(:,:,framestamps(indxOn(1)):framestamps(indxOff(end))),[],3);        
     end
     % Create Amplitude/Phase maps for the input frequency (from Zhuang et al., 2017)
     ampMaps{ind} = (abs(fDat(:,:,freqFFT)) * 2) / size(fDat,3);

@@ -132,8 +132,8 @@ else
     logical_mask = true(metaData.datSize);
 end    
 % Segment the Visual Sign Map:
-% Set threshold as +-1.5  STD of the VSM:
-thr = 1.5*std(vsm(:));
+% Set threshold as +-1 STD of the VSM (a bit more permissive than Garret et al. 2014):
+thr = std(vsm(:));
 % First, binarize the VSM and intersect with logical mask:
 rawMap = (imbinarize(abs(vsm), thr) & logical_mask);
 % Perform opening of Binary Image
