@@ -77,6 +77,7 @@ classdef EventsManager < handle
                 obj.EventFileParseMethod = 'none';
             end
         end
+        
         function set.EventFileParseMethod(obj,parseMethod)
             % Set method for event file parse method. Just checks if the
             % input is valid. Valid parsing methods are stored in the
@@ -215,51 +216,59 @@ classdef EventsManager < handle
            obj.eventNameList = evNames;           
         end
                     
-        function plotAnalogIN(obj, varargin)
+        function plotAnalogIN(obj, chanName)
             % PLOTANALOGIN plots the Analog input signals and overlays the
             % threshold as well as the detected triggers, if existent.
             %
             % Input (optional):
             %   chanName (char|cell): Channel name or list of names to
             %   plot. If not provided, all channels will de displayed.
-            
-            p = inputParser;
-            addRequired(p,'obj');
-            addOptional(p, 'chanName','',@(x) isempty(x) || all(ismember(lower(x),lower(obj.dictAIChan))));
-            parse(p,obj,varargin{:});
-            chanName = p.Results.chanName;            
-            
+                                  
             if isempty(obj.AnalogIN)
+                warning('No signal to plot!')
                 return
             end
-            
-            if isempty(chanName)                
+           
+            if ~exist('chanName','var') || isempty(chanName)                
+                % plot All channels if no channel name is provided:
                 chanName = obj.AIChanList;
             end
             
             if ischar(chanName)
                 chanName = {chanName};
             end
-                        
-            [~,chanIndx] = ismember(chanName,obj.AIChanList);
-            
-            xVec = [0:size(obj.AnalogIN,1)-1]./obj.sr;% Use X-axis in seconds.
-            axYSize = [min(obj.AnalogIN(:)), max(obj.AnalogIN(:))];
-            % Show 4 plot per figure:
-            nFigs = ceil(mod(length(chanName)/4,4));
-            cnt = 1;   
+            % Check inputs:                                   
+            b_chanExists = ismember(chanName,obj.dictAIChan);
+            if all(~b_chanExists)
+                error(['Invalid channel name(s). It must be one of the following:',sprintf('\n"%s"',obj.dictAIChan{:})]);
+            elseif any(~b_chanExists)
+                warning(['The following channel(s) do not exist and will be ignored:', sprintf('\n"%s"',chanName{~b_chanExists})])
+                chanName = chanName(b_chanExists);
+            end
+            [~,chanIndx] = ismember(chanName, obj.AIChanList); 
+            % Calculate the number of figures with a maximum of 4 subplots per figure:
+            nFigs = ceil(length(chanIndx)/4);   
+            nAxPerFig = ones(1,nFigs)*4;
+            remAx = mod(length(chanIndx),4);
+            if remAx > 0
+                nAxPerFig(end) = remAx;
+            end               
+            cnt = 1;    
             b_trigsPlotted= false;
+            % Set axes properties:
+            xVec = [0:size(obj.AnalogIN,1)-1]./obj.sr;% Use X-axis in seconds
+            axYSize = [min(obj.AnalogIN(:)), max(obj.AnalogIN(:))]; % Get min-max for Yscale
+            
             for ii = 1:nFigs
-                f(ii) = figure('Name',sprintf('Analog Inputs %d/%d',ii,nFigs),...
+                f(ii) = figure('Name',sprintf('Analog Inputs %d/%d (downsampled to %0.0f Hz)',ii,nFigs, obj.sr/10),...
                     'Visible','off','NumberTitle','off', 'Position',[0 0 560 720],...
                     'CreateFcn',{@movegui,'center'},'CloseRequestFcn', @closeAllFigs);                
-                for jj = 1:4
-                    if cnt > length(chanName)
-                        break
-                    end
-                    s(cnt) = subplot(4,1,jj,'Parent',f(ii));
-                    % Plot analogIN traces:
-                    plot(s(cnt),xVec,obj.AnalogIN(:,chanIndx(cnt)),'ko-','MarkerSize',2, 'Color',[.8 .8 .8], 'MarkerEdgeColor','k');
+                for jj = 1:nAxPerFig(ii)
+                    s(cnt) = subplot(nAxPerFig(ii),1,jj, 'Parent',f(ii));
+                    s(cnt).XLabel.String = 'time (s)';
+                    s(cnt).YLabel.String = 'amp.(V)';
+                    % Plot analogIN traces (downsample to 1KHz to save space):
+                    line(xVec(1:10:end),obj.AnalogIN(1:10:end,chanIndx(cnt)),'LineStyle','-', 'Color',[.8 .8 .8],'Parent',s(cnt));
                     if jj == 1
                         % Set axes labels:
                         s(cnt).XLabel.String = 'time (s)';
@@ -303,10 +312,9 @@ classdef EventsManager < handle
                         end
                     end                    
                     title(s(cnt), chanName{cnt});
-                    cnt = cnt+1;                    
-                end                
-            end
-                        
+                    cnt = cnt+1;          
+                end
+            end                                   
             for ii = 1:length(f)
                 f(ii).UserData = f;
                 f(ii).Visible = 'on';
@@ -686,8 +694,7 @@ classdef EventsManager < handle
                 durationOrder = arrayfun(@(x) durationMap(x), obj.AcqInfo.Events_Order);                
                 timestamps = reshape([timestamps(state == 1)'; timestamps(state ==1)' + durationOrder],numel(state),[]); % Create timestamps to mark the end of the stim (trigger + duration_sec);               
             end                       
-        end
-        
+        end        
         %%%%% Event File parsers %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%                
         function [eventID, eventNameList] = readCSVfile(obj, colName)
             % READCSVFILE reads a .CSV file. If no column name is provided,
@@ -775,8 +782,7 @@ classdef EventsManager < handle
             % Duplicate the eventID to account for low state (considering
             % that there is no overlap between conditions).
             eventID = repelem(eventID,2);
-        end
-                
+        end                
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%                        
         function delete(obj)
             % Class destructor. Re-enables original warnings.
