@@ -83,7 +83,7 @@ classdef EventsManager < handle
             % input is valid. Valid parsing methods are stored in the
             % property "ParseMethods".
             
-            parseMethod = convertStringsToChars(parseMethod);
+            parseMethod = lower(convertStringsToChars(parseMethod));
             validateattributes(parseMethod,{'char'},{'scalartext'}, 'set.EventFileParseMethod');
             msg = [sprintf('Invalid parse method "%s". It must be one of the following:',parseMethod),...
                 sprintf('\n%s',obj.ParseMethods{:})];
@@ -268,7 +268,7 @@ classdef EventsManager < handle
                     s(cnt).XLabel.String = 'time (s)';
                     s(cnt).YLabel.String = 'amp.(V)';
                     % Plot analogIN traces (downsample to 1KHz to save space):
-                    line(xVec(1:10:end),obj.AnalogIN(1:10:end,chanIndx(cnt)),'LineStyle','-', 'Color',[.8 .8 .8],'Parent',s(cnt));
+                    line(xVec(1:10:end),obj.AnalogIN(1:10:end,chanIndx(cnt)),'LineStyle','-', 'Color',[.3 .3 .3],'Parent',s(cnt));
                     if jj == 1
                         % Set axes labels:
                         s(cnt).XLabel.String = 'time (s)';
@@ -294,7 +294,7 @@ classdef EventsManager < handle
                                 xOff = obj.timestamps(obj.eventID == idx(kk) & obj.state == 0);
                                 x = [xOn xOff xOff xOn];
                                 y = repmat([axYSize(1) axYSize(1) axYSize(2) axYSize(2)], size(xOn));
-                                ptc(kk) = patch(s(cnt), x',y',colorArr(kk,:), 'FaceAlpha', .5, 'EdgeColor', 'none', 'Tag','TrigPatch');
+                                ptc(kk) = patch(s(cnt), x',y',colorArr(kk,:), 'FaceAlpha', .25, 'EdgeColor', 'none', 'Tag','TrigPatch');
                             end
                             % Put legend on the first plot:
                             if jj == 1
@@ -368,16 +368,19 @@ classdef EventsManager < handle
                     continue
                 end
                 [tmstmp,chanState] = obj.detectTrig(obj.AnalogIN(:,idxCh));               
+                % Control for failed detections:
+                if isempty(tmstmp)
+                    warning(['Failed to detect triggers in channel "' obj.trigChanName{ii} '".'])
+                    continue
+                else
+                    disp(['Triggers detected in channel "' obj.trigChanName{ii} '".']);
+                end
+                
                 obj.timestamps = [obj.timestamps;tmstmp];
                 obj.state = [obj.state;chanState];
                 % Create dummy event ID:
                 obj.eventID = [obj.eventID; ones(length(tmstmp),1).*ii];
-                % Control for failed detections:
-                if isempty(obj.timestamps)
-                    warning(['Failed to detect triggers in channel "' obj.trigChanName{ii} '".'])
-                else
-                    disp(['Triggers detected in channel "' obj.trigChanName{ii} '".']);
-                end
+                
                 % Special Case: For internal analog triggers, use the
                 % "Name" field of the channel instead of the channel ID.
                 if startsWith(obj.trigChanName{ii}, 'StimAna')
@@ -386,7 +389,7 @@ classdef EventsManager < handle
                         obj.eventNameList{ii} = obj.AcqInfo.(['Stimulation' num '_Name']);                    
                     end
                 else
-                    obj.eventNameList{ii}= obj.trigChanName{ii};
+                    obj.eventNameList = [obj.eventNameList, obj.trigChanName(ii)];
                 end
             end 
             if isempty(obj.timestamps)                
@@ -724,11 +727,19 @@ classdef EventsManager < handle
             %    eventNameList (cell): list of event names in alphabetical
             %    order.            
             % Set CSV reading rules:                       
-            opts = detectImportOptions(obj.EventFileName);
+            opts = detectImportOptions(obj.EventFileName);    
+            if ~exist('colName','var')
+                colName = {''};
+            elseif ischar(colName)
+                colName = {colName};
+            end
+            
             if ~isempty([colName{:}])
                 opts.SelectedVariableNames = colName; % Select the input columns only.
+            elseif isempty([colName{:}]) && opts.DataLines(1)>1
+                colName = opts.VariableNames; % USe all columns
             else
-                colName = opts.VariableNames;
+                colName = {''}; % USe columns without headers.
             end            
 %             opts.DataLines = 2; %Start reading at 2nd row.
             opts.VariableTypes = repmat({'char'},size(opts.VariableTypes)); % Force data to characters.
@@ -737,10 +748,15 @@ classdef EventsManager < handle
             % Read .CSV file:
             out = table2cell(readtable(obj.EventFileName,opts));                        
             % Merge multiple columns into a single one:
-            nameList = cell(size(out,1),1);            
-            for ii = 1:size(out,1)                
+            nameList = cell(size(out,1),1);   
+            for ii = 1:size(out,1)
+                if ~isempty([colName{:}])
                     nameList{ii} = strjoin(reshape(vertcat(colName,out(ii,:)),1,[]),'-');
-            end            
+                else
+                    nameList{ii} = strjoin(out(ii,:),'-');
+                end               
+            end
+                
             eventNameList = unique(nameList);%             
             nameMap = containers.Map(eventNameList,1:length(eventNameList)); 
             eventID = zeros(length(nameList),1);
