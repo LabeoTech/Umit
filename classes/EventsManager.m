@@ -180,16 +180,15 @@ classdef EventsManager < handle
            % Try to parse files until it works:
            evID = []; evNames = {};
            for ii = 1:length(evFile)
-               obj.EventFileName = evFile{ii};
-               try % try-catch is here just to supress errors from private functiosn when non-event files are read. Errors or warnings will be raised here instead.
+               obj.EventFileName = evFile{ii}; 
+               try % try-catch is here just to supress errors from private functions when non-event files are read. Errors or warnings will be raised here instead.
                    if strcmpi(obj.EventFileParseMethod,'csv') && endsWith(obj.EventFileName, '.csv')
                        [evID, evNames] = obj.readCSVfile(colNames);
                    elseif strcmpi(obj.EventFileParseMethod,'vpixx') && (endsWith(obj.EventFileName, '.vpixx') || endsWith(obj.EventFileName, '.txt'))
                        [evID, evNames] = obj.readVpixxFile;
                        
-                       % Add more elseif statements when new parsing methods
-                       % are added.
-                       %                elseif
+                       % Add new parsing methods here.
+                       %                elseif ... 
                        %
                    else
                        continue
@@ -216,14 +215,15 @@ classdef EventsManager < handle
            obj.eventNameList = evNames;           
         end
                     
-        function plotAnalogIN(obj, chanName)
+        function f = plotAnalogIN(obj, chanName)
             % PLOTANALOGIN plots the Analog input signals and overlays the
             % threshold as well as the detected triggers, if existent.
             %
             % Input (optional):
             %   chanName (char|cell): Channel name or list of names to
             %   plot. If not provided, all channels will de displayed.
-                                  
+            % Output (optional):
+            %   f (handle): array of figure handle(s).
             if isempty(obj.AnalogIN)
                 warning('No signal to plot!')
                 return
@@ -260,8 +260,8 @@ classdef EventsManager < handle
             axYSize = [min(obj.AnalogIN(:)), max(obj.AnalogIN(:))]; % Get min-max for Yscale
             
             for ii = 1:nFigs
-                f(ii) = figure('Name',sprintf('Analog Inputs %d/%d (downsampled to %0.0f Hz)',ii,nFigs, obj.sr/10),...
-                    'Visible','off','NumberTitle','off', 'Position',[0 0 560 720],...
+                f(ii) = figure('Name',sprintf('Analog Inputs %d/%d (downsampled to %0.0f KHz)',ii,nFigs, obj.sr/10000),...
+                    'Visible','off','NumberTitle','off', 'Position',[0 0 560 nAxPerFig(ii)*200],...
                     'CreateFcn',{@movegui,'center'},'CloseRequestFcn', @closeAllFigs);                
                 for jj = 1:nAxPerFig(ii)
                     s(cnt) = subplot(nAxPerFig(ii),1,jj, 'Parent',f(ii));
@@ -316,8 +316,12 @@ classdef EventsManager < handle
                 end
             end                                   
             for ii = 1:length(f)
-                f(ii).UserData = f;
-                f(ii).Visible = 'on';
+                % Cascade figures:
+                if ii > 1
+                    f(ii).Position([1 2]) = f(ii-1).Position([1 2]) + [25 -25];
+                end
+                f(ii).UserData = f;                
+                f(ii).Visible = 'on';                                
             end
             % Link all axes together
             linkaxes(s,'xy');
@@ -331,15 +335,23 @@ classdef EventsManager < handle
             end            
         end
         
-        function getTriggers(obj)
+        function getTriggers(obj, b_dispTrigInfo)
             % GETTRIGGERS detects the triggers from one or more analog IN channels 
             %   with names stored in the "trigChanName" property.
-            % It records the timestamps and state of each event.                         
-% 
+            % It records the timestamps and state of each event.
+            % Input:
+            %   b_dispStats (bool, default = FALSE): If TRUE, displays some basic stats on
+            %   trigger detection on the command window.
+            
+            if ~exist('b_dispTrigInfo','var')
+                b_dispTrigInfo = false;
+            end
+            
 %             if ~isempty(obj.timestamps)
 %                 warning('Event triggers already detected! Trigger detection aborted.');
 %                 return
 %             end
+
             if isempty([obj.trigChanName{:}])
                 warning('Trigger channel name not set! Trigger detection aborted.')
                 return
@@ -370,10 +382,8 @@ classdef EventsManager < handle
                 % "Name" field of the channel instead of the channel ID.
                 if startsWith(obj.trigChanName{ii}, 'StimAna')
                     num = erase(obj.trigChanName{ii}, 'StimAna');                   
-                    try
-                        obj.eventNameList{ii} = obj.AcqInfo.(['Stimulation' num '_Name']);
-                    catch
-                        %%% Do Nothing
+                    if isfield(obj.AcqInfo, ['Stimulation' num '_Name'])
+                        obj.eventNameList{ii} = obj.AcqInfo.(['Stimulation' num '_Name']);                    
                     end
                 else
                     obj.eventNameList{ii}= obj.trigChanName{ii};
@@ -429,15 +439,17 @@ classdef EventsManager < handle
                 assert(isequal(numel(unique(obj.eventID)), numel(obj.eventNameList)), errID, msg);
             end
             % Display trigger stats:
-            disp('Trigger detection completed.')
-            disp('---------- Trigger info ----------')
-            deltaT = [diff(obj.timestamps); nan];
-            fprintf(['Total number of triggers: %d\nTotal number of conditions: %d\n' ...
-                'Average trial length (HIGH state): %0.3f s\nAverage inter-trial length (LOW state): %0.3f s\n'...
-                'Trigger detection threshold: %0.2f v\nTrigger type: %s\n'],sum(obj.state),length(obj.eventNameList),...
-                mean(deltaT(obj.state == 1), 'omitnan'), mean(deltaT(obj.state == 0), 'omitnan'), obj.trigThr, ...
-                obj.trigType)
-            disp('--------------------------------')                     
+            if b_dispTrigInfo
+                disp('Trigger detection completed.')
+                disp('---------- Trigger info ----------')
+                deltaT = [diff(obj.timestamps); nan];
+                fprintf(['Total number of triggers: %d\nTotal number of conditions: %d\n' ...
+                    'Average trial length (HIGH state): %0.3f s\nAverage inter-trial length (LOW state): %0.3f s\n'...
+                    'Trigger detection threshold: %0.2f v\nTrigger type: %s\n'],sum(obj.state),length(obj.eventNameList),...
+                    mean(deltaT(obj.state == 1), 'omitnan'), mean(deltaT(obj.state == 0), 'omitnan'), obj.trigThr, ...
+                    obj.trigType)
+                disp('--------------------------------')
+            end
         end
         
         function saveEvents(obj,saveFolder)
