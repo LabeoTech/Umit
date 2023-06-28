@@ -24,10 +24,10 @@ classdef EventsManager < handle
         eventNameList cell % Name of each condition.
         b_isDigital logical = false; % TRUE for digital stimulation using OiS200 as master.
         minTrigAmp single {mustBePositive} = .15; % Minimal signal amplitude (in Volts). Used when the trigger threshold is "auto". Ignored otherwise.        
+        EventFileName char % Name of the event file containing events information (.csv, .txt, .vpixx ...).
     end
     properties (Access = private)
-        warnOrigState % original state of Matlab's warnings. This will be restored at this class destruction.
-        EventFileName char % Name of the event file containing events information (.csv, .txt, .vpixx ...).
+        warnOrigState % original state of Matlab's warnings. This will be restored at this class destruction.        
         ParseMethods = {'none','csv','vpixx'}; % List of valid parse methods.
         privateEventFileParseMethod;
     end
@@ -209,7 +209,7 @@ classdef EventsManager < handle
            end
            assert(~isempty(evID),'Failed to parse "%s"! \nIs this a valid Event file?',obj.EventFileName)
            % Check if the eventID has the same length as the timestamps:
-           assert(isequaln(length(obj.timestamps), length(evID)), 'Failed to update events in file "%s". Event ID list must have the same length as the timestamps', obj.EventFileName)
+           assert(isequaln(length(obj.timestamps), length(evID)), 'Failed to update events from file "%s". There is a mismatch between the number of conditions and the number of triggers.', obj.EventFileName)
            % Save event ID and name lists:
            obj.eventID = evID;
            obj.eventNameList = evNames;           
@@ -383,11 +383,9 @@ classdef EventsManager < handle
                 
                 % Special Case: For internal analog triggers, use the
                 % "Name" field of the channel instead of the channel ID.
-                if startsWith(obj.trigChanName{ii}, 'StimAna')
-                    num = erase(obj.trigChanName{ii}, 'StimAna');                   
-                    if isfield(obj.AcqInfo, ['Stimulation' num '_Name'])
-                        obj.eventNameList{ii} = obj.AcqInfo.(['Stimulation' num '_Name']);                    
-                    end
+                num = erase(obj.trigChanName{ii}, 'StimAna');                   
+                if startsWith(obj.trigChanName{ii}, 'StimAna') && isfield(obj.AcqInfo, ['Stimulation' num '_Name'])                                        
+                        obj.eventNameList{ii} = obj.AcqInfo.(['Stimulation' num '_Name']);                                        
                 else
                     obj.eventNameList = [obj.eventNameList, obj.trigChanName(ii)];
                 end
@@ -412,24 +410,24 @@ classdef EventsManager < handle
                 [~,idx] = sort(IDs);
                 obj.eventNameList = Names(idx);
                 disp('Trigger timestamps generated.');
-            else                
+%             else                
                 % For Analog stimulation with event list from text file, update
                 % eventID and eventNameList:
-                if ~isempty(obj.EventFileName)
-                    switch lower(obj.EventFileParseMethod)
-                        case 'default'
-                            [obj.eventID, obj.eventNameList] = obj.readCSVfile;
-                        case 'vpixx'
-                            [obj.eventID, obj.eventNameList] = obj.readVpixxFile;
-                        otherwise
-                            error(['Unknown event file parsing method ' obj.EventFileParseMethod]);
-                    end
-                    % Repeat each event ID item to account for the offset (state == 0)
-                    if length(obj.eventID) < length(obj.state)
-                        obj.eventID = repelem(obj.eventID,2);
-                    end
-                    disp(['Event ID list read from file "' obj.EventFileName '"']);
-                end
+%                 if ~isempty(obj.EventFileName)
+%                     switch lower(obj.EventFileParseMethod)
+%                         case 'default'
+%                             [obj.eventID, obj.eventNameList] = obj.readCSVfile;
+%                         case 'vpixx'
+%                             [obj.eventID, obj.eventNameList] = obj.readVpixxFile;
+%                         otherwise
+%                             error(['Unknown event file parsing method ' obj.EventFileParseMethod]);
+%                     end
+%                     % Repeat each event ID item to account for the offset (state == 0)
+%                     if length(obj.eventID) < length(obj.state)
+%                         obj.eventID = repelem(obj.eventID,2);
+%                     end
+%                     disp(['Event ID list read from file "' obj.EventFileName '"']);
+%                 end
             end
             % Validate triggers:
             % Checks for equality of lengths of eventID and timestamps
