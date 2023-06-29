@@ -1,4 +1,7 @@
 function outFile = MV_gen_SF_TF_matrix(SaveFolder, varargin)
+%% OBSOLETE!
+%%
+
 % MV_GEN_SF_TF_MATRIX is a custom function from Matthieu Vanni's lab.
 % This function finds the centroid pixels of visual areas and
 % values from SF-TF experiments for statistical analysis.
