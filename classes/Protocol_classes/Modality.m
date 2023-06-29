@@ -14,7 +14,7 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         MyParent % Acquisition object that contains MODALITY object.
     end
     properties (Hidden)
-        MetaDataFileName char = '' %File containing other information about the recording session.
+        MetaDataFileName char = '' %File containing other information about the recording session. (OBSOLETE. Kept for retrocompatibility).
         RawFiles_FP cell % List of full path of Raw filenames. This property is set/used only by the Protocol Function.
                          % This property will be used to generate just the
                          % list of files (no path) and to create the
@@ -24,7 +24,7 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         RawFiles cell % File(s) containing raw data.
         RawFolder char % Path of directory containing raw data.    
         SaveFolder % Path of directory containing transformed data.        
-        MetaDataFile % FullPath of file containing other information about the recording session.
+        MetaDataFile % FullPath of file containing other information about the recording session. (OBSOLETE. Kept for retrocompatibility).
     end
     
     methods

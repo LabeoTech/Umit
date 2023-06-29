@@ -1468,7 +1468,7 @@ classdef PipelineManager < handle
             % information.
             % !If the User cancels any of the dialogs, the function returns
             % an empty array!
-            % Note: for functions with inputs from the "Disk", the task in
+
             orig_seq = obj.current_seq;
             
             % For when this is the first item in the pipeline:
@@ -1483,13 +1483,13 @@ classdef PipelineManager < handle
                 elseif (task.b_hasDataOut || task.b_hasFileOut ) && ~task.b_hasDataIn
                     task.inputFrom = 0;
                 end
-                if task.inputFileName == 0
+                if task.inputFileName == 0 % Means that the operation was cancelled by User within a GUI.
                     task = [];
                 end
                 return
             end
             % Procedure for adding new items to an existing pipeline:
-            if ~isempty(task.inputFrom) || (task.b_hasDataOut && ~task.b_hasDataIn)
+            if ~isempty(task.inputFrom) || ( (task.b_hasDataOut || task.b_hasFileOut) && ~task.b_hasDataIn )
                 % If the User forces the creation of a new branch or
                 %   if the task function generates data from the disk.
                 obj.current_seq = obj.current_seq + 1;
@@ -1547,7 +1547,7 @@ classdef PipelineManager < handle
                 % For functions that do not have "data" input but create an
                 % output
                 task.inputFrom = 0;
-            elseif ~any(strcmpi('data',task.argsIn)) && ~any(strcmpi('outData',task.argsOut))
+            elseif ~task.b_hasDataOut && ~task.b_hasFileOut && ~task.b_hasDataIn
                 % Control for functions that do not have any data input or
                 % output. *Generally, these are functions that changes
                 % auxiliary files such as meta Data*.
@@ -1561,7 +1561,13 @@ classdef PipelineManager < handle
                         task.inputFrom = ii;
                         task.inputFileName = inputFileName;
                         break
-                    end
+                    end                    
+                end
+                % If all sequence was scanned, and no function with an output
+                % was found, force input from the Disk:
+                if ii == 1 && isempty(inputFileName)
+                    task.inputFrom = 0; % Input from Disk;
+                    task.inputFileName = obj.selectInputFileName(0,task.name);
                 end
             end
             % Update step index:
