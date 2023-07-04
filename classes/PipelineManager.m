@@ -15,10 +15,10 @@ classdef PipelineManager < handle
             '', 'opts',struct.empty,'opts_vals',struct.empty,...
             'opts_def',struct.empty ,'name','', 'inputFrom','', 'seq',[],'seqIndx',[],...
             'b_hasDataIn',false,'b_hasDataOut',false,'b_hasFileOut',false,'b_paramsSet',false);% !!If the fields are changed, please apply to the "set" method as well.
+        funcList struct % structure containing the info about each function in the "fcnDir".
     end
     properties (SetAccess = private)
         % the same changes to the property's set method.
-        funcList struct % structure containing the info about each function in the "fcnDir".
         ProtocolObj Protocol % Protocol Object.
         fcnDir char % Directory of the analysis functions.
         ClassName char % Name of the class that the pipeline analysis functions will run.
@@ -1449,11 +1449,13 @@ classdef PipelineManager < handle
                     % If the sequence is partially skipped, update the
                     % sequence:
                     indx = find(~cellfun(@isempty,({outSeq.inputFrom})), 1,'first');
-                    outSeq(indx).inputFrom = 0; % Input from Disk.
-                    outSeq(indx).inputFileName = [file ext];
-                    % Reset sequence indices:
-                    for jj = 1:length(outSeq)
-                        outSeq(jj).seqIndx = jj;
+                    if any(indx)
+                        outSeq(indx).inputFrom = 0; % Input from Disk.
+                        outSeq(indx).inputFileName = [file ext];
+                        % Reset sequence indices:
+                        for jj = 1:length(outSeq)
+                            outSeq(jj).seqIndx = jj;
+                        end
                     end
                 end
                 % Return steps to be skipped:

@@ -39,7 +39,7 @@ if size(timestamps,1) < size(timestamps,2)
     timestamps = timestamps';
 end
 if isempty(state)
-    state = ones(size(timestamps), 'single');
+    state = true(size(timestamps));
 end
 if isempty(eventNameList)
     eventNameList = num2cell(unique(eventID));

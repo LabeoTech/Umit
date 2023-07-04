@@ -182,9 +182,9 @@ classdef EventsManager < handle
            for ii = 1:length(evFile)
                obj.EventFileName = evFile{ii}; 
                try % try-catch is here just to supress errors from private functions when non-event files are read. Errors or warnings will be raised here instead.
-                   if strcmpi(obj.EventFileParseMethod,'csv') && endsWith(obj.EventFileName, '.csv')
+                   if strcmpi(obj.EventFileParseMethod,'csv') && endsWith(lower(obj.EventFileName), '.csv')
                        [evID, evNames] = obj.readCSVfile(colNames);
-                   elseif strcmpi(obj.EventFileParseMethod,'vpixx') && (endsWith(obj.EventFileName, '.vpixx') || endsWith(obj.EventFileName, '.txt'))
+                   elseif strcmpi(obj.EventFileParseMethod,'vpixx') && (endsWith(lower(obj.EventFileName), '.vpixx') || endsWith(lower(obj.EventFileName), '.txt'))
                        [evID, evNames] = obj.readVpixxFile;
                        
                        % Add new parsing methods here.
@@ -204,7 +204,7 @@ classdef EventsManager < handle
            % Throw warning if no event file was specified and no file was
            % successfully read:
            if isempty(p.Results.EventFileName) && isempty(evID)
-               warning('Event File parsing aborted! Failed to parse "%s" file(s) in "%s".\nDo they exist in the Data Folder?',upper(obj.EventFileParseMethod), obj.DataFolder)
+               warning('Event File parsing aborted! Failed to parse "%s" file in "%s".\nDoes it exists in the Data Folder?',upper(obj.EventFileParseMethod), obj.DataFolder)
                return
            end
            assert(~isempty(evID),'Failed to parse "%s"! \nIs this a valid Event file?',obj.EventFileName)
@@ -298,7 +298,7 @@ classdef EventsManager < handle
                             end
                             % Put legend on the first plot:
                             if jj == 1
-                                legend(s(cnt),ptc,obj.eventNameList,'Location','best')
+                                legend(s(cnt),ptc,obj.eventNameList,'Location','best', 'Interpreter','none');
                             end
                         end
                         hold(s(cnt),'off');
@@ -517,7 +517,7 @@ classdef EventsManager < handle
                 
                 % Initiate list with the names of the CameraTrigger and internal
                 % channels, then, 
-                obj.AIChanList = cell(1,obj.AcqInfo.AINChannels);
+                obj.AIChanList = cell(obj.AcqInfo.AINChannels,1);
                 switch obj.AcqInfo.AINChannels
                     case 1
                         % Cage system: 
@@ -726,7 +726,7 @@ classdef EventsManager < handle
             %    order.            
             % Set CSV reading rules:                       
             opts = detectImportOptions(obj.EventFileName);    
-            if ~exist('colName','var')
+            if ~exist('colName','var') || isempty(colName)
                 colName = {''};
             elseif ischar(colName)
                 colName = {colName};
@@ -755,7 +755,7 @@ classdef EventsManager < handle
                 end               
             end
                 
-            eventNameList = unique(nameList);%             
+            eventNameList = unique(nameList,'stable');
             nameMap = containers.Map(eventNameList,1:length(eventNameList)); 
             eventID = zeros(length(nameList),1);
             for ii = 1:length(nameList)

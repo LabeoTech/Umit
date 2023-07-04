@@ -4,7 +4,7 @@ function getEvents(RawFolder,SaveFolder, varargin)
 % in the SaveFolder to be used by other umIT functions.
 
 % Defaults:
-default_opts = struct('StimChannel','Internal-main', 'Threshold','auto','TriggerType','EdgeSet', 'minInterStimTime', 2,'ConditionFileType','CSV','ConditionFileName','auto','CSVColNames','all');
+default_opts = struct('StimChannel','Internal-main', 'Threshold','auto','TriggerType','EdgeSet', 'minInterStimTime', 2,'ConditionFileType','none','ConditionFileName','auto','CSVColNames','all');
 opts_values = struct('StimChannel',{{'Internal-main', 'Internal-Aux','AI1', 'AI2','AI3','AI4','AI5','AI6','AI7','AI8'}'},'Threshold',{{'auto',Inf}}, 'TriggerType', {{'EdgeSet', 'EdgeToggle'}},'minInterStimTime',[0.5, Inf],'ConditionFileType',{{'none','CSV','Vpixx'}}, 'ConditionFileName',{{'auto'}},'CSVColNames',{{'all'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 % Arguments validation:
 p = inputParser;
@@ -22,29 +22,33 @@ if isempty(opts.StimChannel)
     warning('No stim channels selected. Event file creation aborted.')
     return
 end
-% Remove spaces of values from EditFields:
+% Check and prepare parameters for EventsManager object:
 opts.ConditionFileName = strip(opts.ConditionFileName);
 opts.CSVVolNames = strip(opts.CSVColNames);
-% Instantiate EventsManager class:
-evObj = EventsManager(RawFolder,opts.ConditionFileType);
-% Update parameters:
-evObj.trigThr = opts.Threshold;
-evObj.trigChanName = opts.StimChannel;
-evObj.minInterStim = opts.minInterStimTime;
-if ~strcmpi(opts.ConditionFileName, 'auto')
-    evObj.EventFileName = opts.ConditionFileName;
-else
-    opts.ConditionFileName = '';
+if strcmpi(opts.ConditionFileName, 'auto') && ~strcmpi(opts.CSVColNames,'all') && ~strcmpi(opts.ConditionFileType,'CSV')
+    % Force file type to 'CSV' if column names were set
+    opts.ConditionFileType = 'CSV';
+    warning('Condition file type set to "CSV" given that specific columns were stated in parameters!');    
 end
 if strcmpi(opts.CSVColNames, 'all')
     opts.CSVColNames = {''};
-else
+else    
     opts.CSVColNames = strsplit(opts.CSVColNames,',');
 end
+if strcmpi(opts.ConditionFileName, 'auto')
+    opts.ConditionFileName = '';
+end
+
+% Instantiate EventsManager class:
+evObj = EventsManager(RawFolder,opts.ConditionFileType);
+% Update EventsManager object properties:
+evObj.trigThr = opts.Threshold;
+evObj.trigChanName = opts.StimChannel;
+evObj.minInterStim = opts.minInterStimTime;
 % Detect triggers:
 evObj.getTriggers(true); % Verbose;
 % Update event names:
-evObj.readEventFile(opts.ConditionFileName, opts.CSVColNames);
+evObj.readEventFile(opts.ConditionFileName,'CSVcols', opts.CSVColNames);
 % Save events to file:
 evObj.saveEvents(SaveFolder);
 end
