@@ -1,0 +1,251 @@
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../css/master.css">
+    <style media="screen">
+        ul {
+            line-height: 1.5;
+        }
+
+        ol {
+            line-height: 1.5;
+            counter-reset: item;
+        }
+
+        ol li {
+            display: block;
+        }
+
+        ol li:before {
+            content: counters(item, ".") ". ";
+            counter-increment: item;
+        }
+
+        table {
+            font-family: arial, sans-serif;
+            font-size: 92%;
+            border-collapse: collapse;
+        }
+
+        td,
+        th {
+            border: 1px solid #dddddd;
+            text-align: left;
+            padding: 8px;
+        }
+
+        th {
+            background-color: #ccc;
+        }
+    </style>
+    <title>Multi-plot tool</title>
+</head>
+
+<body>
+    <h2>Event management tool</h2>
+    <hr>
+    <p>
+        This tool is an <i>Utility</i> of the <a href="./DataViewer.html"><samp>DataViewer</samp></a> app. The app is
+        dedicated to the visualization and detection of events stored in the analog inputs from <i>LabeoTech Imaging
+            systems</i>. It enables users to easily set the parameters for event detection either from internally
+        generated events from the imaging platforms or from external sources such as TTL signals or photodiodes.
+        Additionally, a list of event IDs stored in a .CSV or text file can be used to identify the detected events
+        associated with different conditions. Finally, one can save the event information to an <samp>events.mat</samp>
+        file, which can be used by some of the <i>functions</i> in <b><i>umIT</i></b> (e.g. <a
+            href="./split_data_by_event.html">split_data_by_event</a>) to perform the analysis of event-triggered
+        imaging data.
+    </p>
+    <h3 id="the-interface">The interface</h3>
+    <hr>
+    <p style="text-align: center;">
+        <img src="../assets/img/events-manager_tool_fig1.png" alt="events-manager_tool_fig1" width="660"><br>
+        <em>App's main interface (left) and analog input figure (right) showing the events detected (red shaded
+            areas)</em>
+    </p>
+    <ol>
+        <li><b>Event detection parameters</b>:
+            <ol>
+                <li>
+                    <b>Threshold:</b> threshold (in volts) for detection of events. If set to "auto", the threshold is
+                    calculated as <span class="code-inline">0.8*max(signal)</span>.
+                </li>
+                <li>
+                    <b>min. interstim (s):</b> minimum inter-stimulation time period (in seconds). This parameter is
+                    used to put together a block of signal bursts as a single event. As shown in the figure above, each
+                    event consists of a series of three bursts with 0.7 seconds delay and an inter-stimulus (time delay
+                    between events) of 1 second. By setting a value between 0.7 and 1, we can successfully distinguish
+                    the individual blocks of bursts.
+                </li>
+                <li>
+                    <b>Trigger type: </b> types of triggers marking the beginning and end of an event.
+                    There are two types: <i><b>EdgeSet</b></i> (default) and <b><i>EdgeToggle</i></b>.
+                    The
+                    <i>EdgeSet</i> type consists of a rising and falling edges of a pulse marking the beginning and end
+                    of an event while the <i>EdgeToggle</i> represents a pulse at the start and another pulse at the end
+                    of the event (see illustration below).
+                    <p style="text-align: center;">
+                        <img src="../assets/img/events-manager_tool_edgeType.png" alt="events-manager_tool_edgeType"
+                            width="330">
+                    </p>
+                </li>
+            </ol>
+        </li>
+        <li><b>Condition list:</b>
+            <ol>
+                <li><b>Type:</b> type of file containing the list of conditions. As of today, two types are available:
+                    <ol>
+                        <li><b>CSV</b>: this is the default file format. A <samp>.csv</samp> file should contain the
+                            condition IDs/names listed in chronological order with each row representing an event.
+                        </li>
+                        <li><b>Vpixx</b>: file from Vpixx software (Vpixx Technologies) with extensions
+                            <samp>.vpixx</samp>
+                            or <samp>.txt.</samp>
+                        </li>
+                    </ol>
+                </li>
+                <li><b>File:</b> click to select the file containing the condition list.</li>
+            </ol>
+        </li>
+        <li><b>Select channel(s):</b> click on the analog channel(s) containing the event signals.</li>
+        <li><b>Select column(s):</b> panel visible when a <b>CSV</b> file is selected. Click on the column(s) to
+            identify the events.</li>
+        <li><b>Event info:</b> panel containing basic statistics on events detection.</li>
+        <li><b>Detect button</b>: applies the event detection parameters to the selected channels and generates the
+            plots.</li>
+        <li><b>Save events button:</b> creates the file <samp>events.mat</samp> in the save folder. </li>
+    </ol>
+
+    <h3 id="usage">Usage</h3>
+    <hr>
+    <p>
+        To launch the tool, open the <samp>DataViewer</samp> app and go to <i>Utilities &gt;&gt; Manage events</i>. To
+        access the <i>Utilities</i> menu, either open a <samp>.dat</samp> file (<i>File &gt;&gt; Open</i>) or import the
+        raw data (<i>File &gt;&gt; Import raw data... &gt;&gt; from LabeoTech system</i>)
+    </p>
+    <div class="tipnote">
+        <p><strong>Tip</strong><br>
+            If you import the raw data, you can skip the event detection by setting the <b>DetectEvents</b> parameter to
+            <b>No</b> to save time. The app will read the analog data and create the <samp>events.mat</samp> file later
+            in the app.
+        </p>
+    </div>
+    <h4>1. Select the data folder</h4>
+    <p>
+        The app will automatically open the the binary files (<samp>ai_0000x.bin</samp>) containing the analog signals.
+        If the files are not found, you will be asked to select the folder containing the files. Once the files are
+        read, the app interface will appear. The save folder where the <samp>events.mat</samp> file will be saved is the
+        same from the opened <samp>.dat</samp> file.
+    </p>
+    <h4 id="2_select-channel_s">2. Select channel(s)</h4>
+    <p>
+        Select one or more channels from the list in the <i>Select channel(s)</i>. The list of channels is based on the
+        content of the <samp>info.txt</samp> file.
+    </p>
+    <div class="infonote">
+        <p><strong>Note</strong><br>
+            If two or more channels are selected, for each channel, the events detected will be automatically considered
+            as a condition, if no condition list is provided. For example, if there are events in the channels
+            <b>StimAna1</b> and <b>StimAna2</b>, the events will have a total number of two conditions with names
+            <b>StimAna1</b> and <b>StimAna2</b>.
+        </p>
+    </div>
+    <h4 id="3_choose-a-condition-file">3. Choose a condition file</h4>
+    <p>
+        This app provides a convenient feature for cases where the events detected are associated with multiple
+        conditions. Users have the option to upload a .CSV file (or a text file from Vpixx-special case) that will be
+        used to update the list of event names. This can be particularly useful when dealing with cases where there are
+        different stimuli (i.e. conditions) presented in a random order.
+    </p>
+    <h4 id="csv-files">CSV files</h4>
+    <p>
+        Users can prepare a .CSV file that includes the event names listed in chronological order with each event name
+        in a separate row. Upon uploading the file through the app's interface, the app will process the contents and
+        update the event name list accordingly.
+    </p>
+    <p>
+        To upload a .CSV file:
+    </p>
+    <ol>
+        <li>Change the condition <b>type</b> to <b>CSV</b></li>
+        <li>Click on <b><i>Choose file...</i></b> button</li>
+        <li>Select the .CSV file in the folder</li>
+    </ol>
+    <p>
+        The app will read the content of the .CSV file and update the event name list accordingly.
+    </p>
+    <h5>Special case: multiple columns</h5>
+    <p>
+        In cases where the .CSV file contains multiple columns, the utility app's graphical user interface (GUI) offers
+        an additional panel to facilitate column selection. This feature allows users to choose the specific column(s)
+        they want to include in the event name list.
+    </p>
+    <p>
+        By selecting two or more columns, the app concatenates the row values from each selected column to create unique
+        event names. This functionality is particularly useful for users who have different combinations of parameters
+        that form a unique condition. Additionally, if the .CSV file contains headers, those headers are automatically
+        included in the generated event names. This ensures that the resulting event names accurately represent the
+        parameters associated with each condition. Here is an example of a .CSV file containing three columns:
+    </p>
+    <p>
+        Here is the data in the .CSV file:
+    </p>
+    <table style="table-layout: fixed;">
+        <tr>
+            <th style="width:20px" align="center">Test</th>
+            <th style="width:20px" align="center">A</th>
+            <th style="width:20px" align="center">B</th>
+        </tr>
+        <tr>
+            <td>1</td>
+            <td>1</td>
+            <td>1</td>
+        </tr>
+        <tr>
+            <td>2</td>
+            <td>2</td>
+            <td>2</td>
+        </tr>
+        <tr>
+            <td>3</td>
+            <td>3</td>
+            <td>3</td>
+        </tr>
+        <tr>
+            <td>4</td>
+            <td>4</td>
+            <td>4</td>
+        </tr>
+        <tr>
+            <td>5</td>
+            <td>5</td>
+            <td>5</td>
+        </tr>
+    </table>
+    <p>
+        And here is how it looks like when the data is loaded on the app:
+    </p>
+    <img src="../assets/img/events-manager_tool_multiCol_csv.png" alt="events-manager_tool_multiCol_csv" width="880">
+    <p>
+        To update the event names, just select the desired columns and click on the <b><i>Update list</i></b> button.
+    </p>
+    <h5>Vpixx output file</h5>
+    <p>
+        For users that utilize the Vpixx software (Vpixx Technologies) to create stimuli, the app provides the option to
+        parse the <samp>.vpixx</samp> or <samp>.txt</samp> files generated by the Vpixx software and updates the event
+        name list.
+    </p>
+    <p>
+        The procedure for updating event names using <samp>.vpixx</samp> or <samp>.txt</samp>files generated by the
+        Vpixx software is the same as for CSV files with a single column.
+    </p>
+    <h4 id="4_save-events">4. Save events</h4>
+    <p>
+        Finally, once all events are detected and the event names are updated from the condition file, simply click on
+        the <b>Save events</b> button to save the event information to the <samp>events.mat</samp> file. This file
+        contains all the information necessary for the analysis of event-triggered imaging data.
+    </p>
+    <hr>
+</body>
+
+</html>
