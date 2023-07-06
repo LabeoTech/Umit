@@ -5,7 +5,7 @@ classdef EventsManager < handle
     %   systems (e.g. OiS200).
     properties
         trigThr = 'auto'; % Trigger detection Threshold in volts (Default = 'auto'). The 'auto' means that the threshold will be at 70% of the signal amplitude.
-        trigType char {mustBeMember(trigType,{'EdgeSet','EdgeToggle'})} = 'EdgeSet' % Trigger type.
+        trigType char = 'EdgeSet' % Trigger type.
         trigChanName = {''}; % Name of AI channel(s) containing the triggers.
         minInterStim single {mustBeNonnegative} = 2 % Minimal inter stim time (in seconds). This param. is used to identify Bursts in analogIN. !This value should be higher than the inter-burst value to work!
     end
@@ -106,7 +106,10 @@ classdef EventsManager < handle
                 error(['Format ' class(trigName) ' not supported! It must be char or cell array of chars.'])
             end
         end
-
+        function set.trigType(obj, trigType)
+            assert(ismember(lower(trigType), {'edgeset','edgetoggle'}),'Invalid trigger type! It must be either "EdgeSet" or "EdgeToggle".')
+            obj.trigType = lower(trigType);
+        end
         function status =  readEventFile(obj, varargin)
            % READEVENTFILE reads the content of an event file containing a
            % list of event Names. The file will be parsed using one of the
@@ -155,14 +158,32 @@ classdef EventsManager < handle
            %
            status = false;
            if strcmpi(obj.EventFileParseMethod,'none')
+               if ~isempty(evFile) || ~isempty(colNames{:})
+                   warning('Operation aborted! EventFileParseMethod is not set yet.')
+               end               
                status = true;
                return
            end
            if ~isempty(evFile)
-               % For a specific event file:
-               if isempty(fileparts(evFile))
-                   evFile = fullfile(obj.DataFolder,evFile);                   
+               [folder,name,ext] = fileparts(evFile);
+               if isempty(folder)
+                   folder = obj.DataFolder;
                end
+               if isempty(ext)
+                   switch obj.EventFileParseMethod
+                       case 'csv'
+                           evFile = [name, '.csv'];
+                       case 'vpixx'
+                           if exist(fullfile(folder,[name, '.vpixx']),'file')
+                               evFile = fullfile(folder,[name, '.vpixx']);
+                           else
+                               evFile = fullfile(folder,[name, '.txt']);
+                           end
+                       otherwise
+                           error('Unknown file Parsing method')
+                   end
+               end
+               
                % Check if the file exists. If not, raise a warning and
                % return:
                if ~exist(evFile,'file')                   

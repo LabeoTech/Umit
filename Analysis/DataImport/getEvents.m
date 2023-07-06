@@ -1,6 +1,6 @@
 function getEvents(RawFolder,SaveFolder, varargin)
 % GETEVENTS detects events from LabeoTech Imaging system's analog channels
-% (e.g., ai_00000.bin) and saves the event information to "events.mat" file
+% (e.g., ai_0000x.bin) and saves the event information to "events.mat" file
 % in the SaveFolder to be used by other umIT functions.
 
 % Defaults:
@@ -43,10 +43,11 @@ end
 evObj = EventsManager(RawFolder,opts.ConditionFileType);
 % Update EventsManager object properties:
 evObj.trigThr = opts.Threshold;
+evObj.trigType = opts.TriggerType;
 evObj.trigChanName = opts.StimChannel;
 evObj.minInterStim = opts.minInterStimTime;
 % Detect triggers:
-evObj.getTriggers(true); % Verbose;
+evObj.getTriggers(true); % Verbose
 % Update event names:
 evObj.readEventFile(opts.ConditionFileName,'CSVcols', opts.CSVColNames);
 % Save events to file:
