@@ -107,7 +107,7 @@ classdef EventsManager < handle
             end
         end
 
-        function readEventFile(obj, varargin)
+        function status =  readEventFile(obj, varargin)
            % READEVENTFILE reads the content of an event file containing a
            % list of event Names. The file will be parsed using one of the
            % parsing methods available in this class (e.g., for .CSV,
@@ -131,7 +131,9 @@ classdef EventsManager < handle
            %    read. If more than one column is provided, each row will
            %    be merged into a single one (this parameter is ignored for
            %    other parsing methods).           
-           %
+           % Output:
+           %    status (bool): TRUE, if the event file was successfully
+           %    read. FALSE otherwise.
            % Examples:
            %  1 - Automatic search for a .CSV file with a single column:
            %    readEventFile();
@@ -151,7 +153,9 @@ classdef EventsManager < handle
            evFile = p.Results.EventFileName;
            colNames = p.Results.CSVcols;
            %
+           status = false;
            if strcmpi(obj.EventFileParseMethod,'none')
+               status = true;
                return
            end
            if ~isempty(evFile)
@@ -212,7 +216,8 @@ classdef EventsManager < handle
            assert(isequaln(length(obj.timestamps), length(evID)), 'Failed to update events from file "%s". There is a mismatch between the number of conditions and the number of triggers.', obj.EventFileName)
            % Save event ID and name lists:
            obj.eventID = evID;
-           obj.eventNameList = evNames;           
+           obj.eventNameList = evNames;         
+           status = true;
         end
                     
         function f = plotAnalogIN(obj, chanName)
@@ -295,20 +300,23 @@ classdef EventsManager < handle
                                 x = [xOn xOff xOff xOn];
                                 y = repmat([axYSize(1) axYSize(1) axYSize(2) axYSize(2)], size(xOn));
                                 ptc(kk) = patch(s(cnt), x',y',colorArr(kk,:), 'FaceAlpha', .25, 'EdgeColor', 'none', 'Tag','TrigPatch');
+                                uistack(ptc(kk), 'bottom');
                             end
                             % Put legend on the first plot:
                             if jj == 1
                                 legend(s(cnt),ptc,obj.eventNameList,'Location','best', 'Interpreter','none');
-                            end
+                            end                            
                         end
                         hold(s(cnt),'off');
+                        
                     else
-                        % copy the content of the first axis
+                        % copy the content of the first axis                        
+                        if exist('ptc','var')
+                            
+                            copyobj(ptc,s(cnt));
+                        end
                         if exist('ln','var')
                             copyobj(ln,s(cnt));
-                        end
-                        if exist('ptc','var')
-                            copyobj(ptc,s(cnt));
                         end
                     end                    
                     title(s(cnt), chanName{cnt});
@@ -324,7 +332,7 @@ classdef EventsManager < handle
                 f(ii).Visible = 'on';                                
             end
             % Link all axes together
-            linkaxes(s,'xy');
+            linkprop(s,{'XLim','YLim'});
             set(s(1),'YLim',axYSize);
             
             % CloseFig callback:
@@ -641,6 +649,13 @@ classdef EventsManager < handle
             if size(data,1) > size(data,2)
                 data = data';
             end
+            % Check for biphasic signal:
+            dfData = diff(data);         
+            if sum(dfData > max(dfData)/2) ~= sum(dfData < min(dfData)/2)
+                disp('Biphasic signal detected.')
+                data = abs(data - mean(data));
+            end                        
+            %
             if strcmpi(obj.trigThr, 'auto')
                 trigAmp = (.8*(max(data(:)) - min(data(:))));
                 % Control for the minimal amplitude for trigger detection
