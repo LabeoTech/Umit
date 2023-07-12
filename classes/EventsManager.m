@@ -671,10 +671,12 @@ classdef EventsManager < handle
                 data = data';
             end
             % Check for biphasic signal:
-            dfData = diff(data);         
-            if sum(dfData > max(dfData)/2) ~= sum(dfData < min(dfData)/2)
+            % Here, a biphasic signal is considered to have a positive
+            % followed
+            % a negative pulse.
+            if ~isequaln(data,abs(data))
                 disp('Biphasic signal detected.')
-                data = abs(data - mean(data));
+                data = abs(data);
             end                        
             %
             if strcmpi(obj.trigThr, 'auto')
