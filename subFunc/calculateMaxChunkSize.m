@@ -15,28 +15,36 @@ s = whos('data');
 % clear data;
 dataByteSize = s.bytes;
 maxBytes = sizeFactor*dataByteSize;
-% Get available RAM:
-switch computer
-    case 'PCWIN64'
-        [~,sys]= memory;
-        bytesAvailable = sys.PhysicalMemory.Available;
-    case 'GLNXA64'
-        [status, result] = system('free -b | grep Mem | awk ''{print $7}''');
-        if status
-            error('Failed to retrieve RAM information in Linux System!')
-        end
-        bytesAvailable = str2double(result);
-    case 'MACI64'
-        [status, result] = system('vm_stat | grep "Pages free" | awk ''{print $3}''');
-        if status
-            error('Failed to retrieve RAM information in MacOS!')
-        end
-        page_size = str2double(system('getconf PAGESIZE'));
-        bytesAvailable = str2double(result)*page_size;
-    otherwise
-        error('Unsupported Platform!');
-end
 
-% Calculate the number of chunks to be used given the available memory:
-nChunks = ceil(maxBytes/bytesAvailable);
+% Get available RAM:
+try
+    switch computer
+        case 'PCWIN64'
+            [~,sys]= memory;
+            bytesAvailable = sys.PhysicalMemory.Available;
+        case 'GLNXA64'
+            [status, result] = system('free -b | grep Mem | awk ''{print $7}''');
+            if status
+                error('Failed to retrieve RAM information in Linux System!')
+            end
+            bytesAvailable = str2double(result);
+        case 'MACI64'
+            [status, result] = system('vm_stat | grep "Pages free" | awk ''{print $3}''');
+            if status
+                error('Failed to retrieve RAM information in MacOS!')
+            end
+            page_size = str2double(system('getconf PAGESIZE'));
+            bytesAvailable = str2double(result)*page_size;
+        otherwise
+            error('Unsupported Platform!');
+    end
+    
+    % Calculate the number of chunks to be used given the available memory:
+    nChunks = ceil(maxBytes/bytesAvailable);
+catch ME
+    except = MException('calculateMaxChunkSize:NoOSAccess',['Failed to assess available RAM for OS "' computer '"']);
+    except = addCause(except,ME);
+    warning(getReport(except,'extended', 'hyperlinks','off')); % Raise warning instead of error.
+    nChunks = 1;
+end
 end
