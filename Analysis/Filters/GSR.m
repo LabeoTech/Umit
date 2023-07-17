@@ -66,22 +66,20 @@ idx_nan = isnan(outData);
 outData(idx_nan) = 0;
 % Reshape data:
 szData = size(outData);
+mData = mean(outData,'all');
 outData = reshape(outData, [], szData(3));
 % Calculate GSR:
 disp('Calculating Global signal regression...');
-mData = mean(outData,3);
 Sig = mean(outData(logical_mask(:),:),1);
 Sig = Sig / mean(Sig);
 X = [ones(szData(3),1), Sig'];
 clear Sig
 A = X*(X\outData');
 clear X 
-outData = outData - A';%Center at Zero
-outData = outData + mData; %Center over constant mean value.
+outData = outData - A';% Center over constant mean value.
 outData = reshape(outData,szData);
+outData = outData + mData; %Center over constant mean value.
 % Put NaNs back to data:
 outData(idx_nan) = NaN;
 disp('Finished GSR.')
 end
-
-
