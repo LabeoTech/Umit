@@ -377,6 +377,12 @@ end
             Images = iData(:,:,1:(size(iData,3)-overflow));
             clear iData hData overflow;
             
+            if isempty(Images)
+                % In cases where the temporal binning causes the overflow
+                % of all frames. This should happen only in the last ".bin"
+                % file.
+                break
+            end
             if( (~b_IgnoreStim) && (sum(Stim.Stim) ~= 0) )
                 SubStim = [];
                 for ii = 1:length(stim_fn)
