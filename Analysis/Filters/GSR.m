@@ -76,13 +76,14 @@ X = [ones(szData(3),1), Sig'];
 clear Sig
 % 
 A = zeros(length(X),size(outData,1),'single');
-nChunks = calculateMaxChunkSize(outData,6);
+nChunks = calculateMaxChunkSize(outData,7);
 indxChk = round(linspace(0,size(outData,1),nChunks));
-if nChunks > 1
-    disp(nChunks)
+if nChunks > 1    
     for ii = 1:length(indxChk)-1
         A(:,indxChk(ii)+1:indxChk(ii+1)) = X*(X\outData(indxChk(ii)+1:indxChk(ii+1),:)');
+        fprintf('\n%i%...', 100*ii/nChunks);
     end
+    fprintf('\n100%');
 else
     A = X*(X\outData');
 end
