@@ -9,7 +9,7 @@ function out = findMyROIfile(filename,source)
 %   out (str): full path to the ROI file.
 
 % Append extension to filename, if not already provided:
-[~,filename,~] = fileparts(filename);
+[folder,filename,~] = fileparts(filename);
 filename = [filename '.mat'];
 % Get protocol handle:
 protObj = source;
@@ -22,12 +22,21 @@ if ~isempty(protObj)
     end
 end
 % Parse File path to find subject folder:
-if isempty(protObj) || protObj.b_isDummy
+if isempty(protObj) 
+    if isempty(folder)
+        % Look for the file in the current directory
+        out = fullfile(pwd,filename);
+    else
+        % Use fullpath from filename
+        out = fullfile(folder,filename);
+    end    
+elseif protObj.b_isDummy
     % If the protocol object is "dummy", this means that it was created by
     % DataViewer. In this case, look for the ROI file inside the object's
     % save folder:
     out = fullfile(source.SaveFolder, filename);    
 else
+    
     % If the protocol object is not "dummy", look for the ROI file inside
     % the Subject's folder.
     tmp_obj = source;    
