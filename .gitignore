@@ -40,3 +40,4 @@ docs/documentation/userDocs/userdocs_template.html
 test/
 classes/Protocol_classes/Protocol_BACKUP_1599.m
 classes/Protocol_classes/Protocol.asv
+subFunc/mergeRecordings.asv

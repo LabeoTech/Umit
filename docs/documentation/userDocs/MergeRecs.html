@@ -79,6 +79,15 @@
         If there are triggers already stored in the data's meta data file, they will be automatically concatenated. In this case, to preserve this information, leave the box unchecked.
       </p>
     </div>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        A new <samp>events.mat</samp> file will be created when:
+        <ol>
+          <li>The concatenated data contains triggers. In this case, the new <samp>events.mat</samp> file will contain the trigger info from the data's meta data file.</li>
+          <li>All folders with the recordings to be concatenated contain an <samp>event.mat</samp> file and the concatenated data does <b>not</b> contain triggers. In this case, the info from all <samp>events.mat</samp> files will be merged into a single one.</li>
+        </ol>
+      </p>
+    </div>
     <h4 id="9-id-new-data">9. Identify the new acquisition and file</h4>
     <p>
       Type the name of the acquisition that will contain the merged file. If the acquisition already exists, the merged file will be stored in the modality folder inside it. Then, type the name of the merged file.
@@ -94,19 +103,6 @@
     <p style="text-align: center">
       <img src="../assets/img/MergeRec_fig7.png" alt="MergeRec_fig7" width="660">
     </p>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    <hr>
   </body>
 </html>
