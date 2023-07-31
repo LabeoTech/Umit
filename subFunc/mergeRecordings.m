@@ -145,11 +145,14 @@ mOut.datLength = [];
 mOut.datSize = mIn.datSize;
 
 w = waitbar(0,'Merging data...', 'Name', ['Merging ' filename]);
+b_hasEventsFile = false(size(dataPath));
 if strcmpi(merge_type, 'movie')
     % Open new .dat file:
     fidOut = fopen(SaveFilename,'w');
     % Concatenate data in time domain:
     for i = 1:length(dataPath)
+        % Check for existing "events.mat" file:
+        b_hasEventsFile(i) = isfile(fullfile(fileparts(dataPath{i}),'events.mat'));
         % Merge data:
         fidIn = fopen(dataPath{i},'r');
         mIn = matfile(metaDataPath{i});
@@ -176,7 +179,6 @@ if strcmpi(merge_type, 'movie')
         waitbar(i/length(dataPath),w);
     end
     fclose(fidOut);   
-    % Create info for "events.mat" file:
     
 else
     % Concatenate data in "E"vent domain:
@@ -184,10 +186,12 @@ else
     data = nan([length(dataPath), mOut.datSize, mIn.datLength], 'single');
     % Populate each trial with the input data
     for i = 1:length(dataPath)
+        % Check for existing "events.mat" file:
+        b_hasEventsFile(i) = isfile(fullfile(dataPath{i},'events.mat'));
+        %
         [datIn, mIn] = loadDatFile(dataPath{i});
         data(i,:,:,:) = datIn(:,:,1:size(data,4));        
-        if b_hasStim
-            % Concatenate Stim-related variables:       
+        if b_hasStim            % Concatenate Stim-related variables:       
             for j = 1:length(stim_fn)
                 mOut.(stim_fn{j}) = [mOut.(stim_fn{j}), mIn.(stim_fn{j})];
             end
@@ -209,18 +213,63 @@ else
         mOut.eventNameList = {'1'};
         mOut.preEventTime_sec = single(1/mOut.Freq);
         mOut.postEventTime_sec = single((mOut.datLength(2)-1)/mOut.Freq);
-    end        
+    end
     waitbar(1,w,'Please wait. Writing data to file...')
     save2Dat(SaveFilename, data, mOut);
 end
-% Create "events.mat" file from "Stim" parameters:
-genEventsFromStimParameters(fileparts(SaveFilename), mOut);
-if ~isempty(trialMarker)
-    % Open "events.mat" file and update eventNameList var:
-    evntFile = matfile(fullfile(fileparts(SaveFilename), 'events.mat'), 'Writable', true);    
-    evntFile.eventNameList = trialMarker;
-    
+
+% Create "events.mat" file from "Stim" parameters for "movie" data:
+if strcmpi(merge_type, 'movie')
+    if sum(mOut.Stim) > 0
+        % When Stim are found, create a "events.mat" file from the Stim
+        % parameters:
+        genEventsFromStimParameters(fileparts(SaveFilename), mOut);
+        if ~isempty(trialMarker)
+            % Open "events.mat" file and update eventNameList var:
+            evntFile = matfile(fullfile(fileparts(SaveFilename), 'events.mat'), 'Writable', true);
+            evntFile.eventNameList = trialMarker;
+        end
+    elseif all(b_hasEventsFile)
+        % If there are already "events.mat" files in the folders, merge them.
+        warning('off')
+        delete(fullfile(fileparts(SaveFilename),'events.mat')); % Clear existing events.mat file
+        warning('on')
+        % Merge events:
+        eventID = {};
+        timestamps = [];
+        state = [];
+        eventNameList = {};
+        idxList = {};
+        datLen = zeros(size(metaDataPath));
+        for ii = 1:length(metaDataPath)
+            md = matfile(metaDataPath{ii});
+            evFile = matfile(fullfile(fileparts(metaDataPath{ii}), 'events.mat'));
+            eventID{ii} = evFile.eventID;
+            state = [state; evFile.state];
+            eventNameList{ii} = {evFile.eventNameList};            
+            datLen(ii) = md.datLength/md.Freq;
+            % Shift timestamps:             
+            timestamps = [timestamps; evFile.timestamps + sum(datLen) - datLen(1)];                        
+        end
+        timestamps = single(timestamps); state = logical(state);
+        % Update eventID to match merged eventNameLists:
+        allEventNameList = [eventNameList{:}]; allEventNameList = unique(vertcat(allEventNameList{:}),'stable');
+        allEventID = [];
+        for ii = 1:length(eventID)
+            [~,idxAll] = ismember(eventNameList{ii}{:},allEventNameList);
+            eventID_chunk = eventID{ii};
+            idxChunk = unique(eventID_chunk);            
+            for jj = 1:length(idxChunk)
+                eventID_chunk(eventID_chunk == idxChunk(jj)) = idxAll(idxChunk(jj));
+            end
+            allEventID = [allEventID;eventID_chunk];
+        end
+        allEventID = uint16(allEventID);               
+        % Save event info to file:
+        saveEventsFile(fileparts(SaveFilename),allEventID,timestamps,state, allEventNameList)        
+    end
 end
+    % Check for the existance 
 % Copy AcqInfo file from one of the original files to get some experiment info. This is used by some IOI_ana functions.
 copyfile(fullfile(fileparts(dataPath{end}), 'AcqInfos.mat'), fullfile(fileparts(SaveFilename),'AcqInfos.mat'));
 close(w)
@@ -237,7 +286,8 @@ mOut.dataHistory = dH;
 % Save meta data to file:
 save(strrep(SaveFilename, '.dat', '.mat'), '-struct', 'mOut');   
 disp('Done')
-end
+    end
+
 
 
 
