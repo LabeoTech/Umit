@@ -1,4 +1,4 @@
-function [outData, metaData] = genVSM(SaveFolder, varargin)
+function [outData, metaData] = genVSM(SaveFolder, varargin) 
 % GENVSM creates a Visual Sign Map (Sereno et al. 1994,1995; Zhuang et al. 2017)
 % from the phase component of the Azimuth and Elevation maps created with
 % the function "genRetinotopyMaps.m".
@@ -132,7 +132,7 @@ else
     logical_mask = true(metaData.datSize);
 end    
 % Segment the Visual Sign Map:
-% Set threshold as +-1 STD of the VSM (a bit more permissive than Garret et al. 2014):
+% Set threshold as +-1.5 STD of the VSM ( Garret et al. 2014):
 thr = 1.5*std(vsm(:));
 % First, binarize the VSM and intersect with logical mask:
 rawMap = (imbinarize(abs(vsm), thr) & logical_mask);
