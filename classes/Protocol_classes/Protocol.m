@@ -364,7 +364,7 @@ classdef Protocol < handle
             % Check if the acquisition was added to the subject:
             idxS = obj.Array.findElement('ID',subjHandle.ID); 
             if any(strcmp(AcqID, obj.Array.ObjList(idxS).Array.listProp('ID')))                
-                warning('Acquisition already exists in the selected Subject! Operation aborted.')
+                warning('Acquisition already exists in the selected Subject!')
                 return
             end                       
             % Create Acquisition:
