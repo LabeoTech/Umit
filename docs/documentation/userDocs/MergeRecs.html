@@ -7,6 +7,21 @@
       ul {
         line-height: 1.5;
       }
+      table {
+    border-collapse: collapse;
+    width: 300px;
+    border: 2px solid black;
+  }
+
+  th, td {
+    border: 1px solid black;
+    padding: 8px;
+    text-align: center;
+  }
+
+  th {
+    background-color: #f2f2f2;
+  }
     </style>
     <title>MergeRec tool</title>
   </head>
@@ -61,24 +76,22 @@
     </p>
     <p style="text-align: center">
       <img src="../assets/img/MergeRec_fig5.png" alt="MergeRec_fig5" width="660">
-    </p>
-    <h4 id="7-select-merge-type">7. Select merge type</h4>
-    <p> Select the type of merge in the <i>merge type</i> panel.</p>
+    </p>    
+    <h4 id="7-events">7. Events</h4>
     <p>
-      This tool provides two types of merge: <b>movie</b> or <b>trial</b>. The <b>movie</b> type consists of the concatenation of the data in the time domain. Whereas the <b>trial</b> type considers the data as trials and concatenate them in the Event dimension. For instance, for image time series with dimensions Y,X,T concatenated as trials, the resulting file will have the dimensions E,Y,X,T where the length of <b>E</b> is the number of files.
+      In the <i>events</i> panel, one can either overwrite the events IDs from the source recordings or ignore the content of the <samp>events.mat</samp> files. New event IDs should be separated by ";".
     </p>
-    <h4 id="8-events">8. Events</h4>
     <p>
-      In the <i>Events</i> panel, you can check the box <i>Overwrite event IDs</i> to add identifiers to mark the frames from the original acquisitions in the merged file. Sometimes this information is necessary for the analysis. For instance, in the example depicted here, the recordings must have a specific identifier encoding the direction of a visual stimulus. Write the new indentifiers separated by ";".
+      It is worth noting that indepedently of the options selected, an <samp>events.mat</samp> file will be created in the merged recording folder. Here is how the events are managed:
     </p>
+    <ul>
+      <li><b>Source files already have <samp>events.mat</samp> files:</b> Here, the new <samp>events.mat</samp> file will contain the concatenation of the events from the source files.</li>
+      <li><b>Source files do not have <samp>events.mat</samp> files:</b> Here, the new <samp>events.mat</samp> file will simply mark the first and last frames from the source recordings in the merged one.</li>
+    </ul>        
     <p style="text-align: center">
       <img src="../assets/img/MergeRec_fig6.png" alt="MergeRec_fig6" width="660">
     </p>
-    <div class="infonote">
-      <p><strong>Note</strong><br>
-        If there are triggers already stored in the data's meta data file, they will be automatically concatenated. In this case, to preserve this information, leave the box unchecked.
-      </p>
-    </div>
+    
     <h4 id="9-id-new-data">9. Identify the new acquisition and file</h4>
     <p>
       Type the name of the acquisition that will contain the merged file. If the acquisition already exists, the merged file will be stored in the modality folder inside it. Then, type the name of the merged file.
