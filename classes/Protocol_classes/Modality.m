@@ -126,7 +126,8 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         function out = get.RawFiles(obj)
             % Get function of RAWFILES property.
             
-            [~,out,~]  = cellfun(@(x) fileparts(x), obj.RawFiles_FP, 'UniformOutput',false);
+            [~,out,ext]  = cellfun(@(x) fileparts(x), obj.RawFiles_FP, 'UniformOutput',false);
+            out = cellfun(@(x,y) [x,y], out,ext,'UniformOutput',false);
         end
         
         function out = get.SaveFolder(obj)

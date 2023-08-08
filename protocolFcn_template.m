@@ -1,4 +1,4 @@
-function tmpS = protocolFcn_template(obj)
+function tmpS = protocolFcn_template(MainDir)
 % User-defined function. This Function is used inside "Protocol" object to generate the
 % list of Subjects, Acquisitions and Modalities. This template can be used
 % to read recordings from LabeoTech's optical imaging systems.
@@ -55,7 +55,7 @@ function tmpS = protocolFcn_template(obj)
 % Regular expression to find the raw data files:
 expLabeo = '(ai|img)_\d*.bin'; % For Labeo Data
 % Look for all folders containing .bin files:
-FolderNames = dir(fullfile(obj.MainDir, '**','*.bin'));
+FolderNames = dir(fullfile(MainDir, '**','*.bin'));
 FolderNames = unique({FolderNames.folder});
 % Keep only folders that start with an uppercase "M" letter:
 idx = false(size(FolderNames));
