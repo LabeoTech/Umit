@@ -117,7 +117,7 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         function out = get.RawFolder(obj)
             % Get function of RAWFOLDER property.
             if obj.MyParent.MyParent.MyParent.b_isDummy
-                out = obj.MyParent.MyParent.MyParent.MainDir;
+                out = obj.MyParent.MyParent.MyParent.MainDir{1};
                 return
             end
             [out,~,~]  = fileparts(obj.RawFiles_FP{1});

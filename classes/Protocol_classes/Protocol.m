@@ -644,7 +644,11 @@ classdef Protocol < handle
             modItems = obj.extractFilteredObjects(3);
             for ii = 1:length(modItems)
                 tmpM = modItems{ii};
-                thisFolder = obj.MainDir{cellfun(@(x) startsWith(tmpM.RawFolder,x), obj.MainDir)};
+                thisFolder = obj.MainDir(cellfun(@(x) startsWith(tmpM.RawFolder,x), obj.MainDir));
+                if isempty(thisFolder)
+                    continue
+                end
+                thisFolder = thisFolder{:};                
                 for jj = 1:length(newMainDir)
                     newDir = newMainDir{jj};
                     oldPath = tmpM.RawFiles_FP{1};
