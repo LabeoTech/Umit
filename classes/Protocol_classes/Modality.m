@@ -73,17 +73,17 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
             % Removes duplicates.
             [~,idx] = ismember(unique(RawFiles), RawFiles); % Keeps the first of the list;
             RawFiles = RawFiles(idx);
-            % Removes non-existent file names from the list "FileName"
-            b_exist = isfile(RawFiles);
-            if ( sum(b_exist) < length(b_exist) && sum(b_exist) > 0 )
-                disp('The following files were not found and will be ignored:')
-                disp(RawFiles(~b_exist)')
-                RawFiles(~b_exist)= [];
-            elseif ( sum(b_exist) == 0 )
-                % If no files exist, Keep only the folder of the first file
-                % So the "RawFolder" property can be set.
-                RawFiles = {fullfile(fileparts(RawFiles{1}), 'MISSING_FILES')};
-            end
+%             % Removes non-existent file names from the list "FileName"
+%             b_exist = isfile(RawFiles);
+%             if ( sum(b_exist) < length(b_exist) && sum(b_exist) > 0 )
+%                 disp('The following files were not found and will be ignored:')
+%                 disp(RawFiles(~b_exist)')
+%                 RawFiles(~b_exist)= [];
+%             elseif ( sum(b_exist) == 0 )
+%                 % If no files exist, Keep only the folder of the first file
+%                 % So the "RawFolder" property can be set.
+%                 RawFiles = {fullfile(fileparts(RawFiles{1}), 'MISSING_FILES')};
+%             end
             % Set RawFiles property:
             obj.RawFiles_FP = RawFiles;
         end
@@ -125,9 +125,10 @@ classdef (Abstract) Modality < matlab.mixin.Heterogeneous & handle
         
         function out = get.RawFiles(obj)
             % Get function of RAWFILES property.
-            
-            [~,out,ext]  = cellfun(@(x) fileparts(x), obj.RawFiles_FP, 'UniformOutput',false);
+            idxMissing = cellfun(@(x) ~isfile(x), obj.RawFiles_FP);
+            [~,out,ext]  = cellfun(@(x) fileparts(x), obj.RawFiles_FP, 'UniformOutput',false);            
             out = cellfun(@(x,y) [x,y], out,ext,'UniformOutput',false);
+            out(idxMissing) = repmat({'MISSING_FILES'},1,sum(idxMissing));
         end
         
         function out = get.SaveFolder(obj)

@@ -126,7 +126,7 @@ classdef Protocol < handle
             
             sList = [];
             for ii = 1:length(obj.MainDir)
-                sList = [sList,obj.ProtoFunc(obj.MainDir{ii})];
+                sList = [sList,obj.ProtoFunc(obj.MainDir{ii})];%#ok
             end
             obj.Array.addObj(obj.mergeSubjectList(sList));
             disp('List Generated')
@@ -173,8 +173,8 @@ classdef Protocol < handle
             %   msg (char): If "b_verbose" is TRUE, contains a text with
             %       total number of new/missing items in "protocol".
             
-            iNewSubj = {};
-            iMissSubj = {};
+%             iNewSubj = {};
+%             iMissSubj = {};
             iNewAcq = {};
             iMissAcq = {};
             
@@ -182,7 +182,7 @@ classdef Protocol < handle
             objArray = [];
             msg = '';
             for ii = 1:length(obj.MainDir)
-                objArray = [objArray, obj.ProtoFunc(obj.MainDir{ii})];
+                objArray = [objArray, obj.ProtoFunc(obj.MainDir{ii})];%#ok
             end
             objArray = obj.mergeSubjectList(objArray);
             if isempty(objArray)                
@@ -575,7 +575,7 @@ classdef Protocol < handle
                     targetObj = obj.Array.ObjList(indS(i)).Array.ObjList(indA(j));
                     indM = getIndex(obj, targetObj, obj.FilterStruct.Modality);
                     for k = 1:length(indM)
-                        new_Idx_Filtered = [new_Idx_Filtered ;[indS(i) indA(j) indM(k)]];
+                        new_Idx_Filtered = [new_Idx_Filtered ;[indS(i) indA(j) indM(k)]];%#ok
                     end
                 end
             end
@@ -637,37 +637,25 @@ classdef Protocol < handle
             % NEWMAINDIR.
             %   This function must be used only AFTER the user manually moves the
             %   files from OBJ.MAINDIR to NEWMAINDIR. The paths inside
-            %   OBJ.MAINDIR must remain unchanged.
-            tic;
+            %   OBJ.MAINDIR must remain unchanged.            
             newMainDir = checkFolder(newMainDir);
-            if ~isempty(obj.Array.ObjList)
-                for i = 1:length(obj.Array.ObjList)
-                    tmpS = obj.Array.ObjList(i);
-                    for j = 1:length(tmpS.Array.ObjList)
-                        tmpA = tmpS.Array.ObjList(j);
-                        for k = 1:length(tmpA.Array.ObjList)
-                            tmpM = tmpA.Array.ObjList(k);
-                            b_OK = false;
-                            for m = 1:length(newMainDir)
-                                newDir = newMainDir{m};
-                                for n = 1:length(obj.MainDir)                               
-%                                     if isfile(strrep(tmpM.RawFiles_FP{1},obj.MainDir{n},newDir))
-                                        tmpM.RawFiles_FP = strrep(tmpM.RawFiles_FP, obj.MainDir{n}, newDir);
-                                        b_OK = true;
-%                                         continue
-%                                     else
-                                       
-%                                     end
-                                end
-                            end
-                            if ~b_OK
-                                tmpM.RawFiles_FP = strrep(tmpM.RawFiles_FP, obj.MainDir{n}, newDir);
-                            end
-                        end
+            curr_idxFiltered = obj.Idx_Filtered;
+            obj.clearFilterStruct;obj.queryFilter;
+            modItems = obj.extractFilteredObjects(3);
+            for ii = 1:length(modItems)
+                tmpM = modItems{ii};
+                thisFolder = obj.MainDir{cellfun(@(x) startsWith(tmpM.RawFolder,x), obj.MainDir)};
+                for jj = 1:length(newMainDir)
+                    newDir = newMainDir{jj};
+                    oldPath = tmpM.RawFiles_FP{1};
+                    newPath = strrep(oldPath, thisFolder,newMainDir{jj});
+                    if isfile(newPath) && ~strcmp(oldPath, newPath)
+                        tmpM.RawFiles_FP = cellfun(@(x) strrep(x, thisFolder,newDir),tmpM.RawFiles_FP, 'UniformOutput',false);
+                        continue
                     end
                 end
             end
-            toc
+            obj.Idx_Filtered = curr_idxFiltered;      
         end
         function sList = mergeSubjectList(~, sList)
             % This function is a helper function for all public methods
