@@ -631,8 +631,12 @@ classdef DataViewer_pipelineMngr < handle
                     newFn = setdiff(fieldnames(curr_dtHist),fieldnames(obj.metaData.dataHistory));
                     for ii = 1:length(newFn)
                         obj.metaData.dataHistory(1).(newFn{ii}) = '';
+                    end                    
+                    %  
+                    newFn = setdiff(fieldnames(obj.metaData.dataHistory),fieldnames(curr_dtHist));
+                    for ii = 1:length(newFn)
+                        curr_dtHist.(newFn{ii}) = '';
                     end
-                    %                                        
                     obj.metaData.dataHistory = [obj.metaData.dataHistory; curr_dtHist];
                 else
                     obj.metaData.dataHistory = curr_dtHist;
