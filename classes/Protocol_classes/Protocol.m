@@ -68,10 +68,9 @@ classdef Protocol < handle
             
             if isempty(obj.MainDir)
                 obj.MainDir = MainDir;
-            else
-%                 MainDir = union(MainDir,obj.MainDir,'stable');
+            else                
                 obj.changeMainDir(MainDir);
-                obj.MainDir = MainDir;
+                obj.MainDir = unique(MainDir,'stable');
             end
             
         end
@@ -652,11 +651,13 @@ classdef Protocol < handle
                             for m = 1:length(newMainDir)
                                 newDir = newMainDir{m};
                                 for n = 1:length(obj.MainDir)                               
-                                    if isfile(strrep(tmpM.RawFiles_FP{1},obj.MainDir{n},newDir))
-                                        tmpM.RawFiles_FP = strfind(tmpM.RawFiles_FP, obj.MainDir{n}, newDir);
+%                                     if isfile(strrep(tmpM.RawFiles_FP{1},obj.MainDir{n},newDir))
+                                        tmpM.RawFiles_FP = strrep(tmpM.RawFiles_FP, obj.MainDir{n}, newDir);
                                         b_OK = true;
-                                        continue
-                                    end
+%                                         continue
+%                                     else
+                                       
+%                                     end
                                 end
                             end
                             if ~b_OK
