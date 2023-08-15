@@ -182,7 +182,8 @@ function objectList = compareLists(obj, objectList)
 [isDup, locB] = ismember({objectList.ID}, {obj.ObjList.ID});
 if any(isDup)
     objectList = objectList(~isDup);
-    disp('The following objects already exist on the ObjList and were ignored.')    
+    locB = locB(isDup);
+    disp('The following objects already exist on the ObjList and were ignored.')     
     for i = 1:numel(locB)
         disp(obj.ObjList(locB(i)))
     end

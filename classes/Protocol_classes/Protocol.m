@@ -8,7 +8,7 @@ classdef Protocol < handle
     
     properties
         Name char % Title of Project.
-        MainDir char % Folder containing all Raw recordings.
+        MainDir  % List of folders containing all Raw recordings.
         SaveDir char % Folder to save "Protocol" object and HDF5 files. Default value = current folder.
         ProtoFunc % Function handle of the user-defined OpenProtocol
         % where the Subjects and Acquisition data are created.
@@ -21,7 +21,7 @@ classdef Protocol < handle
         LastLog % MAT file with a table containing information about the Last Pipeline Operations run by PIPELINEMANAGER.
     end
     properties (SetAccess = private)
-       b_isDummy  = false % Used by DataViewer as standalone ONLY!!      
+        b_isDummy  = false % Used by DataViewer as standalone ONLY!!
     end
     properties (Dependent)
         LogBookFile char % MAT file with a table containing information about the Pipeline Operations run by PIPELINEMANAGER.
@@ -36,11 +36,13 @@ classdef Protocol < handle
             
             if nargin > 0
                 obj.Name = Name;
-                obj.Array = Array;
+                obj.Array = Array;             
                 obj.MainDir = MainDir;
                 obj.SaveDir = SaveDir;
                 obj.ProtoFunc = ProtoFunc;
-                obj.b_isDummy = varargin{:};
+                if ~isempty([varargin{:}])
+                    obj.b_isDummy = varargin{:};
+                end
             end
             %
             if ~obj.b_isDummy
@@ -52,19 +54,23 @@ classdef Protocol < handle
         function set.Name(obj, Name)
             % Set function for Project Name
             %   Accepts only text.
-            validateattributes(Name,{'char', 'string'}, {'nonempty'}, 'set.Name');
+            validateattributes(Name,{'char'}, {'nonempty'}, 'set.Name');
             obj.Name = Name;
         end
         function set.MainDir(obj, MainDir)
             % Set function for MainDir property.
-            %   Accepts only existing Folders as input.
+            %   Accepts only existing Folders as input.       
+            validateattributes(MainDir,{'char', 'cell'}, {'nonempty'}, 'set.MainDir');
+            if ischar(MainDir)
+                MainDir = {MainDir};
+            end            
             MainDir = checkFolder(MainDir, 'raw');
-            %             obj.validate_path(MainDir); % Checks for existing Path.
+            
             if isempty(obj.MainDir)
                 obj.MainDir = MainDir;
-            else
+            else                
                 obj.changeMainDir(MainDir);
-                obj.MainDir = MainDir;
+                obj.MainDir = unique(MainDir,'stable');
             end
             
         end
@@ -95,8 +101,8 @@ classdef Protocol < handle
                 obj.Array.addObj(Array);
             elseif isa(Array, 'ObjectListManager')
                 obj.Array = Array;
-%             else
-%                 obj.Array = ObjectListManager([],obj);
+                %             else
+                %                 obj.Array = ObjectListManager([],obj);
             end
         end
         %%% Property Get functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -117,8 +123,12 @@ classdef Protocol < handle
             % This function uses the ProtoFunc to create the lists of
             % Subjects and Acquisitions. Input is an Array of SUBJECT
             % objects.
-            SubjArray = obj.ProtoFunc(obj);
-            obj.Array.addObj(SubjArray);
+            
+            sList = [];
+            for ii = 1:length(obj.MainDir)
+                sList = [sList,obj.ProtoFunc(obj.MainDir{ii})];%#ok
+            end
+            obj.Array.addObj(obj.mergeSubjectList(sList));
             disp('List Generated')
         end
         function generateSaveFolders(obj)
@@ -163,18 +173,23 @@ classdef Protocol < handle
             %   msg (char): If "b_verbose" is TRUE, contains a text with
             %       total number of new/missing items in "protocol".
             
-            iNewSubj = {};
-            iMissSubj = {};
+%             iNewSubj = {};
+%             iMissSubj = {};
             iNewAcq = {};
-            iMissAcq = {}; 
-             
-            idxStruc = struct('iNewSubj',{},'iMissSubj', {}, 'iNewAcq', {},'iMissAcq',{});            
-            objArray = obj.ProtoFunc(obj);
-            if isempty(objArray)
+            iMissAcq = {};
+            
+            idxStruc = struct('iNewSubj',{},'iMissSubj', {}, 'iNewAcq', {},'iMissAcq',{});
+            objArray = [];
+            msg = '';
+            for ii = 1:length(obj.MainDir)
+                objArray = [objArray, obj.ProtoFunc(obj.MainDir{ii})];%#ok
+            end
+            objArray = obj.mergeSubjectList(objArray);
+            if isempty(objArray)                
                 warning('The protocol function returned an empty output! Is the raw folder empty?')
                 return
             end
-                
+            
             % Delete objects listed in OBJ.GARBAGELIST from NEWARRAY
             objArray = obj.removeGarbage(objArray);
             
@@ -201,7 +216,7 @@ classdef Protocol < handle
                 end
             end
             % Create message with total number of new/missing items:
-            if b_verbose                                
+            if b_verbose
                 msg = sprintf(['List of New/missing Items:\nNewSubjects: %d\n'...
                     'Missing Subjects: %d\nNewAcquisitions: %d\nMissingAcquisitions: %d'],...
                     sum(iNewSubj), sum(iMissSubj), sum([iNewAcq{:}]),sum([iMissAcq{:}]));
@@ -212,7 +227,7 @@ classdef Protocol < handle
             idxStruc(1).iNewSubj = iNewSubj;
             idxStruc(1).iMissSubj = iMissSubj;
             idxStruc(1).iNewAcq = iNewAcq;
-            idxStruc(1).iMissAcq = iMissAcq;            
+            idxStruc(1).iMissAcq = iMissAcq;
         end
         function updateList(obj, varargin)
             % This function updates the list of Subjects using
@@ -231,9 +246,9 @@ classdef Protocol < handle
                 discardData = true;
             else
                 discardData = varargin{1};
-            end            
+            end
             % Look for new data:
-            [newArray,idxInfo] = obj.lookForNewData(false);   
+            [newArray,idxInfo] = obj.lookForNewData(false);
             if isempty(newArray)
                 return
             end
@@ -243,20 +258,22 @@ classdef Protocol < handle
             for ii = 1:length(indSubj)
                 indAcq = find(idxInfo.iNewAcq{indSubj(ii)});
                 % Find subject in "protocol":
-                currSubj = obj.Array.ObjList(strcmpi(newArray(indSubj(ii)).ID, {obj.Array.ObjList.ID}));
+                currSubj = obj.Array.ObjList(indSubj(ii));
+                % Find subject in new array:
+                indSubjNew = find(strcmp({newArray.ID},currSubj.ID));
                 % Add new acquisition(s) to the existing Subject:
                 arrayfun(@(x) currSubj.Array.addObj(x.Array.ObjList(indAcq)), ...
-                    newArray(indSubj(ii)));%#ok
+                    newArray(indSubjNew));%#ok
             end
             %   Add new Subjects:
             if any(idxInfo.iNewSubj)
                 obj.Array.addObj(newArray(idxInfo.iNewSubj));
             end
             % Add new Folders to OBJ.SAVEDIR
-            obj.generateSaveFolders();            
+            obj.generateSaveFolders();
             if discardData
                 %   Remove existing Acquisitions:
-                indSubj = find(cellfun(@(x) any(x), idxInfo.iMissAcq));
+                indSubj = find(cellfun(@any, idxInfo.iMissAcq));
                 for ii = 1:length(indSubj)
                     indAcq = find(idxInfo.iMissAcq{indSubj(ii)});
                     remInfo = obj.Array.ObjList(indSubj(ii)).Array.removeObj(indAcq);%#ok
@@ -266,53 +283,54 @@ classdef Protocol < handle
                 if any(idxInfo.iMissSubj)
                     remInfo = obj.Array.removeObj(find(idxInfo.iMissSubj));%#ok
                     obj.garbageList = [obj.garbageList; remInfo];
-                end              
-            end
-                     
-            % Update element's properties, if changes were made in the
-            % protocol function:            
-            for ii = 1:length(newArray)
-                % Compare Subjects' properties:
-                idxS = strcmp(newArray(ii).ID, obj.Array.listProp('ID'));
-                propInfo = metaclass(newArray(ii));
-                settableProps = protocolCanSet(propInfo.PropertyList);
-                % Compare settable properties between the old and new
-                % arrays:
-                b_HasChanged = cellfun(@(x) ~isequaln(newArray(ii).(x), obj.Array.ObjList(idxS).(x)), settableProps);
-                if any(b_HasChanged)
-                    cellfun(@(x) evalin('caller',['obj.Array.ObjList(' num2str(find(idxS)) ').' x ' = newArray(' num2str(ii) ').' x ';']), ...
-                                settableProps(b_HasChanged))                                                                        
                 end
-                % Compare Acquisitions:
-                for jj = 1:length(newArray(ii).Array.ObjList)
-                    idxA = strcmp(newArray(ii).Array.ObjList(jj).ID, obj.Array.ObjList(idxS).Array.listProp('ID'));
-                    propInfo = metaclass(newArray(ii).Array.ObjList(jj));
+                
+                
+                % Update element's properties, if changes were made in the
+                % protocol function:
+                for ii = 1:length(newArray)
+                    % Compare Subjects' properties:
+                    idxS = strcmp(newArray(ii).ID, obj.Array.listProp('ID'));
+                    propInfo = metaclass(newArray(ii));
                     settableProps = protocolCanSet(propInfo.PropertyList);
                     % Compare settable properties between the old and new
                     % arrays:
-                    b_HasChanged = cellfun(@(x) ~isequaln(newArray(ii).Array.ObjList(jj).(x), obj.Array.ObjList(idxS).Array.ObjList(idxA).(x)), settableProps);
+                    b_HasChanged = cellfun(@(x) ~isequaln(newArray(ii).(x), obj.Array.ObjList(idxS).(x)), settableProps);
                     if any(b_HasChanged)
-                        cellfun(@(x) evalin('caller',['obj.Array.ObjList(' num2str(find(idxS)) ').Array.ObjList(' num2str(find(idxA)) ').' x...
-                                ' = newArray(' num2str(ii) ').Array.ObjList(' num2str(jj) ').' x ';']), ...
-                                settableProps(b_HasChanged))                                                    
+                        cellfun(@(x) evalin('caller',['obj.Array.ObjList(' num2str(find(idxS)) ').' x ' = newArray(' num2str(ii) ').' x ';']), ...
+                            settableProps(b_HasChanged))
                     end
-                    % Compare modalities:
-                    for kk = 1:length(newArray(ii).Array.ObjList(jj).Array.ObjList)
-                        idxM = strcmp(newArray(ii).Array.ObjList(jj).Array.ObjList(kk).ID, obj.Array.ObjList(idxS).Array.ObjList(idxA).Array.listProp('ID'));
-                        propInfo = metaclass(newArray(ii).Array.ObjList(jj).Array.ObjList(kk));
+                    % Compare Acquisitions:
+                    for jj = 1:length(newArray(ii).Array.ObjList)
+                        idxA = strcmp(newArray(ii).Array.ObjList(jj).ID, obj.Array.ObjList(idxS).Array.listProp('ID'));
+                        propInfo = metaclass(newArray(ii).Array.ObjList(jj));
                         settableProps = protocolCanSet(propInfo.PropertyList);
                         % Compare settable properties between the old and new
                         % arrays:
-                        b_HasChanged = cellfun(@(x) ~isequaln(newArray(ii).Array.ObjList(jj).Array.ObjList(kk).(x), obj.Array.ObjList(idxS).Array.ObjList(idxA).Array.ObjList(idxM).(x)), settableProps);
-                        if any(b_HasChanged)                            
-                            cellfun(@(x) evalin('caller',['obj.Array.ObjList(' num2str(find(idxS)) ').Array.ObjList(' num2str(find(idxA)) ').Array.ObjList(' num2str(find(idxM)) ').' x...
-                                ' = newArray(' num2str(ii) ').Array.ObjList(' num2str(jj) ').Array.ObjList(' num2str(kk) ').' x ';']), ...
-                                settableProps(b_HasChanged))                            
+                        b_HasChanged = cellfun(@(x) ~isequaln(newArray(ii).Array.ObjList(jj).(x), obj.Array.ObjList(idxS).Array.ObjList(idxA).(x)), settableProps);
+                        if any(b_HasChanged)
+                            cellfun(@(x) evalin('caller',['obj.Array.ObjList(' num2str(find(idxS)) ').Array.ObjList(' num2str(find(idxA)) ').' x...
+                                ' = newArray(' num2str(ii) ').Array.ObjList(' num2str(jj) ').' x ';']), ...
+                                settableProps(b_HasChanged))
+                        end
+                        % Compare modalities:
+                        for kk = 1:length(newArray(ii).Array.ObjList(jj).Array.ObjList)
+                            idxM = strcmp(newArray(ii).Array.ObjList(jj).Array.ObjList(kk).ID, obj.Array.ObjList(idxS).Array.ObjList(idxA).Array.listProp('ID'));
+                            propInfo = metaclass(newArray(ii).Array.ObjList(jj).Array.ObjList(kk));
+                            settableProps = protocolCanSet(propInfo.PropertyList);
+                            % Compare settable properties between the old and new
+                            % arrays:
+                            b_HasChanged = cellfun(@(x) ~isequaln(newArray(ii).Array.ObjList(jj).Array.ObjList(kk).(x), obj.Array.ObjList(idxS).Array.ObjList(idxA).Array.ObjList(idxM).(x)), settableProps);
+                            if any(b_HasChanged)
+                                cellfun(@(x) evalin('caller',['obj.Array.ObjList(' num2str(find(idxS)) ').Array.ObjList(' num2str(find(idxA)) ').Array.ObjList(' num2str(find(idxM)) ').' x...
+                                    ' = newArray(' num2str(ii) ').Array.ObjList(' num2str(jj) ').Array.ObjList(' num2str(kk) ').' x ';']), ...
+                                    settableProps(b_HasChanged))
+                            end
                         end
                     end
                 end
             end
-            uiwait(msgbox('Project update completed!'));
+            disp('Project update completed!');
             % Local functions
             function propNames = protocolCanSet(propList)
                 b_pass = false(size(propList));
@@ -328,28 +346,35 @@ classdef Protocol < handle
                     else
                         b_pass(ind) = any(cellfun(@(x) strcmpi(x.Name, 'protocol'), propList(ind).SetAccess));
                     end
-                end  
+                end
                 propNames = propNames(b_pass);
             end
             
-        end          
+        end
+        function updateMainDir(obj)
+            % This method updates the RawFolder and RawFiles properties of
+            % all modalities when the user moved the raw data between
+            % MainDir folders.
+            
+            obj.changeMainDir(obj.MainDir);
+        end
         function out = getSelectedItems(obj)
             % This method generates a list of full IDs (Subject --
             % Acquisition -- Modality) from the selected data stored in
             % "Idx_filtered" property.
-           
-            items = obj.extractFilteredObjects(3);            
+            
+            items = obj.extractFilteredObjects(3);
             out = cellfun(@(x) strjoin({x.MyParent.MyParent.ID, x.MyParent.ID, x.ID},' -- '), items, 'UniformOutput',false);
-        end                            
+        end
         function [modHandle, AcqHandle] = manualAddModality(obj, modClass, modID, AcqID, subjHandle)
             % MANUALADDMODALITY creates a new Acquisition inside a "Subject" Object.
             % and adds the modality object of class "modClass" as it's child. The
-            % Acquisition ID is stored in "acqID". 
+            % Acquisition ID is stored in "acqID".
             % The Subject object handle is "subjHandle".
             % The output are the handles for the new modality and
-            % acquisition. 
+            % acquisition.
             %         **Use the outputs to edit the elements' properties.**
-            disp('Manually adding object to Parent...');            
+            disp('Manually adding object to Parent...');
             modHandle = [];
             AcqHandle = [];
             %%% Validation:
@@ -362,13 +387,13 @@ classdef Protocol < handle
                 error(errID,'The subject handle is invalid!');
             end
             % Check if the acquisition was added to the subject:
-            idxS = obj.Array.findElement('ID',subjHandle.ID); 
-            if any(strcmp(AcqID, obj.Array.ObjList(idxS).Array.listProp('ID')))                
+            idxS = obj.Array.findElement('ID',subjHandle.ID);
+            if any(strcmp(AcqID, obj.Array.ObjList(idxS).Array.listProp('ID')))
                 warning('Acquisition already exists in the selected Subject!')
                 return
-            end                       
+            end
             % Create Acquisition:
-            AcqHandle = Acquisition(); 
+            AcqHandle = Acquisition();
             AcqHandle.ID = AcqID;
             % Create modality:
             eval(['modHandle = ' modClass '();'])
@@ -377,13 +402,13 @@ classdef Protocol < handle
             % Add the modality to the Acquisition:
             AcqHandle.Array.addObj(modHandle)
             % Add the acquisition to the Subject:
-            subjHandle.Array.addObj(AcqHandle);                                              
+            subjHandle.Array.addObj(AcqHandle);
             % Create Save folder for the new acquisition:
             obj.generateSaveFolders;
             % Mark Acquisition as "virtual":
             AcqHandle.b_isVirtual = true;
-            disp('Done')            
-        end                       
+            disp('Done')
+        end
         function manualRemoveObj(obj, SubjectIndex, varargin)
             % This function manually removes one Subject/Acquisition from
             % Protocol.
@@ -429,7 +454,7 @@ classdef Protocol < handle
                             continue
                         end
                         newObj(idxS) = [];
-                    case 'Acquisition'                        
+                    case 'Acquisition'
                         str = split(gbList(i,3), filesep); % Get subject ID from parsing the folder path.
                         if str == ""
                             % skip if the folder doesn't exist. This should
@@ -550,7 +575,7 @@ classdef Protocol < handle
                     targetObj = obj.Array.ObjList(indS(i)).Array.ObjList(indA(j));
                     indM = getIndex(obj, targetObj, obj.FilterStruct.Modality);
                     for k = 1:length(indM)
-                        new_Idx_Filtered = [new_Idx_Filtered ;[indS(i) indA(j) indM(k)]];
+                        new_Idx_Filtered = [new_Idx_Filtered ;[indS(i) indA(j) indM(k)]];%#ok
                     end
                 end
             end
@@ -577,6 +602,27 @@ classdef Protocol < handle
                 {'None'}, {'None'}, 0,datetime('now'),{'None'}, {'None'},...
                 'VariableNames', {'Subject', 'Acquisition', 'Recording', 'ClassName','TaskName',...
                 'Job', 'InputFile_Path', 'Completed', 'RunDateTime', 'Messages', 'Messages_short'});
+        end
+        function varargout = save(obj, saveFolder)
+            % Saves the protocol object in the SaveFolder as the project's
+            % name. It handles retrocompatibility.
+            if ~exist('saveFolder','var')
+                saveFolder = obj.SaveDir;
+            end
+            
+            filename = fullfile(saveFolder, obj.Name);
+            if isfile([filename '.prt']) || (~isfile([filename '.prt']) && ~isfile([filename '.mat']))
+                filename = [filename '.prt'];
+            else
+                % For retrocompatibility
+                filename = [filename '.mat'];
+            end
+            protocol = obj;
+            save(filename, 'protocol','-mat');     
+            disp(['Protocol saved as: "' filename '"']);
+            if nargout
+                varargout = {filename};
+            end
         end
         function s = saveobj(obj)
             s.Name = obj.Name;
@@ -612,20 +658,48 @@ classdef Protocol < handle
             % NEWMAINDIR.
             %   This function must be used only AFTER the user manually moves the
             %   files from OBJ.MAINDIR to NEWMAINDIR. The paths inside
-            %   OBJ.MAINDIR must remain unchanged.
+            %   OBJ.MAINDIR must remain unchanged.            
             newMainDir = checkFolder(newMainDir);
-            if ~isempty(obj.Array.ObjList)
-                for i = 1:length(obj.Array.ObjList)
-                    tmpS = obj.Array.ObjList(i);
-                    for j = 1:length(tmpS.Array.ObjList)
-                        tmpA = tmpS.Array.ObjList(j);
-                        for k = 1:length(tmpA.Array.ObjList)
-                            tmpM = tmpA.Array.ObjList(k);
-                            tmpM.RawFiles_FP = strrep(tmpM.RawFiles_FP, obj.MainDir, newMainDir);
-                        end
+            curr_idxFiltered = obj.Idx_Filtered;
+            obj.clearFilterStruct;obj.queryFilter;
+            modItems = obj.extractFilteredObjects(3);
+            for ii = 1:length(modItems)
+                tmpM = modItems{ii};
+                thisFolder = obj.MainDir(cellfun(@(x) startsWith(tmpM.RawFolder,x), obj.MainDir));
+                if isempty(thisFolder)
+                    continue
+                end
+                thisFolder = thisFolder{:};                
+                for jj = 1:length(newMainDir)
+                    newDir = newMainDir{jj};
+                    oldPath = tmpM.RawFiles_FP{1};
+                    newPath = strrep(oldPath, thisFolder,newMainDir{jj});
+                    if isfile(newPath) && ~strcmp(oldPath, newPath)
+                        tmpM.RawFiles_FP = cellfun(@(x) strrep(x, thisFolder,newDir),tmpM.RawFiles_FP, 'UniformOutput',false);
+                        continue
                     end
                 end
             end
+            obj.Idx_Filtered = curr_idxFiltered;      
+        end
+        function sList = mergeSubjectList(~, sList)
+            % This function is a helper function for all public methods
+            % that add new subjects to the protocol using the protocol
+            % function. In brief, it merges the acquisitions of duplicate
+            % subjects in the list "sList". The presence of duplicates may
+            % arise from the existence of different acquisitions of the
+            % same subject across different raw folders (i.e. MainDir(s)).
+            sIDlist = unique({sList.ID},'stable');
+            idxDelete = false(size(sList));
+            for ii = 1:length(sIDlist)
+                % Merge acquisitions of a single subject:
+                sIdx = find(strcmp(sIDlist{ii},{sList.ID}));
+                for jj = 2:length(sIdx)
+                    sList(sIdx(1)).Array.addObj(sList(sIdx(jj)).Array.ObjList);
+                end
+                idxDelete(sIdx(2:end)) = true;
+            end
+            sList(idxDelete) = []; % Remove duplicates
         end
         function out = getIndex(obj, targetObj, FilterStruct)
             % GETINDEX applies a filter (OBJ.FILTERSTRUCT) to TARGETOBJ
@@ -664,15 +738,15 @@ classdef Protocol < handle
         function obj = loadobj(s)
             if isstruct(s)
                 % Update Save Directory based on the current location
-                    % of the protocol file:   
-                if isfile(which([s.Name, '.prt']))                    
+                % of the protocol file:
+                if isfile(which([s.Name, '.prt']))
                     ext = '.prt';
-                    s.SaveDir = fileparts(which([s.Name, ext]));               
-                elseif isfile(which([s.Name, '.mat']))                                        
+                    s.SaveDir = fileparts(which([s.Name, ext]));
+                elseif isfile(which([s.Name, '.mat']))
                     % For retrocompatibility
                     ext = '.mat';
                     s.SaveDir = fileparts(which([s.Name, ext]));
-                end               
+                end
                 newObj = Protocol;
                 newObj.Name = s.Name;
                 % Check MainDir and SaveDir existance:
@@ -697,7 +771,7 @@ classdef Protocol < handle
                 obj = s;
             end
             % Add Main and Save directories to Matlab's path (this may be SLOW for directories with a lot of folders...):
-            addpath(genpath(obj.MainDir));
+            cellfun(@(x) addpath(genpath(x)), obj.MainDir);
             addpath(genpath(obj.SaveDir));
             % Rebuild handle of "MyParent" property of elements from
             % Protocol:
