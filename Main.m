@@ -12,7 +12,8 @@ ProjectName = 'TYPEprojectNAME';
 protocol = Protocol(ProjectName, maindir, savedir, @protocolFcn_template, []);
 protocol.generateList;
 protocol.generateSaveFolders;
-save(fullfile(protocol.SaveDir, [protocol.Name '.mat']), 'protocol');
+% Save it
+protocol.save;
 %% Load existing Protocol Object:
 load(fullfile(savedir, ProjectName));
 %% Query filter

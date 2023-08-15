@@ -603,12 +603,15 @@ classdef Protocol < handle
                 'VariableNames', {'Subject', 'Acquisition', 'Recording', 'ClassName','TaskName',...
                 'Job', 'InputFile_Path', 'Completed', 'RunDateTime', 'Messages', 'Messages_short'});
         end
-        function save(obj)
+        function varargout = save(obj, saveFolder)
             % Saves the protocol object in the SaveFolder as the project's
             % name. It handles retrocompatibility.
+            if ~exist('saveFolder','var')
+                saveFolder = obj.SaveDir;
+            end
             
-            filename = fullfile(obj.SaveDir, obj.Name);
-            if isfile([filename '.prt'])
+            filename = fullfile(saveFolder, obj.Name);
+            if isfile([filename '.prt']) || (~isfile([filename '.prt']) && ~isfile([filename '.mat']))
                 filename = [filename '.prt'];
             else
                 % For retrocompatibility
@@ -617,6 +620,9 @@ classdef Protocol < handle
             protocol = obj;
             save(filename, 'protocol','-mat');     
             disp(['Protocol saved as: "' filename '"']);
+            if nargout
+                varargout = {filename};
+            end
         end
         function s = saveobj(obj)
             s.Name = obj.Name;
