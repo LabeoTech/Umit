@@ -1,5 +1,5 @@
 function varargout = HemoCorrection(Folder, fData, fMetaData, varargin)
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
 % General Infos:
 %
 % This function is used to remove the hemodynamic fluctuations from any
@@ -13,12 +13,11 @@ function varargout = HemoCorrection(Folder, fData, fMetaData, varargin)
 %       with the "fluoData".
 % 4. Varargin -> if empty: a dialog box will be prompt to ask user which
 %                   channels to use to do the correction.
-%             -> cell array of string: to specify which channels to use.
-%                   Ex: HemoCorrection(pwd, {'Red', 'Green'});
+%             -> cell array of string: to specify which channels to use.%                   
 % 3. Optional: lowpass filter
 %           -> Value of the cutoff frequency to use on a lowpass filter
 %           applied to intrinsic signals. THIS PARAMETER IS OPTIONAL
-%           To keep the data as is, just use the function with 3 parameters
+%           To keep the data as is, just use the function with 3-4 parameters
 % Ouput:
 % - If an output is set, the result of the correction will be given back
 % through this output. All the data in the folder will remain unchanged.
@@ -27,23 +26,21 @@ function varargout = HemoCorrection(Folder, fData, fMetaData, varargin)
 %
 % Exemples:
 %
-% 1- HemoCorrection(pwd);
-% The fluorescence dat files in the folder will be overwriten and a dialog
+% 1- HemoCorrection(pwd, fData, fMetaData);
+% The fluorescence data in "fData" will be corrected and a dialog
 % box will be used in order to select which channels must be used to
 % compute the correction.
-% 2- NewFluo = HemoCorrection(pwd, {'Green'});
-% The dat files in the folder won't be overwriten. The new corrected
-% fluorescence data will be in NewFluo. Only the green channel will be used
-% to compute the correction.
-% 3- HemoCorrection(pwd, {'Red, 'Green', 'Amber'});
-% fChan_475.dat will be overwriten with the corrected fluorescence data.
+% 2- NewFluo = HemoCorrection(pwd, fData, fMetaData, {'Green'});
+% Only the green channel will be used to compute the correction. The
+% corrected data will be stored in the NewFluo variable.
+% 3- HemoCorrection(pwd, fData, fMetaData, {'Red, 'Green', 'Amber'});
 % All three hemodynamic channels will be used to compute the correction.
 
 if( ~strcmp(Folder(end),filesep) )
     Folder = strcat(Folder, filesep);
 end
 
-if( nargin <= 1 )
+if( nargin <= 3 )
     cList = dir([Folder '*.dat']);
     fn = {};
     for ind = 1:size(cList,1)
