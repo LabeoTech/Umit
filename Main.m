@@ -48,9 +48,9 @@ pipe = PipelineManager(protocol, 'FluorescenceImaging');
 % Show list of Available analysis functions:
 pipe.showFuncList;
 % Set Optional Parameters for "run_ImagesClassification" function:
-pipe.setOpts(15)
+pipe.setOpts('run_ImagesClassification')
 % Add "run_ImagesClassification" to the pipeline:
-% Example of adding tasks to pipeline using functions indices:
+% Example of adding tasks to pipeline using functions names:
 pipe.addTask('run_ImagesClassification');
 pipe.addTask('GSR');
 pipe.addTask('spatialGaussFilt');
