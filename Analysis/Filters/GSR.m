@@ -79,11 +79,12 @@ A = zeros(length(X),size(outData,1),'single');
 nChunks = calculateMaxChunkSize(outData,7);
 indxChk = round(linspace(0,size(outData,1),nChunks));
 if nChunks > 1    
+    fprintf('\n%i%% ...\n', 0);
     for ii = 1:length(indxChk)-1
-        A(:,indxChk(ii)+1:indxChk(ii+1)) = X*(X\outData(indxChk(ii)+1:indxChk(ii+1),:)');
-        fprintf('\n%i%...', 100*ii/nChunks);
+        fprintf('\n%11.0f%% ...\n', 100*ii/nChunks);
+        A(:,indxChk(ii)+1:indxChk(ii+1)) = X*(X\outData(indxChk(ii)+1:indxChk(ii+1),:)');        
     end
-    fprintf('\n100%');
+    fprintf('\n%i%%\n', 100);
 else
     A = X*(X\outData');
 end
