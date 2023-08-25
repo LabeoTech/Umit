@@ -448,7 +448,7 @@ classdef StatsManager < handle
                 % Remove data corresponding to missing observations:
                 if any(idxObs)
                     obj.dataArr(ind).data(~idxObs) = [];
-                    obj.dataArr(ind).dataSize(~idxObs) = [];
+%                     obj.dataArr(ind).dataSize(~idxObs) = [];
                     obj.dataArr(ind).rIndx(~idxObs) = [];
                     obj.dataArr(ind).observationID(~idxObs) = [];
                 else
@@ -693,8 +693,12 @@ classdef StatsManager < handle
             parse(p, obj, varargin{:});
             b_verbose = p.Results.verbose;
             %
-            warnMsg = [];
+            testMsg = '';
+            warnMsg = '';
             obj.results_stats = []; obj.statsReport = '';
+            if nargout
+                varargout = {obj.statsReport, testMsg,warnMsg};
+            end
             % Validation:
             if ~obj.b_hasStatsToolbox
                 varargout{3} = warning('Operation Aborted! "Statistics and Machine learning" toolbox is necessary!');
