@@ -182,6 +182,7 @@ classdef Protocol < handle
             objArray = [];
             msg = '';
             for ii = 1:length(obj.MainDir)
+                addpath(obj.MainDir{ii}); % To ensure that the proto function is found.
                 objArray = [objArray, obj.ProtoFunc(obj.MainDir{ii})];%#ok
             end
             objArray = obj.mergeSubjectList(objArray);
