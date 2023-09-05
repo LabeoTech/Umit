@@ -73,11 +73,13 @@ out.dim_names = dim_names;
 % Set dimension of data that will be labeled. Default = 2;
 dim_label = 2;
 if ismember('E', dim_names)
-    % Create labels based in event names:
-    
-    % Check if "E" exists in dim_names and verify if event info exists in "s"
-    % struct:
-    dim_label = find(strcmpi('E',dim_names));
+    % Create labels based in event names:        
+    % Find "Events" dimension in data:
+    idx_dim = zeros(length(out.data),ndims(out.data{1}));
+    for ii = 1:length(out.data)
+        idx_dim(ii,:) = (size(out.data{ii}) == length(out.eventID));
+    end
+    dim_label = find(all(idx_dim,1));
     fn = fieldnames(out);
     errID = 'Umitoolbox:genDataMetaStructure:MissingInfo';
     errMsg = 'An event dimension name ("E") was detected but no event info ("eventID" and "eventNameList") was found in metaData.';
