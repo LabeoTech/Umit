@@ -93,14 +93,20 @@ dim_label = 2;
 % Check if "E" exists in dim_names and verify if event info exists in "s"
 % struct:
 if ismember('E', dim_names)
-    dim_label = find(strcmpi('E',dim_names));
     fn = fieldnames(s);
     errID = 'Umitoolbox:save2Mat:MissingInfo';
     errMsg = 'An event dimension name ("E") was detected but no event info ("eventID" and "eventNameList")was found in metaData.';
     assert(all(ismember({'eventID', 'eventNameList'}, fn)), errID, errMsg);
     disp('Creating labels for Events...')
+    % Find "Events" dimension in data:
+    idx_dim = zeros(length(s.data),ndims(s.data{1}));
+    for ii = 1:length(s.data)
+        idx_dim(ii,:) = (size(s.data{ii}) == length(s.eventID));
+    end
+    dim_label = find(all(idx_dim,1));
     % Build Event Labels:
     label = cell(1,length(s.eventID));
+    
     for i = 1:numel(s.eventNameList)
         indx = find(s.eventID == i);
         for j = 1:numel(indx)

@@ -395,7 +395,13 @@ classdef StatsManager < handle
                     [idxE,obj.dataArr(ind).eIndx] = ismember(obj.dataArr(ind).MatFile.eventNameList, obj.list_of_events);
                     evID = obj.dataArr(ind).MatFile.eventID;
                     evNames = obj.dataArr(ind).MatFile.eventNameList;
-                    dimE = find(strcmpi(obj.dataArr(ind).MatFile.dim_names, 'E'));
+%                     dimE = find(strcmpi(obj.dataArr(ind).MatFile.dim_names, 'E'));
+                    % Find "Events" dimension in data:
+                    idx_dim = zeros(length(obj.dataArr(ind).data),ndims(obj.dataArr(ind).data{1}));
+                    for indE = 1:length(obj.dataArr(ind).data)
+                        idx_dim(indE,:) = (size(obj.dataArr(ind).data{indE}) == length(evID));
+                    end
+                    dimE = find(all(idx_dim,1));                    
                     if ( numel(evID) > numel(evNames) )
                         % Automatically average any event repetitions in
                         % data:
@@ -411,9 +417,8 @@ classdef StatsManager < handle
                 % Manage missing events:
                 if ( obj.dataArr(ind).b_hasEvents )
                     if  any(idxE)
-                        indxE = find(strcmp(obj.dataArr(ind).MatFile.dim_names,'E'));
-                        permE = [indxE, setdiff(1:numel(obj.dataArr(ind).MatFile.dim_names), indxE)];
-                        
+%                         indxE = find(strcmp(obj.dataArr(ind).MatFile.dim_names,'E'));
+                        permE = [dimE, setdiff(1:ndims(obj.dataArr(ind).data{1}), dimE)];                        
                         % Remove data corresponding to missing events:
                         for kk = 1:length(obj.dataArr(ind).data)
                             tmp = permute(obj.dataArr(ind).data{kk},permE);
