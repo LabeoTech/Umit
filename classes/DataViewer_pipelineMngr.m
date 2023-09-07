@@ -58,19 +58,19 @@ classdef DataViewer_pipelineMngr < handle
             if ~isempty(obj.metaData)
                 disp('Updating metaData...');
                 % Append new fields:
-                newFields = setdiff(fieldnames(metaData), fieldnames(obj.metaData));
+                newFields = [setdiff(fieldnames(metaData), fieldnames(obj.metaData)); intersect(fieldnames(metaData), fieldnames(obj.metaData))];
                 for i = 1:numel(newFields)
                     obj.metaData.(newFields{i}) = metaData.(newFields{i});
                 end
-                % Update variables related to data dimension:
-                obj.metaData.datSize = metaData.datSize;
-                obj.metaData.datLength = metaData.datLength;
-                obj.metaData.dim_names = metaData.dim_names;
-                
-                % Replace dataHistory field:
-                if isfield(metaData, 'dataHistory')
-                    obj.metaData.dataHistory = metaData.dataHistory;
-                end
+%                 % Update variables related to data dimension:
+%                 obj.metaData.datSize = metaData.datSize;
+%                 obj.metaData.datLength = metaData.datLength;
+%                 obj.metaData.dim_names = metaData.dim_names;
+%                 
+%                 % Replace dataHistory field:
+%                 if isfield(metaData, 'dataHistory')
+%                     obj.metaData.dataHistory = metaData.dataHistory;
+%                 end
             else
                 obj.metaData = metaData;
             end

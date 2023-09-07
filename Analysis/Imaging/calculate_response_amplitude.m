@@ -114,17 +114,17 @@ switch aggfcn
         out = mean(vals, 1, 'omitnan');
     case 'median'
         out = median(vals, 1, 'omitnan');
-%     case 'mode'
-%         out = mode(vals, 1);
-%     case 'std'
-%         out = std(vals, 0, 1, 'omitnan');
+        %     case 'mode'
+        %         out = mode(vals, 1);
+        %     case 'std'
+        %         out = std(vals, 0, 1, 'omitnan');
     case 'max'
         out = max(vals, [], 1, 'omitnan');
     case 'min'
         out = min(vals, [], 1, 'omitnan');
-%     case 'sum'
-%         out = sum(vals, 1, 'omitnan');
-    otherwise
-        out = repmat(aggfcn,size(vals));
+        %     case 'sum'
+        %         out = sum(vals, 1, 'omitnan');
+        %     otherwise
+        %         out = vals;
 end
 end
