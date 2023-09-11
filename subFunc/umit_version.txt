@@ -1,1 +1,1 @@
-Bipolar-dev-v.0.0.0
+Bipolar-v.2.0.0
