@@ -51,17 +51,19 @@ end
 % Apply tform to data from Camera 2:
 for ii = 1:length(Cam2List)
     % Load Data and apply TFORM:
-    disp(['Processing file: ' Cam2List{ii} '...'])
-    disp('Loading data...')
+    fprintf('----------------------------------\n')    
+    fprintf('Coregistration of file: "%s"\n', Cam2List{ii})
+    fprintf('\t- Loading data...\n')
     [dat, info] = loadDatFile(fullfile(DataFolder, Cam2List{ii}));
-    disp('Applying geometric transformation...')
+    fprintf('\t- Applying geometric transformation...\n')    
     dat = imwarp(dat, tform, 'OutputView', imref2d(info.datSize));
     % Replace data with registered one:
-    disp('Overwriting data in .DAT file...');
+    fprintf('\t- Overwriting data in .DAT file...\n')    
     fid = fopen(fullfile(DataFolder, Cam2List{ii}), 'w');
     fwrite(fid, dat, 'single');
     fclose(fid);
-    disp('Done')    
+    fprintf('Done.\n')    
+    fprintf('----------------------------------\n')    
 end
 status = true; % Set status to true if the operation is successful.
 % Save copy of tform in Data folder:

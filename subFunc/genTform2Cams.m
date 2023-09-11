@@ -78,7 +78,7 @@ end
 cam1Img = squeeze(sum(cam1Img,1));
 
 % Check if signals recorded on camera 1 are too low to perform coregistration.
-if ( mean(cam1Img(:) < 0.1) )
+if ( mean(cam1Img(:)) < 0.1 )
     warnmsg = 'Signals recorded on camera 1 are too low to perform coregistration.';
     return;
 end
@@ -100,7 +100,7 @@ clear dat
 cam2Img = squeeze(sum(cam2Img,1));
 
 % Check if signals recorded on camera 2 are too low to perform coregistration.
-if ( mean(cam2Img(:) < 0.1) )
+if ( mean(cam2Img(:)) < 0.1 )
     warnmsg = 'Signals recorded on camera 2 are too low to perform coregistration.';
     return;
 end
@@ -129,7 +129,7 @@ opt.InitialRadius = 1e-3;
 opt.MaximumIterations = 500;
 
 % Execute coregistration:
-disp('Performing coregistration...')
+disp('Calculating geometric transformation matrix...')
 tform = imregtform(cam2Img,cam1Img,'similarity',opt,met,'InitialTransformation',initialTform);
 disp('Done!')
 
