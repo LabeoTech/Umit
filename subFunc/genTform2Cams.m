@@ -1,6 +1,6 @@
-function [tform, registeredImages, warnmsg] = genTform2Cams(DataFolder, b_enhanceContrast, b_isFlipped)
+function [tform, tformInfo, warnmsg] = genTform2Cams(DataFolder, b_enhanceContrast, b_isFlipped)
 % GENTFORM2CAMS performs coregistration of data from a 2-camera imaging system (LabeoTech).
-% This function generates the geometric transformations (TFORM) necessary to align the 
+% This function generates the geometric transformations (TFORM) necessary to align the
 % data from the two cameras and produces registered images.
 %
 % Inputs:
@@ -8,15 +8,17 @@ function [tform, registeredImages, warnmsg] = genTform2Cams(DataFolder, b_enhanc
 %                     imaging system.
 %   - b_enhanceContrast (logical): Set to TRUE to enhance image contrast before coregistration.
 %   - b_isFlipped (logical): Set to TRUE if images from camera 2 are horizontally flipped.
-%  
+%
 % Outputs:
 %   - tform (affine2d): The computed geometric transformation to align the images.
-%   - registeredImages (cell array): A cell array containing the preprocessed and aligned images
-%                     from camera 1 and camera 2.
+%   - tformInfo (struct): A structure containing the original and aligned images
+%                     from camera 1 and camera 2, as well as the meta data
+%                     necessary for alignment (by applyTform2Cams.m
+%                     function).
 %   - warnmsg (char): A warning message indicating the status of the operation.
 
 tform = []; % Initialize the transformation matrix
-registeredImages = {}; % Initialize the cell array for registered images
+tformInfo = struct(); % Initialize the structure with metadata
 warnmsg = ''; % Initialize the warning message
 
 % Get Acquisition info:
@@ -133,7 +135,24 @@ disp('Calculating geometric transformation matrix...')
 tform = imregtform(cam2Img,cam1Img,'similarity',opt,met,'InitialTransformation',initialTform);
 disp('Done!')
 
-% Store registered images in a cell array.
-registeredImages{1} = cam1Img;
-registeredImages{2} = imwarp(cam2Img,tform,'OutputView',imref2d(size(cam1Img)));
+% Store registered images and metadata in structure:
+tformInfo.RegisteredImages = {cam1Img, imwarp(cam2Img,tform,'OutputView',imref2d(size(cam1Img)))};
+tformInfo.OriginalImages = {cam1Img, cam2Img};
+% Instantiate default values for Rotation and offset:
+tformInfo.Binning = 1;
+tformInfo.Rotation = 0;
+tformInfo.X_Offset = 0;
+tformInfo.Y_Offset = 0;
+fn = fieldnames(AcqInfo);
+indfn = find(ismember(fn,{'Binning','Rotation','X_Offset','Y_Offset'}));
+% Update rotation and offset fields from Info.txt file:
+for ii = 1:length(indfn)
+    tformInfo.(fn{indfn(ii)}) = AcqInfo.(fn{indfn(ii)});
+    if strcmpi(fn{indfn(ii)}, 'Binning')
+        % Update binning value with binning created during
+        % ImageClassification
+        md = load(fullfile(DataFolder,strrep(Cam1List{ii},'.dat','.mat')));
+        tformInfo.Binning = tformInfo.Binning * AcqInfo.Width/md.datSize(2);
+    end
+end
 end

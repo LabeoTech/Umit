@@ -1,4 +1,4 @@
-function [status, warnmsg] = applyTform2Cams(DataFolder, tform)
+function [status, warnmsg] = applyTform2Cams(DataFolder, tform,tformInfo)
 % APPLYTFORM2CAMS -  Applies the geometric transformation (tform) to data
 % files from Camera 2 (2-Camera systems from LabeoTech) in the given data 
 % folder (DataFolder). The registered data is saved back to the original files.
@@ -6,6 +6,8 @@ function [status, warnmsg] = applyTform2Cams(DataFolder, tform)
 %   Input:
 %       - DataFolder(char): The path to the folder containing the data files.
 %       - tform (affine2d): The geometric transformation to be applied to the data.
+%       - tformInfo (struct): Structure containing extra parameters from
+%       tform file.
 %   Output:
 %       - status(bool): A status indicator. It is set to true if the operation is successful,
 %                and false otherwise.
@@ -48,15 +50,39 @@ else
     return;
 end
 
+% Check for existence of rotation and X/Y offset fields
+fNames = {'Rotation', 'X_Offset', 'Y_Offset'};
+fn = fieldnames(AcqInfo);
+for ii = 1:length(fNames)
+    % Add defaults:
+    if ~ismember(fNames{ii}, fn)
+        AcqInfo.(fNames{ii}) = 0;
+    end
+    if ~ismember(fNames{ii}, fn)
+        tformInfo.(fNames{ii}) = 0;
+    end
+end
+% Update spatial reference object:
+fileInfo = load(fullfile(DataFolder,strrep(Cam2List{1},'.dat','.mat')));
+% Account for rotation in acquisition software:
+rot_diff = 90*(tformInfo.Rotation) - 90*(AcqInfo.Rotation);
+RA = updateRA(tformInfo, fileInfo, AcqInfo);
+clear fileInfo
 % Apply tform to data from Camera 2:
 for ii = 1:length(Cam2List)
     % Load Data and apply TFORM:
     fprintf('----------------------------------\n')    
     fprintf('Coregistration of file: "%s"\n', Cam2List{ii})
-    fprintf('\t- Loading data...\n')
-    [dat, info] = loadDatFile(fullfile(DataFolder, Cam2List{ii}));
-    fprintf('\t- Applying geometric transformation...\n')    
-    dat = imwarp(dat, tform, 'OutputView', imref2d(info.datSize));
+    fprintf('\t- Loading data...\n')       
+    dat = loadDatFile(fullfile(DataFolder, Cam2List{ii})); 
+    fprintf('\t- Applying geometric transformation...\n')
+    if rot_diff
+        dat = imrotate(dat,rot_diff);     
+        dat = imwarp(dat,RA, tform, 'nearest','OutputView', RA);        
+        dat = imrotate(dat,-rot_diff);
+    else
+        dat = imwarp(dat,RA, tform, 'nearest','OutputView', RA);
+    end
     % Replace data with registered one:
     fprintf('\t- Overwriting data in .DAT file...\n')    
     fid = fopen(fullfile(DataFolder, Cam2List{ii}), 'w');
@@ -67,5 +93,36 @@ for ii = 1:length(Cam2List)
 end
 status = true; % Set status to true if the operation is successful.
 % Save copy of tform in Data folder:
-save(fullfile(DataFolder,'tform.mat'), 'tform');
+save(fullfile(DataFolder,'tform.mat'), 'tform','rot_diff');
+end
+
+% Local function
+
+function RA = updateRA(tf_info, img_info, acqInfo)
+    % Update the spatial reference object (RA) based on transformation and acquisition information.
+    %
+    % This function takes transformation (tform), transformation information (tf_info),
+    % image information (img_info), and acquisition information (acqInfo) as input and
+    % updates the spatial reference object (RA) accordingly.
+    %
+    % Parameters:
+    %   - tf_info (struct): Transformation information containing fields like 'X_Offset', and 'Y_Offset'.
+    %   - img_info (struct): Image information containing data size and other attributes.
+    %   - acqInfo (struct): Acquisition information containing binning, offsets, and other details.
+    %
+    % Returns:
+    %   - RA (imref2d): The updated spatial reference object with adjusted X and Y offsets and pixel sizes.    
+        
+    % Process spatial binning:
+    % Get binning from acquisition:
+    AcqBinFactor = acqInfo.Binning;
+    % Update binning from umIT:
+    AcqBinFactor = AcqBinFactor * acqInfo.Width / img_info.datSize(2);
+    % Get tform binning factor:
+    binFactor = AcqBinFactor/tf_info.Binning; % Binning relative to tform file binning.    
+    RA = imref2d(img_info.datSize, binFactor, binFactor);
+    % Process ROIs:
+    % Compensate for X and Y offsets:
+    RA.XWorldLimits = RA.XWorldLimits + acqInfo.X_Offset - tf_info.X_Offset;
+    RA.YWorldLimits = RA.YWorldLimits + acqInfo.Y_Offset - tf_info.Y_Offset;
 end
