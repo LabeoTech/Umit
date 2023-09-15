@@ -65,14 +65,13 @@ end
 % Update spatial reference object:
 fileInfo = load(fullfile(DataFolder,strrep(Cam2List{1},'.dat','.mat')));
 % Account for rotation in acquisition software:
-rot_diff = 90*(tformInfo.Rotation) - 90*(AcqInfo.Rotation);
-b_flip = false;
-if ismember(mod(floor(rot_diff/90),4),[1 3])
-    % Flip X,Y info in RA object:
-    b_flip = true;
-end
-RA = updateRA(tformInfo, fileInfo, AcqInfo,b_flip);
+rot_diff = 90*(AcqInfo.Rotation) - 90*(tformInfo.Rotation);
+% Update TFORM to account for differences in rotation, binning and ROI
+% offset:
+tform = updateTForm(tform,tformInfo,fileInfo,AcqInfo,rot_diff);
+RA = imref2d(fileInfo.datSize);
 clear fileInfo
+
 % Apply tform to data from Camera 2:
 for ii = 1:length(Cam2List)
     % Load Data and apply TFORM:
@@ -81,14 +80,7 @@ for ii = 1:length(Cam2List)
     fprintf('\t- Loading data...\n')
     dat = loadDatFile(fullfile(DataFolder, Cam2List{ii}));
     fprintf('\t- Applying geometric transformation...\n')
-    if rot_diff
-        % Lazy method (too slow):
-        dat = imrotate(dat,rot_diff);
-        dat = imwarp(dat,RA, tform, 'nearest','OutputView', RA);
-        dat = imrotate(dat,-rot_diff);
-    else
-        dat = imwarp(dat,RA, tform, 'nearest','OutputView', RA);
-    end
+    dat = imwarp(dat,RA, tform, 'nearest','OutputView', RA);
     % Replace data with registered one:
     fprintf('\t- Overwriting data in .DAT file...\n')
     fid = fopen(fullfile(DataFolder, Cam2List{ii}), 'w');
@@ -99,44 +91,57 @@ for ii = 1:length(Cam2List)
 end
 status = true; % Set status to true if the operation is successful.
 % Save copy of tform in Data folder:
-save(fullfile(DataFolder,'tform.mat'), 'tform','rot_diff');
+save(fullfile(DataFolder,'tform.mat'), 'tform');
 end
 
 % Local function
 
-function RA = updateRA(tf_info, img_info, acqInfo, flipXY)
-% Update the spatial reference object (RA) based on transformation and acquisition information.
+function newtform = updateTForm(tform,tf_info, img_info, acqInfo, ang)
+% UPDATETFORM Updates a geometric transformation matrix (tform) to account for
+% spatial binning, rotation, and region of interest (ROI) offset.
 %
-% This function takes transformation (tform), transformation information (tf_info),
-% image information (img_info), and acquisition information (acqInfo) as input and
-% updates the spatial reference object (RA) accordingly.
+% INPUTS:
+%   tform       - Original geometric transformation matrix.
+%   tf_info     - Transformation information.
+%   img_info    - Image information.
+%   acqInfo     - Acquisition information.
+%   ang         - Rotation angle in degrees.
 %
-% Parameters:
-%   - tf_info (struct): Transformation information containing fields like 'X_Offset', and 'Y_Offset'.
-%   - img_info (struct): Image information containing data size and other attributes.
-%   - acqInfo (struct): Acquisition information containing binning, offsets, and other details.
+% OUTPUT:
+%   newtform    - Updated geometric transformation matrix.
 %
-% Returns:
-%   - RA (imref2d): The updated spatial reference object with adjusted X and Y offsets and pixel sizes.
+% This function performs a series of transformations on the input tform to
+% accommodate differences in spatial binning, rotation, and ROI offset between
+% acquired images and the desired transformation. It returns a new geometric
+% transformation matrix that combines these adjustments:
 
-% Process spatial binning:
-% Get binning from acquisition:
+% 1. Process Spatial Binning
 AcqBinFactor = acqInfo.Binning;
-% Update binning from umIT:
 AcqBinFactor = AcqBinFactor * acqInfo.Width / img_info.datSize(2);
-% Get tform binning factor:
-binFactor = AcqBinFactor/tf_info.Binning; % Binning relative to tform file binning.
-if flipXY
-    RA = imref2d(fliplr(img_info.datSize), binFactor, binFactor);
-    % Process ROIs:
-    % Compensate for X and Y offsets:
-    RA.YWorldLimits = RA.YWorldLimits + acqInfo.X_Offset - tf_info.X_Offset;
-    RA.XWorldLimits = RA.XWorldLimits + acqInfo.Y_Offset - tf_info.Y_Offset;
-else
-    RA = imref2d(img_info.datSize, binFactor, binFactor);
-    % Process ROIs:
-    % Compensate for X and Y offsets:
-    RA.XWorldLimits = RA.XWorldLimits + acqInfo.X_Offset - tf_info.X_Offset;
-    RA.YWorldLimits = RA.YWorldLimits + acqInfo.Y_Offset - tf_info.Y_Offset;
+binFactor = AcqBinFactor / tf_info.Binning;
+binningMat = [binFactor 0 0; 0 binFactor 0; 0 0 1];
+
+% 2. Process XY Offset
+Xoffset = acqInfo.X_Offset - tf_info.X_Offset;
+Yoffset = acqInfo.Y_Offset - tf_info.Y_Offset;
+offsetMat = [1 0 0; 0 1 0; Xoffset Yoffset 1];
+
+% 3. Create Rotation and Centering Matrices
+frSize = img_info.datSize;
+centerImg = [1 0 0; 0 1 0; -frSize(2)/2 -frSize(1)/2 1];
+centerImgFlip = [1 0 0; 0 1 0; -frSize(1)/2 -frSize(2)/2 1];
+rot = [cosd(ang) sind(ang) 0; -sind(ang) cosd(ang) 0; 0 0 1];
+
+% 4. Create New tform 
+switch abs(ang)
+    case 0
+        newMat = binningMat * offsetMat * tform.T * inv(offsetMat) * inv(binningMat);        
+    case {90, 270}
+        
+        newMat = centerImg * rot * inv(centerImgFlip) * binningMat * offsetMat * tform.T * inv(offsetMat) * inv(binningMat) * centerImgFlip * inv(rot) * inv(centerImg);        
+    case 180
+        newMat = centerImg * rot * inv(centerImg) * binningMat * offsetMat * tform.T * inv(offsetMat) * inv(binningMat) * centerImg * inv(rot) * inv(centerImg);
 end
+newMat(:,3) = [0;0;1];
+newtform = affine2d(newMat);
 end
