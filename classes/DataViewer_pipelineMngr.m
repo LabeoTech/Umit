@@ -28,7 +28,7 @@ classdef DataViewer_pipelineMngr < handle
     
     methods
         function obj = DataViewer_pipelineMngr(data, metaData, SaveFolder, RawFolder)
-            if isdeployed
+            if ~isdeployed
                 [obj.fcnDir,~,~] = fileparts(which('funcTemplate.m'));
                 a = load(fullfile(obj.fcnDir,'deployFcnList.mat'));
                 obj.funcList = a.out; % Get the structure "out" created inside the function "umitFcnReader".
@@ -261,6 +261,10 @@ classdef DataViewer_pipelineMngr < handle
             funcInfo.seq = 1;
             obj.current_seqIndx = obj.current_seqIndx + 1;
             funcInfo.seqIndx = obj.current_seqIndx;
+            %%% Fix for deploy version:
+            fn = setdiff(fieldnames(funcInfo),fieldnames(obj.pipe));
+            funcInfo = rmfield(funcInfo,fn);
+            %%%
             obj.pipe = [obj.pipe; funcInfo];
             state = true;
             % Control for existing data to be saved for the current
