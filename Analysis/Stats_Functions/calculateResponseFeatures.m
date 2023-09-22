@@ -77,7 +77,7 @@ else
     end
 end
 % locate time and event dimensions:
-idxEdim = find(strcmpi(outData.dim_names), 'E');
+idxEdim = find(strcmpi(outData.dim_names, 'E'));
 % idxTdim = find(strcmpi(outData.dim_names), 'T');
 for ii = 1:length(outData.data)
     % Instantiate output arrays:
