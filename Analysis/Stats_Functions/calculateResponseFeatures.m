@@ -76,6 +76,9 @@ else
         frOff = size(outData.data{1},2);    
     end
 end
+% locate time and event dimensions:
+idxEdim = find(strcmpi(outData.dim_names), 'E');
+% idxTdim = find(strcmpi(outData.dim_names), 'T');
 for ii = 1:length(outData.data)
     % Instantiate output arrays:
     PeakAmp_arr = nan(size(evntList),'single');
@@ -88,12 +91,12 @@ for ii = 1:length(outData.data)
     for jj = 1:length(evntList)
         idx = ( outData.eventID == evntList(jj) );
         % Calculate average response to the current event:
-        avgResp = squeeze(mean(outData.data{ii}(:,idx,:),2,'omitnan'));
+        avgResp = squeeze(mean(outData.data{ii}(:,idx,:),idxEdim,'omitnan'));
         if strcmpi(opts.ResponsePolarity, 'negative')
             % Flip the data around its mean to make the response peak
             % positive:
             avgResp = -1.*avgResp;
-        end
+        end                
         % Calculate threshold as a multiple of the standard deviation of the
         %   baseline period from the average response:
         avgBsln = mean(avgResp(1:evntFr),'omitnan'); % Average baseline amplitude
