@@ -28,7 +28,7 @@ classdef DataViewer_pipelineMngr < handle
     
     methods
         function obj = DataViewer_pipelineMngr(data, metaData, SaveFolder, RawFolder)
-            if ~isdeployed
+            if isdeployed
                 [obj.fcnDir,~,~] = fileparts(which('funcTemplate.m'));
                 a = load(fullfile(obj.fcnDir,'deployFcnList.mat'));
                 obj.funcList = a.out; % Get the structure "out" created inside the function "umitFcnReader".
