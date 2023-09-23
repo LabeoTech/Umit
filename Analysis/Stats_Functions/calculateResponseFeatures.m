@@ -39,7 +39,7 @@ function outData = calculateResponseFeatures(data, varargin)
 dependency = 'getDataFromROI'; %#ok Dependent function that will be automatically added to the pipeline before this one.
 default_Output = 'RespFeatures.mat'; %#ok This line is here just for Pipeline management.
 default_opts = struct('STD_threshold', 1, 'ResponsePolarity', 'positive', 'TimeWindow_sec', 'all');
-opts_values = struct('STD_threshold', [eps Inf], 'ResponsePolarity', {{'positive', 'negative'}}, 'TimeWindow_sec',{{'all'}}); %#ok This is here only as a reference for PIPELINEMANAGER.m.
+opts_values = struct('STD_threshold', [eps Inf], 'ResponsePolarity', {{'positive', 'negative'}}, 'TimeWindow_sec',{{'all',[0 Inf]}}); %#ok This is here only as a reference for PIPELINEMANAGER.m.
 
 %%% Arguments parsing and validation %%%
 p = inputParser;
@@ -56,6 +56,9 @@ clear p
 % Check if the input data is "time vector split by events":
 assert(all(ismember(upper(outData.dim_names), {'O','E','T'})),...
     'Wrong input data type. Data must be a time vector split by event(s).');
+% locate time and event dimensions:
+idxEdim = find(strcmpi(outData.dim_names,'E'));
+idxTdim = find(strcmpi(outData.dim_names,'T'));
 % For each ROI, calculate the average response and use the average time
 % vector to calculate the peak stats:
 ROIdata = struct();
@@ -64,21 +67,18 @@ evntList = unique(outData.eventID);
 evntFr = round(outData.preEventTime_sec*outData.Freq);
 if strcmpi(opts.TimeWindow_sec,'all')
     frOn = evntFr+1;
-    frOff = size(outData.data{1},2) - evntFr;
+    frOff = size(outData.data{1},idxTdim) - evntFr;
 else       
     % Get frames values:
-    frOn = round((outData.preEventTime_sec + opts.TimeWindow_sec(1))*outData.Freq);
-    frOff = round((outData.preEventTime_sec + opts.TimeWindow_sec(2))*outData.Freq);
+    frOn = round(opts.TimeWindow_sec(1)*outData.Freq) + evntFr;
+    frOff = round(opts.TimeWindow_sec(2)*outData.Freq) + evntFr;
     % Reset to default if input values are out of range
-    if frOn > size(outData.data{1},2) || frOff > size(outData.data{1},2) || frOn > frOff
+    if frOn > size(outData.data{1},idxTdim) || frOff > size(outData.data{1},idxTdim) || frOn > frOff
         warning('TimeWindow onset is out of range! Reset to default ("all")')
         frOn = evntFr +1;
-        frOff = size(outData.data{1},2);    
+        frOff = size(outData.data{1},idxTdim);    
     end
 end
-% locate time and event dimensions:
-idxEdim = find(strcmpi(outData.dim_names, 'E'));
-% idxTdim = find(strcmpi(outData.dim_names), 'T');
 for ii = 1:length(outData.data)
     % Instantiate output arrays:
     PeakAmp_arr = nan(size(evntList),'single');
@@ -87,11 +87,13 @@ for ii = 1:length(outData.data)
     onsetLat_arr = PeakAmp_arr;
     AUCamp_arr = PeakAmp_arr;
     avgAmp_arr = PeakAmp_arr;
-    
+    % Be sure that the data is arranged properly ('O','E','T'):
+    data = outData.data{ii};
+    data = permute(data,[setdiff([1:ndims(data)],[idxEdim idxTdim]),idxEdim,idxTdim]);
     for jj = 1:length(evntList)
-        idx = ( outData.eventID == evntList(jj) );
+        idx = ( outData.eventID == evntList(jj) );        
         % Calculate average response to the current event:
-        avgResp = squeeze(mean(outData.data{ii}(:,idx,:),idxEdim,'omitnan'));
+        avgResp = squeeze(mean(data(:,idx,:),2,'omitnan'));
         if strcmpi(opts.ResponsePolarity, 'negative')
             % Flip the data around its mean to make the response peak
             % positive:
@@ -105,7 +107,7 @@ for ii = 1:length(outData.data)
         
         % Find the maximum ('peak') response value:
         [PeakValue,indxPeak] = max(avgResp(frOn:frOff),[],1);
-        indxPeak = frOn + indxPeak;
+        indxPeak = frOn + indxPeak -1;
         % Calculate the Average amplitude value:
         avgAmp_arr(jj) = mean(avgResp(frOn:frOff),'omitnan') - avgBsln;
         % Calculate the Area Under the Curve amplitude:
@@ -114,7 +116,7 @@ for ii = 1:length(outData.data)
         PeakAmp_arr(jj) = PeakValue - avgBsln;
         if PeakValue > thr
             % Calculate the onset(threshold crossing point) amplitude and latencies in seconds:
-            onsetIndx = frOn + find(avgResp(frOn:frOff) > thr,1,'first');
+            onsetIndx = frOn + find(avgResp(frOn:frOff) > thr,1,'first') - 1;
             % Calculate onset amplitude:
             onsetAmp_arr(jj) = avgResp(onsetIndx) - avgBsln;
             % Calculate onset latency:

@@ -2365,10 +2365,15 @@ for i = 1:length(fields)
             vo.Limits = [listVals{i}];
         otherwise
             vo.Value = num2str(currVals{i});
-            idx_char = cellfun(@ischar, listVals{i});
+            idx_char = cellfun(@ischar, listVals{i});            
             name = strjoin(cellfun(@(x) ['"', x, '"'],listVals{i}(idx_char), 'UniformOutput', false),', ');
             if ~all(idx_char)
-                vo.Tooltip = ['Type ' name ' or a number.'];
+                % Check if numeric values are scalar or an array.
+                if numel(listVals{i}{~idx_char}) > 1
+                    vo.Tooltip = ['Type ' name ' or a range of numbers separated by a semicolon (ex. 0;2;3;4).'];
+                else
+                    vo.Tooltip = ['Type ' name ' or a single number.'];
+                end
             else
                 vo.Tooltip = 'Type a string';
             end
