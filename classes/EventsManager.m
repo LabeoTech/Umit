@@ -30,6 +30,7 @@ classdef EventsManager < handle
         warnOrigState % original state of Matlab's warnings. This will be restored at this class destruction.        
         ParseMethods = {'none','csv','vpixx'}; % List of valid parse methods.
         privateEventFileParseMethod;
+        b_LP_applied = false % Boolean to indicate if a low-pass filtering was applied to the AnalogIN data.
     end
     properties (Dependent)
         EventFileParseMethod char % Name of the method to read the Event File. {'CSV','vpixx'};
@@ -364,27 +365,40 @@ classdef EventsManager < handle
             end            
         end
         
-        function getTriggers(obj, b_dispTrigInfo)
+        function getTriggers(obj, varargin)
             % GETTRIGGERS detects the triggers from one or more analog IN channels 
             %   with names stored in the "trigChanName" property.
             % It records the timestamps and state of each event.
             % Input:
-            %   b_dispStats (bool, default = FALSE): If TRUE, displays some basic stats on
+            %   b_verbose(bool, default = FALSE): If TRUE, displays some basic stats on
             %   trigger detection on the command window.
-            
-            if ~exist('b_dispTrigInfo','var')
-                b_dispTrigInfo = false;
-            end
-            
-%             if ~isempty(obj.timestamps)
-%                 warning('Event triggers already detected! Trigger detection aborted.');
-%                 return
-%             end
-
+            %   
+            p = inputParser;
+            addRequired(p,'obj');
+            addOptional(p,'b_verbose',true,@islogical)
+            addParameter(p,'FilterFreq',0,@(x) isscalar(x) & x>=0)
+            parse(p,obj,varargin{:})
+            b_verbose = p.Results.b_verbose;
+            FilterFreq = p.Results.FilterFreq;
+                       
             if isempty([obj.trigChanName{:}])
                 warning('Trigger channel name not set! Trigger detection aborted.')
                 return
             end
+            if ( FilterFreq > 0 && FilterFreq < obj.sr/2 )
+                    % Apply low-pass filter to the data at selected cut-off
+                    % frequency:
+                    f = fdesign.lowpass('N,F3dB', 4, FilterFreq, obj.sr); %Fluo lower Freq
+                    lpass = design(f,'butter');
+                    obj.b_LP_applied = true;
+            end
+            
+            if obj.b_LP_applied
+                % Reset AnalogIN data to original, if a filtering was
+                % already applied.
+                obj.setAnalogIN;
+                obj.b_LP_applied = false;
+            end                                 
             % Reset event info:
             obj.timestamps = [];
             obj.state = [];
@@ -395,6 +409,12 @@ classdef EventsManager < handle
                 if ~any(idxCh)
                     warning(['Channel ' obj.trigChanName{ii} ' not found!'])
                     continue
+                end
+                signal = obj.AnalogIN(:,idxCh);
+                if FilterFreq
+                    % Apply low-pass filter to the data at selected cut-off
+                    % frequency:
+                    obj.AnalogIN(:,idxCh) = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(obj.AnalogIN(:,idxCh))')');
                 end
                 [tmstmp,chanState] = obj.detectTrig(obj.AnalogIN(:,idxCh));               
                 % Control for failed detections:
@@ -469,7 +489,7 @@ classdef EventsManager < handle
                 assert(isequal(numel(unique(obj.eventID)), numel(obj.eventNameList)), errID, msg);
             end
             % Display trigger stats:
-            if b_dispTrigInfo
+            if b_verbose
                 disp('Trigger detection completed.')
                 disp('---------- Trigger info ----------')
                 deltaT = [diff(obj.timestamps); nan];
@@ -515,6 +535,7 @@ classdef EventsManager < handle
             save(fullfile(saveFolder, 'events.mat'), 'eventID', 'state', 'timestamps', 'eventNameList');
             disp(['Events MAT file saved in  ' saveFolder]);
         end
+                
     end
     
     methods (Access = private)
