@@ -58,6 +58,12 @@
           </ul>
         </li>
         <li><b><i>Save as...:</i></b> Open dialog to save current data into a .DAT file</li>
+        <li><b><i>Batch processing:</i></b> Batch process multiple folders &gt;&gt;
+          <ul>
+            <li><b><i>Convert raw to TIFF:</i></b> Converts raw files (.bin) from LabeoTech systems to .TIFF format</li>
+            <li><b><i>Convert .DAT to TIFF:</i></b> Converts <samp>.dat</samp> files to .TIFF format</li>
+          </ul>
+        </li>
       </ul>
     </li>
     <li><b>Settings &gt;&gt;</b><ul>
@@ -67,21 +73,33 @@
     </li>
     <li><b><i>Utilities &gt;&gt;</i></b>
       <ul>
-        <li><b><i>Data processing:</i></b> <b>(Standalone only)</b> Tool to setup image processing pipeline on the data using the <a href="../user_doc_index.html">analysis functions</a> from the toolbox</li>
-        <li><b><i>View Data History:</i></b> Opens a table showing information about the analysis functions run for the opened data file</li>
-        <li><b><i>ROI options</i></b> <b>(Standalone only)</b> &gt;&gt;
+        <li><b><i>Data processing:</i></b> <b>(Standalone only)</b> Tool to setup image processing pipeline on the data
+          using the <a href="../user_doc_index.html">analysis functions</a> from the toolbox</li>
+        <li><b><i>View Data History:</i></b> Opens a table showing information about the analysis functions run for the
+          opened data file</li>
+        <li><b><i>Show trigger traces:</i></b> Overlays the High states of triggers listed in the <samp>events.mat</samp>
+          file located in the same folder as the displayed dataset (<i>currently available only for image time series</i>)
+        </li>
+        <li><b><i>Manage events:</i></b> Launches the <a href="./events-manager_tool.html">Event Management tool</a> to handle event triggers originating from LabeoTech system's analog inputs and use it to separate the data by different conditions.</li>
+        <li><b><i> View ROI data (Standalone only) &gt;&gt;</i></b>
           <ul>
-            <li><b><i>Extract data from ROI:</i></b> <b></b> Tool to create a <samp>.mat</samp> file containing data from the displayed ROIs. Read the documentation of the <a href="getDataFromROI.html"><samp>getDataFromROI</samp></a> function for details</li>
-            <li><b><i>Generate correlation matrix:</i></b> <b></b> Tool to create a <samp>.mat</samp> file containing a correlation matrix from the displayed ROIs. Read the documentation of the <a href="genCorrelationMatrix.html"><samp>genCorrelationMatrix</samp></a> function for details</li>
+            <li><b><i>ROI traces:</i></b> <b></b> Tool to visualize ROI values as a function of time or events. Read the
+              documentation of the <a href="lineBox-plot_tool.html"><samp>Line Box-plot</samp></a> tool for details</li>
+            <li><b><i>Correlation matrix:</i></b> <b></b> Tool to visualize a correlation matrix from displayed ROIs. Read
+              the documentation of the <a href="correlation_matrix_plot_tool.html"><samp>Correlation Matrix plot</samp></a>
+              tool for details</li>
           </ul>
         </li>
-        <li><b><i>Show trigger traces</i></b>: Overlays the High states of triggers listed in the <samp>events.mat</samp> file located in the same folder as the displayed dataset (<i>currently available only for image time series</i>)</li>
+        <li><b><i>OiS Dual Cam Coregistration:</i></b> Tool used for OiS Dual Camera systems (LabeoTech) to assess coregistration quality and manage the coregistration parameters</li>
+    </li>
     </ul>
     </li>
     <li><b><i>Add-ons &gt;&gt;</i></b>
       <ul>
         <li><b><i>ROImanager:</i></b> Launches the <a href="ROImanager.html">ROImanager</a> app as add-on</li>
         <li><b><i>Multi-plots:</i></b> Launches the <a href="multi-plot_tool.html">Multi-plot</a> tool</li>
+        <li><b><i>Enable FFT View:</i></b> Allows the visualisation of image time series data in the frequency domain</li>
+
       </ul>
     </li>
     </ul>
