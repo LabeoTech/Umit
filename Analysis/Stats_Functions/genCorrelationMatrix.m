@@ -1,7 +1,7 @@
 function outData = genCorrelationMatrix(data, metaData, varargin)
 % GENCORRELATIONMATRIX creates a correlation matrix from an Image time
 % series with dimensions Y,X,T using Regions of Interest (ROIs) stored in a
-% "ROImasks_xxxx.mat" file (created by the ROImanager App).
+% "<NAME>.roimsk" file (created by the ROImanager App).
 % The function offers 3 distinct ways of calculating the correlation
 % between ROIs:
 %   1- Centroid vs centroid: correlates the centroid pixels between ROIs.
@@ -20,8 +20,8 @@ function outData = genCorrelationMatrix(data, metaData, varargin)
 % Defaults: IMPORTANT, keep all default statements in one line each so the
 % Pipeline Managers will be able to read it!
 default_Output = 'corrMatrix.mat'; %#ok This line is here just for Pipeline management.
-default_opts = struct('ROImasks_filename', 'ROImasks_data.mat', 'CorrAlgorithm', 'centroid_vs_centroid', 'SpatialAggFcn', 'mean','b_FisherZ_transform', false, 'b_genSPCMaps', false);
-opts_values = struct('ROImasks_filename', {{'ROImasks_data.mat'}}, 'CorrAlgorithm',{{'centroid_vs_centroid','centroid_vs_agg', 'avg_vs_avg'}}, 'SpatialAggFcn', {{'mean', 'max', 'min', 'median'}},'b_FisherZ_transform',[true,false],'b_genSPCMaps',[true,false]);%  % This is here only as a reference for PIPELINEMANAGER.m.
+default_opts = struct('ROImasks_filename', 'myROIs.roimsk', 'CorrAlgorithm', 'centroid_vs_centroid', 'SpatialAggFcn', 'mean','b_FisherZ_transform', false, 'b_genSPCMaps', false);
+opts_values = struct('ROImasks_filename', {{'myROIs.roimsk'}}, 'CorrAlgorithm',{{'centroid_vs_centroid','centroid_vs_agg', 'avg_vs_avg'}}, 'SpatialAggFcn', {{'mean', 'max', 'min', 'median'}},'b_FisherZ_transform',[true,false],'b_genSPCMaps',[true,false]);%  % This is here only as a reference for PIPELINEMANAGER.m.
 
 default_object = ''; % This line is here just for Pipeline management to be able to detect this input.
 %%% Arguments parsing and validation %%%

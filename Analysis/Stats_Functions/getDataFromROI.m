@@ -11,8 +11,8 @@ function outData = getDataFromROI(data, metaData, varargin)
 
 % Defaults:
 default_Output = 'ROI_data.mat'; %#ok This line is here just for Pipeline management.
-default_opts = struct('ROImasks_filename', 'ROImasks_data.mat', 'SpatialAggFcn', 'mean');
-opts_values = struct('ROImasks_filename', {{'ROImasks_data.mat'}}, 'SpatialAggFcn',{{'none','mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}});% This is here only as a reference for PIPELINEMANAGER.
+default_opts = struct('ROImasks_filename', 'myROIs.roimsk', 'SpatialAggFcn', 'mean');
+opts_values = struct('ROImasks_filename', {{'myROIs.roimsk'}}, 'SpatialAggFcn',{{'none','mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}});% This is here only as a reference for PIPELINEMANAGER.
 default_object = ''; % This line is here just for Pipeline management to be able to detect this input.
 %%% Arguments parsing and validation %%%
 p = inputParser;
