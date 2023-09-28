@@ -25,8 +25,7 @@ if ~any(idxValid)
     fileList = {};
     return
 end
-% matFilesMap = arrayfun(@(x) matfile(fullfile(folder,x.name)), matFileList, 'UniformOutput',false);
-% idxValid = cellfun(@(x) isprop(x, 'dataHistory'), matFilesMap);
+
 matList = {matFileList(idxValid).name}';
 [~,matNames,~] = cellfun(@(x) fileparts(x), matList, 'UniformOutput', false);
 

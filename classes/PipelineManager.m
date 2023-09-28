@@ -1501,10 +1501,10 @@ classdef PipelineManager < handle
                 if ~strcmpi(file, 'self')
                     try
                         a = load(fullfile(path,[file '.mat']),'dataHistory');
+                        dataHistory = a.dataHistory; clear a
                     catch
                         return
                     end
-                    dataHistory = a.dataHistory; clear a
                 else
                     dataHistory = obj.dv_originalMetaData.dataHistory;
                 end
