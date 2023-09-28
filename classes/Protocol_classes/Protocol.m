@@ -34,16 +34,30 @@ classdef Protocol < handle
             %   All first inputs must be provided. If Array is empty,
             %   the function creates an emtpy Array.
             
-            if nargin > 0
-                obj.Name = Name;
-                obj.Array = Array;             
-                obj.MainDir = MainDir;
-                obj.SaveDir = SaveDir;
-                obj.ProtoFunc = ProtoFunc;
+            if nargin > 0                
                 if ~isempty([varargin{:}])
-                    obj.b_isDummy = varargin{:};
+                    b_isDummy = varargin{:};
                 end
+            else
+                % Create dummy protocol object, if no input is provided
+                % (used for testing and dev.);
+                mod = FluorescenceImaging('DummyMod',{''},'Dummy',1);
+                acq = Acquisition('DummyAcq',[]);acq.Array.addObj(mod);
+                sbj = Subject('DummySbj','def',''); sbj.Array.addObj(acq);
+                Array = sbj;
+                Name = 'DummyProtocol';
+                MainDir = pwd;
+                SaveDir = pwd;
+                ProtoFunc = @(x) x;
+                b_isDummy = true;                
             end
+            obj.Name = Name;
+            obj.Array = Array;
+            obj.MainDir = MainDir;
+            obj.SaveDir = SaveDir;
+            obj.ProtoFunc = ProtoFunc;
+            obj.b_isDummy = b_isDummy;
+            
             %
             if ~obj.b_isDummy
                 obj.createLogBookFile
