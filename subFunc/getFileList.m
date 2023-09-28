@@ -1,7 +1,7 @@
 function fileList = getFileList(folder, extension)
 % GETFILELIST creates a list of .mat/.dat files created using umIT.
 % The files considered here are the ones with the .mat files containing the
-% variable "dataHistory". This is the criterion used to identify the
+% variable "datSize". This is the criterion used to identify the
 % pertinent files.
 % Inputs:
 %   folder (char): path to the folder containing the files:
@@ -16,7 +16,7 @@ matFileList = dir(fullfile(folder, '*.mat'));
 idxValid = false(size(matFileList));
 warning('off')
 for ii = 1:length(matFileList)
-    a = load(fullfile(folder, matFileList(ii).name), 'dataHistory');
+    a = load(fullfile(folder, matFileList(ii).name), 'datSize');
     idxValid(ii) = ~isempty(fieldnames(a));
 end
 clear a
