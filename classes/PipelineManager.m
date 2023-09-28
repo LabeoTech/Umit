@@ -864,7 +864,7 @@ classdef PipelineManager < handle
             idxNL = 1+regexp(tmp,'\n');
             idxNL = [1 idxNL(1:end-1)];
             for ii = 2:length(idxNL)
-                summaryTxt = [summaryTxt  sprintf('%%\t\t') tmp(idxNL(ii-1):idxNL(ii)-1)];
+                summaryTxt = [summaryTxt  sprintf('%%\t\t') tmp(idxNL(ii-1):idxNL(ii)-1)];%#ok
             end
             txt = [txt summaryTxt];
             % Initialize working folder to the current directory.
@@ -948,6 +948,7 @@ classdef PipelineManager < handle
             if any(idx)
                 % Create deletion section.                
                 delStr = sprintf('%%%% Delete temporary files\n%% Delete .dat/mat files created during the execution of this script.\n');
+                delStr  = [delStr sprintf('disp(''Deleting temporary files...'');\n')];
                 fNames = {obj.pipe.saveFileName};
                 fNames(~idx) = [];
                 for ii = 1:length(fNames)
@@ -960,8 +961,8 @@ classdef PipelineManager < handle
                 txt = [txt delStr];
             end
             
-            % Add a closing comment to the script.
-            txt = [txt sprintf('\n%%%%%%%%%%%%%%%%%%%%%%%% END OF FILE %%%%%%%%%%%%%%%%%%%%%%%%')];
+            % Add a closing comment to the script.            
+            txt = [txt sprintf('%%%%\ndisp(''Script execution completed!'');\n%%%%%%%%%%%%%%%%%%%%%%%% END OF FILE %%%%%%%%%%%%%%%%%%%%%%%%')];
             
             % Save the generated script text to the specified file.
             fid = fopen(filename, 'w');
@@ -1429,7 +1430,10 @@ classdef PipelineManager < handle
             newSeqArr = cell(size(fileList));
             skippedStepsArr = newSeqArr;
             selFile = '';
-            
+            % If the data does not contain dataHistory, abort:
+            if ~isprop(obj.current_metaData,'dataHistory')
+                return
+            end
             % Compare dataHistory with pipeline sequence:
             for ii = 1:length(fileList)
                 [newSeqArr{ii}, skippedStepsArr{ii}] = compareDataHistory(obj,thisSeq,fullfile(folderName,fileList{ii}));

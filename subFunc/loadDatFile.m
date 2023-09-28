@@ -20,6 +20,7 @@ parse(p, DatFileName, varargin{:});
 DatFileName = p.Results.DatFileName;
 metaDatFileName = p.Results.metaDatFileName;
 %%%%
+fprintf('Opening file "%s" ...\n',DatFileName);
 % Get metaData:
 if isempty(metaDatFileName)
     metaDatFileName = strrep(DatFileName, '.dat', '.mat');
@@ -38,6 +39,7 @@ fid = fopen(DatFileName);
 outFile = fread(fid, inf, '*single');
 outFile = reshape(outFile, [metaData.datSize metaData.datLength]);
 fclose(fid);
+disp('Done.');
 end
 
 % Validation function
