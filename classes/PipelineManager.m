@@ -2239,19 +2239,7 @@ classdef PipelineManager < handle
             fprintf(fid,'%s',str);
             fclose(fid);
             % Open system's file explorer:
-            switch computer
-                case 'PCWIN64'
-                    % Windows
-                    winopen(folder);
-                case 'GLNXA64'
-                    % Linux
-                    system(['gnome-open ' folder]);
-                case 'MACI64'
-                    % MacOS
-                    system(['open ' folder]);
-                otherwise
-                    disp(['Error log saved at: ' folder]);
-            end
+            openFolder(folder);            
         end
         %%%%%%-- WAITBAR methods-------------------------------------------
         function setWaitBar(obj,tag,varargin)
