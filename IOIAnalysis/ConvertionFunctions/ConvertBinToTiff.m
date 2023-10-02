@@ -1,7 +1,7 @@
+function ConvertBinToTiff(FolderPath)
 %This function converts to raw binary files acquired by the imaging system
 %to tiff (or big tiff files).
 %No image classification to de-interlace the channels (colors) is done.
-function ConvertBinToTiff(FolderPath)
 %The folder path is passed as an argument. If not, a dialog will ask the
 %user to select a path
 if (nargin < 1)
@@ -13,24 +13,24 @@ if ~ischar(FolderPath)
 end
 
 disp(['Starting Tiff conversion for: ' FolderPath]);
-
-%Check how many data files there are
-nFiles = 0;
-totalSize = 0; %Used to know if we need to use big tif over 4 GB
 % Accounting for Dual-Cam data:
 binPrefix = {'img_','imgCam2_'};
 for ii = 1:2
-    
+    %Check how many data files there are
+    nFiles = 0;
+    totalSize = 0; %Used to know if we need to use big tif over 4 GB
     while (exist([FolderPath filesep binPrefix{ii} sprintf('%05d',nFiles) '.bin'],'file'))
         file = dir([FolderPath filesep binPrefix{ii} sprintf('%05d',nFiles) '.bin']);
         totalSize = totalSize + file.bytes;
         nFiles = nFiles + 1;
     end
     
-    if ~(ii == 2 && ~nFiles)
-        fprintf('%d file(s) found from camera #%d.\n',nFiles,ii)
+    if ~nFiles
+        continue
     end
-              
+    
+    fprintf('%d file(s) found from camera #%d.\n',nFiles,ii)
+    
     outFName = strcat(FolderPath, filesep, [binPrefix{ii}(1:end-1) '.tif']); %Output file name
     if (totalSize < 3900000000)
         fTIF = Fast_Tiff_Write(outFName,1,0);
