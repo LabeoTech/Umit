@@ -18,7 +18,10 @@ SaveFolder = p.Results.SaveFolder;
 opts = p.Results.opts;
 clear p
 %%%%
-if isempty(opts.StimChannel)
+if ischar(opts.StimChannel)
+    opts.StimChannel = {opts.StimChannel};
+end
+if all(cellfun(@isempty,opts.StimChannel))
     warning('No stim channels selected. Event file creation aborted.')
     return
 end
@@ -41,6 +44,18 @@ end
 
 % Instantiate EventsManager class:
 evObj = EventsManager(RawFolder,opts.ConditionFileType);
+for ii = 1:length(opts.StimChannel)
+    % Update internal channel names. These may change depending on the OiS
+    % acquisition software version.
+    if strcmpi(opts.StimChannel{ii}, 'internal-main')
+        warning(['Translated ''Internal-Main'' channel to ''' evObj.AIChanList{2}]);
+        opts.StimChannel{ii} = evObj.AIChanList{2};
+    elseif strcmpi(opts.StimChannel{ii}, 'internal-aux')
+        warning(['Translated ''Internal-Aux'' channel to ''' evObj.AIChanList{3}]);
+        opts.StimChannel{ii} = evObj.AIChanList{3};
+    end
+end
+evObj.AIChanList
 % Update EventsManager object properties:
 evObj.trigThr = opts.Threshold;
 evObj.trigType = opts.TriggerType;
