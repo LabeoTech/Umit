@@ -1,45 +1,53 @@
 function fileList = getFileList(folder, extension)
-% GETFILELIST creates a list of .mat/.dat files created using umIT.
-% The files considered here are the ones with the .mat files containing the
-% variable "datSize". This is the criterion used to identify the
-% pertinent files.
+% GETFILELIST retrieves a list of relevant files in a folder based on extension.
 % Inputs:
-%   folder (char): path to the folder containing the files:
-%   extension (char): extension of the files to list: {'.mat','.dat','all'}.
-%       Set to 'all', to retrive a list of .mat AND .dat files.
+%   folder (char): The path to the folder containing the files.
+%   extension (char): The desired file extension or 'all' to list all files.
 % Output:
-%   fileList (cell): list of valid filenames with file extension. Empty, if
-%       no valid files are found.
+%   fileList (cell): List of valid filenames with the specified extension.
 
-matFileList = dir(fullfile(folder, '*.mat'));
-% Check if "dataHistory" exists inside each file
-idxValid = false(size(matFileList));
-warning('off')
-for ii = 1:length(matFileList)
-    a = load(fullfile(folder, matFileList(ii).name), 'datSize');
-    idxValid(ii) = ~isempty(fieldnames(a));
+% Get a list of .mat files
+matFiles = dir(fullfile(folder, '*.mat'));
+
+% Check if "datSize" exists inside each .mat file
+warning('off'); % warning disabled to supress messages from .mat files that do not have "datSize" variable.
+validMatFiles = false(size(matFiles));
+for ii = 1:length(matFiles)
+    data = load(fullfile(folder, matFiles(ii).name), 'datSize');
+    validMatFiles(ii) = ~isempty(fieldnames(data));
 end
-clear a
-warning('on')
-if ~any(idxValid)
-    fileList = {};
+warning('on');
+fileList = {};
+if any(strcmpi(extension,{'.mat','.dat'})) && ~any(validMatFiles)
     return
 end
-
-matList = {matFileList(idxValid).name}';
-[~,matNames,~] = cellfun(@(x) fileparts(x), matList, 'UniformOutput', false);
-
-datFileList = dir(fullfile(folder, '*.dat'));
-[~,datNames,~] = arrayfun(@(x) fileparts(x.name), datFileList, 'UniformOutput', false);
-
-switch extension
-    case '.mat'
-        fileList = cellfun(@(x) [x, '.mat'],setdiff(matNames,datNames), 'UniformOutput',false);
-    case '.dat'
-        fileList = cellfun(@(x) [x, '.dat'],intersect(matNames,datNames), 'UniformOutput',false);
-    otherwise
-        matList = cellfun(@(x) [x, '.mat'],setdiff(matNames,datNames), 'UniformOutput',false);
-        datList = cellfun(@(x) [x, '.dat'],intersect(matNames,datNames), 'UniformOutput',false);
-        fileList = vertcat(datList, matList);
+if ischar(extension)
+    extension = {extension};
 end
+
+for ii = 1:length(extension)
+    ext = extension{ii};
+    matFileNames = {matFiles(validMatFiles).name}';
+    [~, matNames, ~] = cellfun(@(x) fileparts(x), matFileNames, 'UniformOutput', false);
+    
+    % Get a list of .dat files
+    datFiles = dir(fullfile(folder, '*.dat'));
+    [~, datNames, ~] = arrayfun(@(x) fileparts(x.name), datFiles, 'UniformOutput', false);
+    
+    switch ext
+        case '.mat'
+            fileList{ii} = cellfun(@(x) [x, '.mat'], setdiff(matNames, datNames), 'UniformOutput', false);
+        case '.dat'
+            fileList{ii} = cellfun(@(x) [x, '.dat'], intersect(matNames, datNames), 'UniformOutput', false);
+        case 'all'
+            matList = cellfun(@(x) [x, '.mat'], setdiff(matNames, datNames), 'UniformOutput', false);
+            datList = cellfun(@(x) [x, '.dat'], intersect(matNames, datNames), 'UniformOutput', false);
+            fileList{ii} = vertcat(datList, matList);
+        otherwise
+            thisExt = dir(fullfile(folder, ['*' ext]));
+            fileList{ii} = {thisExt.name};
+    end
+end
+% Unpack filelist:
+fileList = [fileList{:}];
 end
