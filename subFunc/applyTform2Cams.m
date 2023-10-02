@@ -22,6 +22,7 @@ if ~exist(fullfile(DataFolder, 'AcqInfos.mat'), 'file')
 end
 Info = matfile(fullfile(DataFolder, 'AcqInfos.mat'));
 AcqInfo = Info.AcqInfoStream;
+
 clear Info;
 % Get list of channels for each camera:
 if (AcqInfo.MultiCam)
@@ -50,16 +51,18 @@ else
     return;
 end
 
-% Check for existence of rotation and X/Y offset fields
-fNames = {'Rotation', 'X_Offset', 'Y_Offset'};
+% For Retrocompatibility:
+% Check for existence of Binning, rotation and X/Y offset fields
+fNames = {'Binning','Rotation', 'X_Offset', 'Y_Offset'};
+defaults = [1 0 0 0];
 fn = fieldnames(AcqInfo);
 for ii = 1:length(fNames)
     % Add defaults:
     if ~ismember(fNames{ii}, fn)
-        AcqInfo.(fNames{ii}) = 0;
+        AcqInfo.(fNames{ii}) = defaults(ii);
     end
     if ~ismember(fNames{ii}, fn)
-        tformInfo.(fNames{ii}) = 0;
+        tformInfo.(fNames{ii}) = defaults(ii);
     end
 end
 % Update spatial reference object:
