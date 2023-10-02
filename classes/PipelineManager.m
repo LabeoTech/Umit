@@ -889,10 +889,7 @@ classdef PipelineManager < handle
                         txt = [txt sprintf('data = load(%s); %% Load input data\n', obj.pipe(ii).inputFileName)];%#ok
                     end
                 end
-                
-                
-                    
-                
+                                                   
                 % Set input and output argument names.
                 argsIn = obj.pipe(ii).argsIn;
                 argsIn = replace(argsIn, {'RawFolder', 'SaveFolder'}, {'Folder', 'Folder'});
@@ -906,6 +903,12 @@ classdef PipelineManager < handle
                     for jj = 1:length(fn)
                         if ischar(obj.pipe(ii).opts.(fn{jj}))
                             val = ['''' obj.pipe(ii).opts.(fn{jj}) ''''];
+                        elseif iscell(obj.pipe(ii).opts.(fn{jj})) && ischar([obj.pipe(ii).opts.(fn{jj}){:}])
+                            val = '{{';
+                            for kk = 1:length(obj.pipe(ii).opts.(fn{jj}))
+                                val = [val '''' obj.pipe(ii).opts.(fn{jj}){kk} '''', ','];
+                            end
+                            val(end:end+1) = '}}';
                         else
                             val = ['[' strjoin(arrayfun(@num2str, obj.pipe(ii).opts.(fn{jj}), 'UniformOutput', false), ';') ']'];
                         end
@@ -921,7 +924,7 @@ classdef PipelineManager < handle
                 
                 % Create function string for the current step.
                 if isempty(argsOut)
-                    fcnStr = [fcnStr ';' task.name '(' strjoin(argsIn, ',') ');'];%#ok
+                    fcnStr = [fcnStr ';' obj.pipe(ii).name '(' strjoin(argsIn, ',') ');'];%#ok
                 elseif numel(argsOut) == 1
                     fcnStr = [fcnStr ';' strjoin(argsOut, ',') ' = ' obj.pipe(ii).name '(' strjoin(argsIn, ',') ');'];%#ok
                 else
