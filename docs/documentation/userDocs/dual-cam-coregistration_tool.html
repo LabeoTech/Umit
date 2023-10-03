@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="../../css/master.css">
+    <style media="screen">
+        ul,ol {
+            line-height: 1.5;
+        }
+        
+    </style>
+    <title>Dual-Camera coregistration tool</title>
+</head>
+
+<body>
+    <h2>Dual-Camera coregistration tool</h2>
+    <hr>
+    <p>
+        This tool is dedicated to perform the coregistration of the images from Dual-Camera Imaging systems from <a
+            href="http://www.labeotech.com">LabeoTech</a>. The goal of this tool is to ensure that the output of both
+        cameras are aligned. This documentation concerns the usage of the tool in the <samp>DataViewer</samp> app. For
+        more information about the Dual-Camera imaging system and the acquisition software, please refer to the
+        product's documentation.
+    </p>
+    <h3 id="initial-coregistration">Initial coregistration</h3>
+    <hr>
+    <p>
+        Here we cover the steps to perform the coregistration for the first time between the data from the two cameras.
+    </p>
+    <ol>
+        <li><b>Step 1:</b> Generate some sample recording using a high-contrast image, such as the one in the figure
+            below.
+            <p style="text-align: center;">
+                <img src="../assets/img/dual-cam-coregistration_tool_fig1.png" alt="dual-cam-coregistration_tool_fig1" width="660"><br>
+                    <em>Screenshow from LabeoTech's Imaging software showing the images from the two cameras</em>
+            </p>
+        </li>
+
+        <li><b>Step 2:</b> Import the Data
+            <ol type="a">
+                <li>Launch the DataViewer app</li>
+                <li>Go to <strong>File &rarr; Import Raw Data &rarr; From LabeoTech</strong></li>
+                <li>Select the folder containing the sample data</li>
+                <li>Apply the default parameters for the data import. Once the data is imported, the Dual-Camera
+                    coregistration tool will appear:
+                    <p style="text-align: center;">
+                        <img src="../assets/img/dual-cam-coregistration_tool_fig2.png" alt="dual-cam-coregistration_tool_fig2" width="660"><br>
+                        <em>Coregistration tool interface during first time execution of the coregistration</em>
+                    </p>
+                </li>
+            </ol>
+        </li>
+        <li><b>Step 3:</b> Execute the coregistration. Click on <strong>"Run Coregistration"</strong> to execute the
+            coregistration on the sample data. At the end of the coregistration, open one of the channels from the
+            camera #2 for validation</li>
+    </ol>
+    <h3 id="coregistration-validation">Coregistration validation</h3>
+    <hr>
+    <p>
+        In order to validate if the coregistration worked. Go to <b>Utilities &rarr; OiS Dual Cam Coregistration:</b>
+    </p>
+    <p style="text-align: center;">
+        <img src="../assets/img/dual-cam-coregistration_tool_fig3.png" alt="dual-cam-coregistration_tool_fig3" width="660"><br>
+        <em>Dual-Camera coregistration tool interface showing the result of the coregistration</em>
+    </p>
+    <p>
+        Use the <b>View mode</b> <i>FalseColor overlay</i> to facilitate the visualization of the registered images.
+    </p>
+    <p>
+        Here are some examples of a good and poor quality registration:
+    </p>
+    <p style="text-align: center;">
+        <img src="../assets/img/dual-cam-coregistration_tool_fig4.png" alt="dual-cam-coregistration_tool_fig1" width=" 660"><br>
+        <em>Examples of good and bad coregistrations in FalseColor view mode</em>
+    </p>
+    <h3 id="redo-coregistration">How to redo the coregistration</h3>
+    <hr>
+    <p>
+        If the first coregistration yielded an unsatisfactory result, one can redo it. To do so, delete the <i>Geometric
+            transformation file</i> by clicking on the <b>Discard</b> button. The Geometric transformation file will be
+        first copied to a backup file and will be deleted. Once the Geometric transformation file deleted, one can redo
+        the coregistration by following the steps 1-3 shown in the <a href="#initial-coregistration">Initial
+            coregistration</a> section.
+    </p>
+    <p>
+        To restore the backup file, click on <b> Recover from backup</b> button.
+    </p>
+    <div class="infonote">
+        <p><strong>Note</strong><br>
+            The <i>Geometric transformation file</i> is located at the LabeoTech default folder <span
+                class="code-inline">..\USER\Documents\LabeoTech\Config\umIT\tformFiles</span>.
+        </p>
+        <p>
+            To access the folder, click on <b>Show in folder</b> button.
+        </p>
+    </div>
+    <h3 id="automatic-coregistration">Automatic coregistration</h3>
+    <hr>
+    <p>
+        The Data import function <samp>run_ImagesClassification</samp> will look for the Geometric transformation file
+        inside the labeotech folder and will automatically apply the coregistration in all subsequent data import
+        processes as long as the file <span class="code-inline">coreg2cam_tform.mat</span> exists. At the end of the data import process, a copy of the Geometric transformation matrix will be stored in the Save directory along with the imported <samp>.dat</samp> files.
+    </p>
+    <hr>
+</body>
+</html>
