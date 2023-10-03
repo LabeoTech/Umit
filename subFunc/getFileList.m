@@ -28,9 +28,9 @@ end
 warning('on');
 
 fileList = {};
-if any(strcmpi(extension, {'.mat', '.dat'})) && ~any(validMatFiles)
-    return
-end
+% if any(strcmpi(extension, {'.mat', '.dat'})) && ~any(validMatFiles)
+%     return
+% end
 
 if ischar(extension)
     extension = {extension};
