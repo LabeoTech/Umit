@@ -1,26 +1,37 @@
-function fileList = getFileList(folder, extension)
+function out = getFileList(folder, extension)
 % GETFILELIST retrieves a list of relevant files in a folder based on extension.
+%
 % Inputs:
 %   folder (char): The path to the folder containing the files.
 %   extension (char): The desired file extension or 'all' to list all files.
+%
 % Output:
-%   fileList (cell): List of valid filenames with the specified extension.
+%   out (cell): List of valid filenames with the specified extension.
+%
+% Example usage:
+%   fileList = getFileList('/path/to/folder', '.mat');
+%
+% Note: This function does not change the algorithm for file retrieval.
+
+
 
 % Get a list of .mat files
 matFiles = dir(fullfile(folder, '*.mat'));
 
 % Check if "datSize" exists inside each .mat file
-warning('off'); % warning disabled to supress messages from .mat files that do not have "datSize" variable.
+warning('off'); % Disable warning to suppress messages from .mat files that do not have "datSize" variable.
 validMatFiles = false(size(matFiles));
 for ii = 1:length(matFiles)
     data = load(fullfile(folder, matFiles(ii).name), 'datSize');
     validMatFiles(ii) = ~isempty(fieldnames(data));
 end
 warning('on');
+
 fileList = {};
-if any(strcmpi(extension,{'.mat','.dat'})) && ~any(validMatFiles)
+if any(strcmpi(extension, {'.mat', '.dat'})) && ~any(validMatFiles)
     return
 end
+
 if ischar(extension)
     extension = {extension};
 end
@@ -48,6 +59,15 @@ for ii = 1:length(extension)
             fileList{ii} = {thisExt.name};
     end
 end
+
 % Unpack filelist:
-fileList = [fileList{:}];
+out = {};
+for ii = 1:length(fileList)
+    % Unpack list:
+    list = [fileList{ii}];
+    if size(list, 1) < size(list, 2)
+        list = list';
+    end
+    out = [out; list];
+end
 end

@@ -1,4 +1,4 @@
-function status = runScriptOnFolder(folder, scriptName,fileFlag)
+function status = runScriptOnFolder(folder, scriptName,fileFlag,varargin)
 % RUNSCRIPTONFOLDER - Execute a MATLAB script within a specified folder.
 %
 % This function executes a MATLAB script within a specified folder and tracks
@@ -11,6 +11,9 @@ function status = runScriptOnFolder(folder, scriptName,fileFlag)
 %     missing, it will be added automatically.
 %   - fileFlag (char| cell ): File type to list from folder (see "getFileList.m" for
 %     details). Character or cell array of characters.
+%   - extFlag (char): File extension of the script. If DataViewer is
+%       deployed as an executable, the script will be saved in plain text
+%       format (.txt). In this case, use ".txt" as value for this input.
 %
 % Returns:
 %   - status (logical): A boolean value indicating the execution status
@@ -30,12 +33,14 @@ p = inputParser;
 addRequired(p,'folder',@isfolder);
 addRequired(p,'scriptName',@(x) isfile(x) | isfile([x '.m']));
 addRequired(p,'fileFlag');
-parse(p,folder,scriptName,fileFlag);
+addOptional(p,'extFlag','.m',@(x) ismember(x, {'.m','.txt'}));
+parse(p,folder,scriptName,fileFlag,varargin{:});
+extFlag = p.Results.extFlag;
 clear p
 
 % Check if the scriptName has a .m extension and add it if missing.
-if ~endsWith(scriptName, '.m')
-    scriptName = [scriptName, '.m'];
+if ~endsWith(scriptName, extFlag)
+    scriptName = [scriptName, extFlag];
 end
 origFolder = pwd;
 % Add the script to the MATLAB path.
@@ -55,28 +60,38 @@ try
     execTimeStamp = now;
     errorReport = '';
     [~,name,~] = fileparts(scriptName);
-    localScriptName = fullfile(pwd,[name '.m']);
+    localScriptName = fullfile(pwd,[name extFlag]);
     
     % Remove original script from Matlab's cache:
     clear(scriptName);
-    
-    % Add local copy of the script and use it. This will ensure that Matlab
-    % will not change the current directory to the one from the script.
-    copyfile(scriptName,localScriptName);
-    
-    bAdd2Path = false;
-    if any(which(scriptName))
-        % Remove original script from path:
-        rmpath(fileparts(scriptName))
-        bAdd2Path = true;
-    end
-    % Execute local copy of script
-    run(localScriptName);
-    if bAdd2Path
-        % Put the original script back to Matlab's path:
-        addpath(fileparts(scriptName));
-    end
-    
+   
+    if strcmpi(extFlag, '.m')
+        % Execute matlab script in current folder:
+        
+        % Add local copy of the script and use it. This will ensure that Matlab
+        % will not change the current directory to the one from the script.
+        copyfile(scriptName,localScriptName);
+        
+        bAdd2Path = false;
+        if any(which(scriptName))
+            % Remove original script from path:
+            rmpath(fileparts(scriptName))
+            bAdd2Path = true;
+        end
+        % Execute local copy of script
+        run(localScriptName);
+        if bAdd2Path
+            % Put the original script back to Matlab's path:
+            addpath(fileparts(scriptName));
+        end
+        % Remove local copy of script:
+        delete(fullfile(pwd,[name extFlag]));
+    else
+        % In case where the script is saved in .txt format. This is a
+        % special case used only in DataViewer deployed as an executable.
+        txt = fileread(scriptName);
+        eval(txt);
+    end    
 catch ME
     status = false;
     % Create report from failed script execution in folder:
@@ -84,8 +99,6 @@ catch ME
     errorReport = getReport(ME, 'extended', 'hyperlinks', 'off'); % For testing
 end
 
-% Remove local copy of script:
-delete(fullfile(pwd,[name '.m']));
 % Get information about all files after script execution.
 fileInfo_postExec = cellfun(@(x) dir(fullfile(pwd, x)), getFileList(pwd, fileFlag));
 % Classify each file status after script execution.
