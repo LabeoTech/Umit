@@ -174,6 +174,18 @@ end
 %--------------------------------------------------------------------------
 function [x,y,c,g,dt] = validateVector(x,y,c,g,dt)
 % Check if all inputs have the same dimensions.
+% Flip all inputs:
+if size(x,1)<size(x,2)
+    x = x';
+end
+
+if size(y,1)<size(y,2)
+    y = y';
+end
+if size(g,1)<size(g,2)
+    g = g';
+end
+
 
 if isempty([dt{:}])
     dt = repmat({'null'}, size(x));
