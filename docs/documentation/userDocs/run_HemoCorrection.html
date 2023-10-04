@@ -42,7 +42,7 @@
     <h3 id="description">Description</h3>
     <hr>
     <p>
-      This function removes the hemodynamic fluctuations from a fluorescence signal using data acquired with the LabeoTech's optical imaging systems.The function uses multi-channel recordings to measure the light absorption of the hemoglobin in order to remove it from the fluorescence channel. The algorithm used in this function is described in <a href="#references">[1]</a>.
+      This function removes the hemodynamic fluctuations from a fluorescence signal using data acquired with the LabeoTech's optical imaging systems.The function uses multi-channel recordings to measure the light absorption of the hemoglobin in order to remove it from the fluorescence channel. In brief, this function applies a <b>pixelwise linear regression</b> of the fluorescence signal onto the reflectance signals. The algorithm is described in details by <a href="#references">[1]</a>.
     </p>
     <h3>Input</h3>
     <hr>
