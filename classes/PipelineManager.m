@@ -327,7 +327,7 @@ classdef PipelineManager < handle
             % For the first step of the pipeline avoid asking for an input
             % file:
             if obj.ProtocolObj.b_isDummy && obj.current_seq == 0 
-                if task.inputFrom ~= 0
+                if isempty(task.inputFrom) || task.inputFrom ~= 0
                     
                     task.inputFrom = -1;% Set inputFrom to "-1" the data from DataViewer.
                 else
