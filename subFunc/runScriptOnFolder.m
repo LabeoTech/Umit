@@ -71,22 +71,17 @@ try
         % Add local copy of the script and use it. This will ensure that Matlab
         % will not change the current directory to the one from the script.
         if ~strcmp(scriptName, localScriptName)
-            copyfile(scriptName,localScriptName);            
+            copyfile(scriptName,localScriptName);
+            % Remove original script from path:
             if any(which(scriptName))
-                % Remove original script from path:
                 rmpath(fileparts(scriptName))
-                bAdd2Path = true;
             end
+            bAdd2Path = true;
+        else
+            addpath(fileparts(scriptName));
         end
         % Execute local copy of script
-        run(localScriptName);
-        if bAdd2Path
-            % Put the original script back to Matlab's path:
-            addpath(fileparts(scriptName));
-            % Remove local copy of script:
-            delete(fullfile(pwd,[name extFlag]));
-        end
-        
+        run(localScriptName);    
     else
         % In case where the script is saved in .txt format. This is a
         % special case used only in DataViewer deployed as an executable.
@@ -98,8 +93,14 @@ catch ME
     % Create report from failed script execution in folder:
     %     errorReport = getReport(ME, 'basic', 'hyperlinks', 'off');
     errorReport = getReport(ME, 'extended', 'hyperlinks', 'off'); % For testing
+    disp(errorReport);
 end
-
+if bAdd2Path
+    % Put the original script back to Matlab's path:
+    addpath(fileparts(scriptName));
+    % Remove local copy of script:
+    delete(fullfile(pwd,[name extFlag]));
+end
 % Get information about all files after script execution.
 fileInfo_postExec = cellfun(@(x) dir(fullfile(pwd, x)), getFileList(pwd, fileFlag));
 % Classify each file status after script execution.

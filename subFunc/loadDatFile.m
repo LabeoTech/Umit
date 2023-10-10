@@ -47,9 +47,14 @@ function mustBeDatFile(datFileName)
 if ~endsWith(datFileName,'.dat')
     datFileName = [datFileName, '.dat'];
 end
+folder = fileparts(datFileName);
+if isempty(folder)
+    folder = pwd;
+end
+folder = strrep(folder,filesep,[filesep filesep]);
 if ~isfile(datFileName)
     errID = 'umIToolbox:loadDatFile:InvalidInput';
-    msg = [datFileName ' is not a .DAT file!'];
+    msg = [datFileName ' not found in "' folder '"'];
     throwAsCaller(MException(errID,msg))
 end
 end
