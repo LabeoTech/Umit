@@ -67,25 +67,26 @@ try
    
     if strcmpi(extFlag, '.m')
         % Execute matlab script in current folder:
-        
+        bAdd2Path = false;
         % Add local copy of the script and use it. This will ensure that Matlab
         % will not change the current directory to the one from the script.
-        copyfile(scriptName,localScriptName);
-        
-        bAdd2Path = false;
-        if any(which(scriptName))
-            % Remove original script from path:
-            rmpath(fileparts(scriptName))
-            bAdd2Path = true;
+        if ~strcmp(scriptName, localScriptName)
+            copyfile(scriptName,localScriptName);            
+            if any(which(scriptName))
+                % Remove original script from path:
+                rmpath(fileparts(scriptName))
+                bAdd2Path = true;
+            end
         end
         % Execute local copy of script
         run(localScriptName);
         if bAdd2Path
             % Put the original script back to Matlab's path:
             addpath(fileparts(scriptName));
+            % Remove local copy of script:
+            delete(fullfile(pwd,[name extFlag]));
         end
-        % Remove local copy of script:
-        delete(fullfile(pwd,[name extFlag]));
+        
     else
         % In case where the script is saved in .txt format. This is a
         % special case used only in DataViewer deployed as an executable.

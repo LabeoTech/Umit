@@ -326,8 +326,15 @@ classdef PipelineManager < handle
             %%% SPECIAL CASE - DataViewer
             % For the first step of the pipeline avoid asking for an input
             % file:
-            if obj.ProtocolObj.b_isDummy && obj.current_seq == 0
-                task.inputFrom = -1;% Set inputFrom to "-1" the data from DataViewer.
+            if obj.ProtocolObj.b_isDummy && obj.current_seq == 0 
+                if task.inputFrom ~= 0
+                    
+                    task.inputFrom = -1;% Set inputFrom to "-1" the data from DataViewer.
+                else
+                    % The task.inputFrom field will be zero when generating a script
+                    % from DataViewer GUI.
+                    task = obj.setInput(task);
+                end
                 if task.dependency
                     obj.current_seqIndx = 0;
                     task = obj.addDependency(task);
@@ -345,6 +352,7 @@ classdef PipelineManager < handle
                 end
                 % Remove dependency field from "task")
                 task = rmfield(task, 'dependency');
+                % 
                 % Add task to pipeline:
                 obj.pipe = [obj.pipe; task];
                 fprintf('Added "%s" to sequence #%d of the pipeline.\n',task.name, obj.current_seq)
