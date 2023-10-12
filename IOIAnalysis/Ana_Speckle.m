@@ -99,13 +99,13 @@ end
 % Create meta data structure:
 metaData = struct();
 metaData.datName = 'data';
-metaData.Stim = Iptr.Stim;
+% metaData.Stim = Iptr.Stim;
 % Copy Stim fields:
-fn = fieldnames(Iptr);
-fn = fn(startsWith(fn, 'stim_', 'IgnoreCase',true));
-for i = 1:length(fn)
-    metaData.(fn{i}) = Iptr.(fn{i});
-end
+% fn = fieldnames(Iptr);
+% fn = fn(startsWith(fn, 'stim_', 'IgnoreCase',true));
+% for i = 1:length(fn)
+%     metaData.(fn{i}) = Iptr.(fn{i});
+% end
 %
 metaData.datLength = Iptr.datLength-1;
 metaData.datSize = Iptr.datSize;
