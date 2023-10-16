@@ -1,0 +1,180 @@
+---
+permalink: /documentation/userDocs/fcns/getEvents.html
+layout: default
+title: getEvents
+parent: Data import & export
+grand_parent: Functions
+nav_order: 3
+---
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+      .mycollapsible {
+      background-color: #eeeeee;
+      color: black;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      margin-bottom: 10px;
+      }
+      .active, .mycollapsible:hover {
+      background-color: #888;
+      }
+      .content {
+      padding: 0 18px;
+      display: none;
+      overflow: hidden;
+      background-color: #fff;
+      border: 1px solid black;
+      margin-bottom: 10px;
+      }
+    </style>
+    <title>getEvents</title>
+  </head>
+  <body>
+    <h2>getEvents</h2>
+    <hr>
+    <p>
+       Events detection for LabeoTech imaging systems.
+    </p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+        This function detects events from LabeoTech Imaging system's analog channels (e.g., ai_0000x.bin) and saves the event information to <samp>events.mat</samp> file in the SaveFolder to be used by other <b><i>umIT</i></b> functions.
+    </p>
+    <h3>Input</h3>
+    <hr>
+    <p>
+      This function uses the raw analog channels from LabeoTech's imaging systems (i.e. <samp>ai_0000x.bin</samp> files) and, optionally, a <samp>.csv</samp> or <samp>.txt</samp> file containing the list of event names in chronological order located in the same folder.
+    </p>
+    <div class="infonote">
+        <p><strong>Note<br></strong>
+            This function uses the same ressources than the <a href="../tools/events-manager_tool.html">Events Manager tool</a> from the <b>DataViewer</b> app. The main difference here is that the tool allows the user to interactively set the events detection parameters. One can use the tool in a couple of recordings and apply the events detection parameters (see below) to automate the events detection in a pipeline using this function. 
+        </p>                
+    </div>
+    <br>
+    <div class="infonote">
+        <p><strong>Note on CSV files</strong><br>
+            For those using condition lists stored in <samp>.csv</samp> files, it is important to note that the events should be listed in chronological order row-wise. If the file contains headers, the header will be concatenated to the each event ID. <br>For multiple columns, each row will be concatenated resulting in a single unique event name (see examples on  <a href="../tools/events-manager_tool.html">Events Manager tool</a>'s documentation).
+        </p>
+    </div>
+    <h3>Output</h3>
+    <hr>
+    <p>
+       This function creates an <samp>events.mat</samp> file containing the events detected in the analog channels of LabeoTech imaging systems and saves it in the save folder alongside the <samp>.dat</samp> files. The <samp>events.mat</samp> file is used by other functions (e.g. <a href="./split_data_by_event.html">split_data_by_event</a>) to process event-triggered imaging datasets.
+    </p>
+    
+    <h3 id="parameters">Parameters</h3>
+    <hr>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>StimChannel</b></samp> - Analog channel containing the events<br>
+      <span class="title-desc"><i> 'Internal-main' (default) | other </i></span>
+    </button>
+    <div class="content">
+      <p>
+        Name of the analog input channel containing the events. The names can vary depending on the number of available channels on the LabeoTech imaging system. For more details, refer to the product user manual.
+      </p>
+    </div>
+
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>Threshold</b></samp> - Event detection threshold (V)<br>
+      <span class="title-desc"><i> 'auto' (default) | number </i></span>
+    </button>
+    <div class="content">
+      <p>
+        Threshold value for detection of events. If set to <b>auto</b>, the threshold will be set as 80% of the maximum signal amplitude. Otherwise, users can set to any numerical value (in volts). 
+      </p>
+    </div>
+    
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>TriggerType</b></samp> - Event pulse shape <br>
+      <span class="title-desc"><i> EdgeSet (default) | EdgeToggle </i></span>
+    </button>
+    <div class="content">
+      <p>
+        types of triggers marking the beginning and end of an event.
+        There are two types: <i><b>EdgeSet</b></i> (default) and <b><i>EdgeToggle</i></b>.
+        The
+        <i>EdgeSet</i> type consists of a rising and falling edges of a pulse marking the beginning and end
+        of an event while the <i>EdgeToggle</i> represents a pulse at the start and another pulse at the end
+        of the event (see illustration below).
+        <p style="text-align: center;">
+            <img src="../../assets/img/events-manager_tool_edgeType.png" alt="events-manager_tool_edgeType"
+                width="330">
+        </p>
+      </p>
+    </div>
+    
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>minInterStimTime</b></samp> - minimum time between events<br>
+      <span class="title-desc"><i> 2 (default) | positive number </i></span>
+    </button>
+    <div class="content">
+      <p>
+        Minimum inter-stimulation time period (in seconds). This parameter mainly is used to put together a block of signal bursts as a single event. Set this parameter to a value smaller than the time between the events and larger than the time between bursts.
+      </p>
+    </div>
+
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>ConditionFileType</b></samp> - condition file extension<br>
+      <span class="title-desc"><i> none (default) | CSV | VPIXX </i></span>
+    </button>
+    <div class="content">
+      <p>
+        type of file containing the list of conditions. Set to <b>none</b>, if no condition list is provided. Two types are available:
+        <ol>
+            <li><b>CSV</b>: this is the default file format. A <samp>.csv</samp> file should contain the
+                condition IDs/names listed in chronological order with each row representing an event.
+            </li>
+            <li><b>Vpixx</b>: file from Vpixx software (Vpixx Technologies) with extensions
+                <samp>.vpixx</samp>
+                or <samp>.txt.</samp>
+            </li>
+        </ol>
+      </p>
+    </div>
+
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>ConditionFileName</b></samp> - condition file name<br>
+      <span class="title-desc"><i> auto (default) | char </i></span>
+    </button>
+    <div class="content">
+      <p>
+        Name of the file containing the condition list. If set to <b>auto</b>, the function will try to parse all files with the extension set by the <b><i>ConditionFileType</i></b> parameter and return the first successful execution. Otherwise, type the name of the file to be parsed.
+      </p>
+    </div>
+    
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>CSVColNames</b></samp> - Names of colums from CSV file<br>
+      <span class="title-desc"><i> all (default) | char </i></span>
+    </button>
+    <div class="content">
+      <p>
+        Name of the column(s) in the .CSV file to generate the event name list. IF set to <b>all</b>, all columns will be used. This parameter is ignored for Vpixx files.        
+      </p>
+      <p>
+        For multiple columns, type the list of column names separated by a comma (<b>","</b>). <font color="red">CAUTION! Case sensitive!</font> 
+      </p>
+    </div>
+
+    <!-- JavaScript code to collapse sections -->
+    <script src="../../collapsible_behaviour.js"></script>
+    <hr>
+  </body>
+</html>

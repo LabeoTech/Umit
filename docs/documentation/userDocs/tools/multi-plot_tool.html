@@ -1,0 +1,67 @@
+---
+permalink: /documentation/userDocs/tools/multi-plot_tool.html
+layout: default
+title: Multi-plot tool
+parent: Tools
+grand_parent: Documentation
+nav_order: 3
+---
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+    </style>
+    <title>Multi-plot tool</title>
+  </head>
+  <body>
+    <h2>Multi-plot tool</h2>
+    <hr>
+    <p>
+      This tool is an <i>Add-on</i> of the <a href="../apps//DataViewer.html"><samp>DataViewer</samp></a> app. It allows the display of three extra recordings alongside the one currently displayed in <samp>DataViewer</samp>.
+    </p>
+    <h3 id="procedure">Procedure</h3>
+    <hr>
+    <p>
+      First of all, open an imaging recording in <samp>DataViewer</samp> app. Then, go to Add-ons &gt;&gt; <i>Multi-plots</i> to launch the app and follow the steps below:
+    </p>
+    <h4 id="1-select-data">1. Select files</h4>
+    <p>
+      Select up to three files to plot. To select a file, click on the folder icon and choose a <samp>.dat</samp> file containing the imaging data.
+    </p>
+    <p style="text-align: center;">
+      <img src="../../assets/img/multi-plot_tool_select_file.png" alt="multi-plot_tool_select_file"><br>
+      <i>File selection panel of the multi-plot tool.</i>
+    </p>
+    <p>
+      Once all files are selected, click on <i>Load</i>. Otherwise, click on <i>Reset</i> to start over.
+    </p>
+    <div class="warnnote">
+      <p><strong>Important</strong><br>
+        This tool accepts only files with the same dimensions of the one currently displayed in <samp>DataViewer</samp>!. If a file with different dimensions is loaded, an error message will appear. Click on the "error" icon <img src="../../assets/img/multi-plot_tool_select_file_error_icon.png" alt="multi-plot_tool_select_file_error_icon"> to load a different file.
+      </p>
+    </div>
+    <h4 id="2-visualize">2. Visualize</h4>
+    <p>
+      Here is  the tool interface once the data is loaded:
+    </p>
+    <p style="text-align: center;">
+      <img src="../../assets/img/multi-plot_interface.png" alt="multi-plot_interface" width="880"><br>
+      <i>Interface of multi-plot tool. (1) Display options panel: provides options to display one ROI at a time. (2) Main window: figure showing the current frames (top) and the temporal profiles (bottom) of the selected ROI for each loaded file.</i>
+    </p>
+    <p>
+      Here, one can visualize the current frame of all loaded files as well as the temporal profile of the selected ROI. Use the dropdown menu in the <i>Display options</i> window to load a different ROI. If no ROI exists, the pixel value of the crosshair from <samp>DataViewer</samp> is shown. Additionally, you can display the trace containing the sum of the data by checking the <i>Show sum of traces</i> box.
+    </p>
+    <p>
+      The images and plots are updated every time the current frame is changed or when you change the crosshair position in <samp>DataViewer</samp>:
+    </p>
+    <p style="text-align: center;">
+      <video src="../../assets/gifs/multi-plot_tool_interactions.ogg" alt="multi-plot_tool_interactions" width="880" controls></video><br>
+      <i>Basic data exploration using the multi-plot tool. Notice that the images and time plots are updated after changes in <samp>DataViewer</samp>.</i>
+    </p>
+
+  </body>
+</html>

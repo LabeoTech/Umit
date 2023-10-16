@@ -1,0 +1,235 @@
+---
+permalink: /documentation/userDocs/other/stats_explanation.html
+layout: default
+title: Statistical analysis
+parent: Advanced User Resources
+grand_parent: Documentation
+---
+<html lang="en">
+
+<head>    
+    <style media="screen">
+        ul {
+            line-height: 1.5;
+        }
+    </style>
+    <meta charset="utf-8">
+    <title>How umIT performs hypothesis tests</title>
+</head>
+
+<body>
+    <h2>How <b><i>umIT</i></b> performs hypothesis tests</h2>
+    <hr>
+    <h3>First, a word of CAUTION</h3>
+    <p>
+        The <b><i>umIToolbox</i></b> performs hypothesis testing for comparisons on two types of data: scalar (i.e.
+        single values) and correlation matrices. The idea behind the statistical testing is to assess differences
+        between experimental groups with an exploratory approach. This means that we have chosen tests, in particular
+        post hoc multiple comparisons, that are less strict when rejecting the null hypothesis. Thus, this approach has
+        the advantage of increasing the probability of detection of significant differences between experimental groups.
+        On the other hand, this may also increase the probability of false positives (i.e. type I error). Given that, if
+        your project has other needs in terms of statistical analysis, it is advisable to perform the necessary
+        statistical comparisons outside the toolbox.
+    </p>
+    <h3>Available tests</h3>
+    <hr>
+    <p>
+        Our toolbox performs statistical comparisons using the available functions with Matlab's <i>Statistics and Machine
+            Learning Toolbox</i>. The functions are listed in the table below(click on the respective link for details).
+    </p>
+    <div class="infonote">
+        <p><strong>How the tests are chosen</strong><br>
+            The toolbox chooses the statistical test depending on the data validation criteria (see next section) and on how the data is organized. For instance, if the data is organized as two experimental groups as a function of time (i.e. acquisitions), a Two-Way Repeated Measures ANOVA will be performed. In contrast, for data from a single experimental group separated into two acquisitions, a paired two-sampled test will be used.
+        </p>
+    </div>
+    <table style="table-layout: fixed;">
+        <tr>
+            <th style="width:230px" align="left">Function name</th>
+            <th align="left"> Usage</th>
+        </tr>
+        <tr>
+            <td class="add_font_monospace"><a href="https://www.mathworks.com/help/stats/ttest.html">ttest</a></td>
+            <td>Paired two-sampled T-test</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace"><a href="https://www.mathworks.com/help/stats/signrank.html">signrank</a>
+            </td>
+            <td>Non-parametric Wilcoxon signed rank test for paired two-sampled data</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace"><a href="https://www.mathworks.com/help/stats/ttest2.html">ttest2</a></td>
+            <td> T-test for independent two-sampled data</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace"><a href="https://www.mathworks.com/help/stats/ranksum.html">ranksum</a></td>
+            <td> Non-parametric Wilcoxon rank sum test for independent two-sampled data</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace"><a href="https://www.mathworks.com/help/stats/anova1.html">anova1</a></td>
+            <td>One-way analysis of variance</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace"><a
+                    href="https://www.mathworks.com/help/stats/kruskalwallis.html">kruskalwallis</a></td>
+            <td>Kruskal-Wallis Test. Non-parametric version of the classical One-way ANOVA</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace"><a href="https://www.mathworks.com/help/stats/anovan.html">anovan</a></td>
+            <td>N-way analysis of variance. Used to perform Two-Way ANOVA.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace"><a
+                    href="https://www.mathworks.com/help/stats/repeatedmeasuresmodel.ranova.html">ranova</a></td>
+            <td>Repeated measures (rm) analysis of variance. Used to analyse One and Two-way rmANOVA</td>
+        </tr>
+    </table>
+    <h4>ANOVA's post hoc tests</h4>
+    <div class="infonote">
+        <p><strong>Note</strong><br>
+            Multiple comparisons after ANOVA are performed using Matlab's <a
+                href="https://www.mathworks.com/help/stats/multcompare.html">multcompare</a> function. Different methods
+            are using depending on the data type. For <b>scalar</b> data, we use the <a
+                href="https://www.mathworks.com/help/stats/multiple-comparisons.html"><i>Dunn & Sidák</i></a>'s approach
+            while for <b>correlation matrices</b>, we use the <a
+                href="https://www.mathworks.com/help/stats/multiple-comparisons.html">Fisher's least significant
+                difference procedure</a>.
+        </p>
+    </div>
+    <h3>Validation of normality and homogeneity of variances</h3>
+    <hr>
+    <p>
+        Before the execution of statistical tests, we test if the data follows a normal distribution and, for Two-Way
+        ANOVA and Repeated Measures, we also check if the variances are roughly equal.
+    </p>
+    <h4>Normality check</h4>
+    <p>
+        For each group of data, the normality is tested using the Lilliefors test statistic (click <a
+            href="https://www.mathworks.com/help/stats/lillietest.html">here</a> for details). If <i>all</i>groups of
+        data are normally distributed, the algorithm will use the <b>parametric</b> tests. In contrast, if one or more
+        groups are not normally distributed, <b>non-parametric</b> versions will be used instead.
+    </p>
+    <div class="warnnote">
+        <p><strong>Important</strong><br>
+            Non-parametric versions of <b>Two-Way ANOVA</b> and <b>Repeated Measures ANOVA</b> tests are currently
+            unavailable. Therefore, if the data is not normally distributed, no statistical test will be performed.
+        </p>
+    </div>
+    <h4>Homogeneity check</h4>
+    <p>
+        This parameter applies to <b>ANOVA</b> only. Given that homoscedascity (i.e. homogeneity of variances) is one of
+        the assumptions considered for ANOVA tests, we test for this as well. However, in our case, we use a very
+        "loose" criterion where we consider <b> heterogeneous variances</b> only if the ratio of the largest to the
+        smallest variance exceeds <b>4:1</b> (from S. McKillup, 2011).
+    </p>
+    <div class="warnnote">
+        <p><strong>Important</strong><br>
+            Differently from the test for normal distribution, if the data fails the test for homogeneous variances, a
+            warning message will be issued and the <b>ANOVA</b> tests will be executed. Just, be mindful that if this
+            assumption was violated, caution must be taken when interpreting the results!
+        </p>
+    </div>
+    <h4>Homogeneity of variances in Repeated Measures ANOVA (sphericity)</h4>
+    <p>
+        Although <a href="https://en.wikipedia.org/wiki/Mauchly%27s_sphericity_test">sphericity</a> is an important assumption for rmANOVA, the toolbox does <b>not</b> use this criterion to decide wether or not to perform statistical comparisons. Instead, the sphericity is automatically tested during the analysis. If the criterion is violated, then a "corrected" <i>p</i> value is used.
+    </p>
+    <p>
+        The rmANOVA function <a href="https://www.mathworks.com/help/stats/repeatedmeasuresmodel.ranova.html"><samp>ranova</samp></a> provides the "uncorrected" <i>p</i> value as well as a set of <i>p</i> values corrected for sphericity violation. In our case, we use the <a href="https://en.wikipedia.org/wiki/Greenhouse%E2%80%93Geisser_correction">Greenhouse-Geisser</a> corrected <i>p</i> value (<i>pValueGG</i>) as a significance threshold for data that violate the sphericity assumption. Thus, during the calculations, our algorithm decides which p value to use as threshold to decide to perform post hoc tests. The chosen <i>p</i> value is displayed in the ANOVA table(s) in the stats report. 
+    </p>
+    <h3>The stats report</h3>
+    <hr>
+    <p>
+        The results of the statistical comparisons are summarized in text format. Here is an example:
+    </p>
+    <div class="black-box">
+        <pre style="white-space: pre;">
+-----------------------Statistical Hypothesis test report-----------------------
+Run date: 01-Feb-2023 12:29:03
+
+The data was grouped by 4 Acquisition(s) vs 1 Group(s) and split by a total of 6 ROI(s).
+
+The hypothesis test executed was "OneWayRepeatedMeasures"
+--------------------------------------------------------------------------------
+Subgroup name: A_R
+Comparison performed: "Group by Acquisition"
+Stats:
+                        | SumSq         | DF | MeanSq      | F       | pValueGG 
+-----------------------------------------------------------------------------------
+(Intercept):Acquisition | 19272503.2471 | 3  | 6424167.749 | 24.7977 | 0.1023
+Error(Acquisition)      | 2331566.1496  | 9  | 259062.9055 | 1       | 0.5      
+-----------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+Subgroup name: AL_R
+Comparison performed: "Group by Acquisition"
+Stats:
+                        | SumSq       | DF | MeanSq       | F       | pValueGG 
+----------------------------------------------------------------------------------
+(Intercept):Acquisition | 9457407.259 | 3  | 3152469.0863 | 31.7015 | 0.0025141
+Error(Acquisition)      | 894981.2687 | 9  | 99442.3632   | 1       | 0.5      
+----------------------------------------------------------------------------------
+Post hoc tests:
+Test name: "dunn-sidak"
+Group | Acquisition_1 | Acquisition_2 | Difference | StdErr   | pValue    | Lower      | Upper     
+------------------------------------------------------------------------------------------------------
+Test  | 1             | 2             | -822.7637  | 261.2608 | 0.27091   | -2438.6161 | 793.0887  
+Test  | 1             | 3             | -1652.4593 | 303.8789 | 0.071054  | -3531.8975 | 226.979   
+Test  | 1             | 4             | -1979.2164 | 155.2347 | 0.0062294 | -2939.3159 | -1019.1169
+Test  | 2             | 1             | 822.7637   | 261.2608 | 0.27091   | -793.0887  | 2438.6161 
+Test  | 2             | 3             | -829.6956  | 115.468  | 0.032866  | -1543.8449 | -115.5462 
+Test  | 2             | 4             | -1156.4527 | 198.7203 | 0.05911   | -2385.5035 | 72.5981   
+Test  | 3             | 1             | 1652.4593  | 303.8789 | 0.071054  | -226.979   | 3531.8975 
+Test  | 3             | 2             | 829.6956   | 115.468  | 0.032866  | 115.5462   | 1543.8449 
+Test  | 3             | 4             | -326.7571  | 246.5909 | 0.85719   | -1851.8788 | 1198.3646 
+Test  | 4             | 1             | 1979.2164  | 155.2347 | 0.0062294 | 1019.1169  | 2939.3159 
+Test  | 4             | 2             | 1156.4527  | 198.7203 | 0.05911   | -72.5981   | 2385.5035 
+Test  | 4             | 3             | 326.7571   | 246.5909 | 0.85719   | -1198.3646 | 1851.8788 
+------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------            
+    </pre>
+    </div>
+    <p>
+        The report consists of a first section containing basic information about the data and the type of statistical
+        comparison (e.g. <samp>OneWayRepeatedMeasures</samp>). The other sections are separated by <b>subgroups</b>. In
+        the example above, the data of each "ROI" was analysed separately. The content of each section varies depending
+        on the test applied. In the example above, the ANOVA table is shown under the "Stats:" section for the first
+        subgroup. As for the second one, the results of the post hoc test are shown given that "significant" differences
+        were detected in the ANOVA test.
+    </p>
+    <h3>Statistical comparisons of correlation matrices: a special case</h3>
+    <hr>
+    <p>
+        Hypothesis testing of correlation matrices are performed differently than the scalar data. In this case, each pair of ROIs is treated as an unique data. The data from each pair is then analysed as it were scalar using the statistical functions listed in the table above. The difference here is that we apply a <a href="https://en.wikipedia.org/wiki/False_discovery_rate"><b>False Discovery Rate</b></a> (FDR) correction to the <i>p</i> values obtained from the comparisons. The idea behind this is to exclude <i>false</i> positives (i.e. type I error) due to the multiplicity of pair-wise comparisons.         
+    </p>
+    <h4>The method</h4>
+    <p>
+        When available, all comparisons will use non-parametric tests regardless of the normality of the data. For two-sampled data (unpaired and paired), the <i>p</i> values of the hypothesis tests from all pairs of ROIs are FDR-corrected (also named as <i>q</i> values) and displayed as a matrix (see example below). The FDR algorithm used here is the one developed by Benjamini and Hochberg [2]).
+    </p>
+    <p style="text-align: center;"><img src="../../assets/img/stats_explanation_FDR_matrix_example.png" alt="stats_explanation_FDR_matrix_example" width="400"></p>
+    <p>
+        For ANOVA tests, the procedure is similar but with an extra step. First, the <i>p</i> values of the ANOVA tests are FDR-corrected. Then, <b>only</b> the pairs of ROIs with FDR-corrected values &le; 0.05 are considered for post hoc testing. 
+    </p>
+    <p>
+        The post hoc test method used for correlation matrix is the <b>Fisher's least significant difference ("lsd")</b> followed by the FDR-correction of the <i>p</i> values from the post hoc tests (procedure inspired by [3])
+    </p>
+    <div class="infonote">
+        <p><strong>Note</strong><br>
+            The statistical report is available only for ANOVA tests where post hoc tests were generated. If the data is two-sampled or no pairs of ROIs yielded FDR-corrected <i>p</i> values &le; 0.05, only the matrix (as the figure above) is available.
+        </p>
+    </div>
+    <h3>References</h3>
+    <hr>
+    <ol>
+        <li>
+            McKillup, Steve. “Statistics Explained: An Introductory Guide for Life Scientists.” Higher Education from
+            Cambridge University Press. Cambridge University Press, November 2, 2011. <a
+                href="https://doi.org/10.1017/CBO9781139047500">https://doi.org/10.1017/CBO9781139047500</a>.
+        </li>
+        <li>
+            Benjamini, Y., and Y. Hochberg. “Controlling the False Discovery Rate: A Practical and Powerful Approach to Multiple Testing,” 1995. <a href="https://doi.org/10.1111/J.2517-6161.1995.TB02031.X">https://doi.org/10.1111/J.2517-6161.1995.TB02031.X</a>.
+        </li>
+        <li>
+            “GraphPad Prism 9 Statistics Guide - False Discovery Rate Approach to Multiple Comparisons.” <a href="https://www.graphpad.com/guides/prism/latest/statistics/stat_false_discovery_rate_from_mult.htm">https://www.graphpad.com/guides/prism/latest/statistics/stat_false_discovery_rate_from_mult.htm</a>.
+
+        </li>
+    </ol>
+</body>
+</html>

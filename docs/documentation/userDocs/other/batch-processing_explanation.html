@@ -1,0 +1,213 @@
+---
+permalink: /documentation/userDocs/other/batch-processing_explanation.html
+layout: default
+title: Batch processing
+parent: Advanced User Resources
+grand_parent: Documentation
+---
+<html lang="en">
+
+<head>    
+    <style media="screen">
+        ul,
+        ol {
+            line-height: 1.5;
+        }
+    </style>
+    <meta charset="utf-8">
+    <title>Batch processing</title>
+</head>
+
+<body>
+    <h2>Batch processing in DataViewer</h2>
+
+    <h3>How it works</h3>
+    <hr>
+    <p>
+        The batch processing options are available in the <samp>DataViewer</samp> app in <b>File &rarr; Batch
+            processing</b>. This feature expands on the <b>Data Processing</b> option from the <b>Utilities</b> tab
+        allowing one to execute a Matlab script across a list of folders.
+    </p>
+    <p>
+        In the batch mode, a Matlab script is executed sequentially across a specified list of folders. The purpose of
+        this operation is to process data within each of these folders systematically. At the conclusion of the
+        execution in each folder, a log file is generated containing a summary of the execution. This log includes
+        information regarding the changes in the relevant files inside each folder as well as the statement of success
+        or failure of each folder's processing with a copy of the script executed.
+    </p>
+    <h4>Features and limitations</h4>
+    <p>
+        There are some pros and cons of using the batch process module in comparison with the <b>Data Processing</b>
+        utility. Here are some to take into account:
+    </p>
+    <h5>Features:</h5>
+    <ol>
+        <li><strong>Enhanced Data Processing Efficiency:</strong> Our batch mode significantly accelerates data
+            processing by automating operations across a predefined list of folders. Users no longer need to manually
+            open and apply data processing to individual files, saving time and effort.</li>
+        <li><strong>Unparalleled Flexibility:</strong> Users have the freedom to modify or create their own Matlab
+            scripts and apply them to the list of folders. This feature extends the functionality of DataViewer beyond
+            its available suite of functions.</li>
+    </ol>
+
+    <h5>Limitations:</h5>
+    <ol>
+        <li><strong>Lack of Processing Step Control:</strong> One limitation of our batch mode is the absence of control
+            over previously executed processing steps. If a script is inadvertently run twice on the same data,
+            DataViewer will not detect that the data has already been processed, potentially leading to unintended
+            outcomes.</li>
+        <li><strong>File Name Overwriting:</strong> Another limitation is that our application lacks file name control.
+            When processing files a second time, DataViewer will overwrite existing files without warning. Users should
+            exercise caution to prevent unintentional data loss.</li>
+        <li><strong>Restricted Functionality in Executable Mode:</strong> In cases where DataViewer is deployed as an
+            executable, there is a constraint on functionality. Only basic Matlab functions and those provided by our
+            software can be utilized. This limitation arises because the executable version cannot read <samp>.m</samp>
+            files, which may limit the full range of Matlab capabilities.</li>
+    </ol>
+
+    <h3>Generating scripts</h3>
+    <hr>
+    <p>
+        Users have the capability to export any data processing pipeline to a <samp>.m</samp> script and execute it in
+        batch mode. To accomplish this, access the menu option <b>File &rarr; Batch processing &rarr; Gen. script</b>.
+        This action will prompt users to utilize the <a href="../tools/pipeline_configuration_tool.html">Pipeline Configuration
+            tool</a>, where they can create a new pipeline or load an existing one. The pipeline can then be saved to a
+        <samp>.m</samp> file by clicking on the <b>Gen. script</b> button.
+    </p>
+
+    <p style="text-align: center;">
+        <img src="../../assets/img/batch-processing_explanation_fig1.png" alt="batch-processing_explanation_fig1"
+            width="660"><br>
+        <em>Pipeline configuration tool in Gen. script mode</em>
+    </p>
+    <div class="infonote">
+        <p><strong>Note</strong><br>
+            Note that, when in Gen. script mode, the Pipeline configuration tool includes the available <b>Data
+                Import</b> functions (e.g., run_ImagesClassification, importFromTif) so the data can be imported in
+            batch mode. These functions are hidden when using the <b>Data processing</b> utility and are called directly
+            from the <b>File &rarr; Import Raw data</b> menu.
+        </p>
+    </div>
+    <br>
+    <div class="warnnote">
+        <p><strong>Important</strong><br>
+            For DataViewer deployed as an executable, it's important to note that the script will be saved with a
+            <samp>.txt</samp> file extension. This file can be executed using Matlab's <b>eval</b> function. While it is
+            possible to edit the file using a standard text editor like NotePad, users should exercise caution. <br>
+            The available functionality within this executable environment is limited to basic Matlab functions and
+            those provided by the app, as outlined in the limitations section above. Therefore, any modifications made
+            to the script should align with these constraints to ensure proper execution.
+        </p>
+    </div>
+
+    <h3>Execution and logs</h3>
+    <h4>Execution</h4>
+    <ol>
+        <li>To execute a script in batch mode, access the menu option <b>File &rarr; Batch processing &rarr; Run
+                script</b>.
+            <ul>
+                <li>In the first dialog box, the user is prompted to specify the <samp>.m</samp> Matlab script to be
+                    executed. For the executable version of DataViewer, the script will be saved as a <samp>.txt</samp>
+                    file.</li>
+                <li>A second dialog box will appear, where the user is required to select the parent folder containing
+                    the subfolders with the data to be processed. It is crucial not to select the folder containing the
+                    data itself.</li>
+            </ul>
+        </li>
+
+        <li>Upon selecting the parent folder, a list of folders to be processed will be displayed. Here, the user can
+            choose the specific folders in which the script should execute.
+            <p style="text-align: center;">
+                <img src="../../assets/img/batch-processing_explanation_fig2.png" alt="batch-processing_explanation_fig2"
+                    width="300"><br>
+                <em>List of folders to execute the script</em>
+            </p>
+        </li>
+        <li>During the execution, a status window will provide real-time updates on the script's progress across the
+            selected folders (figure below). If necessary, the user can abort the execution by clicking the "Abort"
+            button. It's
+            important to note that for lengthy executions, the button may appear unresponsive. However, once the current
+            operation is completed, batch processing will pause, and the user will be prompted to confirm the
+            cancellation.</li>
+        <p style="text-align: center;">
+            <img src="../../assets/img/batch-processing_explanation_fig3.png" alt="batch-processing_explanation_fig3"
+                width="300"><br>
+            <em>Batch processing status window</em>
+
+        </p>
+        <li>Upon the completion of the execution, the user should review the status for each folder to ensure the
+            desired processing has occurred successfully.</li>
+
+        <li>A log file named <span class="code-inline">log_batch_process.txt</span> is automatically generated within
+            each folder. To review the
+            summary of the execution for each folder, the respective log files should be opened.</li>
+    </ol>
+    <h4>Log file</h4>
+    <p>
+        Here is an example of the log file <span class="code-inline">log_batch_process.txt</span> :
+    </p>
+    <div class="warnnote">
+        <p><strong>Important</strong><br>
+            It is assumed that the script is executed in Matlab's current folder. Therefore, DataViewer will automatically change the current directory to each folder during the execution. At the end, the original current directory is restore. Please, take this into account when creating/running your own script.        
+        </p>
+    </div>
+    <br>
+    <div class="black-box">
+        <pre style="white-space: pre;">
++----- Batch Processing Log -----------------------------------+
+Script name: "myTestingScript"
+Folder name: "F:\umIT-test-Data\EventsTesting\burstRepNTrial"
+Execution date time: "15:54:09 04/10/2023"
+Execution status: "Successful"
++----- File status after script execution ---------------------+
++-------------+------------+
+|    File     |   Status   |
++-------------+------------+
+| AA.dat      | Unmodified |
+| green.dat   | Unmodified |
+| normZ.dat   | Unmodified |
+| testOut.dat | Unmodified |
++-------------+------------+
++----- Error Messages------------------------------------------+
+Error using Testing script (line 17)
+This is a test error message!
+
++----- Copy of the script executed ----------------------------+
+% Testing script:
+
+% % Modify file 
+% [dat,md] = loadDatFile('green.dat');
+% save2Dat('green.dat',dat,md);
+% 
+% % Create new File
+% [dat,md] = loadDatFile('green.dat');
+% save2Dat('newfile.dat',dat,md);
+% clear dat md
+% % 
+disp('Testing!')
+a = 10;
+b = 20;
+c = a+b;
+if ~isfile('green.dat')
+    error('This is a test error message!')
+end
++--------------------------------------------------------------+        
+        </pre>
+    </div>
+    <p>
+        The first section of the log displays basic information about the execution, followed by a file status table.
+        The file status table shows which files were modified, deleted or added during the script execution. Only files
+        with extension <samp>.dat</samp> and <samp>.mat</samp> appear in this list.
+    </p>
+    <p>
+        If the execution failed, the <b>Error Messages</b> section will contain the error messages raised during the
+        script execution. Finally, a text copy of the script is stored in the log.
+    </p>
+    <p>
+        The log file will be appended contiuosly when multiple script executions are performed. The most recent
+        execution is displayed on the top of the file. If the file reaches 1MB of size, the user will be given the
+        option to overwrite the file, keep a backup file or keep using the large file.
+    </p>
+    <hr>
+</body>
+</html>

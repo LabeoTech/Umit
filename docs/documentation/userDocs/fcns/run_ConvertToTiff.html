@@ -1,0 +1,79 @@
+---
+permalink: /documentation/userDocs/fcns/run_ConvertToTiff.html
+layout: default
+title: run_ConvertToTiff
+parent: Data import & export
+grand_parent: Functions
+nav_order: 4
+---
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">    
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+      .mycollapsible {
+      background-color: #eeeeee;
+      color: black;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      margin-bottom: 10px;
+      }
+      .active, .mycollapsible:hover {
+      background-color: #888;
+      }
+      .content {
+      padding: 0 18px;
+      display: none;
+      overflow: hidden;
+      background-color: #fff;
+      border: 1px solid black;
+      margin-bottom: 10px;
+      }
+    </style>
+    <title>run_ConvertToTiff</title>
+  </head>
+  <body>
+    <h2>run_ConvertToTiff</h2>
+    <hr>
+    <p>
+      Exports imaging data to .TIF files.
+    </p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+      This function exports imaging data created in <b><i>umIT</i></b> to a  multi-frame .TIF file. For 3D datasets, the function will create a single .TIF file containing the image series. For image time series split by trials (4D arrays with dimensions E,Y,X,T), a .TIF file will be created for each trial. This function does not have optional parameters.
+    </p>
+    <h3>Output</h3>
+    <hr>
+    <p> For 3D data:<br>
+      A  multi-frame .TIF file will be created in the SaveFolder with the name of the <samp>.dat</samp> file prepended with the string <span class="stringformat">'img_'</span>. For instance, the .TIF file from the file <samp>fluo.dat</samp> will be named <samp>img_fluo.tif</samp>.
+    </p>
+    <p>For 4D data:<br>
+      One multi-frame .TIF file will be created in the SaveFolder for each trial. the filename will be appended with the condition (C) and repetition(R) indices as so: <span class="stringformat">'img_&lt;FILENAME&gt;_C&lt;index&gt;_R&lt;index&gt;.tif'</span>. For example, for a recording with name <samp>DF_F.dat</samp> with one condition and 10 repetitions the TIF files will be created as so: img_DF_F_C1_R1.tif, img_DF_F_C1_R2.tif, ..., img_DF_F_C1_R10.tif.
+    </p>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <b>More details</b>
+    </button>
+    <div class="content">
+      <h4>Default output file name</h4>
+      <p>
+        The output file name of this function is extracted from the variable <samp>datFile</samp> stored in the <samp>.mat</samp> meta data file associated with the <samp>.dat</samp> file. In the eventuality that this variable is empty, a default filename <span class="stringformat">'img_out.tif'</span> will be used.
+      </p>
+      <h4>The algorithm</h4>
+      <p>
+        This function uses the code from <a href="https://github.com/rharkes/Fast_Tiff_Write">this Git repo</a> to write to TIF files. As stated in their documentation: the algorithm writes <i>"the image data first, and end the file with IFD's"</i>. The accepted data formats are: <b>uint8</b>, <b>uint16</b> and <b>single</b> precision. No compression is applied.
+      </p>
+    </div>
+    <!-- JavaScript code to collapse sections -->
+    <script src="../../collapsible_behaviour.js"></script>
+  </body>
+</html>

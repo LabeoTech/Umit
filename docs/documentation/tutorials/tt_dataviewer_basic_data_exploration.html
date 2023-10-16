@@ -1,0 +1,76 @@
+---
+layout: default
+title: Basic data exploration
+parent: DataViewer app
+grand_parent: Getting started
+nav_order: 3
+---
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Basic data exploration</title>
+</head>
+
+<body>
+    <h2>Basic data exploration</h2>
+    <hr>
+    <p>
+        In this tutorial, we will explore an intermediate step from the preproceesing of a resting state experiment. The
+        data consists of the fluorescence signal that was corrected for
+        the hemodynamic artifacts, followed by the removal of the global signal variance and temporally filtered and
+        normalized.
+    </p>
+    <p>
+        Below is a screenshot of the app with the data loaded. It consists of three windows: the main window (1), where
+        all the options and controls are located, the image window (2) where the current frame of the data is shown, and
+        the temporal signal window (3) where the temporal profile of the selected pixel is displayed.
+    </p>
+    <img src="../assets/img/tt_dataviewer_app_overview.png" alt="tt_dataviewer_app_overview" width="880">
+    <p>
+        Click on a pixel to get it's temporal profile:
+    </p>
+    <video src="../assets/gifs/tt_dataviewer_select_px.ogg" alt="tt_dataviewer_select_px" width="880" controls></video>
+    <p>
+        To change frames, either <b>move the slider</b> in the main window or <b>double-click</b> on the plot from the
+        temporal signal window:
+    </p>
+    <video src="../assets/gifs/tt_dataviewer_select_frame.ogg" alt="tt_dataviewer_select_frame" width="880"
+        controls></video>
+    <p>
+        Also, use the figure's <i>datatip</i> tool <img src="../assets/img/tt_dataviewer_datatip_icon.png"
+            alt="tt_dataviewer_datatip_icon"> to add fixed data tips over the image or the temporal profile to show the
+        pixel values as so:
+    </p>
+    <img src="../assets/img/tt_dataviewer_datatips_example.png" alt="tt_dataviewer_datatips_example" width="880">
+    <div class="warnnote">
+        <p><strong>Important</strong><br>
+            Don't forget to <b>deactivate</b> the datatip button before interacting with the figure. Some of the
+            figure's interactions are suspended when the datatip mode is active.
+        </p>
+    </div>
+    <p>
+        Now, let's adjust the color scale limits to better visualize the fluctuations of the fluorescence signal across
+        the mouse cortex. To do so you can simply use the vertical zoom option on the temporal signal window as so:
+    </p>
+    <video src="../assets/gifs/tt_dataviewer_set_clims_by_zoom.ogg" alt="tt_dataviewer_set_clims_by_zoom" width="880"
+        controls></video>
+    <p>
+        If you want to give a precise number, go to <i>Settings &gt;&gt; Image Options</i> and change the values of
+        <b>min</b> and <b>max</b>. In addition, we can also change the default colormap through the <i>Image
+            Options</i>:
+    </p>
+    <video src="../assets/gifs/tt_dataviewer_set_clims_and_colormap_in_imagOpts.ogg"
+        alt="tt_dataviewer_set_clims_and_colormap_in_imagOpts" width="880" controls></video>
+    <p>
+        Finally, we can use the playback button to display the "movie" of the fluorescence signal. This recording was
+        obtained with a frame rate of 5Hz (default playback speed). We can change the playback speed in <i>Settings
+            &gt;&gt; Playback speed</i>. Below, we can observe the fluctuations of the fluorescence signal across the
+        mouse cortical areas (playback speed at 3 times the real frame rate):
+    </p>
+    <video src="../assets/gifs/tt_dataviewer_playback.ogg" alt="tt_dataviewer_playback" width="880" controls></video><br><em>Note that for the video above, we also changed the colormap in "Settings &rarr; Image options"</em>
+</body>
+
+</html>

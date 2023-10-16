@@ -1,0 +1,95 @@
+---
+permalink: /documentation/userDocs/fcns/SPCM.html
+layout: default
+title: SPCM
+parent: Imaging
+grand_parent: Functions
+---
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">    
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+      .mycollapsible {
+      background-color: #eeeeee;
+      color: black;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      margin-bottom: 10px;
+      }
+      .active, .mycollapsible:hover {
+      background-color: #888;
+      }
+      .content {
+      padding: 0 18px;
+      display: none;
+      overflow: hidden;
+      background-color: #fff;
+      border: 1px solid black;
+      margin-bottom: 10px;
+      }
+    </style>
+    <title>SPCM</title>
+  </head>
+  <body>
+    <h2>SPCM - Seed-pixel correlation map</h2>
+    <hr>
+    <p>
+      Generates correlation maps from image time series.
+    </p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+      This function performs a Pearson's correlation coefficient between the time domain of all pixels from an image time series data with dimensions Y,X,T creating an array of seed-pixel correlation maps (SPCM). Optionally, the correlation values can be <a href="https://en.wikipedia.org/wiki/Fisher_transformation">Fisher Z-transformed</a>.
+    </p>
+    <p>
+      Here, a <i>seed</i> pixel correlation map is defined as the 2D matrix of correlation of all pixels from the image with a particular pixel (the <i>seed</i>).
+    </p>
+    <h3>Input</h3>
+    <hr>
+    <p>
+      This function accepts only image time series (with dimensions Y,X,T) as input.
+    </p>
+    <h3>Output</h3>
+    <hr>
+    <p>
+      The output of this function is a 3D array with dimensions Y,X,S that characterizes a <b>Correlation Map</b> data type. Here, the S dimension contains the correlation maps of all pixels as seed.
+    </p>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <b>More details</b>
+    </button>
+    <div class="content">
+      <p>
+        The output data is organized so a frame <i>f</i> in the dimension <i>S</i> corresponds to a correlation map of a given pixel with spatial coordinates <i>i,j</i> where the given pixel is the "seed":
+      </p>
+      <p style="text-align: center;">
+        <img src="../../assets/img/SPCM_fig1.png" alt="SPCM_fig1" width="350">
+
+      </p>
+    </div>
+
+    <h3 id="parameters">Parameters</h3>
+    <hr>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>b_FisherZ_transform</b></samp> - Z-Fisher transform<br>
+      <span class="title-desc"><i> true | false (default)</i></span>
+    </button>
+    <div class="content">
+      <p>
+        If <b>True</b>, a Fisher z-transformation is applied to the Pearson's correlation values. This transformation is frequently used as a processing step to approximate the data to a normal distribution before statistical analysis. If <b>False</b>, the output data is expressed as Pearson's correlation coefficients.
+      </p>
+    </div>
+    <!-- JavaScript code to collapse sections -->
+    <script src="../../collapsible_behaviour.js"></script>
+  </body>
+</html>

@@ -1,8 +1,14 @@
+---
+layout: default
+title: ROI data extraction
+parent: Group data and visualize
+grand_parent: umIToolbox app
+permalink: /documentation/tutorials/tt_extracting_data_from_rois.html
+---
 <!DOCTYPE html>
 <html lang="en" dir="ltr">
   <head>
     <meta charset="utf-8">
-    <link rel="stylesheet" href="../../css/master.css">
     <title>ROI data extraction</title>
   </head>
   <body>
@@ -119,7 +125,7 @@
     </p>
     <img src="../assets/img/tt_extracting_data_from_rois_dataviewer_choose_aggFcn.png" alt="tt_extracting_data_from_rois_dataviewer_choose_aggFcn" width="220">
     <p>
-      Now, the average response amplitude values of all ROIs will be displayed as a function of events in the <a href="../userDocs/lineBox-plot_tool.html"> Line/Box plot tool</a>:
+      Now, the average response amplitude values of all ROIs will be displayed as a function of events in the <a href="../userDocs/tools/lineBox-plot_tool.html"> Line/Box plot tool</a>:
     </p>
     <img src="../assets/img/tt_extracting_data_from_rois_line-box_plotterExample.png" alt="tt_extracting_data_from_rois_line-box_plotterExample" width="440">
     
@@ -130,7 +136,7 @@
     </p>
     <img src="../assets/img/tt_extracting_data_from_rois_RS_preprocess_workflow.png" alt="tt_extracting_data_from_rois_RS_preprocess_workflow" width="660">
     <p>
-      Here, the normalized image time series will be used to extract and aggregate the ROI data as a correlation matrix. The function used to generate the matrices is named <i>genCorrelationMatrix</i>. It will extract and aggregate the ROI pixel values and calculate the Pearson's correlation between the ROIs creating a N x N matrix from the N ROIs. For more details on the function, please read its <a href="../userDocs/genCorrelationMatrix.html">documentation</a>.
+      Here, the normalized image time series will be used to extract and aggregate the ROI data as a correlation matrix. The function used to generate the matrices is named <i>genCorrelationMatrix</i>. It will extract and aggregate the ROI pixel values and calculate the Pearson's correlation between the ROIs creating a N x N matrix from the N ROIs. For more details on the function, please read its <a href="../userDocs/fcns/genCorrelationMatrix.html">documentation</a>.
     </p>
     <h4 id="corr-mat-main-gui">Create correlation matrix from the main GUI</h4>
     <p>
@@ -141,7 +147,7 @@
     </p>
     <img src="../assets/img/tt_extracting_data_from_rois_genCorrMat_opts_params.png" alt="tt_extracting_data_from_rois_genCorrMat_opts_params" width="330">
     <p>
-      Here, we will use the default parameters. This setting will create a matrix based on the correlation between the ROIs' centroids. For more info on the different settings for this function, please read its <a href="../userDocs/genCorrelationMatrix.html">documentation</a>.
+      Here, we will use the default parameters. This setting will create a matrix based on the correlation between the ROIs' centroids. For more info on the different settings for this function, please read its <a href="../userDocs/fcns/genCorrelationMatrix.html">documentation</a>.
     </p>
     <p>
       3. Finally, click on <i>Run!</i>. button to execute the pipeline.
@@ -163,11 +169,11 @@
       3. In <i>DataViewer</i>'s main window, go to <i>Utilities &gt;&gt; View ROI data &gt;&gt; Correlation Matrix</i>
     </p>    
     <p>
-      4. Finally, set the parameters for the <i>genCorrelationMatrix</i> function (see full documentation <a href="../userDocs/genCorrelationMatrix.html">here</a>) and click <i>Save</i>. Here, we chose the centroid vs centroid algorithm to generate the correlation matrix:
+      4. Finally, set the parameters for the <i>genCorrelationMatrix</i> function (see full documentation <a href="../userDocs/fcns/genCorrelationMatrix.html">here</a>) and click <i>Save</i>. Here, we chose the centroid vs centroid algorithm to generate the correlation matrix:
     </p>
     <img src="..\assets\img\tt_extracting_data_from_rois_dataviewer_genCorrMat_opts_gui.png" alt="tt_extracting_data_from_rois_dataviewer_genCorrMat_opts_gui" width="330">
     <p>
-      Now, the data can be viewed in the <a href="../userDocs/correlation_matrix_plot_tool.html"> Correlation Matrix plotting tool</a>:
+      Now, the data can be viewed in the <a href="../userDocs/tools/correlation_matrix_plot_tool.html"> Correlation Matrix plotting tool</a>:
     </p>
     <img src="../assets/img/tt_extracting_data_from_rois_corr-mat_plotExample.png" alt="tt_extracting_data_from_rois_corr-mat_plotExample" width="550">
     <br>

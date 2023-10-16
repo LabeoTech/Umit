@@ -1,8 +1,14 @@
+---
+layout: default
+title: Visualize grouped data
+parent: Group data and visualize
+grand_parent: umIToolbox app
+permalink: /documentation/tutorials/tt_viz_group_data.html
+---
 <!DOCTYPE html>
 <html lang="en" dir="ltr">
   <head>
     <meta charset="utf-8">
-    <link rel="stylesheet" href="../../css/master.css">
     <title>Visualize grouped data</title>
   </head>
   <body>
@@ -12,7 +18,7 @@
       Up to this point, you learned how to import, preprocess, extract and aggregate data from imaging datasets separated by experimental groups. In this tutorial, we show how to visualize this data. The visualization of grouped data allows one to perform the exploratory data analysis of a given project.
     </p>
     <p>
-      In this tutorial, we will visualize the data used in the previous section about <a href="./tutorials/tt_extracting_data_from_rois.html">ROI data extraction and aggregation</a>. In brief, it consists of four resting state and four visual stimulation experiments performed in four mice divided into two experimental groups.
+      In this tutorial, we will visualize the data used in the previous section about <a href="tt_extracting_data_from_rois.html">ROI data extraction and aggregation</a>. In brief, it consists of four resting state and four visual stimulation experiments performed in four mice divided into two experimental groups.
     </p>
     <h3>Sections</h3>
     <hr>
@@ -37,7 +43,7 @@
       </pre>
     </div>
     <p>
-      2. In the <i>Analysis</i> tab, use the <i>Grouping tool</i> option to create or load the grouped data (for more information, revisit our tutorial on <a href="./tutorials/tt_creating_groups.html">how to create groups</a>). Here, we will group all drifting grating recordings into two groups: <b>M4s</b> and <b>M5s</b>:
+      2. In the <i>Analysis</i> tab, use the <i>Grouping tool</i> option to create or load the grouped data (for more information, revisit our tutorial on <a href="tt_creating_groups.html">how to create groups</a>). Here, we will group all drifting grating recordings into two groups: <b>M4s</b> and <b>M5s</b>:
     </p>
     <img src="../assets/img/tt_viz_data_grouped_data_in_main_gui.png" alt="tt_viz_data_grouped_data_in_main_gui" width="660">
     <p>
@@ -49,7 +55,7 @@
     </p>
     <img src="../assets/img/tt_viz_data_obs_selection_btn_pressed.png" alt="tt_viz_data_obs_selection_btn_pressed" width="660" >
     <p>
-      5. Now the <b>Apps & tools</b> panel is visible. Here, you can use the different tools in the <b>Utilities</b> panel to save, export or edit the loaded data. For more information on each tool, please refer to the <a href="../userDocs/umIToolbox-Analysis.html">Analysis tab</a> documentation.
+      5. Now the <b>Apps & tools</b> panel is visible. Here, you can use the different tools in the <b>Utilities</b> panel to save, export or edit the loaded data. For more information on each tool, please refer to the <a href="../userDocs/apps/umIToolbox-Analysis.html">Analysis tab</a> documentation.
     </p>
     <p>
       6. In this example, we will visualize  the visual response amplitudes of each observation (i.e. ROIs) by clicking on the <b>Line/Box plots</b> button. This app is dedicated to the visualization of scalar (i.e. single value) or time-series (1 x N frames) datasets. Here is a snapshot of the app:
@@ -60,7 +66,7 @@
     </p>
     <img src="../assets/img/tt_viz_data_line_box_plot_interface.png" alt="tt_viz_data_line_box_plot_interface" width="900">
     <p>
-      The image above shows the interface of the plotting tool. It consists of a main window (left) containing options to set several axis parameters, a main plot window (center) showing the selected ROI and one or more summary figures (right) containing the plots of all ROIs. Click <a href="../userDocs/lineBox-plot_tool.html">here</a> to learn more about the <b>Line/Box plot</b> app.
+      The image above shows the interface of the plotting tool. It consists of a main window (left) containing options to set several axis parameters, a main plot window (center) showing the selected ROI and one or more summary figures (right) containing the plots of all ROIs. Click <a href="../userDocs/tools/lineBox-plot_tool.html">here</a> to learn more about the <b>Line/Box plot</b> app.
     </p>
     <h3 id="plot-corr-mat">Plot correlation matrices</h3>
     <hr>
@@ -85,7 +91,7 @@
     </p>
     <img src="../assets/img/plotCorrMatrix_interface.png" alt="plotCorrMatrix_interface" width="900">
     <p>
-      You can click on any region of a correlation matrix (top) to show the temporal profile (bottom) of the correlation between pairs of ROIs. Click <a href="../userDocs/correlation_matrix_plot_tool.html"">here</a> to learn more about the <b>Plot Correlation Matrix</b> app.
+      You can click on any region of a correlation matrix (top) to show the temporal profile (bottom) of the correlation between pairs of ROIs. Click <a href="../userDocs/tools/correlation_matrix_plot_tool.html">here</a> to learn more about the <b>Plot Correlation Matrix</b> app.
     </p>
     <hr>
   </body>

@@ -1,0 +1,144 @@
+---
+permalink: /documentation/userDocs/other/mat-files-organization.html
+layout: default
+title: Organization of .mat files
+parent: Advanced User Resources
+grand_parent: Documentation
+---
+<html lang="en">
+<head>
+    <!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <style media="screen">
+      ul,ol {
+        line-height: 1.5;
+      }
+    </style>
+    <title>.MAT files organizationimage.png</title>      
+</head>
+<body>
+    <h2>How the <samp>.MAT</samp> files are organized</h2>
+    <hr>
+    <p>
+       The <a href=""><i><b>Analysis functions</b></i></a> of the toolbox give as output a <samp>.mat</samp> file instead of a <samp>.dat</samp> file as the othe functions do. This file is used in the <a href="../apps/umIToolbox-Analysis.html">Analysis tab</a> of the <a href="../apps/umIToolbox.html">umIToolbox</a> app and are the output files from the <b><i>Extract data from ROI</i></b> and <b><i>Generate correlation matrix</i></b> utilities from the <a href="../apps/DataViewer.html"><b><i>DataViewer</i></b></a> app. 
+    </p>
+    <p>
+        This section describes how the data is structured and gives an example on how to work with the extracted data.
+    </p>    
+    <h3 id="the-data-structure">The data structure</h3>
+    <hr>    
+    <p>
+        The <samp>.mat</samp> file contains variables with data related to one or more <b><i>observations</i></b> (i.e. ROIs) and meta data.
+    </p>
+    <p>
+        Each element of the structure array contains the following fields:        
+    </p>
+    <div class="infonote">
+        <p><strong>Note</strong>
+            Some of fields may be missing here depending on the type of data and analysis performed.
+        </p>
+    </div>
+    <table style="table-layout: fixed;">
+        <tr>
+          <th style="width:130px" align="left">Field</th>
+          <th align="left">Description</th>
+        </tr>
+        <tr>
+          <td class="add_font_monospace">Datatype</td>
+          <td>format of numerical data</td>
+        </tr>
+        <tr>
+          <td class="add_font_monospace">FirstDim</td>
+          <td>letter of first dimension of imaging data (deprecated)</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">Freq</td>
+            <td>The name of the acquisition/recording</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">Stim</td>
+            <td>Vector with triggers from imaging data with events (deprecated)</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">datFile</td>
+            <td>Path or name of the <samp>.dat</samp> file used to create this <samp>.mat</samp> file</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">dataFile</td>
+            <td>Full path to the <samp>.mat</samp>file containing the recording's data</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">datSize</td>
+            <td>Size of the 1st and 2nd dimensions of data</a></td>            
+        </tr>
+        <tr>
+            <td class="add_font_monospace">datLength</td>
+            <td>Size of the 3rd+ dimension(s) of data</a></td>            
+        </tr>
+        <tr>
+            <td class="add_font_monospace">data</td>
+            <td>Cell array containing the data from each observation. The data is organized in the same order as the <span class="add_font_monospace">obsID</span> field</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">dataHistory</td>
+            <td>structure array with meta data about the analysis pipeline performed to create this file</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">dim_names</td>
+            <td>Cell array with dimension identifiers. Some examples: <b>O</b>bservation, <b>E</b>vent, <b>T</b>ime, <b>X</b> and <b>Y</b></td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">label</td>
+            <td>Cell array containing labels (i.e. names) assigned to each column of the data from the <span class="add_font_monospace">data</span> field</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">obsID</td>
+            <td>List of observation (i.e. ROI) names</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">tExposure</td>
+            <td>Illumination exposure time (in milliseconds). Specific to some recordings from <b>LabeoTech</b> systems</td>
+        </tr>
+        
+      </table>
+      <h3 id="example">Example code</h3>
+      <hr>
+      <p>
+        Here is an example on how to use the data extracted from <b><i>umIT</i></b>. In this case, we will build a correlation matrix with a <samp>.mat</samp> file created using the <a href="../fcns/genCorrelationMatrix.html"><samp>genCorrelationMatrix</samp></a> function.
+      </p>
+      <div class="black-box">        
+        <pre>            
+            <code id="code-content" class="code-block">                 
+% In this example, the data consists of vectors (1xN) values 
+% corresponding to the correlation values of a given observation (i.e. ROI)
+% to all observations.
+% Here, we will create a correlation matrix from this data
+
+%% Load the extracted data:
+s = load('corrMatrix_avg_vs_avg.mat');
+%% Prepare the data for plotting
+% Since the data of each observation ("O") is stored as a numeric vector
+% (1 x O), we will concatenate the data to obtain a matrix with dimensions
+% O x O:
+data = vertcat(s.data{:});
+%% Plot the correlation matrix
+figure; imagesc(data); axis square;
+obsNames = s.label; % Get the observation names from the "label" field.
+% Add the observation names to the X and Y axis and rotate the ones in the X axis by 90 degrees:
+set(gca, 'XTick', 1:length(s.label), 'XTickLabel', s.label,...
+    'XTickLabelRotation', 90, 'YTick', 1:length(s.label), 'YTickLabel', s.label)
+colorbar; % Add a colorbar 
+title('Correlation Matrix') % Add a title                                                             
+            </code>            
+        </pre>
+      </div>
+      <br>
+      <p>Here is the resulting image:</p>
+    <p style="text-align:center">
+        <img src="../../assets/img/mat-files-organization_fig1.png" alt="mat-files-organization_fig1" width="440">
+    </p>    
+    <hr>
+</body>
+</html>

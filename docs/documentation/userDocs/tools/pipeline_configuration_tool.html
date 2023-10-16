@@ -1,0 +1,130 @@
+---
+permalink: /documentation/userDocs/tools/pipeline_configuration_tool.html
+layout: default
+title: Pipeline Configuration
+parent: Tools
+grand_parent: Documentation
+nav_order: 1
+---
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">    
+    <style media="screen">
+			ul, ol {
+				line-height: 1.5;
+			}
+		</style>
+    <title>Pipeline configuration</title>
+  </head>
+  <body>
+    <h2>Pipeline Configuration tool</h2>
+    <hr>
+    <p>
+      The pipeline configuration tool provides an graphical inteface to create, edit, save and load analyisis pipelines. The tool is accessed from both the <a href="../apps/umIToolbox.html"><samp>umIToolbox</samp></a> and <a href="../apps/DataViewer.html"><samp>DataViewer</samp></a> apps.
+    </p>
+    <h3 id="sections">Sections</h3>
+    <hr>
+    <ul>
+      <li><a href="#the-interface">The interface</a></li>
+      <li><a href="#create-a-pipeline">Create a pipeline</a>: how to create and edit an analysis pipeline</li>
+      <li><a href="#save-and-load-pipelines">Save and load pipelines</a>: how to save to and load pipelines from a file</li>
+    </ul>
+    <h3 id="the-interface">The interface</h3>
+    <hr>
+    <p style="text-align: center;">
+      <img src="../../assets/img/pipelineConfigGUI_fig1.png" alt="pipelineConfigGUI_fig1" width="880"> <br>
+      <i>Main components of the Pipeline configuration tool</i>
+    </p>
+    <h4 id="1-function-list">1. Function list</h4>
+    <p>List of available analysis functions separated by category. Functions with an exclamation point <b>(!)</b> have customizable parameters.</p>    
+    <h4 id="2-add-buttons">2. Add buttons</h4>
+    <p>
+      Use the <b><i>Add</i></b> buttons to add a function to a pipeline sequence:
+    </p>
+    <ol type="a">
+      <li><b><i>Add</i></b> (<span><img src="../../assets/img/icon_plusBW.png" alt="icon_plusBW" width ="15"></span>): click to add a function to the current sequence.</li>
+      <li><b><i>Force Add</i></b>(<span><img src="../../assets/img/myIcon_forceAddPipe.png" alt="myIcon_forceAddPipe" width ="15"></span> ): click to add a function to a new sequence.</li>
+    </ol>
+    <h4 id="3-controls">3. Controls</h4>    
+    <ol type="a">
+      <li><b><i>Run!</i></b>: execute the pipeline.</li>
+      <li><b><i>save</i></b>: saves the pipeline workflow to a file.</li>
+      <li><b><i>open</i></b>: opens a pipeline workflow from a file.</li>
+      <li><b><i>Reset</i></b>: erases the pipeline and sets all parameters to default.</li>
+    </ol>
+    <h4 id="4-options">4. Options</h4>
+    <ol type="a">
+      <li><b><i>Skip steps</i></b>: loads saved file from folder to skip consecutive steps in the pipeline.</li>
+      <li><b><i>Overwrite files</i></b>: overwrites files with the same names of the files generated in the pipeline. If unchecked, new files will be appended with a number.</li>
+      <li><b><i>Save data before error</i></b>: automatically saves the data from the previous step when the current function executed fails.</li>
+    </ol>
+    <h4 id="5-pipeline-workflow-window">5. Pipeline workflow window</h4>
+    <p>
+      Graphical representation of the pipeline execution sequence. The functions are executed from top to bottom (in a sequence) and from left to right (across sequences). Interactions:      
+    </p>
+    <ol type="a">
+      <li><b><i>Left-click</i></b> on the items (red and green boxes) to set the function's parameters.</li>
+      <li><b><i>Right-click</i></b> to save the function's output to a file.</li>
+    </ol>
+    <h4 id="6-help-button">6. Help button</h4>
+    <p>
+      Click the help button and then click on a function from the function list (1) to open the function's documentation.
+    </p>
+    <h3 id="create-a-pipeline">Create a pipeline</h3>
+    <hr>
+    <p>
+      Here are the steps to create a new pipeline. As an example, we will create our analysis pipeline based on the workflow shown in our tutorial on <a href="../../tutorials/tt_creating_connectivity_maps.html">how to create functional cortical maps</a> in the mouse. Here is the workflow:
+    </p>
+    <p style="text-align: center;">
+      <img src="../../assets/img/tt_creating_connectivity_maps_ppline_workflow.png" alt="tt_creating_connectivity_maps_ppline_workflow.png"><br>
+      <i>Example of analysis workflow. We will use it to create an analysis pipeline in the Pipeline Configuration tool</i>
+    </p>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+          When launching the <i>Pipeline configuration tool</i> from the <samp>umIToolbox</samp> app, you will be asked to select an object type to perform the analysis on. In brief, object types refer to the classes that store the information about a <b>Subject</b>, <b>Acquisition</b> or a <b>Modality</b>. 
+      </p>
+      <p>
+        In the current example, we the select objects are from the modality <b>FluorescenceImaging</b>, which stores the information about optical imaging recordings:
+      </p>
+      <img src="../../assets/img/mainGUI_pipeline_selectclass.png" alt="mainGUI_pipeline_selectclass" width="160">
+    </div>
+    <p>
+      To create and execute a new pipeline, follow these steps:
+    </p>
+    <ol>
+      <li>Select the functions from the analysis functions list (1) and <i>Add</i> them to the pipeline using the standard <b><i>Add</i></b>(<span><img src="../../assets/img/icon_plusBW.png" alt="icon_plusBW" width="15"></span>) button.</li>      
+      <li>In the pipeline workflow window (5), click on the red boxes to edit the function's parameters.</li>
+      <li><b><i>(Optional)</i></b> Right-click on a box to save the function's output to a file.</li>
+      <li>Click on the <font style="color: green"><b><i>Run!</i></b></font> button to execute the pipeline.
+    </ol>
+    <p style="text-align: center;">
+      <video src="../../assets/gifs/pipeline_config_tool_create_new_pipeline.ogg" alt="pipeline_config_tool_create_new_pipeline" width="660" controls></video><br>
+      <i>Steps to create the analysis pipeline based on the workflow depicted in the previous figure.</i>
+    </p>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        In the video above, the pipeline consisted of two sequences. The toolbox automatically adds a new sequence when the input of the added function is a folder. In this case, the function <samp>run_HemoCorrection</samp> access the SaveFolder containing the imported data from <samp>run_ImagesClassification</samp> and passes the corrected fluorescence data down to the other functions.
+      </p>
+    </div><br>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        In cases, where the pipeline starts with a function that needs a file as input, a prompt window will appear while saving or applying the pipeline so you can choose the file.
+      </p>
+    </div>
+    <h3 id="save-and-load-pipelines">Save and load pipelines</h3>
+    <hr>
+    <p>
+      One can use the <i>Save to</i> and <i>Load from file...</i> buttons to save a pipeline and load it for later use. First, create a new pipeline (steps 1 to 3 from the previous section) and click on <i>Save</i> button. Finally, type the name of the file and select its location. To load a pipeline file, click on <i>Open</i> button and select the file.
+    </p>
+    <p style="text-align: center;">
+      <video src="../../assets/gifs/pipeline_config_tool_save_and_load_pipe.ogg" alt="pipeline_config_tool_save_and_load_pipe" width="660" controls></video><br>
+      <i>Example on how to save to and load from a pipeline file</i>
+    </p>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        If the <i>Pipeline configuration tool</i> is called from the <samp>umIToolbox</samp> app, the pipeline files will be stored automatically inside the project's save directory in a folder named <i>PipeLineConfigFiles</i> (see example above).
+      </p>
+    </div>
+  </body>
+</html>

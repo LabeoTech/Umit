@@ -1,0 +1,104 @@
+---
+permalink: /documentation/userDocs/fcns/spatialGaussFilt.html
+layout: default
+title: spatialGaussFilt
+parent: Filters
+grand_parent: Functions
+nav_order: 3
+---
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">    
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+      .mycollapsible {
+      background-color: #eeeeee;
+      color: black;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      margin-bottom: 10px;
+      }
+      .active, .mycollapsible:hover {
+      background-color: #888;
+      }
+      .content {
+      padding: 0 18px;
+      display: none;
+      overflow: hidden;
+      background-color: #fff;
+      border: 1px solid black;
+      margin-bottom: 10px;
+      }
+    </style>
+    <title>spatial Gaussian filter</title>
+  </head>
+  <body>
+    <h2>spatialGaussFilt - Spatial gaussian filter</h2>
+    <hr>
+    <p>
+      Applies a spatial gaussian filter to image time series.
+    </p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+      This function applies a smoothing to the image using a Gaussian filter in order to blur the images and reduce high-frequency noise. This function uses Matlab's <a href="https://www.mathworks.com/help/images/ref/imgaussfilt.html?s_tid=doc_ta"><samp>imgaussfilt</samp></a> function to perform the smoothing of the frames from the image time series data.
+    </p>
+    <h3>Input</h3>
+    <hr>
+    <p>
+      This function accepts only image time series as input with dimensions Y, X and T.
+    </p>
+    <h3> The algorithm</h3>
+    <hr>
+    <p>
+      This function uses a 2D Gaussian smoothing kernel with a user-defined standard deviation (i.e. <samp>sigma</samp>). In brief, the larger the value of the standard deviation of the filter, more blurred the image will be. Here is an example of five standard deviations values applied to an image measuring 256 by 256 pixels :
+    </p>
+    <p style="text-align: center;">
+      <img src="../../assets/img/spatialGaussFilt_sigma_example.png" alt="spatialGaussFilt_sigma_example" width="990"><br>
+      <i>Example of five different standard deviation (<samp>sigma</samp>) on a image from the cortical activity of a mouse</i>
+    </p>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <b>More details</b>
+    </button>
+    <div class="content">
+      <p>
+        As stated above, this function applies Matlab's function  <a href="https://www.mathworks.com/help/images/ref/imgaussfilt.html?s_tid=doc_ta"><samp>imgaussfilt</samp></a> to all frames of an image time series. The filter convolutes a square Gaussian kernel to the image. The filter is forced to be applied in the <b>spatial</b> domain to avoid unwanted results if the data contains infinite values or NaNs. The Kernel size is dependent on the <samp>sigma</samp> value (function's default) and is defined as:
+      </p>
+      <div class="codeinput">
+        <code>
+          kernel_size = 2*ceil(2*sigma)+1;
+        </code>
+      </div>
+      <br>
+    </div>
+    <h3>Output</h3>
+    <hr>
+    <p>
+      The output of this function is a numerical matrix with dimensions Y,X and T containing the smoothed data.
+    </p>
+    <h3 id="parameters">Parameters</h3>
+    <hr>
+    <p>The parameter of this function is the following:</p>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>Sigma</b></samp> - Gaussian standard deviation <br>
+      <span class="title-desc"><i>1.0 (default) | positive number</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Standard deviation of the Gaussian filter.
+      </p>
+    </div>
+    <!-- JavaScript code to collapse sections -->
+    <script src="../../collapsible_behaviour.js"></script>
+  </body>
+</html>

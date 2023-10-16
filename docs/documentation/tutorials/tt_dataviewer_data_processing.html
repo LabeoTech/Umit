@@ -1,0 +1,119 @@
+---
+layout: default
+title: Data processing
+parent: DataViewer app
+grand_parent: Getting started
+nav_order: 2
+---
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Data processing</title>
+</head>
+
+<body>
+    <h2>Data processing</h2>
+    <hr>
+    <p>
+        In most occasions, the raw imaging signals need to be processed in order to be properly visualized. Such
+        processing includes steps as filtering, normalization, averaging, etc. The <b><i>DataViewer</i></b> app provides a portfolio of functions that cover most of the needs on mesoscale imaging data processing. 
+    </p>
+    <p>
+        In this tutorial, we will cover the steps to apply such functions to a given recording with an basic data processing for calcium signals of a mouse brain in a resting state as an example. Since there are several different ways of processing imaging data, we cannot cover all of cases here. However, we encourage users to consult the list of available functions on our <a href="../userDocs/user_doc_index.html">documentation</a> for more details.
+    </p>
+
+    <h3>Create and execute a processing pipeline</h3>
+
+    <p>
+        In this example, we will create a processing pipeline to create Seed-pixel correlation maps from the raw
+        fluorescence imaging data. The raw data used here consists of ~5 min multi-channel (fluorescence and
+        reflectance) recordings of an awake mouse expressing GCaMP6 calcium indicator in cortical neurons. Here is the
+        analysis workflow that we will create and apply to this data:
+    </p>
+    <p style="text-align: center;">
+        <img src="../assets/img/tt_creating_connectivity_maps_ppline_workflow.png"
+            alt="tt_creating_connectivity_maps_ppline_workflow.png" width="660">
+    </p>
+    <p>
+        To create the above pipeline, first, we will open the raw fluorescence data in <b><i>DataViewer</i></b>:
+    </p>
+    <p style="text-align: center;">
+        <img src="../assets/img/dataviewer_gui__w_fluo_data.png" alt="dataviewer_gui__w_fluo_data" width="660">
+
+    </p>
+    <p>
+        Now, to create a new processing pipeline launch the <a
+            href="../userDocs/tools/pipeline_configuration_tool.html">Pipeline Configuration tool</a>. To do so, go to
+        <b>Utilities &rarr; Data Processing</b>.
+    </p>
+    <p>
+        In the Pipeline Configuration app, we will build the processing pipeline by selecting the functions from the
+        <b>Available functions</b> list and adding them to the new pipeline by clicking on the <span><img
+                src="../assets/icon-plus.png" alt="icon-plus"></span> button in the execution order. In our case, the
+        pipeline will look like so:
+    </p>
+    <p style="text-align: center;">
+        <img src="../assets/img/dataviewer_pipeline_selectfcns.png" alt="dataviewer_pipeline_selectfcns" width="660">
+    </p>
+    <p>
+        The exclamation point <samp>(!)</samp> shown before the function's name, indicate that the given function has
+        optional parameters that can be customized.
+    </p>
+    <p>
+        To access the parameters, click on the function's button (red buttons in the figure above). In this particular
+        case, we will change the parameters of two functions: <i>normalizeLPF</i> and <i>SPCM</i>. For the
+        <i>normalizeLPF</i> function, we will change the frequency cut-off values to filter our data between <b>0.3</b>
+        and <b>3 Hz</b> and we set the <i>Normalize</i> parameter to <b>Yes</b> to normalize the data as &#916;F/F:
+    </p>
+    <img src="../assets/img/mainGUI_pipeline_setopts.png" alt="mainGUI_pipeline_setopts" width="280">
+    <p>
+        As for the <i>SPCM</i> function, we will apply the Z-Fisher transformation of the correlation data as:
+    </p>
+    <img src="../assets/img/mainGUI_pipeline_setoptsSPCM.png" alt="mainGUI_pipeline_setoptsSPCM" width="280">
+    <div class="infonote">
+        <p><strong>Note</strong><br>
+            A data process pipeline does not automatically save the resulting data from the pipeline. It will be stored
+            in RAM. If you want to save output of any of the steps, right-click on the function's button (red/green
+            buttons in the pipeline workflow window) and click on "Save file...".
+        </p>
+
+    </div>
+    <br>
+    <div class="tipnote">
+        <p><strong>Tip</strong>
+            Here, you can save the pipeline with the customized parameters for later use. To do so, just click on the
+            <i>Save</i> button.
+        </p>
+    </div>
+    <p>
+        The pipeline is ready to be applied! Here is a summary of the steps:
+    </p>
+    <ol>
+        <li><i>run_HemoCorrection</i>: uses all reflectance channels (i.e. red, green and amber) to subtract the
+            hemodynamic signal from the fluorescence data.</li>
+        <li><i>GSR</i>: performs a global signal regression of the fluorescence data to remove global signal variance.
+        </li>
+        <li><i>normalizeLPF</i>: performs a temporal band-pass filter between 0.3 and 3Hz and normalizes the data as
+            &#916;F/F. </li>
+        <li><i>SPCM</i>: Calculates a pixel-based correlation <b>S</b>eed<b> P</b>ixel <b>C</b>orrelation <b>M</b>ap and
+            applies the Z-Fisher transformation to the correlation values.</li>
+    </ol>
+    <p>
+        Finally, click on the green button <i>Run!</i> to execute the pipeline.
+    </p>
+    <p>The resulting data is a Seed-pixel correlation map. Click on the seed pixel to update the map:</p>
+    <p style="text-align: center;">
+        <img src="../assets/img/tt_dataviewer_data_processing_SPCM.png" alt="tt_dataviewer_data_processing_SPCM" width="660
+        ">
+    </p> 
+    <div class="infonote">
+        <p><strong>Note</strong><br>
+            The data is kept in the RAM. So, to save the processed data to a <samp>.dat</samp> file, go to <b>File &rarr; Save as...</b>.
+        </p>
+    </div>
+</body>
+
+</html>
