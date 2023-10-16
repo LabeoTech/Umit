@@ -33,8 +33,9 @@ color_scheme: light_Labeo
 
 # Build settings
 theme: just-the-docs
-#plugins:
-#  - jekyll-seo-tag
+
+plugins:
+  - jekyll-default-layout
 
 # Exclude from processing.
 # The following items will not be processed, by default.
