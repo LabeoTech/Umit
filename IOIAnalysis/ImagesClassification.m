@@ -53,7 +53,14 @@ end
 if ~exist(SaveFolder,'dir')
     mkdir(SaveFolder)
 end
-save([SaveFolder 'AcqInfos.mat'],'AcqInfoStream'); %To keep this information and avoid multiple reading of the txt file.
+% Change Spatial and temporal information in AcqInfoStream so the
+% information refers to the output .dat files and not to the original .bin
+% files. 
+
+% Update Binning information on AcqInfoStream:
+AcqInfoStream.Binning = BinningSpatial;
+% Update Sample rate in AcqInfoStream:
+AcqInfoStream.FrameRateHz = AcqInfoStream.FrameRateHz/BinningTemp;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Data Format and Header Information:
@@ -110,6 +117,7 @@ if( b_SubROI )
    
    LimX = [round(Pos(1)) round(Pos(1)+Pos(3))];
    LimY = [round(Pos(2)) round(Pos(2)+Pos(4))];
+   
    save([SaveFolder 'ROI.mat'],'Pos'); %Save region of interest in a .mat file
 else
    LimX = [1 ImRes_XY(1)];
@@ -117,6 +125,11 @@ else
 end
 Rx = round((LimX(2) - LimX(1) + 1)/BinningSpatial);
 Ry = round((LimY(2) - LimY(1) + 1)/BinningSpatial);
+% Update Frame size in AcqInfoStream:
+AcqInfoStream.Width = Rx;
+AcqInfoStream.Height = Ry;
+% Save AcqInfo:
+save([SaveFolder 'AcqInfos.mat'],'AcqInfoStream'); 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % How many colors and in which order?
@@ -200,44 +213,25 @@ end
         % existing colors and saves the data into separate .dat files.
         
         % For each color, initialise output files:
-        fColor = {};
+        
         fid = [];
         subNbColors = size(colors,2);
         
         for indC = 1:size(colors,2)
-            if( contains(colors(indC).Color, {'red','green'},'IgnoreCase', true) )
-                hTag = [lower(colors(indC).Color) '.mat'];
+            if( contains(colors(indC).Color, {'red','green'},'IgnoreCase', true) )        
                 dTag = [lower(colors(indC).Color) '.dat'];
-            elseif( contains(colors(indC).Color, 'amber', 'IgnoreCase', true) )
-                hTag = 'yellow.mat';
+            elseif( contains(colors(indC).Color, 'amber', 'IgnoreCase', true) )                
                 dTag = 'yellow.dat';                
             elseif( contains(colors(indC).Color, 'fluo', 'IgnoreCase', true) )
                 waveTag = regexp(colors(indC).Color, '[0-9]{3}','match');
-                if( ~isempty(waveTag) )
-                    hTag = ['fluo_' waveTag{:} '.mat']; 
+                if( ~isempty(waveTag) )                    
                     dTag = ['fluo_' waveTag{:} '.dat'];
-                else
-                    hTag = ['fluo' waveTag{:} '.mat']; 
+                else                    
                     dTag = ['fluo' waveTag{:} '.dat'];
                 end
-            else
-                hTag = 'speckle.mat';
+            else                
                 dTag = 'speckle.dat';
-            end
-            
-            if( exist([SaveFolder hTag], 'file') )
-                delete([SaveFolder hTag]);
-            end
-            fColor{indC} = matfile([SaveFolder hTag], 'Writable', true);
-            fColor{indC}.datFile = dTag; 
-            fColor{indC}.datSize = [Ry, Rx]; 
-            fColor{indC}.datLength = 0;
-            fColor{indC}.FirstDim = 'y';
-            fColor{indC}.Datatype = 'single';
-            fColor{indC}.datName = 'data';
-            fColor{indC}.dim_names = {'Y', 'X', 'T'};
-            fColor{indC}.Freq = (AcqInfoStream.FrameRateHz)/(size(colors,2)*BinningTemp);
-            fColor{indC}.tExposure = colors(indC).Exposure;
+            end                                    
             fid(indC) = fopen([SaveFolder dTag],'w'); 
         end
         
@@ -335,8 +329,7 @@ end
                     Ims = imresize(Ims,1/BinningSpatial);
                 end
                 
-                fwrite(fid(indC), single(Ims), 'single');
-                fColor{indC}.datLength = fColor{indC}.datLength + size(Ims,3);
+                fwrite(fid(indC), single(Ims), 'single');                
             end
             fprintf('\n');
         end
