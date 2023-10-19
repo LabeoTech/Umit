@@ -203,8 +203,7 @@ if ~isscalar(unique(datLenList))
     % Remove extra frames of channels so all have the same length
     newLen = min(datLenList);
     matH(datLenList == newLen) = [];% Keep list of channels with extra frames.    
-    for ind = 1:length(matH)
-        tic;
+    for ind = 1:length(matH)        
         fid = fopen(strrep(matH{ind}.Properties.Source,'.mat','.dat'),'r');
         dat = fread(fid,Inf,'*single');fclose(fid);
         dat = reshape(dat,matH{ind}.datSize(1,1),matH{ind}.datSize(1,2),[]);
@@ -212,8 +211,7 @@ if ~isscalar(unique(datLenList))
         fid = fopen(strrep(matH{ind}.Properties.Source,'.mat','.dat'),'w');
         fwrite(fid,dat,'single');
         fclose(fid);
-        matH{ind}.datLength = newLen;
-        toc
+        matH{ind}.datLength = newLen;        
     end
     
     disp('Data length fixed.')
