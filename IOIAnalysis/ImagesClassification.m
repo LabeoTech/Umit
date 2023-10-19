@@ -31,14 +31,33 @@ function ImagesClassification(DataFolder, SaveFolder, BinningSpatial, BinningTem
 %  1- Region of Interest (ROI): This parameter is a boolean (0 or 1) to tell the software if 
 %       we want to keep the whole image or if we want to select a smaller ROI
 %  2- backupFolder(char, default = '_SUBFOLDER_'): Name-value input pair.
-%       Name of the subfolder where to move the data. If this parameter is not set,
-%       a dialog box will be presented to the User to ask what to do with existing files.
-%       To ERASE ALL DATA from the SaveFolder and skip the question dialog, set
-%       this parameter as an empty string (''), otherwise type the subfolder name of your choice.
-%  3- backupFolder (char | default = ''): Subfolder name to store the backed-up data. 
-%       If the "moveToBackup" value is TRUE and the "backupFolder" is empty, a
-%       subfolder will be created with the name bkp_<yyyymmddHHMMss>"
-
+%       Name of the subfolder where to move the data. Here, the user has 3
+%       entry options:
+%        - '_SUBFOLDER_' (default) : a dialog box will be presented to the User to ask what
+%           to do with existing files.
+%        - '' (empty string): All data from the SaveFolder are ERASED and no backup is done.
+%        - 'AUTO': Lets the function create a subfolder with name "bkp_yyyymmddHHMMss"
+%        - Type the subfolder name to move the existing data before erasing
+%        them from the SaveFolder.
+%       See examples below:
+% 
+%         % Example 1: Using the default backup folder tag ('_SUBFOLDER_')
+%         ImagesClassification(DataFolder,SaveFolder,BinningSpatial, BinningTemp,b_SubROI);
+%         % In this case, a dialog box will prompt the user to handle existing files.
+%         
+%         % Example 2: Erasing existing data (empty string)
+%         ImagesClassification(DataFolder,SaveFolder,BinningSpatial, BinningTemp,b_SubROI,'backupFolder','');
+%         % This will erase all existing data from the source folder without creating a backup.
+%         
+%         % Example 3: Automatic backup folder creation
+%         ImagesClassification(DataFolder,SaveFolder,BinningSpatial, BinningTemp,b_SubROI,'backupFolder','AUTO');
+%         % The function will create a subfolder with a name like "bkp_yyyymmddHHMMss" and move existing data there.
+%         
+%         % Example 4: Specifying a custom backup folder
+%         ImagesClassification(DataFolder,SaveFolder,BinningSpatial, BinningTemp,b_SubROI,'backupFolder','custom_folder');
+%         % The function will move existing data to the specified custom backup folder.
+% 
+%    
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Argument parsing:
@@ -50,13 +69,18 @@ addRequired(p,'BinningTemp',@isscalar);
 addOptional(p,'b_SubROI',false,@(x) islogical(x) || ismember(x,[0 1]));
 addParameter(p,'backupFolder','_SUBFOLDER_',@ischar)
 parse(p,DataFolder,SaveFolder,BinningSpatial,BinningTemp,varargin{:})
-% Get Optional parameters:
+% Set Optional parameters:
 b_SubROI = p.Results.b_SubROI;
 backupFolder = p.Results.backupFolder;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% Control for existing .dat files in the "SaveFolder".
-fixedFiles = [dir(fullfile(SaveFolder,'*.bin')); dir(fullfile(SaveFolder,'*nfo.txt'))]; % Excludes '.bin' and info Text files.
+% Control for existing .dat files in the "SaveFolder":
+% Excludes raw data, in case the save folder is the same as the DataFolder.
+fixedFiles = [dir(fullfile(SaveFolder,'*.bin'))... % binary files
+    ;dir(fullfile(SaveFolder,'*nfo.txt'))... % info.txt and/or ExperimentInfo.txt
+    ;dir(fullfile(SaveFolder,'Comments.txt'))... % Comments.txt
+    ;dir(fullfile(SaveFolder,'Snapshot*.png'))]; % Snapshots
+% Get list of files to move:
 movFiles = dir(SaveFolder);
 movFiles([movFiles.isdir] == 1) = [];
 if ~isempty(fixedFiles)
@@ -74,7 +98,7 @@ if ~isempty(movFiles)
         %  - OPTION 1: Erase all data.
         %  - OPTION 2a: Move all folder content to a subfolder as backup (with the name "bkp_yyyymmddHHMMssFFF".
         %  - OPTION 2b: Move all folder content to a folder of the User's choice.
-        
+                       
         choice = questdlg('The save folder already contains files. Please choose an option:', ...
             'Folder Contains Files', 'Erase all', 'Create backup', 'Cancel', 'Create backup');
         
@@ -86,28 +110,27 @@ if ~isempty(movFiles)
             case 'Create backup'
                 % User chose to create a backup.
                 answer = inputdlg('Type backup folder name:','BackupFolder',...
-                    [1 35],{['bkp_' datestr(now(),'yyyymmddHHMMSSFFF')]});
+                    [1 60],{['bkp_' datestr(now(),'yyyymmddHHMMSS')]});
                 if isempty(answer)
                     disp('Operation cancelled by User')
                     return
                 elseif ~isempty(answer{:})
                     % Update backupfolder name
                     backupFolder = answer{:};
+                else
+                    % Force auto name to folder if the user provides an
+                    % empty string:
+                    backupFolder = ['bkp_' datestr(now(),'yyyymmddHHMMSS')];
                 end
             otherwise
                 % User chose to cancel the operation.
                 disp('Operation cancelled by User')
                 return
         end
-        
-        % Move files to backup subfolder:
-        
-        % Create backup folder
-        if strcmp(backupFolder, '_SUBFOLDER_')
-            % Create folder with default name:
-            backupFolder = ['bkp_' datestr(now(),'yyyymmddHHMMSSFFF')];
-        end
-        
+                                        
+    elseif strcmpi(backupFolder,'auto')
+        % Auto name:
+       backupFolder = ['bkp_' datestr(now(),'yyyymmddHHMMSS')];
     end
     
     if ~isempty(backupFolder)
