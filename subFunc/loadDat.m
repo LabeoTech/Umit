@@ -22,7 +22,7 @@ fName = fName(cellfun(@isfile,fName));
 if isempty(fName)
     % Load info from "AcqInfos.mat" file:
     Info = loadAcqInfo(fileparts(DatFileName));    
-    datSize = [Info.AcqInfoStream.Width, Info.AcqInfoStream.Height];
+    datSize = [Info.AcqInfoStream.Height, Info.AcqInfoStream.Width];
     datLen = [];
 else
     % Load using info from meta data ".mat" file:

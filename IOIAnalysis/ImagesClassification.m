@@ -1,4 +1,4 @@
-function ImagesClassification(DataFolder, SaveFolder, BinningSpatial, BinningTemp, b_SubROI)
+function ImagesClassification(DataFolder, SaveFolder, BinningSpatial, BinningTemp, varargin)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Channels classification for Labeotech IOS systems. 
 % 
@@ -24,19 +24,106 @@ function ImagesClassification(DataFolder, SaveFolder, BinningSpatial, BinningTem
 %  Set to 1 for no binning; 2 for a 2x2 binning; 4 for a 4x4 binning and so on...
 % 4- Temporal Binning:
 %  Set to 1 for no binning; Otherwise, enter de number of frames to be combined
-%  for exemple: 4 will merge the images by group of 4. So, images #1,2,3,4
+%  for example: 4 will merge the images by group of 4. So, images #1,2,3,4
 %  will become image #1 after avering them together. Images #5, 6, 7, 8 will
 %  become frame #2, etc.
-% 5- Region of Interest (ROI)
-%  this parameter is a boolean (0 or 1) to tell the software if 
-%  we want to keep the whole image or if we want to select a smaller ROI
+% Optional input parameters:
+%  1- Region of Interest (ROI): This parameter is a boolean (0 or 1) to tell the software if 
+%       we want to keep the whole image or if we want to select a smaller ROI
+%  2- backupFolder(char, default = '_SUBFOLDER_'): Name-value input pair.
+%       Name of the subfolder where to move the data. If this parameter is not set,
+%       a dialog box will be presented to the User to ask what to do with existing files.
+%       To ERASE ALL DATA from the SaveFolder and skip the question dialog, set
+%       this parameter as an empty string (''), otherwise type the subfolder name of your choice.
+%  3- backupFolder (char | default = ''): Subfolder name to store the backed-up data. 
+%       If the "moveToBackup" value is TRUE and the "backupFolder" is empty, a
+%       subfolder will be created with the name bkp_<yyyymmddHHMMss>"
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-if(nargin < 5)
-    b_SubROI = 0;
+% Argument parsing:
+p = inputParser;
+addRequired(p,'DataFolder',@isfolder);
+addRequired(p,'SaveFolder',@ischar);
+addRequired(p,'BinningSpatial',@isscalar);
+addRequired(p,'BinningTemp',@isscalar);
+addOptional(p,'b_SubROI',false,@(x) islogical(x) || ismember(x,[0 1]));
+addParameter(p,'backupFolder','_SUBFOLDER_',@ischar)
+parse(p,DataFolder,SaveFolder,BinningSpatial,BinningTemp,varargin{:})
+% Get Optional parameters:
+b_SubROI = p.Results.b_SubROI;
+backupFolder = p.Results.backupFolder;
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Control for existing .dat files in the "SaveFolder".
+fixedFiles = [dir(fullfile(SaveFolder,'*.bin')); dir(fullfile(SaveFolder,'*nfo.txt'))]; % Excludes '.bin' and info Text files.
+movFiles = dir(SaveFolder);
+movFiles([movFiles.isdir] == 1) = [];
+if ~isempty(fixedFiles)
+    movFiles(ismember({movFiles.name},{fixedFiles.name})) = [];
 end
 
+if ~isempty(movFiles)
+    
+    % Create prompt if the moveToBackup optional parameter was not set:
+    if strcmp(backupFolder,'_SUBFOLDER_')
+        
+        % This function will erase all .dat and .mat files inside the
+        % SaveFolder before the data import. If there are .dat files, the user will
+        % be presented with the following options:
+        %  - OPTION 1: Erase all data.
+        %  - OPTION 2a: Move all folder content to a subfolder as backup (with the name "bkp_yyyymmddHHMMssFFF".
+        %  - OPTION 2b: Move all folder content to a folder of the User's choice.
+        
+        choice = questdlg('The save folder already contains files. Please choose an option:', ...
+            'Folder Contains Files', 'Erase all', 'Create backup', 'Cancel', 'Create backup');
+        
+        % Process the user's choice
+        switch choice
+            case 'Erase all'
+                % Do not move to backup and erase all data from SaveFolder
+                backupFolder = '';
+            case 'Create backup'
+                % User chose to create a backup.
+                answer = inputdlg('Type backup folder name:','BackupFolder',...
+                    [1 35],{['bkp_' datestr(now(),'yyyymmddHHMMSSFFF')]});
+                if isempty(answer)
+                    disp('Operation cancelled by User')
+                    return
+                elseif ~isempty(answer{:})
+                    % Update backupfolder name
+                    backupFolder = answer{:};
+                end
+            otherwise
+                % User chose to cancel the operation.
+                disp('Operation cancelled by User')
+                return
+        end
+        
+        % Move files to backup subfolder:
+        
+        % Create backup folder
+        if strcmp(backupFolder, '_SUBFOLDER_')
+            % Create folder with default name:
+            backupFolder = ['bkp_' datestr(now(),'yyyymmddHHMMSSFFF')];
+        end
+        
+    end
+    
+    if ~isempty(backupFolder)
+        % Create subfolder
+        if ~isfolder(fullfile(SaveFolder,backupFolder))
+            mkdir(fullfile(SaveFolder,backupFolder));
+        end
+        % Copy data to subfolder
+        arrayfun(@(x) copyfile(fullfile(x.folder,x.name), fullfile(x.folder,backupFolder,x.name)),movFiles)
+    end
+    % Delete all files from the current folder (exept .bin and .txt)
+    arrayfun(@(x) delete(fullfile(x.folder,x.name)),movFiles);
+end
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 AcqInfoStream = ReadInfoFile(DataFolder);
 
 if( ~strcmp(DataFolder(end), filesep) )
@@ -46,8 +133,8 @@ if( ~strcmp(SaveFolder(end), filesep) )
     SaveFolder = strcat(SaveFolder, filesep);
 end
 
-if( ~isfield(AcqInfoStream, 'Camera_Model') ) %For back compatibility with older versions
-   AcqInfoStream.Camera_Model = 'D1024';    %Camera_Model was not used in former versions
+if( ~isfield(AcqInfoStream, 'Camera_Model') )% For back compatibility with older versions
+   AcqInfoStream.Camera_Model = 'D1024';     % Camera_Model was not used in former versions
 end
 % Create save folder if it does not exist.
 if ~exist(SaveFolder,'dir')
@@ -104,21 +191,21 @@ if( b_SubROI )
                 imgFilesList(1).name],...
                 'Offset', hWima*4 + 5*SizeImage,...
                 'Format', frameFormat, 'repeat', 1);
-            dat = dat.Data.imgj;
-            fig = figure; imagesc(dat);
-            h = drawrectangle();
-            wait(h);
-            Pos = h.Position;
-            close(fig);
+            dat = rot90(fliplr(dat.Data.imgj));
+            fig = figure('Name','Draw ROI','CloseRequestFcn',@closeFig); imagesc(dat); axis image;
+            drawrectangle('Deletable',false,'Tag','myRectangle');
+            title('Close figure to confirm')            
+            waitfor(fig)                    
+            
         case 'Cancel' %User Changed is mind and want to use the original ROI
             disp('User pressed cancel')
             Pos = [1 1 ImRes_XY(1) ImRes_XY(2)];
     end
    
-   LimX = [round(Pos(1)) round(Pos(1)+Pos(3))];
-   LimY = [round(Pos(2)) round(Pos(2)+Pos(4))];
-   
+   LimX = [round(Pos(1)) round(Pos(1)+Pos(3)) - 1 ];
+   LimY = [round(Pos(2)) round(Pos(2)+Pos(4)) - 1 ];   
    save([SaveFolder 'ROI.mat'],'Pos'); %Save region of interest in a .mat file
+   clear Pos
 else
    LimX = [1 ImRes_XY(1)];
    LimY = [1 ImRes_XY(2)];
@@ -130,8 +217,8 @@ AcqInfoStream.Width = Rx;
 AcqInfoStream.Height = Ry;
 % Save AcqInfo:
 save([SaveFolder 'AcqInfos.mat'],'AcqInfoStream'); 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 % How many colors and in which order?
 fprintf('Sorting images per channels. \n');
 if( AcqInfoStream.MultiCam )
@@ -337,4 +424,15 @@ end
             fclose(fid(indC));
         end
     end
+
+% Auxiliary functions:
+    function closeFig(src,~)
+        % CloseRequest function for Drawing ROI.
+        % It saves the current position of the rectangle in the axis:        
+        rectH = findobj(src,'Tag','myRectangle');
+        Pos = rectH.Position;
+        delete(src)                      
+    end
+
 end
+
