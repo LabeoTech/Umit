@@ -215,7 +215,7 @@ if( AcqInfoStream.MultiCam )
     idx = find(arrayfun(@(x) Colors(x).CamIdx == 1, 1:size(Colors,2)));
     [~, index] = sort([Colors(idx).FrameIdx]);
     idx = idx(index);
-    ChannelsSort(imgFilesList, Colors(idx));
+    matHcam1 = ChannelsSort(imgFilesList, Colors(idx));
     fprintf('Camera #1 Done. \n');
     
     %Camera 2:
@@ -224,7 +224,8 @@ if( AcqInfoStream.MultiCam )
     idx = find(arrayfun(@(x) Colors(x).CamIdx == 2, 1:size(Colors,2)));
     [~, index] = sort([Colors(idx).FrameIdx]);
     idx = idx(index);
-    ChannelsSort(imgFilesList, Colors(idx));
+    matHcam2 = ChannelsSort(imgFilesList, Colors(idx));
+    matH = [matHcam1, matHcam2]; clear matHc*
     fprintf('Camera #2 Done. \n');
 else
     Tags = fieldnames(AcqInfoStream);
@@ -252,11 +253,31 @@ else
     end
     
     imgFilesList = dir([DataFolder 'img_*.bin']);
-    ChannelsSort(imgFilesList, Colors);
+    matH = ChannelsSort(imgFilesList, Colors);
     fprintf('Done. \n');
 end
+% Check if all color channels have the same length:
+datLenList = cellfun(@(x) x.datLength,matH);
 
-    function ChannelsSort(fList, colors)               
+if ~isscalar(unique(datLenList))
+    disp('Fixing data length...')
+    % Remove extra frames of channels so all have the same length
+    newLen = min(datLenList);
+    matH(datLenList == newLen) = [];% Keep list of channels with extra frames.
+    for ind = 1:length(matH)        
+        fid = fopen(strrep(matH{ind}.Properties.Source,'.mat','.dat'),'r');
+        dat = fread(fid,Inf,'*single');fclose(fid);
+        dat = reshape(dat,matH{ind}.datSize(1,1),matH{ind}.datSize(1,2),[]);
+        dat = dat(:,:,1:newLen);
+        fid = fopen(strrep(matH{ind}.Properties.Source,'.mat','.dat'),'w');
+        fwrite(fid,dat,'single');
+        fclose(fid);
+        matH{ind}.datLength = newLen;        
+    end
+    
+    disp('Data length fixed.')
+end
+    function fColor = ChannelsSort(fList, colors)               
         % Load Stim info:
         if( ~b_IgnoreStim )
             Stim = load([SaveFolder 'StimParameters.mat']);                       
