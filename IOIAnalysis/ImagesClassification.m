@@ -320,7 +320,7 @@ else
 end
 
 % Check if all color channels have the same length:
-if isscalar(unique([datLen.Len]))
+if ~isscalar(unique([datLen.Len]))
     disp('Fixing data length...')
     % Remove extra frames of channels so all have the same length
     newLen = min([datLen.Len]);
