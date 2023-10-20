@@ -30,7 +30,7 @@ fName = fName(cellfun(@isfile,fName));
 if isempty(fName)
     % Load info from "AcqInfos.mat" file:
     Info = loadAcqInfo(fileparts(DatFileName));    
-    ds = [Info.AcqInfoStream.Width, Info.AcqInfoStream.Height];
+    ds = [Info.AcqInfoStream.Height, Info.AcqInfoStream.Width];
     % Calculate data length:
     fileInfo = dir(DatFileName);   
     dl = fileInfo.bytes/prod([ds,4]);
