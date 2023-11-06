@@ -502,6 +502,36 @@ classdef EventsManager < handle
             end
         end
         
+        function getTriggersFromExternalData(obj,signal)
+           % Detects triggers from a signal given as input and ignores the
+           % data from the AnalogIN
+           
+           assert(isvector(signal), 'Signal must be a vector (1 x N)1')           
+           % Reset event info:
+           obj.timestamps = [];
+           obj.state = [];
+           obj.eventID = [];
+           obj.eventNameList = {};
+           [obj.timestamps,obj.state] = obj.detectTrig(signal);
+           % Control for failed detections:
+           if isempty(obj.timestamps)
+               warning('Failed to detect triggers in signal.')            
+               return
+            else
+               disp(['Triggers detected in signal.']);
+           end                      
+           obj.eventID = ones(size(obj.state));
+           obj.eventNameList = {'1'};
+           disp('Trigger detection completed.')
+           disp('---------- Trigger info ----------')
+           deltaT = [diff(obj.timestamps); nan];
+           fprintf(['Total number of triggers: %d\nTotal number of conditions: %d\n' ...
+               'Average trial length (HIGH state): %0.3f s\nAverage inter-trial length (LOW state): %0.3f s\n'...
+               'Trigger detection threshold: %0.2f v\nTrigger type: %s\n'],sum(obj.state),length(obj.eventNameList),...
+               mean(deltaT(obj.state == 1), 'omitnan'), mean(deltaT(obj.state == 0), 'omitnan'), obj.trigThr, ...
+               obj.trigType)
+           disp('--------------------------------')
+        end
         function saveEvents(obj,saveFolder)
             % SAVEEVENTS creates the file "events.mat" in the
             % SaveFolder. This file is used by umIT to split the data into
