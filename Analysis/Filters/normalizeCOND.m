@@ -1,8 +1,7 @@
 function [outData, metaData] = normalizeCOND(data, metaData, varargin)
 % NORMALIZECOND normalizes event-triggered and image time series data by the
-% avereage of baseline condition.
-% The data must be a 3-D matrix containg image time series or a 4-D matrix
-% containing image time series separated by trials.
+% average of a baseline condition.
+% The data must be a 4-D matrix containing image time series separated by trials.
 
 % Inputs:
 %   data (4D numerical matrix): Image time series or image time series separated by events.
@@ -35,7 +34,7 @@ opts = p.Results.opts;
 clear p
 %%%%
 % Validate if the data is an Image time series by Events:
-errMsg = 'Input Data must be an Image time series with dimensions "Y","X",T" or "E","Y","X","T".';
+errMsg = 'Input Data must be an Image time series with dimensions "E","Y","X","T".';
 errID = 'umIToolbox:normalizeBSLN:WrongInput';
 assert(all(ismember({'E','Y','X','T'}, metaData.dim_names)), errID, errMsg)
 
