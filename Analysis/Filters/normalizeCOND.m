@@ -17,6 +17,7 @@ function [outData, metaData] = normalizeCOND(data, metaData, varargin)
 %   DeltaR/R0.
 %   metaData: .mat file with meta data associated with "outData".
 % Defaults:
+dependency = 'split_data_by_event'; %#ok Dependent function that will be automatically added to the pipeline before this one.
 default_Output = 'normByCond.dat'; %#ok This is here only as a reference for PIPELINEMANAGER.m.
 default_opts = struct('baselineConditionIndex',1, 'b_centerAtOne', false);
 opts_values = struct('baselineConditionIndex', {[1:100]}, 'b_centerAtOne', [true,false]);%#ok. This is here only as a reference for PIPELINEMANAGER.m.
