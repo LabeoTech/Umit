@@ -28,25 +28,90 @@ nav_order: 4
         If you are using the <b><i>umIToolbox</i></b> app, click <a href="manual_image_registration_tool_olderVersion.html">here</a> to access the old manual aligment tool. This tool will be deprecated in a later version of the <b>umIT</b> toolbox.
       </p>
     </div>
-    <h3>Procedure</h3>
+        
+    <details open>
+      <summary>Sections</summary>
+      <div>
+        <ul>
+          <li><a href="#interface-components">Interface components</a></li>
+          <li><a href="#dataviewer-procedure">Using from DataViewer</a></li>
+          <li><a href="#standalone-procedure">Using as standalone</a></li>
+        </ul>
+      </div>     
+    </details>
+
+    <h3 id="interface-components">Interface components</h3>    
+    <h4 id="options">Options panel</h4>
+    <ul>
+      <li><b><i>Image sharpening</i></b>:
+        <ul>
+          <li><b><i>None</i></b>: No sharpening</li>
+          <li><b><i>Enhance Contrast</i></b>: Enhances the contrast of both images using the <a href="https://www.mathworks.com/help/images/ref/adapthisteq.html">adapthisteq</a> function</li>
+          <li><b><i>Gaussian Filter</i></b>:</li>Equivalent of an unsharp masking where two spatially filtered version of the images are subtracted. The operation consists of a filtered image with a sigma of .5 minus a blurred version of the image
+        </ul>
+      </li>
+      <li><b><i>Flip horizontally</i></b>: Mirrors the moving image</li>
+      <li><b><i>Invert colors</i></b>: Invert colors of both images</li>
+      <li><b><i>Fixed aspect ratio</i></b>: Unckeck this box to scale X or Y axes independently</li>
+      <li><b><i>Display result as:</i></b>
+        <ul>
+          <li><b><i>FalseColor</i></b>: Composite of green (reference) and magenta (moving)</li>
+          <li><b><i>Reference</i></b>: Displays reference image</li>
+          <li><b><i>Moving</i></b>: Displays moving image</li>
+          <li><b><i>Difference</i></b>: Shows the difference of the moving and reference images</li>
+          <li><b><i>Alternate view</i></b>: Alternates between the reference and moving images</li>
+        </ul>
+      </li>
+    </ul>
+    <h4 id="fine-tuning">Fine tuning</h4>
+    <p>
+      Click on the <b><i>Fine tuning</i></b> button to show/hide the panel. <br>
+      Here, one can set custom steps and move the misaligned frame incrementally by clicking on the up/down arrows. This is useful to perform small movements otherwise challenging with the mouse cursor.
+    </p>
+    <h4> Align </h4>
+    <p>
+      Applies the coregistration to the misaligned <samp>.dat</samp> file.
+    </p>
+    <p>
+      A <samp>tform.mat</samp> file will also be saved in the <samp>.dat</samp> file's directory containing the geometric transformation <i>affine2d</i> object.
+    </p>
+    <h4> Save geometric transformation object:</h4>
+    <div class="warnnote">
+      <p><strong>Important</strong><br>
+        This section is disabled for when the app is deployed as executable.
+      </p>
+    </div>
+    <br>
+    <ul>
+      <li><b><i>Save to a .mat file</i></b>: Saves the geometric transformation object (tform) to a .mat file</li>
+      <li><b><i>workspace</i></b>: Saves the tform to the Matlab's base workspace</li>
+    </ul>
+    <p>
+      Saves the <i>affine2d</i> object with the geometric transformation to a <samp>.mat</samp> file.
+    </p>    
+
+    <h3 id="dataviewer-procedure">Using from DataViewer</h3>
+    <p>
+      Follow these steps for aligning data open in the <b><i>DataViewer</i></b> app.
+    </p>
     <ol>
       <li>
-        <p>Open it in <b><i>DataViewer</i></b>.</p>
+        <p>Open the image to be aligned in <b><i>DataViewer</i></b>.</p>
         <p style="text-align: center;"><img src="../../assets/img/dataviewer_manual_alignment_fig1.png" alt="dataviewer_manual_alignment_fig1" width="660"></p><br>        
       </li>
       <li>
-        <p>Then go to <b>Utilities &rarr; Manual Coregistration </b> to launch the tool. Note that a frame from the current data is set as the <b>Misaligned file</b></p>
+        <p>Then go to <b>Utilities &rarr; Manual Coregistration </b> to launch the tool. Note that a frame from the current data is set as the <b>Misaligned file</b> (in magenta)</p>
         <p style="text-align: center;"><img src="../../assets/img/dataviewer_manual_alignment_fig2.png" alt="dataviewer_manual_alignment_fig2" width="660"></p>
         <br>        
       </li>
       <li>
-        <p>Click on the green <b>Load</b> button to load the reference image from a <samp>.dat</samp> file</p>
+        <p>Select the reference file/frame (in green). Here, one can use an image from Matlab's workspace or directly from a .dat file.</p>
         <p style="text-align: center;">
           <img src="../../assets/img/dataviewer_manual_alignment_fig3.png" alt="dataviewer_manual_alignment_fig3" width="660">
         </p>
       </li>
       <li><p>
-        Once the reference and the misaligned images are loaded the <b>options</b> panel is visible and one can use the mouse cursor to align the frame (in magenta). See the <a href="#options">Options</a> section for a description of the available options to help with the coregistration.
+        Once the reference and the misaligned images are loaded, the <b>options</b> panel becomes visible and one can use the mouse cursor to align the frame (in magenta). See the <a href="#options">Options</a> section for a description of the available options to help with the coregistration.
       </p>
       <p style="text-align: center;">
           <video src="../../assets/gifs/dataviewer_manual_alignment_mov1.mp4" alt="dataviewer_manual_alignment_mov1 " width="660" controls></video>
@@ -64,44 +129,44 @@ nav_order: 4
         Once the moving image (magenta) is placed in the optimal position, click on the <b>Align</b> button to apply to the misaligned data.
       </p>
     </ol>
-    <h3>Interface components</h3>    
-    <h4 id="options">Options panel</h4>
+    <h3 id="standalone-procedure">Using as standalone</h3>  
+    <br>
+    <div class="warnnote">
+      <p><strong>Important</strong><br>
+        This section does <b>not</b> apply to app deployed as executable.
+      </p>
+      </div>  
+    <p>
+      This tool can also be used as a standalone in Matlab. In this mode, one can use either <samp>.dat</samp> files or images from Matlab's workspace. Here are the different ways of launching the app as standalone from Matlab command window:
+    </p>
     <ul>
-      <li><b><i>Image sharpening</i></b>:
-        <ul>
-          <li><b><i>None</i></b>: No sharpening</li>
-          <li><b><i>Enhance Contrast</i></b>: Enhances the contrast of both images using the <a href="https://www.mathworks.com/help/images/ref/adapthisteq.html">adapthisteq</a> function</li>
-          <li><b><i>Gaussian Filter</i></b>:</li>Equivalent of an unsharp masking where two spatially filtered version of the images are subtracted. The operation consists of a filtered image with a sigma of .5 minus a blurred version of the image
-        </ul>
-      </li>
-      <li><b><i>Flip horizontally</i></b>: Mirrors moving image</li>
-      <li><b><i>Invert colors</i></b>: Invert colors of both images</li>
-      <li><b><i>Display result as:</i></b>
-        <ul>
-          <li><b><i>FalseColor</i></b>: Composite of green (reference) and magenta (moving)</li>
-          <li><b><i>Reference</i></b>: Displays reference image</li>
-          <li><b><i>Moving</i></b>: Displays moving image</li>
-          <li><b><i>Difference</i></b>: Shows the difference of the moving and reference images</li>
-          <li><b><i>Alternate view</i></b>:Alternates between the reference and moving images</li>
-        </ul>
-      </li>
-    </ul>
-    <h4 id="fine-tuning">Fine tuning</h4>
+      <li><span class="code-inline">manualAlignFrames();</span> Launches the inteface. Use the Loading options in the app to load the reference and misaligned data.</li>
+      <li><span class="code-inline">manualAlignFrames('refFile.dat','movFile.dat');</span> Opens the reference and misaligned .dat files. In this case, type the full path to the <samp>.dat</samp> files.</li>
+      <li><span class="code-inline">manualAlignFrames(img1,img2);</span> Opens the images stored in the variables <i>img1</i> and <i>img2</i>. When using variables as input for the misaligned data, the "Align" button is not available.</li>
+    </ul> 
     <p>
-      Click on the <b><i>Fine tuning</i></b> button to show/hide the panel. <br>
-      Here, one can set custom steps and move the misaligned frame incrementally by clicking on the up/down arrows. This is useful to perform small movements otherwise challenging with the mouse cursor.
+      Here is an example of a custom function that uses the manual image registration tool as standalone to generate the geometric transformation object (<i>tform</i>) and apply the coregistration to an image:
     </p>
-    <h4> Align Button </h4>
-    <p>
-      Applies the coregistration to the misaligned <samp>.dat</samp> file.
-    </p>
-    <p>
-      A <samp>tform.mat</samp> file will also be saved in the <samp>.dat</samp> file's directory containing the geometric transformation <i>affine2d</i> object.
-    </p>
-    <h4> Export Button </h4>
-    <p>
-      Saves the <i>affine2d</i> object with the geometric transformation to a <samp>.mat</samp> file.
-    </p>    
+    <div class="black-box">
+      <pre>
+function [alignedImage, tform] = alignImage(fixImg,movImg)
+  % This function calls the manualAlignFrames tool to manually coregister
+  % the image "movImg" to the reference image "fixImg" and outputs the
+  % registered image and the geometric transformation object.
+
+  % Launch the tool:
+  h = manualAlignFrames(fixImg,movImg);
+  % Inside the app, align the movImg and save the geometric transformation
+  % object to Matlab's base workpace to a variable named "tform" and close
+  % the app.
+  waitfor(h);
+  % Load the geometric transformation object:
+  tform = evalin('base','tform');
+  % Apply the geometric transformation to the misaligned image:
+  alignedImage = imwarp(movImg,tform,'nearest','OutputView',imref2d(size(fixImg)));
+end
+      </pre>
+    </div>    
   </body>
 </html>
 
