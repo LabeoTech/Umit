@@ -595,11 +595,17 @@ classdef Protocol < handle
         end
         function createLogBookFile(obj)
             % This function creates an empty table LOGBOOK and saves in a .MAT file (LOGBOOKFILE).
-            if ~isempty(obj.SaveDir)
-                LogBook = obj.createEmptyTable;
-                save(obj.LogBookFile, 'LogBook');
-                disp(['Emtpy Log Book Created in ' obj.SaveDir]);
+            if isempty(obj.SaveDir)
+                return
             end
+            
+            if isfile(fullfile(obj.SaveDir,'LogBook.mat'))
+                % Make sure that the current LogBook is not erased:
+                return
+            end                
+            LogBook = obj.createEmptyTable;
+            save(obj.LogBookFile, 'LogBook');
+            disp(['Emtpy Log Book Created in ' obj.SaveDir]);
         end
         function changeMainDir(obj, newMainDir)
             % CHANGEMAINDIR changes the main directory where the raw data
