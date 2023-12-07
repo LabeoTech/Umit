@@ -238,8 +238,6 @@ Ry = round((LimY(2) - LimY(1) + 1)/BinningSpatial);
 % Update Frame size in AcqInfoStream:
 AcqInfoStream.Width = Rx;
 AcqInfoStream.Height = Ry;
-% Save AcqInfo:
-save([SaveFolder 'AcqInfos.mat'],'AcqInfoStream');
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % How many colors and in which order?
@@ -323,20 +321,26 @@ end
 if ~isscalar(unique([datLen.Len]))
     disp('Fixing data length...')
     % Remove extra frames of channels so all have the same length
-    newLen = min([datLen.Len]);
-    datLen([datLen.Len] == newLen) = [];% Keep list of channels with extra frames.
+    minLen = min([datLen.Len]);
+    datLen([datLen.Len] == minLen) = [];% Keep list of channels with extra frames.
     for ind = 1:length(datLen)
         fid = fopen(fullfile(SaveFolder,datLen(ind).File),'r');
         dat = fread(fid,Inf,'*single');fclose(fid);
         dat = reshape(dat,AcqInfoStream.Height,AcqInfoStream.Width,[]);
-        dat = dat(:,:,1:newLen);
+        dat = dat(:,:,1:minLen);
         fid = fopen(fullfile(SaveFolder,datLen(ind).File),'w');
         fwrite(fid,dat,'single');
         fclose(fid);
+        datLen(ind).Len = minLen;
     end
     disp('Data length fixed.')
 end
+% Add Data length to AcqInfos:
+AcqInfoStream.Length = datLen(1).Len;
+% Save AcqInfo:
+save([SaveFolder 'AcqInfos.mat'],'AcqInfoStream');
 
+%%% Local functions:
 
     function colorLen = ChannelsSort(fList, colors)
         % CHANNELSORT performs the classification of the raw data into the
@@ -472,7 +476,6 @@ end
         end
     end
 
-% Auxiliary functions:
     function closeFig(src,~)
         % CloseRequest function for Drawing ROI.
         % It saves the current position of the rectangle in the axis:
@@ -480,6 +483,5 @@ end
         Pos = rectH.Position;
         delete(src)
     end
-
 end
 
