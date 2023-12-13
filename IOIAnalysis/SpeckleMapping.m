@@ -63,6 +63,8 @@ else
     DatOut = dataSource + 0; % This operation is just to force Matlab to load the data in RAM so the availabe memory estimation works properly.    
     clear dataSource
 end
+% Normalize data by temporal mean:
+DatOut = DatOut./mean(DatOut,3,'omitnan');
 
 disp('Mapping Computation...');
 switch lower(sType)
@@ -82,22 +84,27 @@ if nChunks > 1
     if strcmpi(sType, 'temporal')
         indxChk = round(linspace(0,datSz(1),nChunks));
         for ii = 1:length(indxChk)-1            
-            DatOut(indxChk(ii)+1:indxChk(ii+1),:,:)= single(stdfilt(DatOut(indxChk(ii)+1:indxChk(ii+1),:,:),Kernel)./...
-                imfilter(DatOut(indxChk(ii)+1:indxChk(ii+1),:,:), Kernel/(5*5),'conv'));
+%             DatOut(indxChk(ii)+1:indxChk(ii+1),:,:)= single(stdfilt(DatOut(indxChk(ii)+1:indxChk(ii+1),:,:),Kernel)./...
+%                 imfilter(DatOut(indxChk(ii)+1:indxChk(ii+1),:,:), Kernel/(5*5),'conv'));
+            DatOut(indxChk(ii)+1:indxChk(ii+1),:,:)= single(stdfilt(DatOut(indxChk(ii)+1:indxChk(ii+1),:,:),Kernel));
             fprintf('[%1.0f%%]\n', 100*ii/(length(indxChk)-1));
         end
     else
         indxChk = round(linspace(0,size(DatOut,3),nChunks));
         for ii = 1:length(indxChk)-1
-            DatOut(:,:,indxChk(ii)+1:indxChk(ii+1)) = single(stdfilt(DatOut(:,:,indxChk(ii)+1:indxChk(ii+1)), Kernel)./...
-                imfilter(DatOut(:,:,indxChk(ii)+1:indxChk(ii+1)),Kernel/(5*5),'conv'));
+%             DatOut(:,:,indxChk(ii)+1:indxChk(ii+1)) = single(stdfilt(DatOut(:,:,indxChk(ii)+1:indxChk(ii+1)), Kernel)./...
+%                 imfilter(DatOut(:,:,indxChk(ii)+1:indxChk(ii+1)),Kernel/(5*5),'conv'));
+            DatOut(:,:,indxChk(ii)+1:indxChk(ii+1)) = single(stdfilt(DatOut(:,:,indxChk(ii)+1:indxChk(ii+1)), Kernel));
             fprintf('[%1.0f%%]\n', 100*ii/(length(indxChk)-1));
         end
     end
     fprintf('[Completed]\n')
 else    
-    DatOut = single(stdfilt(DatOut,Kernel)./imfilter(DatOut, Kernel./(5*5),'conv'));
+%     DatOut = single(stdfilt(DatOut,Kernel)./imfilter(DatOut, Kernel./(5*5),'conv'));
+      DatOut = single(stdfilt(DatOut,Kernel));
+
 end
+
 % Remove outliers
 % remOutlier; % This was taking too much RAM for large data.
 
