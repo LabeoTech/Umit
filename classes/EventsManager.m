@@ -7,7 +7,7 @@ classdef EventsManager < handle
         trigThr = 'auto'; % Trigger detection Threshold in volts (Default = 'auto'). The 'auto' means that the threshold will be at 70% of the signal amplitude.
         trigType char = 'EdgeSet' % Trigger type.
         trigChanName = {''}; % Name of AI channel(s) containing the triggers.
-        minInterStim single {mustBeNonnegative} = 2 % Minimal inter stim time (in seconds). This param. is used to identify Bursts in analogIN. !This value should be higher than the inter-burst value to work!
+        minInterStim single {mustBeNonnegative} = 2 % Minimal inter stim time (in seconds). This param. is used to identify Bursts in analogIN. !This value should be higher than the inter-burst value to work!       
     end
     properties (SetAccess = private)
         dictAIChan cell = {'CameraTrig', 'CameraTrig2', 'InputTrigger',...
@@ -22,8 +22,9 @@ classdef EventsManager < handle
         state logical {mustBeNonnegative} % State of triggers (1= ON, 0 = OFF)
         eventID uint16 {mustBePositive} % Index of each condition (1, 2, 3 ...)
         eventNameList cell % Name of each condition.
-        conditionArray single % Vector of condition indices used to mark the beginning and end of each trial. The vector length is equal to the number of frames from the data in .dat files.
-        repetitionArray single % Vector of repetition indices for each condition. Same size of "conditionArray".
+        trialInterval single % Trial interval (in seconds). Values indicate pre and post-time (in seconds) from event onset.
+        ignoredConditions logical % Vector of condition indices NOT used when splitting the data by trials.
+        ignoredRepetitions cell % Vector of repetition indices NOT used when splitting the data by trials.
         b_isDigital logical = false; % TRUE for digital stimulation using OiS200 as master.
         minTrigAmp single {mustBePositive} = .15; % Minimal signal amplitude (in Volts). Used when the trigger threshold is "auto". Ignored otherwise.
         EventFileName char % Name of the event file containing events information (.csv, .txt, .vpixx ...).
@@ -31,11 +32,11 @@ classdef EventsManager < handle
     properties (Access = private)
         warnOrigState % original state of Matlab's warnings. This will be restored at this class destruction.
         ParseMethods = {'none','csv','vpixx'}; % List of valid parse methods.
-        privateEventFileParseMethod;
+        privateEventFileParseMethod;        
         b_LP_applied = false % Boolean to indicate if a low-pass filtering was applied to the AnalogIN data.
     end
     properties (Dependent)
-        EventFileParseMethod char % Name of the method to read the Event File. {'CSV','vpixx'};
+        EventFileParseMethod char % Name of the method to read the Event File. {'CSV','vpixx'};        
     end
     
     methods
@@ -54,7 +55,7 @@ classdef EventsManager < handle
             % Input validation:
             p = inputParser;
             addRequired(p,'DataFolder',@isfolder)
-            addOptional(p, 'ParseMethod','none',@(x) ismember(lower(x),obj.ParseMethods));
+            addOptional(p, 'ParseMethod','csv',@(x) ismember(lower(x),obj.ParseMethods));
             parse(p,DataFolder,varargin{:});
             
             % Disable backtrace warnings:
@@ -64,21 +65,21 @@ classdef EventsManager < handle
             % Set main properties:
             obj.DataFolder = p.Results.DataFolder;
             obj.EventFileParseMethod = lower(p.Results.ParseMethod);
-            % Set properties based on the info.txt file:
+            % Set properties based on the AcqInfo.mat file:
             obj.setInfo;
             % Set AnalogIN property:
-            obj.setAnalogIN;
+%             obj.setAnalogIN;
 %             % Detect internally-generated triggers:
 %             if ~isempty([obj.trigChanName{:}])
 %                 obj.getTriggers;
 %             end
-%             % Force EventFileParseMethod to "none" if the stimulus is
-%             % digital. In this case, the event info should already be
-%             % stated in the "info.txt" file (to be confirmed)
-%             if obj.b_isDigital && ~strcmpi(obj.EventFileParseMethod, 'none')
-%                 warning('Event file parsing method set to "none" because the stimulus is digital.')
-%                 obj.EventFileParseMethod = 'none';
-%             end
+            % Force EventFileParseMethod to "none" if the stimulus is
+            % digital. In this case, the event info should already be
+            % stated in the "info.txt" file (to be confirmed)
+            if obj.b_isDigital && ~strcmpi(obj.EventFileParseMethod, 'none')
+                warning('Event file parsing method set to "none" because the stimulus is digital.')
+                obj.EventFileParseMethod = 'none';
+            end
         end
         
         function set.EventFileParseMethod(obj, parseMethod)
@@ -105,12 +106,51 @@ classdef EventsManager < handle
                 error(['Format ' class(trigName) ' not supported! It must be char or cell array of chars.'])
             end
         end
-        
+                
         function set.trigType(obj, trigType)
             assert(ismember(lower(trigType), {'edgeset','edgetoggle'}),'Invalid trigger type! It must be either "EdgeSet" or "EdgeToggle".')
             obj.trigType = lower(trigType);
+        end                
+                
+        function setTrialInterval(obj,preEventTime, postEventTime)            
+           % Sets the trialInterval property with the beginning and end times (in seconds) for trial splitting.           
+           % Parameters:           
+           %   preEventTime - The time period before the event onset (default: 1/2 of the inter-trial length).
+           %   postEventTime - The time period after the event onset (default: trial length + 1/2 of the inter-trial length).                      
+           %   Note: Here, "trial length" refers to the largest time period with the trigger at HIGH state (i.e. onset to offset time
+           %   period).
+           assert(~isempty(obj.state), 'Failed to set trial interval! No triggers detected yet!')
+           tmOn = obj.timestamps(obj.state);
+           tmOff = obj.timestamps(~obj.state);
+           trialLength = max(tmOff - tmOn);
+           % Calculate the trial length for automatic set of trial interval :
+           if sum(obj.state) == 1
+               % For a single trial, set the inter trial length as the
+               % period before and after the event.
+               interTrialLength = obj.timestamps(obj.state) + obj.AcqInfo.Length/obj.AcqInfo.FrameRateHz; 
+           else
+               % For post cases, get the minimal time period between event
+               % onsets.
+               
+               interTrialLength = max(tmOn(2:end) - tmOff(1:end-1));
+           end
+           
+           if ~exist('preEventTime','var')
+               % If no pre-event time was provided, automatically split the
+               % inter- trial time in two and add half of the time at the
+               % end of the trial.               
+               preEventTime =  interTrialLength/2;
+               postEventTime = trialLength + interTrialLength/2;               
+           end
+           
+           if ~exist('postEventTime','var')
+               % Set the post-event time as the remainder of the trial              
+               postEventTime = trialLength + interTrialLength/2;               
+           end
+                      
+           obj.trialInterval = [preEventTime, postEventTime];                                  
         end
-        
+                
         function out = get.EventFileParseMethod(obj)
             out = obj.privateEventFileParseMethod;
         end
@@ -248,15 +288,23 @@ classdef EventsManager < handle
             %
             p = inputParser;
             addRequired(p,'obj');
+            addOptional(p,'ChannelName','',@(x) ischar(x) || (iscell(x) && ischar(x{:})));
             addOptional(p,'b_verbose',true,@islogical)
             addParameter(p,'FilterFreq',0,@(x) isscalar(x) & x>=0)
             parse(p,obj,varargin{:})
+            chanName = p.Results.ChannelName;
             b_verbose = p.Results.b_verbose;
             FilterFreq = p.Results.FilterFreq;
             
-            if isempty([obj.trigChanName{:}])
+            if ~isempty(chanName) 
+                obj.trigChanName = chanName;
+            elseif isempty(chanName) && isempty([obj.trigChanName{:}])                
                 warning('Trigger channel name not set! Trigger detection aborted.')
                 return
+            end
+            if isempty(obj.AnalogIN)
+                % Read AnalogIN data:
+                obj.setAnalogIN;
             end
             if ( FilterFreq > 0 && FilterFreq < obj.sr/2 )
                 % Apply low-pass filter to the data at selected cut-off
@@ -277,6 +325,8 @@ classdef EventsManager < handle
             obj.state = [];
             obj.eventID = [];
             obj.eventNameList = {};
+           
+            % Get triggers:
             for ii = 1:length(obj.trigChanName)
                 idxCh = strcmpi(obj.trigChanName{ii},obj.AIChanList);
                 if ~any(idxCh)
@@ -354,6 +404,7 @@ classdef EventsManager < handle
                     obj.trigType)
                 disp('--------------------------------')
             end
+            obj.resetIgnoredLists; % Reset lists of ignored Condition and Repetitions 
         end
         
         function status = readEventFile(obj, varargin)
@@ -489,61 +540,98 @@ classdef EventsManager < handle
             % Save event ID and name lists:
             obj.eventID = evID;
             obj.eventNameList = evNames;
+            obj.resetIgnoredLists; % Reset lists of ignored Condition and Repetitions 
+            %             
             status = true;
         end
         
-        function setTrialInterval(obj,preEventTime, postEventTime)            
-           % Sets the beginning and end of each trial for umIToolbox data processing.
-           %
-           % Parameters:           
-           %   preEventTime - The time period before the event onset (default: 20% of trial length).
-           %   postEventTime - The time period after the event onset (default: remaining trial length).
-           %
-           % Description:
-           %   This method sets the trial intervals, condition, and repetition arrays
-           %   required by umIToolbox functions for data splitting by events.
-                               
-           % Set condition and repetition arrays:
-           obj.conditionArray = zeros(1,obj.AcqInfo.Length,'single');
-           obj.repetitionArray = zeros(1,obj.AcqInfo.Length,'single');
-                      
-           % Calculate the trial length:
-           if sum(obj.state) == 1
-               % For a single trial, set the trial length as the period
-               % between the event onset and the recording ending.
-               trialLength = (obj.AcqInfo.Length/obj.AcqInfo.FrameRateHz) - obj.timestamps(obj.state);
-           else
-               % For post cases, get the minimal time period between event
-               % onsets.
-               trialLength = min(diff(obj.timestamps(obj.state)));
-           end
+        function removeCondition(obj, conditionName)
+           % Add condition "conditionName" to the list of ignored conditions.
+           % This will eliminate the whole condition, from the analysis
+           % when the data will be split by events.
+           if ~obj.validateCondition(conditionName);return;end
            
-           if ~exist('preEventTime','var')
-               % If no pre-event time was provided, automatically split the
-               % trials with a 20/80 ratio with 20% of the trial length as the
-               % pre-event time and 80% as post-event time.
-               preEventTime =  .2*trialLength;
-               postEventTime = .8*trialLength;               
-           end
-           
-           if ~exist('postEventTime','var')
-               % Set the post-event time as the remainder of the trial              
-               postEventTime = trialLength - preEventTime;               
-           end
-               
-           % Set the condition and repetition indices:
-           frameOn = ceil((obj.timestamps(obj.state) - preEventTime)*obj.AcqInfo.FrameRateHz) + 1;
-           frameOff = ceil((obj.timestamps(obj.state) + postEventTime)*obj.AcqInfo.FrameRateHz) + 1;
-           frameOn(frameOn < 1) = 1;
-           frameOff(frameOff > obj.AcqInfo.Length) = obj.AcqInfo.Length;
-           evID = obj.eventID(obj.state);
-           for ii = 1:length(evID)
-               obj.conditionArray(frameOn(ii):frameOff(ii)) = evID(ii);
-               obj.repetitionArray(frameOn(ii):frameOff(ii)) = sum(evID(1:ii) == evID(ii));
-           end
-           
+           obj.ignoredConditions(strcmpi(conditionName,obj.eventNameList)) = true;                                        
+           fprintf('Condition "%s" will be ignored in the analysis!\n',conditionName)
         end
         
+        function removeRepetition(obj, conditionName, repetitionIndex)
+            % Adds the repetition "repetitionIndex" to the list of ignored
+            % repetitions for a given condition "conditionName".
+            % This will eliminate a specific repetition or a set of repetitions 
+            % from the analysis when the data will be split by events.
+                       
+            if ~obj.validateCondition(conditionName);return;end
+            if ~obj.validateRepetition(conditionName, repetitionIndex);return;end
+            
+            idxCond = strcmpi(conditionName,obj.eventNameList);            
+                        
+            obj.ignoredRepetitions{idxCond} = unique([obj.ignoredRepetitions{idxCond} repetitionIndex]);
+            obj.ignoredRepetitions{idxCond}(obj.ignoredRepetitions{idxCond} == 0) = []; % Remove zeros;
+            fprintf('Repetition "%d" from condition "%s" will be ignored in the analysis!\n',repetitionIndex,conditionName);
+            if isempty(setdiff([1:sum(obj.eventID == find(idxCond) & obj.state)], obj.ignoredRepetitions{idxCond}))
+                obj.ignoredConditions(idxCond) = true;
+                obj.ignoredRepetitions{idxCond} = [];
+                warning('All repetitions from condition "%s" ignored. The whole condition will be ignored in the analysis!\n',conditionName)
+            end
+
+        end                                
+        
+        function resetIgnoredLists(obj)
+           % Resets the lists of ignored conditions and repetitions to the default state (i.e. all trials included).           
+           if isempty(obj.state)
+               % When there is no triggers detected. This should not be
+               % reached.
+               obj.ignoredConditions = [];
+               obj.ignoredRepetitions = {};
+           else
+               obj.ignoredConditions = false(length(obj.eventNameList),1);
+               obj.ignoredRepetitions = cell(length(obj.eventNameList),1);
+           end               
+           fprintf('Condition and Repetition lists successfully reset! All trials will be considered in the analysis.\n');
+        end                        
+        
+        function [frameIndexList, frameOnsetIndex] = getFrameIndexList(obj, conditionName,repetitionIndex)
+           % Generates a list of frame indices to help DataViewer to quickly plot the data for selected conditions and repetitions
+           
+           frameIndexList = [];frameOnsetIndex = [];
+           % Input variable checks:
+           if ~obj.validateCondition(conditionName)
+               return
+           end
+            
+           % Check repetitions:
+           idxCond = obj.eventID == find(strcmpi(conditionName, obj.eventNameList));
+           if ~exist('repetitionIndex','var')
+               % Get all repetitions, if no repetition index is provided.
+               repetitionIndex = 1:sum(idxCond & obj.state);
+           end           
+           repetitionIndex(~arrayfun(@(x) obj.validateRepetition(conditionName,x), repetitionIndex)) = []; % Remove blacklisted repetitions
+           if isempty(repetitionIndex)
+               return
+           end
+                      
+           % Automatically set trial interval, if the user didn't do it
+           % already:
+           if isempty(obj.trialInterval)
+               obj.setTrialInterval;
+           end           
+           
+           % Create List of Frame indices per repetition:
+           frPreEvent = round(obj.trialInterval(1)*obj.AcqInfo.FrameRateHz);
+           frPostEvent = round(obj.trialInterval(2)*obj.AcqInfo.FrameRateHz);
+           frameOnsetIndex = round(obj.timestamps(obj.state  & idxCond)*obj.AcqInfo.FrameRateHz);
+           % Preallocate output matrix:                          
+           frameIndexList = zeros(length(repetitionIndex),sum([frPreEvent frPostEvent 1]),'single');           
+           % Populate output matrix:           
+           for ii = 1:length(repetitionIndex)               
+               frameInterval = frameOnsetIndex(ii) - frPreEvent: frameOnsetIndex(ii) + frPostEvent;               
+               idx = frameInterval > 0 & frameInterval < obj.AcqInfo.Length;               
+               frameIndexList(ii,idx) = frameInterval(idx);                              
+           end   
+           
+        end
+                
         function saveEvents(obj, saveFolder)
             % SAVEEVENTS creates the file "events.mat" in the
             % SaveFolder. This file is used by umIT to split the data into
@@ -557,30 +645,39 @@ classdef EventsManager < handle
             if isempty(obj.timestamps)
                 warning('Unable to create events.mat file. No triggers found!')
                 return
-            end            
+            end 
+            % Automatically set trial interval, if the user didn't do it
+            % already:
+            if isempty(obj.trialInterval)
+                obj.setTrialInterval;
+            end
             eventID = obj.eventID; %#ok
             timestamps = obj.timestamps; %#ok
             state = obj.state; %#ok
             eventNameList = obj.eventNameList; %#ok
-            conditionArray = obj.conditionArray; %#ok
-            repetitionArray = obj.repetitionArray; %#ok         
+            trialInterval = obj.trialInterval; %#ok
+            trigChanName = obj.trigChanName; %#ok
+            ignoredConditions = obj.ignoredConditions; %#ok
+            ignoredRepetitions = obj.ignoredRepetitions; %#ok
             % Save:
-            save(fullfile(saveFolder, 'events.mat'), 'eventID', 'state', 'timestamps', 'eventNameList','conditionArray','repetitionArray');
+            save(fullfile(saveFolder, 'events.mat'), 'eventID', 'state', 'timestamps', 'eventNameList','trialInterval','trigChanName','ignoredConditions', 'ignoredRepetitions');
             disp(['Events MAT file saved in  ' saveFolder]);
         end
         
         function loadEvents(obj, Folder)
            % Load variables from events.mat file.
-           
+           if ~exist('Folder','var')
+               Folder = pwd;
+           end           
            assert(any(exist(fullfile(Folder,'events.mat'),'file')), ['Failed to load event info! "events.mat" not found in ' Folder]);
            evInfo = load(fullfile(Folder,'events.mat'));
-           
-           obj.eventID = evInfo.eventID;
-           obj.timestamps = evInfo.timestamps;
-           obj.state = evInfo.state;
-           obj.eventNameList = evInfo.eventNameList;
-           obj.conditionArray = evInfo.conditionArray;
-           obj.repetitionArray = evInfo.repetitionArray;
+           fn = fieldnames(evInfo);
+           for ii = 1:length(fn)
+               obj.(fn{ii}) = evInfo.(fn{ii});
+           end
+           if isempty(obj.ignoredConditions)
+               obj.resetIgnoredLists;
+           end
            disp(['Events info loaded from file ' fullfile(Folder,'events.mat')]);           
         end
     end
@@ -910,6 +1007,42 @@ classdef EventsManager < handle
             % that there is no overlap between conditions).
             eventID = repelem(eventID,2);
         end
+        %%%% Validators %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        function bOk = validateCondition(obj, conditionName)
+            % Validates if the input condition exists in the
+            % "eventNameList" and if it is not ignored. ATTENTION: !Case Insensitive!
+            validateattributes(conditionName,{'char'},{'scalartext'});
+            
+            bOk = false;
+            idxCond = strcmpi(conditionName, obj.eventNameList);
+            % Check if it exists:
+            if ~any(idxCond)
+                error('The condition with name "%s" does not exist in the "eventNameList".', conditionName);                
+            end
+            % Check if it was not blacklisted:
+            if obj.ignoredConditions(idxCond)
+                warning('The condition with name "%s" is already listed as ignored!',conditionName)
+                return
+            end
+            bOk = true;
+        end
+        
+        function bOk = validateRepetition(obj, conditionName, repetitionIndex)
+           % Validates if the input repetition exists and if it it is not ignored.             
+           validateattributes(repetitionIndex,{'single','double'},{'scalar'});
+           
+           bOk = false;
+           indxCond = find(strcmpi(conditionName,obj.eventNameList));
+           if ~any(ismember(repetitionIndex, 1:sum(obj.eventID(obj.state) == indxCond)))
+               error('The repetition "%d" from the condition "%s" is out of bounds!',repetitionIndex,conditionName);                          
+               
+           end
+           if any(obj.ignoredRepetitions{indxCond} == repetitionIndex)
+               warning('The repetition "%d" from the condition "%s" is already listed as ignored!',repetitionIndex,conditionName);                          
+               return
+           end
+           bOk = true;
+        end        
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function delete(obj)
             % Class destructor. Re-enables original warnings.

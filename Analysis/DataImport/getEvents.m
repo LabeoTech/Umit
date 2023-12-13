@@ -55,7 +55,6 @@ for ii = 1:length(opts.StimChannel)
         opts.StimChannel{ii} = evObj.AIChanList{3};
     end
 end
-evObj.AIChanList
 % Update EventsManager object properties:
 evObj.trigThr = opts.Threshold;
 evObj.trigType = opts.TriggerType;
