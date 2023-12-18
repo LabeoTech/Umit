@@ -83,10 +83,10 @@ ErrorLineWidth = 3; % Width of error bars.
 % Get number of groups per X point:
 nG = numel(unique(group));
 % Then we calculate the center of each data column around an X point.
-xVec = unique(x);
-
+xVec = unique(x,'stable');
 xSpread = [xVec - lenSpread/2, xVec + lenSpread/2];
-xSpread = unique(xSpread);xSpread = reshape(xSpread,2,[])';
+
+% xSpread = unique(xSpread,'stable');xSpread = reshape(xSpread,2,[])';
 xLim = zeros(size(xSpread,1),nG+1);
 for ii = 1:size(xSpread,1)
     xLim(ii,:) = linspace(xSpread(ii,1), xSpread(ii,2), nG+1);
@@ -96,7 +96,7 @@ spacing = 0.2*min(diff(xLim(1,:))); % 20% of spacing between groups.
 
 % Plotting:
 hold(axHandle, 'on');
-for ii = 1:xVec(end)
+for ii = 1:length(xVec)
     idxX = ( x == xVec(ii) );
     for jj = 1:nG
         idxG = ( group == jj );
@@ -137,8 +137,10 @@ for ii = 1:xVec(end)
         errG.UserData.Ndata = sum(idxX & idxG); % Store the number of data used to calculate the error bar. This can be used to recalculate the error later.
         % Create scatter plot in selected positions:
         
-        if b_Xjitter
+        if b_Xjitter && b_isCat
             xPos = rescale(rand(size(data,1),1),xLim(ii,jj)+spacing/2,xLim(ii,jj+1)-spacing/2);
+        elseif b_Xjitter && ~b_isCat
+            xPos = rescale(rand(size(data,1),1),xVec(ii)-spacing/2,xVec(ii)+spacing/2);
         elseif ~b_isCat
             xPos = repmat(xVec(ii),length(data),1);
         else
