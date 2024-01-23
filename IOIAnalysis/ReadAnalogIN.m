@@ -25,7 +25,7 @@ for ind = 1:size(aiFilesList,1)
     tmp = reshape(tmp, 1e4, Infos.AINChannels, []);
     tmp = permute(tmp,[1 3 2]);
     tmp = reshape(tmp,[],Infos.AINChannels);
-    AnalogIN = [AnalogIN; tmp];
+    AnalogIN = [AnalogIN; tmp]; %#ok
 end
 % Crop to first and last camera triggers:
 camT = diff(AnalogIN(:,1) > 2.5); camT = [camT;NaN];
