@@ -702,7 +702,7 @@ classdef EventsManager < handle
             % Here, a biphasic signal is considered to have a positive
             % followed
             % a negative pulse.
-            if ~isequaln(data,abs(data))
+            if round((max(data) - abs(min(data)))/2) == 0
                 disp('Biphasic signal detected.')
                 data = abs(data);
             end                        
