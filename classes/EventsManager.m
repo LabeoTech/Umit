@@ -676,31 +676,8 @@ classdef EventsManager < handle
         
         function setAnalogIN(obj)
             % SETANALOGIN reads the ai_xxxx.bin files and saves it in "AnalogIN" property.
-            % List of analog files containing raw data:
-            
-            aiFilesList = dir(fullfile(obj.DataFolder,'ai_*.bin'));
-            if isempty(aiFilesList)
-                warning(['Analog Input files (ai_xxxx.bin) not found in "' obj.DataFolder '"'])
-                return
-            end            
-            disp('Reading analog inputs...')
-            % Opening of the files:
-            obj.AnalogIN = [];
-            for ind = 1:size(aiFilesList,1)
-                data = memmapfile(fullfile(obj.DataFolder,aiFilesList(ind).name),...
-                    'Offset', 5*4, 'Format', 'double', 'repeat', inf);
-                tmp = data.Data;
-                tmp = reshape(tmp, 1e4, obj.AcqInfo.AINChannels, []);
-                tmp = permute(tmp,[1 3 2]);
-                tmp = reshape(tmp,[],obj.AcqInfo.AINChannels);
-                obj.AnalogIN = [obj.AnalogIN; tmp];
-            end
-            % Crop to first and last camera triggers:
-            camT = diff(obj.AnalogIN(:,1) > 2.5); camT = [camT;NaN];
-            camTOn = find(camT == 1,1,'first');
-            camTOff = find(camT == -1,1,'last');
-            obj.AnalogIN = obj.AnalogIN(camTOn:camTOff,:);
-            disp('Done')
+            % List of analog files containing raw data:                        
+            obj.AnalogIN = ReadAnalogIN(obj.DataFolder,obj.AcqInfo);            
         end
                      
         function [timestamps, state] = detectTrig(obj,data)
