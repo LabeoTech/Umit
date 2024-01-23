@@ -55,7 +55,13 @@ if ~isempty(eventNameList)
     msg = 'The unique values of eventID do not match the number of elements in eventNameList.';
     assert(isequal(numel(unique(eventID)), numel(eventNameList)), errID, msg);
 end
-
+% Ensure that the event name list is a single column:
+if size(eventNameList,1) < size(eventNameList,2)
+    eventNameList = eventNameList';
+end
+if size(state,1) < size(state,2)
+    state = state';
+end
 % Save:
 filename = fullfile(saveFolder, 'events.mat');
 save(filename, 'eventID', 'state', 'timestamps', 'eventNameList');
