@@ -1,8 +1,9 @@
 function saveEventsFile(saveFolder, eventID, timestamps, varargin)
 % SAVEEVENTSFILE creates a .MAT file containing a list of events
 % identifiers (EVENTID) and their respective time stamps (TIMESTAMPS)
-% in seconds. This function simply performs some validations to the inputs
+% in seconds. This function mostly performs some validations to the inputs
 % before saving them in a .MAT file.
+
 % Inputs:
 %   saveFolder: folder where to save the .MAT file.
 %   eventID: array containing events indices. Transforms to UINT16.
@@ -10,11 +11,8 @@ function saveEventsFile(saveFolder, eventID, timestamps, varargin)
 %   state (optional) : state of the event (ON = 1 or OFF = 0). This is
 %   mostly from TTL-type of events. Transforms to LOGICAL.
 %   eventNameList (optional) : cell array containing the Names associated
-%   with the indices listed in eventID. If not provided, outputs an empty
-%   cell.
-% Outputs:
-%   "events.mat" containing eventID, state, timestamps and eventNameList.
-
+%   with the indices listed in eventID. If not provided, outputs the list
+%   of unique event IDs.
 
 p = inputParser;
 validState = @(x) (all(ismember(x, [0 1]))) | islogical(x);
@@ -26,10 +24,11 @@ addOptional(p, 'eventNameList', [], @iscell);
 parse(p,saveFolder, eventID, timestamps, varargin{:});
 
 saveFolder = p.Results.saveFolder;
-eventID = uint16(p.Results.eventID); 
+eventID = uint16(p.Results.eventID);
 timestamps = single(p.Results.timestamps);
 state = logical(p.Results.state);
 eventNameList = p.Results.eventNameList;
+clear p
 
 % Flip arrays:
 if size(eventID,1) < size(eventID,2)
