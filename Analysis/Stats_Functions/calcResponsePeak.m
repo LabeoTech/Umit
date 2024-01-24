@@ -16,8 +16,8 @@ function outData = calcResponsePeak(data, varargin)
 
 % Defaults:
 default_Output = 'PeakStats.mat'; %#ok This line is here just for Pipeline management.
-default_opts = struct('ResponsePolarity','positive');
-opts_values = struct('ResponsePolarity', {{'positive','negative'}});%#ok This is here only as a reference for PIPELINEMANAGER.m.
+default_opts = struct('ResponsePolarity','positive', 'TimeWindow_sec', 'all');
+opts_values = struct('ResponsePolarity', {{'positive','negative'}}, 'TimeWindow_sec',{{'all',[0 Inf]}});%#ok This is here only as a reference for PIPELINEMANAGER.m.
 default_object = ''; % This line is here just for Pipeline management to be able to detect this input.
 %%% Arguments parsing and validation %%%
 p = inputParser;

@@ -1659,7 +1659,11 @@ for i = 1:length(fields)
             % Set min and max range:
             vo.Limits = [listVals{i}];
         otherwise
-            vo.Value = num2str(currVals{i});
+            if isnumeric(currVals{i})
+                vo.Value = strjoin(arrayfun(@num2str,currVals{i},'UniformOutput',false),';');
+            else
+                vo.Value = num2str(currVals{i});
+            end
             idx_char = cellfun(@ischar, listVals{i});
             name = strjoin(cellfun(@(x) ['"', x, '"'],listVals{i}(idx_char), 'UniformOutput', false),', ');
             if ~all(idx_char)
