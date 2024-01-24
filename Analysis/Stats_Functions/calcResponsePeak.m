@@ -39,7 +39,7 @@ assert(all(ismember(upper(outData.dim_names), {'O','E','T'})),...
     'Wrong input data type. Data must be a time vector split by event(s).');
 % For each ROI, calculate the average response and use the average time
 % vector to calculate the peak stats:
-ROIdata = struct();
+ROIdata = cell(1,length(outData.data));
 evntList = unique(outData.eventID);
 for ii = 1:length(outData.data)
         
@@ -81,17 +81,11 @@ for ii = 1:length(outData.data)
         onsetLat_arr(jj) = (onsetIndx - evntFr)/outData.Freq;
     end
     % Put data inside "ROIdata" structure:
-    ROIdata(ii).PeakAmplitude = PeakAmp_arr;
-    ROIdata(ii).PeakLatency = PeakLat_arr;
-    ROIdata(ii).OnsetAmplitude = onsetAmp_arr;
-    ROIdata(ii).OnsetLatency = onsetLat_arr;        
+    ROIdata{ii} = PeakAmp_arr;    
 end
 % Update meta data:
 outData.eventID = evntList;
 outData.label = outData.eventNameList;
 outData.data = ROIdata;
-
-
-
 
 end
