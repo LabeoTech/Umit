@@ -18,8 +18,8 @@ function [outData, metaData] = calculate_response_amplitude(data, metaData, vara
 
 % Defaults: !Instantiate one default per line!
 default_Output = 'amplitude_Map.dat'; %#ok This line is here just for Pipeline management.
-default_opts = struct('preEvent_value', 'median', 'postEvent_value', 'max', 'postEvnt_timeWindow_sec', 'all');
-opts_values = struct('preEvent_value', {{'mean', 'median', 'min','max'}}, 'postEvent_value',{{'mean', 'median', 'min','max'}},'postEvnt_timeWindow_sec',{{'all',Inf}});% This is here only as a reference for PIPELINEMANAGER.m. 
+default_opts = struct('preEvent_value', 'median', 'postEvent_value', 'max', 'TimeWindow_sec', 'all');
+opts_values = struct('preEvent_value', {{'mean', 'median', 'min','max'}}, 'postEvent_value',{{'mean', 'median', 'min','max'}},'TimeWindow_sec',{{'all',Inf}});% This is here only as a reference for PIPELINEMANAGER.m. 
 
 %%% Arguments parsing and validation %%%
 % Parse inputs:
@@ -39,10 +39,11 @@ clear p
 errID = 'Umitoolbox:calculate_respose_amplitude:InvalidDataType';
 errMsg = 'Invalid Input. Input must be member of {"mean", "median", "min","max"} or a numeric scalar';
 valid_Opts1 = @(x) (ismember(char(x), opts_values.preEvent_value) || (isscalar(x) && isnumeric(x)));
-valid_Opts2 = @(x) ( (~isempty(x) && isscalar(x) && x>0) )  || strcmp(x, 'all');
 assert(valid_Opts1(opts.preEvent_value), errID, errMsg);
 assert(valid_Opts1(opts.postEvent_value), errID, errMsg);
-assert(valid_Opts2(opts.postEvnt_timeWindow_sec), errID, 'Input must be a scalar positive numeric value or "all".');
+if numel(opts.TimeWindow_sec)~= 2 || diff(opts.TimeWindow_sec < 0)
+    error('Invalid time window. The input must be a pair of increasing positive numbers.');
+end
 % Get dimension names:
 dims = metaData.dim_names;
 % Validate if data has the following dimension names "E" and "T":
@@ -66,20 +67,27 @@ data = reshape(data,data_sz(1), []);
 
 % Perform amplitude calculation:
 trigFrame = round(metaData.preEventTime_sec * metaData.Freq);
-if ischar(opts.postEvnt_timeWindow_sec)
+if strcmpi(opts.TimeWindow_sec,'all')
     % Use all post-event time when the user selected "all":
-    endFrame  = size(data,1);
+    frOn = trigFrame + 1;
+    frOff  = size(data,1);
 else
     % Otherwise, select the post-event time window of choice in "opts":
-    endFrame  = trigFrame + round(metaData.Freq * opts.postEvnt_timeWindow_sec);
-    if endFrame > size(data,1)
-        endFrame = size(data,1);
+    % Get frames values:
+    frOn = round(opts.TimeWindow_sec(1)*metaData.Freq) + trigFrame;
+    frOff = round(opts.TimeWindow_sec(2)*metaData.Freq) + trigFrame;
+    
+    % Reset to default if input values are out of range
+    if frOn > size(data,1) || frOff > size(data,1) || frOn > frOff
+        warning('TimeWindow onset is out of range! Reset to default ("all")')
+        frOn = trigFrame + 1;
+        frOff = size(data,1);
     end
 end
 
 % Get baseline (pre_trigger) and postTrigger data:
-bsln = data(1:trigFrame-1,:);
-postTrig = data(trigFrame:endFrame,:);
+bsln = data(1:trigFrame,:);
+postTrig = data(frOn:frOff,:);
 
 % Use aggregate function OR value defined by User:
 bsln = applyAggFcn(bsln, opts.preEvent_value);
