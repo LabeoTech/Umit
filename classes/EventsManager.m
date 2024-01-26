@@ -242,7 +242,7 @@ classdef EventsManager < handle
            status = true;
         end
                     
-        function f = plotAnalogIN(obj, chanName)
+        function varargout = plot(obj, chanName)
             % PLOTANALOGIN plots the Analog input signals and overlays the
             % threshold as well as the detected triggers, if existent.
             %
@@ -281,7 +281,7 @@ classdef EventsManager < handle
                 nAxPerFig(end) = remAx;
             end               
             cnt = 1;    
-            b_trigsPlotted= false;
+            b_trigsPlotted = false;
             % Set axes properties:
             xVec = [0:size(obj.AnalogIN,1)-1]./obj.sr;% Use X-axis in seconds
             axYSize = [min(obj.AnalogIN(:)), max(obj.AnalogIN(:))]; % Get min-max for Yscale
@@ -332,47 +332,47 @@ classdef EventsManager < handle
                         hold(s(cnt),'off');
                         
                     else
-                        % copy the content of the first axis                        
+                        % copy the content of the first axis
                         if exist('ptc','var')
-                            
                             copyobj(ptc,s(cnt));
                         end
                         if exist('ln','var')
                             copyobj(ln,s(cnt));
                         end
-                    end                    
+                    end
                     title(s(cnt), chanName{cnt});
-                    cnt = cnt+1;          
+                    cnt = cnt+1;
                 end
-            end                                   
-            for ii = 1:length(f)
-                % Cascade figures:
-                if ii > 1
-                    f(ii).Position([1 2]) = f(ii-1).Position([1 2]) + [25 -25];
-                end
-                f(ii).UserData = f;                
-                f(ii).Visible = 'on';                                
             end
+            % Distribute figures on screen:
+            scrsz = get(0,'screensize');
+            totalFigWidth = 560*nFigs + 10*(nFigs-1);
+            f(1).Position(1) = (scrsz(3) - totalFigWidth)/2;
+            for ii = 2:nFigs
+                f(ii).Position(1) = sum([f(ii-1).Position([1 3]),10]);
+            end
+            arrayfun(@(x) set(x, 'Visible','on','UserData',f),f);
             % Link all axes together
             linkprop(s,{'XLim','YLim'});
             set(s(1),'YLim',axYSize);
-            
+            if nargout
+                varargout{:} = f;
+            end
             % CloseFig callback:
             function closeAllFigs(src,~)
-                % CLOSEALLFIGS closes all figures when the selected figure is closed.
-                h = src.UserData;
-                delete(h)
-            end            
+                % CLOSEALLFIGS closes all figures when the selected figure is closed.                
+                 delete(src.UserData)
+            end
         end
         
         function getTriggers(obj, varargin)
-            % GETTRIGGERS detects the triggers from one or more analog IN channels 
+            % GETTRIGGERS detects the triggers from one or more analog IN channels
             %   with names stored in the "trigChanName" property.
             % It records the timestamps and state of each event.
             % Input:
             %   b_verbose(bool, default = FALSE): If TRUE, displays some basic stats on
             %   trigger detection on the command window.
-            %   
+            %
             p = inputParser;
             addRequired(p,'obj');
             addOptional(p,'b_verbose',true,@islogical)
@@ -380,17 +380,17 @@ classdef EventsManager < handle
             parse(p,obj,varargin{:})
             b_verbose = p.Results.b_verbose;
             FilterFreq = p.Results.FilterFreq;
-                       
+            
             if isempty([obj.trigChanName{:}])
                 warning('Trigger channel name not set! Trigger detection aborted.')
                 return
             end
             if ( FilterFreq > 0 && FilterFreq < obj.sr/2 )
-                    % Apply low-pass filter to the data at selected cut-off
-                    % frequency:
-                    f = fdesign.lowpass('N,F3dB', 4, FilterFreq, obj.sr); %Fluo lower Freq
-                    lpass = design(f,'butter');
-                    obj.b_LP_applied = true;
+                % Apply low-pass filter to the data at selected cut-off
+                % frequency:
+                f = fdesign.lowpass('N,F3dB', 4, FilterFreq, obj.sr); %Fluo lower Freq
+                lpass = design(f,'butter');
+                obj.b_LP_applied = true;
             end
             
             if obj.b_LP_applied
@@ -398,12 +398,12 @@ classdef EventsManager < handle
                 % already applied.
                 obj.setAnalogIN;
                 obj.b_LP_applied = false;
-            end                                 
+            end
             % Reset event info:
             obj.timestamps = [];
             obj.state = [];
             obj.eventID = [];
-            obj.eventNameList = {};            
+            obj.eventNameList = {};
             for ii = 1:length(obj.trigChanName)
                 idxCh = strcmpi(obj.trigChanName{ii},obj.AIChanList);
                 if ~any(idxCh)
@@ -416,7 +416,7 @@ classdef EventsManager < handle
                     % frequency:
                     obj.AnalogIN(:,idxCh) = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(obj.AnalogIN(:,idxCh))')');
                 end
-                [tmstmp,chanState] = obj.detectTrig(obj.AnalogIN(:,idxCh));               
+                [tmstmp,chanState] = obj.detectTrig(obj.AnalogIN(:,idxCh));
                 % Control for failed detections:
                 if isempty(tmstmp)
                     warning(['Failed to detect triggers in channel "' obj.trigChanName{ii} '".'])
@@ -432,21 +432,21 @@ classdef EventsManager < handle
                 
                 % Special Case: For internal analog triggers, use the
                 % "Name" field of the channel instead of the channel ID.
-                num = erase(obj.trigChanName{ii}, 'StimAna');                   
-                if startsWith(obj.trigChanName{ii}, 'StimAna') && isfield(obj.AcqInfo, ['Stimulation' num '_Name'])                                        
-                        obj.eventNameList{ii} = obj.AcqInfo.(['Stimulation' num '_Name']);                                        
+                num = erase(obj.trigChanName{ii}, 'StimAna');
+                if startsWith(obj.trigChanName{ii}, 'StimAna') && isfield(obj.AcqInfo, ['Stimulation' num '_Name'])
+                    obj.eventNameList{ii} = obj.AcqInfo.(['Stimulation' num '_Name']);
                 else
                     obj.eventNameList = [obj.eventNameList, obj.trigChanName(ii)];
                 end
-            end 
-            if isempty(obj.timestamps)                
+            end
+            if isempty(obj.timestamps)
                 return
-            end                
+            end
             [obj.timestamps,indx] = sort(obj.timestamps);
             obj.state = obj.state(indx);
             obj.eventID = obj.eventID(indx);
             
-            % For digital stimulation, update event ID and event Name lists:                        
+            % For digital stimulation, update event ID and event Name lists:
             if obj.b_isDigital
                 % Overwrite dummy eventIDs with real ones from the info.txt.
                 obj.eventID = ones(size(obj.state));
@@ -459,24 +459,24 @@ classdef EventsManager < handle
                 [~,idx] = sort(IDs);
                 obj.eventNameList = Names(idx);
                 disp('Trigger timestamps generated.');
-%             else                
+                %             else
                 % For Analog stimulation with event list from text file, update
                 % eventID and eventNameList:
-%                 if ~isempty(obj.EventFileName)
-%                     switch lower(obj.EventFileParseMethod)
-%                         case 'default'
-%                             [obj.eventID, obj.eventNameList] = obj.readCSVfile;
-%                         case 'vpixx'
-%                             [obj.eventID, obj.eventNameList] = obj.readVpixxFile;
-%                         otherwise
-%                             error(['Unknown event file parsing method ' obj.EventFileParseMethod]);
-%                     end
-%                     % Repeat each event ID item to account for the offset (state == 0)
-%                     if length(obj.eventID) < length(obj.state)
-%                         obj.eventID = repelem(obj.eventID,2);
-%                     end
-%                     disp(['Event ID list read from file "' obj.EventFileName '"']);
-%                 end
+                %                 if ~isempty(obj.EventFileName)
+                %                     switch lower(obj.EventFileParseMethod)
+                %                         case 'default'
+                %                             [obj.eventID, obj.eventNameList] = obj.readCSVfile;
+                %                         case 'vpixx'
+                %                             [obj.eventID, obj.eventNameList] = obj.readVpixxFile;
+                %                         otherwise
+                %                             error(['Unknown event file parsing method ' obj.EventFileParseMethod]);
+                %                     end
+                %                     % Repeat each event ID item to account for the offset (state == 0)
+                %                     if length(obj.eventID) < length(obj.state)
+                %                         obj.eventID = repelem(obj.eventID,2);
+                %                     end
+                %                     disp(['Event ID list read from file "' obj.EventFileName '"']);
+                %                 end
             end
             % Validate triggers:
             % Checks for equality of lengths of eventID and timestamps
