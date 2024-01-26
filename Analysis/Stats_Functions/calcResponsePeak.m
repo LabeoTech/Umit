@@ -45,8 +45,12 @@ clear p
 % Check if the input data is "time vector split by events":
 assert(all(ismember(upper(outData.dim_names), {'O','E','T'})),...
     'Wrong input data type. Data must be a time vector split by event(s).');
-if numel(opts.TimeWindow_sec)~= 2 || diff(opts.TimeWindow_sec < 0)
+if isnumeric(opts.TimeWindow_sec)
+    if numel(opts.TimeWindow_sec)~= 2 || diff(opts.TimeWindow_sec < 0)
     error('Invalid time window. The input must be a pair of increasing positive numbers.');
+    end
+else
+     assert(strcmpi(opts.TimeWindow_sec, 'all'), 'Invalid input value for TimeWindow_sec parameter.')
 end
 % locate time and event dimensions:
 idxEdim = find(strcmpi(outData.dim_names,'E'));

@@ -41,9 +41,14 @@ errMsg = 'Invalid Input. Input must be member of {"mean", "median", "min","max"}
 valid_Opts1 = @(x) (ismember(char(x), opts_values.preEvent_value) || (isscalar(x) && isnumeric(x)));
 assert(valid_Opts1(opts.preEvent_value), errID, errMsg);
 assert(valid_Opts1(opts.postEvent_value), errID, errMsg);
-if numel(opts.TimeWindow_sec)~= 2 || diff(opts.TimeWindow_sec < 0)
-    error('Invalid time window. The input must be a pair of increasing positive numbers.');
+if isnumeric(opts.TimeWindow_sec)
+    if numel(opts.TimeWindow_sec)~= 2 || diff(opts.TimeWindow_sec < 0)
+        error('Invalid time window. The input must be a pair of increasing positive numbers.');
+    end
+else
+    assert(strcmpi(opts.TimeWindow_sec, 'all'), 'Invalid input value for TimeWindow_sec parameter.')
 end
+    
 % Get dimension names:
 dims = metaData.dim_names;
 % Validate if data has the following dimension names "E" and "T":
