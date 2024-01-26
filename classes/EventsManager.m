@@ -546,24 +546,9 @@ classdef EventsManager < handle
                 warning('Unable to create events.mat file. No triggers found!')
                 return
             end
-            % Format event data:
-            eventID = uint16(obj.eventID);%#ok
-            timestamps = single(obj.timestamps);%#ok
-            state = logical(obj.state);%#ok
-            eventNameList = obj.eventNameList;%#ok
-            % Flip arrays:
-            if size(eventID,1) < size(eventID,2)%#ok
-                eventID = eventID';%#ok
-            end
-            if size(timestamps,1) < size(timestamps,2)%#ok
-                timestamps = timestamps';%#ok
-            end
-            if size(state,1) < size(state,2)%#ok
-                state = state';%#ok
-            end            
-            % Save:
-            save(fullfile(saveFolder, 'events.mat'), 'eventID', 'state', 'timestamps', 'eventNameList');
-            disp(['Events MAT file saved in  ' saveFolder]);
+            
+            % Save events file
+            saveEventsFile(saveFolder,obj.eventID,obj.timestamps,obj.state,obj.eventNameList);
         end
                 
     end
