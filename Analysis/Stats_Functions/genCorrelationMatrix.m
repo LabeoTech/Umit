@@ -139,7 +139,7 @@ else
     B = corrcoef(roiVals');
 end
 % Apply Z-Fisher transformation to the correlation matrix:
-if opts.b_FisherZ_transform
+if opts.b_FisherZ_transform  
     disp('Applying Z-Fisher transform to correlation matrix...')
     B = ZFisher_truncated(B);
 end
@@ -156,9 +156,8 @@ outData = genDataMetaStructure(out, roi_names, dim_names, metaData, 'label',roi_
 if exist('SPCMaps', 'var')
     dim_names = {'Y', 'X','O'};
     % When the function is called from DataViewer
-    out = genDataMetaStructure(SPCMaps, roi_names, dim_names, metaData);
-    [~,outName,~] = fileparts(opts.SPCMapFileName);
-    save(fullfile(SaveFolder,[outName '.mat']),'-struct','out','-v7.3');
+    out = genDataMetaStructure(SPCMaps, roi_names, dim_names, metaData);    
+    save(fullfile(object.SaveFolder,'SPCMaps.mat'),'-struct','out','-v7.3');
 end
 end
 
