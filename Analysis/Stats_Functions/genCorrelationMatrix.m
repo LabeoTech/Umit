@@ -52,7 +52,7 @@ errMsg = 'Invalid data format. The input Data must be an Image time series with 
 assert(isequal(metaData.dim_names, {'Y','X','T'}),errID,errMsg);
 %
 % Load ROI file:
-roi_data = load(opts.ROImasks_filename);
+roi_data = load(opts.ROImasks_filename,'-mat');
 % reshape matrix:
 data_sz = size(data);
 data = reshape(data, [],data_sz(3));
