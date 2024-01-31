@@ -68,6 +68,11 @@ grand_parent: Functions
     <p>
       For more information on the data structure of the output file, click <a href="../other/mat-files-organization.html">here</a>.
     </p>
+    <div class="infonote">
+      <p><strong>Note regarding the centroid calculation</strong><br>
+        In the case that there is more than a single region under the same ROI name, this function will calculate the centroid of the first region on the ROI list. This is applied only if the <b>CorrAlgorithm</b> parameter is set to <i>centroid_vs_centroid</i> or <i>centroid_vs_agg</i> and for the calculation of Seed-pixels correlation maps.
+      </p>
+    </div>
     <h3 id="parameters">Parameters</h3>
     <hr>
     <button title="click to expand" type="button" class="mycollapsible">
@@ -108,7 +113,7 @@ grand_parent: Functions
         <p><strong>Note</strong><br>
           This parameter is used <b>only</b> when the parameter <samp>CorrAlgorithm</samp> is set to <i>centroid_vs_agg</i>. Otherwise, it will be ignored.
         </p>
-      </div>
+      </div>    
     </div>
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
