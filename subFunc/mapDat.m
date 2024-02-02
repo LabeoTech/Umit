@@ -36,7 +36,7 @@ if isempty(fName)
     ds = [Info.Height, Info.Width];
     % Calculate data length:
     fileInfo = dir(DatFileName);   
-    dl = fileInfo.bytes/prod([ds,4]);
+    dl = fileInfo.bytes/prod([ds,4]);    
 else
     % Load using info from meta data ".mat" file:
     matInfo = load(fName{1});
@@ -45,6 +45,8 @@ else
     % Update Info:
     Info.Height = matInfo.datSize(1);
     Info.Width = matInfo.datSize(2);
+    Info.Length = matInfo.datLength(1);
+    Info.FrameRateHz = matInfo.Freq;
 end
 
 dt = 'single'; % Data type as "single"
