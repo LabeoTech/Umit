@@ -8,13 +8,13 @@ classdef EventsManager < handle
         trigType char = 'EdgeSet' % Trigger type.
         trigChanName = {''}; % Name of AI channel(s) containing the triggers.
         minInterStim single {mustBeNonnegative} = 2 % Minimal inter stim time (in seconds). This param. is used to identify Bursts in analogIN. !This value should be higher than the inter-burst value to work!
+        RawFolder char % Folder containing the ai_xxxx.bin and (optionally) the Event list file.
     end
     properties (SetAccess = private)
         dictAIChan cell = {'CameraTrig', 'CameraTrig2', 'InputTrigger',...
             'StimAna1','StimAna2', 'StimDig', 'Optogen', 'Unused',...
             'AI1', 'AI2','AI3','AI4','AI5','AI6','AI7','AI8'}; %  List of all available channels from Imaging system:
         AIChanList cell % List of Analog IN channels obtained from "AcqInfo".
-        RawFolder char % Folder containing the ai_xxxx.bin and (optionally) the Event list file.
         SaveFolder char % Folder containing the "AcqInfos.mat" file. Default folder to save/load the "events.mat" file.
         AcqInfo struct % Content of the info.txt file as a structure.
         AnalogIN single % Array of analog input data.
@@ -59,8 +59,8 @@ classdef EventsManager < handle
             
             % Input validation:
             p = inputParser;
-            addOptional(p,'RawFolder',pwd,@ischar)
-            addOptional(p,'SaveFolder','',@isfolder)
+            addOptional(p,'SaveFolder',pwd,@isfolder)
+            addOptional(p,'RawFolder','')            
             addOptional(p, 'ParseMethod','csv',@(x) ismember(lower(x),obj.ParseMethods));
             parse(p,varargin{:});
             
@@ -70,13 +70,7 @@ classdef EventsManager < handle
             
             % Set main properties:
             obj.RawFolder = p.Results.RawFolder;
-            if isempty(p.Results.SaveFolder)
-                % If the SaveFolder was not provided, consider it the same as
-                % the RawFolder.
-                obj.SaveFolder = obj.RawFolder;
-            else
-                obj.SaveFolder = p.Results.SaveFolder;
-            end
+            obj.SaveFolder = p.Results.SaveFolder;
             obj.EventFileParseMethod = lower(p.Results.ParseMethod);
             % Set properties based on the AcqInfo.mat file:
             try
@@ -687,7 +681,7 @@ classdef EventsManager < handle
             if ~obj.validateCondition(conditionName);return;end                            
             
             % Validate repetition index:
-            if ~exist('repetitionIndex','var')
+            if ~exist('repetitionIndex','var') || isempty(repetitionIndex)
                 repetitionIndex = find(selReps);
             end
             if all(arrayfun(@(x) ~obj.validateRepetition(conditionName,x),repetitionIndex));return;end                            
