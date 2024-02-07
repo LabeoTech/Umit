@@ -51,8 +51,8 @@ classdef EventsManager < handle
             %       load an "events.mat" file or manually set the
             %       DataFolder later.
             %   SaveFolder (char): path to the folder containing the
-            %       AcqInfos.mat file. This will be the folder where the 
-            %       "events.mat" file will be saved or loaded from.            
+            %       AcqInfos.mat file. This will be the folder where the
+            %       "events.mat" file will be saved or loaded from.
             %   ParseMethod (optional, char): Name of the parsing method to
             %   apply to the event file containing the list of event
             %   IDs:{'none'(default),'csv','vpixx'}.
@@ -60,7 +60,7 @@ classdef EventsManager < handle
             % Input validation:
             p = inputParser;
             addOptional(p,'SaveFolder',pwd,@isfolder)
-            addOptional(p,'RawFolder','')            
+            addOptional(p,'RawFolder','')
             addOptional(p, 'ParseMethod','csv',@(x) ismember(lower(x),obj.ParseMethods));
             parse(p,varargin{:});
             
@@ -143,7 +143,6 @@ classdef EventsManager < handle
             else
                 % For most cases, get the minimal time period between event
                 % onsets.
-                
                 interTrialLength = max(tmOn(2:end) - tmOff(1:end-1));
             end
             
@@ -159,7 +158,7 @@ classdef EventsManager < handle
             if ~exist('postEventTime','var')
                 % Set the post-event time as the remainder of the trial
                 postEventTime = trialLength + interTrialLength - preEventTime;
-            end            
+            end
             obj.trialInterval = [preEventTime, postEventTime];
             fprintf('%s\nTrial interval set to:\n\tpre-event time:  %0.2f seconds\n\tpost-event time: %0.2f seconds\n%s\n',...
                 repmat('-',1,60),preEventTime,postEventTime,repmat('-',1,60));
@@ -200,8 +199,76 @@ classdef EventsManager < handle
         
         function out = get.EventFileParseMethod(obj)
             out = obj.privateEventFileParseMethod;
-        end                
+        end
         
+        function [timestamps, eventID, state, repetitionIndex] = getConditionTimestamps(obj,conditionName, repetitionIndex)
+            % Filters the timestamps, eventIDs, and state for the selected
+            % condition and its repetitions. If no repetition index is
+            % provided, all repetitions are included.
+            % It's important to note that any repetitions or conditions marked
+            % as 'ignored' in the selectedEvents property will be automatically
+            % excluded from the output variables.
+            % Inputs:
+            %   conditionName: A string specifying the name of the condition to be
+            %                  located.
+            %   repetitionIndex (optional): An index or array of indices specifying
+            %                               which repetitions of the condition to include.
+            %                               If not provided, all repetitions are included.
+            %
+            % Outputs:
+            %   timestamps: A vector containing the timestamps corresponding to the
+            %               occurrences of the selected condition and its repetitions.
+            %
+            %   eventID: A vector containing the event IDs corresponding to the
+            %            occurrences of the selected condition and its repetitions.
+            %
+            %   state: A vector containing the state (on/off) of the selected condition
+            %          at each occurrence.
+            %
+            %   repetitionIndex: A vector containing the repetition indices for each
+            %                    occurrence of the selected condition. This allows for
+            %                    tracking which occurrence each timestamp, eventID, and
+            %                    state corresponds to.
+            
+            
+            % Initialize output variables
+            timestamps = []; eventID = []; state = [];            
+            
+            % Validate condition name:
+            % If the condition name is not valid, the function will return empty outputs
+            if ~obj.validateCondition(conditionName)
+                return;
+            end
+            
+            % Check if repetition index is provided:
+            % If no repetition index is provided or it is empty, include all repetitions
+            if ~exist('repetitionIndex','var') || isempty(repetitionIndex)
+                repetitionIndex = find(obj.selectedEvents(strcmpi(conditionName,obj.eventNameList),:));
+            end
+            
+            % Validate repetition index:
+            % If the repetition index is not valid, the function will return empty outputs
+            if all(~arrayfun(@(x) obj.validateRepetition(conditionName, x),repetitionIndex))
+                return;
+            end
+            
+            % Filter the output variables based on the condition and its repetitions:
+            condInd = obj.eventID == strcmp(conditionName,obj.eventNameList);
+            
+            % Get indices for 'on' and 'off' states of the condition
+            indxOn = find(condInd & obj.state); indxOn = indxOn(repetitionIndex);
+            indxOff = find(condInd & ~obj.state); indxOff = indxOff(repetitionIndex);
+            
+            % Sort indices and use them to filter timestamps, eventID, and state
+            indx = sort([indxOn;indxOff]);
+            timestamps = obj.timestamps(indx);
+            eventID = obj.eventID(indx);
+            state = obj.state(indx);
+            
+            % Assign repetition index to each occurrence of the condition
+            repetitionIndex = repelem(repetitionIndex,1,2)';
+        end
+                        
         function f = plot(obj, chanName)
             % PLOTANALOGIN plots the Analog input signals and overlays the
             % threshold as well as the detected triggers, if existent.
@@ -654,7 +721,7 @@ classdef EventsManager < handle
             % condition (conditionName). The matrix can be used to split
             % the imaging data by trials and perform event-triggered
             % averages.
-            %             
+            %
             % Inputs:
             %   conditionName(char): name of the condition to extract the
             %       trials.
@@ -678,21 +745,21 @@ classdef EventsManager < handle
             selReps = obj.selectedEvents(conditionIndex,:);
             
             % Validate condition name:
-            if ~obj.validateCondition(conditionName);return;end                            
+            if ~obj.validateCondition(conditionName);return;end
             
             % Validate repetition index:
             if ~exist('repetitionIndex','var') || isempty(repetitionIndex)
                 repetitionIndex = find(selReps);
             end
-            if all(arrayfun(@(x) ~obj.validateRepetition(conditionName,x),repetitionIndex));return;end                            
+            if all(arrayfun(@(x) ~obj.validateRepetition(conditionName,x),repetitionIndex));return;end
             
             % Update the list of selected repetitions:
             tmp = false(size(selReps));tmp(repetitionIndex) = true;
-            selReps = all([selReps;tmp],1);clear tmp;                    
+            selReps = all([selReps;tmp],1);clear tmp;
             % Calculate the trial length (in frames):
             trialLenFr = round(sum(obj.trialInterval)*obj.AcqInfo.FrameRateHz);
             % Preallocate output matrix with nans:
-            frameIndexMat = nan(sum(selReps),trialLenFr);                        
+            frameIndexMat = nan(sum(selReps),trialLenFr);
             % Get the list of timestamps of the event onsets:
             evOnTimestamps = obj.timestamps(obj.eventID == conditionIndex & obj.state & repelem(selReps,2)');
             % Populate output matrix with the frame indices of each
@@ -705,7 +772,7 @@ classdef EventsManager < handle
                 frameIndexMat(ii,:) = round(evOnTimestamps(ii)*obj.AcqInfo.FrameRateHz) - preEvFr: round(evOnTimestamps(ii)*obj.AcqInfo.FrameRateHz) + postEvFr -1;
             end
             % Remove frames that are out of bounds:
-            frameIndexMat(frameIndexMat < 1 | frameIndexMat > obj.AcqInfo.Length) = nan;             
+            frameIndexMat(frameIndexMat < 1 | frameIndexMat > obj.AcqInfo.Length) = nan;
             repIndexList = find(selReps');
         end
         
@@ -739,7 +806,7 @@ classdef EventsManager < handle
             eventNameList = obj.eventNameList; %#ok
             trialInterval = obj.trialInterval; %#ok
             trigChanName = obj.trigChanName; %#ok
-            selectedEvents = obj.selectedEvents; %#ok            
+            selectedEvents = obj.selectedEvents; %#ok
             % Save:
             save(fullfile(saveFolder, 'events.mat'),...
                 'RawFolder',...
@@ -747,7 +814,7 @@ classdef EventsManager < handle
                 'state',...
                 'timestamps',...
                 'eventNameList',...
-                'selectedEvents');                       
+                'selectedEvents');
             disp(['Events MAT file saved in  ' saveFolder]);
         end
         
@@ -878,7 +945,7 @@ classdef EventsManager < handle
                 obj.minInterStim = 1.15*(1/obj.AcqInfo.(fn{find(idxFreq,1,'first')}));% Add 15% to the value of the pulse period
             end
             
-        end               
+        end
         
         function [timestamps, state] = detectTrig(obj, data)
             % DETECTTRIG detects the triggers from a given signal and
@@ -1082,7 +1149,7 @@ classdef EventsManager < handle
             assert(~isempty(obj.selectedEvents),'List of selected Events not set yet! Execute getTriggers and try again!');
             
             bOk = false;
-            idxCond = strcmpi(conditionName, obj.eventNameList);           
+            idxCond = strcmpi(conditionName, obj.eventNameList);
             % Check if it exists:
             if ~any(idxCond)
                 error('The condition with name "%s" does not exist in the "eventNameList".', conditionName);
