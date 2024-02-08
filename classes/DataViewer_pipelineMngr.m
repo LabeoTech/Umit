@@ -624,6 +624,15 @@ classdef DataViewer_pipelineMngr < handle
                             mtD.dataHistory = tmpDh;
                             clear tmpDh
                         end
+                        newFn = setdiff(fieldnames(mtD.dataHistory),fieldnames(curr_dtHist));
+                        if ~isempty(newFn)
+                            tmpDh = curr_dtHist;
+                            for ii = 1:length(newFn)
+                                tmpDh(1).(newFn{ii}) = '';
+                            end
+                            curr_dtHist = tmpDh;
+                            clear tmpDh
+                        end
                         mtD.dataHistory = [mtD.dataHistory; curr_dtHist];
                     else
                         mtD.dataHistory = curr_dtHist;
