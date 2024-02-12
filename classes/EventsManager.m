@@ -60,7 +60,7 @@ classdef EventsManager < handle
             % Input validation:
             p = inputParser;
             addOptional(p,'SaveFolder',pwd,@isfolder)
-            addOptional(p,'RawFolder','')
+            addOptional(p,'RawFolder','',@ischar)
             addOptional(p, 'ParseMethod','csv',@(x) ismember(lower(x),obj.ParseMethods));
             parse(p,varargin{:});
             
@@ -127,8 +127,8 @@ classdef EventsManager < handle
         function setTrialInterval(obj,preEventTime, postEventTime)
             % Sets the trialInterval property with the beginning and end times (in seconds) for trial splitting.
             % Parameters:
-            %   preEventTime - The time period before the event onset (default: 1/2 of the inter-trial length).
-            %   postEventTime - The time period after the event onset (default: trial length + 1/2 of the inter-trial length).
+            %   preEventTime - The time period before the event onset (default: 20%  of the inter-trial length).
+            %   postEventTime - The time period after the event onset (default: 80% of the inter-trial length + the trial length).
             %   Note: Here, "trial length" refers to the largest time period with the trigger at HIGH state (i.e. onset to offset time
             %   period).
             assert(~isempty(obj.state), 'Failed to set trial interval! No triggers detected yet!')
@@ -152,12 +152,12 @@ classdef EventsManager < handle
                 preEventTime =  0.2*interTrialLength;
                 % If the preEventTime was not provided, force the
                 % calculation of the postEventTime as well:
-                postEventTime = trialLength + interTrialLength - preEventTime;
+                postEventTime = 0.8*interTrialLength + trialLength;
             end
             
             if ~exist('postEventTime','var')
                 % Set the post-event time as the remainder of the trial
-                postEventTime = trialLength + interTrialLength - preEventTime;
+                postEventTime = 0.8*interTrialLength + trialLength;
             end
             obj.trialInterval = [preEventTime, postEventTime];
             fprintf('%s\nTrial interval set to:\n\tpre-event time:  %0.2f seconds\n\tpost-event time: %0.2f seconds\n%s\n',...
@@ -248,12 +248,14 @@ classdef EventsManager < handle
             
             % Validate repetition index:
             % If the repetition index is not valid, the function will return empty outputs
-            if all(~arrayfun(@(x) obj.validateRepetition(conditionName, x),repetitionIndex))
+            repOk = arrayfun(@(x) obj.validateRepetition(conditionName, x),repetitionIndex);
+            if ~any(repOk)
                 return;
             end
+            repetitionIndex(~repOk) = [];
             
             % Filter the output variables based on the condition and its repetitions:
-            condInd = obj.eventID == strcmp(conditionName,obj.eventNameList);
+            condInd = obj.eventID == find(strcmp(conditionName,obj.eventNameList));
             
             % Get indices for 'on' and 'off' states of the condition
             indxOn = find(condInd & obj.state); indxOn = indxOn(repetitionIndex);
@@ -739,41 +741,29 @@ classdef EventsManager < handle
             %       indices associated with the frameIndexMat output.
             
             frameIndexMat = [];
-            
-            % List of selected repetitions for the given condition:
-            conditionIndex = find(strcmp(conditionName,obj.eventNameList));
-            selReps = obj.selectedEvents(conditionIndex,:);
-            
-            % Validate condition name:
-            if ~obj.validateCondition(conditionName);return;end
-            
-            % Validate repetition index:
-            if ~exist('repetitionIndex','var') || isempty(repetitionIndex)
-                repetitionIndex = find(selReps);
-            end
-            if all(arrayfun(@(x) ~obj.validateRepetition(conditionName,x),repetitionIndex));return;end
-            
-            % Update the list of selected repetitions:
-            tmp = false(size(selReps));tmp(repetitionIndex) = true;
-            selReps = all([selReps;tmp],1);clear tmp;
+            repIndexList = [];
+            % Get list of timetamps from the selected condition and
+            % repetitions:
+            if ~exist('repetitionIndex','var');repetitionIndex = [];end
+            [condTimestamps,~,condState,repIndex]= obj.getConditionTimestamps(conditionName,repetitionIndex);
+            if isempty(condTimestamps);return;end
+            condTimestamps(~condState) = []; % Just keep the onset timestamps.
             % Calculate the trial length (in frames):
             trialLenFr = round(sum(obj.trialInterval)*obj.AcqInfo.FrameRateHz);
             % Preallocate output matrix with nans:
-            frameIndexMat = nan(sum(selReps),trialLenFr);
-            % Get the list of timestamps of the event onsets:
-            evOnTimestamps = obj.timestamps(obj.eventID == conditionIndex & obj.state & repelem(selReps,2)');
+            frameIndexMat = nan(sum(condState),trialLenFr);                        
             % Populate output matrix with the frame indices of each
             % repetition:
             % Calculate the beginning and end frames of each trial using
             % the TrialInterval values:
             preEvFr = round(obj.trialInterval(1)*obj.AcqInfo.FrameRateHz);
             postEvFr = round(obj.trialInterval(2)*obj.AcqInfo.FrameRateHz);
-            for ii = 1:length(evOnTimestamps)
-                frameIndexMat(ii,:) = round(evOnTimestamps(ii)*obj.AcqInfo.FrameRateHz) - preEvFr: round(evOnTimestamps(ii)*obj.AcqInfo.FrameRateHz) + postEvFr -1;
+            for ii = 1:length(condTimestamps)
+                frameIndexMat(ii,:) = round(condTimestamps(ii)*obj.AcqInfo.FrameRateHz) - preEvFr: round(condTimestamps(ii)*obj.AcqInfo.FrameRateHz) + postEvFr -1;
             end
             % Remove frames that are out of bounds:
             frameIndexMat(frameIndexMat < 1 | frameIndexMat > obj.AcqInfo.Length) = nan;
-            repIndexList = find(selReps');
+            repIndexList = repIndex(condState);
         end
         
         function saveEvents(obj, saveFolder)
@@ -807,6 +797,7 @@ classdef EventsManager < handle
             trialInterval = obj.trialInterval; %#ok
             trigChanName = obj.trigChanName; %#ok
             selectedEvents = obj.selectedEvents; %#ok
+            trialInterval = obj.trialInterval; %#ok
             % Save:
             save(fullfile(saveFolder, 'events.mat'),...
                 'RawFolder',...
@@ -814,7 +805,8 @@ classdef EventsManager < handle
                 'state',...
                 'timestamps',...
                 'eventNameList',...
-                'selectedEvents');
+                'selectedEvents',...
+                'trialInterval');
             disp(['Events MAT file saved in  ' saveFolder]);
         end
         
