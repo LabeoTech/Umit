@@ -69,9 +69,15 @@ if strcmpi(chanName, 'Internal-Main')
 elseif strcmpi(chanName, 'Internal-Aux')
     stimChan = 3;
 else
-    % Get channel number containg triggers:
+    % Get position of the channel in the AnalogIN matrix:
     fn = fieldnames(AcqInfoStream);fn = fn(startsWith(fn,'AICh','IgnoreCase',true));
-    chanNameList = cellfun(@(x) AcqInfoStream.(x),fn,'UniformOutput',false);
+    if ~isempty(fn)
+        % Look for the channel name directly from the info.txt file:
+        chanNameList = cellfun(@(x) AcqInfoStream.(x),fn,'UniformOutput',false);
+    else
+        % Consider the following channel organization when there are no channel names in the info.txt file:
+        chanNameList = {'CameraTrig','Internal-main', 'Internal-Aux','AI1', 'AI2','AI3','AI4','AI5','AI6','AI7','AI8'}; % List of existing Analog channel names.
+    end
     [~,stimChan] = ismember(upper(chanName), upper(chanNameList));
     if stimChan == 0
         warning('Invalid channel name! The "Internal-main" channel will be read instead.');
@@ -103,16 +109,17 @@ save([SaveFolder 'AcqInfos.mat'],'AcqInfoStream'); %To keep this information and
 disp('Recovering stimulation parameters')
 disp('**************************');
 
-tAIChan = AcqInfoStream.AINChannels; %Number of Analog Inputs
+% tAIChan = AcqInfoStream.AINChannels; %Number of Analog Inputs
 
 if( ~b_IgnoreStim ) %If user doesn't want to ignore Stimulation:
-    
-    Fields = fieldnames(AcqInfoStream); %Recovers Stimulation information from info.txt file
-    idx = contains(Fields, 'stimulation','IgnoreCase',true);
-    Fields = Fields(idx);
+        
     if( AcqInfoStream.Stimulation == 0 )
         AcqInfoStream.Stimulation = 1;
     end
+    Fields = fieldnames(AcqInfoStream); %Recovers Stimulation information from info.txt file
+    idx = contains(Fields, 'stimulation','IgnoreCase',true);
+    Fields = Fields(idx);
+    
     for indS = 1:length(Fields)
         tmp = ReadAnalogsIn(DataFolder, SaveFolder, AcqInfoStream, stimChan,trigPolarity); %Read analog inputs.
         if(isnumeric(AcqInfoStream.(Fields{indS})) && ...
