@@ -827,6 +827,10 @@ classdef EventsManager < handle
             for ii = 1:length(fn)
                 obj.(fn{ii}) = evInfo.(fn{ii});
             end
+            if isempty(obj.AcqInfo)
+                % Load Acquisition info:
+                obj.setInfo
+            end
             if isempty(obj.selectedEvents)
                 obj.clearIgnoredEvents;
             end
