@@ -1,12 +1,12 @@
-function ImagesClassification(DataFolder, SaveFolder, BinningSpatial, BinningTemp, b_IgnoreStim, b_SubROI, chanName)
+function ImagesClassification(DataFolder, SaveFolder, BinningSpatial, BinningTemp, b_IgnoreStim, b_SubROI, chanName,varargin)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Channels classification for Labeotech IOS systems. 
-% 
+% Channels classification for Labeotech IOS systems.
+%
 % On IOS systems, acquisitions made with multiple channels (colors) are
 % interlaced. For example, if the following channels were selected before
 % recording: Red (R), Green (G), Yellow (Y) and Fluo (F)
 % The saved images will be organised as follow (from frame #1):
-% R-G-Y-F-R-G-Y-F-R-G-Y-F-R-G-Y-F-...-R-G-Y-F 
+% R-G-Y-F-R-G-Y-F-R-G-Y-F-R-G-Y-F-...-R-G-Y-F
 % (see manual page 26 for more details)
 %
 % This function is used to separate each channel from an acquisition.
@@ -19,7 +19,7 @@ function ImagesClassification(DataFolder, SaveFolder, BinningSpatial, BinningTem
 % 1- DataFolder Path:
 %  Path contaning dataset from Labeo's system
 % 2- SaveFolder Path:
-%  Path where to save 
+%  Path where to save
 % 3- Spatial Binning:
 %  Set to 1 for no binning; 2 for a 2x2 binning; 4 for a 4x4 binning and so on...
 % 4- Temporal Binning:
@@ -28,10 +28,10 @@ function ImagesClassification(DataFolder, SaveFolder, BinningSpatial, BinningTem
 %  will become image #1 after avering them together. Images #5, 6, 7, 8 will
 %  become frame #2, etc.
 % 5- Ignore stimulation signal
-%  boolean to tell the function if it should consider the 
+%  boolean to tell the function if it should consider the
 %  stimulation signal or not (0 = consider stim; 1= ignore stim)
 % 6- Region of Interest (ROI)
-%  this parameter is a boolean (0 or 1) to tell the software if 
+%  this parameter is a boolean (0 or 1) to tell the software if
 %  we want to keep the whole image or if we want to select a smaller ROI
 % 7- Channel Name:
 %   use this parameter to select a specific analog IN channel that contains
@@ -46,15 +46,15 @@ function ImagesClassification(DataFolder, SaveFolder, BinningSpatial, BinningTem
 %       'AI6' : External Analog channel #6.
 %       'AI7' : External Analog channel #7.
 %       'AI8' : External Analog channel #8.
+% 8- Trigger polarity (optional | default = positive): Set to "negative" if
+%   the trigger onset and offset is marked by a falling and rising edges,
+%   respectively.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Get channel number containg triggers:
-chanNameList = {'Internal-main', 'Internal-Aux','AI1', 'AI2','AI3','AI4','AI5','AI6','AI7','AI8'}; % List of existing Analog channel names.
-[~,stimChan] = ismember(upper(chanName), upper(chanNameList));
-if stimChan == 0
-    warning('Invalid channel name! The "Internal-main" channel will be read instead.');
-    stimChan = 2;
+
+if ~isempty(varargin)
+    trigPolarity = varargin{:};
 else
-    stimChan = stimChan + 1 ; % Shift channel index to skip camera channel.
+    trigPolarity = 'positive';
 end
 
 if(nargin < 6)
@@ -62,6 +62,22 @@ if(nargin < 6)
 end
 
 AcqInfoStream = ReadInfoFile(DataFolder);
+
+
+if strcmpi(chanName, 'Internal-Main')
+    stimChan = 2;
+elseif strcmpi(chanName, 'Internal-Aux')
+    stimChan = 3;
+else
+    % Get channel number containg triggers:
+    fn = fieldnames(AcqInfoStream);fn = fn(startsWith(fn,'AICh','IgnoreCase',true));
+    chanNameList = cellfun(@(x) AcqInfoStream.(x),fn,'UniformOutput',false);
+    [~,stimChan] = ismember(upper(chanName), upper(chanNameList));
+    if stimChan == 0
+        warning('Invalid channel name! The "Internal-main" channel will be read instead.');
+        stimChan = 2;
+    end
+end
 
 if( ~strcmp(DataFolder(end), filesep) )
     DataFolder = strcat(DataFolder, filesep);
@@ -71,7 +87,7 @@ if( ~strcmp(SaveFolder(end), filesep) )
 end
 
 if( ~isfield(AcqInfoStream, 'Camera_Model') ) %For back compatibility with older versions
-   AcqInfoStream.Camera_Model = 'D1024';    %Camera_Model was not used in former versions
+    AcqInfoStream.Camera_Model = 'D1024';    %Camera_Model was not used in former versions
 end
 % Create save folder if it does not exist.
 if ~exist(SaveFolder,'dir')
@@ -94,22 +110,21 @@ if( ~b_IgnoreStim ) %If user doesn't want to ignore Stimulation:
     Fields = fieldnames(AcqInfoStream); %Recovers Stimulation information from info.txt file
     idx = contains(Fields, 'stimulation','IgnoreCase',true);
     Fields = Fields(idx);
-    cnt = 0;
+    if( AcqInfoStream.Stimulation == 0 )
+        AcqInfoStream.Stimulation = 1;
+    end
     for indS = 1:length(Fields)
+        tmp = ReadAnalogsIn(DataFolder, SaveFolder, AcqInfoStream, stimChan,trigPolarity); %Read analog inputs.
         if(isnumeric(AcqInfoStream.(Fields{indS})) && ...
                 AcqInfoStream.(Fields{indS}) > 0)
-            if( AcqInfoStream.Stimulation == 0 )
-                AcqInfoStream.Stimulation = 1;
-            end
-            ReadAnalogsIn(DataFolder, SaveFolder, AcqInfoStream, stimChan); %Read analog inputs.
-            cnt = cnt + 1;
             break;
         end
     end
-    if( cnt == 0 ) %No stimulation found in info.txt file.
+    if( isempty(tmp) ) %No stimulation found in info.txt file.
         fprintf('Stimulation not detected. \n');
         b_IgnoreStim = 1;
     end
+    clear tmp
 else
     fprintf('Stimulation ignored. \n');
     
@@ -119,7 +134,7 @@ end
 % Data Format and Header Information:
 
 hWima = 5;
-imgFilesList = dir([DataFolder 'img*.bin']); 
+imgFilesList = dir([DataFolder 'img*.bin']);
 %Images files header description (see User Manual, page 26 for more
 %details):
 header = memmapfile([DataFolder imgFilesList(1).name], ...
@@ -140,13 +155,13 @@ SizeImage = nx*ny*2 + 3*8;
 % SubROI...
 if( b_SubROI )
     fprintf('Redifining Region Of Interest post-process: \n');
-     %Dialog (there are different options to determine the new ROI):
+    %Dialog (there are different options to determine the new ROI):
     ButtonName = questdlg('Would you like to use a pre-defined ROI?', ...
         'ROI', ...
         'Pre-defined', 'Draw', 'Cancel', 'Draw');
     switch ButtonName  %Depending on user choice:
-        case 'Pre-defined' %Used a ROI from an other acquisition: 
-             [filename, pathname] = uigetfile('*.mat', 'Select ROI file');
+        case 'Pre-defined' %Used a ROI from an other acquisition:
+            [filename, pathname] = uigetfile('*.mat', 'Select ROI file');
             if isequal(filename,0) || isequal(pathname,0)
                 disp('User pressed cancel')
                 Pos = [1 1 ImRes_XY(1) ImRes_XY(2)];
@@ -168,13 +183,13 @@ if( b_SubROI )
             disp('User pressed cancel')
             Pos = [1 1 ImRes_XY(1) ImRes_XY(2)];
     end
-   
-   LimX = [round(Pos(1)) round(Pos(1)+Pos(3))];
-   LimY = [round(Pos(2)) round(Pos(2)+Pos(4))];
-   save([SaveFolder 'ROI.mat'],'Pos'); %Save region of interest in a .mat file
+    
+    LimX = [round(Pos(1)) round(Pos(1)+Pos(3))];
+    LimY = [round(Pos(2)) round(Pos(2)+Pos(4))];
+    save([SaveFolder 'ROI.mat'],'Pos'); %Save region of interest in a .mat file
 else
-   LimX = [1 ImRes_XY(1)];
-   LimY = [1 ImRes_XY(2)];
+    LimX = [1 ImRes_XY(1)];
+    LimY = [1 ImRes_XY(2)];
 end
 Rx = round((LimX(2) - LimX(1) + 1)/BinningSpatial);
 Ry = round((LimY(2) - LimY(1) + 1)/BinningSpatial);
@@ -188,30 +203,30 @@ if( AcqInfoStream.MultiCam )
     NbColors = sum(idx);
     Colors = struct('ID', {}, 'Color', {}, 'CamIdx', {}, 'FrameIdx', {}, 'Exposure', {});
     for indC = 1:NbColors
-         Colors(indC).ID = indC;
-         eval(['Colors(' int2str(indC) ').Color = AcqInfoStream.Illumination' int2str(indC) '.Color;']);
-         eval(['Colors(' int2str(indC) ').CamIdx = AcqInfoStream.Illumination' int2str(indC) '.CamIdx;']);
-         eval(['Colors(' int2str(indC) ').FrameIdx = AcqInfoStream.Illumination' int2str(indC) '.FrameIdx;']);
-         if( contains(Colors(indC).Color,{'red', 'amber', 'green'}, 'IgnoreCase', true) )
+        Colors(indC).ID = indC;
+        eval(['Colors(' int2str(indC) ').Color = AcqInfoStream.Illumination' int2str(indC) '.Color;']);
+        eval(['Colors(' int2str(indC) ').CamIdx = AcqInfoStream.Illumination' int2str(indC) '.CamIdx;']);
+        eval(['Colors(' int2str(indC) ').FrameIdx = AcqInfoStream.Illumination' int2str(indC) '.FrameIdx;']);
+        if( contains(Colors(indC).Color,{'red', 'amber', 'green'}, 'IgnoreCase', true) )
             Colors(indC).Exposure = AcqInfoStream.ExposureMsec;
         elseif( contains(Colors(indC).Color,{'speckle'}, 'IgnoreCase', true) )
             if( ~isfield(AcqInfoStream, 'ExposureSpeckleMsec') )
-                Colors(indC).Exposure = AcqInfoStream.ExposureMsec;             
+                Colors(indC).Exposure = AcqInfoStream.ExposureMsec;
             else
-                Colors(indC).Exposure = AcqInfoStream.ExposureSpeckleMsec;            
+                Colors(indC).Exposure = AcqInfoStream.ExposureSpeckleMsec;
             end
         else
             if( ~isfield(AcqInfoStream, 'ExposureFluoMsec') )
-                Colors(indC).Exposure = AcqInfoStream.ExposureMsec;             
+                Colors(indC).Exposure = AcqInfoStream.ExposureMsec;
             else
-                Colors(indC).Exposure = AcqInfoStream.ExposureFluoMsec;            
+                Colors(indC).Exposure = AcqInfoStream.ExposureFluoMsec;
             end
         end
     end
     
     %Camera 1:
     fprintf('Camera #1. \n');
-    imgFilesList = dir([DataFolder 'img_*.bin']); 
+    imgFilesList = dir([DataFolder 'img_*.bin']);
     idx = find(arrayfun(@(x) Colors(x).CamIdx == 1, 1:size(Colors,2)));
     [~, index] = sort([Colors(idx).FrameIdx]);
     idx = idx(index);
@@ -220,7 +235,7 @@ if( AcqInfoStream.MultiCam )
     
     %Camera 2:
     fprintf('Camera #2. \n');
-    imgFilesList = dir([DataFolder 'imgCam2_*.bin']); 
+    imgFilesList = dir([DataFolder 'imgCam2_*.bin']);
     idx = find(arrayfun(@(x) Colors(x).CamIdx == 2, 1:size(Colors,2)));
     [~, index] = sort([Colors(idx).FrameIdx]);
     idx = idx(index);
@@ -239,15 +254,15 @@ else
             Colors(indC).Exposure = AcqInfoStream.ExposureMsec;
         elseif( contains(Colors(indC).Color,{'speckle'}, 'IgnoreCase', true) )
             if( ~isfield(AcqInfoStream, 'ExposureSpeckleMsec') )
-                Colors(indC).Exposure = AcqInfoStream.ExposureMsec;             
+                Colors(indC).Exposure = AcqInfoStream.ExposureMsec;
             else
-                Colors(indC).Exposure = AcqInfoStream.ExposureSpeckleMsec;            
+                Colors(indC).Exposure = AcqInfoStream.ExposureSpeckleMsec;
             end
         else
             if( ~isfield(AcqInfoStream, 'ExposureFluoMsec') )
-                Colors(indC).Exposure = AcqInfoStream.ExposureMsec;             
+                Colors(indC).Exposure = AcqInfoStream.ExposureMsec;
             else
-                Colors(indC).Exposure = AcqInfoStream.ExposureFluoMsec;            
+                Colors(indC).Exposure = AcqInfoStream.ExposureFluoMsec;
             end
         end
     end
@@ -264,7 +279,7 @@ if ~isscalar(unique(datLenList))
     % Remove extra frames of channels so all have the same length
     newLen = min(datLenList);
     matH(datLenList == newLen) = [];% Keep list of channels with extra frames.
-    for ind = 1:length(matH)        
+    for ind = 1:length(matH)
         fid = fopen(strrep(matH{ind}.Properties.Source,'.mat','.dat'),'r');
         dat = fread(fid,Inf,'*single');fclose(fid);
         dat = reshape(dat,matH{ind}.datSize(1,1),matH{ind}.datSize(1,2),[]);
@@ -272,16 +287,16 @@ if ~isscalar(unique(datLenList))
         fid = fopen(strrep(matH{ind}.Properties.Source,'.mat','.dat'),'w');
         fwrite(fid,dat,'single');
         fclose(fid);
-        matH{ind}.datLength = newLen;        
+        matH{ind}.datLength = newLen;
     end
     
     disp('Data length fixed.')
 end
-    function fColor = ChannelsSort(fList, colors)               
+    function fColor = ChannelsSort(fList, colors)
         % Load Stim info:
         if( ~b_IgnoreStim )
-            Stim = load([SaveFolder 'StimParameters.mat']);                       
-        else            
+            Stim = load([SaveFolder 'StimParameters.mat']);
+        else
             Stim.Stim = 0;
         end
         stim_fn = fieldnames(Stim);
@@ -299,14 +314,14 @@ end
                 dTag = [lower(colors(indC).Color) '.dat'];
             elseif( contains(colors(indC).Color, 'amber', 'IgnoreCase', true) )
                 hTag = ['yellow.mat'];
-                dTag = ['yellow.dat'];                
+                dTag = ['yellow.dat'];
             elseif( contains(colors(indC).Color, 'fluo', 'IgnoreCase', true) )
                 waveTag = regexp(colors(indC).Color, '[0-9]{3}','match');
                 if( ~isempty(waveTag) )
-                    hTag = ['fluo_' waveTag{:} '.mat']; 
+                    hTag = ['fluo_' waveTag{:} '.mat'];
                     dTag = ['fluo_' waveTag{:} '.dat'];
                 else
-                    hTag = ['fluo' waveTag{:} '.mat']; 
+                    hTag = ['fluo' waveTag{:} '.mat'];
                     dTag = ['fluo' waveTag{:} '.dat'];
                 end
             else
@@ -318,7 +333,7 @@ end
                 delete([SaveFolder hTag]);
             end
             fColor{indC} = matfile([SaveFolder hTag], 'Writable', true);
-            fColor{indC}.datFile = dTag; 
+            fColor{indC}.datFile = dTag;
             fColor{indC}.datSize = [Ry, Rx]; % Flipped datSize
             fColor{indC}.Stim = Stim.Stim;
             for ii = 1:length(stim_fn)
@@ -331,17 +346,17 @@ end
             fColor{indC}.dim_names = {'Y', 'X', 'T'};
             fColor{indC}.Freq = (AcqInfoStream.FrameRateHz)/(size(colors,2)*BinningTemp);
             fColor{indC}.tExposure = colors(indC).Exposure;
-            fid(indC) = fopen([SaveFolder dTag],'w'); 
+            fid(indC) = fopen([SaveFolder dTag],'w');
         end
         
         %Opening Images Files:
         oIm = [];
-        Cnt = 0;        
+        Cnt = 0;
         for indF = 1:size(fList,1)
             fprintf('Sorting %s.', fList(indF).name);
             data = memmapfile([DataFolder fList(indF).name],...
-                        'Offset', hWima*4, 'Format', frameFormat,...
-                        'repeat', inf);
+                'Offset', hWima*4, 'Format', frameFormat,...
+                'repeat', inf);
             data = data.Data;
             hData = reshape([data.framej], 3, []);
             iData = reshape([data.imgj], ImRes_XY(1), ImRes_XY(2), []);
@@ -349,10 +364,10 @@ end
             clear data;
             
             if( contains(AcqInfoStream.Camera_Model,{'D1024', 'D1312'}) )
-%                 if( indF == 1 )
-%                     hData = hData(:,(subNbColors + 1):end) - subNbColors;
-%                     iData = iData(:,:,(subNbColors + 1):end);
-%                 end
+                %                 if( indF == 1 )
+                %                     hData = hData(:,(subNbColors + 1):end) - subNbColors;
+                %                     iData = iData(:,:,(subNbColors + 1):end);
+                %                 end
                 SkipNFirst = sum(hData(1,:) == 0);
                 MissingOffset = cumsum(hData(2,:));
                 hData(1,:) = hData(1,:) + MissingOffset - hData(1,1) + 1;
@@ -424,8 +439,8 @@ end
                     idx = find(sum(sum(Ims,1),2) > 1);
                     Ims = interp1(idx, single(reshape(Ims(:,:,idx),[], length(idx)))', 1:size(Ims,3),'linear','extrap');
                     Ims = reshape(Ims', ImRes_XY(2), ImRes_XY(1), []);
-                end                  
-                                   
+                end
+                
                 %SubROI
                 if( b_SubROI )
                     Ims = Ims(round(LimY(1)):round(LimY(2)),round(LimX(1)):round(LimX(2)),:);
@@ -433,7 +448,7 @@ end
                 %Temporal Binning
                 if( BinningTemp > 1 )
                     Ims = imresize3(Ims, [size(Ims,1), size(Ims,2),...
-                        size(Ims,3)/BinningTemp], 'linear');                                        
+                        size(Ims,3)/BinningTemp], 'linear');
                 end
                 %Spatial Binning
                 if( BinningSpatial > 1 )

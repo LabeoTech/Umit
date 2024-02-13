@@ -1,4 +1,4 @@
-function varargout = ReadAnalogsIn(FolderPath, SaveFolder, Infos, stimChan)
+function varargout = ReadAnalogsIn(FolderPath, SaveFolder, Infos, stimChan,trigPolarity)
 out = [];
 if( ~strcmp(FolderPath, filesep) )
     FolderPath = strcat(FolderPath, filesep);
@@ -23,7 +23,7 @@ clear tmp ind data aiFilesList;
 % Detect Triggers in each channel:
 Stim = {};
 for i = 1:length(stimChan)
-    Stim{i} = detectTriggers(stimChan(i), Infos, AnalogIN);
+    Stim{i} = detectTriggers(stimChan(i), Infos, AnalogIN, trigPolarity);
 end
 disp('Checking stim info...')
 idxMiss = cellfun(@(x) isequaln(sum(x),0), Stim);
@@ -33,6 +33,9 @@ if all(idxMiss)
     disp('No Stimulations detected. Resting State experiment?');    
     Stim = 0;
     save([SaveFolder filesep 'StimParameters.mat'], 'Stim');
+    if nargout
+        varargout{:} = out;
+    end
     return
 end
 % Remove data with missing triggers:
@@ -59,16 +62,29 @@ end
 end
 
 % Local functions:
-function Stim = detectTriggers(stimChan, Infos, AnalogIN)
+function Stim = detectTriggers(stimChan, Infos, AnalogIN, trigPolarity)
 Stim = 0;
 % CamTrig is on the first channel:
 CamTrig = find((AnalogIN(1:(end-1),1) < 1.25) & (AnalogIN(2:end,1) >= 1.25))+1;
+if strcmpi(trigPolarity,'negative')
+    % Flip signal if it's negative:
+    sigMin = min(AnalogIN(:,stimChan));
+    sigMax = max(AnalogIN(:,stimChan));
+     AnalogIN(:,stimChan) = (1 - (AnalogIN(:,stimChan) - sigMin)./(sigMax - sigMin)).*...
+        (sigMax - sigMin) + sigMin;
+end
 % Detect Stimulation triggers in channel 2:
 % StimTrig is on the second channel (except if slave):
 if stimChan > 3
     % If the stim channel is external, set the amplitude as the half of the
     % signal amplitude:
-    thr = min(AnalogIN(:,stimChan)) + ((max(AnalogIN(:,stimChan)) - min(AnalogIN(:,stimChan)))/2);
+    minThr = 0.15; % Minimal threshold value for detection:
+    sigAmp = max(AnalogIN(:,stimChan)) - min(AnalogIN(:,stimChan));
+    if sigAmp > minThr
+        thr = min(AnalogIN(:,stimChan)) + (sigAmp/2);
+    else
+        thr = minThr;
+    end
     % Also, we filter the signal to remove high-frequency noise. This is
     % common with photodiodes, for instance:
     f = fdesign.lowpass('N,F3dB', 4, 200, 10000); % Apply low-pass filter @200Hz to remove high-frequency noise.
@@ -82,9 +98,11 @@ elseif ( ~isfield(Infos, 'Stimulation1_Amplitude') )
 else
     thr = Infos.Stimulation1_Amplitude/2;
 end
-  
+
+% Detect triggers:
 StimTrig = find((AnalogIN(1:(end-1), stimChan) < thr) &...
     (AnalogIN(2:end, stimChan) >= thr))+1;
+
 if isempty(StimTrig)
     if isfield(Infos,['AICh' num2str(stimChan)])
         str = Infos.(['AICh' num2str(stimChan)]);
