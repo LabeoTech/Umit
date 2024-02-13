@@ -4,8 +4,8 @@ function getEvents(RawFolder,SaveFolder, varargin)
 % in the SaveFolder to be used by other umIT functions.
 
 % Defaults:
-default_opts = struct('StimChannel','Internal-main', 'Threshold','auto','TriggerType','EdgeSet', 'minInterStimTime', 2,'ConditionFileType','none','ConditionFileName','auto','CSVColNames','all');
-opts_values = struct('StimChannel',{{'Internal-main', 'Internal-Aux','AI1', 'AI2','AI3','AI4','AI5','AI6','AI7','AI8'}'},'Threshold',{{'auto',Inf}}, 'TriggerType', {{'EdgeSet', 'EdgeToggle'}},'minInterStimTime',[0.5, Inf],'ConditionFileType',{{'none','CSV','Vpixx'}}, 'ConditionFileName',{{'auto'}},'CSVColNames',{{'all'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
+default_opts = struct('StimChannel','Internal-main', 'Threshold','auto','TriggerType','EdgeSet','TriggerPolarity','Positive', 'minInterStimTime', 2,'ConditionFileType','none','ConditionFileName','auto','CSVColNames','all');
+opts_values = struct('StimChannel',{{'Internal-main', 'Internal-Aux','AI1', 'AI2','AI3','AI4','AI5','AI6','AI7','AI8'}'},'Threshold',{{'auto',Inf}}, 'TriggerType', {{'EdgeSet', 'EdgeToggle'}},'TriggerPolarity',{{'Positive','Negative'}},'minInterStimTime',[0.5, Inf],'ConditionFileType',{{'none','CSV','Vpixx'}}, 'ConditionFileName',{{'auto'}},'CSVColNames',{{'all'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 % Arguments validation:
 p = inputParser;
 addRequired(p, 'RawFolder', @isfolder);
@@ -44,6 +44,7 @@ end
 
 % Instantiate EventsManager class:
 evObj = EventsManager(RawFolder,opts.ConditionFileType);
+
 for ii = 1:length(opts.StimChannel)
     % Update internal channel names. These may change depending on the OiS
     % acquisition software version.
@@ -59,6 +60,7 @@ evObj.AIChanList
 % Update EventsManager object properties:
 evObj.trigThr = opts.Threshold;
 evObj.trigType = opts.TriggerType;
+evObj.trigPolarity = opts.TriggerPolarity;
 evObj.trigChanName = opts.StimChannel;
 evObj.minInterStim = opts.minInterStimTime;
 % Detect triggers:

@@ -5,16 +5,17 @@ classdef EventsManager < handle
     %   systems (e.g. OiS200).
     properties
         trigThr = 'auto'; % Trigger detection Threshold in volts (Default = 'auto'). The 'auto' means that the threshold will be at 70% of the signal amplitude.
-        trigType char = 'EdgeSet' % Trigger type.
+        trigType char = 'edgeSet' % Trigger type.
+        trigPolarity char = 'positive'
         trigChanName = {''}; % Name of AI channel(s) containing the triggers.
         minInterStim single {mustBeNonnegative} = 2 % Minimal inter stim time (in seconds). This param. is used to identify Bursts in analogIN. !This value should be higher than the inter-burst value to work!
     end
     properties (SetAccess = private)
         dictAIChan cell = {'CameraTrig', 'CameraTrig2', 'InputTrigger',...
-                           'StimAna1','StimAna2', 'StimDig', 'Optogen', 'Unused',...
-                           'AI1', 'AI2','AI3','AI4','AI5','AI6','AI7','AI8'}; %  List of all available channels from Imaging system:
+            'StimAna1','StimAna2', 'StimDig', 'Optogen', 'Unused',...
+            'AI1', 'AI2','AI3','AI4','AI5','AI6','AI7','AI8'}; %  List of all available channels from Imaging system:
         AIChanList cell % List of Analog IN channels obtained from "AcqInfo".
-        DataFolder char % Folder containing the ai_xxxx.bin and (optionally) the Event list file.        
+        DataFolder char % Folder containing the ai_xxxx.bin and (optionally) the Event list file.
         AcqInfo struct % Content of the info.txt file as a structure.
         AnalogIN single % Array of analog input data.
         sr single {mustBePositive} = 10000; % Sample rate of analog input channels in Hz.
@@ -23,11 +24,11 @@ classdef EventsManager < handle
         eventID uint16 {mustBePositive} % Index of each condition (1, 2, 3 ...)
         eventNameList cell % Name of each condition.
         b_isDigital logical = false; % TRUE for digital stimulation using OiS200 as master.
-        minTrigAmp single {mustBePositive} = .15; % Minimal signal amplitude (in Volts). Used when the trigger threshold is "auto". Ignored otherwise.        
+        minTrigAmp single {mustBePositive} = .15; % Minimal signal amplitude (in Volts). Used when the trigger threshold is "auto". Ignored otherwise.
         EventFileName char % Name of the event file containing events information (.csv, .txt, .vpixx ...).
     end
     properties (Access = private)
-        warnOrigState % original state of Matlab's warnings. This will be restored at this class destruction.        
+        warnOrigState % original state of Matlab's warnings. This will be restored at this class destruction.
         ParseMethods = {'none','csv','vpixx'}; % List of valid parse methods.
         privateEventFileParseMethod;
         b_LP_applied = false % Boolean to indicate if a low-pass filtering was applied to the AnalogIN data.
@@ -35,7 +36,7 @@ classdef EventsManager < handle
     properties (Dependent)
         EventFileParseMethod char % Name of the method to read the Event File. {'CSV','vpixx'};
     end
-        
+    
     methods
         function obj = EventsManager(DataFolder,varargin)
             % This is the constructor method.
@@ -51,8 +52,8 @@ classdef EventsManager < handle
             
             % Input validation:
             p = inputParser;
-            addRequired(p,'DataFolder',@isfolder)            
-            addOptional(p, 'ParseMethod','none',@(x) ismember(lower(x),obj.ParseMethods));            
+            addRequired(p,'DataFolder',@isfolder)
+            addOptional(p, 'ParseMethod','none',@(x) ismember(lower(x),obj.ParseMethods));
             parse(p,DataFolder,varargin{:});
             
             % Disable backtrace warnings:
@@ -60,15 +61,15 @@ classdef EventsManager < handle
             warning('off', 'backtrace');
             
             % Set main properties:
-            obj.DataFolder = p.Results.DataFolder;            
-            obj.EventFileParseMethod = lower(p.Results.ParseMethod);            
+            obj.DataFolder = p.Results.DataFolder;
+            obj.EventFileParseMethod = lower(p.Results.ParseMethod);
             % Set properties based on the info.txt file:
             obj.setInfo;
             % Set AnalogIN property:
-            obj.setAnalogIN;   
-            % Detect internally-generated triggers:            
+            obj.setAnalogIN;
+            % Detect internally-generated triggers:
             if ~isempty([obj.trigChanName{:}])
-                obj.getTriggers;            
+                obj.getTriggers;
             end
             % Force EventFileParseMethod to "none" if the stimulus is
             % digital. In this case, the event info should already be
@@ -89,17 +90,17 @@ classdef EventsManager < handle
             msg = [sprintf('Invalid parse method "%s". It must be one of the following:',parseMethod),...
                 sprintf('\n%s',obj.ParseMethods{:})];
             assert(ismember(parseMethod,obj.ParseMethods),msg);
-            obj.privateEventFileParseMethod = parseMethod;                        
+            obj.privateEventFileParseMethod = parseMethod;
         end
         
         function out = get.EventFileParseMethod(obj)
-           out = obj.privateEventFileParseMethod; 
+            out = obj.privateEventFileParseMethod;
         end
-               
+        
         function set.trigChanName(obj, trigName)
-            % Set method for trigger channel name. 
+            % Set method for trigger channel name.
             % Forces the property to a cell.
-            if ischar(trigName)                
+            if ischar(trigName)
                 obj.trigChanName = {trigName};
             elseif iscell(trigName)
                 obj.trigChanName = trigName;
@@ -107,141 +108,155 @@ classdef EventsManager < handle
                 error(['Format ' class(trigName) ' not supported! It must be char or cell array of chars.'])
             end
         end
+        
         function set.trigType(obj, trigType)
             assert(ismember(lower(trigType), {'edgeset','edgetoggle'}),'Invalid trigger type! It must be either "EdgeSet" or "EdgeToggle".')
             obj.trigType = lower(trigType);
         end
-        function status =  readEventFile(obj, varargin)
-           % READEVENTFILE reads the content of an event file containing a
-           % list of event Names. The file will be parsed using one of the
-           % parsing methods available in this class (e.g., for .CSV,
-           % .vpixx) and set by the "EventFileParseMethod" property. This
-           % property is set at the class construction.
-           % If the "EventFileName" is not provided, this function will
-           % look for the file with the valid extension (.csv,
-           % .vpixx) inside the "DataFolder" and parse it. Override this by
-           % giving the full path of the "EventsFileName" as input.
-           % For .CSV files, the list of events should be arranged in a
-           % column with a HEADER (a header is necessary!) in the first row.
-           % Multiple columns will be merged as a single event per row. 
-           % It is possible to select  a subset of columns by providing the 
-           % names of the columns "CSVcolNames" as input (Case sensitive!).
-           % 
-           % Inputs (Optional):
-           %   EventFileName (char): full path to a valid file containing
-           %    the event IDs/Names to be parsed using the parse method set
-           %    in the "EventFileParseMethod" property.
-           %   CSVcolNames (cell): name of column(s) from a .CSV file to be
-           %    read. If more than one column is provided, each row will
-           %    be merged into a single one (this parameter is ignored for
-           %    other parsing methods).           
-           % Output:
-           %    status (bool): TRUE, if the event file was successfully
-           %    read. FALSE otherwise.
-           % Examples:
-           %  1 - Automatic search for a .CSV file with a single column:
-           %    readEventFile();
-           %  2 - Read an specific .CSV file:
-           %    readEventFile('C:/FULLPATH/FILENAME.CSV');
-           %  3 - Read a subset of columns from a .CSV file:
-           %    readEventFile('CSVcolNames',{'Col1'',Col2','Col5'};
-           %  4 - Read a subset o columns from an specific .CSV file:
-           %    readEventFile('C:/FULLPATH/FILENAME.CSV','CSVcolNames',{'ThisOne'});
-           
-           p = inputParser;
-           addRequired(p,'obj')
-           addOptional(p,'EventFileName','',@(x) ischar(x) | isempty(x));
-           addParameter(p,'CSVcols',{''},@(x) iscell(x) & ischar([x{:}]));
-           parse(p,obj,varargin{:});
-           %
-           evFile = p.Results.EventFileName;
-           colNames = p.Results.CSVcols;
-           %
-           status = false;
-           if strcmpi(obj.EventFileParseMethod,'none')
-               if ~isempty(evFile) || ~isempty(colNames{:})
-                   warning('Operation aborted! EventFileParseMethod is not set yet.')
-               end               
-               status = true;
-               return
-           end
-           if ~isempty(evFile)
-               [folder,name,ext] = fileparts(evFile);
-               if isempty(folder)
-                   folder = obj.DataFolder;
-               end
-               if isempty(ext)
-                   switch obj.EventFileParseMethod
-                       case 'csv'
-                           evFile = [name, '.csv'];
-                       case 'vpixx'
-                           if exist(fullfile(folder,[name, '.vpixx']),'file')
-                               evFile = fullfile(folder,[name, '.vpixx']);
-                           else
-                               evFile = fullfile(folder,[name, '.txt']);
-                           end
-                       otherwise
-                           error('Unknown file Parsing method')
-                   end
-               end
-               
-               % Check if the file exists. If not, raise a warning and
-               % return:
-               if ~exist(evFile,'file')                   
-                   warning('Operation aborted. Events file "%s" does not exist!',evFile);
-                   return
-               end
-               evFile = {evFile};
-           else
-               % For automatic detection of event files:
-               fList = [dir(fullfile(obj.DataFolder,'*.csv'));...
-                   dir(fullfile(obj.DataFolder,'*.vpixx'));...
-                   dir(fullfile(obj.DataFolder,'*.txt'))];
-               evFile = fullfile({fList.folder},{fList.name});
-               if isempty([evFile{:}])
-                   warning('Event list not found! Event IDs and names will not be updated!')
-                   return
-               end
-           end           
-           % Try to parse files until it works:
-           evID = []; evNames = {};
-           for ii = 1:length(evFile)
-               obj.EventFileName = evFile{ii}; 
-               try % try-catch is here just to supress errors from private functions when non-event files are read. Errors or warnings will be raised here instead.
-                   if strcmpi(obj.EventFileParseMethod,'csv') && endsWith(lower(obj.EventFileName), '.csv')
-                       [evID, evNames] = obj.readCSVfile(colNames);
-                   elseif strcmpi(obj.EventFileParseMethod,'vpixx') && (endsWith(lower(obj.EventFileName), '.vpixx') || endsWith(lower(obj.EventFileName), '.txt'))
-                       [evID, evNames] = obj.readVpixxFile;
-                       
-                       % Add new parsing methods here.
-                       %                elseif ... 
-                       %
-                   else
-                       continue
-                   end
-               catch                    
-                   %%% Do nothing
-               end
-               if ~isempty(evID)
-                   disp(['Event list updated from file "' obj.EventFileName '"'])
-                   break
-               end
-           end
-           % Throw warning if no event file was specified and no file was
-           % successfully read:
-           if isempty(p.Results.EventFileName) && isempty(evID)
-               warning('Event File parsing aborted! Failed to parse "%s" file in "%s".\nDoes it exists in the Data Folder?',upper(obj.EventFileParseMethod), obj.DataFolder)
-               return
-           end
-           assert(~isempty(evID),'Failed to parse "%s"! \nIs this a valid Event file?',obj.EventFileName)
-           % Check if the eventID has the same length as the timestamps:
-           assert(isequaln(length(obj.timestamps), length(evID)), 'Failed to update events from file "%s". There is a mismatch between the number of conditions and the number of triggers.', obj.EventFileName)
-           % Save event ID and name lists:
-           obj.eventID = evID;
-           obj.eventNameList = evNames;         
-           status = true;
+        
+        function set.trigPolarity(obj, trigPolarity)
+            % Set function for the trigger polarity.
+            % There are two types:
+            %   - positive: trigger characterized by raising and falling
+            %   edges
+            %   - negative: trigger characterized by falling and raising
+            %   edges.
+            
+            assert(ismember(lower(trigPolarity), {'positive','negative'}),'Invalid trigger polarity! It must be either "positive" or "negative".')
+            obj.trigPolarity = lower(trigPolarity);
         end
-                    
+        
+        function status =  readEventFile(obj, varargin)
+            % READEVENTFILE reads the content of an event file containing a
+            % list of event Names. The file will be parsed using one of the
+            % parsing methods available in this class (e.g., for .CSV,
+            % .vpixx) and set by the "EventFileParseMethod" property. This
+            % property is set at the class construction.
+            % If the "EventFileName" is not provided, this function will
+            % look for the file with the valid extension (.csv,
+            % .vpixx) inside the "DataFolder" and parse it. Override this by
+            % giving the full path of the "EventsFileName" as input.
+            % For .CSV files, the list of events should be arranged in a
+            % column with a HEADER (a header is necessary!) in the first row.
+            % Multiple columns will be merged as a single event per row.
+            % It is possible to select  a subset of columns by providing the
+            % names of the columns "CSVcolNames" as input (Case sensitive!).
+            %
+            % Inputs (Optional):
+            %   EventFileName (char): full path to a valid file containing
+            %    the event IDs/Names to be parsed using the parse method set
+            %    in the "EventFileParseMethod" property.
+            %   CSVcolNames (cell): name of column(s) from a .CSV file to be
+            %    read. If more than one column is provided, each row will
+            %    be merged into a single one (this parameter is ignored for
+            %    other parsing methods).
+            % Output:
+            %    status (bool): TRUE, if the event file was successfully
+            %    read. FALSE otherwise.
+            % Examples:
+            %  1 - Automatic search for a .CSV file with a single column:
+            %    readEventFile();
+            %  2 - Read an specific .CSV file:
+            %    readEventFile('C:/FULLPATH/FILENAME.CSV');
+            %  3 - Read a subset of columns from a .CSV file:
+            %    readEventFile('CSVcolNames',{'Col1'',Col2','Col5'};
+            %  4 - Read a subset o columns from an specific .CSV file:
+            %    readEventFile('C:/FULLPATH/FILENAME.CSV','CSVcolNames',{'ThisOne'});
+            
+            p = inputParser;
+            addRequired(p,'obj')
+            addOptional(p,'EventFileName','',@(x) ischar(x) | isempty(x));
+            addParameter(p,'CSVcols',{''},@(x) iscell(x) & ischar([x{:}]));
+            parse(p,obj,varargin{:});
+            %
+            evFile = p.Results.EventFileName;
+            colNames = p.Results.CSVcols;
+            %
+            status = false;
+            if strcmpi(obj.EventFileParseMethod,'none')
+                if ~isempty(evFile) || ~isempty(colNames{:})
+                    warning('Operation aborted! EventFileParseMethod is not set yet.')
+                end
+                status = true;
+                return
+            end
+            if ~isempty(evFile)
+                [folder,name,ext] = fileparts(evFile);
+                if isempty(folder)
+                    folder = obj.DataFolder;
+                end
+                if isempty(ext)
+                    switch obj.EventFileParseMethod
+                        case 'csv'
+                            evFile = [name, '.csv'];
+                        case 'vpixx'
+                            if exist(fullfile(folder,[name, '.vpixx']),'file')
+                                evFile = fullfile(folder,[name, '.vpixx']);
+                            else
+                                evFile = fullfile(folder,[name, '.txt']);
+                            end
+                        otherwise
+                            error('Unknown file Parsing method')
+                    end
+                end
+                
+                % Check if the file exists. If not, raise a warning and
+                % return:
+                if ~exist(evFile,'file')
+                    warning('Operation aborted. Events file "%s" does not exist!',evFile);
+                    return
+                end
+                evFile = {evFile};
+            else
+                % For automatic detection of event files:
+                fList = [dir(fullfile(obj.DataFolder,'*.csv'));...
+                    dir(fullfile(obj.DataFolder,'*.vpixx'));...
+                    dir(fullfile(obj.DataFolder,'*.txt'))];
+                evFile = fullfile({fList.folder},{fList.name});
+                if isempty([evFile{:}])
+                    warning('Event list not found! Event IDs and names will not be updated!')
+                    return
+                end
+            end
+            % Try to parse files until it works:
+            evID = []; evNames = {};
+            for ii = 1:length(evFile)
+                obj.EventFileName = evFile{ii};
+                try % try-catch is here just to supress errors from private functions when non-event files are read. Errors or warnings will be raised here instead.
+                    if strcmpi(obj.EventFileParseMethod,'csv') && endsWith(lower(obj.EventFileName), '.csv')
+                        [evID, evNames] = obj.readCSVfile(colNames);
+                    elseif strcmpi(obj.EventFileParseMethod,'vpixx') && (endsWith(lower(obj.EventFileName), '.vpixx') || endsWith(lower(obj.EventFileName), '.txt'))
+                        [evID, evNames] = obj.readVpixxFile;
+                        
+                        % Add new parsing methods here.
+                        %                elseif ...
+                        %
+                    else
+                        continue
+                    end
+                catch
+                    %%% Do nothing
+                end
+                if ~isempty(evID)
+                    disp(['Event list updated from file "' obj.EventFileName '"'])
+                    break
+                end
+            end
+            % Throw warning if no event file was specified and no file was
+            % successfully read:
+            if isempty(p.Results.EventFileName) && isempty(evID)
+                warning('Event File parsing aborted! Failed to parse "%s" file in "%s".\nDoes it exists in the Data Folder?',upper(obj.EventFileParseMethod), obj.DataFolder)
+                return
+            end
+            assert(~isempty(evID),'Failed to parse "%s"! \nIs this a valid Event file?',obj.EventFileName)
+            % Check if the eventID has the same length as the timestamps:
+            assert(isequaln(length(obj.timestamps), length(evID)), 'Failed to update events from file "%s". There is a mismatch between the number of conditions and the number of triggers.', obj.EventFileName)
+            % Save event ID and name lists:
+            obj.eventID = evID;
+            obj.eventNameList = evNames;
+            status = true;
+        end
+        
         function varargout = plot(obj, chanName)
             % PLOTANALOGIN plots the Analog input signals and overlays the
             % threshold as well as the detected triggers, if existent.
@@ -255,8 +270,8 @@ classdef EventsManager < handle
                 warning('No signal to plot!')
                 return
             end
-           
-            if ~exist('chanName','var') || isempty(chanName)                
+            
+            if ~exist('chanName','var') || isempty(chanName)
                 % plot All channels if no channel name is provided:
                 chanName = obj.AIChanList;
             end
@@ -264,7 +279,7 @@ classdef EventsManager < handle
             if ischar(chanName)
                 chanName = {chanName};
             end
-            % Check inputs:                                   
+            % Check inputs:
             b_chanExists = ismember(chanName,obj.dictAIChan);
             if all(~b_chanExists)
                 error(['Invalid channel name(s). It must be one of the following:',sprintf('\n"%s"',obj.dictAIChan{:})]);
@@ -272,15 +287,15 @@ classdef EventsManager < handle
                 warning(['The following channel(s) do not exist and will be ignored:', sprintf('\n"%s"',chanName{~b_chanExists})])
                 chanName = chanName(b_chanExists);
             end
-            [~,chanIndx] = ismember(chanName, obj.AIChanList); 
+            [~,chanIndx] = ismember(chanName, obj.AIChanList);
             % Calculate the number of figures with a maximum of 4 subplots per figure:
-            nFigs = ceil(length(chanIndx)/4);   
+            nFigs = ceil(length(chanIndx)/4);
             nAxPerFig = ones(1,nFigs)*4;
             remAx = mod(length(chanIndx),4);
             if remAx > 0
                 nAxPerFig(end) = remAx;
-            end               
-            cnt = 1;    
+            end
+            cnt = 1;
             b_trigsPlotted = false;
             % Set axes properties:
             xVec = [0:size(obj.AnalogIN,1)-1]./obj.sr;% Use X-axis in seconds
@@ -289,7 +304,7 @@ classdef EventsManager < handle
             for ii = 1:nFigs
                 f(ii) = figure('Name',sprintf('Analog Inputs %d/%d (downsampled to %0.0f KHz)',ii,nFigs, obj.sr/10000),...
                     'Visible','off','NumberTitle','off', 'Position',[0 0 560 nAxPerFig(ii)*200],...
-                    'CreateFcn',{@movegui,'center'},'CloseRequestFcn', @closeAllFigs);                
+                    'CreateFcn',{@movegui,'center'},'CloseRequestFcn', @closeAllFigs);
                 for jj = 1:nAxPerFig(ii)
                     s(cnt) = subplot(nAxPerFig(ii),1,jj, 'Parent',f(ii));
                     s(cnt).XLabel.String = 'time (s)';
@@ -312,7 +327,7 @@ classdef EventsManager < handle
                         % Plot Trigger patches:
                         if ~isempty(obj.timestamps)
                             idx = unique(obj.eventID);
-                            % Create semi-transparent patches to represent HIGH state of triggers:                          
+                            % Create semi-transparent patches to represent HIGH state of triggers:
                             % Trigger color code
                             colorArr = jet(64);
                             colorArr = colorArr(round(linspace(1,64,numel(obj.eventNameList))),:);
@@ -327,7 +342,7 @@ classdef EventsManager < handle
                             % Put legend on the first plot:
                             if jj == 1
                                 legend(s(cnt),ptc,obj.eventNameList,'Location','best', 'Interpreter','none');
-                            end                            
+                            end
                         end
                         hold(s(cnt),'off');
                         
@@ -360,8 +375,8 @@ classdef EventsManager < handle
             end
             % CloseFig callback:
             function closeAllFigs(src,~)
-                % CLOSEALLFIGS closes all figures when the selected figure is closed.                
-                 delete(src.UserData)
+                % CLOSEALLFIGS closes all figures when the selected figure is closed.
+                delete(src.UserData)
             end
         end
         
@@ -371,12 +386,15 @@ classdef EventsManager < handle
             % It records the timestamps and state of each event.
             % Input:
             %   b_verbose(bool, default = FALSE): If TRUE, displays some basic stats on
-            %   trigger detection on the command window.
+            %       trigger detection on the command window.
+            %   FilterFreq (scalar positive): Cut-off frequency of Low-pass
+            %       filter(Hz).
             %
             p = inputParser;
             addRequired(p,'obj');
             addOptional(p,'b_verbose',true,@islogical)
             addParameter(p,'FilterFreq',0,@(x) isscalar(x) & x>=0)
+            
             parse(p,obj,varargin{:})
             b_verbose = p.Results.b_verbose;
             FilterFreq = p.Results.FilterFreq;
@@ -411,12 +429,17 @@ classdef EventsManager < handle
                     continue
                 end
                 signal = obj.AnalogIN(:,idxCh);
+                if strcmpi(obj.trigPolarity,'negative')
+                    % Flip the signal if the triggers are negative:
+                    sigMin = min(signal);sigMax = max(signal);
+                    signal = (1 - (signal-sigMin)./(sigMax-sigMin)).*(sigMax-sigMin) + sigMin;
+                end
                 if FilterFreq
                     % Apply low-pass filter to the data at selected cut-off
                     % frequency:
-                    obj.AnalogIN(:,idxCh) = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(obj.AnalogIN(:,idxCh))')');
+                    signal = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(signal)')');
                 end
-                [tmstmp,chanState] = obj.detectTrig(obj.AnalogIN(:,idxCh));
+                [tmstmp,chanState] = obj.detectTrig(signal);
                 % Control for failed detections:
                 if isempty(tmstmp)
                     warning(['Failed to detect triggers in channel "' obj.trigChanName{ii} '".'])
@@ -490,11 +513,13 @@ classdef EventsManager < handle
             end
             % Display trigger stats:
             if b_verbose
+                strMapHigh = containers.Map({'positive','negative'},{'HIGH','LOW'});
+                strMapLow = containers.Map({'positive','negative'},{'LOW','HIGH'});
                 disp('Trigger detection completed.')
                 disp('---------- Trigger info ----------')
                 deltaT = [diff(obj.timestamps); nan];
                 fprintf(['Total number of triggers: %d\nTotal number of conditions: %d\n' ...
-                    'Average trial length (HIGH state): %0.3f s\nAverage inter-trial length (LOW state): %0.3f s\n'...
+                    'Average trial length (' strMapHigh(obj.trigPolarity) ' state): %0.3f s\nAverage inter-trial length (' strMapLow(obj.trigPolarity) ' state): %0.3f s\n'...
                     'Trigger detection threshold: %0.2f v\nTrigger type: %s\n'],sum(obj.state),length(obj.eventNameList),...
                     mean(deltaT(obj.state == 1), 'omitnan'), mean(deltaT(obj.state == 0), 'omitnan'), obj.trigThr, ...
                     obj.trigType)
@@ -503,44 +528,44 @@ classdef EventsManager < handle
         end
         
         function getTriggersFromExternalData(obj,signal)
-           % Detects triggers from a signal given as input and ignores the
-           % data from the AnalogIN
-           
-           assert(isvector(signal), 'Signal must be a vector (1 x N)1')           
-           % Reset event info:
-           obj.timestamps = [];
-           obj.state = [];
-           obj.eventID = [];
-           obj.eventNameList = {};
-           [obj.timestamps,obj.state] = obj.detectTrig(signal);
-           % Control for failed detections:
-           if isempty(obj.timestamps)
-               warning('Failed to detect triggers in signal.')            
-               return
+            % Detects triggers from a signal given as input and ignores the
+            % data from the AnalogIN
+            
+            assert(isvector(signal), 'Signal must be a vector (1 x N)1')
+            % Reset event info:
+            obj.timestamps = [];
+            obj.state = [];
+            obj.eventID = [];
+            obj.eventNameList = {};
+            [obj.timestamps,obj.state] = obj.detectTrig(signal);
+            % Control for failed detections:
+            if isempty(obj.timestamps)
+                warning('Failed to detect triggers in signal.')
+                return
             else
-               disp(['Triggers detected in signal.']);
-           end                      
-           obj.eventID = ones(size(obj.state));
-           obj.eventNameList = {'1'};
-           disp('Trigger detection completed.')
-           disp('---------- Trigger info ----------')
-           deltaT = [diff(obj.timestamps); nan];
-           fprintf(['Total number of triggers: %d\nTotal number of conditions: %d\n' ...
-               'Average trial length (HIGH state): %0.3f s\nAverage inter-trial length (LOW state): %0.3f s\n'...
-               'Trigger detection threshold: %0.2f v\nTrigger type: %s\n'],sum(obj.state),length(obj.eventNameList),...
-               mean(deltaT(obj.state == 1), 'omitnan'), mean(deltaT(obj.state == 0), 'omitnan'), obj.trigThr, ...
-               obj.trigType)
-           disp('--------------------------------')
+                disp(['Triggers detected in signal.']);
+            end
+            obj.eventID = ones(size(obj.state));
+            obj.eventNameList = {'1'};
+            disp('Trigger detection completed.')
+            disp('---------- Trigger info ----------')
+            deltaT = [diff(obj.timestamps); nan];
+            fprintf(['Total number of triggers: %d\nTotal number of conditions: %d\n' ...
+                'Average trial length (' strMapHigh(obj.trigPolarity) ' state): %0.3f s\nAverage inter-trial length (' strMapLow(obj.trigPolarity) ' state): %0.3f s\n'...
+                'Trigger detection threshold: %0.2f v\nTrigger type: %s\n'],sum(obj.state),length(obj.eventNameList),...
+                mean(deltaT(obj.state == 1), 'omitnan'), mean(deltaT(obj.state == 0), 'omitnan'), obj.trigThr, ...
+                obj.trigType)
+            disp('--------------------------------')
         end
         function saveEvents(obj,saveFolder)
             % SAVEEVENTS creates the file "events.mat" in the
             % SaveFolder. This file is used by umIT to split the data into
             % trials.
             
-            if nargin < 2 
+            if nargin < 2
                 % If no SaveFolder is provided, create the file in the
                 % "DataFolder".
-                saveFolder = obj.DataFolder;  
+                saveFolder = obj.DataFolder;
             end
             if isempty(obj.timestamps)
                 warning('Unable to create events.mat file. No triggers found!')
@@ -550,7 +575,7 @@ classdef EventsManager < handle
             % Save events file
             saveEventsFile(saveFolder,obj.eventID,obj.timestamps,obj.state,obj.eventNameList);
         end
-                
+        
     end
     
     methods (Access = private)
@@ -559,7 +584,7 @@ classdef EventsManager < handle
             % SETINFO calls the "ReadInfoFile.m" function or simply loads
             %   the AcqInfo.m file from the DataFolder and stores the
             %   structure in the "AcqInfo" property. In addition, it uses
-            %   the information to update the properties: 
+            %   the information to update the properties:
             %   "sr" and "trigChanName" (for internal triggers only).
             
             % Load existing info:
@@ -574,27 +599,27 @@ classdef EventsManager < handle
                 return
             end
             fn = fieldnames(obj.AcqInfo);
-            idxChan = startsWith(fn,'AICh', 'IgnoreCase',true);        
+            idxChan = startsWith(fn,'AICh', 'IgnoreCase',true);
             if ~any(idxChan)
-                % For retrocompatibility with older versions of the "info.txt" 
-                %   file where the names of AIchannels are not set. Here, we 
-                %   infer the names of the channels based on the total number of channels:    
+                % For retrocompatibility with older versions of the "info.txt"
+                %   file where the names of AIchannels are not set. Here, we
+                %   infer the names of the channels based on the total number of channels:
                 
                 % Initiate list with the names of the CameraTrigger and internal
-                % channels, then, 
+                % channels, then,
                 obj.AIChanList = cell(obj.AcqInfo.AINChannels,1);
                 switch obj.AcqInfo.AINChannels
                     case 1
-                        % Cage system: 
-                        obj.AIChanList(1) = {'CameraTrig'};                        
+                        % Cage system:
+                        obj.AIChanList(1) = {'CameraTrig'};
                         idx = 2;
                     case {2,6,10}
                         % Cage (n=2) or OiS200 (n=6,10) system. Camera and single internal trigger:
-                        obj.AIChanList(1:2) = {'CameraTrig', 'StimAna1'};                                                                  
+                        obj.AIChanList(1:2) = {'CameraTrig', 'StimAna1'};
                         idx = 3;
                     case {3,7,11}
                         % Cage (n=3) or OiS200 (n=7,11) system. Camera and double internal triggers:
-                        obj.AIChanList(1:3) = {'CameraTrig', 'StimAna1', 'StimAna2'};                                                                                                              
+                        obj.AIChanList(1:3) = {'CameraTrig', 'StimAna1', 'StimAna2'};
                         idx = 4;
                     otherwise
                         error('Failed to infer channel names from "info.txt" file!')
@@ -607,7 +632,7 @@ classdef EventsManager < handle
                 for ii = 1:length(obj.AIChanList)
                     obj.AcqInfo.(['AICh' num2str(ii)]) = obj.AIChanList{ii};
                 end
-            else                
+            else
                 obj.AIChanList = cellfun(@(x) obj.AcqInfo.(x),fn(idxChan),'UniformOutput',false);
             end
             
@@ -617,11 +642,11 @@ classdef EventsManager < handle
                 'Mismatch found between list of channel names and total number of channels! Check "info.txt" file!')
             % Validate if all AnalogIN names exist in the dictionary. (This
             %   will keep devs up-to-date on changes in the "info.txt" file)
-            assert(all(ismember(lower(obj.AIChanList), lower(obj.dictAIChan))),'Unexpected AnalogIN channel name found in "info.txt" file!');            
+            assert(all(ismember(lower(obj.AIChanList), lower(obj.dictAIChan))),'Unexpected AnalogIN channel name found in "info.txt" file!');
             % Update Analog input sample rate:
             obj.sr = obj.AcqInfo.AISampleRate;
             
-            % Update trigger names:            
+            % Update trigger names:
             if any(startsWith(fn,'event','IgnoreCase',true))
                 % For digital stimulation:
                 obj.b_isDigital = true;
@@ -630,12 +655,12 @@ classdef EventsManager < handle
             end
             % Update trigger names for Analog Stims:
             b_hasStim1 = any(cellfun(@any,regexpi(fn,'stimulation1_')));
-            b_hasStim2 = any(cellfun(@any,regexpi(fn,'stimulation2_')));                            
+            b_hasStim2 = any(cellfun(@any,regexpi(fn,'stimulation2_')));
             if ~any([b_hasStim1, b_hasStim2])
                 return
             end
-            names = {'StimAna1','StimAna2'};                
-            obj.trigChanName = names([b_hasStim1, b_hasStim2]);            
+            names = {'StimAna1','StimAna2'};
+            obj.trigChanName = names([b_hasStim1, b_hasStim2]);
             % Use the pulse information from analog stim to update the
             % minimal interStim interval for detection of bursts stim.
             % blocks. We set the minimal interstim as the largest pulse
@@ -644,31 +669,31 @@ classdef EventsManager < handle
             idxPeriod = contains(fn,'_period','IgnoreCase',true);
             idxFreq = contains(fn,'_frequency','IgnoreCase',true);
             if any(idxBurst) && obj.AcqInfo.(fn{find(idxBurst,1,'first')}) > 0
-                % Use burst delay 
+                % Use burst delay
                 burst_delay = obj.AcqInfo.(fn{find(idxBurst,1,'first')});
                 stim_period = obj.AcqInfo.(fn{find(idxPeriod,1,'first')});
-                obj.minInterStim = 1.15*(burst_delay + stim_period)/1000; % Add 15% to the value of the burst delay                
+                obj.minInterStim = 1.15*(burst_delay + stim_period)/1000; % Add 15% to the value of the burst delay
             elseif any(idxPeriod)
                 % Use the pulse period
                 obj.minInterStim = 1.15*(obj.AcqInfo.(fn{find(idxPeriod,1,'first')}))/1000;% Add 15% to the value of the pulse period
             else
                 % Calculate the pulse period from frequency (older
                 % "info.txt" versions)
-                obj.minInterStim = 1.15*(1/obj.AcqInfo.(fn{find(idxFreq,1,'first')}));% Add 15% to the value of the pulse period                
+                obj.minInterStim = 1.15*(1/obj.AcqInfo.(fn{find(idxFreq,1,'first')}));% Add 15% to the value of the pulse period
             end
-
+            
         end
         
         function setAnalogIN(obj)
             % SETANALOGIN reads the ai_xxxx.bin files and saves it in "AnalogIN" property.
-            % List of analog files containing raw data:                        
-            obj.AnalogIN = ReadAnalogIN(obj.DataFolder,obj.AcqInfo);            
+            % List of analog files containing raw data:
+            obj.AnalogIN = ReadAnalogIN(obj.DataFolder,obj.AcqInfo);
         end
-                     
+        
         function [timestamps, state] = detectTrig(obj,data)
             % DETECTTRIG detects the triggers from a given signal and
             %   outputs the timestamps and state. THis function is called by
-            %   the method "getTriggers".            
+            %   the method "getTriggers".
             % Input:
             %    data(1xN num. vector): vector containing the triggers.
             % Outputs:
@@ -690,7 +715,7 @@ classdef EventsManager < handle
             if round((max(data) - abs(min(data)))/2) == 0
                 disp('Biphasic signal detected.')
                 data = abs(data);
-            end                        
+            end
             %
             if strcmpi(obj.trigThr, 'auto')
                 trigAmp = (.8*(max(data(:)) - min(data(:))));
@@ -703,10 +728,10 @@ classdef EventsManager < handle
                 obj.trigThr = trigAmp + min(data(:));
             end
             
-            % Find samples that cross the threshold (rising and falling):            
+            % Find samples that cross the threshold (rising and falling):
             tmRise = find(data < obj.trigThr & [data(2:end) nan] > obj.trigThr);
-            tmFall = find(data > obj.trigThr & [data(2:end) nan] < obj.trigThr);            
-            if isempty(tmRise)                
+            tmFall = find(data > obj.trigThr & [data(2:end) nan] < obj.trigThr);
+            if isempty(tmRise)
                 return
             elseif numel(tmRise) ~= numel(tmFall)
                 % Need to decide what to do in this case. For now, throw a
@@ -721,7 +746,7 @@ classdef EventsManager < handle
             timestamps = timestamps';
             state = state(idx)';
             % For Toggle type triggers:
-            if strcmpi(obj.trigType, 'edgetoggle')                
+            if strcmpi(obj.trigType, 'edgetoggle')
                 % Use 2nd signal onset as the trial "OFF" state:
                 timestamps = timestamps(state==1);
                 % Overwite state:
@@ -730,15 +755,15 @@ classdef EventsManager < handle
             end
             
             % Deal with bursts stimuli:
-            StimLim = find(diff(timestamps(state ==1)) >= obj.minInterStim); %             
+            StimLim = find(diff(timestamps(state ==1)) >= obj.minInterStim); %
             NbStim = length(StimLim)+1;
             if NbStim < sum(state) && ~obj.b_isDigital
-                disp('Burst stim detected.')                                                  
-                BurstOff = [StimLim; length(tmFall)]; 
+                disp('Burst stim detected.')
+                BurstOff = [StimLim; length(tmFall)];
                 BurstOn = [1; StimLim+1];
-                % Update timestamps and state:                
+                % Update timestamps and state:
                 tmRise = tmRise(BurstOn);
-                tmFall = tmFall(BurstOff); 
+                tmFall = tmFall(BurstOff);
                 % Recalculate the timestamps and state:
                 timestamps = single([tmRise tmFall]./obj.sr);
                 state = [ones(1,numel(tmRise), 'uint8') zeros(1,numel(tmFall), 'uint8')];
@@ -746,27 +771,27 @@ classdef EventsManager < handle
                 [timestamps,idx] = sort(timestamps);
                 timestamps = timestamps';
                 state = state(idx)';
-            end                 
+            end
             % Update timestamps and states for digital stim. Digital stim
             %   will only have a toggle marking the stim onset and the
             %   duration (in seconds) is recorded in the "info.txt" file.
-            if obj.b_isDigital                
+            if obj.b_isDigital
                 fn = regexp(fieldnames(obj.AcqInfo),'Stim\d+','match','once');
-                fn(cellfun(@isempty,fn)) = [];  
+                fn(cellfun(@isempty,fn)) = [];
                 stimInfo = cellfun(@(x) obj.AcqInfo.(x), fn);
                 durationMap = containers.Map([stimInfo.ID],[stimInfo.Duration]);
-                durationOrder = arrayfun(@(x) durationMap(x), obj.AcqInfo.Events_Order);                
-                timestamps = reshape([timestamps(state == 1)'; timestamps(state ==1)' + durationOrder],numel(state),[]); % Create timestamps to mark the end of the stim (trigger + duration_sec);               
-            end                       
-        end        
-        %%%%% Event File parsers %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%                
+                durationOrder = arrayfun(@(x) durationMap(x), obj.AcqInfo.Events_Order);
+                timestamps = reshape([timestamps(state == 1)'; timestamps(state ==1)' + durationOrder],numel(state),[]); % Create timestamps to mark the end of the stim (trigger + duration_sec);
+            end
+        end
+        %%%%% Event File parsers %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function [eventID, eventNameList] = readCSVfile(obj, colName)
             % READCSVFILE reads a .CSV file. If no column name is provided,
             % it reads the content of the first column and considers it
             % without header. If one column name is provided, it reads the
             % rows of the given column. If 2 or more column names are
             % provided, the values of the column names are concatenated
-            % with a hiphen ("-"). 
+            % with a hiphen ("-").
             % Input:
             %    colName(optional, char|cell): column name(s) to be read
             %    from the CSV file.
@@ -774,9 +799,9 @@ classdef EventsManager < handle
             %    eventID (num vect.): list of indices of the events listed
             %    in "eventNameList".
             %    eventNameList (cell): list of event names in alphabetical
-            %    order.            
-            % Set CSV reading rules:                       
-            opts = detectImportOptions(obj.EventFileName);    
+            %    order.
+            % Set CSV reading rules:
+            opts = detectImportOptions(obj.EventFileName);
             if ~exist('colName','var') || isempty(colName)
                 colName = {''};
             elseif ischar(colName)
@@ -789,30 +814,30 @@ classdef EventsManager < handle
                 colName = opts.VariableNames; % USe all columns
             else
                 colName = {''}; % USe columns without headers.
-            end            
-%             opts.DataLines = 2; %Start reading at 2nd row.
+            end
+            %             opts.DataLines = 2; %Start reading at 2nd row.
             opts.VariableTypes = repmat({'char'},size(opts.VariableTypes)); % Force data to characters.
             opts.MissingRule = 'omitrow'; % Remove rows with missing values.
             opts.ExtraColumnsRule = 'ignore'; % Ignore empty columns.
             % Read .CSV file:
-            out = table2cell(readtable(obj.EventFileName,opts));                        
+            out = table2cell(readtable(obj.EventFileName,opts));
             % Merge multiple columns into a single one:
-            nameList = cell(size(out,1),1);   
+            nameList = cell(size(out,1),1);
             for ii = 1:size(out,1)
                 if ~isempty([colName{:}])
                     nameList{ii} = strjoin(reshape(vertcat(colName,out(ii,:)),1,[]),'-');
                 else
                     nameList{ii} = strjoin(out(ii,:),'-');
-                end               
+                end
             end
-                
+            
             eventNameList = unique(nameList,'stable');
-            nameMap = containers.Map(eventNameList,1:length(eventNameList)); 
+            nameMap = containers.Map(eventNameList,1:length(eventNameList));
             eventID = zeros(length(nameList),1);
             for ii = 1:length(nameList)
                 % Generate event ID from event name index.
                 eventID(ii) = nameMap(nameList{ii});
-            end 
+            end
             % Duplicate the eventID to account for low state (considering
             % that there is no overlap between conditions).
             eventID = repelem(eventID,2);
@@ -825,13 +850,13 @@ classdef EventsManager < handle
             %    eventID (num vect.): list of indices of the events listed
             %    in "eventNameList".
             %    eventNameList (cell): list of event names in alphabetical
-            %    order. 
+            %    order.
             
             % Extract only the part of the text containing the real sequence of
             %   conditions (RAW DATA section):
             filetext = fileread(obj.EventFileName);
             [~,idx_start] = regexp(filetext, 'RAW DATA');
-            idx_stop = regexp(filetext, 'SORTED');            
+            idx_stop = regexp(filetext, 'SORTED');
             filetext = strip(filetext(idx_start+1:idx_stop-1));
             if isempty(filetext)
                 return
@@ -847,11 +872,11 @@ classdef EventsManager < handle
                     continue
                 end
                 out = [out;str(myCols)];
-            end            
+            end
             out(:,1) = cellfun(@str2double, out(:,1), 'UniformOutput',false);
-            eventID = [out{:,1}]';            
+            eventID = [out{:,1}]';
             IDs = unique(eventID);
-            eventNameList = cell(length(IDs),1);            
+            eventNameList = cell(length(IDs),1);
             for ii = 1:length(IDs)
                 idx = find(eventID == IDs(ii),1,'first');
                 eventNameList(ii) = out(idx,2);
@@ -859,8 +884,8 @@ classdef EventsManager < handle
             % Duplicate the eventID to account for low state (considering
             % that there is no overlap between conditions).
             eventID = repelem(eventID,2);
-        end                
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%                        
+        end
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function delete(obj)
             % Class destructor. Re-enables original warnings.
             warning(obj.warnOrigState)
