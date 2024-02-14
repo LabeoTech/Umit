@@ -76,20 +76,22 @@ end
 % Detect Stimulation triggers in channel 2:
 % StimTrig is on the second channel (except if slave):
 if stimChan > 3
-    % If the stim channel is external, set the amplitude as the half of the
-    % signal amplitude:
-    minThr = 0.15; % Minimal threshold value for detection:
-    sigAmp = max(AnalogIN(:,stimChan)) - min(AnalogIN(:,stimChan));
-    if sigAmp > minThr
-        thr = min(AnalogIN(:,stimChan)) + (sigAmp/2);
-    else
-        thr = minThr;
-    end
     % Also, we filter the signal to remove high-frequency noise. This is
     % common with photodiodes, for instance:
     f = fdesign.lowpass('N,F3dB', 4, 200, 10000); % Apply low-pass filter @200Hz to remove high-frequency noise.
     lpass = design(f,'butter');
-    AnalogIN(:,stimChan) = filtfilt(lpass.sosMatrix, lpass.ScaleValues, AnalogIN(:,stimChan)')';    
+    AnalogIN(:,stimChan) = filtfilt(lpass.sosMatrix, lpass.ScaleValues, AnalogIN(:,stimChan)')';   
+    % If the stim channel is external, set the amplitude as the half of the
+    % signal amplitude:
+    minThr = 0.15; % Minimal threshold value for detection.
+    sigAmp = max(AnalogIN(:,stimChan)) - min(AnalogIN(:,stimChan));
+    if sigAmp > minThr
+        thr = min(AnalogIN(:,stimChan)) + (sigAmp/2);
+    else
+        % This will force the detection to fail (not ideal).
+        thr = minThr;
+    end
+     
 elseif ( ~isfield(Infos, 'Stimulation1_Amplitude') )
     % Set threshold amplitude for internal channels to 2.5V when the amplitude
     % value is not available (retrocompatibility issue)
@@ -125,6 +127,15 @@ if Infos.Stimulation == 1
     if( NbStim == length(StimTrig) ) %Single Pulse trigged Stims
         StimLim = find((AnalogIN(1:(end-1), stimChan) >thr) &...
             (AnalogIN(2:end, stimChan) <= thr))+1;
+        if numel(StimLim) < numel(StimTrig)
+            % Remove missing stim offset (in case the trial was finished before
+            % the trigger falling edge:
+            StimTrig = StimTrig(1:length(StimLim));
+            % Update number of stims:
+            NbStim = numel(StimTrig);
+            warning('Trigger offset from last trial not detected! The last trigger was removed!')
+        end
+        %
         StimLength = mean(StimLim - StimTrig)./Infos.AISampleRate;
         if StimLength < (CamTrig(2) - CamTrig(1))/Infos.AISampleRate
             StimLength = 3*(CamTrig(2) - CamTrig(1))/Infos.AISampleRate;
