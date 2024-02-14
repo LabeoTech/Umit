@@ -30,7 +30,7 @@ idxMiss = cellfun(@(x) isequaln(sum(x),0), Stim);
 if all(idxMiss)
     % If no stim is detected, save StimParameters.mat file with default
     % values:
-    disp('No Stimulations detected. Resting State experiment?');    
+    disp('No Stimulations detected. Resting State experiment?');
     Stim = 0;
     save([SaveFolder filesep 'StimParameters.mat'], 'Stim');
     if nargout
@@ -70,7 +70,7 @@ if strcmpi(trigPolarity,'negative')
     % Flip signal if it's negative:
     sigMin = min(AnalogIN(:,stimChan));
     sigMax = max(AnalogIN(:,stimChan));
-     AnalogIN(:,stimChan) = (1 - (AnalogIN(:,stimChan) - sigMin)./(sigMax - sigMin)).*...
+    AnalogIN(:,stimChan) = (1 - (AnalogIN(:,stimChan) - sigMin)./(sigMax - sigMin)).*...
         (sigMax - sigMin) + sigMin;
 end
 % Detect Stimulation triggers in channel 2:
@@ -80,7 +80,7 @@ if stimChan > 3
     % common with photodiodes, for instance:
     f = fdesign.lowpass('N,F3dB', 4, 200, 10000); % Apply low-pass filter @200Hz to remove high-frequency noise.
     lpass = design(f,'butter');
-    AnalogIN(:,stimChan) = filtfilt(lpass.sosMatrix, lpass.ScaleValues, AnalogIN(:,stimChan)')';   
+    AnalogIN(:,stimChan) = filtfilt(lpass.sosMatrix, lpass.ScaleValues, AnalogIN(:,stimChan)')';
     % If the stim channel is external, set the amplitude as the half of the
     % signal amplitude:
     minThr = 0.15; % Minimal threshold value for detection.
@@ -91,27 +91,36 @@ if stimChan > 3
         % This will force the detection to fail (not ideal).
         thr = minThr;
     end
-     
+    
 elseif ( ~isfield(Infos, 'Stimulation1_Amplitude') )
     % Set threshold amplitude for internal channels to 2.5V when the amplitude
     % value is not available (retrocompatibility issue)
-%     Infos.Stimulation1_Amplitude = 5;
+    %     Infos.Stimulation1_Amplitude = 5;
     thr = 2.5;
 else
     thr = Infos.Stimulation1_Amplitude/2;
 end
 
-% Detect triggers:
+% Detect trigger rising edges:
 StimTrig = find((AnalogIN(1:(end-1), stimChan) < thr) &...
     (AnalogIN(2:end, stimChan) >= thr))+1;
+StimTrigOff = find((AnalogIN(1:(end-1), stimChan) >thr) &...
+    (AnalogIN(2:end, stimChan) <= thr))+1;
 
+if isfield(Infos,['AICh' num2str(stimChan)])
+    chanName = Infos.(['AICh' num2str(stimChan)]);
+else
+    chanName = num2str(stimChan);
+end
+
+if numel(StimTrig) ~= numel(StimTrigOff)
+    % Raise a warning if the number of rising and falling edges are
+    % not equal:
+    warning('Failed to detect triggers in channel "%s"! The number of rising and falling edges are not equal!',chanName)
+    return
+end
 if isempty(StimTrig)
-    if isfield(Infos,['AICh' num2str(stimChan)])
-        str = Infos.(['AICh' num2str(stimChan)]);
-    else
-        str = num2str(stimChan);
-    end
-    disp(['Missing triggers in channel ' str '!'])
+    warning('Missing triggers in channel "%s"!',chanName)
     return
 end
 % Add Stimulation field for retrocompatibility:
@@ -120,25 +129,12 @@ if( ~isfield(Infos, 'Stimulation') )
 end
 
 if Infos.Stimulation == 1
-    Period = median(StimTrig(2:end)-StimTrig(1:(end-1)))/Infos.AISampleRate;
-    Freq = 1/Period;
+    Period = median(StimTrig(2:end)-StimTrig(1:(end-1)))/Infos.AISampleRate;    
     StimLim = find(diff(StimTrig)>20000);
     NbStim = length(StimLim)+1;
     if( NbStim == length(StimTrig) ) %Single Pulse trigged Stims
-        StimLim = find((AnalogIN(1:(end-1), stimChan) >thr) &...
-            (AnalogIN(2:end, stimChan) <= thr))+1;
-        if numel(StimLim) < numel(StimTrig)
-            % Remove missing stim offset (in case the trial was finished before
-            % the trigger falling edge:
-            StimTrig = StimTrig(1:length(StimLim));
-            % Update number of stims:
-            NbStim = numel(StimTrig);
-            warning('Trigger offset from last trial not detected! The last trigger was removed!')
-        end
-        %
-        StimLength = mean(StimLim - StimTrig)./Infos.AISampleRate;
-        if StimLength < (CamTrig(2) - CamTrig(1))/Infos.AISampleRate
-            StimLength = 3*(CamTrig(2) - CamTrig(1))/Infos.AISampleRate;
+        StimLim = StimTrigOff; % Update StimLim
+        if mean(StimLim - StimTrig)./Infos.AISampleRate < (CamTrig(2) - CamTrig(1))/Infos.AISampleRate
             StimLim = StimLim + 3*(CamTrig(2) - CamTrig(1));
         end
         Stim = zeros(length(AnalogIN(:,stimChan)),1);
