@@ -850,12 +850,17 @@ classdef EventsManager < handle
             % "sr" and "trigChanName" (for trigger detection).
             
             % Check if AcqInfos file exists:
-            assert(any(exist(fullfile(obj.SaveFolder, 'AcqInfos.mat'),'file')),...
-                ['Unable to read experiment metadata. The file "AcqInfo.mat" is missing in folder "'...
-                obj.SaveFolder '". Execute Images Classification and try again.']);
+%             assert(any(exist(fullfile(obj.RawFolder, 'info.txt'),'file')),...
+%                 ['Unable to read experiment metadata. The file "info.txt" is missing in folder "'...
+%                 obj.RawFolder '". Execute Images Classification and try again.']);
             % Load existing info:
-            a = load(fullfile(obj.SaveFolder, 'AcqInfos.mat'));
-            obj.AcqInfo = a.AcqInfoStream;
+            try
+                a = load(fullfile(obj.SaveFolder, 'AcqInfos.mat'));
+                obj.AcqInfo = a.AcqInfoStream;
+            catch
+                obj.AcqInfo = ReadInfoFile(obj.RawFolder);
+            end
+            
             % Get AnalogIN channel list:
             fn = fieldnames(obj.AcqInfo);
             idxChan = startsWith(fn,'AICh', 'IgnoreCase',true);
