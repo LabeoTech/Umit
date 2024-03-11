@@ -62,20 +62,24 @@ for i = 1:length(dimVec)
         data = applyAggFcn(data, opts.aggregateFcn, i, []);
     end
 end
-% Find singleton dimensions:
-singDims = ( size(data) == 1 );
+
 % Permute data back and remove singleton dimensions:
 [~,locB] = ismember(metaData.dim_names,perm_dim_names);
-outData = squeeze(permute(data, locB));
-% Update dim_names:
-singDims = singDims(locB);
+outData = permute(data, locB);
+
 % new_dim_names = metaData.dim_names;
-data_dim_names (singDims) = [];
 
 % Create metaData structure based on aggregated data:
 if exist('new_eventID', 'var')
     % IF "E"vent dimension was processed, update eventID variable in metaData file:
-    metaData.eventID = new_eventID;    
+    metaData.eventID = new_eventID;           
+else
+    % Find singleton dimensions:
+    singDims = ( size(data) == 1 );
+    % Update dim_names:
+    singDims = singDims(locB);
+    % Remove Singleton dimensions:
+    data_dim_names (singDims) = [];
 end
 metaData = genMetaData(outData, data_dim_names,metaData);
 end
