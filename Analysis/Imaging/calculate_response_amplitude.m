@@ -19,7 +19,7 @@ function [outData, metaData] = calculate_response_amplitude(data, metaData, vara
 % Defaults: !Instantiate one default per line!
 default_Output = 'amplitude_Map.dat'; %#ok This line is here just for Pipeline management.
 default_opts = struct('preEvent_value', 'median', 'postEvent_value', 'max', 'TimeWindow_sec', 'all');
-opts_values = struct('preEvent_value', {{'mean', 'median', 'min','max'}}, 'postEvent_value',{{'mean', 'median', 'min','max'}},'TimeWindow_sec',{{'all',Inf}});% This is here only as a reference for PIPELINEMANAGER.m. 
+opts_values = struct('preEvent_value', {{'mean', 'median', 'min','max','AUC'}}, 'postEvent_value',{{'mean', 'median', 'min','max','AUC'}},'TimeWindow_sec',{{'all',Inf}});% This is here only as a reference for PIPELINEMANAGER.m. 
 
 %%% Arguments parsing and validation %%%
 % Parse inputs:
@@ -95,6 +95,11 @@ bsln = data(1:trigFrame,:);
 postTrig = data(frOn:frOff,:);
 
 % Use aggregate function OR value defined by User:
+if strcmpi(opts.postEvent_value,'auc') || strcmpi(opts.preEvent_value,'auc')
+    % If the user chose the Area under the curve as a measure, force the
+    % preEvent value to be the same:
+    opts.preEvent_value = 'AUC';
+end
 bsln = applyAggFcn(bsln, opts.preEvent_value);
 postTrig = applyAggFcn(postTrig, opts.postEvent_value);
 % Reshape data to match original data size:
@@ -139,5 +144,7 @@ switch aggfcn
         %         out = sum(vals, 1, 'omitnan');
         %     otherwise
         %         out = vals;
+    case 'AUC'
+        out = trapz(vals);
 end
 end
