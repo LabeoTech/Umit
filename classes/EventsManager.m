@@ -837,7 +837,7 @@ classdef EventsManager < handle
             if isempty(obj.trialInterval)
                 obj.setTrialInterval;
             end
-            disp(['Events info loaded from file ' fullfile(Folder,'events.mat')]);
+%             disp(['Events info loaded from file ' fullfile(Folder,'events.mat')]);
         end
     end
     

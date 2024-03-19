@@ -36,7 +36,7 @@ clear p
 % Check if ROImasks file exist:
 opts.ROImasks_filename = findMyROIfile(opts.ROImasks_filename, object);
 % Load ROI file:
-roi_data = load(opts.ROImasks_filename);
+roi_data = load(opts.ROImasks_filename,'-mat');
 % locate "X" and "Y" dimensions in metaData and in ROI info:
 dim_names = metaData.dim_names;
 [~,yxLoc] = ismember({'Y','X'}, dim_names);
