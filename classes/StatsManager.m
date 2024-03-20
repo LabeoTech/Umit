@@ -498,6 +498,15 @@ classdef StatsManager < handle
                         continue
                     else
                         dat = [dat{~idxEmpty}]';
+                        % Special case: Correlation Matrices. In case that
+                        % the observations of the correlation matrices are
+                        % not in the same order, reorder the data from each
+                        % observation before averaging:
+                        if all(cellfun(@(x) strcmpi(x,'o'),dataIn{1,obj.hMap('MatFile')}.dim_names))
+                           [~,labelIndx] = cellfun(@(x) ismember(obsList,x),dataIn(:,obj.hMap('ObservationID')),'UniformOutput',false);
+                           dat = cellfun(@(x,y) x(y),dat,labelIndx, 'UniformOutput',false);
+                        end
+                        
                         % Calculate average:
                         avg = [avg; {mean(cat(dimCat,dat{:}),dimCat,'omitnan')}];%#ok
                         currObs = [currObs; obsList(iOb)];%#ok
