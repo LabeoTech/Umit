@@ -689,23 +689,23 @@ classdef StatsManager < handle
                 disp(testMsg)
             end
             if strcmpi(obj.curr_test, 'unknown')
-                varargout{3} = warning('Operation Aborted! Failed to Identify Hypothesis test based on the data.');
+                varargout{3} = warning('Operation Aborted! Failed to Identify Hypothesis test based on the data.\n');
                 return
             end
             % Validate assumptions to use parametric tests;
             if ~obj.checkNormality && any(contains(obj.curr_test, {'Two','Repeated'}, 'IgnoreCase',true))
-                % If the data is not normal for ANOVA test, abort!
-                varargout{3} = warning('The data does not follow a normal distribution. Statistical tests will not be applied!');
-                return
+                % If the data is not normal for ANOVA test, raise warning!
+                warnMsg = [warnMsg, warning('The data does not follow a normal distribution. Interpret data with caution!\n')];
+                %return
             elseif ~obj.checkNormality
                 % If is not normal for Paired and Unpaired 2-sampled data,
                 % switch comparison to non-parametric versions:
-                warnMsg = warning('The data does not follow a normal distribution. Non-parametric tests will be performed.');
+                warnMsg = [warnMsg, warning('The data does not follow a normal distribution. Non-parametric tests will be performed.\n')];
             end
             if ~obj.checkHomogeneity && any(contains(obj.curr_test, {'Two','Repeated'}, 'IgnoreCase',true))
-                warnMsg = warning('The data does not contain homogeneous variances. Interpret results with caution!');
+                warnMsg = [warnMsg, warning('The data does not contain homogeneous variances. Interpret results with caution!\n')];
             elseif ~obj.checkHomogeneity
-                warnMsg = warning('The data does not contain homogeneous variances. Non-parametric tests will be performed. Interpret results with caution!');
+                warnMsg = [warnMsg, warning('The data does not contain homogeneous variances. Non-parametric tests will be performed. Interpret results with caution!\n')];
             end
             obj.runHypothesisTest;
             obj.genStatsReport;
@@ -717,7 +717,7 @@ classdef StatsManager < handle
             if nargout
                 varargout{1} = obj.statsReport;
                 varargout{2} = testMsg;
-                varargout{3} = warnMsg;
+                varargout{3} = sprintf(warnMsg);
             end
         end
         
@@ -1262,7 +1262,7 @@ classdef StatsManager < handle
             % Input (optional):
             %   b_forceNonParametric (bool): If TRUE, ignore normality
             %       check and use non-parametric tests. !! NOT AVAILABLE for
-            %   	woWay ANOVA and Repeated Measures !!
+            %   	twoWay ANOVA and Repeated Measures !!
             %   b_useFDR: If TRUE, use False Discovery Rate on ANOVA postHoc tests (ONLY!). 
             %       This parameter is ignored for two-sampled test!
             p = inputParser;
@@ -1532,7 +1532,6 @@ classdef StatsManager < handle
             % Check for normality
             % Inputs:
             % idx (array | matrix): array of stats. groups indices to test.
-            % CheckName (str): {'normality', 'homoskedacity','sphericity'}
             indx = bin2dec([dec2bin(obj.flatData.(obj.splitVar.indexName)),...
                 dec2bin(obj.flatData.(obj.indepVars(1).indexName)), ...
                 dec2bin(obj.flatData.(obj.indepVars(2).indexName))]);
@@ -1603,6 +1602,8 @@ classdef StatsManager < handle
                 'The hypothesis test executed was "%s"\n%s\n'],...
                 obj.indepVars(1).len, obj.indepVars(1).Name,obj.indepVars(2).len, obj.indepVars(2).Name, ...
                 length(obj.results_stats), obj.splitVar.Name, obj.curr_test, div)];
+            
+            
             % Write the results of each test.
             for ii = 1:length(obj.results_stats)
                 % Add name of Split Variable:
