@@ -59,8 +59,8 @@ classdef EventsManager < handle
             
             % Input validation:
             p = inputParser;
-            addOptional(p,'SaveFolder',pwd,@isfolder)
             addOptional(p,'RawFolder','',@ischar)
+            addOptional(p,'SaveFolder',pwd,@isfolder)
             addOptional(p, 'ParseMethod','csv',@(x) ismember(lower(x),obj.ParseMethods));
             parse(p,varargin{:});
             
@@ -232,7 +232,7 @@ classdef EventsManager < handle
             
             
             % Initialize output variables
-            timestamps = []; eventID = []; state = [];            
+            timestamps = []; eventID = []; state = [];
             
             % Validate condition name:
             % If the condition name is not valid, the function will return empty outputs
@@ -269,129 +269,6 @@ classdef EventsManager < handle
             
             % Assign repetition index to each occurrence of the condition
             repetitionIndex = repelem(repetitionIndex,1,2)';
-        end
-                        
-        function f = plot(obj, chanName)
-            % PLOTANALOGIN plots the Analog input signals and overlays the
-            % threshold as well as the detected triggers, if existent.
-            %
-            % Input (optional):
-            %   chanName (char|cell): Channel name or list of names to
-            %   plot. If not provided, all channels will de displayed.
-            % Output (optional):
-            %   f (handle): array of figure handle(s).
-            if isempty(obj.AnalogIN)
-                warning('No signal to plot!')
-                return
-            end
-            
-            if ~exist('chanName','var') || isempty(chanName)
-                % plot All channels if no channel name is provided:
-                chanName = obj.AIChanList;
-            end
-            
-            if ischar(chanName)
-                chanName = {chanName};
-            end
-            % Check inputs:
-            b_chanExists = ismember(chanName,obj.dictAIChan);
-            if all(~b_chanExists)
-                error(['Invalid channel name(s). It must be one of the following:',sprintf('\n"%s"',obj.dictAIChan{:})]);
-            elseif any(~b_chanExists)
-                warning(['The following channel(s) do not exist and will be ignored:', sprintf('\n"%s"',chanName{~b_chanExists})])
-                chanName = chanName(b_chanExists);
-            end
-            [~,chanIndx] = ismember(chanName, obj.AIChanList);
-            % Calculate the number of figures with a maximum of 4 subplots per figure:
-            nFigs = ceil(length(chanIndx)/4);
-            nAxPerFig = ones(1,nFigs)*4;
-            remAx = mod(length(chanIndx),4);
-            if remAx > 0
-                nAxPerFig(end) = remAx;
-            end
-            cnt = 1;
-            b_trigsPlotted= false;
-            % Set axes properties:
-            xVec = [0:size(obj.AnalogIN,1)-1]./obj.sr;% Use X-axis in seconds
-            axYSize = [min(obj.AnalogIN(:)), max(obj.AnalogIN(:))]; % Get min-max for Yscale
-            
-            for ii = 1:nFigs
-                f(ii) = figure('Name',sprintf('Analog Inputs %d/%d (downsampled to %0.0f KHz)',ii,nFigs, obj.sr/10000),...
-                    'Visible','off','NumberTitle','off', 'Position',[0 0 560 nAxPerFig(ii)*200],...
-                    'CreateFcn',{@movegui,'center'},'CloseRequestFcn', @closeAllFigs);
-                for jj = 1:nAxPerFig(ii)
-                    s(cnt) = subplot(nAxPerFig(ii),1,jj, 'Parent',f(ii));
-                    s(cnt).XLabel.String = 'time (s)';
-                    s(cnt).YLabel.String = 'amp.(V)';
-                    % Plot analogIN traces (downsample to 1KHz to save space):
-                    line(xVec(1:10:end),obj.AnalogIN(1:10:end,chanIndx(cnt)),'LineStyle','-', 'Color',[.3 .3 .3],'Parent',s(cnt));
-                    if jj == 1
-                        % Set axes labels:
-                        s(cnt).XLabel.String = 'time (s)';
-                        s(cnt).YLabel.String = 'amp.(V)';
-                    end
-                    % Plot detected triggers and threshold lines,
-                    if ~b_trigsPlotted
-                        hold(s(cnt),'on');
-                        % Plot threshold line:
-                        if ~ischar(obj.trigThr)
-                            ln = line([xVec(1) xVec(end)],[obj.trigThr obj.trigThr],'Color','r');
-                            ln.Tag = 'thrLn';
-                        end
-                        % Plot Trigger patches:
-                        if ~isempty(obj.timestamps)
-                            idx = unique(obj.eventID);
-                            % Create semi-transparent patches to represent HIGH state of triggers:
-                            % Trigger color code
-                            colorArr = jet(64);
-                            colorArr = colorArr(round(linspace(1,64,numel(obj.eventNameList))),:);
-                            for kk = 1:length(idx)
-                                xOn = obj.timestamps(obj.eventID == idx(kk) & obj.state == 1);
-                                xOff = obj.timestamps(obj.eventID == idx(kk) & obj.state == 0);
-                                x = [xOn xOff xOff xOn];
-                                y = repmat([axYSize(1) axYSize(1) axYSize(2) axYSize(2)], size(xOn));
-                                ptc(kk) = patch(s(cnt), x',y',colorArr(kk,:), 'FaceAlpha', .25, 'EdgeColor', 'none', 'Tag','TrigPatch');
-                                uistack(ptc(kk), 'bottom');
-                            end
-                            % Put legend on the first plot:
-                            if jj == 1
-                                legend(s(cnt),ptc,obj.eventNameList,'Location','best', 'Interpreter','none');
-                            end
-                        end
-                        hold(s(cnt),'off');
-                        
-                    else
-                        % copy the content of the first axis
-                        if exist('ptc','var')
-                            
-                            copyobj(ptc,s(cnt));
-                        end
-                        if exist('ln','var')
-                            copyobj(ln,s(cnt));
-                        end
-                    end
-                    title(s(cnt), chanName{cnt});
-                    cnt = cnt+1;
-                end
-            end
-            for ii = 1:length(f)
-                % Cascade figures:
-                if ii > 1
-                    f(ii).Position([1 2]) = f(ii-1).Position([1 2]) + [25 -25];
-                end
-                f(ii).UserData = f;
-                f(ii).Visible = 'on';
-            end
-            % Link all axes together
-            linkprop(s,{'XLim','YLim'});
-            set(s(1),'YLim',axYSize);
-            
-            % CloseFig callback:
-            function closeAllFigs(src,~)
-                % CLOSEALLFIGS closes all figures when the selected figure is closed.
-                h = src.UserData;
-                delete(h)
-            end
         end
         
         function getTriggers(obj, varargin)
@@ -527,8 +404,131 @@ classdef EventsManager < handle
             end
         end
         
-        function status = readEventFile(obj, varargin)
-            % READEVENTFILE reads the content of an event file containing a
+        function f = plot(obj, chanName)
+            % PLOTANALOGIN plots the Analog input signals and overlays the
+            % threshold as well as the detected triggers, if existent.
+            %
+            % Input (optional):
+            %   chanName (char|cell): Channel name or list of names to
+            %   plot. If not provided, all channels will de displayed.
+            % Output (optional):
+            %   f (handle): array of figure handle(s).
+            if isempty(obj.AnalogIN)
+                warning('No signal to plot!')
+                return
+            end
+            
+            if ~exist('chanName','var') || isempty(chanName)
+                % plot All channels if no channel name is provided:
+                chanName = obj.AIChanList;
+            end
+            
+            if ischar(chanName)
+                chanName = {chanName};
+            end
+            % Check inputs:
+            b_chanExists = ismember(chanName,obj.dictAIChan);
+            if all(~b_chanExists)
+                error(['Invalid channel name(s). It must be one of the following:',sprintf('\n"%s"',obj.dictAIChan{:})]);
+            elseif any(~b_chanExists)
+                warning(['The following channel(s) do not exist and will be ignored:', sprintf('\n"%s"',chanName{~b_chanExists})])
+                chanName = chanName(b_chanExists);
+            end
+            [~,chanIndx] = ismember(chanName, obj.AIChanList);
+            % Calculate the number of figures with a maximum of 4 subplots per figure:
+            nFigs = ceil(length(chanIndx)/4);
+            nAxPerFig = ones(1,nFigs)*4;
+            remAx = mod(length(chanIndx),4);
+            if remAx > 0
+                nAxPerFig(end) = remAx;
+            end
+            cnt = 1;
+            b_trigsPlotted= false;
+            % Set axes properties:
+            xVec = [0:size(obj.AnalogIN,1)-1]./obj.sr;% Use X-axis in seconds
+            axYSize = [min(obj.AnalogIN(:)), max(obj.AnalogIN(:))]; % Get min-max for Yscale
+            
+            for ii = 1:nFigs
+                f(ii) = figure('Name',sprintf('Analog Inputs %d/%d (downsampled to %0.0f KHz)',ii,nFigs, obj.sr/10000),...
+                    'Visible','off','NumberTitle','off', 'Position',[0 0 560 nAxPerFig(ii)*200],...
+                    'CreateFcn',{@movegui,'center'},'CloseRequestFcn', @closeAllFigs);
+                for jj = 1:nAxPerFig(ii)
+                    s(cnt) = subplot(nAxPerFig(ii),1,jj, 'Parent',f(ii));
+                    s(cnt).XLabel.String = 'time (s)';
+                    s(cnt).YLabel.String = 'amp.(V)';
+                    % Plot analogIN traces (downsample to 1KHz to save space):
+                    line(xVec(1:10:end),obj.AnalogIN(1:10:end,chanIndx(cnt)),'LineStyle','-', 'Color',[.3 .3 .3],'Parent',s(cnt));
+                    if jj == 1
+                        % Set axes labels:
+                        s(cnt).XLabel.String = 'time (s)';
+                        s(cnt).YLabel.String = 'amp.(V)';
+                    end
+                    % Plot detected triggers and threshold lines,
+                    if ~b_trigsPlotted
+                        hold(s(cnt),'on');
+                        % Plot threshold line:
+                        if ~ischar(obj.trigThr)
+                            ln = line([xVec(1) xVec(end)],[obj.trigThr obj.trigThr],'Color','r');
+                            ln.Tag = 'thrLn';
+                        end
+                        % Plot Trigger patches:
+                        if ~isempty(obj.timestamps)
+                            idx = unique(obj.eventID);
+                            % Create semi-transparent patches to represent HIGH state of triggers:
+                            % Trigger color code
+                            colorArr = jet(64);
+                            colorArr = colorArr(round(linspace(1,64,numel(obj.eventNameList))),:);
+                            for kk = 1:length(idx)
+                                xOn = obj.timestamps(obj.eventID == idx(kk) & obj.state == 1);
+                                xOff = obj.timestamps(obj.eventID == idx(kk) & obj.state == 0);
+                                x = [xOn xOff xOff xOn];
+                                y = repmat([axYSize(1) axYSize(1) axYSize(2) axYSize(2)], size(xOn));
+                                ptc(kk) = patch(s(cnt), x',y',colorArr(kk,:), 'FaceAlpha', .25, 'EdgeColor', 'none', 'Tag','TrigPatch');
+                                uistack(ptc(kk), 'bottom');
+                            end
+                            % Put legend on the first plot:
+                            if jj == 1
+                                legend(s(cnt),ptc,obj.eventNameList,'Location','best', 'Interpreter','none');
+                            end
+                        end
+                        hold(s(cnt),'off');
+                        
+                    else
+                        % copy the content of the first axis
+                        if exist('ptc','var')
+                            
+                            copyobj(ptc,s(cnt));
+                        end
+                        if exist('ln','var')
+                            copyobj(ln,s(cnt));
+                        end
+                    end
+                    title(s(cnt), chanName{cnt});
+                    cnt = cnt+1;
+                end
+            end
+            for ii = 1:length(f)
+                % Cascade figures:
+                if ii > 1
+                    f(ii).Position([1 2]) = f(ii-1).Position([1 2]) + [25 -25];
+                end
+                f(ii).UserData = f;
+                f(ii).Visible = 'on';
+            end
+            % Link all axes together
+            linkprop(s,{'XLim','YLim'});
+            set(s(1),'YLim',axYSize);
+            
+            % CloseFig callback:
+            function closeAllFigs(src,~)
+                % CLOSEALLFIGS closes all figures when the selected figure is closed.
+                h = src.UserData;
+                delete(h)
+            end
+        end
+                        
+        function status = readConditionFile(obj, varargin)
+            % READCONDITIONFILE reads the content of an event file containing a
             % list of event Names. The file will be parsed using one of the
             % parsing methods available in this class (e.g., for .CSV,
             % .vpixx) and set by the "EventFileParseMethod" property. This
@@ -556,13 +556,13 @@ classdef EventsManager < handle
             %    read. FALSE otherwise.
             % Examples:
             %  1 - Automatic search for a .CSV file with a single column:
-            %    readEventFile();
+            %    readConditionFile();
             %  2 - Read an specific .CSV file:
-            %    readEventFile('C:/FULLPATH/FILENAME.CSV');
+            %    readConditionFile('C:/FULLPATH/FILENAME.CSV');
             %  3 - Read a subset of columns from a .CSV file:
-            %    readEventFile('CSVcolNames',{'Col1'',Col2','Col5'};
+            %    readConditionFile('CSVcolNames',{'Col1'',Col2','Col5'};
             %  4 - Read a subset o columns from an specific .CSV file:
-            %    readEventFile('C:/FULLPATH/FILENAME.CSV','CSVcolNames',{'ThisOne'});
+            %    readConditionFile('C:/FULLPATH/FILENAME.CSV','CSVcolNames',{'ThisOne'});
             
             p = inputParser;
             addRequired(p,'obj')
@@ -677,6 +677,8 @@ classdef EventsManager < handle
             if ~any(obj.selectedEvents)
                 warning('All conditions were ignored! Data splitting by events will be impossible!')
             end
+            % Update selectedEvents field in current "events.mat" file:
+            obj.updateEventsFile('selectedEvents')
         end
         
         function removeRepetition(obj, conditionName, repetitionIndex)
@@ -695,6 +697,8 @@ classdef EventsManager < handle
             if all(~obj.selectedEvents(idxCond,:))
                 warning('All repetitions from condition "%s" ignored. The whole condition will be ignored in the analysis!\n',conditionName)
             end
+            % Update selectedEvents field in current "events.mat" file:
+            obj.updateEventsFile('selectedEvents')
         end
         
         function clearIgnoredEvents(obj)
@@ -714,58 +718,9 @@ classdef EventsManager < handle
                 end
             end
             fprintf('Condition and Repetition lists successfully reset! All trials will be considered in the analysis.\n');
+            obj.updateEventsFile('selectedEvents')
         end
-        
-        function [frameIndexMat,repIndexList] = createTrialFrameMatrix(obj, conditionName,repetitionIndex)
-            % Generates a matrix with dimensions Repetition x Frame indices
-            % of the selected condition. The matrix output consists of the
-            % frame indices split by trial (repetition) for the selected
-            % condition (conditionName). The matrix can be used to split
-            % the imaging data by trials and perform event-triggered
-            % averages.
-            %
-            % Inputs:
-            %   conditionName(char): name of the condition to extract the
-            %       trials.
-            %   repetitionIndex (int | optional): repetition index(ices) of
-            %       the condition. If not provided, all repetitions will be
-            %       used. **
-            %       ** Note: ignored repetitions will be automatically removed
-            %       from the repetition index list!
-            %
-            % Output:
-            %   frameIndexMat (matrix): matrix containing the frame indices
-            %       of each trial of the selected condition. Frames that are
-            %       out of bounds are marked as NaNs.
-            %   repIndexList (array | optional): List of repetitions
-            %       indices associated with the frameIndexMat output.
-            
-            frameIndexMat = [];
-            repIndexList = [];
-            % Get list of timetamps from the selected condition and
-            % repetitions:
-            if ~exist('repetitionIndex','var');repetitionIndex = [];end
-            [condTimestamps,~,condState,repIndex]= obj.getConditionTimestamps(conditionName,repetitionIndex);
-            if isempty(condTimestamps);return;end
-            condTimestamps(~condState) = []; % Just keep the onset timestamps.
-            % Calculate the trial length (in frames):
-            trialLenFr = round(sum(obj.trialInterval)*obj.AcqInfo.FrameRateHz);
-            % Preallocate output matrix with nans:
-            frameIndexMat = nan(sum(condState),trialLenFr);                        
-            % Populate output matrix with the frame indices of each
-            % repetition:
-            % Calculate the beginning and end frames of each trial using
-            % the TrialInterval values:
-            preEvFr = round(obj.trialInterval(1)*obj.AcqInfo.FrameRateHz);
-            postEvFr = round(obj.trialInterval(2)*obj.AcqInfo.FrameRateHz);
-            for ii = 1:length(condTimestamps)
-                frameIndexMat(ii,:) = round(condTimestamps(ii)*obj.AcqInfo.FrameRateHz) - preEvFr: round(condTimestamps(ii)*obj.AcqInfo.FrameRateHz) + postEvFr -1;
-            end
-            % Remove frames that are out of bounds:
-            frameIndexMat(frameIndexMat < 1 | frameIndexMat > obj.AcqInfo.Length) = nan;
-            repIndexList = repIndex(condState);
-        end
-        
+                        
         function saveEvents(obj, saveFolder)
             % SAVEEVENTS creates the file "events.mat" in the
             % SaveFolder. This file is used by umIT to split the data into
@@ -837,7 +792,57 @@ classdef EventsManager < handle
             if isempty(obj.trialInterval)
                 obj.setTrialInterval;
             end
-%             disp(['Events info loaded from file ' fullfile(Folder,'events.mat')]);
+            %             disp(['Events info loaded from file ' fullfile(Folder,'events.mat')]);
+        end
+        
+        function [frameIndexMat,repIndexList] = createTrialFrameMatrix(obj, conditionName,repetitionIndex)
+            % Generates a matrix with dimensions Repetition x Frame indices
+            % of the selected condition. The matrix output consists of the
+            % frame indices split by trial (repetition) for the selected
+            % condition (conditionName). The matrix can be used to split
+            % the imaging data by trials and perform event-triggered
+            % averages.
+            %
+            % Inputs:
+            %   conditionName(char): name of the condition to extract the
+            %       trials.
+            %   repetitionIndex (int | optional): repetition index(ices) of
+            %       the condition. If not provided, all repetitions will be
+            %       used. **
+            %       ** Note: ignored repetitions will be automatically removed
+            %       from the repetition index list!
+            %
+            % Output:
+            %   frameIndexMat (matrix): matrix containing the frame indices
+            %       of each trial of the selected condition. Frames that are
+            %       out of bounds are marked as NaNs.
+            %   repIndexList (array | optional): List of repetitions
+            %       indices associated with the frameIndexMat output.
+            
+            frameIndexMat = [];
+            repIndexList = [];
+            % Get list of timetamps from the selected condition and
+            % repetitions:
+            if ~exist('repetitionIndex','var');repetitionIndex = [];end
+            [condTimestamps,~,condState,repIndex]= obj.getConditionTimestamps(conditionName,repetitionIndex);
+            if isempty(condTimestamps);return;end
+            condTimestamps(~condState) = []; % Just keep the onset timestamps.
+            % Calculate the beginning and end frames of each trial using
+            % the TrialInterval values:
+            preEvFr = round(obj.trialInterval(1)*obj.AcqInfo.FrameRateHz);
+            postEvFr = round(obj.trialInterval(2)*obj.AcqInfo.FrameRateHz);
+            % Calculate the trial length (in frames):
+            trialLenFr = preEvFr+postEvFr;
+            % Preallocate output matrix with nans:
+            frameIndexMat = nan(sum(condState),trialLenFr);
+            % Populate output matrix with the frame indices of each
+            % repetition:            
+            for ii = 1:length(condTimestamps)
+                frameIndexMat(ii,:) = round(condTimestamps(ii)*obj.AcqInfo.FrameRateHz) - preEvFr: round(condTimestamps(ii)*obj.AcqInfo.FrameRateHz) + postEvFr -1;
+            end
+            % Remove frames that are out of bounds:
+            frameIndexMat(frameIndexMat < 1 | frameIndexMat > obj.AcqInfo.Length) = nan;
+            repIndexList = repIndex(condState);
         end
     end
     
@@ -850,9 +855,9 @@ classdef EventsManager < handle
             % "sr" and "trigChanName" (for trigger detection).
             
             % Check if AcqInfos file exists:
-%             assert(any(exist(fullfile(obj.RawFolder, 'info.txt'),'file')),...
-%                 ['Unable to read experiment metadata. The file "info.txt" is missing in folder "'...
-%                 obj.RawFolder '". Execute Images Classification and try again.']);
+            %             assert(any(exist(fullfile(obj.RawFolder, 'info.txt'),'file')),...
+            %                 ['Unable to read experiment metadata. The file "info.txt" is missing in folder "'...
+            %                 obj.RawFolder '". Execute Images Classification and try again.']);
             % Load existing info:
             try
                 a = load(fullfile(obj.SaveFolder, 'AcqInfos.mat'));
@@ -1184,6 +1189,15 @@ classdef EventsManager < handle
             warning(obj.warnOrigState)
         end
         
+        function updateEventsFile(obj,fieldname)
+            % Updates a given field in an existing "events.mat" file.
+            
+            if ~isfile(fullfile(obj.SaveFolder,'events.mat'))
+                return
+            end
+            evFile = matfile(fullfile(obj.SaveFolder,'events.mat'),'Writable',true);
+            evFile.(fieldname)= obj.(fieldname);
+        end
     end
 end
 

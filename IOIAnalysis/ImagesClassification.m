@@ -42,20 +42,20 @@ function ImagesClassification(DataFolder, SaveFolder, BinningSpatial, BinningTem
 %       See examples below:
 %
 %         % Example 1: Using the default backup folder value ('')
-%         ImagesClassification(DataFolder,SaveFolder,BinningSpatial, BinningTemp,b_SubROI);
+%         ImagesClassification(DataFolder,SaveFolder,BinningSpatial, BinningTemp);
 %         In this case, a dialog box will prompt the user to handle existing files.
 %
 %         % Example 2: Erasing existing data ('ERASE')
-%         ImagesClassification(DataFolder,SaveFolder,BinningSpatial, BinningTemp,b_SubROI,'backupFolder','ERASE');
+%         ImagesClassification(DataFolder,SaveFolder,BinningSpatial, BinningTemp,b_SubROI,'backupOpts','ERASE');
 %         This will erase all existing data from the source folder without creating a backup.
 %
 %         % Example 3: Automatic backup folder creation
-%         ImagesClassification(DataFolder,SaveFolder,BinningSpatial, BinningTemp,b_SubROI,'backupFolder','AUTO');
+%         ImagesClassification(DataFolder,SaveFolder,BinningSpatial, BinningTemp,b_SubROI,'backupOpts','AUTO');
 %         The function will create a subfolder with a name like "bkp_yyyymmddHHMMss" and move existing data there.
 %
 %         % Example 4: Specifying a custom backup folder
 %         custom_folder = 'myBackupData';
-%         ImagesClassification(DataFolder,SaveFolder,BinningSpatial, BinningTemp,b_SubROI,'backupFolder',custom_folder);
+%         ImagesClassification(DataFolder,SaveFolder,BinningSpatial, BinningTemp,b_SubROI,'backupOpts',custom_folder);
 %         The function will move existing data to the specified custom backup folder.
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -67,11 +67,11 @@ addRequired(p,'SaveFolder',@ischar);
 addRequired(p,'BinningSpatial',@isscalar);
 addRequired(p,'BinningTemp',@isscalar);
 addOptional(p,'b_SubROI',false,@(x) islogical(x) || ismember(x,[0 1]));
-addParameter(p,'backupFolder','',@ischar)
+addParameter(p,'backupOpts','',@ischar)
 parse(p,DataFolder,SaveFolder,BinningSpatial,BinningTemp,varargin{:})
 % Set Optional parameters:
 b_SubROI = p.Results.b_SubROI;
-backupFolder = p.Results.backupFolder;
+backupOpts = p.Results.backupOpts;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Control for existing .dat files in the "SaveFolder":
@@ -90,13 +90,13 @@ end
 if ~isempty(movFiles)
     
     % Create prompt if the moveToBackup optional parameter was not set:
-    if isempty(backupFolder)
+    if isempty(backupOpts)
         
         % This function will erase all .dat and .mat files inside the
         % SaveFolder before the data import. If there are .dat files, the user will
         % be presented with the following options:
         %  - OPTION 1: Erase all data.
-        %  - OPTION 2a: Move all folder content to a subfolder as backup (with the name "bkp_yyyymmddHHMMssFFF".
+        %  - OPTION 2a: Move all folder content to a subfolder as backup (with the name "bkp_yyyymmddHHMMss".
         %  - OPTION 2b: Move all folder content to a folder of the User's choice.
         
         choice = questdlg('The save folder already contains files. Please choose an option:', ...
@@ -106,21 +106,21 @@ if ~isempty(movFiles)
         switch choice
             case 'Erase all'
                 % Do not move to backup and erase all data from SaveFolder
-                backupFolder = 'ERASE';
+                backupOpts = 'ERASE';
             case 'Create backup'
                 % User chose to create a backup.
-                answer = inputdlg('Type backup folder name:','BackupFolder',...
+                answer = inputdlg('Type backup folder name:','backupOpts',...
                     [1 60],{['bkp_' datestr(now(),'yyyymmddHHMMSS')]});
                 if isempty(answer)
                     disp('Operation cancelled by User')
                     return
                 elseif ~isempty(answer{:})
-                    % Update backupfolder name
-                    backupFolder = answer{:};
+                    % Update backupOpts name
+                    backupOpts = answer{:};
                 else
                     % Force auto name to folder if the user provides an
                     % empty string:
-                    backupFolder = ['bkp_' datestr(now(),'yyyymmddHHMMSS')];
+                    backupOpts = ['bkp_' datestr(now(),'yyyymmddHHMMSS')];
                 end
             otherwise
                 % User chose to cancel the operation.
@@ -128,18 +128,18 @@ if ~isempty(movFiles)
                 return
         end
         
-    elseif strcmpi(backupFolder,'auto')
+    elseif strcmpi(backupOpts,'auto')
         % Auto name:
-        backupFolder = ['bkp_' datestr(now(),'yyyymmddHHMMSS')];
+        backupOpts = ['bkp_' datestr(now(),'yyyymmddHHMMSS')];
     end
     
-    if ~strcmpi(backupFolder,'erase')
+    if ~strcmpi(backupOpts,'erase')
         % Create subfolder
-        if ~isfolder(fullfile(SaveFolder,backupFolder))
-            mkdir(fullfile(SaveFolder,backupFolder));
+        if ~isfolder(fullfile(SaveFolder,backupOpts))
+            mkdir(fullfile(SaveFolder,backupOpts));
         end
         % Copy data to subfolder
-        arrayfun(@(x) copyfile(fullfile(x.folder,x.name), fullfile(x.folder,backupFolder,x.name)),movFiles)
+        arrayfun(@(x) copyfile(fullfile(x.folder,x.name), fullfile(x.folder,backupOpts,x.name)),movFiles)
     end
     % Delete all files from the current folder (exept .bin and .txt)
     arrayfun(@(x) delete(fullfile(x.folder,x.name)),movFiles);
@@ -167,10 +167,6 @@ end
 % information refers to the output .dat files and not to the original .bin
 % files.
 
-% Update Binning information on AcqInfoStream:
-AcqInfoStream.Binning = BinningSpatial;
-% Update Sample rate in AcqInfoStream:
-AcqInfoStream.FrameRateHz = AcqInfoStream.FrameRateHz/BinningTemp;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Data Format and Header Information:
@@ -235,9 +231,11 @@ else
 end
 Rx = round((LimX(2) - LimX(1) + 1)/BinningSpatial);
 Ry = round((LimY(2) - LimY(1) + 1)/BinningSpatial);
-% Update Frame size in AcqInfoStream:
+% Update AcqInfoStream:
 AcqInfoStream.Width = Rx;
 AcqInfoStream.Height = Ry;
+AcqInfoStream.Binning = BinningSpatial;
+AcqInfoStream.FrameRateHz = AcqInfoStream.FrameRateHz/BinningTemp/sum(contains(fieldnames(AcqInfoStream),'Illumination'));
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % How many colors and in which order?
