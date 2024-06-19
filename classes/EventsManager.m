@@ -545,6 +545,8 @@ classdef EventsManager < handle
             else
                 disp(['Triggers detected in signal.']);
             end
+            strMapHigh = containers.Map({'positive','negative'},{'HIGH','LOW'});
+            strMapLow = containers.Map({'positive','negative'},{'LOW','HIGH'});
             obj.eventID = ones(size(obj.state));
             obj.eventNameList = {'1'};
             disp('Trigger detection completed.')
