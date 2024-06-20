@@ -49,7 +49,7 @@ classdef EventsManager < handle
             %   RawFolder (char): path to the folder containing the
             %       ai_xxxx.bin data and "info.txt" file. If not provided,
             %       load an "events.mat" file or manually set the
-            %       DataFolder later.
+            %       RawFolder later.
             %   SaveFolder (char): path to the folder containing the
             %       AcqInfos.mat file. This will be the folder where the
             %       "events.mat" file will be saved or loaded from.
@@ -58,9 +58,9 @@ classdef EventsManager < handle
             %   IDs:{'none'(default),'csv','vpixx'}.
             
             % Input validation:
-            p = inputParser;
-            addOptional(p,'RawFolder','',@ischar)
+            p = inputParser;            
             addOptional(p,'SaveFolder',pwd,@isfolder)
+            addOptional(p,'RawFolder','',@ischar)
             addOptional(p, 'ParseMethod','csv',@(x) ismember(lower(x),obj.ParseMethods));
             parse(p,varargin{:});
             
@@ -68,9 +68,9 @@ classdef EventsManager < handle
             obj.warnOrigState = warning;
             warning('off', 'backtrace');
             
-            % Set main properties:
-            obj.RawFolder = p.Results.RawFolder;
+            % Set main properties:            
             obj.SaveFolder = p.Results.SaveFolder;
+            obj.RawFolder = p.Results.RawFolder;
             obj.EventFileParseMethod = lower(p.Results.ParseMethod);
             % Set properties based on the AcqInfo.mat file:
             try
@@ -672,7 +672,7 @@ classdef EventsManager < handle
             if ~obj.validateCondition(conditionName);return;end
             
             obj.selectedEvents(strcmpi(conditionName,obj.eventNameList),:) = false;
-            fprintf('Condition "%s" will be ignored in the analysis!\n',conditionName)
+            fprintf('Condition "%s" will be ignored!\n',conditionName)
             % Warn user that all conditions are ignored:
             if ~any(obj.selectedEvents)
                 warning('All conditions were ignored! Data splitting by events will be impossible!')
@@ -693,9 +693,9 @@ classdef EventsManager < handle
             idxCond = strcmpi(conditionName,obj.eventNameList);
             
             obj.selectedEvents(idxCond,repetitionIndex) = false;
-            fprintf('Repetition "%d" from condition "%s" will be ignored in the analysis!\n',repetitionIndex,conditionName);
+            fprintf('Repetition "%d" from condition "%s" will be ignored!\n',repetitionIndex,conditionName);
             if all(~obj.selectedEvents(idxCond,:))
-                warning('All repetitions from condition "%s" ignored. The whole condition will be ignored in the analysis!\n',conditionName)
+                warning('All repetitions from condition "%s" ignored. The whole condition will be ignored!\n',conditionName)
             end
             % Update selectedEvents field in current "events.mat" file:
             obj.updateEventsFile('selectedEvents')
@@ -768,9 +768,14 @@ classdef EventsManager < handle
         function loadEvents(obj, Folder)
             % Load variables from events.mat file.
             if ~exist('Folder','var')
-                % Consider the current folder the SaveFolder, if the input was not
-                % provided.
-                Folder = pwd;
+                if ~exist(fullfile(obj.SaveFolder,'events.mat'),'file')
+                    % Consider the current folder the SaveFolder, if the input was not
+                    % provided.
+                    Folder = pwd;
+                else
+                    % Use the SaveFolder by default.
+                    Folder = obj.SaveFolder;
+                end
             end
             assert(any(exist(fullfile(Folder,'events.mat'),'file')), ['Failed to load event info! "events.mat" not found in ' Folder]);
             % Update SaveFolder:
@@ -838,7 +843,8 @@ classdef EventsManager < handle
             % Populate output matrix with the frame indices of each
             % repetition:            
             for ii = 1:length(condTimestamps)
-                frameIndexMat(ii,:) = round(condTimestamps(ii)*obj.AcqInfo.FrameRateHz) - preEvFr: round(condTimestamps(ii)*obj.AcqInfo.FrameRateHz) + postEvFr -1;
+                frameIndexMat(ii,:) = round(condTimestamps(ii)*obj.AcqInfo.FrameRateHz) -...
+                    preEvFr:round(condTimestamps(ii)*obj.AcqInfo.FrameRateHz) + postEvFr -1;
             end
             % Remove frames that are out of bounds:
             frameIndexMat(frameIndexMat < 1 | frameIndexMat > obj.AcqInfo.Length) = nan;
