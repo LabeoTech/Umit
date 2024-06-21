@@ -78,8 +78,13 @@ for ind = 1:numel(evntInfo.eventNameList)
         avg_mov = zeros([metaData.datSize, trial_len],'single');
         disp(['Creating average Delta R movie for direction ' evntInfo.eventNameList{ind}]);
         for ii = 1:length(indxOn)
+            if framestamps(indxOn(ii)) - bsln_len < 1
+                frBsln = 1:framestamps(indxOn(ii))-1;
+            else
+                frBsln = framestamps(indxOn(ii)) - bsln_len : framestamps(indxOn(ii)) -1;
+            end
             DeltaR = data(:,:,framestamps(indxOn(ii)): framestamps(indxOn(ii)) + trial_len -1) - ...
-                median(data(:,:,framestamps(indxOn(ii)) - bsln_len: framestamps(indxOn(ii)) - 1), 3,'omitnan'); % trial period minus the intertrial period.
+                median(data(:,:,frBsln), 3,'omitnan'); % trial period minus the intertrial period.
             avg_mov = [avg_mov + DeltaR];
         end
         avg_mov = avg_mov/length(indxOn); % Average DeltaR movie.
