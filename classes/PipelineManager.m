@@ -24,12 +24,13 @@ classdef PipelineManager < handle
         ClassName char % Name of the class that the pipeline analysis functions will run.
         ClassLevel int16 % Level of the class in protocol's hierarchy (1 = Modality, 2 = Acquisition, 3= Subject);
         PipelineSummary % Shows the jobs run in the current Pipeline
-        current_seq = 0 % index of current sequence in pipeline .
+        current_seq = 0 % index of current sequence in pipeline.
     end
-    properties (GetAccess = {?DataViewer})
+    properties % (GetAccess = {?DataViewer})
         current_data % Data available in the workspace during pipeline.
-        current_metaData % MetaData associated with "current_data".
-        dv_originalMetaData % Copy of current_metaData from the input file.
+        current_info % Structure with info about the functions ran on "current_data". This will be saved to the dataHistory file.
+        dataHistory = struct.empty(0,1) % Local copy of the content from the dataHistory file in the data's SaveFolder.
+        dv_inputFilename % Name of the input file (DataViewer only).
         b_state logical % True if a task of a pipeline was successfully executed.
     end
     properties (Access = private)
@@ -327,9 +328,8 @@ classdef PipelineManager < handle
             % For the first step of the pipeline avoid asking for an input
             % file:
             if obj.ProtocolObj.b_isDummy && obj.current_seq == 0 
-                if isempty(task.inputFrom) || task.inputFrom ~= 0
-                    
-                    task.inputFrom = -1;% Set inputFrom to "-1" the data from DataViewer.
+                if isempty(task.inputFrom) || task.inputFrom ~= 0                    
+                    task.inputFrom = -1;% Set inputFrom to "-1" the data from DataViewer.   
                 else
                     % The task.inputFrom field will be zero when generating a script
                     % from DataViewer GUI.
@@ -339,7 +339,7 @@ classdef PipelineManager < handle
                     obj.current_seqIndx = 0;
                     task = obj.addDependency(task);
                     task.seq = obj.current_seq;
-                    task.seqIndx = obj.current_seqIndx + 1;
+                    task.seqIndx = obj.current_seqIndx + 1;w
                     task.inputFrom = length(obj.pipe);
                 else
                     obj.current_seq = 1;
@@ -347,7 +347,7 @@ classdef PipelineManager < handle
                     task.seq = obj.current_seq; task.seqIndx = obj.current_seqIndx;
                 end
                 if ~isempty(obj.current_data)
-                    [~,file,ext] = fileparts(obj.dv_originalMetaData.datFile);
+                    [~,file,ext] = fileparts(obj.dv_inputFilename);
                     task.inputFileName = [file ext]; % Get name of the input file in DataViewer.
                 end
                 % Remove dependency field from "task")
@@ -527,8 +527,8 @@ classdef PipelineManager < handle
             for ii = 1:size(targetIdxArr,1)
                 % Clear current data,  metaData and File List for each item in te pipeline:
                 if ~obj.ProtocolObj.b_isDummy
-                    obj.current_data = []; obj.current_metaData = [];obj.current_outFile = {};
-                end
+                    obj.current_data = []; obj.current_info = [];obj.current_outFile = {};
+                end               
                 obj.b_state = true;
                 % Get handle of current object:
                 obj.getTargetObj(targetIdxArr(ii,:));
@@ -557,7 +557,7 @@ classdef PipelineManager < handle
                     thisSeq = obj.pipe(arrayfun(@(x) any(x.seq == obj.current_seq), obj.pipe));
                     % Skip pipeline steps:
                     if ~obj.b_ignoreLoggedFiles
-                        [thisSeq, skippedFcns,selFile] = obj.skipSteps(thisSeq,obj.tmp_TargetObj.SaveFolder);
+                        [thisSeq, skippedFcns,selFile] = obj.skipSteps(thisSeq);
                         if isempty(thisSeq)
                             % When all sequence is skipped:
                             fprintf('All steps skipped from the current sequence!\n')
@@ -671,9 +671,7 @@ classdef PipelineManager < handle
                         % DATAVIEWER: Skip duplicate save file names for
                         % steps that will not be saved.
                         break
-                    end
-                    
-                    
+                    end                                        
                     % Check for output files with the same name
                     idxDuplicate = strcmpi(thisSeq(jj).saveFileName,lastFileNameList);
                     if any(idxDuplicate)
@@ -838,7 +836,7 @@ classdef PipelineManager < handle
             obj.pipe = struct();
             % Reset some properties:
             if ~obj.ProtocolObj.b_isDummy
-                obj.current_data = []; obj.current_metaData = [];
+                obj.current_data = [];
             end
             obj.current_outFile = {};
             obj.current_seq = 0; obj.current_seqIndx = 0;
@@ -882,7 +880,7 @@ classdef PipelineManager < handle
             end
             txt = [txt summaryTxt];
             % Initialize working folder to the current directory.
-            txt = [txt sprintf('%%%% Instantiate variables:\nFolder = pwd; %% By Default, set the current folder as the working folder.\n%%%% Pipeline execution\n\n')];
+            txt = [txt sprintf('%%%% Set variables:\nFolder = pwd; %% By Default, set the current folder as the working folder.\n%%%% Pipeline execution\n\n')];
             
             % Loop through each step in the pipeline.
             curSeq = 0;
@@ -999,8 +997,8 @@ classdef PipelineManager < handle
             
             % Open the folder containing the generated script.
             openFolder(folder);
-        end
-        
+        end       
+                
         %%%%%%--Pipeline Visualization  -----------------------------------
         function fH = drawPipe(obj,varargin)
             % DRAWPIPE creates a Directed Acyclic Graph (DAG) representation
@@ -1306,21 +1304,102 @@ classdef PipelineManager < handle
             end
             
         end
+        %%%%%%-------------------------------------------------------------
+    end
+    methods (Access = {?DataViewer})
         %%%%%-- Methods for interfacing with DataViewer -------------------
-        function loadDataFromDummyProtocol(obj, data,metaData)
+        function loadDataFromDummyProtocol(obj,data,filename,dataInfo)
             % This methods imports the imaging data from DataViewer to this
             % class.
-            
             if ~obj.ProtocolObj.b_isDummy
                 % Exclusive to "dummy" protocol instance.
                 return
             end
-            %
+            % Update current data:
             obj.current_data = data;
-            obj.current_metaData = metaData;
-            obj.dv_originalMetaData = metaData; % Store original metaData structure for comparisons during pipeline execution.
+            % Store filename:
+            obj.dv_inputFilename = filename;
+            
+            % Load DataHistory
+            obj.dataHistory = obj.loadDataHistory(obj.ProtocolObj.SaveDir);
+            if isempty(obj.dataHistory)
+                return
+            end
+            % Update current info for data stored in RAM
+            if exist('dataInfo','var')
+                obj.current_info = dataInfo;
+            else
+                % Update input file name of first step in the pipeline:
+                obj.pipe(1).inputFileName = obj.dv_inputFilename;
+                % Update current data history:
+                idxFile = strcmp({obj.dataHistory.filename},filename);
+                if any(idxFile)
+                    obj.current_info = obj.dataHistory(idxFile).info;
+                else
+                    obj.current_info = [];
+                end
+            end
         end
-        %%%%%%-------------------------------------------------------------
+        
+        function dataHistory = loadDataHistory(~,folder)
+            % LOADDATAHISTORY loads the dataHistory structure from the "dataHistory.mat"
+            % file in the protocol's saveFolder.
+            % This function also cleans-up the dataHistory structure and
+            % file if there are missing files in the folder.
+            
+            dataHistory = struct.empty(0,1);
+            if ~isfile(fullfile(folder,'dataHistory.mat'))
+                return
+            end
+            load(fullfile(folder,'dataHistory.mat'));%#ok
+            % Check if all files listed in dataHistory still exist in the
+            % saveFolder:
+            datList = dir(fullfile(folder,'*.dat'));
+            %% MAT LIST FILTERING TBD!
+            %            matList = dir(fullfile(obj.tmp_TargetObj.SaveFolder,'*.mat'));
+            %%
+            % Remove missing files from dataHistory:
+            dataHistory(~ismember({dataHistory.filename}, {datList.name})) = [];
+            if isempty(dataHistory)
+                delete(fullfile(folder,'dataHistory.mat'));
+            else
+                % Overwrite dataHistory.mat file:
+                save(fullfile(folder,'dataHistory.mat'),'dataHistory');
+            end
+        end
+        
+        function saveDataHistory(obj,SaveFolder, filename)
+            % SAVEDATAHISTORY creates or overwrites the data history for a
+            % .dat or .mat file (filename) inside the dataHistory.mat file.
+            
+            % Create a new dataHistory.mat file, if it doesn't exists in
+            % the SaveFolder
+            if isempty(obj.current_info)
+                return
+            end
+            thisDataHistory = struct('filename',filename,'info',obj.current_info);
+            if ~isfile(fullfile(SaveFolder,'dataHistory.mat'))
+                dataHistory = thisDataHistory;%#ok
+                save(fullfile(SaveFolder,'dataHistory.mat'),'dataHistory');
+                return
+            end
+            % Reload dataHistory to ensure that the local one is
+            % up-to-date:
+            obj.dataHistory = obj.loadDataHistory(SaveFolder);
+            
+            % Append info to existing data history file:
+            idxFile = strcmpi({obj.dataHistory.filename},filename);
+            if any(idxFile)
+                % Overwrite the existing file with the new data history:
+                obj.dataHistory(idxFile) = thisDataHistory;
+            else
+                % Append DataHistory file with new entry:
+                obj.dataHistory(end+1) = thisDataHistory;
+            end
+            % Overwrite dataHistory.mat file:
+            dataHistory = obj.dataHistory;%#ok
+            save(fullfile(SaveFolder,'dataHistory.mat'),'dataHistory');
+        end
         
     end
     
@@ -1371,7 +1450,7 @@ classdef PipelineManager < handle
                 obj.b_state = true;
                 LastLog.Messages = 'No Errors';
                 % Update data history of current data with task:
-                obj.updateDataHistory(task);
+                obj.updateStepInfo(task);
             catch ME
                 obj.b_state = false;
                 LastLog.Messages = {getReport(ME,'extended', 'hyperlinks','off')};
@@ -1412,9 +1491,11 @@ classdef PipelineManager < handle
                     targetObj = obj.ProtocolObj.Array.ObjList(targetIdx(1)).Array.ObjList(targetIdx(2)).Array.ObjList(targetIdx(3));
             end
             obj.tmp_TargetObj = targetObj;
+            % Update dataHistory structure:
+            obj.dataHistory = obj.loadDataHistory(obj.tmp_TargetObj.SaveFolder);
         end
         
-        function [newSeq,skippedSteps, selFile] = skipSteps(obj,thisSeq,folderName)
+        function [newSeq,skippedSteps, selFile] = skipSteps(obj,thisSeq)
             % SKIPSTEPS looks in the folder "folderName" for .dat/.mat files
             % that can potentially replace the N first steps of the pipeline
             % sequence "thisSeq".
@@ -1425,35 +1506,38 @@ classdef PipelineManager < handle
             %    4- No intermediate steps from the file is used as input to
             %    other sequences
             %    Inputs:
-            %        thisSeq (struct): current sequence of the pipeline.
-            %        folderName(char): full path to the folder containing
-            %            files.
+            %        thisSeq (struct): current sequence of the pipeline.         
             %    Outputs:
             %        newSeq (struct): updated sequence without the redundant
             %            steps.
             %        skippedSteps (cell): list of skipped function names from
             %            "thisSeq".
-            
-            % Get list of valid files in the folder:
-            fileList = getFileList(folderName, 'all');
-            if obj.ProtocolObj.b_isDummy && ~isempty(obj.current_metaData)
+           
+            if obj.ProtocolObj.b_isDummy && ~isempty(obj.current_info)
                 % For DataViewer, also, look at the dataHistory of the
                 % current data.
-                fileList = [fileList;'self'];
+                % Temporarily add the dataHistory of the data in RAM to the
+                % "dataHistory" property. This will be removed at the end
+                % of this function.
+                if isempty(obj.dataHistory)
+                    obj.dataHistory =  struct('filename','self','info',obj.current_info);
+                else                    
+                    obj.dataHistory(end+1) = struct('filename','self','info',obj.current_info);
+                end
             end
-            %
+
             newSeq = thisSeq;
             skippedSteps = {};
-            newSeqArr = cell(size(fileList));
+            newSeqArr = cell(size(obj.dataHistory));
             skippedStepsArr = newSeqArr;
             selFile = '';
-            % If the data does not contain dataHistory, abort:
-            if ~isprop(obj.current_metaData,'dataHistory')
+            % Abort,if the dataHistory file doesn't exists.
+            if isempty(obj.dataHistory)
                 return
             end
             % Compare dataHistory with pipeline sequence:
-            for ii = 1:length(fileList)
-                [newSeqArr{ii}, skippedStepsArr{ii}] = compareDataHistory(obj,thisSeq,fullfile(folderName,fileList{ii}));
+            for ii = 1:length(obj.dataHistory)
+                [newSeqArr{ii}, skippedStepsArr{ii}] = compareDataHistory(obj,thisSeq,obj.dataHistory(ii));
             end
             % Check for matches:
             if all(cellfun(@isempty,skippedStepsArr))
@@ -1466,7 +1550,7 @@ classdef PipelineManager < handle
             idxSkipAll = cellfun(@isempty,newSeqArr);
             if any(idxSkipAll)
                 indxSkip = find(idxSkipAll,1,'first');
-                selFile = fileList{indxSkip};
+                selFile = obj.dataHistory(indxSkip).filename;
                 % Copy file if the "saveFileName of the current sequence has a different "saveFileName"
                 for ii = length(thisSeq):-1:1
                     if thisSeq(ii).saveFileName
@@ -1491,13 +1575,14 @@ classdef PipelineManager < handle
                 % the same name as the inputFileName(s) in the current
                 % sequence. If none is found, just pick the first one that has the same dataHistory.
                 for ii = length(idxMax):-1:1
-                    if any(arrayfun(@(x) strcmp(fileList{idxMax(ii)},x.inputFileName),thisSeq)) || strcmpi(fileList{idxMax(ii)},'self')
+                    if any(arrayfun(@(x) strcmp(obj.dataHistory(idxMax(ii)).filename,x.inputFileName),thisSeq)) ||...
+                            strcmpi(obj.dataHistory(idxMax(ii)).filename,'self')
                         break
                     end
                 end
                 idxMax = idxMax(ii);
             end
-            selFile = fileList{idxMax};
+            selFile = obj.dataHistory(idxMax).filename;
             newSeq = newSeqArr{idxMax};
             skippedSteps = skippedStepsArr{idxMax};
             % For DataViewer, when the data is already in RAM:
@@ -1505,46 +1590,27 @@ classdef PipelineManager < handle
                 newSeq(1).inputFileName = '';
                 newSeq(1).inputFrom = -1;
             end
+            % Remove "self" entry from dataHistory:
+            idxSelf = strcmp({obj.dataHistory.filename},'self');
+            obj.dataHistory(idxSelf) = [];            
             %%%%%--Local function ------------------------------------------
-            function [outSeq,skipNames] = compareDataHistory(obj,seqIn, fileIn)
+            function [outSeq,skipNames] = compareDataHistory(obj,seqIn, dhIn)
                 % COMPAREDATAHISTORY compares the dataHistory of "fileIn"
                 % with the pipeline sequence "seqIN" and outputs the
                 % updated sequence "outSeq" and the list of skipped steps
                 % "skipNames".
+                
                 outSeq = seqIn;
                 skipNames = {};
-                % Load data history:
-                [path,file,ext] = fileparts(fileIn);
-                if ~strcmpi(file, 'self')
-                    try
-                        a = load(fullfile(path,[file '.mat']),'dataHistory');
-                        dataHistory = a.dataHistory; clear a
-                    catch
-                        return
-                    end
-                else
-                    dataHistory = obj.dv_originalMetaData.dataHistory;
-                end
-                %%% For retrocompatibility
-                if ~strcmpi(fieldnames(dataHistory(1)), 'inputFileName')
-                    dataHistory(1).inputFileName = '';
-                end
-                
+                              
                 % Compare datetimes:
-                [~,locB] = ismember({dataHistory.name},{obj.funcList.name});
+                [~,locB] = ismember({dhIn.info.name},{obj.funcList.name});
                 locB(locB == 0) = []; % Remove non-existent functions.
                 if isempty(locB)
                     % If none of the functions exist, abort.
                     return
                 end
-                
-                % %% SECTION COMMENTED FOR NOW. Not sure if addinf the
-                % function's creationDateTime as parameter is a good idea.
-                %                  idxSameDate = cellfun(@(x,y) strcmpi(datestr(x),y),{dataHistory(idx).creationDatetime},...
-                %                     {obj.funcList(locB).date});
-                %                                 if ~all(idxSameDate)
-                %                                     return
-                %                                 end
+                                
                 % Compare function names and optional parameters:
                 thisHistory = struct();
                 for jj = 1:length(seqIn)
@@ -1559,45 +1625,43 @@ classdef PipelineManager < handle
                 if any(idxFromDisk > 0)
                     idxFrom = idxFromDisk;
                     % Load the input file dataHistory:
-                    [~,inputFile,~] = fileparts(seqIn(idxFromDisk).inputFileName);
-                    fileMetaData = load(fullfile(path,[inputFile,'.mat']));
+                    [~,inputFile,ext] = fileparts(seqIn(idxFromDisk).inputFileName);
                     
-                elseif  any(idxFromDataViewer > 0) && ~isempty(obj.dv_originalMetaData)
+                    idxFile = strcmp({obj.dataHistory.filename},[inputFile,ext]);
+                    if any(idxFile)
+                        ppInfo = obj.dataHistory(idxFile).info;
+                    end
+                elseif  any(idxFromDataViewer > 0) && ~isempty(obj.current_info)
                     idxFrom = idxFromDataViewer;
-                    %%% Special case: Look inside the current meta Data when
-                    %%% working with DataViewer:
-                    % Load the dataHistory from the input file meta Data:
-                    fileMetaData = obj.dv_originalMetaData;
+                    
+                    ppInfo = obj.current_info;
                 end
                 
-                if exist('fileMetaData','var')
-                    if isfield(fileMetaData,'dataHistory')
-                        dh = fileMetaData.dataHistory;
-                        %%%% For retrocompatibility
-                        fNames = {'name','inputFileName','opts'};
-                        for kk = 1:length(fNames)
-                            if ~isfield(dh,fNames{kk})
-                                dh(1).(fNames{kk}) = [];
-                            end
+                if exist('ppInfo','var')
+                    %%%% For retrocompatibility
+                    fNames = {'name','inputFileName','opts'};
+                    for kk = 1:length(fNames)
+                        if ~isfield(ppInfo,fNames{kk})
+                            ppInfo(1).(fNames{kk}) = [];
                         end
-                        %%%%%
-                        prepend_info = struct();
-                        for jj = 1:length(dh)
-                            prepend_info(jj).name = dh(jj).name;
-                            prepend_info(jj).inputFileName = dh(jj).inputFileName;
-                            prepend_info(jj).opts = dh(jj).opts;
-                        end
-                        thisHistory = horzcat(prepend_info,thisHistory(idxFrom:end));
                     end
+                    %%%%%
+                    prepend_info = struct();
+                    for jj = 1:length(ppInfo)
+                        prepend_info(jj).name = ppInfo(jj).name;
+                        prepend_info(jj).inputFileName = ppInfo(jj).inputFileName;
+                        prepend_info(jj).opts = ppInfo(jj).opts;
+                    end
+                    thisHistory = horzcat(prepend_info,thisHistory(idxFrom:end));
                 end
                 %%%%%% ----------------------------------------------------
                 % Check for the existence of consecutive equal steps:
-                b_isEqual = false(size(dataHistory));
-                for jj = 1:length(dataHistory)
+                b_isEqual = false(size(dhIn.info));
+                for jj = 1:length(dhIn.info)
                     % Compare name and opts:
-                    b_isEqual(jj) = (strcmpi(thisHistory(jj).name, dataHistory(jj).name) && ...
-                        strcmpi(thisHistory(jj).inputFileName, dataHistory(jj).inputFileName) && ...
-                        isequaln(thisHistory(jj).opts,dataHistory(jj).opts));
+                    b_isEqual(jj) = (strcmpi(thisHistory(jj).name, dhIn.info(jj).name) && ...
+                        strcmpi(thisHistory(jj).inputFileName, dhIn.info(jj).inputFileName) && ...
+                        isequaln(thisHistory(jj).opts,dhIn.info(jj).opts));
                     if jj == length(thisHistory) || ~b_isEqual(jj)
                         break
                     end
@@ -1606,7 +1670,7 @@ classdef PipelineManager < handle
                     return
                 end
                 % Get indices of sequence corresponding to the dataHistory:
-                [~,indxEqual] = ismember({dataHistory(b_isEqual).name},{seqIn.name});indxEqual(indxEqual == 0) = [];
+                [~,indxEqual] = ismember({dhIn.info(b_isEqual).name},{seqIn.name});indxEqual(indxEqual == 0) = [];
                 % If any consecutive steps were equal, check if the intermediate steps
                 % from dataHistory are inputs to other sequences:
                 b_isInputFcn = arrayfun(@(x) numel(x) > 1, seqIn(indxEqual(1:end-1)));
@@ -1623,7 +1687,7 @@ classdef PipelineManager < handle
                     indx = find(~cellfun(@isempty,({outSeq.inputFrom})), 1,'first');
                     if any(indx)
                         outSeq(indx).inputFrom = 0; % Input from Disk.
-                        outSeq(indx).inputFileName = [file ext];
+                        outSeq(indx).inputFileName = dhIn.filename;
                         % Reset sequence indices:
                         for jj = 1:length(outSeq)
                             outSeq(jj).seqIndx = jj;
@@ -2005,9 +2069,9 @@ classdef PipelineManager < handle
             
         end
         
-        function updateDataHistory(obj,step)
-            % This function creates or  updates the "dataHistory" structure
-            % and saves the information to the metaData structure/matfile.
+        function updateStepInfo(obj,step)
+            % This function creates or  updates the "current_info" structure
+            % 
             % The dataHistory contains all information about the functions'
             % parameters used to create the current "data" and when it was run.
             %
@@ -2016,55 +2080,50 @@ classdef PipelineManager < handle
             
             funcInfo = obj.funcList(strcmp(step.name, {obj.funcList.name}));
             % Create a local structure with the function's info:
-            curr_dtHist = genDataHistory(funcInfo, step.opts, step.inputFileName, '');
-            % First, we need to know if the output is a "data", a .DAT file or a .MAT file:
+            thisStep = obj.getStepInfo(funcInfo, step.opts, step.inputFileName, '');
+            % Append to current dataHistory:
+            obj.current_info = [obj.current_info;thisStep];
+            
+            % If the data was already saved as a .dat or .mat file by the
+            % function, update the function's info directly in the
+            % dataHistory.mat file:
             if any(strcmp(step.argsOut, 'outFile'))
-                curr_dtHist.outFileName = obj.current_outFile; % Update outFileName list with the actual files generated by the function in "step".
-                % In case the step ouput is .DAT file(s), update the
-                % dataHistory on each one:
-                for i = 1:length(obj.current_outFile)
-                    % Map existing metaData file to memory:
-                    if endsWith(obj.current_outFile{i},'.dat','IgnoreCase',true)
-                        mtD = matfile(strrep(obj.current_outFile{i}, '.dat', '.mat'));
-                    else
-                        mtD = matfile(obj.current_outFile{i});
-                    end
-                    mtD.Properties.Writable = true;
-                    % Create or update "dataHistory" structure:
-                    mtD.dataHistory = appendDataHistory(mtD, curr_dtHist);
-                end
-            elseif any(strcmp(step.argsOut, 'outData'))
-                if isstruct(obj.current_data)
-                    % In case of step output is .MAT file(s):
-                    obj.current_data.dataHistory = appendDataHistory(obj.current_data, curr_dtHist);
-                else
-                    % In case of step output is a data array:
-                    obj.current_metaData.dataHistory = appendDataHistory(obj.current_metaData, curr_dtHist);
-                end
-            end
-            %%%%%--Local function -----------------------------------------
-            function out = appendDataHistory(currData, new_dh)
-                % This function appends the data history "dh" to
-                % "current_dataHistory" property of obj.
-                if ~isfield(currData,'dataHistory')
-                    out = new_dh;
-                    return
-                end
-                dh_original = currData.dataHistory;
-                % Account for missing fields (FOR RETROCOMPATIBILITY)
-                fn = setdiff(fieldnames(new_dh),fieldnames(dh_original));
-                for ii = 1:length(fn)
-                    dh_original(1).(fn{ii}) = [];
-                end
-                % Append fields
-                fn = setdiff(fieldnames(dh_original), fieldnames(new_dh));
-                for ii = 1:length(fn)
-                    new_dh(1).(fn{ii}) = [];
-                end
-                out = vertcat(dh_original,new_dh);
+                obj.current_info(end).outFileName = obj.current_outFile; % Update outFileName list with the actual files generated by the function in "step".
+                % In case the step ouput is a .DAT or .MAT file, update the
+                % dataHistory for each one:
+                for jj = 1:length(obj.current_outFile)
+                    obj.saveDataHistory(obj.tmp_TargetObj.SaveFolder,obj.current_outFile{jj});                     
+                end            
             end
         end
         
+        function out = getStepInfo(~,fcnInfo, optsStruct, inputFileName, outFileName)
+            % This function creates a structure containing information about an
+            % analysis function.
+                       
+            % Inputs:
+            %   fcnInfo (struct): structure containing the function's basic informations with
+            %       fields:
+            %           -name (char): name of the analysis function.
+            %           -folder (char): path where the analysis function file is located.
+            %           -creationDatetime(datetime): timestamp of the creation of the
+            %               analysis function file.
+            %   optsStruct (struct): structure containing optional parameters of the
+            %       analysis function.
+            %   inputFileName(cell|char): name of the input file(s) to the function.
+            %   outFileName(cell|char): name of the output file(s) from the function.
+            %   This field is used just by functions that create files already. Just to
+            %   keep track of the files that were created.
+            % Output:
+            %   out (struct): structure with the information necessary for the
+            %       dataHistory variable in the data's metaData.
+            
+            out = struct('runDatetime', datetime('now'), 'name', {fcnInfo.name},...
+                'folder', {fcnInfo.folder}, 'creationDatetime',...
+                datetime(fcnInfo.datenum, 'ConvertFrom', 'datenum'),...
+                'opts', optsStruct, 'inputFileName',inputFileName, 'outFileName',outFileName);
+        end
+                
         function updateTargetObjLog(obj, LastLog)
             % UPDTETARGETOBJLOG appends the Log of the current pipeline to
             % the object's "LastLog" property up to 500 rows. When the 500
@@ -2094,17 +2153,22 @@ classdef PipelineManager < handle
             
             if endsWith(step.inputFileName, '.dat')
                 %If the InputFile is a .DAT file:
-                [obj.current_data, obj.current_metaData] = ...
-                    loadDatFile(fullfile(obj.tmp_TargetObj.SaveFolder, step.inputFileName));
+                obj.current_data = loadDat(fullfile(obj.tmp_TargetObj.SaveFolder, step.inputFileName));
             else
                 % If the InputFile is a .MAT file
                 obj.current_data = load(fullfile(obj.tmp_TargetObj.SaveFolder,...
-                    step.inputFileName));
-                % Erase current metaData, since it will not be associated
-                % with the curren_data anymore:
-                obj.current_metaData = [];
+                    step.inputFileName));               
             end
-            
+            % Update Data History file handle:
+            obj.dataHistory = obj.loadDataHistory(obj.tmp_TargetObj);
+            if ~isempty(obj.dataHistory)                
+                % Update current info:
+                idxFile = strcmp({obj.dataHistory.filename},step.inputFileName);
+                obj.current_info = obj.dataHistory(idxFile).info;
+            else
+                % If there is no dataHistory in the SaveFolder:                
+                obj.current_info = [];
+            end                        
         end
         
         function saveDataToFile(obj,step,b_failed)
@@ -2162,7 +2226,7 @@ classdef PipelineManager < handle
                 saveFileName = obj.pipe(ii).saveFileName;
             end
             
-            % If the pipeline failed, and the previous step was a fuction with data output,
+            % If the pipeline failed, and the previous step was a function with data output,
             % use the default file name to save the data:
             if b_failed && isempty(obj.pipe(ii).saveFileName) && ischar(obj.pipe(ii).outFileName)
                 saveFileName = [name '_recovered' ext]; % string to append to files saved before an error.;
@@ -2176,8 +2240,8 @@ classdef PipelineManager < handle
             % Save data to file:
             if strcmpi(ext, '.dat')
                 % For .dat files:
-                save2Dat(fullfile(obj.tmp_TargetObj.SaveFolder,saveFileName),...
-                    obj.current_data, obj.current_metaData);
+                saveDat(fullfile(obj.tmp_TargetObj.SaveFolder,saveFileName),...
+                    obj.current_data);                                
             else
                 % For .mat files:
                 disp('Writing data to .MAT file ...')
@@ -2186,6 +2250,8 @@ classdef PipelineManager < handle
                     '-struct', 'S', '-v7.3');
                 disp(['Data saved in : "' fullfile(obj.tmp_TargetObj.SaveFolder,saveFileName) '"'])
             end
+            % Save data history:
+            obj.saveDataHistory(obj.tmp_TargetObj.SaveFolder,saveFileName);
         end
         
         function deleteTemporaryFiles(obj,folder)

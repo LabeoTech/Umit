@@ -69,7 +69,6 @@ chanList = chanList(idx);
 idxName = ismember({chanList.name}, {existing_ChanList.name});
 idxDate = ismember([chanList.datenum], [existing_ChanList.datenum]);
 idxNew = ~all([idxName; idxDate],1);
-chanList = {chanList(idxNew).name};
-outFile = fullfile(SaveFolder, chanList);
+outFile = {chanList(idxNew).name};
 %
 end
