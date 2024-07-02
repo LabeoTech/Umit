@@ -19,25 +19,27 @@ classdef PipelineManager < handle
     end
     properties (SetAccess = private)
         % the same changes to the property's set method.
-        ProtocolObj Protocol % Protocol Object.
         fcnDir char % Directory of the analysis functions.
-        ClassName char % Name of the class that the pipeline analysis functions will run.
-        ClassLevel int16 % Level of the class in protocol's hierarchy (1 = Modality, 2 = Acquisition, 3= Subject);
         PipelineSummary % Shows the jobs run in the current Pipeline
         current_seq = 0 % index of current sequence in pipeline.
+        SaveFolderList % List of Save folders
+        RawFolderList % List of Raw folders corresponding to the items in SaveFolderList.
     end
-    properties % (GetAccess = {?DataViewer})
+    properties (GetAccess = {?DataViewer})
         current_data % Data available in the workspace during pipeline.
         current_info % Structure with info about the functions ran on "current_data". This will be saved to the dataHistory file.
-        dataHistory = struct.empty(0,1) % Local copy of the content from the dataHistory file in the data's SaveFolder.
+        current_saveFolder % Current path to save folder during pipeline execution.
+        current_rawFolder % Current path to raw folder during pipeline execution.
+        dataHistory % Local copy of the content from the dataHistory file in the data's SaveFolder.
         dv_inputFilename % Name of the input file (DataViewer only).
+        b_inputFromDataViewer = false % TRUE if the first input from the pipeline comes from the DataViewer app.
         b_state logical % True if a task of a pipeline was successfully executed.
     end
     properties (Access = private)
-        b_taskState = false % Boolean indicating if the task in pipeline was successful (TRUE) or not (FALSE).
-        tmp_LogBook % Temporarily stores the table from PROTOCOL.LOGBOOKFILE
+        ProtocolSaveFolder char % Path to Protocols Save Folder. Used to locate PipelineConfig and Error Log folders.
+        folderLog table % Pipeline LogTable stored in the "pipeLog.mat" file in the SaveFolder.
+        maxLogRows = 100 % Maximum number of rows in the folderLog table. If exeeded, older entries will be erased.
         tmp_BranchPipeline % Temporarily stores LogBook from a Hierarchical branch.
-        tmp_TargetObj % % Temporarily stores an object (TARGEROBJ).
         current_pipe % Pipeline currently running.
         current_outFile cell % List of file names created as output from some of the analysis functions.
         % It can be the name of an existing file, or
@@ -45,85 +47,57 @@ classdef PipelineManager < handle
         % such as "run_ImagesClassification".
         h_wbItem % Handle of waitbar dialog showing the progress of the pipeline across protocol's objects.
         h_wbTask % Handle of waitbar dialog showing the progress of the pipeline in the current object.
-        targetObjFullID char % Full ID of the current object.
-        % For example, if the current object is a
-        % modality the full ID is:
-        % SubjID--AcqID--ModID.
         timeTag % timestamp used as "tag" for temporary files created during the pipeline execution.
         current_seqIndx = 0 % index of step in current sequence in pipeline.
         b_newSeq = false; % boolean to indicate if a new sequence was created in the previous step.
-        b_pipeIsValid = false % TRUE, if the pipeline passed all validations and is ready to execution.
+        b_pipeIsValid = false % TRUE, if the pipeline passed all validations and is ready to execution.        
     end
     
     methods
         % Constructor
-        function obj = PipelineManager(ProtocolObj,ClassName)
+        function obj = PipelineManager(SaveFolderList,varargin)
             % PIPELINEMANAGER Constructs an instance of this class
             %  Input:
-            %   ProtocolObj(Protocol): Protocol object. This input is
-            %   needed to have access to the protocol's hierarchy of
-            %   objects.
-            %   ClassName (str): Name of an existing class from
-            %   ProtocolObj. The pipeline analysis functions will run on objects of
-            %   this class only.
+            %   SaveFolderList(cell array of chars): List of Save folder
+            %       paths containing .dat and .mat files.
+            %   RawFolderList(cell array of chars): List of Raw folders
+            %       associated with the save folders.
+            %   Optionals:
+            %   ProtocolSave
             
             p = inputParser;
-            addRequired(p,'ProtocolObj', @(x) isa(x, 'Protocol'));
-            addRequired(p,'ClassName', @ischar);
-            parse(p,ProtocolObj, ClassName);
-            obj.ProtocolObj = p.Results.ProtocolObj;
+            validationFun = @(x) iscell(x) & ischar([x{:}]);
+            addRequired(p,'SaveFolderList', validationFun);
+            addOptional(p,'RawFolderList',{''}, validationFun);
+            addOptional(p,'ProtocolSaveFolder',pwd,@ischar);
+            parse(p,SaveFolderList, varargin{:});
+            RawFolderList = p.Results.RawFolderList;
+            obj.ProtocolSaveFolder = p.Results.ProtocolSaveFolder;
+            
+            % Further validate each Item from Save and Raw folder lists.
+            
+            % criterion #1 - Both lists should have the same length:
+            errID = 'umIToolbox:PipelineManager:MissingInput';
+            errMsg = 'SaveFolderList and RawFolderList should have the same number of items!';
+            assert(isequaln(length(SaveFolderList),length(RawFolderList)),errID,errMsg)
+            % criterion #2 - All SaveFolders should exist:
+            assert(all(isfolder(SaveFolderList)), 'One or more folders in SaveFolderList do not exist!');
+            
+            % For the Raw Folder list, replace missing folders with
+            % "MISSING" string and raise a warning. Reason: sometimes, the raw data
+            % is not available (different HD, PC etc.).
+            b_missingFolders = ~isfolder(RawFolderList);
+            if any(b_missingFolders)
+                warning('A total of %d out of %d Raw Folder(s) do not exist! Beware! Functions that use this parameter will fail!',...
+                    sum(b_missingFolders),length(b_missingFolders));
+                RawFolderList(b_missingFolders) = {'MISSING'};
+            end
+            % Store folder lists
+            obj.SaveFolderList = SaveFolderList;
+            obj.RawFolderList = RawFolderList;
             % Create timestamp tag:
             obj.timeTag = datestr(datetime('now'),'_ddmmyyyyHHMMSS');
-            % Set level of selected class:
-            switch p.Results.ClassName
-                case 'Subject'
-                    obj.ClassLevel = 1;
-                case 'Acquisition'
-                    obj.ClassLevel = 2;
-                otherwise
-                    obj.ClassLevel = 3;
-                    % Check if the selected class exists in the Filtered objects
-                    % from Protocol:
-                    if isempty(obj.ProtocolObj.Idx_Filtered)
-                        obj.ProtocolObj.clearFilterStruct;
-                        obj.ProtocolObj.queryFilter;
-                    end
-                    
-                    % Find the class from the list of Modality objects from protocol's filtered
-                    % objects:
-                    items = obj.ProtocolObj.extractFilteredObjects(3);
-                    idx_class = cellfun(@(x) isa(x,p.Results.ClassName), items);
-                    % Check if all acquisitions contain the selected class:
-                    idx_acq = ismember(obj.ProtocolObj.Idx_Filtered(:,2),...
-                        unique(obj.ProtocolObj.Idx_Filtered(idx_class,2)));
-                    % Control for missing modalities with the selected class
-                    % name and remode acquisitions that do not have the
-                    % modality.
-                    if ~any(idx_acq)
-                        % Throw error if there are no modalities with the name
-                        % of the selected class.
-                        errID = 'umIToolbox:PipelineManager:MissingInput';
-                        errMsg = ['The protocol object with name "' p.Results.ClassName ...
-                            '" does not exist in the filtered list of objects!'];
-                        error(errID, errMsg)
-                    elseif ~all(idx_acq)
-                        % Remove acquisitions that lack the selected class from
-                        % the protocol "Idx_Filtered" property:
-                        items_errList = items(~idx_acq);
-                        str = {};
-                        for i = 1:length(items_errList)
-                            str{i} = strjoin({items_errList{i}.MyParent.MyParent.ID, ...
-                                items_errList{i}.MyParent.ID, items_errList{i}.ID},' -- ');
-                        end
-                        warn_msg = [{['The following Acquisition(s) lack objects with name "' ...
-                            p.Results.ClassName '" and will be removed from this pipeline session:']}; str];
-                        warndlg(warn_msg, 'Warning! Missing Objects in protocol')
-                        % Update list of selected objects from protocol:
-                        obj.ProtocolObj.Idx_Filtered = obj.ProtocolObj.Idx_Filtered(idx_acq, :);
-                    end
-            end
-            
-            obj.ClassName = p.Results.ClassName;
+
             if isdeployed
                 [obj.fcnDir,~,~] = fileparts(which('funcTemplate.m'));
                 a = load(fullfile(obj.fcnDir,'deployFcnList.mat'));
@@ -136,8 +110,6 @@ classdef PipelineManager < handle
                 obj.fcnDir = fullfile(rootDir, 'Analysis');
                 obj.createFcnList;
             end
-            %             obj.b_ignoreLoggedFiles = false;
-            %             obj.b_saveDataBeforeFail = false;
         end
         % SETTERS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function set.pipe(obj,pipe)
@@ -164,6 +136,7 @@ classdef PipelineManager < handle
         function setOpts(obj,varargin)
             % SETOPTS opens an INPUTDLG for entry of optional variables
             % (OPTS) of methods in the Pipeline.
+            
             p = inputParser;
             addRequired(p,'obj');
             addOptional(p,'funcName','',@ischar)
@@ -327,9 +300,9 @@ classdef PipelineManager < handle
             %%% SPECIAL CASE - DataViewer
             % For the first step of the pipeline avoid asking for an input
             % file:
-            if obj.ProtocolObj.b_isDummy && obj.current_seq == 0 
-                if isempty(task.inputFrom) || task.inputFrom ~= 0                    
-                    task.inputFrom = -1;% Set inputFrom to "-1" the data from DataViewer.   
+            if obj.b_inputFromDataViewer&& obj.current_seq == 0
+                if isempty(task.inputFrom) || task.inputFrom ~= 0
+                    task.inputFrom = -1;% Set inputFrom to "-1" the data from DataViewer.
                 else
                     % The task.inputFrom field will be zero when generating a script
                     % from DataViewer GUI.
@@ -352,7 +325,7 @@ classdef PipelineManager < handle
                 end
                 % Remove dependency field from "task")
                 task = rmfield(task, 'dependency');
-                % 
+                %
                 % Add task to pipeline:
                 obj.pipe = [obj.pipe; task];
                 fprintf('Added "%s" to sequence #%d of the pipeline.\n',task.name, obj.current_seq)
@@ -425,7 +398,7 @@ classdef PipelineManager < handle
         %             assert(any(idxFunc),['Operation aborted! The function "' p.Results.func '" does not exist!']);
         %
         %         end
-        
+        %%%%% -------------------------------------------------------------
         function varargout = showPipeSummary(obj)
             % This method creates a summary of the current pipeline.
             
@@ -491,6 +464,9 @@ classdef PipelineManager < handle
         function run_pipeline(obj)
             % RUN_PIPELINE runs the tasks in OBJ.PIPE
             
+            % Reset PipelineSummary table:
+            obj.PipelineSummary = table();
+            
             if ~obj.b_pipeIsValid
                 % Force saving sequences' last steps (Except for DataViewer)
                 obj.validatePipeline; % Run pipeline validation
@@ -500,56 +476,28 @@ classdef PipelineManager < handle
                 warning('Pipeline execution aborted! Pipeline is invalid.')
                 return
             end
-            
-            % Reset sequence counter:
-            obj.current_seq = 1;
-            if ~obj.ProtocolObj.b_isDummy
-                lbf = matfile(obj.ProtocolObj.LogBookFile);
-                obj.tmp_LogBook = lbf.LogBook;
-            end
-            obj.PipelineSummary = obj.ProtocolObj.createEmptyTable;
+
             % Initialize waitbars:
             obj.setWaitBar('Initialize')
             
-            % Get indexes of Filtered Objects from OBJ.PROTOCOLOBJ.QUERYFILTER function.
-            switch obj.ClassLevel
-                case 3
-                    % Modality
-                    targetIdxArr = unique(obj.ProtocolObj.Idx_Filtered,'rows');
-                case 2
-                    % Acquisition
-                    targetIdxArr = unique(obj.ProtocolObj.Idx_Filtered(:,[1 2]), 'rows');
-                case 1
-                    % Subject
-                    targetIdxArr = unique(obj.ProtocolObj.Idx_Filtered(:,1), 'rows');
-            end
-            
-            for ii = 1:size(targetIdxArr,1)
-                % Clear current data,  metaData and File List for each item in te pipeline:
-                if ~obj.ProtocolObj.b_isDummy
-                    obj.current_data = []; obj.current_info = [];obj.current_outFile = {};
-                end               
+            for ii = 1:length(obj.SaveFolderList)
+                % Clear current data, metaData and File List for each item in te pipeline:
+                if ~obj.b_inputFromDataViewer
+                    obj.current_data = []; obj.current_info = []; obj.current_outFile = {};
+                end
                 obj.b_state = true;
-                % Get handle of current object:
-                obj.getTargetObj(targetIdxArr(ii,:));
-                if isempty(obj.tmp_TargetObj.LastLog)
-                    % Initialize Log table:
-                    obj.tmp_TargetObj.LastLog = obj.ProtocolObj.createEmptyTable;
-                end
-                % Create Full ID of object:
-                ID_list = repmat({'null'}, 1,3);
-                if isa(obj.tmp_TargetObj, 'Modality')
-                    ID_list = {obj.tmp_TargetObj.MyParent.MyParent.ID, obj.tmp_TargetObj.MyParent.ID, obj.tmp_TargetObj.ID};
-                elseif isa(obj.tmp_TargetObj, 'Acquisition')
-                    ID_list(1,[1,2]) = {obj.tmp_TargetObj.MyParent.ID, obj.tmp_TargetObj.ID};
-                else
-                    ID_list{1} = obj.tmp_TargetObj.ID;
-                end
-                obj.targetObjFullID = strjoin(ID_list, ' -- ');
+                % Update current save and raw folders:
+                obj.current_saveFolder = obj.SaveFolderList{ii};
+                obj.current_rawFolder = obj.RawFolderList{ii};
+                obj.loadFolderLog(obj.SaveFolderList{ii});
+                % Update Data History from current save folder:
+                obj.dataHistory = obj.loadDataHistory(obj.current_saveFolder);
+               
                 % Update waitbars:
-                obj.setWaitBar('UpdateItem', ii, size(targetIdxArr,1));
+                obj.setWaitBar('UpdateItem', ii, length(obj.SaveFolderList));
                 fprintf([repmat('-',1,50),'\n']);
-                fprintf('Object Name: %s\n\n', obj.targetObjFullID)
+                fprintf('Save Folder : %s\n', obj.current_saveFolder);
+                fprintf('Raw Folder : %s\n', obj.current_rawFolder);
                 % Run one sequence at a time:
                 for jj = 1:max([obj.pipe.seq],[],'all')
                     obj.current_seq = jj;
@@ -562,15 +510,12 @@ classdef PipelineManager < handle
                             % When all sequence is skipped:
                             fprintf('All steps skipped from the current sequence!\n')
                             % Initialize empty Log for current object:
-                            LastLog = obj.ProtocolObj.createEmptyTable;
-                            % Fill out Log with Subject/Acquisition/Modality IDs :
-                            LastLog(1,1:3) = strsplit(obj.targetObjFullID, ' -- ');
                             % Add class name to table:
                             txt = sprintf('The file %s contains the following steps:',selFile);
-                            txt = [txt,sprintf('\n%s', skippedFcns{:})];
-                            LastLog(1,[4:8,11]) = {obj.ClassName, ['Skipped Sequence #' num2str(obj.current_seq)],...
-                                'none',selFile,true,txt};
-                            obj.PipelineSummary = [obj.PipelineSummary; LastLog];
+                            txt = [txt,sprintf('\n%s', skippedFcns{:})];%#ok
+                            dummyTask = struct('name',['Skipped sequence # ' num2str(obj.current_seq)],...
+                                'inputFileName',selFile,'saveFileName',selFile);
+                            obj.updateFolderLog(dummyTask,datetime('now'),true,txt);                             
                         elseif ~isempty(skippedFcns)
                             % When some steps are skipped:
                             fprintf('The following steps will be skipped:\n')
@@ -600,7 +545,7 @@ classdef PipelineManager < handle
                     end
                     fprintf([repmat('-',1,50),'\n']);
                     % Remove temporary files with appended with the "timeTag":
-                    obj.deleteTemporaryFiles(obj.tmp_TargetObj.SaveFolder);
+                    obj.deleteTemporaryFiles(obj.current_saveFolder);
                     % Abort outer loop if user cancels pipeline or a pipeline execution failed:
                     if ~ishandle(obj.h_wbItem) || ~obj.b_state
                         break
@@ -610,23 +555,12 @@ classdef PipelineManager < handle
                 if ~ishandle(obj.h_wbItem)
                     break
                 end
+                % Save folderLog file:
+                obj.saveFolderLog (obj.current_saveFolder);                                
             end
-            % Remove "empty" rows from the Pipeline Summary Log table:
-            idx_emptyRow = all(strcmp('None',table2cell(obj.PipelineSummary(:,1:5))),2);
-            obj.PipelineSummary(idx_emptyRow,:) = [];
-            % Update LogBook with Pipeline Summary table:
-            if ~obj.ProtocolObj.b_isDummy
-                LogBook = [obj.tmp_LogBook; obj.PipelineSummary];
-                % Save Log Book to file:
-                save(obj.ProtocolObj.LogBookFile, 'LogBook');
-                % Save Protocol Object:
-                protocol = obj.ProtocolObj;
-                save([obj.ProtocolObj.SaveDir obj.ProtocolObj.Name '.mat'], 'protocol');
-                disp('Protocol object Saved!');
-            end
-            
+                       
             % Show Pipeline Summary in command window:
-            disp(obj.PipelineSummary)
+            disp(obj.PipelineSummary);
             % Delete progress bars:
             delete([obj.h_wbItem, obj.h_wbTask]);
             % Request User permission to save error report:
@@ -662,16 +596,16 @@ classdef PipelineManager < handle
                         continue
                     end
                     % Force saving last step of the sequence (Except for DataViewer):
-                    if ~thisSeq(jj).b_save2File && ( ~obj.ProtocolObj.b_isDummy || b_isGenScript )
+                    if ~thisSeq(jj).b_save2File && ( ~obj.b_inputFromDataViewer || b_isGenScript )
                         thisSeq(jj).b_save2File = true;
                         thisSeq(jj).saveFileName = thisSeq(jj).outFileName;
                     end
                     
-                    if obj.ProtocolObj.b_isDummy && ~thisSeq(jj).b_save2File
+                    if obj.b_inputFromDataViewer && ~thisSeq(jj).b_save2File
                         % DATAVIEWER: Skip duplicate save file names for
                         % steps that will not be saved.
                         break
-                    end                                        
+                    end
                     % Check for output files with the same name
                     idxDuplicate = strcmpi(thisSeq(jj).saveFileName,lastFileNameList);
                     if any(idxDuplicate)
@@ -739,13 +673,13 @@ classdef PipelineManager < handle
             if ~strcmpi(filename,'.pipe') || isempty(ext)
                 ext = '.pipe'; % Force extension.
             end
-            % If the user did not enforce a path:
+            % If the user did not enforce a path, use ProtocolSaveFolder:
             if isempty(path)
-                if ~obj.ProtocolObj.b_isDummy
-                    path = fullfile(obj.ProtocolObj.SaveDir, 'PipeLineConfigFiles');
+                if ~obj.b_inputFromDataViewer
+                    path = fullfile(obj.ProtocolSaveFolder, 'PipeLineConfigFiles');
                     [~,~] = mkdir(path);
                 else
-                    path = obj.ProtocolObj.SaveDir;
+                    path = obj.ProtocolSaveFolder;
                 end
             end
             pipeStruct = obj.pipe;
@@ -761,17 +695,8 @@ classdef PipelineManager < handle
             %   pipeline config.
             
             % Read Pipeline Config file:
-            if endsWith(pipeFile, '.json', 'IgnoreCase',true)
-                % For retrocompatibility:
-                txt = fileread(pipeFile);
-                new_pipe = jsondecode(txt);
-                b_isOldFile = true;
-            else
-                % New version:
-                a = load(pipeFile,'-mat');
-                new_pipe = a.pipeStruct;
-                b_isOldFile = false;
-            end
+            a = load(pipeFile,'-mat');
+            new_pipe = a.pipeStruct;
             % Reset current pipeline:
             obj.reset_pipe;
             % Check if all functions listed in "new_pipe" exist:
@@ -781,47 +706,7 @@ classdef PipelineManager < handle
                     'Failed to load pipeline!');
                 waitfor(h);
                 return
-            end
-            %%%----- RETROCOMPATIBILITY SECTION ---------------------------
-            if b_isOldFile
-                stale_fields = setdiff(fieldnames(new_pipe), fieldnames(obj.pipe));
-                missing_fields = setdiff(fieldnames(obj.pipe), fieldnames(new_pipe));
-                if ~isempty(stale_fields) || ~isempty(missing_fields)
-                    w = warndlg('Deprecated pipeline file found. The file will be updated now! A copy with extension".pipe" will be created with the updated version.');
-                    waitfor(w);
-                    
-                    for ii = 1:length(new_pipe)
-                        % Add inputFrom:
-                        if new_pipe(ii).b_save2File
-                            if any(strcmpi(fieldnames(new_pipe),'datFileName'))
-                                state = obj.addTask(new_pipe(ii).name,true,new_pipe(ii).datFileName);
-                            else
-                                state = obj.addTask(new_pipe(ii).name,true,new_pipe(ii).saveFileName);
-                            end
-                        else
-                            state = obj.addTask(new_pipe(ii).name);
-                        end
-                        if ~state
-                            error('Failed to load pipeline!');
-                        end
-                    end
-                    % Update opts fields in the current pipeline:
-                    fn = intersect(fieldnames(new_pipe),{'opts', 'opts_vals','opts_def'});
-                    for i = 1:length(new_pipe)
-                        for k = 1:numel(fn)
-                            obj.pipe(i).(fn{k}) = new_pipe(i).(fn{k});
-                        end
-                        obj.pipe(i).b_paramsSet = true; % Assume that the parameters were already set
-                    end
-                    % Save updated pipeline in new file format and erase old .JSON file:
-                    obj.savePipe(pipeFile);
-                    %                     delete(fullfile(path,[filename '.json']));
-                    obj.validatePipeline;
-                    return
-                end
-                
-            end
-            %%%------------------------------------------------------------
+            end            
             obj.pipe = new_pipe;
             % Update current sequence index:
             obj.current_seq = max([obj.pipe.seq],[],'all');
@@ -835,7 +720,7 @@ classdef PipelineManager < handle
             % property to default parameter values.
             obj.pipe = struct();
             % Reset some properties:
-            if ~obj.ProtocolObj.b_isDummy
+            if ~obj.b_inputFromDataViewer
                 obj.current_data = [];
             end
             obj.current_outFile = {};
@@ -869,7 +754,9 @@ classdef PipelineManager < handle
             obj.validatePipeline(true);
             
             % Create the initial text for the script.
-            txt = sprintf('%%%% Pipeline script.\n%% Script generated by PipelineManager class @ %s\n\n%% clearvars;%% Clear workspace (commented by default)\n%% Here is a summary of the pipeline:\n', datestr(now(), 'HH:MM:ss dd-mm-yyyy'));
+            txt = sprintf(['%%%% Pipeline script.\n%% Script generated by PipelineManager class @'...
+                '%s\n\n%% clearvars;%% Clear workspace (commented by default)\n%%'...
+                'Here is a summary of the pipeline:\n'], datestr(now(), 'HH:MM:ss dd-mm-yyyy'));
             % Add pipeline summary to script docstring:
             summaryTxt = '';
             tmp = obj.showPipeSummary;
@@ -896,12 +783,12 @@ classdef PipelineManager < handle
                 if ~isempty(obj.pipe(ii).inputFileName) && ~strcmpi(obj.pipe(ii).inputFileName, 'data')
                     % If the function requires a file as input, create a loading string.
                     if endsWith(obj.pipe(ii).inputFileName, '.dat')
-                        txt = [txt sprintf('[data, metaData] = loadDatFile(''%s''); %% Load input data\n', obj.pipe(ii).inputFileName)];%#ok
+                        txt = [txt sprintf('[data, metaData] = loadDat(''%s''); %% Load input data\n', obj.pipe(ii).inputFileName)];%#ok
                     else
                         txt = [txt sprintf('data = load(%s); %% Load input data\n', obj.pipe(ii).inputFileName)];%#ok
                     end
                 end
-                                                   
+                
                 % Set input and output argument names.
                 argsIn = obj.pipe(ii).argsIn;
                 argsIn = replace(argsIn, {'RawFolder', 'SaveFolder'}, {'Folder', 'Folder'});
@@ -949,7 +836,7 @@ classdef PipelineManager < handle
                 if obj.pipe(ii).b_save2File
                     % Save data to file.
                     if endsWith(obj.pipe(ii).saveFileName, '.dat')
-                        txt = [txt sprintf('save2Dat(fullfile(Folder, ''%s''), data, metaData); %% Save data to .DAT file "%s" \n', obj.pipe(ii).saveFileName, obj.pipe(ii).saveFileName)];%#ok
+                        txt = [txt sprintf('saveDat(fullfile(Folder, ''%s''), data); %% Save data to .DAT file "%s" \n', obj.pipe(ii).saveFileName, obj.pipe(ii).saveFileName)];%#ok
                     else
                         txt = [txt sprintf('save(fullfile(Folder, %s), ''-struct'', ''data'', ''-v7.3''); %% Save data to .MAT file "%s" \n', obj.pipe(ii).saveFileName, obj.pipe(ii).saveFileName)];%#ok
                     end
@@ -961,7 +848,7 @@ classdef PipelineManager < handle
             % Create a section to delete temporary files created inside the script.
             idx = contains({obj.pipe.saveFileName}, num2str(obj.timeTag));
             if any(idx)
-                % Create deletion section.                
+                % Create deletion section.
                 delStr = sprintf('%%%% Delete temporary files\n%% Delete .dat/mat files created during the execution of this script.\n');
                 delStr  = [delStr sprintf('disp(''Deleting temporary files...'');\n')];
                 fNames = {obj.pipe.saveFileName};
@@ -976,7 +863,7 @@ classdef PipelineManager < handle
                 txt = [txt delStr];
             end
             
-            % Add a closing comment to the script.            
+            % Add a closing comment to the script.
             txt = [txt sprintf('%%%%\ndisp(''Script execution completed!'');\n%%%%%%%%%%%%%%%%%%%%%%%% END OF FILE %%%%%%%%%%%%%%%%%%%%%%%%')];
             
             % Save the generated script text to the specified file.
@@ -997,8 +884,8 @@ classdef PipelineManager < handle
             
             % Open the folder containing the generated script.
             openFolder(folder);
-        end       
-                
+        end
+        
         %%%%%%--Pipeline Visualization  -----------------------------------
         function fH = drawPipe(obj,varargin)
             % DRAWPIPE creates a Directed Acyclic Graph (DAG) representation
@@ -1027,7 +914,7 @@ classdef PipelineManager < handle
             if isempty(pp)
                 return
             end
-            if obj.ProtocolObj.b_isDummy
+            if obj.b_inputFromDataViewer
                 dskName = 'DataViewer';
             else
                 dskName = 'Disk';
@@ -1296,6 +1183,7 @@ classdef PipelineManager < handle
                 btn.Tooltip = obj.genToolTipTxt(obj.pipe(idxFcn));
                 jiggleFig(ancestor(src, 'figure'))
             end
+            
             function jiggleFig(figH)
                 % For some reason, the tooltip doesn't update until we
                 % resize the figure...
@@ -1311,7 +1199,7 @@ classdef PipelineManager < handle
         function loadDataFromDummyProtocol(obj,data,filename,dataInfo)
             % This methods imports the imaging data from DataViewer to this
             % class.
-            if ~obj.ProtocolObj.b_isDummy
+            if ~obj.b_inputFromDataViewer
                 % Exclusive to "dummy" protocol instance.
                 return
             end
@@ -1354,12 +1242,9 @@ classdef PipelineManager < handle
             load(fullfile(folder,'dataHistory.mat'));%#ok
             % Check if all files listed in dataHistory still exist in the
             % saveFolder:
-            datList = dir(fullfile(folder,'*.dat'));
-            %% MAT LIST FILTERING TBD!
-            %            matList = dir(fullfile(obj.tmp_TargetObj.SaveFolder,'*.mat'));
-            %%
-            % Remove missing files from dataHistory:
-            dataHistory(~ismember({dataHistory.filename}, {datList.name})) = [];
+            fileList = getFileList(folder,'all');            
+            % Clean-up! Remove missing files from dataHistory:
+            dataHistory(~ismember({dataHistory.filename}, fileList)) = [];
             if isempty(dataHistory)
                 delete(fullfile(folder,'dataHistory.mat'));
             else
@@ -1384,7 +1269,7 @@ classdef PipelineManager < handle
                 return
             end
             % Reload dataHistory to ensure that the local one is
-            % up-to-date:
+            % up-to-date (dataHistory clean-up):
             obj.dataHistory = obj.loadDataHistory(SaveFolder);
             
             % Append info to existing data history file:
@@ -1405,38 +1290,70 @@ classdef PipelineManager < handle
     
     methods (Access = private)
         
+        function saveFolderLog(obj,SaveFolder)
+            % SAVEFOLDERLOG saves the obj.folderLog table to the
+            % "pipeLog.mat" file in the "SaveFolder".
+            % This function checks for the height limit of the table and
+            % up to "maxLogRows" and removes older entries before saving.
+            
+            if height(obj.folderLog) > obj.maxLogRows
+                % Remove older entries if log exceeds maximum number of
+                % rows (oler entries are on top).
+                obj.folderLog(1:height(obj.folderLog) - obj.maxLogRows,:) = [];
+            end
+            % Save Folder log:
+            pipeLog = obj.folderLog;
+            save(fullfile(SaveFolder,'pipeLog.mat'),'pipeLog');
+        end
+        
+        function loadFolderLog(obj,SaveFolder)
+            % LOADFOLDERLOG loads the log table from the SaveFolder in the
+            % obj.folderLog property.
+            
+            if ~isfile(fullfile(SaveFolder,'pipeLog.mat'))
+                obj.folderLog = table();
+                return
+            end
+            load(fullfile(SaveFolder,'pipeLog.mat'));%#ok
+            obj.folderLog =  pipeLog;
+        end
+        
+        function updateFolderLog(obj,task,runDateTime,b_completed,errMsg)
+            % UPDATEFOLDERLOG creates/appends task entries in the
+            % folderLog and PipelineSummary tables.
+                        
+            if isa(errMsg,'MException')
+                MessageLong = getReport(errMsg,'extended','hyperlinks','off');
+                MessageShort = getReport(errMsg,'basic','hyperlinks','off');
+            elseif isempty(errMsg)
+                MessageLong = 'No Errors';MessageShort = 'No Errors';
+            else
+                MessageLong = errMsg; MessageShort = errMsg;
+            end
+            thisLog = table({task.name},{task.inputFileName},{task.saveFileName}, b_completed, runDateTime,{MessageShort},{MessageLong},...
+                'VariableNames', {'TaskName','InputFile','OutputFile', 'Completed', 'RunDateTime', 'Messages_short','Messages'});          
+            % Update Pipeline summary table:
+            obj.PipelineSummary = [obj.PipelineSummary; thisLog];
+            % Update folder log:
+            obj.folderLog = [obj.folderLog; thisLog];
+        end
+        
         function run_taskOnTarget(obj, task)
             % RUN_TASKONTARGET runs a task in the pipeline structure array in
             % TASK.
             % Input
             %   task(struct): current step from "obj.pipe".
             
-            % Initialize empty Log for current object:
-            LastLog = obj.ProtocolObj.createEmptyTable;
-            % Fill out Log with Subject/Acquisition/Modality IDs :
-            LastLog(:,1:3) = strsplit(obj.targetObjFullID, ' -- ');
-            % Add class name to table:
-            LastLog(:,4) = {obj.ClassName};
-            LastLog(:,5) = {task.name};
-            %%%
             % Create function string and update log table:
             funcStr = createFcnString(obj, task);
-            LastLog.Job = {funcStr};
-            % Add full path of input file, if applicable:
-            b_hasInputFile = false;
-            if ( ~isempty(task.inputFileName) && ~strcmpi(task.inputFileName,'data') ) && task.inputFrom ~= -1
-                b_hasInputFile = true;
-                LastLog.InputFile_Path = fullfile(obj.tmp_TargetObj.SaveFolder, task.inputFileName);
-            elseif strcmpi(task.inputFileName,'data') | task.inputFrom <= 0
-                % Do nothing
-            end
+            Messages = '';
             %  Execute the task:
             try
                 % Control for missing input files:
-                if b_hasInputFile
+                if (~isempty(task.inputFileName) && ~strcmpi(task.inputFileName,'data') ) && task.inputFrom ~= -1
                     errID = 'MATLAB:Umitoolbox:PipelineManager:FileNotFound';
                     errmsg = ['Input File for function ' task.name ' not found!'];
-                    assert(isfile(fullfile(obj.tmp_TargetObj.SaveFolder, task.inputFileName)),...
+                    assert(isfile(fullfile(obj.current_saveFolder, task.inputFileName)),...
                         errID,errmsg);
                     obj.loadInputFile(task);
                 end
@@ -1447,14 +1364,12 @@ classdef PipelineManager < handle
                 eval(funcStr);
                 % Update log table and tell other methods that the function
                 % was successfully run:
-                obj.b_state = true;
-                LastLog.Messages = 'No Errors';
+                obj.b_state = true;                
                 % Update data history of current data with task:
                 obj.updateStepInfo(task);
             catch ME
                 obj.b_state = false;
-                LastLog.Messages = {getReport(ME,'extended', 'hyperlinks','off')};
-                LastLog.Messages_short = {getReport(ME, 'basic','hyperlinks','off')};
+                Messages = ME;
                 disp('FAILED!');
             end
             % Save data to file:
@@ -1465,34 +1380,9 @@ classdef PipelineManager < handle
             elseif obj.b_saveDataBeforeFail && ~obj.b_state
                 obj.saveDataToFile(task,true);
             end
+            % Update log table of current folder:
+            obj.updateFolderLog(task,datetime('now'),obj.b_state,Messages);
             
-            LastLog.Completed = obj.b_state;
-            LastLog.RunDateTime = datetime('now');
-            % Remove "empty" rows from LastLog:
-            idx_emptyRow = all(strcmp('None',table2cell(LastLog(:,1:5))),2);
-            LastLog(idx_emptyRow,:) = [];
-            % Update log table of target object:
-            obj.updateTargetObjLog(LastLog);
-            % Update Pipeline summary table:
-            obj.PipelineSummary = [obj.PipelineSummary; LastLog];
-        end
-        
-        function getTargetObj(obj,targetIdx)
-            % GETTARGETOBJ finds the object TARGETOBJ indicated by the
-            % index TARGETIDX inside PROTOCOL.
-            
-            tgtSz = size(targetIdx,2);
-            switch tgtSz
-                case 1
-                    targetObj = obj.ProtocolObj.Array.ObjList(targetIdx);
-                case 2
-                    targetObj = obj.ProtocolObj.Array.ObjList(targetIdx(1)).Array.ObjList(targetIdx(2));
-                case 3
-                    targetObj = obj.ProtocolObj.Array.ObjList(targetIdx(1)).Array.ObjList(targetIdx(2)).Array.ObjList(targetIdx(3));
-            end
-            obj.tmp_TargetObj = targetObj;
-            % Update dataHistory structure:
-            obj.dataHistory = obj.loadDataHistory(obj.tmp_TargetObj.SaveFolder);
         end
         
         function [newSeq,skippedSteps, selFile] = skipSteps(obj,thisSeq)
@@ -1506,26 +1396,22 @@ classdef PipelineManager < handle
             %    4- No intermediate steps from the file is used as input to
             %    other sequences
             %    Inputs:
-            %        thisSeq (struct): current sequence of the pipeline.         
+            %        thisSeq (struct): current sequence of the pipeline.
             %    Outputs:
             %        newSeq (struct): updated sequence without the redundant
             %            steps.
             %        skippedSteps (cell): list of skipped function names from
             %            "thisSeq".
-           
-            if obj.ProtocolObj.b_isDummy && ~isempty(obj.current_info)
+            
+            if obj.b_inputFromDataViewer && ~isempty(obj.current_info)
                 % For DataViewer, also, look at the dataHistory of the
                 % current data.
                 % Temporarily add the dataHistory of the data in RAM to the
                 % "dataHistory" property. This will be removed at the end
                 % of this function.
-                if isempty(obj.dataHistory)
-                    obj.dataHistory =  struct('filename','self','info',obj.current_info);
-                else                    
-                    obj.dataHistory(end+1) = struct('filename','self','info',obj.current_info);
-                end
+                obj.dataHistory =  [obj.dataHistory; struct('filename','self','info',obj.current_info)];
             end
-
+            
             newSeq = thisSeq;
             skippedSteps = {};
             newSeqArr = cell(size(obj.dataHistory));
@@ -1561,7 +1447,7 @@ classdef PipelineManager < handle
                     thisSeq(ii).inputFileName = selFile;
                     obj.loadInputFile(thisSeq(ii));% Load step;
                 end
-                if ~isempty(thisSeq(ii).saveFileName) && ~strcmpi(thisSeq(ii).saveFileName,selFile) && ~obj.ProtocolObj.b_isDummy
+                if ~isempty(thisSeq(ii).saveFileName) && ~strcmpi(thisSeq(ii).saveFileName,selFile) && ~obj.b_inputFromDataViewer
                     obj.saveDataToFile(thisSeq(ii),false)
                 end
                 newSeq = {}; skippedSteps = skippedStepsArr{indxSkip};
@@ -1592,7 +1478,7 @@ classdef PipelineManager < handle
             end
             % Remove "self" entry from dataHistory:
             idxSelf = strcmp({obj.dataHistory.filename},'self');
-            obj.dataHistory(idxSelf) = [];            
+            obj.dataHistory(idxSelf) = [];
             %%%%%--Local function ------------------------------------------
             function [outSeq,skipNames] = compareDataHistory(obj,seqIn, dhIn)
                 % COMPAREDATAHISTORY compares the dataHistory of "fileIn"
@@ -1602,7 +1488,7 @@ classdef PipelineManager < handle
                 
                 outSeq = seqIn;
                 skipNames = {};
-                              
+                
                 % Compare datetimes:
                 [~,locB] = ismember({dhIn.info.name},{obj.funcList.name});
                 locB(locB == 0) = []; % Remove non-existent functions.
@@ -1610,7 +1496,7 @@ classdef PipelineManager < handle
                     % If none of the functions exist, abort.
                     return
                 end
-                                
+                
                 % Compare function names and optional parameters:
                 thisHistory = struct();
                 for jj = 1:length(seqIn)
@@ -1625,15 +1511,13 @@ classdef PipelineManager < handle
                 if any(idxFromDisk > 0)
                     idxFrom = idxFromDisk;
                     % Load the input file dataHistory:
-                    [~,inputFile,ext] = fileparts(seqIn(idxFromDisk).inputFileName);
-                    
+                    [~,inputFile,ext] = fileparts(seqIn(idxFromDisk).inputFileName);                    
                     idxFile = strcmp({obj.dataHistory.filename},[inputFile,ext]);
                     if any(idxFile)
                         ppInfo = obj.dataHistory(idxFile).info;
                     end
                 elseif  any(idxFromDataViewer > 0) && ~isempty(obj.current_info)
-                    idxFrom = idxFromDataViewer;
-                    
+                    idxFrom = idxFromDataViewer;                    
                     ppInfo = obj.current_info;
                 end
                 
@@ -1828,16 +1712,11 @@ classdef PipelineManager < handle
             % files, it will show the possible outputs from the given
             % function. However, if the "inputFrom" is "_LOCAL_", the
             % prompt will show a list of existing files from the first
-            % element in "protocol".
+            % element in the saveFolderList.
             % Input:
-            %   source (char | int): function name from "pipe" propery or
-            %   "_LOCAL_".
+            %   source (int): index of function from "pipe" or 0 for "_LOCAL_".
             filename = '';
-            
-            %%% DEBUGGING
-            if ischar(source)
-                return
-            end
+                       
             % For functions as "source":
             if source ~=0
                 % Get source function info:
@@ -1874,12 +1753,10 @@ classdef PipelineManager < handle
                     filename = funcInfo.outFileName{indxFile};
                 end
             else
-                % For "_LOCAL_" source, look inside the folder of the first
-                % element from "protocol" and display the .dat and .mat
-                % files:
-                item = obj.ProtocolObj.extractFilteredObjects(obj.ClassLevel); item = item{1};
-                % Create list of .dat and .mat files:
-                fileList = getFileList(item.SaveFolder, 'all');
+                % For "_LOCAL_" source, display the .dat files from the
+                % first item of the SaveFolderList:                                
+                fileList = getFileList(obj.SaveFolderList{1},'dat');
+                               
                 % If not files exist in the item's save folder, raise a
                 % warning and abort:
                 if isempty(fileList)
@@ -1945,8 +1822,8 @@ classdef PipelineManager < handle
                 out = parseFuncFile(list(i));
                 % Validate if all input arguments from the function are
                 % "valid" inputs keywords:
-                kwrds_args = {'data', 'metaData', 'SaveFolder', 'RawFolder', 'opts', 'object'};
-                kwrds_out = {'outFile', 'outData', 'metaData'};
+                kwrds_args = {'data', 'SaveFolder', 'RawFolder', 'opts'};
+                kwrds_out = {'outFile', 'outData'};
                 if all(ismember(out.argsIn, kwrds_args)) && all(ismember(out.argsOut, kwrds_out))
                     [~,list(i).name, ~] = fileparts(list(i).name);
                     list(i).info = out;
@@ -2047,19 +1924,12 @@ classdef PipelineManager < handle
             
             % Create analysis function string:
             fcnStr = '';
-            % Replace input argument names:
-            if isprop(obj.tmp_TargetObj, 'RawFolder')
-                argsIn = replace(task.argsIn, ["RawFolder", "SaveFolder", "data","metaData", "object"],...
-                    {['''' obj.tmp_TargetObj.RawFolder ''''],['''' obj.tmp_TargetObj.SaveFolder ''''], 'obj.current_data',...
-                    'obj.current_metaData', 'obj.tmp_TargetObj'});
-            else
-                argsIn = replace(task.argsIn, [ "SaveFolder", "data","metaData", "object"],...
-                    {['''' obj.tmp_TargetObj.SaveFolder ''''], 'obj.current_data',...
-                    'obj.current_metaData', 'obj.tmp_TargetObj'});
-            end
             
-            argsOut = replace(task.argsOut, ["outData", "metaData","outFile"],...
-                {'obj.current_data', 'obj.current_metaData', 'obj.current_outFile'});
+            argsIn = replace(task.argsIn, ["RawFolder", "SaveFolder", "data"],...
+                {['''' obj.current_rawFolder ''''],['''' obj.current_saveFolder ''''],...
+                'obj.current_data'});
+            argsOut = replace(task.argsOut, ["outData", "outFile"],...
+                {'obj.current_data', 'obj.current_outFile'});
             if isempty(argsOut)
                 fcnStr = [fcnStr ';' task.name '(' strjoin(argsIn,',') ');'];
             else
@@ -2071,7 +1941,7 @@ classdef PipelineManager < handle
         
         function updateStepInfo(obj,step)
             % This function creates or  updates the "current_info" structure
-            % 
+            %
             % The dataHistory contains all information about the functions'
             % parameters used to create the current "data" and when it was run.
             %
@@ -2092,15 +1962,15 @@ classdef PipelineManager < handle
                 % In case the step ouput is a .DAT or .MAT file, update the
                 % dataHistory for each one:
                 for jj = 1:length(obj.current_outFile)
-                    obj.saveDataHistory(obj.tmp_TargetObj.SaveFolder,obj.current_outFile{jj});                     
-                end            
+                    obj.saveDataHistory(obj.current_saveFolder,obj.current_outFile{jj});
+                end
             end
         end
         
         function out = getStepInfo(~,fcnInfo, optsStruct, inputFileName, outFileName)
             % This function creates a structure containing information about an
             % analysis function.
-                       
+            
             % Inputs:
             %   fcnInfo (struct): structure containing the function's basic informations with
             %       fields:
@@ -2123,23 +1993,7 @@ classdef PipelineManager < handle
                 datetime(fcnInfo.datenum, 'ConvertFrom', 'datenum'),...
                 'opts', optsStruct, 'inputFileName',inputFileName, 'outFileName',outFileName);
         end
-                
-        function updateTargetObjLog(obj, LastLog)
-            % UPDTETARGETOBJLOG appends the Log of the current pipeline to
-            % the object's "LastLog" property up to 500 rows. When the 500
-            % rows are filled, each row added removes the last row.
-            
-            if height(obj.tmp_TargetObj.LastLog) + height(LastLog) < 500
-                obj.tmp_TargetObj.LastLog = [obj.tmp_TargetObj.LastLog; LastLog];
-                return
-            end
-            
-            % For each new row, remove one from the object's "LastLog"
-            % table:
-            obj.tmp_TargetObj.LastLog = [obj.tmp_TargetObj.LastLog; LastLog];
-            obj.tmp_TargetObj.LastLog(1:height(obj.tmp_TargetObj.LastLog)-500,:) = [];
-        end
-        
+              
         function loadInputFile(obj,step)
             % This function loads the data and metaData (if applicable)
             % from a .DAT or .MAT file indicated by the inputFileName field
@@ -2153,22 +2007,24 @@ classdef PipelineManager < handle
             
             if endsWith(step.inputFileName, '.dat')
                 %If the InputFile is a .DAT file:
-                obj.current_data = loadDat(fullfile(obj.tmp_TargetObj.SaveFolder, step.inputFileName));
+                obj.current_data = loadDat(fullfile(obj.current_saveFolder, step.inputFileName));
             else
                 % If the InputFile is a .MAT file
-                obj.current_data = load(fullfile(obj.tmp_TargetObj.SaveFolder,...
-                    step.inputFileName));               
+                obj.current_data = load(fullfile(obj.current_saveFolder,...
+                    step.inputFileName));
             end
+            
+            obj.current_info = [];
+            
             % Update Data History file handle:
-            obj.dataHistory = obj.loadDataHistory(obj.tmp_TargetObj);
-            if ~isempty(obj.dataHistory)                
+            obj.dataHistory = obj.loadDataHistory(obj.current_saveFolder);
+            if ~isempty(obj.dataHistory)
                 % Update current info:
                 idxFile = strcmp({obj.dataHistory.filename},step.inputFileName);
-                obj.current_info = obj.dataHistory(idxFile).info;
-            else
-                % If there is no dataHistory in the SaveFolder:                
-                obj.current_info = [];
-            end                        
+                if any(idxFile)
+                    obj.current_info = obj.dataHistory(idxFile).info;
+                end
+            end
         end
         
         function saveDataToFile(obj,step,b_failed)
@@ -2207,9 +2063,10 @@ classdef PipelineManager < handle
             end
             % Change save file name if the user decides not to overwrite
             % the data:
-            [~,name, ext] = fileparts(obj.pipe(ii).saveFileName);
+            saveFileName = obj.pipe(ii).saveFileName;
             if ~obj.b_overwriteFiles
-                fList = getFileList(obj.tmp_TargetObj.SaveFolder,ext);
+                [~,name, ext] = fileparts(saveFileName);
+                fList = getFileList(obj.current_saveFolder,ext);
                 cnt = 2;
                 newName = name;
                 while 1
@@ -2222,42 +2079,47 @@ classdef PipelineManager < handle
                 end
                 % Save new filename to pipeline:
                 saveFileName = [newName ext];
-            else
-                saveFileName = obj.pipe(ii).saveFileName;
             end
             
-            % If the pipeline failed, and the previous step was a function with data output,
-            % use the default file name to save the data:
-            if b_failed && isempty(obj.pipe(ii).saveFileName) && ischar(obj.pipe(ii).outFileName)
-                saveFileName = [name '_recovered' ext]; % string to append to files saved before an error.;
-            elseif b_failed && contains(obj.pipe(ii).saveFileName, obj.timeTag,'IgnoreCase',true)
-                % If the previous step already saved a temporary file, just
-                % rename it.
-                movefile(fullfile(obj.tmp_TargetObj.SaveFolder,obj.pipe(ii).saveFileName),...
-                    fullfile(obj.tmp_TargetObj.SaveFolder,saveFailStr));
-                return
+            if b_failed
+                if isempty(obj.pipe(ii).saveFileName) && ischar(obj.pipe(ii).outFileName)
+                    % If the previous step was a function with data output,
+                    % use the default file name to save the data:
+                    [~,name,ext] = fileparts(obj.pipe(ii).outFileName);
+                    saveFileName = [name '_recovered' ext]; % string to append to files saved before an error.
+                elseif contains(obj.pipe(ii).saveFileName, obj.timeTag,'IgnoreCase',true)
+                    % If the previous step already saved a temporary file, just
+                    % rename it.
+                    saveFileName = replace(obj.pipe(ii).saveFileName,obj.timeTag,'_recovered');
+                    movefile(fullfile(obj.current_saveFolder,obj.pipe(ii).saveFileName),...
+                        fullfile(obj.current_saveFolder,saveFileName));
+                    % Save data history:
+                    obj.saveDataHistory(obj.current_saveFolder,saveFileName);
+                    return
+                end
             end
-            % Save data to file:
-            if strcmpi(ext, '.dat')
+            
+            % Save current data to file:
+            if endsWith(saveFileName,'.dat')
                 % For .dat files:
-                saveDat(fullfile(obj.tmp_TargetObj.SaveFolder,saveFileName),...
-                    obj.current_data);                                
+                saveDat(fullfile(obj.current_saveFolder,saveFileName),...
+                    obj.current_data);
             else
                 % For .mat files:
                 disp('Writing data to .MAT file ...')
                 S = obj.current_data;
-                save(fullfile(obj.tmp_TargetObj.SaveFolder,saveFileName),...
+                save(fullfile(obj.current_saveFolder,saveFileName),...
                     '-struct', 'S', '-v7.3');
-                disp(['Data saved in : "' fullfile(obj.tmp_TargetObj.SaveFolder,saveFileName) '"'])
+                disp(['Data saved in : "' fullfile(obj.current_saveFolder,saveFileName) '"'])
             end
             % Save data history:
-            obj.saveDataHistory(obj.tmp_TargetObj.SaveFolder,saveFileName);
+            obj.saveDataHistory(obj.current_saveFolder,saveFileName);
         end
         
         function deleteTemporaryFiles(obj,folder)
             % DELETETEMPORARYFILES removes .dat and .mat files from
             % "folder" that were automatically generated during the
-            % pipeline due to the existance of branches. The files to be
+            % pipeline due to the existence of branches. The files to be
             % deleted are appended with the "timeTag" of the current
             % pipeline.
             
@@ -2308,11 +2170,11 @@ classdef PipelineManager < handle
                 str = [str, sprintf('Error Message:\n""\n%s\n""\n%s\n', msg,repmat('-',1,60))];%#ok
             end
             % Save to .txt file:
-            if obj.ProtocolObj.b_isDummy
+            if obj.b_inputFromDataViewer
                 % For DataViewer:
-                folder = obj.ProtocolObj.SaveDir;
+                folder = obj.ProtocolSaveFolder;
             else
-                folder = fullfile(obj.ProtocolObj.SaveDir,'PipelineErrorLogs');
+                folder = fullfile(obj.ProtocolSaveFolder,'PipelineErrorLogs');
             end
             if ~exist(folder,'dir')
                 mkdir(folder);
@@ -2322,7 +2184,7 @@ classdef PipelineManager < handle
             fprintf(fid,'%s',str);
             fclose(fid);
             % Open system's file explorer:
-            openFolder(folder);            
+            openFolder(folder);
         end
         %%%%%%-- WAITBAR methods-------------------------------------------
         function setWaitBar(obj,tag,varargin)
@@ -2371,7 +2233,7 @@ classdef PipelineManager < handle
                 case 'UpdateItem'
                     waitbar(barVal/totalBarVal, obj.h_wbItem, ['Item ' num2str(barVal)...
                         '/' num2str(totalBarVal)]);
-                    obj.h_wbTask.Name = obj.targetObjFullID;
+                    obj.h_wbTask.Name = obj.current_saveFolder;
                 case 'UpdateTask'
                     waitbar(barVal, obj.h_wbTask, ['Running "' taskName '"']);
             end
