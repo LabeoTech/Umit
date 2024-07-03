@@ -36,9 +36,7 @@ function ImagesClassification(DataFolder, SaveFolder, BinningSpatial, BinningTem
 %        - '' (empty string, default) : a dialog box will be presented to the User to ask what
 %           to do with existing files.
 %        - 'ERASE': All data from the SaveFolder are ERASED and no backup is done.
-%        - 'AUTO': Lets the function create a subfolder with name "bkp_yyyymmddHHMMss"
-%        - '<FOLDERNAME>': Type the name of the subfolder where to move the existing data before erasing
-%            them from the SaveFolder.
+%        - 'GENBACKUP': Lets the function create a subfolder with name "bkp_yyyymmddHHMMss"
 %       See examples below:
 %
 %         % Example 1: Using the default backup folder value ('')
@@ -50,14 +48,9 @@ function ImagesClassification(DataFolder, SaveFolder, BinningSpatial, BinningTem
 %         This will erase all existing data from the source folder without creating a backup.
 %
 %         % Example 3: Automatic backup folder creation
-%         ImagesClassification(DataFolder,SaveFolder,BinningSpatial, BinningTemp,b_SubROI,'backupOpts','AUTO');
+%         ImagesClassification(DataFolder,SaveFolder,BinningSpatial, BinningTemp,b_SubROI,'backupOpts','GENBACKUP');
 %         The function will create a subfolder with a name like "bkp_yyyymmddHHMMss" and move existing data there.
-%
-%         % Example 4: Specifying a custom backup folder
-%         custom_folder = 'myBackupData';
-%         ImagesClassification(DataFolder,SaveFolder,BinningSpatial, BinningTemp,b_SubROI,'backupOpts',custom_folder);
-%         The function will move existing data to the specified custom backup folder.
-%
+%        
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Argument parsing:
@@ -128,7 +121,7 @@ if ~isempty(movFiles)
                 return
         end
         
-    elseif strcmpi(backupOpts,'auto')
+    elseif strcmpi(backupOpts,'GENBACKUP')
         % Auto name:
         backupOpts = ['bkp_' datestr(now(),'yyyymmddHHMMSS')];
     end

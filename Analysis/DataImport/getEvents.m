@@ -43,7 +43,7 @@ if strcmpi(opts.ConditionFileName, 'auto')
 end
 
 % Instantiate EventsManager class:
-evObj = EventsManager(RawFolder,opts.ConditionFileType);
+evObj = EventsManager(SaveFolder,RawFolder,opts.ConditionFileType);
 for ii = 1:length(opts.StimChannel)
     % Update internal channel names. These may change depending on the OiS
     % acquisition software version.

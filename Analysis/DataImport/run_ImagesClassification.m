@@ -6,8 +6,8 @@ function outFile = run_ImagesClassification(RawFolder, SaveFolder, varargin)
 
 % Defaults:
 default_Output = {'fluo_475.dat', 'fluo_567.dat','fluo.dat', 'red.dat', 'green.dat', 'yellow.dat', 'speckle.dat'}; % This is here only as a reference for PIPELINEMANAGER.m. The real outputs will be stored in OUTFILE.
-default_opts = struct('BinningSpatial', 1, 'BinningTemp', 1);
-opts_values = struct('BinningSpatial', 2.^[0:4], 'BinningTemp',2.^[0:4]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
+default_opts = struct('BinningSpatial', 1, 'BinningTemp', 1,'BackupOption','Erase');
+opts_values = struct('BinningSpatial', 2.^[0:4], 'BinningTemp',2.^[0:4],'BackupOption',{{'Erase','genBackup'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 % Arguments validation:
 p = inputParser;
 addRequired(p, 'RawFolder', @isfolder);
