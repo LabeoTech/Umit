@@ -157,10 +157,7 @@ classdef Protocol < handle
             %   msg (char): If "b_verbose" is TRUE, contains a text with
             %       total number of new/missing items in "protocol".
             
-            iNewSubj = {};
-            iMissSubj = {};
-            iNewAcq = {};
-            iMissAcq = {}; 
+
              
             idxStruc = struct('iNewSubj',{},'iMissSubj', {}, 'iNewAcq', {},'iMissAcq',{});            
             objArray = obj.ProtoFunc(obj);
@@ -171,7 +168,9 @@ classdef Protocol < handle
                 
             % Delete objects listed in OBJ.GARBAGELIST from NEWARRAY
             objArray = obj.removeGarbage(objArray);
-            
+            % Set New and Missing Acquisition Arrays:
+            iNewAcq = arrayfun(@(x) false(1,length(x.Array.ObjList)),objArray,'UniformOutput',false);
+            iMissAcq = arrayfun(@(x) false(1,length(x.Array.ObjList)),obj.Array.ObjList,'UniformOutput',false);
             % 1st, control for new or deleted Subjects:
             iNewSubj = ~ismember({objArray.ID}, {obj.Array.ObjList.ID}); % New subjects in the newArray.
             iMissSubj = ~ismember({obj.Array.ObjList.ID},{objArray.ID});% Subjects from original list that are no longer in the newArray.
@@ -182,16 +181,16 @@ classdef Protocol < handle
                 % Locate the sujects from "newArray" in "obj":
                 [~,indObj] = ismember({objArray(indNwArr).ID},{obj.Array.ObjList.ID});
                 % Get new Acquisitions from existing Subjects:
-                iNewAcq = arrayfun(@(a,b) ~ismember({a.Array.ObjList.ID}, {b.Array.ObjList.ID}),...
+                iNewAcq(indNwArr) = arrayfun(@(a,b) ~ismember({a.Array.ObjList.ID}, {b.Array.ObjList.ID}),...
                     objArray(indNwArr), obj.Array.ObjList(indObj), 'UniformOutput', false);
                 % Get missing Acquisitions from existing Subjects:
-                iMissAcq = arrayfun(@(a,b) ~ismember({b.Array.ObjList.ID}, {a.Array.ObjList.ID}),...
+                iMissAcq(indObj) = arrayfun(@(a,b) ~ismember({b.Array.ObjList.ID}, {a.Array.ObjList.ID}),...
                     objArray(indNwArr), obj.Array.ObjList(indObj), 'UniformOutput', false);
                 % Exclude "virtual" acquisitions from the missing list:
                 indSubj = find(cellfun(@any, iMissAcq));
                 for ii = 1:length(indSubj)
                     % REMOVE virtual ACQS:
-                    iMissAcq{indSubj(ii)} = iMissAcq{indSubj(ii)} & ~[obj.Array.ObjList(indObj(indSubj(ii))).Array.ObjList.b_isVirtual];
+                    iMissAcq{indSubj(ii)} = iMissAcq{indSubj(ii)} & ~[obj.Array.ObjList(indSubj(ii)).Array.ObjList.b_isVirtual];
                 end
             end
             % Create message with total number of new/missing items:
@@ -237,7 +236,7 @@ classdef Protocol < handle
             for ii = 1:length(indSubj)
                 indAcq = find(idxInfo.iNewAcq{indSubj(ii)});
                 % Find subject in "protocol":
-                currSubj = obj.Array.ObjList(strcmpi(newArray(indSubj(ii)).ID, {obj.Array.ObjList.ID}));
+                currSubj = obj.Array.ObjList(strcmp(newArray(indSubj(ii)).ID, {obj.Array.ObjList.ID}));
                 % Add new acquisition(s) to the existing Subject:
                 arrayfun(@(x) currSubj.Array.addObj(x.Array.ObjList(indAcq)), ...
                     newArray(indSubj(ii)));%#ok
@@ -434,9 +433,9 @@ classdef Protocol < handle
                         end
                         subjID = str{end-1};
                         idxS = strcmp(subjID, {newObj.ID});
-                        if isempty(idxS)
+                        if ~any(idxS)
                             continue
-                        end
+                        end                        
                         idxAcq = strcmp(gbList(i,2), {newObj(idxS).Array.ObjList.ID});
                         newObj(idxS).Array.ObjList(idxAcq) = [];
                 end
