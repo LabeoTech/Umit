@@ -9,13 +9,13 @@ function out = ReadInfoFile(FolderPath, varargin)
 
 % Read the info.txt file:
 if nargin == 1
-    txt = readcell(fullfile(FolderPath, 'info.txt'), 'Delimiter', ':', 'NumHeaderLines',1);
+    txt = readcell(fullfile(FolderPath, 'info.txt'), 'Delimiter', ':', 'NumHeaderLines',1,'DatetimeType','text');
 else
     [~,infoFile,ext] = fileparts(varargin{:});
     if isempty(ext)
         ext = '.txt';
     end        
-    txt = readcell(fullfile(FolderPath, [infoFile, ext]), 'Delimiter', ':', 'NumHeaderLines',1);
+    txt = readcell(fullfile(FolderPath, [infoFile, ext]), 'Delimiter', ':', 'NumHeaderLines',1,'DatetimeType','text');
 end
     
 % Rebuild strings that were split by the delimiter:
