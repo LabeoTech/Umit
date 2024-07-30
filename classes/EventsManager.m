@@ -789,38 +789,37 @@ classdef EventsManager < handle
         %%%%% Event File parsers %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function [eventID, eventNameList] = readCSVfile(obj, colName)
             % READCSVFILE reads a .CSV file. If no column name is provided,
-            % it reads the content of the first column and considers it
-            % without header. If one column name is provided, it reads the
+            % it reads the content of the first column.
+            % If one column name is provided, it reads the
             % rows of the given column. If 2 or more column names are
             % provided, the values of the column names are concatenated
             % with a hiphen ("-").
             % Input:
-            %    colName(optional, char|cell): column name(s) to be read
+            %    colName(char|cell): column name(s) to be read
             %    from the CSV file.
             % Outputs:
             %    eventID (num vect.): list of indices of the events listed
             %    in "eventNameList".
             %    eventNameList (cell): list of event names in alphabetical
             %    order.
+            
             % Set CSV reading rules:
             opts = detectImportOptions(obj.EventFileName);
-            if ~exist('colName','var') || isempty(colName)
-                colName = {''};
-            elseif ischar(colName)
-                colName = {colName};
-            end
-            
-            if ~isempty([colName{:}])
-                opts.SelectedVariableNames = colName; % Select the input columns only.
-            elseif isempty([colName{:}]) && opts.DataLines(1)>1
-                colName = opts.VariableNames; % USe all columns
-            else
-                colName = {''}; % USe columns without headers.
-            end
-            %             opts.DataLines = 2; %Start reading at 2nd row.
+            opts.DataLines = 2; % Start reading at 2nd row. We assume that there is ALWAYS a header!
             opts.VariableTypes = repmat({'char'},size(opts.VariableTypes)); % Force data to characters.
             opts.MissingRule = 'omitrow'; % Remove rows with missing values.
             opts.ExtraColumnsRule = 'ignore'; % Ignore empty columns.
+            
+            % Select columns:
+            if isempty([colName{:}])
+                % If no column name is provided, select the first one:
+                opts.SelectedVariableNames = opts.VariableNames(1);
+            else
+                % Read columns selected by the User
+                opts.SelectedVariableNames = colName;
+            end
+            % Erase column name, if there is only one:
+            if numel(colName) == 1; colName = {''};end
             % Read .CSV file:
             out = table2cell(readtable(obj.EventFileName,opts));
             % Merge multiple columns into a single one:
