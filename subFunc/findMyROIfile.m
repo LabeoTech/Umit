@@ -9,7 +9,8 @@ function out = findMyROIfile(filename,source)
 %   out (str): full path to the ROI file.
 
 % % Append extension to filename, if not already provided:
-[~,filename,ext] = fileparts(filename);
+[folder,filename,ext] = fileparts(filename);
+if isempty(folder);folder = pwd;end
 filename = [filename ext];
 % Get protocol handle:
 protObj = source;
