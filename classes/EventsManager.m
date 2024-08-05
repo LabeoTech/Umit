@@ -126,15 +126,22 @@ classdef EventsManager < handle
         
         function setTrialInterval(obj,preEventTime, postEventTime)
             % Sets the trialInterval property with the beginning and end times (in seconds) for trial splitting.
+            %
             % Parameters:
-            %   preEventTime - The time period before the event onset (default: 20%  of the inter-trial length).
-            %   postEventTime - The time period after the event onset (default: 80% of the inter-trial length + the trial length).
-            %   Note: Here, "trial length" refers to the largest time period with the trigger at HIGH state (i.e. onset to offset time
-            %   period).
+            %   preEventTime - The time period before the event onset. If not provided, defaults to 20% of the total trial length.
+            %   postEventTime - The time period after the event onset. If not provided, defaults to the remainder of the total trial length.
+            %
+            % Example:
+            %   obj.setTrialInterval(); % Uses default values
+            %   obj.setTrialInterval(5, 15); % Manually sets pre and postEvent times.
+            %   obj.setTrialInterval(2) % Sets the preEventTime to 2s and
+            %       use the remainder of the total trial length as the
+            %       postEvent time.
+            
             assert(~isempty(obj.state), 'Failed to set trial interval! No triggers detected yet!')
             tmOn = obj.timestamps(obj.state);
             tmOff = obj.timestamps(~obj.state);
-            trialLength = max(tmOff - tmOn);
+            trialLength = max(tmOff - tmOn);            
             % Calculate the trial length for automatic set of trial interval :
             if sum(obj.state) == 1
                 % For a single trial, set the inter trial length as the
@@ -145,19 +152,17 @@ classdef EventsManager < handle
                 % onsets.
                 interTrialLength = max(tmOn(2:end) - tmOff(1:end-1));
             end
+            totalTrialLength = trialLength + interTrialLength;
             
             if ~exist('preEventTime','var')
                 % If no pre-event time was provided, automatically split the
-                % inter- trial time in 0.2 and 0.8:
-                preEventTime =  0.2*interTrialLength;
-                % If the preEventTime was not provided, force the
-                % calculation of the postEventTime as well:
-                postEventTime = 0.8*interTrialLength + trialLength;
+                % inter-trial time in 0.2 and 0.8:
+                preEventTime = 0.2*totalTrialLength;                
             end
             
             if ~exist('postEventTime','var')
                 % Set the post-event time as the remainder of the trial
-                postEventTime = 0.8*interTrialLength + trialLength;
+                postEventTime = totalTrialLength - preEventTime;
             end
             obj.trialInterval = [preEventTime, postEventTime];
             fprintf('%s\nTrial interval set to:\n\tpre-event time:  %0.2f seconds\n\tpost-event time: %0.2f seconds\n%s\n',...
