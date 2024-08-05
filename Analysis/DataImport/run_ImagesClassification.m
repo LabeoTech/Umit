@@ -26,7 +26,7 @@ existing_ChanList  = dir(fullfile(SaveFolder,'*.dat'));
 idxName = ismember({existing_ChanList.name}, default_Output);
 existing_ChanList = existing_ChanList(idxName);
 % Calls function from IOI library. Temporary for now.
-ImagesClassification(RawFolder, SaveFolder, opts.BinningSpatial, opts.BinningTemp,0);
+ImagesClassification(RawFolder, SaveFolder, opts.BinningSpatial, opts.BinningTemp,0,'backupOpts',opts.BackupOption);
 
 % For Dual-Camera Imaging systems, apply the coregistration using the tform
 % file created in DataViewer's OiS Dual Cam Coregistration utility:

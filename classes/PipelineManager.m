@@ -63,7 +63,9 @@ classdef PipelineManager < handle
             %   RawFolderList(cell array of chars): List of Raw folders
             %       associated with the save folders.
             %   Optionals:
-            %   ProtocolSave
+            %   ProtocolSaveFolder (char): Path to "Protocol" folder. This
+            %   will be used to save/load pipelines, and save pipeline
+            %   error logs.
             
             p = inputParser;
             validationFun = @(x) iscell(x) & ischar([x{:}]);

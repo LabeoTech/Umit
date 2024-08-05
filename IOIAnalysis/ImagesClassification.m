@@ -67,77 +67,8 @@ b_SubROI = p.Results.b_SubROI;
 backupOpts = p.Results.backupOpts;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% Control for existing .dat files in the "SaveFolder":
-% Excludes raw data, in case the SaveFolder is the same as the DataFolder.
-fixedFiles = [dir(fullfile(SaveFolder,'*.bin'))... % binary files
-    ;dir(fullfile(SaveFolder,'*nfo.txt'))... % info.txt and/or ExperimentInfo.txt
-    ;dir(fullfile(SaveFolder,'Comments.txt'))... % Comments.txt
-    ;dir(fullfile(SaveFolder,'Snapshot*.png'))]; % Snapshots
-% Get list of files to move:
-movFiles = dir(SaveFolder);
-movFiles([movFiles.isdir] == 1) = [];
-if ~isempty(fixedFiles)
-    movFiles(ismember({movFiles.name},{fixedFiles.name})) = [];
-end
-
-if ~isempty(movFiles)
-    
-    % Create prompt if the moveToBackup optional parameter was not set:
-    if isempty(backupOpts)
-        
-        % This function will erase all .dat and .mat files inside the
-        % SaveFolder before the data import. If there are .dat files, the user will
-        % be presented with the following options:
-        %  - OPTION 1: Erase all data.
-        %  - OPTION 2a: Move all folder content to a subfolder as backup (with the name "bkp_yyyymmddHHMMss".
-        %  - OPTION 2b: Move all folder content to a folder of the User's choice.
-        
-        choice = questdlg('The save folder already contains files. Please choose an option:', ...
-            'Folder Contains Files', 'Erase all', 'Create backup', 'Cancel', 'Create backup');
-        
-        % Process the user's choice
-        switch choice
-            case 'Erase all'
-                % Do not move to backup and erase all data from SaveFolder
-                backupOpts = 'ERASE';
-            case 'Create backup'
-                % User chose to create a backup.
-                answer = inputdlg('Type backup folder name:','backupOpts',...
-                    [1 60],{['bkp_' datestr(now(),'yyyymmddHHMMSS')]});
-                if isempty(answer)
-                    disp('Operation cancelled by User')
-                    return
-                elseif ~isempty(answer{:})
-                    % Update backupOpts name
-                    backupOpts = answer{:};
-                else
-                    % Force auto name to folder if the user provides an
-                    % empty string:
-                    backupOpts = ['bkp_' datestr(now(),'yyyymmddHHMMSS')];
-                end
-            otherwise
-                % User chose to cancel the operation.
-                disp('Operation cancelled by User')
-                return
-        end
-        
-    elseif strcmpi(backupOpts,'GENBACKUP')
-        % Auto name:
-        backupOpts = ['bkp_' datestr(now(),'yyyymmddHHMMSS')];
-    end
-    
-    if ~strcmpi(backupOpts,'erase')
-        % Create subfolder
-        if ~isfolder(fullfile(SaveFolder,backupOpts))
-            mkdir(fullfile(SaveFolder,backupOpts));
-        end
-        % Copy data to subfolder
-        arrayfun(@(x) copyfile(fullfile(x.folder,x.name), fullfile(x.folder,backupOpts,x.name)),movFiles)
-    end
-    % Delete all files from the current folder (exept .bin and .txt)
-    arrayfun(@(x) delete(fullfile(x.folder,x.name)),movFiles);
-end
-
+% Control for existing files and create backup or erase them:
+genBackupFolder(SaveFolder,backupOpts);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 AcqInfoStream = ReadInfoFile(DataFolder);
@@ -156,10 +87,6 @@ end
 if ~exist(SaveFolder,'dir')
     mkdir(SaveFolder)
 end
-% Change Spatial and temporal information in AcqInfoStream so the
-% information refers to the output .dat files and not to the original .bin
-% files.
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Data Format and Header Information:
@@ -224,7 +151,9 @@ else
 end
 Rx = round((LimX(2) - LimX(1) + 1)/BinningSpatial);
 Ry = round((LimY(2) - LimY(1) + 1)/BinningSpatial);
-% Update AcqInfoStream:
+% Change Spatial and temporal information in AcqInfoStream so the
+% information refers to the output .dat files and not to the original .bin
+% files:
 AcqInfoStream.Width = Rx;
 AcqInfoStream.Height = Ry;
 AcqInfoStream.Binning = BinningSpatial;

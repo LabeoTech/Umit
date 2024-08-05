@@ -15,13 +15,19 @@ p = inputParser;
 addRequired(p,'DatFileName', @(x) validateattributes(x, {'char', 'string'}, {'nonempty'}));
 addRequired(p, 'data', @(x) validateattributes(x, {'single'}, {'nonempty'}));
 addOptional(p, 'AcqInfoStream', struct.empty(0,1),@isstruct);
+addParameter(p,'Append',false,@islogical);
 
 parse(p, DatFileName, data,varargin{:});
 %%%%%%
 DatFileName = p.Results.DatFileName;
 data = p.Results.data;
 AcqInfoStream = p.Results.AcqInfoStream;
+b_append = p.Results.Append;
 clear p
+% Set permission type:
+permission = 'w';
+if b_append; permission = 'a';end
+
 % Check if there is an "AcqInfos.mat" file in the SaveFolder:
 [saveFolder,file,ext] = fileparts(DatFileName);
 if isempty(saveFolder)
@@ -44,7 +50,7 @@ if ~endsWith(DatFileName, '.dat')
 end
 
 disp('Writing data to .DAT file ...');
-fid = fopen(DatFileName, 'w');
+fid = fopen(DatFileName, permission);
 fwrite(fid, data, 'single'); % Write data as single precision.
 fclose(fid);
 disp(['Data saved in : "' DatFileName '"']);
