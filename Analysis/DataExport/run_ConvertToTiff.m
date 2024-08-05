@@ -1,6 +1,5 @@
-function run_ConvertToTiff(data, metaData, SaveFolder,varargin)
-% RUN_CONVERTTOTIFF calls the function
-% CONVERTTOTIFF from the IOI library (LabeoTech).
+function run_ConvertToTiff(data,SaveFolder,varargin)
+% RUN_CONVERTTOTIFF calls the function CONVERTTOTIFF from the IOI library (LabeoTech).
 % In brief, this function creates a .TIFF file that can be opened in other
 % softwares such as ImageJ.
 % This function will create a .TIFF file for each imaging time series. In
@@ -33,15 +32,12 @@ clear p
 [~,outFileName,~] = fileparts(metaData.datFile);
 if isempty(outFileName)
     outFileName = 'img_out';
-else
-    outFileName = ['img_' outFileName];
 end
-
 % If the data is separated by Events, create one TIFF file per trial
 if opts.ByEvent
     [data,condIndx,repIndx] = reshape_data_by_event(data,SaveFolder);          
     for ii = 1:size(data,1)
-        str = [outFileName '_C', num2str(condIndx(ii)), '_R', num2str(repIndx(ii)),'.tif'];
+        str = [outFileName, '_', num2str(condIndx(ii)), 'c', num2str(repIndx(ii)),'r.tif'];
         ConvertToTiff(SaveFolder, squeeze(data(ii,:,:,:)), str)
     end
 else

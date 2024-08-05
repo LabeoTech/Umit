@@ -24,10 +24,10 @@ fprintf('Opening file "%s" ...\n',DatFileName);
 % Load AcqInfos:
 load(fullfile(fileparts(DatFileName),'AcqInfos.mat'));%#ok
 Info = AcqInfoStream;
+datLen = [];
 % For retrocompatibility:
 fName = {strrep(DatFileName,'.dat','.mat'), strrep(DatFileName, '.dat', '_info.mat')};
 fName = fName(cellfun(@isfile,fName));
-datLen = [];
 if ~isempty(fName)
     % Load using info from meta data ".mat" file:
     matInfo = load(fName{1});

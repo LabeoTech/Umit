@@ -16,17 +16,11 @@ addRequired(p,'DatFileName', @(x) validateattributes(x, {'char', 'string'}, {'no
 addRequired(p, 'data', @(x) validateattributes(x, {'single'}, {'nonempty'}));
 addOptional(p, 'AcqInfoStream', struct.empty(0,1),@isstruct);
 addParameter(p,'Append',false,@islogical);
-
 parse(p, DatFileName, data,varargin{:});
-%%%%%%
 DatFileName = p.Results.DatFileName;
 data = p.Results.data;
 AcqInfoStream = p.Results.AcqInfoStream;
-b_append = p.Results.Append;
-clear p
-% Set permission type:
-permission = 'w';
-if b_append; permission = 'a';end
+%%%%%%
 
 % Check if there is an "AcqInfos.mat" file in the SaveFolder:
 [saveFolder,file,ext] = fileparts(DatFileName);
@@ -43,10 +37,21 @@ if ~isfile(fullfile(saveFolder,'AcqInfos.mat'))
         save(fullfile(saveFolder,'AcqInfos.mat'),'AcqInfoStream');
     end
 end
-
+clear AcqInfoStream
 % Force filename extension:
 if ~endsWith(DatFileName, '.dat')
     DatFileName = fullfile(saveFolder,[file, '.dat']);
+end
+% Set permission type:
+permission = 'w';
+if p.Results.Append
+    % Set data writing permission to "append":
+    permission = 'a';
+    % Update Data Length in AcqInfos.mat file:
+    load(fullfile(saveFolder,'AcqInfos.mat'));      
+    AcqInfoStream.Length = AcqInfoStream.Length + size(data,3);
+    save(fullfile(saveFolder,'AcqInfos.mat'),'AcqInfoStream');
+    clear AcqInfoStream;
 end
 
 disp('Writing data to .DAT file ...');
