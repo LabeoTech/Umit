@@ -4,8 +4,8 @@ function getEvents(RawFolder,SaveFolder, varargin)
 % in the SaveFolder to be used by other umIT functions.
 
 % Defaults:
-default_opts = struct('StimChannel','Internal-main', 'Threshold','auto','TriggerType','EdgeSet', 'minInterStimTime', 2,'ConditionFileType','none','ConditionFileName','auto','CSVColNames','all','preEventTime_sec','auto', 'postEventTime_sec','auto');
-opts_values = struct('StimChannel',{{'Internal-main', 'Internal-Aux','AI1', 'AI2','AI3','AI4','AI5','AI6','AI7','AI8'}'},'Threshold',{{'auto',Inf}}, 'TriggerType', {{'EdgeSet', 'EdgeToggle'}},'minInterStimTime',[0.5, Inf],'ConditionFileType',{{'none','CSV','Vpixx'}}, 'ConditionFileName',{{'auto'}},'CSVColNames',{{'all'}},'preEventTime_sec', {{'auto',Inf}},'postEventTime_sec', {{'auto',Inf}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
+default_opts = struct('StimChannel','Internal-main', 'Threshold','auto','TriggerType','EdgeSet', 'minInterStimTime', 2,'ConditionFileType','none','ConditionFileName','auto','CSVColNames','all','baselinePeriod','auto');
+opts_values = struct('StimChannel',{{'Internal-main', 'Internal-Aux','AI1', 'AI2','AI3','AI4','AI5','AI6','AI7','AI8'}'},'Threshold',{{'auto',Inf}}, 'TriggerType', {{'EdgeSet', 'EdgeToggle'}},'minInterStimTime',[0.5, Inf],'ConditionFileType',{{'none','CSV','Vpixx'}}, 'ConditionFileName',{{'auto'}},'CSVColNames',{{'all'}},'baselinePeriod', {{'auto',Inf}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 % Arguments validation:
 p = inputParser;
 addRequired(p, 'RawFolder', @isfolder);
@@ -27,17 +27,19 @@ if all(cellfun(@isempty,opts.StimChannel))
 end
 % Check and prepare parameters for EventsManager object:
 opts.ConditionFileName = strip(opts.ConditionFileName);
-opts.CSVVolNames = strip(opts.CSVColNames);
+opts.CSVColNames = strip(opts.CSVColNames);
 if strcmpi(opts.ConditionFileName, 'auto') && ~strcmpi(opts.CSVColNames,'all') && ~strcmpi(opts.ConditionFileType,'CSV')
     % Force file type to 'CSV' if column names were set
     opts.ConditionFileType = 'CSV';
     warning('Condition file type set to "CSV" given that specific columns were stated in parameters!');    
 end
+
 if strcmpi(opts.CSVColNames, 'all')
     opts.CSVColNames = {''};
 else    
     opts.CSVColNames = strsplit(opts.CSVColNames,',');
 end
+
 if strcmpi(opts.ConditionFileName, 'auto')
     opts.ConditionFileName = '';
 end
@@ -65,17 +67,12 @@ evObj.getTriggers(true); % Verbose
 % Update event names:
 evObj.readEventFile(opts.ConditionFileName,'CSVcols', opts.CSVColNames);
 % Set pre and post event times:
-if strcmpi(opts.preEventTime_sec,'auto')
+if strcmpi(opts.baselinePeriod,'auto')
     % Let the EventsManager decide the trial interval
-    evObj.setTrialInterval();
-elseif isnumeric(opts.preEventTime_sec) & strcmpi(opts.postEventTime_sec)
-    % Manually set the pre-event time and automatically set the post
-    evObj.setTrialInterval(opts.preEventTime_sec);
-else 
-    % Manually set both
-    evObj.setTrialInterval(opts.preEventTime_sec, opts.postEventTime_sec);
-end
-    
+    evObj.setBaselinePeriod();
+else    
+    evObj.setBaselinePeriod(opts.baselinePeriod);
+end    
 % Save events to file:
 evObj.saveEvents(SaveFolder);
 end
