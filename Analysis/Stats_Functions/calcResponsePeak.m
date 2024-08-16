@@ -101,7 +101,7 @@ for ii = 1:length(outData.data)
             PeakValue = max(avgResp(frOn:frOff),[],1);
         end
         % Calculate Peak amplitude:
-        PeakAmp_arr(jj) = abs(PeakValue) - avgBsln;
+        PeakAmp_arr(jj) = abs(PeakValue) - abs(avgBsln);
     end
     % Put data inside "ROIdata" structure:
     ROIdata{ii} = PeakAmp_arr';    
