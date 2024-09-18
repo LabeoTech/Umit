@@ -86,7 +86,7 @@ disp('Splitting data by events...')
 % Fill empty matrix with data segments
 fix_snippet = false;
 for i = 1:n_trial
-    trialFr = round(sr*timestamps(i));
+    trialFr = round(sr*timestamps(i))+1;
     start = trialFr - preFr;
     stop = trialFr + postFr - 1;
     if start < 1
