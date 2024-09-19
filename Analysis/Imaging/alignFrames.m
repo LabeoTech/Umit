@@ -116,7 +116,9 @@ refFr_mask = imgaussfilt(refFr, .5) - imgaussfilt(refFr, radius);
 % targetFr_mask = imsharpen(targetFr,'Radius', 1.5, 'Amount', 1);
 
 targetFr_mask = imgaussfilt(targetFr, .5) - imgaussfilt(targetFr, radius);
-
+% Remove NaNs from masks:
+refFr_mask(isnan(refFr_mask)) = 0;
+targetFr_mask(isnan(targetFr_mask)) = 0;
 % Perform image registration:
 tform_init = imregcorr(targetFr_mask,refFr_mask, 'similarity', 'Window', true);
 Rfixed = imref2d(size(refFr));
@@ -214,9 +216,18 @@ linkaxes([s1,s2,s3], 'xy');
 % Apply mask to data file:
 h = waitbar(0,'Initiating alignment...');
 outData = zeros(size(refFr_mask,1),size(refFr_mask,2), size(data,3), 'single');
+% Check for NaNs:
+nan_mask = isnan(data(:,:,1));
+nan_mask_warped = imwarp(nan_mask, tform, 'nearest', 'OutputView', Rfixed);
 for i = 1:size(outData,3)
     waitbar(i/size(outData,3), h, 'Performing alignment...')
-    outData(:,:,i) = imwarp(data(:,:,i), tform, 'nearest', 'OutputView', Rfixed);
+    this_frame = data(:,:,i);
+    % Remove nans before warping:
+    this_frame(nan_mask) = 0;
+    this_frame = imwarp(this_frame, tform, 'nearest', 'OutputView', Rfixed);
+    % Put Nans back:
+    this_frame(nan_mask_warped) = nan;    
+    outData(:,:,i) = this_frame;
 end
 waitbar(1,h, 'Alignment finished!'); pause(.5);
 disp('Check figure to validate alignment.')
