@@ -169,9 +169,19 @@ catch ME
 end
 % This section may be too greedy on RAM and not efficient...
 warp_data = zeros(size(refFr,1),size(refFr,2), size(mData.Data.data,3), 'single');
+% Check for NaNs:
+nan_mask = isnan(mData.Data.data(:,:,1));
+nan_mask_warped = imwarp(nan_mask, tform, 'nearest', 'OutputView', Rfixed);
 h = waitbar(0,['Performing alignment in data from ' applyToFile ' ...']);
 for i = 1:size(warp_data,3)
-    warp_data(:,:,i) = imwarp(mData.Data.data(:,:,i), tform, 'nearest', 'OutputView', Rfixed);
+    this_frame = mData.Data.data(:,:,i);
+    % Remove nans before warping:
+    this_frame(nan_mask) = 0;
+    this_frame = imwarp(this_frame, tform, 'nearest', 'OutputView', Rfixed);
+    % Put Nans back:
+    this_frame(nan_mask_warped) = nan;    
+    % Save frame
+    warp_data(:,:,i) = this_frame;
     waitbar(i/size(warp_data,3),h);
 end
 waitbar(1,h,'Alignment finished.')

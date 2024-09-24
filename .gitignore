@@ -41,6 +41,7 @@ test/
 classes/Protocol_classes/Protocol_BACKUP_1599.m
 classes/Protocol_classes/Protocol.asv
 subFunc/mergeRecordings.asv
+docs/Gemfile.lock
 docs/_site/404.html
 docs/_site/demos.xml
 docs/_site/favicon.ico
