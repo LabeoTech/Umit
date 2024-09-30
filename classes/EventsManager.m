@@ -45,14 +45,14 @@ classdef EventsManager < handle
             % It instantiates the object and sets the values for the
             % DataFolder and EventFileName properties.
             % It reads the analog IN channels and the info.txt as well.
-            % Inputs:
+            % Inputs:            
+            %   SaveFolder (char): path to the folder containing the
+            %       AcqInfos.mat file. This will be the folder where the
+            %       "events.mat" file will be saved or loaded from.            
             %   RawFolder (char): path to the folder containing the
             %       ai_xxxx.bin data and "info.txt" file. If not provided,
             %       load an "events.mat" file or manually set the
             %       RawFolder later.
-            %   SaveFolder (char): path to the folder containing the
-            %       AcqInfos.mat file. This will be the folder where the
-            %       "events.mat" file will be saved or loaded from.
             %   ParseMethod (optional, char): Name of the parsing method to
             %   apply to the event file containing the list of event
             %   IDs:{'none'(default),'csv','vpixx'}.
@@ -206,7 +206,7 @@ classdef EventsManager < handle
             obj.AnalogIN = obj.AnalogIN(camTOn:camTOff,:);
             disp('Done')
         end
-        
+         
         function out = get.EventFileParseMethod(obj)
             out = obj.privateEventFileParseMethod;
         end
@@ -678,9 +678,9 @@ classdef EventsManager < handle
                 warning('Unable to create events.mat file. No triggers found!')
                 return
             end
-            % Trim all .dat files in the SaveFolder to exclude frames
-            % outside trials:
-            obj.trimDatFiles;                                    
+%             % Trim all .dat files in the SaveFolder to exclude frames
+%             % outside trials:
+%             obj.trimDatFiles;                                    
             % Save Events data:
             RawFolder = obj.RawFolder; %#ok
             AnalogIN = obj.AnalogIN;%#ok
@@ -1241,64 +1241,64 @@ classdef EventsManager < handle
             evFile.(fieldname)= obj.(fieldname);
         end
         
-        function trimDatFiles(obj)
-           % TRIMDATFILES removes all frames that are outside the range of the trials. 
-           % This is a permanent operation and it should be executed only
-           % once in a given dataset (SaveFolder). This applies only to
-           % .dat files and not the data saved in .mat files.
-           
-           % Return if the baselinePeriod property was not changed. No need
-           % to crop the data.  
-           if isfile(fullfile(obj.SaveFolder,'events.mat'))
-               evFile = matfile(fullfile(obj.SaveFolder,'events.mat'));
-               if evFile.baselinePeriod == obj.baselinePeriod
-                   return
-               end
-           end
-           % Raise error if the data was already cropped:
-           errMsg = ['Data trimming aborted! The data in folder "%s" was already cropped!\n',...
-               'Please, re-import the data to apply the intended changes.'];
-           bWasTrimmed = false; 
-           if isfield(obj.AcqInfo,'bDataTrimmed')
-               bWasTrimmed = obj.AcqInfo.bDataTrimmed;
-           end
-           assert(~bWasTrimmed,errMsg,obj.SaveFolder)
-           % Get the frames out of bounds:
-           frMat = obj.getFrameMatrix;
-           frRange = [min(frMat,[],'all','omitnan'),max(frMat,[],'all','omitnan')];
-           if frRange(1) == 1 && frRange(2) == obj.AcqInfo.Length
-               disp('Data length is already set for trials.')
-               return
-           end
-           fprintf('All .dat files in the "%s" will be trimmed to fit trial sizes.\n',obj.SaveFolder)
-           % Crop all .dat files:
-           fList = dir(fullfile(obj.SaveFolder,'*.dat'));
-           for ii = 1:length(fList)
-               dat = loadDat(fullfile(obj.SaveFolder,fList(ii).name));
-               dat = dat(:,:,frRange(1):frRange(2));
-               saveDat(fullfile(obj.SaveFolder,fList(ii).name),dat);               
-           end
-           clear dat
-           fprintf('Finished trimming .dat files.\n');
-           
-           % Update info in this object:
-           obj.AcqInfo.Length = diff(frRange)+1;
-           % Add flag:
-           obj.AcqInfo.bDataTrimmed = true;
-           % Overwrite "AcqInfos.mat" file:
-           AcqInfoStream = obj.AcqInfo;
-           save(fullfile(obj.SaveFolder,'AcqInfos.mat'),'AcqInfoStream');
-           fprintf('AcqInfos.mat file updated.\n')
-           clear AcqInfoStream
-           % Update timestamps:
-           time_shift = frRange(1)/obj.AcqInfo.FrameRateHz;
-           obj.timestamps = obj.timestamps - time_shift;
-           % Crop AnalogIN (internal only. ai_xxxxx.bin files are not
-           % changed!)
-           aiFrame = round(time_shift*obj.sr);
-           obj.AnalogIN(1:aiFrame-1,:) = [];
-           fprintf('AnalogIN updated.\n')           
-        end        
+%         function trimDatFiles(obj)
+%            % TRIMDATFILES removes all frames that are outside the range of the trials. 
+%            % This is a permanent operation and it should be executed only
+%            % once in a given dataset (SaveFolder). This applies only to
+%            % .dat files and not the data saved in .mat files.
+%            
+%            % Return if the baselinePeriod property was not changed. No need
+%            % to crop the data.  
+%            if isfile(fullfile(obj.SaveFolder,'events.mat'))
+%                evFile = matfile(fullfile(obj.SaveFolder,'events.mat'));
+%                if evFile.baselinePeriod == obj.baselinePeriod
+%                    return
+%                end
+%            end
+%            % Raise error if the data was already cropped:
+%            errMsg = ['Data trimming aborted! The data in folder "%s" was already cropped!\n',...
+%                'Please, re-import the data to apply the intended changes.'];
+%            bWasTrimmed = false; 
+%            if isfield(obj.AcqInfo,'bDataTrimmed')
+%                bWasTrimmed = obj.AcqInfo.bDataTrimmed;
+%            end
+%            assert(~bWasTrimmed,errMsg,obj.SaveFolder)
+%            % Get the frames out of bounds:
+%            frMat = obj.getFrameMatrix;
+%            frRange = [min(frMat,[],'all','omitnan'),max(frMat,[],'all','omitnan')];
+%            if frRange(1) == 1 && frRange(2) == obj.AcqInfo.Length
+%                disp('Data length is already set for trials.')
+%                return
+%            end
+%            fprintf('All .dat files in the "%s" will be trimmed to fit trial sizes.\n',obj.SaveFolder)
+%            % Crop all .dat files:
+%            fList = dir(fullfile(obj.SaveFolder,'*.dat'));
+%            for ii = 1:length(fList)
+%                dat = loadDat(fullfile(obj.SaveFolder,fList(ii).name));
+%                dat = dat(:,:,frRange(1):frRange(2));
+%                saveDat(fullfile(obj.SaveFolder,fList(ii).name),dat);               
+%            end
+%            clear dat
+%            fprintf('Finished trimming .dat files.\n');
+%            
+%            % Update info in this object:
+%            obj.AcqInfo.Length = diff(frRange)+1;
+%            % Add flag:
+%            obj.AcqInfo.bDataTrimmed = true;
+%            % Overwrite "AcqInfos.mat" file:
+%            AcqInfoStream = obj.AcqInfo;
+%            save(fullfile(obj.SaveFolder,'AcqInfos.mat'),'AcqInfoStream');
+%            fprintf('AcqInfos.mat file updated.\n')
+%            clear AcqInfoStream
+%            % Update timestamps:
+%            time_shift = frRange(1)/obj.AcqInfo.FrameRateHz;
+%            obj.timestamps = obj.timestamps - time_shift;
+%            % Crop AnalogIN (internal only. ai_xxxxx.bin files are not
+%            % changed!)
+%            aiFrame = round(time_shift*obj.sr);
+%            obj.AnalogIN(1:aiFrame-1,:) = [];
+%            fprintf('AnalogIN updated.\n')           
+%         end        
         
     end
 end

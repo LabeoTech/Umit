@@ -6,6 +6,7 @@ function saveDat(DatFileName, data,varargin)
 %   (Optional:
 %       AcqInfoStream(struct): structure with acquisition information. See "AcqInfos.mat"
 %       file.
+%       Append(bool):If true, appends new data to existing .dat file.
 % Note:
 % If there is no "AcqInfos.mat" file in the saveFolder, it is necessary to
 % provide the "AcqInfoStream" structure!
