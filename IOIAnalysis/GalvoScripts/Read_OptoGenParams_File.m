@@ -102,10 +102,10 @@ elseif( contains(tline, 'Mapping') )
         if( contains(tline,':') )
             tag = tline(1:(strfind(tline,':')-1));
             idxS = regexp(tline,'\t') + 1;
-            idxE = length(tline) - regexp(tline(end:-1:1), ' ');
+            idxE = length(tline) - regexp(tline(end:-1:1), ' ','once');
             if( isempty(idxE) | (idxE < idxS) )
                 idxE = length(tline);
-            end
+            end            
             Value = str2num(tline(idxS:idxE));
             switch(tag)
                 case 'Laser Power' %Deprecated
