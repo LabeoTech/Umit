@@ -522,7 +522,7 @@ classdef DataViewer_pipelineMngr < handle
                 else
                     [~,~,ext] = fileparts(out.outFileName{1});
                 end
-                if all(ismember(out.argsIn, kwrds_args)) && all(ismember(out.argsOut, kwrds_out)) && strcmpi(ext, '.dat')
+                if all(ismember(out.argsIn, kwrds_args)) && ( all(ismember(out.argsOut, kwrds_out)) && strcmpi(ext, '.dat')  || isempty(out.argsOut) )
                     % Here, we exclude all "stats" functions that output .mat files!        
                     [~,list(i).name, ~] = fileparts(list(i).name);
                     list(i).info = out;
