@@ -46,31 +46,31 @@ end
 
 % Instantiate EventsManager class:
 evObj = EventsManager(SaveFolder,RawFolder,opts.ConditionFileType);
+
 for ii = 1:length(opts.StimChannel)
     % Update internal channel names. These may change depending on the OiS
     % acquisition software version.
     if strcmpi(opts.StimChannel{ii}, 'internal-main')
-        warning(['Translated ''Internal-Main'' channel to ''' evObj.AIChanList{2}]);
+        warning(['Translated ''Internal-Main'' channel to ''' evObj.AIChanList{2} '''']);
         opts.StimChannel{ii} = evObj.AIChanList{2};
     elseif strcmpi(opts.StimChannel{ii}, 'internal-aux')
-        warning(['Translated ''Internal-Aux'' channel to ''' evObj.AIChanList{3}]);
+        warning(['Translated ''Internal-Aux'' channel to ''' evObj.AIChanList{3} '''']);
         opts.StimChannel{ii} = evObj.AIChanList{3};
     end
 end
 % Update EventsManager object properties:
 evObj.trigThr = opts.Threshold;
 evObj.trigType = opts.TriggerType;
-evObj.trigChanName = opts.StimChannel;
+if ~isempty(evObj.trigChanName{:})
+    evObj.trigChanName = opts.StimChannel;
+end
 evObj.minInterStim = opts.minInterStimTime;
 % Detect triggers:
-evObj.getTriggers(true); % Verbose
+evObj.getTriggers(evObj.trigChanName,true); % Verbose
 % Update event names:
-evObj.readEventFile(opts.ConditionFileName,'CSVcols', opts.CSVColNames);
+evObj.readConditionFile(opts.ConditionFileName,'CSVcols', opts.CSVColNames);
 % Set pre and post event times:
-if strcmpi(opts.baselinePeriod,'auto')
-    % Let the EventsManager decide the trial interval
-    evObj.setBaselinePeriod();
-else    
+if ~strcmpi(opts.baselinePeriod,'auto')
     evObj.setBaselinePeriod(opts.baselinePeriod);
 end    
 % Save events to file:
