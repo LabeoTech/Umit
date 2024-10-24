@@ -738,7 +738,7 @@ classdef EventsManager < handle
             fprintf('Events info loaded from folder %s\n', Folder);
         end
         
-        function [frMat, conditionList, repetitionList] = getFrameMatrix(obj,varargin)
+        function [frMat, conditionList, repetitionList, evOnsetFrame] = getFrameMatrix(obj,varargin)
             % GETFRAMEMATRIX generates a matrix with dimensions Repetition x Frame indices
             % for each trial. The matrix output consists of the
             % frame indices split by trial (repetition). The matrix can be
@@ -754,27 +754,23 @@ classdef EventsManager < handle
             %   obj: The object containing the data and methods.
             %   conditionName (char): Name of the condition to extract the trials.
             %   repetitionIndex (vector, int | optional): Repetition index(ices) of
-            %       the condition. If not provided, all repetitions will be used.
-            %   ignoreEvents (logical | optional): Boolean flag to indicate if some
-            %       trials should be ignored based on the selectedEvents property.
-            %       Default is false.
-            %
+            %       the condition. If not provided, all repetitions will be used.                                    
             % Outputs:
             %   frMat (matrix): Matrix containing the frame indices of each trial.
             %       Frames that are out of bounds are marked as NaNs.
             %   conditionList (vecrot): List of conditions indices for each trial.
             %   repetitionList (vector): List of repetition indices for each trial.                       
-                        
+            %   evOnsetFrame(scalar): Frame index corresponding to the event onset.
+            
             % Input parsing and validation:
             p = inputParser();
             addRequired(p,'obj');
             addOptional(p,'conditionName','',@(x) ischar(x) | isStringScalar(x) )
             addOptional(p,'repetitionIndex',[],@(x) ( isnumeric(x) && all(x > 0) ) || isempty(x))
-            addParameter(p,'ignoreEvents',false,@islogical)
+            %
             parse(p,obj,varargin{:});
             conditionName = convertStringsToChars(p.Results.conditionName);
             repetitionIndex = p.Results.repetitionIndex;
-            b_ignoreEvents = p.Results.ignoreEvents;
             % Deny filtering repetition without condition name:
             if isempty(conditionName) && ~isempty(repetitionIndex)
                 error('Repetition index cannot be set without the condition Name!')
@@ -789,11 +785,12 @@ classdef EventsManager < handle
                 end
             end
             % Create frame index matrix:            
+            evOnsetFrame = round(obj.baselinePeriod*obj.AcqInfo.FrameRateHz);
             frOn = ceil(obj.timestamps(obj.state)*obj.AcqInfo.FrameRateHz);
-            frStart = frOn - round(obj.baselinePeriod*obj.AcqInfo.FrameRateHz) + 1;
+            frStart = frOn - evOnsetFrame + 1;
             trialLen = [diff(frOn);max(diff(frOn))];
             frMat = nan(sum(obj.state),max(trialLen));
-                        
+            
             for ii = 1:length(frStart)                
                 frVec = frStart(ii):frStart(ii)+trialLen(ii)-1;
                 b_outbound_frames = frVec < 1 | frVec > obj.AcqInfo.Length;
@@ -809,10 +806,7 @@ classdef EventsManager < handle
                 repetitionList(idx_cond) = 1:sum(idx_cond);
                 skipEvIdx(idx_cond) = obj.selectedEvents(ii,:);
             end
-            if ~b_ignoreEvents
-                % Force selection of all trials:
-                skipEvIdx = true(size(skipEvIdx));
-            end
+
             % Filter Frame Index matrix, if the user defined the conditions
             % and/repetitions:
             % Condition:
@@ -841,12 +835,7 @@ classdef EventsManager < handle
             %    data (3D num array): Image time series with dimensions Y, X, T.
             %    varargin: Optional parameters as name-value pairs!:
             %       'conditionName' (char or string): Name of the condition to filter trials.
-            %       'repetitionIndex' (numeric array): Indices of repetitions to include.
-            %       'ignoreEvents' (logical): Boolean flag to indicate if some
-            %           trials should be ignored based on the selectedEvents property.
-            %           (default: false).
-            %       'cropTrials' (logical): Flag to crop trials to avoid frames full of NaNs (default: false).
-            %
+            %       'repetitionIndex' (numeric array): Indices of repetitions to include.          
             % Output:
             %    dataByEv (4D num array): Image time series by events with
             %       dimensions E, Y, X, T.
@@ -859,8 +848,6 @@ classdef EventsManager < handle
            addRequired(p,'data');           
            addParameter(p,'conditionName','',@(x) ischar(x) | isStringScalar(x) )
            addParameter(p,'repetitionIndex',[],@(x) ( isnumeric(x) && all(x > 0) ) || isempty(x))
-           addParameter(p,'ignoreEvents',false,@islogical)
-           addParameter(p,'cropTrials',false,@islogical);
           
            parse(p,obj,data,varargin{:});
            
@@ -870,15 +857,8 @@ classdef EventsManager < handle
                'Failed to split data by events! The dimensions of the input data do not match the ones in the AcqInfo structure!');
            % get frame matrix
            [frMat,conditionList, repetitionList] = obj.getFrameMatrix(p.Results.conditionName,...
-               p.Results.repetitionIndex,'ignoreEvents',p.Results.ignoreEvents);
-                      
-           if p.Results.cropTrials
-               % Crop trials to avoid creating frames full of nans due to
-               % differences in trial lengths:
-               frMat(:,any(isnan(frMat),1)) = [];
-           end
-           % Split the data:   
-           
+               p.Results.repetitionIndex);
+           % Split the data:              
            dataByEv = nan(size(frMat,1),size(data,1),size(data,2),size(frMat,2),'single');
            b_validFrames = ~isnan(frMat);
            for ii = 1:size(frMat,1)
@@ -886,6 +866,18 @@ classdef EventsManager < handle
            end                     
         end
                 
+        function evInfo = exportEventInfo(obj)
+           % EXPORTEVENTINFO packages the event-related information into a structure.
+                      
+           fieldsToExport ={'eventID','state','timestamps','eventNameList',...
+               'baselinePeriod','selectedEvents','EventFileName'};
+           evInfo = struct();
+           for ii = 1:length(fieldsToExport)
+               evInfo.(fieldsToExport{ii}) = obj.(fieldsToExport{ii});
+           end
+           % Add Frame Rate:
+           evInfo.FrameRateHz = obj.AcqInfo.FrameRateHz;
+        end
     end
     
     methods (Access = private)
@@ -1240,66 +1232,7 @@ classdef EventsManager < handle
             evFile = matfile(fullfile(obj.SaveFolder,'events.mat'),'Writable',true);
             evFile.(fieldname)= obj.(fieldname);
         end
-        
-%         function trimDatFiles(obj)
-%            % TRIMDATFILES removes all frames that are outside the range of the trials. 
-%            % This is a permanent operation and it should be executed only
-%            % once in a given dataset (SaveFolder). This applies only to
-%            % .dat files and not the data saved in .mat files.
-%            
-%            % Return if the baselinePeriod property was not changed. No need
-%            % to crop the data.  
-%            if isfile(fullfile(obj.SaveFolder,'events.mat'))
-%                evFile = matfile(fullfile(obj.SaveFolder,'events.mat'));
-%                if evFile.baselinePeriod == obj.baselinePeriod
-%                    return
-%                end
-%            end
-%            % Raise error if the data was already cropped:
-%            errMsg = ['Data trimming aborted! The data in folder "%s" was already cropped!\n',...
-%                'Please, re-import the data to apply the intended changes.'];
-%            bWasTrimmed = false; 
-%            if isfield(obj.AcqInfo,'bDataTrimmed')
-%                bWasTrimmed = obj.AcqInfo.bDataTrimmed;
-%            end
-%            assert(~bWasTrimmed,errMsg,obj.SaveFolder)
-%            % Get the frames out of bounds:
-%            frMat = obj.getFrameMatrix;
-%            frRange = [min(frMat,[],'all','omitnan'),max(frMat,[],'all','omitnan')];
-%            if frRange(1) == 1 && frRange(2) == obj.AcqInfo.Length
-%                disp('Data length is already set for trials.')
-%                return
-%            end
-%            fprintf('All .dat files in the "%s" will be trimmed to fit trial sizes.\n',obj.SaveFolder)
-%            % Crop all .dat files:
-%            fList = dir(fullfile(obj.SaveFolder,'*.dat'));
-%            for ii = 1:length(fList)
-%                dat = loadDat(fullfile(obj.SaveFolder,fList(ii).name));
-%                dat = dat(:,:,frRange(1):frRange(2));
-%                saveDat(fullfile(obj.SaveFolder,fList(ii).name),dat);               
-%            end
-%            clear dat
-%            fprintf('Finished trimming .dat files.\n');
-%            
-%            % Update info in this object:
-%            obj.AcqInfo.Length = diff(frRange)+1;
-%            % Add flag:
-%            obj.AcqInfo.bDataTrimmed = true;
-%            % Overwrite "AcqInfos.mat" file:
-%            AcqInfoStream = obj.AcqInfo;
-%            save(fullfile(obj.SaveFolder,'AcqInfos.mat'),'AcqInfoStream');
-%            fprintf('AcqInfos.mat file updated.\n')
-%            clear AcqInfoStream
-%            % Update timestamps:
-%            time_shift = frRange(1)/obj.AcqInfo.FrameRateHz;
-%            obj.timestamps = obj.timestamps - time_shift;
-%            % Crop AnalogIN (internal only. ai_xxxxx.bin files are not
-%            % changed!)
-%            aiFrame = round(time_shift*obj.sr);
-%            obj.AnalogIN(1:aiFrame-1,:) = [];
-%            fprintf('AnalogIN updated.\n')           
-%         end        
-        
+               
     end
 end
 
