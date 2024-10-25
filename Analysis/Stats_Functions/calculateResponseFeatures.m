@@ -49,34 +49,32 @@ addOptional(p, 'opts', default_opts,@(x) isstruct(x));
 % Parse inputs:
 parse(p,data, varargin{:});
 % Initialize Variables:
-outData = p.Results.data;
+outData = data;
 opts = p.Results.opts;
 clear p
 %%%%%%%%%%%%%%%%
 % Check if the input data is "time vector split by events":
-assert(all(ismember(upper(outData.dim_names), {'O','E','T'})),...
+fn = fieldnames(data.data);
+assert(data.b_hasEvents & ndims(data.data(1).(fn{1})) == 3 & ismember('eventID',fieldnames(data)),...
     'Wrong input data type. Data must be a time vector split by event(s).');
-% locate time and event dimensions:
-idxEdim = find(strcmpi(outData.dim_names,'E'));
-idxTdim = find(strcmpi(outData.dim_names,'T'));
 % For each ROI, calculate the average response and use the average time
 % vector to calculate the peak stats:
 ROIdata = struct();
 evntList = unique(outData.eventID);
 % Get frame list of time window:
-evntFr = round(outData.preEventTime_sec*outData.Freq);
+evntFr = round(outData.baselinePeriod*outData.FrameRateHz);
 if strcmpi(opts.TimeWindow_sec,'all')
     frOn = evntFr+1;
-    frOff = size(outData.data{1},idxTdim) - evntFr;
+    frOff = size(outData.data(1).(fn{1}),3) - evntFr;
 else       
     % Get frames values:
-    frOn = round(opts.TimeWindow_sec(1)*outData.Freq) + evntFr;
-    frOff = round(opts.TimeWindow_sec(2)*outData.Freq) + evntFr;
+    frOn = round(opts.TimeWindow_sec(1)*outData.FrameRateHz) + evntFr;
+    frOff = round(opts.TimeWindow_sec(2)*outData.FrameRateHz) + evntFr;
     % Reset to default if input values are out of range
-    if frOn > size(outData.data{1},idxTdim) || frOff > size(outData.data{1},idxTdim) || frOn > frOff
+    if frOn > size(outData.data(1).(fn{1}),3) || frOff > size(outData.data(1).(fn{1}),3) || frOn > frOff
         warning('TimeWindow onset is out of range! Reset to default ("all")')
         frOn = evntFr +1;
-        frOff = size(outData.data{1},idxTdim);    
+        frOff = size(outData.data(1).(fn{1}),3);    
     end
 end
 for ii = 1:length(outData.data)
@@ -87,15 +85,14 @@ for ii = 1:length(outData.data)
     onsetLat_arr = PeakAmp_arr;
     AUCamp_arr = PeakAmp_arr;
     avgAmp_arr = PeakAmp_arr;
-    % Be sure that the data is arranged properly ('O','E','T'):
-    data = outData.data{ii};
-    data = permute(data,[setdiff([1:ndims(data)],[idxEdim idxTdim]),idxEdim,idxTdim]);
+    %
+    data = outData.data(ii).(fn{1});   
     for jj = 1:length(evntList)
         idx = ( outData.eventID == evntList(jj) );        
         % Calculate average response to the current event:
         avgResp = squeeze(mean(data(:,idx,:),2,'omitnan'));
         if strcmpi(opts.ResponsePolarity, 'negative')
-            % Flip the data around its mean to make the response peak
+            % Flip the data to make the response peak
             % positive:
             avgResp = -1.*avgResp;
         end                
@@ -120,9 +117,9 @@ for ii = 1:length(outData.data)
             % Calculate onset amplitude:
             onsetAmp_arr(jj) = avgResp(onsetIndx) - avgBsln;
             % Calculate onset latency:
-            onsetLat_arr(jj) = (onsetIndx - evntFr)/outData.Freq;
+            onsetLat_arr(jj) = (onsetIndx - evntFr)/outData.FrameRateHz;
             % Calculate the Peak latency:
-            PeakLat_arr(jj) = (indxPeak - evntFr)/outData.Freq;
+            PeakLat_arr(jj) = (indxPeak - evntFr)/outData.FrameRateHz;
         end
     end
     % Put data inside "ROIdata" structure:
@@ -135,7 +132,5 @@ for ii = 1:length(outData.data)
 end
 % Update metaData:
 outData.eventID = evntList;
-outData.label = outData.eventNameList;
 outData.data = ROIdata;
-outData.dim_names = {'O','E'};
 end

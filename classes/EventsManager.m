@@ -738,7 +738,7 @@ classdef EventsManager < handle
             fprintf('Events info loaded from folder %s\n', Folder);
         end
         
-        function [frMat, conditionList, repetitionList, evOnsetFrame] = getFrameMatrix(obj,varargin)
+        function [frMat, conditionList, repetitionList] = getFrameMatrix(obj,varargin)
             % GETFRAMEMATRIX generates a matrix with dimensions Repetition x Frame indices
             % for each trial. The matrix output consists of the
             % frame indices split by trial (repetition). The matrix can be
@@ -760,8 +760,7 @@ classdef EventsManager < handle
             %       Frames that are out of bounds are marked as NaNs.
             %   conditionList (vecrot): List of conditions indices for each trial.
             %   repetitionList (vector): List of repetition indices for each trial.                       
-            %   evOnsetFrame(scalar): Frame index corresponding to the event onset.
-            
+                        
             % Input parsing and validation:
             p = inputParser();
             addRequired(p,'obj');
@@ -804,7 +803,7 @@ classdef EventsManager < handle
             for ii = 1:length(obj.eventNameList)
                 idx_cond = obj.eventID(obj.state) == ii;                
                 repetitionList(idx_cond) = 1:sum(idx_cond);
-                skipEvIdx(idx_cond) = obj.selectedEvents(ii,:);
+                skipEvIdx(idx_cond) = obj.selectedEvents(ii,1:sum(idx_cond));
             end
 
             % Filter Frame Index matrix, if the user defined the conditions
@@ -863,20 +862,29 @@ classdef EventsManager < handle
            b_validFrames = ~isnan(frMat);
            for ii = 1:size(frMat,1)
                dataByEv(ii,:,:,b_validFrames(ii,:)) = data(:,:,frMat(ii,b_validFrames(ii,:)));
-           end                     
+           end
+           % Crop trials to remove frames full of nans:
+           if any(isnan(frMat(:)))
+               disp('Cropping trials to shortest length...');
+               dataByEv(:,:,:,find([0 diff(any(isnan(frMat),1))] == 1,1,'first'):end) = [];
+           end
+           disp('Finished splitting data by events');
+                     
         end
                 
         function evInfo = exportEventInfo(obj)
            % EXPORTEVENTINFO packages the event-related information into a structure.
-                      
-           fieldsToExport ={'eventID','state','timestamps','eventNameList',...
-               'baselinePeriod','selectedEvents','EventFileName'};
+           %            
+           fieldsToExport ={'eventNameList','baselinePeriod','selectedEvents'};
            evInfo = struct();
            for ii = 1:length(fieldsToExport)
                evInfo.(fieldsToExport{ii}) = obj.(fieldsToExport{ii});
            end
            % Add Frame Rate:
            evInfo.FrameRateHz = obj.AcqInfo.FrameRateHz;
+           % Add EventID but keep only the selected events:
+           [~,evInfo.eventID,~] = obj.getFrameMatrix;
+           
         end
     end
     

@@ -68,7 +68,7 @@ classdef PipelineManager < handle
             %   error logs.
             
             p = inputParser;
-            validationFun = @(x) iscell(x) & ischar([x{:}]);
+            validationFun = @(x) (iscell(x) && ischar([x{:}])) || (ischar(x));
             addRequired(p,'SaveFolderList', validationFun);
             addOptional(p,'RawFolderList',{''}, validationFun);
             addOptional(p,'ProtocolSaveFolder',pwd,@ischar);
@@ -77,7 +77,7 @@ classdef PipelineManager < handle
             obj.ProtocolSaveFolder = p.Results.ProtocolSaveFolder;
             
             % Further validate each Item from Save and Raw folder lists.
-            
+            if ischar(SaveFolderList);SaveFolderList = {SaveFolderList};end
             % criterion #1 - Both lists should have the same length:
             errID = 'umIToolbox:PipelineManager:MissingInput';
             errMsg = 'SaveFolderList and RawFolderList should have the same number of items!';
@@ -1238,7 +1238,7 @@ classdef PipelineManager < handle
             % file if there are missing files in the folder.
             
             dataHistory = struct.empty(0,1);
-            if ~isfile(fullfile(folder,'dataHistory.mat'))
+            if ~isfile(fullfile(folder,'dataHistory.mat')) 
                 return
             end
             load(fullfile(folder,'dataHistory.mat'));%#ok
@@ -1275,7 +1275,7 @@ classdef PipelineManager < handle
             obj.dataHistory = obj.loadDataHistory(SaveFolder);
             
             % Append info to existing data history file:
-            idxFile = strcmpi({obj.dataHistory.filename},filename);
+            idxFile = strcmp({obj.dataHistory.filename},filename);
             if any(idxFile)
                 % Overwrite the existing file with the new data history:
                 obj.dataHistory(idxFile) = thisDataHistory;

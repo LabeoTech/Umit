@@ -22,12 +22,12 @@ datFiles = dir(fullfile(folder, '*.dat'));
 matFiles = dir(fullfile(folder,'*.mat'));
 % Filter list of mat files to get only those with the proper toolbox format
 
-% Here, we check if the file contains the variable "datSize" to check if it
+% Here, we check if the file contains the variable "obsID" to check if it
 % is valid or not
 warning('off'); % Disable warning to suppress messages from .mat files that do not have "datSize" variable.
 validMatFiles = false(size(matFiles));
 for ii = 1:length(matFiles)
-    data = load(fullfile(folder, matFiles(ii).name), 'datSize');
+    data = load(fullfile(folder, matFiles(ii).name), 'obsID');
     validMatFiles(ii) = ~isempty(fieldnames(data));
 end
 matFiles = matFiles(validMatFiles);

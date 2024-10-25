@@ -37,9 +37,9 @@ ev = EventsManager(SaveFolder);ev.loadEvents(SaveFolder);
 % Set output array:
 outData = zeros(size(data),'single');
 % 
-bslnFrames = 1:round(ev.trialInterval(1)*ev.AcqInfo.FrameRateHz);
+bslnFrames = 1:round(ev.baselinePeriod*ev.AcqInfo.FrameRateHz);
 for ii = 1:length(ev.eventNameList)
-    frIndexMat = ev.createTrialFrameMatrix(ev.eventNameList{ii});
+    frIndexMat = ev.getFrameMatrix(ev.eventNameList{ii});
     for jj = 1:size(frIndexMat,1)
         bslnTrialFrames = frIndexMat(jj,bslnFrames);bslnTrialFrames(isnan(bslnTrialFrames)) = [];
         allTrialFrames = frIndexMat(jj,~isnan(frIndexMat(jj,:)));
