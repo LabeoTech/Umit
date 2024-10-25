@@ -774,15 +774,9 @@ classdef EventsManager < handle
             if isempty(conditionName) && ~isempty(repetitionIndex)
                 error('Repetition index cannot be set without the condition Name!')
             end
-            % Check condition name:
-            if ~isempty(conditionName)
-                obj.validateCondition(conditionName)
-            end
-            if ~isempty(repetitionIndex)
-                for ii = 1:length(repetitionIndex)
-                    obj.validateRepetition(conditionName, repetitionIndex(ii));
-                end
-            end
+            
+            [evIdx,conditionList, repetitionList] = obj.getEventIndex(conditionName,repetitionIndex);
+                       
             % Create frame index matrix:            
             evOnsetFrame = round(obj.baselinePeriod*obj.AcqInfo.FrameRateHz);
             frOn = ceil(obj.timestamps(obj.state)*obj.AcqInfo.FrameRateHz);
@@ -796,34 +790,9 @@ classdef EventsManager < handle
                 frVec(b_outbound_frames) = nan;                
                 frMat(ii,1:length(frVec)) = frVec;
             end
-            % Create output lists (condition and repetition)
-            conditionList = obj.eventID(obj.state);
-            repetitionList = zeros(size(conditionList));
-            skipEvIdx = false(size(conditionList));
-            for ii = 1:length(obj.eventNameList)
-                idx_cond = obj.eventID(obj.state) == ii;                
-                repetitionList(idx_cond) = 1:sum(idx_cond);
-                skipEvIdx(idx_cond) = obj.selectedEvents(ii,1:sum(idx_cond));
-            end
-
-            % Filter Frame Index matrix, if the user defined the conditions
-            % and/repetitions:
-            % Condition:
-            condIdx = true(size(frMat,1),1);  
-            repIdx = condIdx;
-            if ~isempty(conditionName)
-                condIdx = ( obj.eventID(obj.state) == find(strcmp(conditionName,obj.eventNameList)) );                
-            end
-            % Repetitions:
-            if ~isempty(repetitionIndex)
-                repIdx = zeros(size(condIdx));
-                repIdx(condIdx) = find(condIdx) - find(condIdx,1,'first') + 1;
-                repIdx = ismember(repIdx,repetitionIndex);               
-            end
+            
             % Update output matrix and lists:
-            frMat = frMat(condIdx & repIdx & skipEvIdx,:);
-            conditionList = conditionList(condIdx & repIdx & skipEvIdx);
-            repetitionList = repetitionList(condIdx & repIdx & skipEvIdx);
+            frMat = frMat(evIdx,:);           
         end
         
         function [dataByEv, conditionList, repetitionList] = splitDataByEvents(obj,data,varargin)
@@ -888,8 +857,81 @@ classdef EventsManager < handle
         end
     end
     
-    methods (Access = private)
+    methods %(Access = {?DataViewer})
+        function [tmstmp,state]= getConditionTimestamps(obj,conditionName,varargin)
+           % GETCONDITIONTIMESTAMPS outputs the timestamps of the
+           % condition "conditionName".
+           tmstmp = [];state = [];
+           if ~obj.validateCondition(conditionName);return;end
+           repetitionIndex =[];
+           if nargin>2
+               repetitionIndex = varargin{1};
+           end               
+           evIdx = obj.getEventIndex(conditionName,repetitionIndex);
+           % Duplicate evIdx to account for falling triggers:
+           evIdx = repelem(evIdx,2);
+           tmstmp = obj.timestamps(evIdx);
+           state = obj.state(evIdx);
+        end
         
+        function [evIdx,conditionList, repetitionList] = getEventIndex(obj,conditionName,repetitionIndex)
+            % GETEVENTINDEX Retrieves event indices based on condition and repetition.
+            %   This function retrieves indices of events based on
+            %   specified condition name and repetition index.
+            %   It is a helper function for "getFrameMatrix","splitDataByEvents"
+            %   and "getConditionTimestamps".
+            %
+            %   Inputs:
+            %       - conditionName: Name of the condition to filter events.
+            %       - repetitionIndex: Index of the repetition to filter events.
+            %
+            %   Outputs:
+            %       - evIdx: Logical array indicating filtered event indices.
+            %       - conditionList: Array containing condition IDs of the events.
+            %       - repetitionList: Array containing repetition indices of the events.
+            %   Notes:
+            %       - If conditionName is empty, all conditions are considered.
+            %       - If repetitionIndex is empty, all repetitions are considered.
+            %       - The option of having no condition and a repetition is not allowed; 
+            %           if conditionName is empty, repetitionIndex should also be empty.
+
+            % Check condition name:
+            if ~isempty(conditionName)
+                obj.validateCondition(conditionName);
+            end
+            if ~isempty(repetitionIndex)
+                for ii = 1:length(repetitionIndex)
+                    obj.validateRepetition(conditionName, repetitionIndex(ii));
+                end
+            end
+            
+            % Create output lists (condition and repetition)
+            conditionList = obj.eventID(obj.state);
+            repetitionList = zeros(size(conditionList));
+            selEvIdx = false(size(conditionList));
+            for ii = 1:length(obj.eventNameList)
+                idx_cond = obj.eventID(obj.state) == ii;
+                repetitionList(idx_cond) = 1:sum(idx_cond);
+                selEvIdx(idx_cond) = obj.selectedEvents(ii,1:sum(idx_cond));
+            end
+            
+            % Select condition
+            condIdx = true(size(conditionList));
+            repIdx = condIdx;
+            if ~isempty(conditionName)
+                condIdx = ( conditionList == find(strcmp(conditionName,obj.eventNameList)) );
+            end
+            if ~isempty(repetitionIndex)
+                repIdx = ismember(repetitionList,repetitionIndex);
+            end
+            evIdx = condIdx & repIdx & selEvIdx;
+            conditionList = conditionList(evIdx);
+            repetitionList = repetitionList(evIdx);
+            
+        end
+    end
+    
+    methods (Access = private)        
         function setInfo(obj)
             % SETINFO reads the content of the "AcqInfoStream" structure in the
             % SaveFolder and updates the fields for retrocompatibility.
@@ -1239,8 +1281,7 @@ classdef EventsManager < handle
             end
             evFile = matfile(fullfile(obj.SaveFolder,'events.mat'),'Writable',true);
             evFile.(fieldname)= obj.(fieldname);
-        end
-               
+        end                               
     end
 end
 
