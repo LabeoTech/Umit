@@ -4,7 +4,7 @@ function outData = calculateResponseFeatures(data, varargin)
 % signal that crosses a baseline level by a threshold (1 std by default).
 %
 % The input data for this function should be the output of the function
-% "getDataFromROI," representing temporal response profiles of each ROI to a stimulus.
+% "getDataFromROI", representing temporal response profiles of each ROI to a stimulus.
 %
 % Inputs:
 %   data (struct): ROI data with temporal signals split by event.
@@ -130,7 +130,8 @@ for ii = 1:length(outData.data)
     ROIdata(ii).OnsetAmplitude = onsetAmp_arr';
     ROIdata(ii).OnsetLatency = onsetLat_arr';
 end
-% Update metaData:
+% Update event list:
 outData.eventID = evntList;
+% Add measurements to output structure:
 outData.data = ROIdata;
 end
