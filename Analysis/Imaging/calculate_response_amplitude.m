@@ -16,7 +16,7 @@ function [outData, metaData] = calculate_response_amplitude(data, metaData, vara
 %   outData: numerical matrix with dimensions {E,Y,X}.   
 %   metaData: .mat file with meta data associated with "outData".
 
-% Defaults: !Instantiate one default per line!
+% Defaults: !Set one default per line!
 default_Output = 'amplitude_Map.dat'; %#ok This line is here just for Pipeline management.
 default_opts = struct('preEvent_value', 'median', 'postEvent_value', 'max', 'postEvnt_timeWindow_sec', 'all');
 opts_values = struct('preEvent_value', {{'mean', 'median', 'min','max'}}, 'postEvent_value',{{'mean', 'median', 'min','max'}},'postEvnt_timeWindow_sec',{{'all',Inf}});% This is here only as a reference for PIPELINEMANAGER.m. 

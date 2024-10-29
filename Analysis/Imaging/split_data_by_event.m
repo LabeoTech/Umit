@@ -25,6 +25,6 @@ ev.loadEvents(SaveFolder);
 % shortest length for uniformity.
 dataByEv = ev.splitDataByEvents(data);
 % Package the data in structure and add event info:
-outData = genDataMetaStructure(dataByEv,'hasEvents',true,'extraInfo',ev.exportEventInfo);
+outData = genDataStructure(dataByEv,'hasEvents',true,'extraInfo',ev.exportEventInfo);
 
 end

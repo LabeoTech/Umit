@@ -1,5 +1,5 @@
-function out = genDataMetaStructure(data,varargin)
-% GENDATAMETASTRUCTURE validates all variables necessary for the statistical module
+function out = genDataStructure(data,varargin)
+% GENDATASTRUCTURE validates all variables necessary for the statistical module
 % and merges the DATA and METADATA into a single structure ("out").
 %
 % Inputs:
@@ -52,7 +52,7 @@ for ii = 1:length(fn)
     elseif isvector(this_data)
         dataCat = 'time-vector';
     elseif dataDims == 2
-        dataCat = 'Map';
+        dataCat = 'map';
     elseif dataDims == 3
         dataCat = 'Image-time-series';
     else
