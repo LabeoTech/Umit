@@ -61,16 +61,16 @@ if opts.b_UseMask
 else
     logical_mask = true(metaData.datSize);
 end
-% Find NaNs and replace them with zeros:
-idx_nan = isnan(outData);
-outData(idx_nan) = 0;
+
+
 % Reshape data:
 szData = size(outData);
-mData = mean(outData,'all');
+% Find NaNs:
+idx_nan = isnan(outData(:,:,1));idx_nan = idx_nan(:);
 outData = reshape(outData, [], szData(3));
 % Calculate GSR:
 disp('Calculating Global signal regression...');
-Sig = mean(outData(logical_mask(:),:),1);
+Sig = mean(outData(logical_mask(:),:),1,'omitnan');
 Sig = Sig / mean(Sig);
 X = [ones(szData(3),1), Sig'];
 clear Sig
@@ -78,21 +78,31 @@ clear Sig
 A = zeros(length(X),size(outData,1),'single');
 nChunks = calculateMaxChunkSize(outData,7);
 indxChk = round(linspace(0,size(outData,1),nChunks));
+mData = 0;
 if nChunks > 1    
     fprintf('\n%i%% ...\n', 0);
     for ii = 1:length(indxChk)-1
-        fprintf('\n%11.0f%% ...\n', 100*ii/nChunks);
-        A(:,indxChk(ii)+1:indxChk(ii+1)) = X*(X\outData(indxChk(ii)+1:indxChk(ii+1),:)');        
+        fprintf('%11.0f%% ...\n', 100*ii/nChunks);
+        nan_msk = idx_nan(indxChk(ii)+1:indxChk(ii+1));
+        dataChunk = outData(indxChk(ii)+1:indxChk(ii+1),:);
+        dataChunk(nan_msk,:) = 0;
+%         A(:,indxChk(ii)+1:indxChk(ii+1)) = X*(X\outData(indxChk(ii)+1:indxChk(ii+1),:)');        
+        A(:,indxChk(ii)+1:indxChk(ii+1)) = X*(X\dataChunk');        
+        mData = mData + sum(dataChunk,'all');
     end
-    fprintf('\n%i%%\n', 100);
+    mData = mData/numel(outData);
+    clear dataChunk
+    fprintf('%i%%\n', 100);
 else
+    mData = mean(outData,'all');
     A = X*(X\outData');
 end
 clear X 
 outData = outData - A';% Center over constant mean value.
+clear A
+% Put NaNs back to data:
+outData(idx_nan(:),:) = NaN;
 outData = reshape(outData,szData);
 outData = outData + mData; % Center over constant mean value.
-% Put NaNs back to data:
-outData(idx_nan) = NaN;
 disp('Finished GSR.')
 end
