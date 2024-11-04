@@ -21,7 +21,7 @@ addRequired(p,'data',@(x) isnumeric(x) & ndims(x) == 3); % Validate if the input
 addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
 addRequired(p, 'SaveFolder', @isfolder);
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x) && ...
-    ismember(x.PadWith, {'mean', 'NaN'}) || isnumeric(x)); % Padding options for cases where movie snippets dont have the same length.
+    ( any(strcmpi(x.PadWith, {'mean', 'NaN'})) || isnumeric(x.PadWith) )); % Padding options for cases where movie snippets dont have the same length.
 % Parse inputs:
 parse(p,data, metaData, SaveFolder, varargin{:});
 %Initialize Variables:
