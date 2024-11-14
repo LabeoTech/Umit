@@ -22,6 +22,7 @@ classdef EventsManager < handle
         timestamps single {mustBeNonnegative} % Time stamps in seconds of triggers.
         state logical {mustBeNonnegative} % State of triggers (1= ON, 0 = OFF)
         eventID uint16 {mustBePositive} % Index of each condition (1, 2, 3 ...)
+        repetitionID uint16 {mustBePositive} % Index of repetition from each condition.
         eventNameList cell % Name of each condition.
         baselinePeriod single{mustBePositive} % Trial baseline duration (in seconds) for splitting data by trials.
         selectedEvents logical % Matrix (Event by Repetition) of repetitions to be used when splitting the data by trials (TRUE = keep;FALSE = ignore).
@@ -45,10 +46,10 @@ classdef EventsManager < handle
             % It instantiates the object and sets the values for the
             % DataFolder and EventFileName properties.
             % It reads the analog IN channels and the info.txt as well.
-            % Inputs:            
+            % Inputs:
             %   SaveFolder (char): path to the folder containing the
             %       AcqInfos.mat file. This will be the folder where the
-            %       "events.mat" file will be saved or loaded from.            
+            %       "events.mat" file will be saved or loaded from.
             %   RawFolder (char): path to the folder containing the
             %       ai_xxxx.bin data and "info.txt" file. If not provided,
             %       load an "events.mat" file or manually set the
@@ -58,7 +59,7 @@ classdef EventsManager < handle
             %   IDs:{'none'(default),'csv','vpixx'}.
             
             % Input validation:
-            p = inputParser;            
+            p = inputParser;
             addOptional(p,'SaveFolder',pwd,@isfolder)
             addOptional(p,'RawFolder','',@ischar)
             addOptional(p, 'ParseMethod','csv',@(x) ismember(lower(x),obj.ParseMethods));
@@ -68,7 +69,7 @@ classdef EventsManager < handle
             obj.warnOrigState = warning;
             warning('off', 'backtrace');
             
-            % Set main properties:            
+            % Set main properties:
             obj.SaveFolder = p.Results.SaveFolder;
             obj.RawFolder = p.Results.RawFolder;
             obj.EventFileParseMethod = lower(p.Results.ParseMethod);
@@ -79,12 +80,22 @@ classdef EventsManager < handle
                 warning('The folder "%s" does not contain the "AcqInfos.mat" file. Set a valid DataFolder or load an "events.mat" file.',obj.SaveFolder);
                 return
             end
-            % Set AnalogIN property:
-            %             obj.setAnalogIN;
-            %             % Detect internally-generated triggers:
-            %             if ~isempty([obj.trigChanName{:}])
-            %                 obj.getTriggers;
-            %             end
+            
+            % Load "events.mat", if it exists in the save
+            % folder:
+            if isfile(fullfile(obj.SaveFolder,'events.mat'));
+                obj.loadEvents;
+                return
+            end
+            % Read AnalogIN if the RawFolder was set:
+            if ~isempty(obj.RawFolder)
+                % Set AnalogIN property:
+                obj.setAnalogIN;
+                % Detect internally-generated triggers:
+                if ~isempty([obj.trigChanName{:}])
+                    obj.getTriggers;
+                end
+            end
             % Force EventFileParseMethod to "none" if the stimulus is
             % digital. In this case, the event info should already be
             % stated in the "info.txt" file (to be confirmed)
@@ -125,7 +136,7 @@ classdef EventsManager < handle
         end
         
         function setBaselinePeriod(obj,baselinePeriod)
-            % Sets the baseline period (pre-event onset time) property with 
+            % Sets the baseline period (pre-event onset time) property with
             % for trial splitting. The user can manually set the baseline period.
             % If not, this period will correspond to 20% of the trial length.
             %
@@ -140,14 +151,8 @@ classdef EventsManager < handle
             
             % Check for triggers:
             assert(~isempty(obj.state), 'Failed to set trial interval! No triggers detected yet!')
-            % Abort, if the data in the SaveFolder was previously cropped:
-            if isfield(obj.AcqInfo, 'bDataTrimmed')
-                if obj.AcqInfo.bDataTrimmed
-                    warning('Operation aborted! Baseline period was already set! Re-import the data and try again.');
-                    return
-                end
-            end
-            % Validate baseline period:            
+            
+            % Validate baseline period:
             tm_on = obj.timestamps(obj.state);
             trial_length = diff(tm_on);
             if ~exist('baselinePeriod','var')
@@ -171,7 +176,7 @@ classdef EventsManager < handle
             end
             % Update baseline period value
             obj.baselinePeriod = baselinePeriod;
-            fprintf('Baseline period set to %0.2f seconds.\n',obj.baselinePeriod)            
+            fprintf('Baseline period set to %0.2f seconds.\n',obj.baselinePeriod)
         end
         
         function setAnalogIN(obj)
@@ -206,11 +211,25 @@ classdef EventsManager < handle
             obj.AnalogIN = obj.AnalogIN(camTOn:camTOff,:);
             disp('Done')
         end
-         
+        
         function out = get.EventFileParseMethod(obj)
             out = obj.privateEventFileParseMethod;
         end
-                       
+        
+        function out = get.repetitionID(obj)
+            % Generates the repetition index of each condition.
+            out = [];
+            if isempty(obj.eventID);return;end
+            % Create list
+            IDlist = obj.eventID(obj.state);
+            out = zeros(size(IDlist), class(IDlist));
+            for ii = 1:length(obj.eventNameList)
+                idx = IDlist == ii;
+                out(idx) = 1:sum(idx);
+            end
+            out = repelem(out,2,1);
+        end
+        
         function getTriggers(obj, varargin)
             % GETTRIGGERS detects the triggers from one or more analog IN channels
             %   with names stored in the "trigChanName" property.
@@ -344,129 +363,105 @@ classdef EventsManager < handle
             end
         end
         
-        function f = plot(obj, chanName)
-            % PLOTANALOGIN plots the Analog input signals and overlays the
-            % threshold as well as the detected triggers, if existent.
+        function f = plot(obj, chanName, varargin)
+            % PLOT plots the analog input signals and overlays the threshold as well
+            % as the detected triggers, if any.
             %
-            % Input (optional):
-            %   chanName (char|cell): Channel name or list of names to
-            %   plot. If not provided, all channels will de displayed.
-            % Output (optional):
-            %   f (handle): array of figure handle(s).
+            % Input Arguments:
+            %   chanName (char|cell): Channel name or list of names to plot.
+            %   varargin (optional): Additional arguments including:
+            %       fHandle (optional): Handle to figure or parent container to plot
+            %           in. If not provided, a new figure will be created.
+            %
+            % Output Arguments (optional):
+            %   f (handle): figure handle.
+            %
+            % Example:
+            %   f = plot(obj, 'AI1');
+            %   f = plot(obj, {'StimAna1', 'StimAna2'});
+            %
+            % Notes:                        
+            %   - If no figure handle is provided, a new figure is created.                                    
+            %   - Threshold lines and trigger patches are added if applicable.                        
+
+            
+            % Return if there are no ANALOGIN:
             if isempty(obj.AnalogIN)
                 warning('No signal to plot!')
                 return
             end
-            
-            if ~exist('chanName','var') || isempty(chanName)
-                % plot All channels if no channel name is provided:
-                chanName = obj.AIChanList;
-            end
-            
+            % Force input to cell:
             if ischar(chanName)
                 chanName = {chanName};
             end
-            % Check inputs:
-            b_chanExists = ismember(chanName,obj.dictAIChan);
+            chanName = unique(chanName,'stable');
+            
+            % Check for figure/Parent container handle:
+            f = [];
+            if nargin > 2
+                f = varargin{1};
+            end
+            % Create new figure, if no handle is provided:
+            if isempty(f)
+                f = figure('Name',sprintf('Analog Inputs (downsampled to %0.0f KHz)', 0.1*obj.sr),...
+                    'NumberTitle','off','CreateFcn',{@movegui,'northwest'});
+            end
+            % Set subplot layout:
+            nRows = ceil(sqrt(length(chanName))); 
+            nCols = ceil(length(chanName)/nRows);
+                                                
+            % Check channel name(s):
+            b_chanExists = ismember(chanName,obj.AIChanList);
             if all(~b_chanExists)
-                error(['Invalid channel name(s). It must be one of the following:',sprintf('\n"%s"',obj.dictAIChan{:})]);
+                error(['Invalid channel name(s). It must be one of the following:',sprintf('\n"%s"',obj.AIChanList{:})]);
             elseif any(~b_chanExists)
                 warning(['The following channel(s) do not exist and will be ignored:', sprintf('\n"%s"',chanName{~b_chanExists})])
                 chanName = chanName(b_chanExists);
             end
             [~,chanIndx] = ismember(chanName, obj.AIChanList);
-            % Calculate the number of figures with a maximum of 4 subplots per figure:
-            nFigs = ceil(length(chanIndx)/4);
-            nAxPerFig = ones(1,nFigs)*4;
-            remAx = mod(length(chanIndx),4);
-            if remAx > 0
-                nAxPerFig(end) = remAx;
-            end
-            cnt = 1;
-            b_trigsPlotted= false;
+            % Plot:
             % Set axes properties:
             xVec = [0:size(obj.AnalogIN,1)-1]./obj.sr;% Use X-axis in seconds
             axYSize = [min(obj.AnalogIN(:)), max(obj.AnalogIN(:))]; % Get min-max for Yscale
-            
-            for ii = 1:nFigs
-                f(ii) = figure('Name',sprintf('Analog Inputs %d/%d (downsampled to %0.0f KHz)',ii,nFigs, obj.sr/10000),...
-                    'Visible','off','NumberTitle','off', 'Position',[0 0 560 nAxPerFig(ii)*200],...
-                    'CreateFcn',{@movegui,'center'},'CloseRequestFcn', @closeAllFigs);
-                for jj = 1:nAxPerFig(ii)
-                    s(cnt) = subplot(nAxPerFig(ii),1,jj, 'Parent',f(ii));
-                    s(cnt).XLabel.String = 'time (s)';
-                    s(cnt).YLabel.String = 'amp.(V)';
-                    % Plot analogIN traces (downsample to 1KHz to save space):
-                    line(xVec(1:10:end),obj.AnalogIN(1:10:end,chanIndx(cnt)),'LineStyle','-', 'Color',[.3 .3 .3],'Parent',s(cnt));
-                    if jj == 1
-                        % Set axes labels:
-                        s(cnt).XLabel.String = 'time (s)';
-                        s(cnt).YLabel.String = 'amp.(V)';
-                    end
-                    % Plot detected triggers and threshold lines,
-                    if ~b_trigsPlotted
-                        hold(s(cnt),'on');
-                        % Plot threshold line:
-                        if ~ischar(obj.trigThr)
-                            ln = line([xVec(1) xVec(end)],[obj.trigThr obj.trigThr],'Color','r');
-                            ln.Tag = 'thrLn';
-                        end
-                        % Plot Trigger patches:
-                        if ~isempty(obj.timestamps)
-                            idx = unique(obj.eventID);
-                            % Create semi-transparent patches to represent HIGH state of triggers:
-                            % Trigger color code
-                            colorArr = jet(64);
-                            colorArr = colorArr(round(linspace(1,64,numel(obj.eventNameList))),:);
-                            for kk = 1:length(idx)
-                                xOn = obj.timestamps(obj.eventID == idx(kk) & obj.state == 1);
-                                xOff = obj.timestamps(obj.eventID == idx(kk) & obj.state == 0);
-                                x = [xOn xOff xOff xOn];
-                                y = repmat([axYSize(1) axYSize(1) axYSize(2) axYSize(2)], size(xOn));
-                                ptc(kk) = patch(s(cnt), x',y',colorArr(kk,:), 'FaceAlpha', .25, 'EdgeColor', 'none', 'Tag','TrigPatch');
-                                uistack(ptc(kk), 'bottom');
-                            end
-                            % Put legend on the first plot:
-                            if jj == 1
-                                legend(s(cnt),ptc,obj.eventNameList,'Location','best', 'Interpreter','none');
-                            end
-                        end
-                        hold(s(cnt),'off');
-                        
-                    else
-                        % copy the content of the first axis
-                        if exist('ptc','var')
-                            
-                            copyobj(ptc,s(cnt));
-                        end
-                        if exist('ln','var')
-                            copyobj(ln,s(cnt));
-                        end
-                    end
-                    title(s(cnt), chanName{cnt});
-                    cnt = cnt+1;
+            evNames = obj.eventNameList(unique(obj.eventID(obj.selectedEvents)));
+            for ii = 1:length(chanName)
+                s(ii) = subplot(nRows,nCols,ii, 'Parent',f,'PlotBoxAspectRatio',[1,.35,1]);
+                s(ii).YLabel.String = 'amp. (V)';
+                title(s(ii), chanName{ii});
+                hold(s(ii),'on');
+                % Plot analogIN traces (downsample to 1KHz to save space):
+                line(xVec(1:10:end),obj.AnalogIN(1:10:end,chanIndx(ii)),'LineStyle','-', 'Color',[.3 .3 .3],'Parent',s(ii));
+                % Plot threshold line:
+                if ~ischar(obj.trigThr)
+                    ln = line(s(ii),[xVec(1) xVec(end)],[obj.trigThr obj.trigThr],'Color','r');
+                    ln.Tag = 'thrLn';
                 end
-            end
-            for ii = 1:length(f)
-                % Cascade figures:
-                if ii > 1
-                    f(ii).Position([1 2]) = f(ii-1).Position([1 2]) + [25 -25];
+                % Plot Trigger patches:
+                if ~isempty(obj.timestamps)
+                    idx = unique(obj.eventID(obj.selectedEvents));
+                    % Create semi-transparent patches to represent HIGH state of triggers:
+                    % Trigger color code
+                    colorArr = jet(64);
+                    colorArr = colorArr(round(linspace(1,64,numel(evNames))),:);
+                    for kk = 1:length(idx)
+                        xOn = obj.timestamps(obj.eventID == idx(kk) & obj.state == 1 & obj.selectedEvents);
+                        xOff = obj.timestamps(obj.eventID == idx(kk) & obj.state == 0 & obj.selectedEvents);
+                        x = [xOn xOff xOff xOn];
+                        y = repmat([axYSize(1) axYSize(1) axYSize(2) axYSize(2)], size(xOn));
+                        ptc(kk) = patch(s(ii), x',y',colorArr(kk,:), 'FaceAlpha', .25, 'EdgeColor', 'none', 'Tag','TrigPatch');
+                    end
                 end
-                f(ii).UserData = f;
-                f(ii).Visible = 'on';
+                % Put legend on the first plot:
+                if ii == 1                    
+                    legend(s(ii),ptc,evNames,'Location','northeast', 'Interpreter','none');
+                end
+                hold(s(ii),'off');
             end
+            s(end).XLabel.String = 'time (s)';
             % Link all axes together
-            linkprop(s,{'XLim','YLim'});
-            set(s(1),'YLim',axYSize);
-            
-            % CloseFig callback:
-            function closeAllFigs(src,~)
-                % CLOSEALLFIGS closes all figures when the selected figure is closed.
-                h = src.UserData;
-                delete(h)
-            end
+            linkaxes(s,'xy')
         end
-                        
+        
         function status = readConditionFile(obj, varargin)
             % READCONDITIONFILE reads the content of an event file containing a
             % list of event Names. The file will be parsed using one of the
@@ -526,6 +521,11 @@ classdef EventsManager < handle
                 warning('Operation aborted! Triggers missing. Detect triggers first, then read the event file to update the event IDs and names');
                 return
             end
+            % Use current event file:
+            if ~isempty(obj.EventFileName) & isempty(evFile)
+                evFile = obj.EventFileName;
+            end
+            
             if ~isempty(evFile)
                 [folder,name,ext] = fileparts(evFile);
                 if isempty(folder)
@@ -610,15 +610,14 @@ classdef EventsManager < handle
             % This will eliminate the whole condition, from the analysis
             % when the data will be split by events.
             if ~obj.validateCondition(conditionName);return;end
-            
-            obj.selectedEvents(strcmpi(conditionName,obj.eventNameList),:) = false;
+            obj.selectedEvents(obj.eventID == find(strcmp(conditionName,obj.eventNameList))) = false;
             fprintf('Condition "%s" will be ignored!\n',conditionName)
             % Warn user that all conditions are ignored:
             if ~any(obj.selectedEvents)
                 warning('All conditions were ignored! Data splitting by events will be impossible!')
             end
             % Update selectedEvents field in current "events.mat" file:
-            obj.updateEventsFile('selectedEvents')
+            %             obj.updateEventsFile('selectedEvents')
         end
         
         function removeRepetition(obj, conditionName, repetitionIndex)
@@ -630,37 +629,28 @@ classdef EventsManager < handle
             if ~obj.validateCondition(conditionName);return;end
             if ~obj.validateRepetition(conditionName, repetitionIndex);return;end
             
-            idxCond = strcmpi(conditionName,obj.eventNameList);
+            idxCond = obj.eventID  == find(strcmpi(conditionName,obj.eventNameList));
             
-            obj.selectedEvents(idxCond,repetitionIndex) = false;
+            obj.selectedEvents(idxCond & obj.repetitionID == repetitionIndex) = false;
             fprintf('Repetition "%d" from condition "%s" will be ignored!\n',repetitionIndex,conditionName);
-            if all(~obj.selectedEvents(idxCond,:))
+            if all(~obj.selectedEvents(idxCond))
                 warning('All repetitions from condition "%s" ignored. The whole condition will be ignored!\n',conditionName)
             end
             % Update selectedEvents field in current "events.mat" file:
-            obj.updateEventsFile('selectedEvents')
+            %             obj.updateEventsFile('selectedEvents')
         end
         
         function clearIgnoredEvents(obj)
             % Resets the lists of ignored conditions and repetitions to the default state (i.e. all trials included).
-            if isempty(obj.state)
-                % When there is no triggers detected. This should not be
-                % reached.
-                obj.selectedEvents = [];
-            else
-                % Set logical matrix with TRUEs to keep all repetitions.
-                nEvents = arrayfun(@(x) sum(obj.eventID == x & obj.state),unique(obj.eventID));
-                obj.selectedEvents = false(length(obj.eventNameList),max(nEvents));
-                % Account for rare cases where the events do not have the
-                % same number of reps:
-                for ii = 1:length(nEvents)
-                    obj.selectedEvents(ii,1:nEvents(ii)) = true;
-                end
-            end
-            fprintf('Condition and Repetition lists successfully reset! All trials will be considered in the analysis.\n');
-            obj.updateEventsFile('selectedEvents')
+            if all(obj.selectedEvents(:));return;end
+            % When there is no triggers detected. This should not be reached.
+            if isempty(obj.eventID);obj.selectedEvents = [];return;end
+            % Set logical matrix with TRUEs to keep all repetitions.
+            obj.selectedEvents = true(size(obj.eventID));
+            fprintf('Condition and Repetition lists successfully reset!\n');
+            %             obj.updateEventsFile('selectedEvents')
         end
-                        
+        
         function saveEvents(obj, saveFolder)
             % SAVEEVENTS creates the file "events.mat" in the
             % SaveFolder. This file is used by umIT to split the data into
@@ -678,9 +668,9 @@ classdef EventsManager < handle
                 warning('Unable to create events.mat file. No triggers found!')
                 return
             end
-%             % Trim all .dat files in the SaveFolder to exclude frames
-%             % outside trials:
-%             obj.trimDatFiles;                                    
+            %             % Trim all .dat files in the SaveFolder to exclude frames
+            %             % outside trials:
+            %             obj.trimDatFiles;
             % Save Events data:
             RawFolder = obj.RawFolder; %#ok
             AnalogIN = obj.AnalogIN;%#ok
@@ -690,17 +680,21 @@ classdef EventsManager < handle
             eventNameList = obj.eventNameList; %#ok
             baselinePeriod = obj.baselinePeriod; %#ok
             trigChanName = obj.trigChanName; %#ok
-            selectedEvents = obj.selectedEvents; %#ok            
+            selectedEvents = obj.selectedEvents; %#ok
+            EventFileName = obj.EventFileName;%#ok
+            EventFileParseMethod = obj.EventFileParseMethod;%#ok
             % Save:
             save(fullfile(saveFolder, 'events.mat'),...
                 'RawFolder',...
-                'AnalogIN',...    
-                'eventID',...                
+                'AnalogIN',...
+                'eventID',...
                 'state',...
                 'timestamps',...
                 'eventNameList',...
                 'selectedEvents',...
-                'baselinePeriod');
+                'baselinePeriod',...
+                'EventFileName',...
+                'EventFileParseMethod');
             disp(['Events MAT file saved in  ' saveFolder]);
         end
         
@@ -725,9 +719,9 @@ classdef EventsManager < handle
             fn = intersect(fn,properties(obj),'stable');
             for ii = 1:length(fn)
                 obj.(fn{ii}) = evInfo.(fn{ii});
-            end            
+            end
             % Load Acquisition info:
-            obj.setInfo            
+            obj.setInfo
             %
             if isempty(obj.selectedEvents)
                 obj.clearIgnoredEvents;
@@ -754,13 +748,13 @@ classdef EventsManager < handle
             %   obj: The object containing the data and methods.
             %   conditionName (char): Name of the condition to extract the trials.
             %   repetitionIndex (vector, int | optional): Repetition index(ices) of
-            %       the condition. If not provided, all repetitions will be used.                                    
+            %       the condition. If not provided, all repetitions will be used.
             % Outputs:
             %   frMat (matrix): Matrix containing the frame indices of each trial.
             %       Frames that are out of bounds are marked as NaNs.
-            %   conditionList (vecrot): List of conditions indices for each trial.
-            %   repetitionList (vector): List of repetition indices for each trial.                       
-                        
+            %   conditionList (vector): List of conditions indices for each trial.
+            %   repetitionList (vector): List of repetition indices for each trial.
+            
             % Input parsing and validation:
             p = inputParser();
             addRequired(p,'obj');
@@ -776,102 +770,106 @@ classdef EventsManager < handle
             end
             
             [evIdx,conditionList, repetitionList] = obj.getEventIndex(conditionName,repetitionIndex);
-                       
-            % Create frame index matrix:            
+            if isempty(evIdx)
+                frMat = [];
+                return
+            end
+            % Create frame index matrix:
             evOnsetFrame = round(obj.baselinePeriod*obj.AcqInfo.FrameRateHz);
             frOn = ceil(obj.timestamps(obj.state)*obj.AcqInfo.FrameRateHz);
             frStart = frOn - evOnsetFrame + 1;
             trialLen = [diff(frOn);max(diff(frOn))];
             frMat = nan(sum(obj.state),max(trialLen));
             
-            for ii = 1:length(frStart)                
+            for ii = 1:length(frStart)
                 frVec = frStart(ii):frStart(ii)+trialLen(ii)-1;
                 b_outbound_frames = frVec < 1 | frVec > obj.AcqInfo.Length;
-                frVec(b_outbound_frames) = nan;                
+                frVec(b_outbound_frames) = nan;
                 frMat(ii,1:length(frVec)) = frVec;
             end
             
             % Update output matrix and lists:
-            frMat = frMat(evIdx,:);           
+            frMat = frMat(evIdx,:);
         end
         
         function [dataByEv, conditionList, repetitionList] = splitDataByEvents(obj,data,varargin)
             % SPLITDATABYEVENT uses the function getFrameMatrix to split 3D
-            % image time series by trials. 
+            % image time series by trials.
             % Inputs:
             %
             %    data (3D num array): Image time series with dimensions Y, X, T.
             %    varargin: Optional parameters as name-value pairs!:
             %       'conditionName' (char or string): Name of the condition to filter trials.
-            %       'repetitionIndex' (numeric array): Indices of repetitions to include.          
+            %       'repetitionIndex' (numeric array): Indices of repetitions to include.
             % Output:
             %    dataByEv (4D num array): Image time series by events with
             %       dimensions E, Y, X, T.
             %    conditionList (vector): List of condition indices for each trial.
-            %    repetitionList (vector): List of repetition indices for each trial.           
-           
-           % Input parsing and validation:
-           p = inputParser();
-           addRequired(p,'obj');
-           addRequired(p,'data');           
-           addParameter(p,'conditionName','',@(x) ischar(x) | isStringScalar(x) )
-           addParameter(p,'repetitionIndex',[],@(x) ( isnumeric(x) && all(x > 0) ) || isempty(x))
-          
-           parse(p,obj,data,varargin{:});
-           
-           % Check if the input data matches the dimensions stored in
-           % AcqInfo:
-           assert(isequaln(size(data),[obj.AcqInfo.Height, obj.AcqInfo.Width, obj.AcqInfo.Length]),...
-               'Failed to split data by events! The dimensions of the input data do not match the ones in the AcqInfo structure!');
-           % get frame matrix
-           [frMat,conditionList, repetitionList] = obj.getFrameMatrix(p.Results.conditionName,...
-               p.Results.repetitionIndex);
-           % Split the data:              
-           dataByEv = nan(size(frMat,1),size(data,1),size(data,2),size(frMat,2),'single');
-           b_validFrames = ~isnan(frMat);
-           for ii = 1:size(frMat,1)
-               dataByEv(ii,:,:,b_validFrames(ii,:)) = data(:,:,frMat(ii,b_validFrames(ii,:)));
-           end
-           % Crop trials to remove frames full of nans:
-           if any(isnan(frMat(:)))
-               disp('Cropping trials to shortest length...');
-               dataByEv(:,:,:,find([0 diff(any(isnan(frMat),1))] == 1,1,'first'):end) = [];
-           end
-           disp('Finished splitting data by events');
-                     
+            %    repetitionList (vector): List of repetition indices for each trial.
+            
+            % Input parsing and validation:
+            p = inputParser();
+            addRequired(p,'obj');
+            addRequired(p,'data');
+            addParameter(p,'condition','',@(x) ischar(x) | isStringScalar(x) )
+            addParameter(p,'repetition',[],@(x) ( isnumeric(x) && all(x > 0) ) || isempty(x))
+            
+            parse(p,obj,data,varargin{:});
+            
+            % Check if the input data matches the dimensions stored in
+            % AcqInfo:
+            assert(isequaln(size(data),[obj.AcqInfo.Height, obj.AcqInfo.Width, obj.AcqInfo.Length]),...
+                'Failed to split data by events! The dimensions of the input data do not match the ones in the AcqInfo structure!');
+            % get frame matrix
+            [frMat,conditionList, repetitionList] = obj.getFrameMatrix(p.Results.condition,...
+                p.Results.repetition);
+            % Split the data:
+            dataByEv = nan(size(frMat,1),size(data,1),size(data,2),size(frMat,2),'single');
+            b_validFrames = ~isnan(frMat);
+            for ii = 1:size(frMat,1)
+                dataByEv(ii,:,:,b_validFrames(ii,:)) = data(:,:,frMat(ii,b_validFrames(ii,:)));
+            end
+            % Crop trials to remove frames full of nans:
+            if any(isnan(frMat(:)))
+                disp('Cropping trials to shortest length...');
+                dataByEv(:,:,:,find([0 diff(any(isnan(frMat),1))] == 1,1,'first'):end) = [];
+            end
+            disp('Finished splitting data by events');
         end
-                
+        
         function evInfo = exportEventInfo(obj)
-           % EXPORTEVENTINFO packages the event-related information into a structure.
-           %            
-           fieldsToExport ={'eventNameList','baselinePeriod','selectedEvents'};
-           evInfo = struct();
-           for ii = 1:length(fieldsToExport)
-               evInfo.(fieldsToExport{ii}) = obj.(fieldsToExport{ii});
-           end
-           % Add Frame Rate:
-           evInfo.FrameRateHz = obj.AcqInfo.FrameRateHz;
-           % Add EventID but keep only the selected events:
-           [~,evInfo.eventID,~] = obj.getFrameMatrix;
-           
+            % EXPORTEVENTINFO packages the event-related information into a structure.
+            %
+            fieldsToExport ={'eventNameList','baselinePeriod'};
+            evInfo = struct();
+            for ii = 1:length(fieldsToExport)
+                evInfo.(fieldsToExport{ii}) = obj.(fieldsToExport{ii});
+            end
+            % Add Frame Rate:
+            evInfo.FrameRateHz = obj.AcqInfo.FrameRateHz;
+            % Add EventID:
+            evInfo.eventID = obj.eventID(obj.state);
+            % Add selectedEvents:
+            evInfo.selectedEvents = obj.selectedEvents(obj.state);
         end
+        
     end
     
     methods %(Access = {?DataViewer})
         function [tmstmp,state]= getConditionTimestamps(obj,conditionName,varargin)
-           % GETCONDITIONTIMESTAMPS outputs the timestamps of the
-           % condition "conditionName".
-           tmstmp = [];state = [];
-           if ~obj.validateCondition(conditionName);return;end
-           repetitionIndex =[];
-           if nargin>2
-               repetitionIndex = varargin{1};
-           end               
-           evIdx = obj.getEventIndex(conditionName,repetitionIndex);
-           % Duplicate evIdx to account for falling triggers:
-           evIdx = repelem(evIdx,2);
-           tmstmp = obj.timestamps(evIdx);
-           state = obj.state(evIdx);
+            % GETCONDITIONTIMESTAMPS outputs the timestamps of the
+            % condition "conditionName".
+            tmstmp = [];state = [];
+            if ~obj.validateCondition(conditionName);return;end
+            repetitionIndex =[];
+            if nargin>2
+                repetitionIndex = varargin{1};
+            end
+            evIdx = obj.getEventIndex(conditionName,repetitionIndex);
+            % Duplicate evIdx to account for falling triggers:
+            evIdx = repelem(evIdx,2);
+            tmstmp = obj.timestamps(evIdx);
+            state = obj.state(evIdx);
         end
         
         function [evIdx,conditionList, repetitionList] = getEventIndex(obj,conditionName,repetitionIndex)
@@ -890,58 +888,48 @@ classdef EventsManager < handle
             %       - conditionList: Array containing condition IDs of the events.
             %       - repetitionList: Array containing repetition indices of the events.
             %   Notes:
+            %       - Here, the indices and lists are set using the
+            %           "obj.state" == 1.
             %       - If conditionName is empty, all conditions are considered.
             %       - If repetitionIndex is empty, all repetitions are considered.
-            %       - The option of having no condition and a repetition is not allowed; 
+            %       - The option of having no condition and a repetition is not allowed;
             %           if conditionName is empty, repetitionIndex should also be empty.
-
+            
             % Check condition name:
+            evIdx = [];
+            conditionList = [];
+            repetitionList = [];
             if ~isempty(conditionName)
-                obj.validateCondition(conditionName);
+                bOk = obj.validateCondition(conditionName);
+            else
+                conditionName = obj.eventNameList;
+                bOk = true;
             end
+            if ~bOk;return;end
+            % Get condition index:
+            condIdx = ismember(obj.eventID,find(ismember(obj.eventNameList,conditionName)));
             if ~isempty(repetitionIndex)
+                bOk = false(length(repetitionIndex));
                 for ii = 1:length(repetitionIndex)
-                    obj.validateRepetition(conditionName, repetitionIndex(ii));
+                    bOk(ii) = obj.validateRepetition(conditionName, repetitionIndex(ii));
                 end
+            else
+                repetitionIndex = obj.repetitionID(condIdx);
             end
-            
-            % Create output lists (condition and repetition)
-            conditionList = obj.eventID(obj.state);
-            repetitionList = zeros(size(conditionList));
-            selEvIdx = false(size(conditionList));
-            for ii = 1:length(obj.eventNameList)
-                idx_cond = obj.eventID(obj.state) == ii;
-                repetitionList(idx_cond) = 1:sum(idx_cond);
-                selEvIdx(idx_cond) = obj.selectedEvents(ii,1:sum(idx_cond));
-            end
-            
-            % Select condition
-            condIdx = true(size(conditionList));
-            repIdx = condIdx;
-            if ~isempty(conditionName)
-                condIdx = ( conditionList == find(strcmp(conditionName,obj.eventNameList)) );
-            end
-            if ~isempty(repetitionIndex)
-                repIdx = ismember(repetitionList,repetitionIndex);
-            end
-            evIdx = condIdx & repIdx & selEvIdx;
-            conditionList = conditionList(evIdx);
-            repetitionList = repetitionList(evIdx);
-            
+            evIdx = ( obj.state & condIdx & ismember(obj.repetitionID,repetitionIndex)& obj.selectedEvents );
+            conditionList = obj.eventID(evIdx);
+            repetitionList= obj.repetitionID(evIdx);
+            evIdx = evIdx(obj.state);
         end
     end
     
-    methods (Access = private)        
+    methods (Access = private)
         function setInfo(obj)
             % SETINFO reads the content of the "AcqInfoStream" structure in the
             % SaveFolder and updates the fields for retrocompatibility.
             % In addition, it uses the information to update the properties:
             % "sr" and "trigChanName" (for trigger detection).
             
-            % Check if AcqInfos file exists:
-            %             assert(any(exist(fullfile(obj.RawFolder, 'info.txt'),'file')),...
-            %                 ['Unable to read experiment metadata. The file "info.txt" is missing in folder "'...
-            %                 obj.RawFolder '". Execute Images Classification and try again.']);
             % Load existing info:
             try
                 a = load(fullfile(obj.SaveFolder, 'AcqInfos.mat'));
@@ -1134,11 +1122,11 @@ classdef EventsManager < handle
         %%%%% Event File parsers %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function [eventID, eventNameList] = readCSVfile(obj, colName)
             % READCSVFILE reads a .CSV file. If no column name is provided,
-            % it reads the content of the first column and considers it
-            % without header. If one column name is provided, it reads the
-            % rows of the given column. If 2 or more column names are
-            % provided, the values of the column names are concatenated
-            % with a hiphen ("-").
+            % it reads the content of the first column.
+            % If one column name is provided, it reads the rows of the
+            % given column. If 2 or more column names are provided, the
+            % values of the column names are concatenated with a hiphen ("-").
+            %
             % Input:
             %    colName(optional, char|cell): column name(s) to be read
             %    from the CSV file.
@@ -1158,8 +1146,8 @@ classdef EventsManager < handle
             if ~isempty([colName{:}])
                 opts.SelectedVariableNames = colName; % Select the input columns only.
             else
-                colName = {''}; % USe columns without headers.
-                opts.DataLines(1) = 1;
+                colName = {''}; % Use first column and skip header.
+                opts.DataLines(1) = 2;
             end
             %             opts.DataLines = 2; %Start reading at 2nd row.
             opts.VariableTypes = repmat({'char'},size(opts.VariableTypes)); % Force data to characters.
@@ -1239,13 +1227,13 @@ classdef EventsManager < handle
             assert(~isempty(obj.selectedEvents),'List of selected Events not set yet! Execute getTriggers and try again!');
             
             bOk = false;
-            idxCond = strcmpi(conditionName, obj.eventNameList);
+            indxCond = find(strcmpi(conditionName, obj.eventNameList));
             % Check if it exists:
-            if ~any(idxCond)
+            if ~any(indxCond)
                 error('The condition with name "%s" does not exist in the "eventNameList".', conditionName);
             end
             % Check if it was not blacklisted:
-            if all(~obj.selectedEvents(idxCond,:))
+            if all(~obj.selectedEvents(obj.eventID == indxCond))
                 warning('The condition with name "%s" is already listed as ignored!',conditionName)
                 return
             end
@@ -1253,15 +1241,18 @@ classdef EventsManager < handle
         end
         
         function bOk = validateRepetition(obj, conditionName, repetitionIndex)
+            bOk = false;
             % Validates if the input repetition exists and if it it is not ignored.
             validateattributes(repetitionIndex,{'single','double'},{'scalar'});
             % Validate the condition name first:
             obj.validateCondition(conditionName);
             % Check if the repetitionIndex provided is valid:
-            assert(repetitionIndex <=size(obj.selectedEvents,2),'The repetition index provided is out of bounds!')
-            bOk = false;
+            assert(ismember(repetitionIndex,obj.repetitionID(obj.eventID == find(strcmp(conditionName,obj.eventNameList)))),...
+                'The repetition index provided is out of bounds!')
             
-            if ~obj.selectedEvents(strcmpi(conditionName,obj.eventNameList),repetitionIndex)
+            repIdx = ( obj.eventID == find(strcmp(conditionName,obj.eventNameList)) & obj.repetitionID == repetitionIndex );
+            
+            if ~obj.selectedEvents(repIdx)
                 warning('The repetition "%d" from the condition "%s" is already listed as ignored!',repetitionIndex,conditionName);
                 return
             end
@@ -1273,15 +1264,15 @@ classdef EventsManager < handle
             warning(obj.warnOrigState)
         end
         
-        function updateEventsFile(obj,fieldname)
-            % Updates a given field in an existing "events.mat" file.
-            
-            if ~isfile(fullfile(obj.SaveFolder,'events.mat'))
-                return
-            end
-            evFile = matfile(fullfile(obj.SaveFolder,'events.mat'),'Writable',true);
-            evFile.(fieldname)= obj.(fieldname);
-        end                               
+        %         function updateEventsFile(obj,fieldname)
+        %             % Updates a given field in an existing "events.mat" file.
+        %
+        %             if ~isfile(fullfile(obj.SaveFolder,'events.mat'))
+        %                 return
+        %             end
+        %             evFile = matfile(fullfile(obj.SaveFolder,'events.mat'),'Writable',true);
+        %             evFile.(fieldname)= obj.(fieldname);
+        %         end
     end
 end
 

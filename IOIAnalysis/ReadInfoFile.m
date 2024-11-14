@@ -2,10 +2,16 @@ function out = ReadInfoFile(FolderPath, varargin)
 % This function parses the "info.txt" file and saves the data to a
 % structure.
 % Inputs:
-% FolderPath (char): Path to folder containing the "info.txt" file.
+% FolderPath (char): Path to folder containing the "info.txt" file. If
+% empty, the function reads the "info.txt" file in the current directory.
+%
 % infoFile (char): Optional Parameter. Name of the .TXT file containing the
 % acquisition information. Use this parameter to read a file with a
 % different name as "info".
+
+% Force full path with current directory, otherwise the function "readcell" 
+% will read any info.txt file inside Matlab's path:
+if isempty(FolderPath);FolderPath = pwd;end
 
 % Read the info.txt file:
 if nargin == 1
