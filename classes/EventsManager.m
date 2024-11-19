@@ -380,10 +380,10 @@ classdef EventsManager < handle
             %   f = plot(obj, 'AI1');
             %   f = plot(obj, {'StimAna1', 'StimAna2'});
             %
-            % Notes:                        
-            %   - If no figure handle is provided, a new figure is created.                                    
-            %   - Threshold lines and trigger patches are added if applicable.                        
-
+            % Notes:
+            %   - If no figure handle is provided, a new figure is created.
+            %   - Threshold lines and trigger patches are added if applicable.
+            
             
             % Return if there are no ANALOGIN:
             if isempty(obj.AnalogIN)
@@ -407,9 +407,9 @@ classdef EventsManager < handle
                     'NumberTitle','off','CreateFcn',{@movegui,'northwest'});
             end
             % Set subplot layout:
-            nRows = ceil(sqrt(length(chanName))); 
+            nRows = ceil(sqrt(length(chanName)));
             nCols = ceil(length(chanName)/nRows);
-                                                
+            
             % Check channel name(s):
             b_chanExists = ismember(chanName,obj.AIChanList);
             if all(~b_chanExists)
@@ -429,15 +429,8 @@ classdef EventsManager < handle
                 s(ii).YLabel.String = 'amp. (V)';
                 title(s(ii), chanName{ii});
                 hold(s(ii),'on');
-                % Plot analogIN traces (downsample to 1KHz to save space):
-                line(xVec(1:10:end),obj.AnalogIN(1:10:end,chanIndx(ii)),'LineStyle','-', 'Color',[.3 .3 .3],'Parent',s(ii));
-                % Plot threshold line:
-                if ~ischar(obj.trigThr)
-                    ln = line(s(ii),[xVec(1) xVec(end)],[obj.trigThr obj.trigThr],'Color','r');
-                    ln.Tag = 'thrLn';
-                end
-                % Plot Trigger patches:
                 if ~isempty(obj.timestamps)
+                    % Plot Trigger patches:
                     idx = unique(obj.eventID(obj.selectedEvents));
                     % Create semi-transparent patches to represent HIGH state of triggers:
                     % Trigger color code
@@ -451,8 +444,15 @@ classdef EventsManager < handle
                         ptc(kk) = patch(s(ii), x',y',colorArr(kk,:), 'FaceAlpha', .25, 'EdgeColor', 'none', 'Tag','TrigPatch');
                     end
                 end
+                % Plot analogIN traces (downsample to 1KHz to save space):
+                line(xVec(1:10:end),obj.AnalogIN(1:10:end,chanIndx(ii)),'LineStyle','-', 'Color',[.3 .3 .3],'Parent',s(ii));
+                % Plot threshold line:
+                if ~ischar(obj.trigThr)
+                    ln = line(s(ii),[xVec(1) xVec(end)],[obj.trigThr obj.trigThr],'Color','r');
+                    ln.Tag = 'thrLn';
+                end
                 % Put legend on the first plot:
-                if ii == 1                    
+                if ii == 1
                     legend(s(ii),ptc,evNames,'Location','northeast', 'Interpreter','none');
                 end
                 hold(s(ii),'off');
