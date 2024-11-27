@@ -1,0 +1,76 @@
+[
+    {
+        "ElementID": "matlab.ui.Figure",
+        "LightMode": {
+            "Color": 0.94
+        },
+        "DarkMode": {
+            "Color": 0.27
+        }
+    },
+    {
+        "ElementID": ["matlab.ui.control.Button","matlab.ui.control.StateButton","matlab.ui.control.NumericEditField","matlab.ui.control.RadioButton"],
+        "LightMode": {
+            "FontColor": 0,
+            "ForegroundColor": 0,
+            "BackgroundColor": 0.9
+        },
+        "DarkMode": {
+            "FontColor": 0.9,
+            "ForegroundColor": 0.9,
+            "BackgroundColor": 0.5
+        }
+    },
+    {
+        "ElementID": ["matlab.ui.container.panel","matlab.ui.container.ButtonGroup"],
+        "LightMode": {
+            "FontColor": 0,
+            "ForegroundColor": 0,
+            "BackgroundColor": 0.94
+        },
+        "DarkMode": {
+            "FontColor": 0.9,
+            "ForegroundColor": 0.9,
+            "BackgroundColor": 0.27
+        }
+    },
+    {
+        "ElementID": ["matlab.ui.control.Label","matlab.ui.control.CheckBox", "matlab.ui.control.Slider"],
+        "LightMode": {
+            "FontColor": 0,
+            "BackgroundColor": "none"
+        },
+        "DarkMode": {
+            "FontColor": 1,
+            "BackgroundColor": "none"
+        }
+    },
+    {
+        "ElementID": "matlab.ui.control.DropDown",
+        "LightMode": {
+            "FontColor": 0,
+            "BackgroundColor": 0.94
+        },
+        "DarkMode": {
+            "FontColor": 0.15,
+            "BackgroundColor": 0.43
+        }
+    },
+    {
+        "ElementID": "matlab.ui.control.UIAxes",
+        "LightMode": {
+            "Color": 1,
+            "BackgroundColor": 0.94,
+            "XColor":0,
+            "YColor":0,
+            "Title.Color":0
+        },
+        "DarkMode": {
+            "Color": 0.43,
+            "BackgroundColor": 0.43,
+            "XColor":0.9,
+            "YColor":0.9,
+            "Title.Color":0.9
+        }
+    }    
+]
