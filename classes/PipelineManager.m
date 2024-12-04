@@ -6,16 +6,12 @@ classdef PipelineManager < handle
     properties
         b_ignoreLoggedFiles  = false %(bool) If true, PIPELINEMANAGER will ignore identical jobs previously run.
         b_saveDataBeforeFail = false %(bool) If true, the more recent data ("current_data") in the pipeline will be saved to a file when an error occurs.
-        b_overwriteFiles = false %(bool) If true, the pipeline will overwrite existing files with same names. If false, a "_n"umber will be appended to the new file name.
+        b_overwriteFiles = false %(bool) If true, the pipeline will overwrite existing files with same names. If false, a "_n"umber will be appended to the new file name.        
     end
     properties (SetAccess = {?DataViewer})
-        % Structure array containing steps of the pipeline:
-        pipe = struct('argsIn', {},'argsOut',{},'outFileName','',...
-            'inputFileName', '', 'b_save2File', logical.empty, 'saveFileName',...
-            '', 'opts',struct.empty,'opts_vals',struct.empty,...
-            'opts_def',struct.empty ,'name','', 'inputFrom','', 'seq',[],'seqIndx',[],...
-            'b_hasDataIn',false,'b_hasDataOut',false,'b_hasFileOut',false,'b_paramsSet',false);% !!If the fields are changed, please apply to the "set" method as well.
+        % Structure array containing steps of the pipeline:               
         funcList struct % structure containing the info about each function in the "fcnDir".
+        pipe % pipeline structure (see corresponding Set method).
     end
     properties (SetAccess = private)
         % the same changes to the property's set method.
@@ -36,7 +32,7 @@ classdef PipelineManager < handle
         b_state logical % True if a task of a pipeline was successfully executed.
     end
     properties (Access = private)
-        ProtocolSaveFolder char % Path to Protocols Save Folder. Used to locate PipelineConfig and Error Log folders.
+        ProjectFolder char % Path to Project's Directory. Used to locate PipelineConfig and Error Log folders.
         folderLog table % Pipeline LogTable stored in the "pipeLog.mat" file in the SaveFolder.
         maxLogRows = 100 % Maximum number of rows in the folderLog table. If exeeded, older entries will be erased.
         tmp_BranchPipeline % Temporarily stores LogBook from a Hierarchical branch.
@@ -50,7 +46,7 @@ classdef PipelineManager < handle
         timeTag % timestamp used as "tag" for temporary files created during the pipeline execution.
         current_seqIndx = 0 % index of step in current sequence in pipeline.
         b_newSeq = false; % boolean to indicate if a new sequence was created in the previous step.
-        b_pipeIsValid = false % TRUE, if the pipeline passed all validations and is ready to execution.        
+        b_pipeIsValid = false % TRUE, if the pipeline passed all validations and is ready to execution.                
     end
     
     methods
@@ -63,7 +59,7 @@ classdef PipelineManager < handle
             %   RawFolderList(cell array of chars): List of Raw folders
             %       associated with the save folders.
             %   Optionals:
-            %   ProtocolSaveFolder (char): Path to "Protocol" folder. This
+            %   ProjectFolder (char): Path to "Protocol" folder. This
             %   will be used to save/load pipelines, and save pipeline
             %   error logs.
             
@@ -71,35 +67,48 @@ classdef PipelineManager < handle
             validationFun = @(x) (iscell(x) && ischar([x{:}])) || (ischar(x));
             addRequired(p,'SaveFolderList', validationFun);
             addOptional(p,'RawFolderList',{''}, validationFun);
-            addOptional(p,'ProtocolSaveFolder',pwd,@ischar);
+            addOptional(p,'ProjectFolder',pwd,@ischar);
             parse(p,SaveFolderList, varargin{:});
             RawFolderList = p.Results.RawFolderList;
-            obj.ProtocolSaveFolder = p.Results.ProtocolSaveFolder;
-            
+            obj.ProjectFolder = p.Results.ProjectFolder;
+            clear p
             % Further validate each Item from Save and Raw folder lists.
             if ischar(SaveFolderList);SaveFolderList = {SaveFolderList};end
-            % criterion #1 - Both lists should have the same length:
-            errID = 'umIToolbox:PipelineManager:MissingInput';
-            errMsg = 'SaveFolderList and RawFolderList should have the same number of items!';
-            assert(isequaln(length(SaveFolderList),length(RawFolderList)),errID,errMsg)
-            % criterion #2 - All SaveFolders should exist:
-            assert(all(isfolder(SaveFolderList)), 'One or more folders in SaveFolderList do not exist!');
-            
+            if ischar(RawFolderList);RawFolderList = {RawFolderList};end
             % For the Raw Folder list, replace missing folders with
             % "MISSING" string and raise a warning. Reason: sometimes, the raw data
             % is not available (different HD, PC etc.).
-            b_missingFolders = ~isfolder(RawFolderList);
-            if any(b_missingFolders)
-                warning('A total of %d out of %d Raw Folder(s) do not exist! Beware! Functions that use this parameter will fail!',...
-                    sum(b_missingFolders),length(b_missingFolders));
-                RawFolderList(b_missingFolders) = {'MISSING'};
+            if isempty([RawFolderList{:}])
+                % Default action when no RawFolderList is provided:
+                RawFolderList = repmat({'MISSING'},size(SaveFolderList));
+            else
+                % Validate RawFolderList:
+                b_RawFolderMissing = ~isfolder(RawFolderList);
+                if any(b_RawFolderMissing)
+                    msg_char = repmat('\n%s',1,sum(b_RawFolderMissing));
+                    warning(['The following Raw Folder(s) do not exist! Functions that use this parameter (e.g. run_ImagesClassification) will fail!' msg_char],...
+                        RawFolderList{b_RawFolderMissing});
+                    RawFolderList(b_RawFolderMissing) = {'MISSING'};
+                end             
             end
+            % criterion #1 - Both lists should have the same length:
+            errID = 'umIToolbox:PipelineManager:wrongInput';
+            errMsg = 'Save Folder and Raw Folder lists should have the same length!';
+            assert(isequaln(length(SaveFolderList),length(RawFolderList)),errID,errMsg)
+            % criterion #2 - All SaveFolders should exist:
+            b_SaveFolderExist = isfolder(SaveFolderList);
+            msg_char = repmat('\n%s',1,sum(~b_SaveFolderExist));
+            assert(all(b_SaveFolderExist), ['Operation aborted! The following Save Folder(s) do not exist:' msg_char],SaveFolderList{~b_SaveFolderExist});
+            % criterion #3 - All SaveFolders should be unique:
+            assert(isequaln(numel(unique(SaveFolderList)),length(SaveFolderList)),errID, 'Save Folder list cannot have duplicates!')            
             % Store folder lists
             obj.SaveFolderList = SaveFolderList;
             obj.RawFolderList = RawFolderList;
             % Create timestamp tag:
             obj.timeTag = datestr(datetime('now'),'_ddmmyyyyHHMMSS');
-
+            % Set pipeline
+            obj.pipe = [];
+            % Get list of available analysis functions
             if isdeployed
                 [obj.fcnDir,~,~] = fileparts(which('funcTemplate.m'));
                 a = load(fullfile(obj.fcnDir,'deployFcnList.mat'));
@@ -116,23 +125,23 @@ classdef PipelineManager < handle
         % SETTERS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function set.pipe(obj,pipe)
             % Pipeline structure setter. If pipe is empty, create an empty
-            % structure containing tasks fields.
+            % structure containing tasks fields.                                    
             
-            if isempty(fieldnames(pipe))
-                pipe = struct('argsIn', {},'argsOut',{},'outFileName','',...
-                    'inputFileName', '','b_save2File', logical.empty, 'saveFileName',...
-                    '', 'opts',struct.empty,'opts_vals',struct.empty,...
-                    'opts_def',struct.empty ,'name','', 'inputFrom','',...
-                    'seq',[],'seqIndx',[],'b_hasDataIn',false,'b_hasDataOut',false,...
-                    'b_hasFileOut',false,'b_paramsSet',false);
+            pipe_empty = struct('argsIn', {},'argsOut',{},'outFileName','',...
+            'inputFileName', '', 'b_save2File', logical.empty, 'saveFileName',...
+            '', 'opts',struct.empty,'opts_vals',struct.empty,...
+            'opts_def',struct.empty ,'name','', 'inputFrom','', 'seq',[],'seqIndx',[],...
+            'b_hasDataIn',false,'b_hasDataOut',false,'b_hasFileOut',false,'b_paramsSet',false);% empty template for pipeline structure
+        
+            if ~isstruct(pipe) || isempty(fieldnames(pipe))
+                pipe = pipe_empty;
             end
             % Check if all fields exist:
-            if ~all(ismember(fieldnames(pipe),fieldnames(obj.pipe)))
+            if ~all(ismember(fieldnames(pipe),fieldnames(pipe_empty)))
                 error('umIToolbox:PipelineManager:InvalidInput',...
                     'The pipeline structure provided is invalid!');
             end
-            obj.pipe = pipe;
-            
+            obj.pipe = pipe;            
         end
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function setOpts(obj,varargin)
@@ -302,7 +311,7 @@ classdef PipelineManager < handle
             %%% SPECIAL CASE - DataViewer
             % For the first step of the pipeline avoid asking for an input
             % file:
-            if obj.b_inputFromDataViewer&& obj.current_seq == 0
+            if obj.b_inputFromDataViewer && obj.current_seq == 0
                 if isempty(task.inputFrom) || task.inputFrom ~= 0
                     task.inputFrom = -1;% Set inputFrom to "-1" the data from DataViewer.
                 else
@@ -675,13 +684,13 @@ classdef PipelineManager < handle
             if ~strcmpi(filename,'.pipe') || isempty(ext)
                 ext = '.pipe'; % Force extension.
             end
-            % If the user did not enforce a path, use ProtocolSaveFolder:
+            % If the user did not enforce a path, use ProjectFolder:
             if isempty(path)
                 if ~obj.b_inputFromDataViewer
-                    path = fullfile(obj.ProtocolSaveFolder, 'PipeLineConfigFiles');
+                    path = fullfile(obj.ProjectFolder, 'PipeLineConfigFiles');
                     [~,~] = mkdir(path);
                 else
-                    path = obj.ProtocolSaveFolder;
+                    path = obj.ProjectFolder;
                 end
             end
             pipeStruct = obj.pipe;
@@ -2174,9 +2183,9 @@ classdef PipelineManager < handle
             % Save to .txt file:
             if obj.b_inputFromDataViewer
                 % For DataViewer:
-                folder = obj.ProtocolSaveFolder;
+                folder = obj.ProjectFolder;
             else
-                folder = fullfile(obj.ProtocolSaveFolder,'PipelineErrorLogs');
+                folder = fullfile(obj.ProjectFolder,'PipelineErrorLogs');
             end
             if ~exist(folder,'dir')
                 mkdir(folder);
