@@ -17,7 +17,7 @@
 # you will see them accessed via {{ site.title }}, {{ site.email }}, and so on.
 # You can create any custom variable you would like, and they will be accessible
 # in the templates via {{ site.myvariable }}.
-title: UmIT
+title: <img src="./documentation/assets/img/index_online_fig1.png" alt="index_fig1.png"/><br>
 email: info@labeotech.com
 description: >- # this means to ignore newlines until "baseurl:"
   Umit is a toolbox dedicated to the analysis and management of mesoscale imaging datasets. 
