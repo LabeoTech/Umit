@@ -83,7 +83,7 @@ classdef PipelineManager < handle
                 RawFolderList = repmat({'MISSING'},size(SaveFolderList));
             else
                 % Validate RawFolderList:
-                [b_rawFolderExists,rawFolderInfo] = cellfun(@(x) fileattrib(x),RawFolderList);
+                b_rawFolderExists = isfolder(RawFolderList);
                 if any(~b_rawFolderExists)
                     msg_char = repmat('\n%s',1,sum(~b_rawFolderExists));
                     warning(['The following Raw Folder(s) do not exist! Functions that use this parameter (e.g. run_ImagesClassification) will fail!' msg_char],...
@@ -96,14 +96,17 @@ classdef PipelineManager < handle
             errMsg = 'Save Folder and Raw Folder lists should have the same length!';
             assert(isequaln(length(SaveFolderList),length(RawFolderList)),errID,errMsg)
             % criterion #2 - All SaveFolders should exist:
-            [b_SaveFolderExists, saveFolderInfo] = cellfun(@(x) fileattrib(x),SaveFolderList);
+            b_SaveFolderExists = isfolder(SaveFolderList);
             msg_char = repmat('\n%s',1,sum(~b_SaveFolderExists));
             assert(all(b_SaveFolderExists), ['Operation aborted! The following Save Folder(s) do not exist:' msg_char],SaveFolderList{~b_SaveFolderExists});
             % criterion #3 - All SaveFolders should be unique:
             assert(isequaln(numel(unique(SaveFolderList)),length(SaveFolderList)),errID, 'Save Folder list cannot have duplicates!')            
-            % Store folder lists and enforce full path:
+            % Enforce full path:
+            [~,saveFolderInfo] = cellfun(@(x) fileattrib(x),SaveFolderList);
+            [~,rawFolderInfo] = cellfun(@(x) fileattrib(x),RawFolderList(b_rawFolderExists));
+            % Store folder lists: 
             obj.SaveFolderList = {saveFolderInfo.Name}';
-            obj.RawFolderList = {rawFolderInfo(b_rawFolderExists).Name}';
+            obj.RawFolderList = {rawFolderInfo.Name}';
             % Create timestamp tag:
             obj.timeTag = datestr(datetime('now'),'_ddmmyyyyHHMMSS');
             % Set pipeline
@@ -245,7 +248,7 @@ classdef PipelineManager < handle
             %       pipeline will be created !
             %   fromSeq (numeric): Optional. Sequence number of the input
             %       function set in "inputFrom" parameter. If not provided, we
-            %       assume that the function comes from the sequence "1". This
+            %       assume that the function comes from the current sequence. This
             %       parameter is ignored if the input comes from the disk.
             % Output:
             %   state (bool): FALSE, if failed to add the task to the
@@ -259,8 +262,8 @@ classdef PipelineManager < handle
             addParameter(p,'fromSeq',obj.current_seq,@isPositiveIntegerValuedNumeric);
             parse(p,func, varargin{:});
             %
-            currSeq = obj.current_seq;
-            state = false;
+%             currSeq = obj.current_seq;
+%             state = false;
             % Check if the function name is valid:
             idxFunc = strcmpi(p.Results.func, {obj.funcList.name});
             assert(any(idxFunc),['Operation aborted! The function "' p.Results.func '" does not exist!']);
@@ -273,17 +276,23 @@ classdef PipelineManager < handle
             task.b_save2File = p.Results.b_save2File;
             task.saveFileName = p.Results.saveFileName;
             task.b_paramsSet = false;
-            task.inputSource = p.Results.inputSource;
-            task.fromSeq = p.Results.fromSeq;
-            
+            task.inputSource = '';
+            task.fromSeq = p.Results.fromSeq;                        
+            if task.b_hasDataIn
+                % Function uses data in RAM:
+                task.inputFrom = '_CURRENT_DATA_';
+            else
+                % Function accesses the folder instead:
+                task.inputFrom = '_FOLDER_';
+            end
             %%%% DEV SECTION %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
                         
             %%% GUIDELINES:
-            % IF EMPTY, IGNORE THE "FROMSEQ" PARAMETER AND STAY IN THE CURRENT
+            % IF "_CURRENT_DATA_", IGNORE THE "FROMSEQ" PARAMETER AND STAY IN THE CURRENT
             % SEQUENCE.  
             
             % IF THE USER SELECTS A FUNCTION FROM A SEQUENCE AND THE
-            % FUNCTION ADDED HAS A FILE AS INPUT, AUTOMATICALLY SAVE THE
+            % FUNCTION ADDED HAS DATA AS INPUT, AUTOMATICALLY SAVE THE
             % FILE AS A TEMP. FILE AND ADD IT AS INPUT.
             
             % FUNCTIONS WITHOUT INPUTS (FOLDERS ONLY) ARE AUTOMATICALLY SET
@@ -293,41 +302,60 @@ classdef PipelineManager < handle
             % Option #1: A function from the sequence set in "seqFrom" parameter:
             
             % Option #2: A file from the SaveFolder AND any files
-            % potentially created in the pipeline so far. Parameter
-            % "fromSeq" is ignored.
+            % potentially created in the pipeline so far. Parameter "fromSeq" is ignored.
             
             % Option #3: "_CURRENT_DATA" (i.e. data in RAM). Parameter "fromSeq" is ignored.
-            
-            if ~strcmp(task.inputSource,'_CURRENT_DATA_')
+                                       
+            if ~strcmp(p.Results.inputSource,'_CURRENT_DATA_')
+                % User set another sequence:
+                
                 % Check if the task function needs data:
                 assert(obj.funcList(idxFunc).info.b_hasDataIn, ['The function "' task.name '" does not have "data" as input. Operation aborted!'])
                 % Parse input source:
                 if ~endsWith(task.inputSource,'.dat') || ~endsWith(task.inputSource,'.datstat')
-                    % For existing functions:
+                    % Functions as data source:
                     idxFcn = ( strcmpi(task.inputSource, {obj.pipe.name}) & arrayfun(@(x) any(x.seq == (task.fromSeq)),obj.pipe)' );
                     assert(any(idxFcn), 'Input function not found! Operation aborted!');
                     % Check if the input function has output data:
                     assert(obj.pipe(idxFcn).b_hasDataOut,['The function "' task.inputSource '" does not have any "data" as output. Operation aborted!'])
-                    % Save function name in task:
+                    % Update task inputFrom field:
                     task.inputFrom = obj.pipe(idxFcn).name;
                 else
-                    % For existing files and potential ones created in the
-                    % pipeline so far:
-                    % Get list of files inside the first item of the
-                    % SaveFolder list:
-                    % Add files in SaveFolder
+                    % Files as data source.
+                    % Get list of files inside the first item of the SaveFolder list:
+                    % Files in SaveFolder:
                     fList = vertcat(dir(fullfile(obj.SaveFolderList{1},'*.dat')), dir(fullfile(obj.SaveFolderList{1},'*datstat')));
-                    fileList = {fList.name}';
-                    
-                    % Add potential files created during pipeline
-                    % execution:
+                    fileList = {fList.name}';                    
+                    % Potential files created during pipeline execution:
                     fileList = [fileList; {obj.pipe(obj.pipe.b_hasFileOut).outFileName}']; % Add output files from functions that generate files
                     fileList = [fileList; {obj.pipe(obj.pipe.b_hasDataOut & obj.pipe.b_save2File).saveFileName}']; % Add output files from functions that will save files.
                     % Remove temporary files from the list:
                     fileList(startsWith(fileList,'tmpFile_')) = [];
                     % Check if input file exists:
                     idxFile = strcmp(task.inputSource,fileList);
-                    assert(any(idxFile), 'Input File not found! Operation aborted!');                         
+                    assert(any(idxFile), 'Input File not found! Operation aborted!');    
+                    % Update task inputFrom field:
+                    task.inputFrom = fileList{idxFile};
+                end  
+                % Increment sequence index:
+                obj.current_seq = obj.current_seq + 1;
+            else
+                % Default behavior: Adds task to current sequence or
+                % automatically create new one (depending on function
+                % inputs).
+                if strcmp(task.inputFrom, '_CURRENT_DATA_')
+                    % Function has data in RAM as input.
+                    
+                    % Control for duplicate functions in the same sequence:
+                    assert(~any(strcmpi(task.name,{obj.pipe(arrayfun(@(x) any(x.seq == task.fromSeq),obj.pipe)).name})), ...
+                        ['Operation Aborted! The function "' task.name '" already exists in the pipeline!'])
+                    
+                else
+                    % Function accesses FOLDER directly. In this case,
+                    % create new sequence.
+                    
+                    %TBD%
+                    
                 end                                
             end
                                                                                
@@ -345,9 +373,7 @@ classdef PipelineManager < handle
 %                 obj.current_seq = currSeq; % Reset current sequence
 %                 return
 %             end
-            % Control for duplicate functions in the same sequence:
-            assert(~any(strcmpi(task.name,{obj.pipe(arrayfun(@(x) any(x.seq == obj.current_seq),obj.pipe)).name})), ...
-                ['Operation Aborted! The function "' task.name '" already exists in the pipeline!'])
+           
             % Perform checks on save options:
             if task.b_save2File
                 % Check if the saveFileName is correct:
