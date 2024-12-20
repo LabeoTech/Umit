@@ -29,7 +29,7 @@ url: https://labeotech.github.io/Umit # the subpath of your site, e.g. /blog
 
 color_scheme: light_Labeo
 
-# logo: /documentation/assets/logo.png
+logo: /documentation/assets/logo.png
 
 # Build settings
 theme: just-the-docs
