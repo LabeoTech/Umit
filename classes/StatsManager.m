@@ -1014,7 +1014,7 @@ classdef StatsManager < handle
                 obj.stats_data{i,10}= data(indx,:); % observation data
                 obj.stats_data{i,11}= cellfun(@(x) size(squeeze(x)), ...
                     obj.stats_data{i,10}, 'UniformOutput', false);% size of observation data
-                obj.stats_data{i,obj.hMap('b_hasEvents')} = ( isprop(obj.MfileArr{i}, 'eventID') && isprop(obj.MfileArr{i}, 'eventNameList') );
+                obj.stats_data{i,obj.hMap('b_hasEvents')} = ( isprop(obj.MfileArr{i}, 'eventID') && isprop(obj.MfileArr{i}, 'eventNameList') && ismember('E',obj.MfileArr{i}.dim_names));
             end
             
             % Create Relative time per subject's acquisitions per group:
