@@ -249,7 +249,7 @@ classdef PipelineManager < handle
             %   fromSeq (numeric): Optional. Sequence number of the input
             %       function set in "inputFrom" parameter. If not provided, we
             %       assume that the function comes from the current sequence. This
-            %       parameter is ignored if the input comes from the disk.
+            %       parameter is ignored if the input comes from the disk (e.g. a .dat file).
             % Output:
             %   state (bool): FALSE, if failed to add the task to the
             %   pipeline.
@@ -310,7 +310,8 @@ classdef PipelineManager < handle
                 % User set another sequence:
                 
                 % Check if the task function needs data:
-                assert(obj.funcList(idxFunc).info.b_hasDataIn, ['The function "' task.name '" does not have "data" as input. Operation aborted!'])
+                assert(obj.funcList(idxFunc).info.b_hasDataIn,...
+                    ['The function "' task.name '" does not have "data" as input. Operation aborted!'])
                 % Parse input source:
                 if ~endsWith(task.inputSource,'.dat') || ~endsWith(task.inputSource,'.datstat')
                     % Functions as data source:
@@ -1608,126 +1609,114 @@ classdef PipelineManager < handle
             end
         end
         %%%%%%--Helpers for "addTask" method -----------------------------
-        function task = setInput(obj,task)
+        function task = setInput(obj,task,inputSource,fromSeq)
             % SETINPUT selects the input to the function in "task". It
             % controls for multiple outputs and for functions with no
             % input. It updates the fields of "task" with the input
             % information.
             % !If the User cancels any of the dialogs, the function returns
             % an empty array!
-            
-            orig_seq = obj.current_seq;
-            
-            % For when this is the first item in the pipeline:
-            if obj.current_seq == 0
-                obj.current_seq = 1;
-                obj.current_seqIndx = 1;
-                task.seq = obj.current_seq;
-                task.seqIndx = obj.current_seqIndx;
-                if task.b_hasDataIn
-                    task.inputFrom = 0; % Set input index to zero when the data comes from the Hard Drive.
-                    task.inputFileName = obj.selectInputFileName(task.inputFrom, task.name);
-                elseif (task.b_hasDataOut || task.b_hasFileOut ) && ~task.b_hasDataIn
-                    task.inputFrom = 0;
-                end
-                if task.inputFileName == 0 % Means that the operation was cancelled by User within a GUI.
-                    task = [];
-                end
-                return
-            end
-            % Procedure for adding new items to an existing pipeline:
-            if ~isempty(task.inputFrom) || ( (task.b_hasDataOut || task.b_hasFileOut) && ~task.b_hasDataIn )
-                % If the User forces the creation of a new branch or
-                %   if the task function generates data from the disk.
-                obj.current_seq = obj.current_seq + 1;
-                obj.current_seqIndx = 1; % Reset current sequence index.
-                if isempty(task.inputFrom)
-                    % Force input to be "_LOCAL_":
-                    task.inputFrom = 0;
-                elseif task.inputFrom == 0
-                    % prompt to file selection:
-                    if isempty(task.inputFileName)
-                        task.inputFileName = obj.selectInputFileName(0,task.name);
-                    end
-                else
-                    obj.current_seqIndx = 2;
-                    % Append new sequence to input function:
-                    idx = strcmpi(obj.pipe(task.inputFrom).name,{obj.pipe.name}) & arrayfun(@(x) any(ismember(x.seq,[obj.pipe(task.inputFrom).seq])),obj.pipe)';
-                    if ~any(idx)
-                        % If there is no input function in the Sequence #1,
-                        % abort:
-                        warning('Input function "%s"  to function "%s" not found! Operation aborted.', obj.pipe(task.inputFrom).name, task.name)
-                        obj.current_seq = orig_seq;
-                        task = [];
-                        return
-                    end
-                    obj.pipe(idx).seq = [obj.pipe(idx).seq obj.current_seq]; % Append sequence number
-                    obj.pipe(idx).seqIndx = [obj.pipe(idx).seqIndx 1]; % Append sequence index as "1".
-                    % Check input file:
-                    if ~isempty(task.inputFileName)
-                        %skip
-                    elseif any(strcmpi('outFile',obj.pipe(idx).argsOut))
-                        % Get File from input function:
-                        task.inputFileName = obj.selectInputFileName(find(idx),task.name);%#ok
                         
+            % Identify default parameters: 
+            %   1) task.inputFrom = "_CURRENT_DATA_" or "_FOLDER_".
+            %   2) inputSource = "_CURRENT_DATA_" (default).
+            
+            if strcmp(inputSource,'_CURRENT_DATA_')
+                % Default. Adds task to existing sequence.
+                if task.b_hasDataIn
+                    % The function input is stored in RAM:
+                    if obj.current_seqIndx == 1
+                        % For the first step of the sequence, get the input
+                        % file from the Folder
+                        task.inputSource = obj.selectInputFileName('Folder',task.name); 
+                    elseif obj.pipe(obj.current_seqIndx - 1).b_hasDataOut
+                        % Previous step output is the current_data.
+                        task.inputSource = '_CURRENT_DATA_';
+                    elseif obj.pipe(obj.current_seqIndx -1).b_hasFileOut
+                        % Previous step output is a file.
+                        task.inputSource = obj.selectInputFileName(obj.pipe(obj.current_seqIndx - 1).name,task.name); 
                     else
-                        % Ensure that the input function saves the
-                        % "outData" to the disk.
-                        if isempty(obj.pipe(idx).saveFileName)
-                            % Create temporary file:
-                            [~,defName,ext] = fileparts(obj.pipe(idx).outFileName);
-                            obj.pipe(idx).saveFileName = [defName, obj.timeTag, ext];
-                            obj.pipe(idx).b_save2File = true;
-                        end
-                        task.inputFileName = obj.pipe(idx).saveFileName;
+                        % This should never be reached:
+                        error('Unknown input source!')
                     end
+                    % Update sequence info and task structure:
+                    obj.current_seqIndx = obj.current_seqIndx + 1;
+                else
+                    % The function accesses the SaveFolder instead:
+                    task.inputSource = '_FOLDER_'; 
+                    % Force new sequence for functions accessing the
+                    % folder:
+                    obj.current_seq = obj.current_seq + 1;
+                    obj.current_seqIndx = 1;
                 end
+                
                 task.seq = obj.current_seq;
                 task.seqIndx = obj.current_seqIndx;
-                if task.inputFileName == 0
-                    obj.current_seq = orig_seq;
-                    task = [];
-                end
                 return
             end
             
-            % For the rest of the steps:
-            if task.b_hasDataOut && ~task.b_hasDataIn
-                % For functions that do not have "data" input but create an
-                % output
-                task.inputFrom = 0;
-            elseif ~task.b_hasDataOut && ~task.b_hasFileOut && ~task.b_hasDataIn
-                % Control for functions that do not have any data input or
-                % output. *Generally, these are functions that changes
-                % auxiliary files such as meta Data*.
-                task.inputFrom = [];
+            %%% THE SECTION BELOW DEALS WITH NEW BRANCHES WHEN THE USER
+            %%% MANUALLY CREATES ONE.
+            
+            % Check if the task function needs data:
+            assert(task.info.b_hasDataIn,...
+                ['The function "' task.name '" does not have "data" as input. Operation aborted!'])
+            % Here, there are two input options: 
+            %   1) An existing function from the pipeline.
+            %   2) A file from the SaveFolder.
+            % Functions as input source will be processed before files.
+            
+            % Check for function as input source:
+            idxFcn = ( strcmpi(inputSource, {obj.pipe.name}) &...
+                arrayfun(@(x) any(x.seq == (fromSeq)),obj.pipe)' );
+            if any(idxFcn)
+                % Check if the source function has Data or File as output:
+                if obj.pipe(idxFcn).b_hasDataOut
+                    % For functions with Data as output, force saving data
+                    % to temporary file and use the file as input source.                    
+                    task.inputSource = obj.forceSaveFile(obj.pipe(idxFcn), obj.pipe(idxFcn).seqIndx < obj.current_seqIndx);
+                    
+                elseif obj.pipe(idxFcn).b_hasFileOut
+                    % For functions that output one or more files:
+                    nOutFiles = obj.funcList(strcmpi(inputSource,{obj.funclist.name})).info.outFileName;
+                    if nOutFiles > 1
+                        task.inputSource = obj.selectInputFileName(inputSource,task.name); 
+                    else
+                        task.inputSource = obj.funcList(strcmpi(inputSource,{obj.funclist.name})).info.outFileName;
+                    end                    
+                end                   
+            end
+
+            % Check for file as input source:
+            fileList = getFileList(obj.SaveFolderList{1}); % Get list of existing data files in the first SaveFolder.            
+            if ~endsWith(inputSource,'.dat') || ~endsWith(inputSource,'.datstat')
+                % Deal with input file source without file extension.                
+                [~,filenames,~] = cellfun(@(x) fileparts(x),fileList,'UniformOutput',false);
+                % Get index using file name only:
+                idxFile = strcmp(inputSource,filenames);
+                if sum(idxFile) > 1
+                    % Control for files with same names. Keep the first
+                    % file by default and raises warning.
+                    indxFile = find(idxFile,1,'first');
+                    warning(['More than one file found with name "%s".\n'...
+                        'The file "%s" will be selected as input.\n'...
+                        'To avoid this, use input file name with the file extension (.dat or .datstat).'],...
+                        inputSource,fileList{indxFile})
+                    % Keep first file from list.
+                    idxFile = false(size(idxFile));
+                    idxFile(indxFile) = true;
+                end                             
             else
-                % If this is not the first step, look backwards on the pipeline
-                % to find the first function with "outData" or "outFile":
-                for ii = length(obj.pipe):-1:1
-                    inputFileName = obj.selectInputFileName(ii, task.name);
-                    if ~isempty(inputFileName) | inputFileName == 0%#ok
-                        task.inputFrom = ii;
-                        task.inputFileName = inputFileName;
-                        break
-                    end
-                end
-                % If all sequence was scanned, and no function with an output
-                % was found, force input from the Disk:
-                if ii == 1 && isempty(inputFileName)
-                    task.inputFrom = 0; % Input from Disk;
-                    task.inputFileName = obj.selectInputFileName(0,task.name);
-                end
+                % Select file from the list.
+                idxFile = strcmp(inputSource,fileList);
             end
-            % Update step index:
-            obj.current_seqIndx = obj.current_seqIndx + 1;
-            % Add sequence info to task:
+            task.inputSource = fileList{idxFile};            
+            % Force new sequence: 
+            obj.current_seq = obj.current_seq + 1;
+            obj.current_seqIndx = 1;
+            % Update task
             task.seq = obj.current_seq;
-            task.seqIndx = obj.current_seqIndx;
-            if task.inputFileName == 0
-                obj.current_seq = orig_seq;
-                task = [];
-            end
+            task.seqIndx = obj.current_seqIndx;                                                                                     
         end
         
         function filename = selectInputFileName(obj,source,target)
@@ -1739,55 +1728,35 @@ classdef PipelineManager < handle
             % prompt will show a list of existing files from the first
             % element in the saveFolderList.
             % Input:
-            %   source (int): index of function from "pipe" or 0 for "_LOCAL_".
-            filename = '';
-                       
-            % For functions as "source":
-            if source ~=0
+            %   source (char): name of the pipeline function OR a folder to get file list from.
+            % Output:
+            %   filename (char): name of the input file. Empty, if user
+            %   cancels.
+                                              
+            % For functions as "source":            
+            if strcmp(source, {obj.pipe.name})                
                 % Get source function info:
-                funcInfo = obj.pipe(source);
-                if isempty(funcInfo)
-                    warning('Input function not found. To create a new branch, the input function must be in the first sequence')
+                funcInfo = obj.pipe(strcmp(source,{obj.pipe.name}));
+                % Create dialog box so the user selects the file:
+                [indxFile, tf] = listdlg('ListString', funcInfo.outFileName,...
+                    'SelectionMode','single','PromptString',{'Select a file from:',...
+                    ['"' funcInfo.name '" as input to :' ], ['"' target '":']}, 'ListSize',[250,280],'Name', 'Select file');
+                if ~tf
+                    disp('Operation cancelled by User')
+                    filename = 0;
                     return
                 end
-                % Check if the selected input function has any outputs:
-                if ~any(ismember(funcInfo.argsOut, {'outData','outFile'}))
-                    % If not outputs are found, abort!
-                    return
-                end
-                % If the output is "outData", return, otherwise, create
-                % dialog box for file selection:
-                if any(ismember(funcInfo.argsOut, 'outData'))
-                    filename = 'data';
-                    return
-                end
-                % For functions with "outFile":
-                if numel(funcInfo.outFileName) == 1
-                    % For a single file:
-                    filename = funcInfo.outFileName{1};
-                else
-                    % Create dialog box so the user selects the file:
-                    [indxFile, tf] = listdlg('ListString', funcInfo.outFileName,...
-                        'SelectionMode','single','PromptString',{'Select a file from:',...
-                        ['"' funcInfo.name '" as input to :' ], ['"' target '":']}, 'ListSize',[250,280],'Name', 'Select file');
-                    if ~tf
-                        disp('Operation cancelled by User')
-                        filename = 0;
-                        return
-                    end
-                    filename = funcInfo.outFileName{indxFile};
-                end
+                filename = funcInfo.outFileName{indxFile};
             else
-                % For "_LOCAL_" source, display the .dat files from the
-                % first item of the SaveFolderList:                                
-                fileList = getFileList(obj.SaveFolderList{1},'dat');
-                               
+                % For "FOLDER" as source, display the .dat/.datstat files from the
+                % first item of the SaveFolderList:
+                fileList = getFileList(obj.SaveFolderList{1});                
                 % If not files exist in the item's save folder, raise a
                 % warning and abort:
                 if isempty(fileList)
-                    w = warndlg(['No valid data files found in folder: ' item.SaveFolder], 'Operation aborted!');
+                    w = warndlg(['No valid data files found in folder: ' obj.SaveFolderList{1}], 'Operation aborted!');
                     waitfor(w);
-                    filename = 0;
+                    filename = '';
                     return
                 end
                 % Create dialog box
@@ -1800,6 +1769,30 @@ classdef PipelineManager < handle
                 end
                 filename = fileList{indxFile};
             end
+        end
+        
+        function [saveFilename,step] = forceSaveFile(obj,step,b_genTmpFile)
+           % FORCESAVEFILE forces the function from the pipeline "step" to 
+           % save the output data to a .dat/.datstat file. 
+                      
+           if ~isempty(step.saveFileName)
+               saveFilename = step.saveFileName;
+               return           
+           end
+           
+           funcInfo = obj.funcList(strcmp(obj.funcList.name,step.name)).info;
+           
+           if b_genTmpFile 
+               % Create temporary file:
+               [~,~,ext] = fileparts(funcInfo.outFileName);
+               saveFilename = ['tmpFile_' num2str(randi(99999,1,1),'%05i') ext];                              
+           else
+               % Save with default name
+               saveFilename = funcInfo.outFileName;
+           end
+           % Update step info
+           step.saveFileName = saveFilename;
+           step.b_save2File = true;                                
         end
         
         function task = addDependency(obj,task)

@@ -1,53 +1,42 @@
-function out = getFileList(folder, extension)
-% GETFILELIST retrieves a list of relevant files in a folder based on extension (.dat or .mat).
+function out = getFileList(folder, varargin)
+% GETFILELIST retrieves a list of relevant files in a folder based on extension (.dat or .datstat).
 %
 % Inputs:
 %   folder (char): The path to the folder containing the files.
-%   extension (char): The desired file extension or 'all' to list all files.
+%   Optional:
+%   extension (char|default = 'all'): The desired file extension. If not
+%   set, the function returns all .dat and .datstat files.
 %
 % Output:
 %   out (cell): List of valid filenames with the specified extension. Empty
 %   cell array if no files are found.
 %
 % Example usage:
-%   fileList = getFileList('/path/to/folder', '.mat');
+%   fileList = getFileList('/path/to/folder', '.dat'); % Gets all ".dat"
+%   files from the given folder.
 %
-% Note: This function does not change the algorithm for file retrieval.
-
-
-
+p = inputParser;
+addRequired(p,'folder',@isfolder)
+addOptional(p,'extension','all',@(x) ismember(lower(x),{'.dat','.datstat','all'}))
+parse(p,folder,varargin{:});
+extension = lower(p.Results.extension);
 % Get a list of .dat files
 datFiles = dir(fullfile(folder, '*.dat'));
-% Get a list of .mat files
-matFiles = dir(fullfile(folder,'*.mat'));
+% Get a list of .datstat files
+statFiles = dir(fullfile(folder,'*.datstat'));
 % Filter list of mat files to get only those with the proper toolbox format
 
-% Here, we check if the file contains the variable "obsID" to check if it
-% is valid or not
-warning('off'); % Disable warning to suppress messages from .mat files that do not have "datSize" variable.
-validMatFiles = false(size(matFiles));
-for ii = 1:length(matFiles)
-    data = load(fullfile(folder, matFiles(ii).name), 'obsID');
-    validMatFiles(ii) = ~isempty(fieldnames(data));
-end
-matFiles = matFiles(validMatFiles);
-warning('on');
-
-switch lower(erase(extension,'.'))
-    case 'dat'
-        out = datFiles;
-    case 'mat'
-        out = matFiles;
+switch extension
+    case '.dat'
+        out = {datFiles.name}';
+    case '.datstat'
+        out = {statFiles.name}';
     case 'all'
-        out = [datFiles;matFiles];
+        allFiles = vertcat(datFiles, statFiles);
+        out = {allFiles.name}';
     otherwise
-        error('Unknown file extension "%s"!',extension)
+        error('File extension "%s" not supported by this function!',extension)
 end
 
-if isempty(out)
-    out = cell.empty(0,1);
-else
-    out = {out.name};
-end
 
 end
