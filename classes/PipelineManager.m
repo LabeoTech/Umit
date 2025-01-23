@@ -6,10 +6,10 @@ classdef PipelineManager < handle
     properties
         b_ignoreLoggedFiles  = false %(bool) If true, PIPELINEMANAGER will ignore identical jobs previously run.
         b_saveDataBeforeFail = false %(bool) If true, the more recent data ("current_data") in the pipeline will be saved to a file when an error occurs.
-        b_overwriteFiles = false %(bool) If true, the pipeline will overwrite existing files with same names. If false, a "_n"umber will be appended to the new file name.        
+        b_overwriteFiles = false %(bool) If true, the pipeline will overwrite existing files with same names. If false, a "_n"umber will be appended to the new file name.
     end
     properties (SetAccess = {?DataViewer})
-        % Structure array containing steps of the pipeline:               
+        % Structure array containing steps of the pipeline:
         funcList struct % structure containing the info about each function in the "fcnDir".
         pipe % pipeline structure (see corresponding Set method).
     end
@@ -17,7 +17,6 @@ classdef PipelineManager < handle
         % the same changes to the property's set method.
         fcnDir char % Directory of the analysis functions.
         PipelineSummary % Shows the jobs run in the current Pipeline
-        current_seq = 0 % index of current sequence in pipeline.
         SaveFolderList % List of Save folders
         RawFolderList % List of Raw folders corresponding to the items in SaveFolderList.
     end
@@ -44,9 +43,9 @@ classdef PipelineManager < handle
         h_wbItem % Handle of waitbar dialog showing the progress of the pipeline across protocol's objects.
         h_wbTask % Handle of waitbar dialog showing the progress of the pipeline in the current object.
         timeTag % timestamp used as "tag" for temporary files created during the pipeline execution.
+        current_seq = 0 % index of current sequence in pipeline.
         current_seqIndx = 0 % index of step in current sequence in pipeline.
-        b_newSeq = false; % boolean to indicate if a new sequence was created in the previous step.
-        b_pipeIsValid = false % TRUE, if the pipeline passed all validations and is ready to execution.                
+        b_pipeIsValid = false % TRUE, if the pipeline passed all validations and is ready to execution.
     end
     
     methods
@@ -89,7 +88,7 @@ classdef PipelineManager < handle
                     warning(['The following Raw Folder(s) do not exist! Functions that use this parameter (e.g. run_ImagesClassification) will fail!' msg_char],...
                         RawFolderList{~b_rawFolderExists});
                     RawFolderList(~b_rawFolderExists) = {'MISSING'};
-                end             
+                end
             end
             % criterion #1 - Both lists should have the same length:
             errID = 'umIToolbox:PipelineManager:wrongInput';
@@ -100,11 +99,11 @@ classdef PipelineManager < handle
             msg_char = repmat('\n%s',1,sum(~b_SaveFolderExists));
             assert(all(b_SaveFolderExists), ['Operation aborted! The following Save Folder(s) do not exist:' msg_char],SaveFolderList{~b_SaveFolderExists});
             % criterion #3 - All SaveFolders should be unique:
-            assert(isequaln(numel(unique(SaveFolderList)),length(SaveFolderList)),errID, 'Save Folder list cannot have duplicates!')            
+            assert(isequaln(numel(unique(SaveFolderList)),length(SaveFolderList)),errID, 'Save Folder list cannot have duplicates!')
             % Enforce full path:
             [~,saveFolderInfo] = cellfun(@(x) fileattrib(x),SaveFolderList);
             [~,rawFolderInfo] = cellfun(@(x) fileattrib(x),RawFolderList(b_rawFolderExists));
-            % Store folder lists: 
+            % Store folder lists:
             obj.SaveFolderList = {saveFolderInfo.Name}';
             obj.RawFolderList = {rawFolderInfo.Name}';
             % Create timestamp tag:
@@ -128,16 +127,16 @@ classdef PipelineManager < handle
         % SETTERS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function set.pipe(obj,pipe)
             % Pipeline structure setter. If pipe is empty, create an empty
-            % structure containing tasks fields.                                    
+            % structure containing tasks fields.
             
             pipe_empty = struct('name','','argsIn', {},'argsOut',{},...
-            'b_save2File', logical.empty, 'saveFileName','',...
-            'opts',struct.empty,'opts_vals',struct.empty,...
-            'opts_def',struct.empty,'inputSource','',...
-            'seq',[],'seqIndx',[],...
-            'b_hasDataIn',false,'b_hasDataOut',false,...
-            'b_hasFileOut',false,'b_paramsSet',false);% empty template for pipeline structure
-        
+                'b_save2File', logical.empty, 'saveFileName','',...
+                'opts',struct.empty,'opts_vals',struct.empty,...
+                'opts_def',struct.empty,'inputSource','',...
+                'inputStepIndx',[],'seq',[],'seqIndx',[],...
+                'b_hasDataIn',false,'b_hasDataOut',false,...
+                'b_hasFileOut',false,'b_paramsSet',false);% empty template for pipeline structure
+            
             if ~isstruct(pipe) || isempty(fieldnames(pipe))
                 pipe = pipe_empty;
             end
@@ -146,7 +145,7 @@ classdef PipelineManager < handle
                 error('umIToolbox:PipelineManager:InvalidInput',...
                     'The pipeline structure provided is invalid!');
             end
-            obj.pipe = pipe;            
+            obj.pipe = pipe;
         end
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         function setOpts(obj,varargin)
@@ -230,7 +229,7 @@ classdef PipelineManager < handle
             disp(['Optional Parameters set for function : ' obj.pipe(idxFunc).name]);
         end
         
-        function state = addTask(obj,func,varargin)
+        function varargout = addTask(obj,func,varargin)
             % This method adds an analysis function, or task, to the
             % pipeline. Here, we can choose to save the output of a given
             % task as a .DAT file. ADDTASK will create a string containing
@@ -238,192 +237,193 @@ classdef PipelineManager < handle
             % Inputs:
             %   func (str || char):  name or index of the analysis function
             %       contained in obj.funcList property.
-            %   b_save2File (bool): Optional. True means that the output data
+            %   save (bool): Optional. True means that the output data
             %       from the function will be saved as a .DAT file.
-            %   saveFileName(char): Optional. Name of the file to be saved.
+            %   saveas(char): Optional. Name of the file to be saved.
             %       If not provided, the analysis function's default
             %       filename will be used.
-            %   inputSource (char): Optional. Name of the input function to
-            %       the task. If you set this parameter, a new sequence of the
+            %   source (char): Optional. Name of the input function OR
+            %       input file. If you set this parameter, a new sequence of the
             %       pipeline will be created !
-            %   fromSeq (numeric): Optional. Sequence number of the input
+            %   sequence (numeric): Optional. Sequence number of the input
             %       function set in "inputFrom" parameter. If not provided, we
             %       assume that the function comes from the current sequence. This
             %       parameter is ignored if the input comes from the disk (e.g. a .dat file).
-            % Output:
+            % Output (optional):
             %   state (bool): FALSE, if failed to add the task to the
             %   pipeline.
             
             p = inputParser;
             addRequired(p, 'func', @(x) ischar(x) || isnumeric(x));
-            addOptional(p, 'b_save2File', false, @islogical);
-            addOptional(p, 'saveFileName', '', @ischar);
-            addParameter(p,'inputSource','_CURRENT_DATA_', @ischar);            
-            addParameter(p,'fromSeq',obj.current_seq,@isPositiveIntegerValuedNumeric);
+            addParameter(p,'save', false, @islogical);
+            addParameter(p,'saveas', '', @ischar);
+            addParameter(p,'source','', @(x) ischar(x) && ~strcmpi('_CURRENT_DATA_',x));
+            addParameter(p,'sequence',obj.current_seq,@isPositiveIntegerValuedNumeric);
             parse(p,func, varargin{:});
-            %
-%             currSeq = obj.current_seq;
-%             state = false;
-            % Check if the function name is valid:
-            idxFunc = strcmpi(p.Results.func, {obj.funcList.name});
-            assert(any(idxFunc),['Operation aborted! The function "' p.Results.func '" does not exist!']);
+            % Set optional parameters:
+            b_save2File = p.Results.save;
+            saveFileName = p.Results.saveas;
+            inputSource = p.Results.source;
+            inputFromSeq = p.Results.sequence;
+            clear p
+            % Set boolean flag for function execution completion:
+            % Validate inputs:
+            % Check if the function exists:
+            idxFunc = strcmpi(func, {obj.funcList.name}); %Index of the function from the function list
+            assert(any(idxFunc),['Operation aborted! The function "' func '" does not exist!']);
+            % Warn the user that "sequence" cannot be set without "source":
+            if ( isempty(inputSource) && inputFromSeq ~= obj.current_seq )
+                warning(['Parameter "sequence" ignored. Please, set both'...
+                    '"source" and "sequence" parameters to force a new sequence in the pipeline.\n"sequence" reset to #%d.'],...
+                    obj.current_seq);
+                % Reset to default:
+                inputFromSeq = obj.current_seq;
+            end
+            assert(ismember(inputFromSeq,0:obj.current_seq),'The sequence "%d" doesn''t exist!',inputFromSeq);
+            
+            if isempty(inputSource)
+                if( ~obj.funcList(idxFunc).info.b_hasDataIn && ( obj.funcList(idxFunc).info.b_hasDataOut ||  obj.funcList(idxFunc).info.b_hasFileOut ) )
+                    % For functions without data as inputs that generate outputs,
+                    % set input source as the save folder:
+                    inputSource = '_FOLDER_'; % Set input source as the save folder.
+                else
+                    % Set default value to inputSource (data in RAM)
+                    inputSource = '_CURRENT_DATA_';
+                end
+                % Default behaviour ( function added to the current sequence)
+                % Raise error if the function already exists:
+                assert(~ismember(func,{obj.pipe(arrayfun(@(x) any(x.seq == (obj.current_seq)),obj.pipe)).name}),...
+                    ['Operation aborted! The function "' func '" already exists in the current sequence.'...
+                    ' To force the creation of a new sequence, set the "source" and "sequence" parameters.']);
+            end
+            
             % Create "task" structure. This is the one that will be added
             % to the pipeline:
             task = obj.funcList(idxFunc).info;
+            % Remove extra fields:
+            extra_fields = setdiff(fieldnames(task),fieldnames(obj.pipe));
+            task = rmfield(task,extra_fields);
             task.name = obj.funcList(idxFunc).name;
             % Add default values for fields used to save the data: These
             % values will be updated later:
-            task.b_save2File = p.Results.b_save2File;
-            task.saveFileName = p.Results.saveFileName;
+            task.b_save2File = b_save2File | ~isempty(saveFileName);
+            task.saveFileName = saveFileName;
             task.b_paramsSet = false;
-            task.inputSource = '';
-            task.fromSeq = p.Results.fromSeq;                        
-            if task.b_hasDataIn
-                % Function uses data in RAM:
-                task.inputFrom = '_CURRENT_DATA_';
+            % Update saving info:
+            task = obj.setSaveFilename(task,false);
+            % Manage inputs
+            task = obj.setInput(task,inputSource,inputFromSeq);
+            if isempty(task)
+                % User cancelled during "setInput" method.
+                state = false;
             else
-                % Function accesses the folder instead:
-                task.inputFrom = '_FOLDER_';
+                state = true;
+                % Finally, add task to pipeline:
+                obj.pipe = [obj.pipe; task];
+                fprintf('Added "%s" to sequence #%d of the pipeline.\n',task.name, obj.current_seq)
             end
-            %%%% DEV SECTION %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-                        
-            %%% GUIDELINES:
-            % IF "_CURRENT_DATA_", IGNORE THE "FROMSEQ" PARAMETER AND STAY IN THE CURRENT
-            % SEQUENCE.  
-            
-            % IF THE USER SELECTS A FUNCTION FROM A SEQUENCE AND THE
-            % FUNCTION ADDED HAS DATA AS INPUT, AUTOMATICALLY SAVE THE
-            % FILE AS A TEMP. FILE AND ADD IT AS INPUT.
-            
-            % FUNCTIONS WITHOUT INPUTS (FOLDERS ONLY) ARE AUTOMATICALLY SET
-            % AS A NEW SEQUENCE. "INPUTSOURCE" IS IGNORED.
-            
-            % Parse input source:
-            % Option #1: A function from the sequence set in "seqFrom" parameter:
-            
-            % Option #2: A file from the SaveFolder AND any files
-            % potentially created in the pipeline so far. Parameter "fromSeq" is ignored.
-            
-            % Option #3: "_CURRENT_DATA" (i.e. data in RAM). Parameter "fromSeq" is ignored.
-                                       
-            if ~strcmp(p.Results.inputSource,'_CURRENT_DATA_')
-                % User set another sequence:
-                
-                % Check if the task function needs data:
-                assert(obj.funcList(idxFunc).info.b_hasDataIn,...
-                    ['The function "' task.name '" does not have "data" as input. Operation aborted!'])
-                % Parse input source:
-                if ~endsWith(task.inputSource,'.dat') || ~endsWith(task.inputSource,'.datstat')
-                    % Functions as data source:
-                    idxFcn = ( strcmpi(task.inputSource, {obj.pipe.name}) & arrayfun(@(x) any(x.seq == (task.fromSeq)),obj.pipe)' );
-                    assert(any(idxFcn), 'Input function not found! Operation aborted!');
-                    % Check if the input function has output data:
-                    assert(obj.pipe(idxFcn).b_hasDataOut,['The function "' task.inputSource '" does not have any "data" as output. Operation aborted!'])
-                    % Update task inputFrom field:
-                    task.inputFrom = obj.pipe(idxFcn).name;
-                else
-                    % Files as data source.
-                    % Get list of files inside the first item of the SaveFolder list:
-                    % Files in SaveFolder:
-                    fList = vertcat(dir(fullfile(obj.SaveFolderList{1},'*.dat')), dir(fullfile(obj.SaveFolderList{1},'*datstat')));
-                    fileList = {fList.name}';                    
-                    % Potential files created during pipeline execution:
-                    fileList = [fileList; {obj.pipe(obj.pipe.b_hasFileOut).outFileName}']; % Add output files from functions that generate files
-                    fileList = [fileList; {obj.pipe(obj.pipe.b_hasDataOut & obj.pipe.b_save2File).saveFileName}']; % Add output files from functions that will save files.
-                    % Remove temporary files from the list:
-                    fileList(startsWith(fileList,'tmpFile_')) = [];
-                    % Check if input file exists:
-                    idxFile = strcmp(task.inputSource,fileList);
-                    assert(any(idxFile), 'Input File not found! Operation aborted!');    
-                    % Update task inputFrom field:
-                    task.inputFrom = fileList{idxFile};
-                end  
-                % Increment sequence index:
-                obj.current_seq = obj.current_seq + 1;
-            else
-                % Default behavior: Adds task to current sequence or
-                % automatically create new one (depending on function
-                % inputs).
-                if strcmp(task.inputFrom, '_CURRENT_DATA_')
-                    % Function has data in RAM as input.
-                    
-                    % Control for duplicate functions in the same sequence:
-                    assert(~any(strcmpi(task.name,{obj.pipe(arrayfun(@(x) any(x.seq == task.fromSeq),obj.pipe)).name})), ...
-                        ['Operation Aborted! The function "' task.name '" already exists in the pipeline!'])
-                    
-                else
-                    % Function accesses FOLDER directly. In this case,
-                    % create new sequence.
-                    
-                    %TBD%
-                    
-                end                                
+            % Output flag
+            if nargout
+                varargout{1}= state;
             end
-                                                                               
-            % Check if the new function needs another one to work:
-%             if task.dependency
-%                 task = obj.addDependency(task);
-%             end
-%             % Remove dependency field from "task")
-%             task = rmfield(task, 'dependency');
-            %%%------------------------------------------------------------
-%             % Add branch and sequence index to the function:
-%             task = obj.setInput(task);
-%             if isempty(task)
-%                 % If failed, return
-%                 obj.current_seq = currSeq; % Reset current sequence
-%                 return
-%             end
-           
-            % Perform checks on save options:
-            if task.b_save2File
-                % Check if the saveFileName is correct:
-                [~,~,ext] = fileparts(task.outFileName);
-                if ~any(strcmpi('outData', task.argsOut))
-                    warning(['Cannot save output to .DAT file for the function'...
-                        ' "%s" \nbecause it doesn''t have any data as output!'], task.name);
-                    task.b_save2File = false;
-                    task.saveFileName= '';
-                elseif isempty(task.saveFileName)
-                    % Save as default:
-                    task.saveFileName = task.outFileName;
-                elseif ~endsWith(task.saveFileName, ext)
-                    % Append file exension:
-                    task.saveFileName = [task.saveFileName, ext];
-                end
-            end
-            % Add task to pipeline:
-            obj.pipe = [obj.pipe; task];
-            fprintf('Added "%s" to sequence #%d of the pipeline.\n',task.name, obj.current_seq)
-            state = true;
+            
         end
-        %%%%% TO BE DONE --------------------------------------------------
-        %         function state = rmTask(obj,func,varargin)
-        %             % RMTASK removes a given function from the existing pipeline and
-        %             % updates the remaining steps in order to maintain the pipeline
-        %             % workflow.
-        %             % Inputs:
-        %             %   func (str || char):  name or index of the analysis function
-        %             %       contained in obj.funcList property.
-        %             %   fromSeq (positive integer): Optional. Sequence number of the input
-        %             %       function set in "inputFrom" parameter. If not provided, we
-        %             %       assume that the function comes from the sequence "1". This
-        %             %       parameter is ignored if the input comes from the disk.
-        %             % Output:
-        %             %   state (bool): FALSE, if failed to add the task to the
-        %             %   pipeline.
-        %
-        %             p = inputParser;
-        %             addRequired(p,'func',@(x) ischar(x) || isnumeric(x));
-        %             addParameter(p,'fromSeq',1,@isPositiveIntegerValuedNumeric);
-        %             parse(p,func,varargin{:});
-        %             %
-        %             state = false;
-        %             % Check if the function exists in the pipeline sequence:
-        %             idxFunc = ( strcmpi(p.Results.func,{obj.pipe.name}) && arrayfun(@(x) any(x.seq == p.Results.fromSeq),obj.pipe) );
-        %             assert(any(idxFunc),['Operation aborted! The function "' p.Results.func '" does not exist!']);
-        %
-        %         end
+        
+        function state = rmTask(obj,func2Del,varargin)
+            % RMTASK removes a given function from the existing pipeline and
+            % updates the remaining steps in order to maintain the pipeline
+            % workflow.
+            % Inputs:
+            %   func2Del (str || char):  name or index of the analysis function
+            %       contained in obj.funcList property.
+            %   Optional:
+            %   inputFromSeq (positive integer): Optional. Sequence number of the input
+            %       function set in "inputFrom" parameter. If not provided, we
+            %       assume that the function comes from the sequence "1". This
+            %       parameter is ignored if the input comes from the disk.
+            % Output:
+            %   state (bool): FALSE, if failed to add the task to the
+            %   pipeline.
+            
+            p = inputParser;
+            addRequired(p,'func2Del',@(x) ischar(x) || isnumeric(x));
+            addParameter(p,'inputFromSeq',obj.current_seq,@isPositiveIntegerValuedNumeric);
+            parse(p,func2Del,varargin{:});
+            %
+            state = false;
+            
+            % Check if the function exists in the pipeline sequence:
+            idxFunc = ( strcmpi(func2Del,{obj.pipe.name}) && ...
+                arrayfun(@(x) any(x.seq == p.Results.inputFromSeq),obj.pipe) );
+            assert(any(idxFunc),...
+                'Operation aborted! The function "%s" does not exist in sequence #%d!',...
+                p.Results.func,p.Results.inputFromSeq);
+            % Get info from step to be removed:
+            stepToDelete = obj.pipe(idxFunc);
+            % Get step's sequence:
+            prev_steps = obj.pipe(1:find(idxFunc)-1); % Previous steps.
+            idxSeq = arrayfun(@(x) x.seq == stepToDelete.seq,prev_steps);
+            this_seq = obj.pipe(idxSeq); % Previous steps from the same sequence
+            
+            
+            % Identify function's source. It will be either another
+            % function, "_FOLDER_" or a .dat/.datstat file:
+            
+            % Parse step's "inputSource" parameter:
+            if strcmp(stepToDelete.inputSource ,'_FOLDER_')
+                % The function's input is a Folder:
+                sourceIndx = 0;
+            elseif strcmp(stepToDelete.inputSource,'_CURRENT_DATA_')
+                % The function's input is the current data in RAM:
+                % Get sequence:
+                
+                for ii = length(this_seq):-1:1
+                    % Look backwards in the current sequence to locate the
+                    % last step that output data:
+                    if this_seq(ii).b_hasDataOut
+                        break
+                    end
+                end
+                sourceIndx = find(obj.pipe == this_seq(ii));
+            elseif endsWith(stepToDelete.inputSource, '.dat') || endsWith(stepToDelete.inputSource,'.datstat')
+                % The function's input is a data file:
+                
+                % First, check if the data comes from a previous function
+                % in the sequence that generates files:
+                idxOutFile = ( [this_seq.b_hasFileOut] && arrayfun(@(x) ismember(stepToDelete.inputSource,x.argsOut),this_seq) && ...
+                    obj.pipe.seq == stepToDelete.inputFromSeq );
+                idxOutData = ( strcmp(stepToDelete.inputSource,arrayfun(@(x) x.SaveFileName, prev_steps,'UniformOutput',false)) &&...
+                    prev_steps.seq == stepToDelete.inputFromSeq );
+                assert(sum(idxOutFile) == 1,'DEV: FOUND MORE THAN ONE FILE SOURCE')
+                assert(sum(idxOutData) == 1,'DEV: FOUND MORE THAN ONE DATA FILE SOURCE')
+                if any(idxOutFile)
+                    % Locate function that saved the input source file
+                    sourceIndx = find(obj.pipe == this_seq(idxOutFile));
+                elseif any(idxOutData)
+                    % Locate function that saved the input file:
+                    sourceIndx = find(obj.pipe == prev_steps(idxOutData));
+                end
+                
+            else
+                % Unknown input or no input at all. DEV: CONDITION TO BE
+                % VALIDATED
+                error('Unexpected condition. DEV: TO BE CHECKED.')
+            end
+            
+            %%%% TBD
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+        end
         %%%%% -------------------------------------------------------------
         function varargout = showPipeSummary(obj)
             % This method creates a summary of the current pipeline.
@@ -502,7 +502,7 @@ classdef PipelineManager < handle
                 warning('Pipeline execution aborted! Pipeline is invalid.')
                 return
             end
-
+            
             % Initialize waitbars:
             obj.setWaitBar('Initialize')
             
@@ -518,7 +518,7 @@ classdef PipelineManager < handle
                 obj.loadFolderLog(obj.SaveFolderList{ii});
                 % Update Data History from current save folder:
                 obj.dataHistory = obj.loadDataHistory(obj.current_saveFolder);
-               
+                
                 % Update waitbars:
                 obj.setWaitBar('UpdateItem', ii, length(obj.SaveFolderList));
                 fprintf([repmat('-',1,50),'\n']);
@@ -541,7 +541,7 @@ classdef PipelineManager < handle
                             txt = [txt,sprintf('\n%s', skippedFcns{:})];%#ok
                             dummyTask = struct('name',['Skipped sequence # ' num2str(obj.current_seq)],...
                                 'inputFileName',selFile,'saveFileName',selFile);
-                            obj.updateFolderLog(dummyTask,datetime('now'),true,txt);                             
+                            obj.updateFolderLog(dummyTask,datetime('now'),true,txt);
                         elseif ~isempty(skippedFcns)
                             % When some steps are skipped:
                             fprintf('The following steps will be skipped:\n')
@@ -582,9 +582,9 @@ classdef PipelineManager < handle
                     break
                 end
                 % Save folderLog file:
-                obj.saveFolderLog (obj.current_saveFolder);                                
+                obj.saveFolderLog (obj.current_saveFolder);
             end
-                       
+            
             % Show Pipeline Summary in command window:
             disp(obj.PipelineSummary);
             % Delete progress bars:
@@ -732,7 +732,7 @@ classdef PipelineManager < handle
                     'Failed to load pipeline!');
                 waitfor(h);
                 return
-            end            
+            end
             obj.pipe = new_pipe;
             % Update current sequence index:
             obj.current_seq = max([obj.pipe.seq],[],'all');
@@ -1262,13 +1262,13 @@ classdef PipelineManager < handle
             % file if there are missing files in the folder.
             
             dataHistory = struct.empty(0,1);
-            if ~isfile(fullfile(folder,'dataHistory.mat')) 
+            if ~isfile(fullfile(folder,'dataHistory.mat'))
                 return
             end
             load(fullfile(folder,'dataHistory.mat'));%#ok
             % Check if all files listed in dataHistory still exist in the
             % saveFolder:
-            fileList = getFileList(folder,'all');            
+            fileList = getFileList(folder,'all');
             % Clean-up! Remove missing files from dataHistory:
             dataHistory(~ismember({dataHistory.filename}, fileList)) = [];
             if isempty(dataHistory)
@@ -1347,7 +1347,7 @@ classdef PipelineManager < handle
         function updateFolderLog(obj,task,runDateTime,b_completed,errMsg)
             % UPDATEFOLDERLOG creates/appends task entries in the
             % folderLog and PipelineSummary tables.
-                        
+            
             if isa(errMsg,'MException')
                 MessageLong = getReport(errMsg,'extended','hyperlinks','off');
                 MessageShort = getReport(errMsg,'basic','hyperlinks','off');
@@ -1357,7 +1357,7 @@ classdef PipelineManager < handle
                 MessageLong = errMsg; MessageShort = errMsg;
             end
             thisLog = table({task.name},{task.inputFileName},{task.saveFileName}, b_completed, runDateTime,{MessageShort},{MessageLong},...
-                'VariableNames', {'TaskName','InputFile','OutputFile', 'Completed', 'RunDateTime', 'Messages_short','Messages'});          
+                'VariableNames', {'TaskName','InputFile','OutputFile', 'Completed', 'RunDateTime', 'Messages_short','Messages'});
             % Update Pipeline summary table:
             obj.PipelineSummary = [obj.PipelineSummary; thisLog];
             % Update folder log:
@@ -1390,7 +1390,7 @@ classdef PipelineManager < handle
                 eval(funcStr);
                 % Update log table and tell other methods that the function
                 % was successfully run:
-                obj.b_state = true;                
+                obj.b_state = true;
                 % Update data history of current data with task:
                 obj.updateStepInfo(task);
             catch ME
@@ -1537,13 +1537,13 @@ classdef PipelineManager < handle
                 if any(idxFromDisk > 0)
                     idxFrom = idxFromDisk;
                     % Load the input file dataHistory:
-                    [~,inputFile,ext] = fileparts(seqIn(idxFromDisk).inputFileName);                    
+                    [~,inputFile,ext] = fileparts(seqIn(idxFromDisk).inputFileName);
                     idxFile = strcmp({obj.dataHistory.filename},[inputFile,ext]);
                     if any(idxFile)
                         ppInfo = obj.dataHistory(idxFile).info;
                     end
                 elseif  any(idxFromDataViewer > 0) && ~isempty(obj.current_info)
-                    idxFrom = idxFromDataViewer;                    
+                    idxFrom = idxFromDataViewer;
                     ppInfo = obj.current_info;
                 end
                 
@@ -1609,115 +1609,134 @@ classdef PipelineManager < handle
             end
         end
         %%%%%%--Helpers for "addTask" method -----------------------------
-        function task = setInput(obj,task,inputSource,fromSeq)
+        function task = setInput(obj,task,inputSource,inputFromSeq)
             % SETINPUT selects the input to the function in "task". It
             % controls for multiple outputs and for functions with no
             % input. It updates the fields of "task" with the input
             % information.
             % !If the User cancels any of the dialogs, the function returns
-            % an empty array!
-                        
-            % Identify default parameters: 
-            %   1) task.inputFrom = "_CURRENT_DATA_" or "_FOLDER_".
-            %   2) inputSource = "_CURRENT_DATA_" (default).
+            % an empty array.
             
-            if strcmp(inputSource,'_CURRENT_DATA_')
-                % Default. Adds task to existing sequence.
-                if task.b_hasDataIn
-                    % The function input is stored in RAM:
-                    if obj.current_seqIndx == 1
-                        % For the first step of the sequence, get the input
-                        % file from the Folder
-                        task.inputSource = obj.selectInputFileName('Folder',task.name); 
-                    elseif obj.pipe(obj.current_seqIndx - 1).b_hasDataOut
-                        % Previous step output is the current_data.
-                        task.inputSource = '_CURRENT_DATA_';
-                    elseif obj.pipe(obj.current_seqIndx -1).b_hasFileOut
-                        % Previous step output is a file.
-                        task.inputSource = obj.selectInputFileName(obj.pipe(obj.current_seqIndx - 1).name,task.name); 
+            % Check if this is the very first step of the pipeline:
+            b_pipeFirstStep = ( obj.current_seq == 0 );
+            b_genNewSeq = true; % Flag to create new sequence.
+            inputStepIndx = 0; % Pre-set step index.
+            switch upper(inputSource)
+                case '_CURRENT_DATA_'
+                    
+                    % Default behaviour for functions with data as input.
+                    % Get the current sequence:
+                    if b_pipeFirstStep
+                        if task.b_hasDataIn
+                            % For the first step of the sequence, get the input
+                            % file from the Folder
+                            inputSource = obj.selectInputFileName('Folder',task.name);                        
+                        end
                     else
-                        % This should never be reached:
-                        error('Unknown input source!')
+                        this_seq = obj.pipe([obj.pipe.seq] == obj.current_seq);
+                        [inputSource,inputStepIndx] = lookBackOnSeq(this_seq,inputSource);
+                        % DO NOT create new sequence:
+                        b_genNewSeq = false;
+                    end                    
+                case '_FOLDER_'
+                    % Default behaviour for functions accessing the save
+                    % folder.
+                    % DO NOTHING
+                otherwise
+                    % For user-defined new sequence.
+                    % Here, one can set the input source as:
+                    %   1) a function from the existing pipeline.
+                    %   2) a file (.dat or .datstat).
+                    
+                    % Check if the task function needs data:
+                    assert(task.b_hasDataIn,...
+                        ['The function "' task.name '" does not have "data" as input. Operation aborted!'])
+                    % Check if the input source is a file or a function:
+                    if endsWith(inputSource,'.dat') || endsWith(inputSource,'.datstat')
+                        % The input source is a file from the save folder.
+                        fileList = getFileList(obj.SaveFolderList{1}); % Get list of existing data files in the first SaveFolder.
+                        idxFile = strcmp(fileList,inputSource);
+                        % Check if the input file exists:
+                        assert(any(idxFile),'Failed to find file "%s" in SaveFolder!',inputSource);
+                    else
+                        % The input source is an existing function in the
+                        % pipeline. Here, the "inputFromSeq" parameter is used to
+                        % locate the function.
+                        idxSourceFcn = ( strcmpi(inputSource, {obj.pipe.name}) & arrayfun(@(x) any(x.seq == inputFromSeq),obj.pipe)' );
+                        assert(any(idxSourceFcn),'The function "%s" was not found in sequence #%d!',inputSource, inputFromSeq);
+                        % Check if the source function has Data or File as output:
+                        if obj.pipe(idxSourceFcn).b_hasDataOut
+                            % For functions with Data as output, force saving data
+                            % to temporary file and use the file as input source.
+                            obj.pipe(idxSourceFcn).b_save2File = true;
+                            obj.pipe(idxSourceFcn) = obj.setSaveFilename(obj.pipe(idxSourceFcn), true);
+                            inputSource = obj.pipe(idxSourceFcn).saveFileName;
+                            inputStepIndx = find(idxSourceFcn);
+                        elseif obj.pipe(idxSourceFcn).b_hasFileOut
+                            % For functions that output one or more files:
+                            nOutFiles = length(obj.funcList(strcmpi(inputSource,{obj.funcList.name})).info.outFileName);
+                            if nOutFiles > 1
+                                inputSource = obj.selectInputFileName(inputSource,task.name);
+                            else
+                                inputSource = obj.funcList(strcmpi(inputSource,{obj.funclist.name})).info.outFileName;
+                            end
+                            inputStepIndx = find(idxSourceFcn);
+                        else
+                            % If the source function does not provide data,
+                            % reroute the source to the previous step
+                            
+                            % DECIDED TO RAISE AN ERROR FOR NOW:
+                            error('Unable to create new sequence from a source function without output. Please, select another function and try again.')
+%                             this_seq = obj.pipe([obj.pipe.seq] == inputFromSeq);
+%                             this_seq = this_seq(1:find(strcmp({this_seq.name},inputSource)));
+%                             [inputSource,inputStepIndx] = lookBackOnSeq(this_seq,inputSource);
+                        end
                     end
-                    % Update sequence info and task structure:
-                    obj.current_seqIndx = obj.current_seqIndx + 1;
-                else
-                    % The function accesses the SaveFolder instead:
-                    task.inputSource = '_FOLDER_'; 
-                    % Force new sequence for functions accessing the
-                    % folder:
-                    obj.current_seq = obj.current_seq + 1;
-                    obj.current_seqIndx = 1;
-                end
-                
-                task.seq = obj.current_seq;
-                task.seqIndx = obj.current_seqIndx;
+            end
+            
+            if isempty(inputSource)
+                % The User cancelled the process during
+                % "selectInputFileName" execution.
+                task = [];
                 return
             end
-            
-            %%% THE SECTION BELOW DEALS WITH NEW BRANCHES WHEN THE USER
-            %%% MANUALLY CREATES ONE.
-            
-            % Check if the task function needs data:
-            assert(task.info.b_hasDataIn,...
-                ['The function "' task.name '" does not have "data" as input. Operation aborted!'])
-            % Here, there are two input options: 
-            %   1) An existing function from the pipeline.
-            %   2) A file from the SaveFolder.
-            % Functions as input source will be processed before files.
-            
-            % Check for function as input source:
-            idxFcn = ( strcmpi(inputSource, {obj.pipe.name}) &...
-                arrayfun(@(x) any(x.seq == (fromSeq)),obj.pipe)' );
-            if any(idxFcn)
-                % Check if the source function has Data or File as output:
-                if obj.pipe(idxFcn).b_hasDataOut
-                    % For functions with Data as output, force saving data
-                    % to temporary file and use the file as input source.                    
-                    task.inputSource = obj.forceSaveFile(obj.pipe(idxFcn), obj.pipe(idxFcn).seqIndx < obj.current_seqIndx);
-                    
-                elseif obj.pipe(idxFcn).b_hasFileOut
-                    % For functions that output one or more files:
-                    nOutFiles = obj.funcList(strcmpi(inputSource,{obj.funclist.name})).info.outFileName;
-                    if nOutFiles > 1
-                        task.inputSource = obj.selectInputFileName(inputSource,task.name); 
-                    else
-                        task.inputSource = obj.funcList(strcmpi(inputSource,{obj.funclist.name})).info.outFileName;
-                    end                    
-                end                   
+            % Create a new sequence.
+            if b_genNewSeq
+                obj.current_seq = obj.current_seq + 1;
+                obj.current_seqIndx = 0; % Reset current sequence index.
             end
-
-            % Check for file as input source:
-            fileList = getFileList(obj.SaveFolderList{1}); % Get list of existing data files in the first SaveFolder.            
-            if ~endsWith(inputSource,'.dat') || ~endsWith(inputSource,'.datstat')
-                % Deal with input file source without file extension.                
-                [~,filenames,~] = cellfun(@(x) fileparts(x),fileList,'UniformOutput',false);
-                % Get index using file name only:
-                idxFile = strcmp(inputSource,filenames);
-                if sum(idxFile) > 1
-                    % Control for files with same names. Keep the first
-                    % file by default and raises warning.
-                    indxFile = find(idxFile,1,'first');
-                    warning(['More than one file found with name "%s".\n'...
-                        'The file "%s" will be selected as input.\n'...
-                        'To avoid this, use input file name with the file extension (.dat or .datstat).'],...
-                        inputSource,fileList{indxFile})
-                    % Keep first file from list.
-                    idxFile = false(size(idxFile));
-                    idxFile(indxFile) = true;
-                end                             
-            else
-                % Select file from the list.
-                idxFile = strcmp(inputSource,fileList);
-            end
-            task.inputSource = fileList{idxFile};            
-            % Force new sequence: 
-            obj.current_seq = obj.current_seq + 1;
-            obj.current_seqIndx = 1;
-            % Update task
+            % Increment step index:
+            obj.current_seqIndx = obj.current_seqIndx + 1;
+            % Update task structure
+            task.inputSource = inputSource;
+            task.inputStepIndx = inputStepIndx;
             task.seq = obj.current_seq;
-            task.seqIndx = obj.current_seqIndx;                                                                                     
+            task.seqIndx = obj.current_seqIndx;
+            %%% LOCAL FUNCTION
+            function [newSource,newIndx] = lookBackOnSeq(this_seq, newSource)
+                % Look back on current sequence to get the last
+                % function with any outputs:
+                for ii = length(this_seq):-1:1
+                    if this_seq(ii).b_hasDataOut || this_seq(ii).b_hasFileOut
+                        break
+                    end
+                end
+                % Update input step index with the last item of the
+                % sequence.
+                newIndx = find([obj.pipe.seq] == this_seq(ii).seq & [obj.pipe.seqIndx] == this_seq(ii).seqIndx);
+                if this_seq(ii).b_hasFileOut
+                    % Previous step output is a file.
+                    newSource = obj.selectInputFileName(this_seq(ii).name,task.name);
+                elseif ~any([this_seq.b_hasDataOut this_seq.b_hasFileOut]) && ii == 1
+                    % This means that the first function of the
+                    % sequence does not have any data as
+                    % output. Force input from folder.
+                    newSource = obj.selectInputFileName('Folder',task.name);
+                    newIndx = 0; % Reset index to zero (data from folder).
+                end
+            end
         end
+        
         
         function filename = selectInputFileName(obj,source,target)
             % SELECTINPUTFILENAME creates a dialog box for the User to
@@ -1732,25 +1751,25 @@ classdef PipelineManager < handle
             % Output:
             %   filename (char): name of the input file. Empty, if user
             %   cancels.
-                                              
-            % For functions as "source":            
-            if strcmp(source, {obj.pipe.name})                
+            
+            % For functions as "source":
+            if ismember(source, {obj.pipe.name})
                 % Get source function info:
-                funcInfo = obj.pipe(strcmp(source,{obj.pipe.name}));
+                funcInfo = obj.funcList(strcmp(source,{obj.funcList.name}));
                 % Create dialog box so the user selects the file:
-                [indxFile, tf] = listdlg('ListString', funcInfo.outFileName,...
+                [indxFile, tf] = listdlg('ListString', funcInfo.info.outFileName,...
                     'SelectionMode','single','PromptString',{'Select a file from:',...
                     ['"' funcInfo.name '" as input to :' ], ['"' target '":']}, 'ListSize',[250,280],'Name', 'Select file');
                 if ~tf
                     disp('Operation cancelled by User')
-                    filename = 0;
+                    filename = '';
                     return
                 end
-                filename = funcInfo.outFileName{indxFile};
+                filename = funcInfo.info.outFileName{indxFile};
             else
                 % For "FOLDER" as source, display the .dat/.datstat files from the
                 % first item of the SaveFolderList:
-                fileList = getFileList(obj.SaveFolderList{1});                
+                fileList = getFileList(obj.SaveFolderList{1});
                 % If not files exist in the item's save folder, raise a
                 % warning and abort:
                 if isempty(fileList)
@@ -1764,35 +1783,73 @@ classdef PipelineManager < handle
                     'PromptString',{'Select a file as input to:', ['"' target '"']},'ListSize',[250,280],'Name','Select file');
                 if ~tf
                     disp('Operation cancelled by User');
-                    filename = 0;
+                    filename = '';
                     return
                 end
                 filename = fileList{indxFile};
             end
         end
         
-        function [saveFilename,step] = forceSaveFile(obj,step,b_genTmpFile)
-           % FORCESAVEFILE forces the function from the pipeline "step" to 
-           % save the output data to a .dat/.datstat file. 
-                      
-           if ~isempty(step.saveFileName)
-               saveFilename = step.saveFileName;
-               return           
-           end
-           
-           funcInfo = obj.funcList(strcmp(obj.funcList.name,step.name)).info;
-           
-           if b_genTmpFile 
-               % Create temporary file:
-               [~,~,ext] = fileparts(funcInfo.outFileName);
-               saveFilename = ['tmpFile_' num2str(randi(99999,1,1),'%05i') ext];                              
-           else
-               % Save with default name
-               saveFilename = funcInfo.outFileName;
-           end
-           % Update step info
-           step.saveFileName = saveFilename;
-           step.b_save2File = true;                                
+        function step = setSaveFilename(obj,step,b_genTmpFile)
+            % SETSAVEFILENAME validates and sets the "saveFileName" during
+            % the addTask process. This method applies only to functions
+            % that generated Data as output (not files).
+            % Inputs:
+            %   step (struct): task that is being added to the pipeline.
+            %   b_genTmpFile (bool): If TRUE, generates a random file name
+            %       with prefix 'tmpFile_'.
+            
+            if ~step.b_save2File;return;end
+            if ~step.b_hasDataOut
+                warning('The function "%s" does not have data as output. The Save file command will be ignored.',step.name);
+                step.b_save2File = false;
+                return
+            end
+            % Get step's function information:
+            funcInfo = obj.funcList(strcmp({obj.funcList.name},step.name)).info;
+            % Get file extension:
+            [~,~,ext] = fileparts(funcInfo.outFileName);
+            % Set save file name:
+            if ~isempty(step.saveFileName)
+                % Enforce file extension:
+                [~,filename,~] = fileparts(step.saveFileName);
+                saveFilename = [filename, ext];
+            else
+                if b_genTmpFile
+                    % Create temporary file:
+                    [~,~,ext] = fileparts(funcInfo.outFileName);
+                    saveFilename = ['tmpFile_' num2str(randi(99999,1,1),'%05i') ext];
+                else
+                    % Save with default name
+                    saveFilename = funcInfo.outFileName;
+                end
+            end
+            % Validate if the filename already exists in the pipeline:
+            if ~obj.b_overwriteFiles
+                % Validate if the filename already exists in the pipeline:
+                if any(strcmp(saveFilename,{obj.pipe.saveFileName}))
+                    saveFilename = appendNumToName(saveFilename);
+                    warning('Found duplicate names in the pipeline. The data will be saved as "%s" to avoid overwriting',saveFilename)
+                end
+            end
+            % Update save file name:
+            step.saveFileName = saveFilename;
+            
+            %%% LOCAL FUNCTION
+            function newName= appendNumToName(Name)
+                % This function appends a _<INDEX> to a string.
+                [~,Name,fext] = fileparts(Name);
+                out1 = regexp(Name,'^(.*?)_(\d+)$','tokens');
+                out2 = regexp(Name,'^(.*?)$','tokens');
+                if isempty(out1)
+                    prefix = out2{1}{1};
+                    index = 1;
+                else
+                    prefix = out1{1}{1};
+                    index = str2double(out1{1}{2});
+                end
+                newName = [prefix '_' num2str(index + 1) fext];
+            end
         end
         
         function task = addDependency(obj,task)
@@ -1812,7 +1869,7 @@ classdef PipelineManager < handle
             end
             % Add dependency function to the current sequence
             if obj.current_seq > 0
-                obj.addTask(task.dependency,'fromSeq',obj.current_seq);
+                obj.addTask(task.dependency,'inputFromSeq',obj.current_seq);
             else
                 obj.addTask(task.dependency);
             end
@@ -2011,7 +2068,7 @@ classdef PipelineManager < handle
                 datetime(fcnInfo.datenum, 'ConvertFrom', 'datenum'),...
                 'opts', optsStruct, 'inputFileName',inputFileName, 'outFileName',outFileName);
         end
-              
+        
         function loadInputFile(obj,step)
             % This function loads the data and metaData (if applicable)
             % from a .DAT or .MAT file indicated by the inputFileName field
