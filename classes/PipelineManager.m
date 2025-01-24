@@ -1616,28 +1616,32 @@ classdef PipelineManager < handle
             % information.
             % !If the User cancels any of the dialogs, the function returns
             % an empty array.
-            
-            % Check if this is the very first step of the pipeline:
-            b_pipeFirstStep = ( obj.current_seq == 0 );
+                        
+            % Check if this is the very first step of the pipeline:            
+            b_FirstPipeStep = ~obj.current_seq;
             b_genNewSeq = true; % Flag to create new sequence.
             inputStepIndx = 0; % Pre-set step index.
             switch upper(inputSource)
-                case '_CURRENT_DATA_'
-                    
+                case '_CURRENT_DATA_'                    
                     % Default behaviour for functions with data as input.
                     % Get the current sequence:
-                    if b_pipeFirstStep
-                        if task.b_hasDataIn
-                            % For the first step of the sequence, get the input
-                            % file from the Folder
-                            inputSource = obj.selectInputFileName('Folder',task.name);                        
+                    if ~b_FirstPipeStep
+                        b_genNewSeq = false;
+                        [newInputSource,inputStepIndx] = lookBackOnSeq(obj.pipe(end));
+                    else
+                        newInputSource = 'folder';                        
+                    end
+                    %
+                    if task.b_hasDataIn                        
+                        if strcmpi(newInputSource,'folder') || newInputSource.b_hasFileOut
+                            inputSource = obj.selectInputFileName(newInputSource,task.name);
                         end
                     else
-                        this_seq = obj.pipe([obj.pipe.seq] == obj.current_seq);
-                        [inputSource,inputStepIndx] = lookBackOnSeq(this_seq,inputSource);
-                        % DO NOT create new sequence:
-                        b_genNewSeq = false;
-                    end                    
+                        % For functions without data as input, just add a
+                        % new step in the sequence.
+                        inputStepIndx = length(obj.pipe);                        
+                    end
+                    
                 case '_FOLDER_'
                     % Default behaviour for functions accessing the save
                     % folder.
@@ -1662,8 +1666,13 @@ classdef PipelineManager < handle
                         % The input source is an existing function in the
                         % pipeline. Here, the "inputFromSeq" parameter is used to
                         % locate the function.
+                        
+                        % Update source function, in case where the
+                        % user-defined one does not have data as output:
                         idxSourceFcn = ( strcmpi(inputSource, {obj.pipe.name}) & arrayfun(@(x) any(x.seq == inputFromSeq),obj.pipe)' );
-                        assert(any(idxSourceFcn),'The function "%s" was not found in sequence #%d!',inputSource, inputFromSeq);
+                        [stepSource, inputStepIndx] = lookBackOnSeq(obj.pipe(idxSourceFcn));
+                        idxSourceFcn = ( strcmpi(stepSource.name, {obj.pipe.name}) & arrayfun(@(x) any(x.seq == inputFromSeq),obj.pipe)' );
+                        assert(any(idxSourceFcn),'The function "%s" was not found in sequence #%d!',stepSource.name, inputFromSeq);                                                
                         % Check if the source function has Data or File as output:
                         if obj.pipe(idxSourceFcn).b_hasDataOut
                             % For functions with Data as output, force saving data
@@ -1671,7 +1680,7 @@ classdef PipelineManager < handle
                             obj.pipe(idxSourceFcn).b_save2File = true;
                             obj.pipe(idxSourceFcn) = obj.setSaveFilename(obj.pipe(idxSourceFcn), true);
                             inputSource = obj.pipe(idxSourceFcn).saveFileName;
-                            inputStepIndx = find(idxSourceFcn);
+%                             inputStepIndx = find(idxSourceFcn);
                         elseif obj.pipe(idxSourceFcn).b_hasFileOut
                             % For functions that output one or more files:
                             nOutFiles = length(obj.funcList(strcmpi(inputSource,{obj.funcList.name})).info.outFileName);
@@ -1680,16 +1689,10 @@ classdef PipelineManager < handle
                             else
                                 inputSource = obj.funcList(strcmpi(inputSource,{obj.funclist.name})).info.outFileName;
                             end
-                            inputStepIndx = find(idxSourceFcn);
-                        else
-                            % If the source function does not provide data,
-                            % reroute the source to the previous step
-                            
-                            % DECIDED TO RAISE AN ERROR FOR NOW:
+%                             inputStepIndx = find(idxSourceFcn);
+                        else                          
+                            % DEV: TO AN ERROR FOR NOW:
                             error('Unable to create new sequence from a source function without output. Please, select another function and try again.')
-%                             this_seq = obj.pipe([obj.pipe.seq] == inputFromSeq);
-%                             this_seq = this_seq(1:find(strcmp({this_seq.name},inputSource)));
-%                             [inputSource,inputStepIndx] = lookBackOnSeq(this_seq,inputSource);
                         end
                     end
             end
@@ -1713,30 +1716,38 @@ classdef PipelineManager < handle
             task.seq = obj.current_seq;
             task.seqIndx = obj.current_seqIndx;
             %%% LOCAL FUNCTION
-            function [newSource,newIndx] = lookBackOnSeq(this_seq, newSource)
+            function [newInputSource, newInputStepIndx]= lookBackOnSeq(startStep)
                 % Look back on current sequence to get the last
-                % function with any outputs:
-                for ii = length(this_seq):-1:1
-                    if this_seq(ii).b_hasDataOut || this_seq(ii).b_hasFileOut
+                % function with any outputs. If no outputs are fuond, the
+                % FOLDER is used as input.
+                % This function deals with functions with inputs!
+                % Build a sequence that backtraces the from the startStep
+                % up to the folder.
+                
+                newInputSource = startStep;
+                flag = true;
+                while flag
+                    if newInputSource.b_hasDataOut || newInputSource.b_hasFileOut
                         break
                     end
+                    % Move up in the pipeline
+                    if ~newInputSource.inputStepIndx
+                        % This means that the previous step is the folder
+                        newInputSource = 'Folder';
+                        break
+                    else
+                        % Move up in the pipeline
+                        newInputSource = obj.pipe(newInputSource.inputStepIndx);
+                        
+                    end
                 end
-                % Update input step index with the last item of the
-                % sequence.
-                newIndx = find([obj.pipe.seq] == this_seq(ii).seq & [obj.pipe.seqIndx] == this_seq(ii).seqIndx);
-                if this_seq(ii).b_hasFileOut
-                    % Previous step output is a file.
-                    newSource = obj.selectInputFileName(this_seq(ii).name,task.name);
-                elseif ~any([this_seq.b_hasDataOut this_seq.b_hasFileOut]) && ii == 1
-                    % This means that the first function of the
-                    % sequence does not have any data as
-                    % output. Force input from folder.
-                    newSource = obj.selectInputFileName('Folder',task.name);
-                    newIndx = 0; % Reset index to zero (data from folder).
+                if ~ischar(newInputSource)
+                    newInputStepIndx = find(arrayfun(@(x) isequaln(newInputSource,x),obj.pipe));
+                else
+                    newInputStepIndx = 0;
                 end
             end
         end
-        
         
         function filename = selectInputFileName(obj,source,target)
             % SELECTINPUTFILENAME creates a dialog box for the User to
@@ -1753,9 +1764,9 @@ classdef PipelineManager < handle
             %   cancels.
             
             % For functions as "source":
-            if ismember(source, {obj.pipe.name})
+            if isstruct(source)
                 % Get source function info:
-                funcInfo = obj.funcList(strcmp(source,{obj.funcList.name}));
+                funcInfo = obj.funcList(strcmp(source.name,{obj.funcList.name}));
                 % Create dialog box so the user selects the file:
                 [indxFile, tf] = listdlg('ListString', funcInfo.info.outFileName,...
                     'SelectionMode','single','PromptString',{'Select a file from:',...
