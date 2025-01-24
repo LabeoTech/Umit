@@ -1683,11 +1683,11 @@ classdef PipelineManager < handle
 %                             inputStepIndx = find(idxSourceFcn);
                         elseif obj.pipe(idxSourceFcn).b_hasFileOut
                             % For functions that output one or more files:
-                            nOutFiles = length(obj.funcList(strcmpi(inputSource,{obj.funcList.name})).info.outFileName);
+                            nOutFiles = length(obj.funcList(strcmpi(obj.pipe(idxSourceFcn).name,{obj.funcList.name})).info.outFileName);
                             if nOutFiles > 1
-                                inputSource = obj.selectInputFileName(inputSource,task.name);
+                                inputSource = obj.selectInputFileName(obj.pipe(idxSourceFcn),task.name);
                             else
-                                inputSource = obj.funcList(strcmpi(inputSource,{obj.funclist.name})).info.outFileName;
+                                inputSource = obj.funcList(strcmpi(obj.pipe(idxSourceFcn).name,{obj.funcList.name})).info.outFileName;
                             end
 %                             inputStepIndx = find(idxSourceFcn);
                         else                          
