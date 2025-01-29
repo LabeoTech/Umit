@@ -296,7 +296,6 @@ classdef PipelineManager < handle
                     ['Operation aborted! The function "' func '" already exists in the current sequence.'...
                     ' To force the creation of a new sequence, set the "source" and "sequence" parameters.']);
             end
-            
             % Create "task" structure. This is the one that will be added
             % to the pipeline:
             task = obj.funcList(idxFunc).info;
@@ -329,99 +328,157 @@ classdef PipelineManager < handle
             
         end
         
-        function state = rmTask(obj,func2Del,varargin)
+        function varargout = rmTask(obj,func2Del,varargin)
             % RMTASK removes a given function from the existing pipeline and
             % updates the remaining steps in order to maintain the pipeline
             % workflow.
             % Inputs:
-            %   func2Del (str || char):  name or index of the analysis function
-            %       contained in obj.funcList property.
+            %   func2Del (str):  name of the analysis function from the
+            %       pipeline to be deleted
             %   Optional:
-            %   inputFromSeq (positive integer): Optional. Sequence number of the input
-            %       function set in "inputFrom" parameter. If not provided, we
-            %       assume that the function comes from the sequence "1". This
-            %       parameter is ignored if the input comes from the disk.
-            % Output:
-            %   state (bool): FALSE, if failed to add the task to the
-            %   pipeline.
+            %       fromSequence (num scalar): index of the sequence containing
+            %           the function to be deleted. If not provided, the current
+            %           sequence will be used.
+            % Outputs (optional):
+            %   state (bool): FALSE, if failed to remove the task from the
+            %       pipeline.
             
             p = inputParser;
             addRequired(p,'func2Del',@(x) ischar(x) || isnumeric(x));
-            addParameter(p,'inputFromSeq',obj.current_seq,@isPositiveIntegerValuedNumeric);
+            addParameter(p,'fromSequence',obj.current_seq,@isPositiveIntegerValuedNumeric);
             parse(p,func2Del,varargin{:});
-            %
-            state = false;
-            
-            % Check if the function exists in the pipeline sequence:
-            idxFunc = ( strcmpi(func2Del,{obj.pipe.name}) && ...
-                arrayfun(@(x) any(x.seq == p.Results.inputFromSeq),obj.pipe) );
-            assert(any(idxFunc),...
-                'Operation aborted! The function "%s" does not exist in sequence #%d!',...
-                p.Results.func,p.Results.inputFromSeq);
-            % Get info from step to be removed:
-            stepToDelete = obj.pipe(idxFunc);
-            % Get step's sequence:
-            prev_steps = obj.pipe(1:find(idxFunc)-1); % Previous steps.
-            idxSeq = arrayfun(@(x) x.seq == stepToDelete.seq,prev_steps);
-            this_seq = obj.pipe(idxSeq); % Previous steps from the same sequence
-            
-            
-            % Identify function's source. It will be either another
-            % function, "_FOLDER_" or a .dat/.datstat file:
-            
-            % Parse step's "inputSource" parameter:
-            if strcmp(stepToDelete.inputSource ,'_FOLDER_')
-                % The function's input is a Folder:
-                sourceIndx = 0;
-            elseif strcmp(stepToDelete.inputSource,'_CURRENT_DATA_')
-                % The function's input is the current data in RAM:
-                % Get sequence:
-                
-                for ii = length(this_seq):-1:1
-                    % Look backwards in the current sequence to locate the
-                    % last step that output data:
-                    if this_seq(ii).b_hasDataOut
-                        break
-                    end
-                end
-                sourceIndx = find(obj.pipe == this_seq(ii));
-            elseif endsWith(stepToDelete.inputSource, '.dat') || endsWith(stepToDelete.inputSource,'.datstat')
-                % The function's input is a data file:
-                
-                % First, check if the data comes from a previous function
-                % in the sequence that generates files:
-                idxOutFile = ( [this_seq.b_hasFileOut] && arrayfun(@(x) ismember(stepToDelete.inputSource,x.argsOut),this_seq) && ...
-                    obj.pipe.seq == stepToDelete.inputFromSeq );
-                idxOutData = ( strcmp(stepToDelete.inputSource,arrayfun(@(x) x.SaveFileName, prev_steps,'UniformOutput',false)) &&...
-                    prev_steps.seq == stepToDelete.inputFromSeq );
-                assert(sum(idxOutFile) == 1,'DEV: FOUND MORE THAN ONE FILE SOURCE')
-                assert(sum(idxOutData) == 1,'DEV: FOUND MORE THAN ONE DATA FILE SOURCE')
-                if any(idxOutFile)
-                    % Locate function that saved the input source file
-                    sourceIndx = find(obj.pipe == this_seq(idxOutFile));
-                elseif any(idxOutData)
-                    % Locate function that saved the input file:
-                    sourceIndx = find(obj.pipe == prev_steps(idxOutData));
-                end
-                
-            else
-                % Unknown input or no input at all. DEV: CONDITION TO BE
-                % VALIDATED
-                error('Unexpected condition. DEV: TO BE CHECKED.')
+            fromSeq = p.Results.fromSequence;
+            if isempty(obj.pipe)
+                warning('Operation aborted. The pipeline is already empty.')
+                return
             end
             
-            %%%% TBD
+            % Check if the function exists in the pipeline sequence:
+            idxFunc = ( strcmpi(func2Del,{obj.pipe.name}) & ...
+                arrayfun(@(x) any(x.seq == fromSeq),obj.pipe)' );
+            assert(any(idxFunc),...
+                'Operation aborted! The function "%s" does not exist in sequence #%d!',...
+                func2Del,fromSeq);
+            % Get task to be removed:
+            stepToDelete = obj.pipe(idxFunc);
+            % Store original pipeline and indices:
+            original_pipe = obj.pipe;
+            original_seq = obj.current_seq;
+            original_seqIndx = obj.current_seqIndx;
+            state = true;
+            % Delete step from pipeline:
             
+            % #1 - Easiest case: There is only one step:
+            if length(obj.pipe) == 1
+                obj.reset_pipe;
+                fprintf('Function "%s" removed from the pipeline.\n',stepToDelete.name);
+                if nargout; varargout{1} = state;end
+                return
+            end
+
+            % #2 - The more complex situation: There are one or more sequences
+            % that stem from the step to be deleted. Here, we manage the
+            % inputs and sequence indices following the deletion of the
+            % step from the pipeline:
             
+            % Get step's sequence up to the one to be deleted:
+            prev_steps = obj.pipe(1:find(idxFunc) - 1); % Previous steps.
+            % Identify steps that branch out from the step to be deleted:
+            next_steps = obj.pipe(find(idxFunc) + 1:end);
+            % Reset sequence and indices to the last step prior to the
+            % one to be deleted.
+            obj.pipe = prev_steps;
+            if ~isempty(obj.pipe)
+                obj.current_seq = prev_steps(end).seq;
+                obj.current_seqIndx = prev_steps(end).seqIndx;
+            else
+                obj.current_seq = 0;
+                obj.current_seqIndx = 0;
+            end
+            % Loop across each step and re-assing the inputs:
+            state = true;
+            for ii = 1:length(next_steps)
+                sourceFile = '';
+                % Set input index for the current step:
+                if next_steps(ii).inputStepIndx && isequaln(original_pipe(next_steps(ii).inputStepIndx), stepToDelete)
+                    % The input step is the one to be deleted. In this
+                    % case, we skip it to input from the latter.
+                    inputStepIndx = stepToDelete.inputStepIndx;
+                else
+                    inputStepIndx = next_steps(ii).inputStepIndx;
+                end
+                
+                % Manage input Source for the current step. If the input source is the folder,stop looking up the pipeline.
+                if ~inputStepIndx
+                    % When the input source is the FOLDER:
+                    if ~strcmpi(next_steps(ii).inputSource, '_CURRENT_DATA_') && next_steps(ii).inputStepIndx
+                        % Force Input Dialog to select File from folder
+                        inputSource = '_FOLDER_';
+                    else
+                        inputSource = next_steps(ii).inputSource;
+                    end
+                    % Force new sequence:
+                    inputSeqIndx = 0;
+                else
+                    % When the input source is a function from the
+                    % pipeline:
+                    if original_pipe(inputStepIndx).b_hasDataOut && next_steps(ii).seq == original_pipe(inputStepIndx).seq
+                        % If the input function outputs data, set the input
+                        % source as "_CURRENT_DATA_".
+                        inputSource = '_CURRENT_DATA_';
+                        % Keep the current sequence:
+                        inputSeqIndx = obj.current_seq;                    
+                    elseif (original_pipe(inputStepIndx).b_hasDataOut && next_steps(ii).seq ~= original_pipe(inputStepIndx).seq) || original_pipe(inputStepIndx).b_hasFileOut
+                        % If the input function output files, check if the
+                        % file was already set. Otherwise, let 'setInput'
+                        % manage.
+                        inputSource = original_pipe(inputStepIndx).name;
+                        sourceFile = next_steps(ii).inputSource;
+                        
+                        idxOrig = strcmp(inputSource,{original_pipe.name}) & ~idxFunc;
+                        
+                        origSourceFcnRelPos = zeros(size(idxOrig));
+                        origSourceFcnRelPos(idxOrig) = 1:sum(idxOrig);
+                        
+                        idxNew = strcmp(inputSource,{obj.pipe.name});
+                        newSourceFcnRelPos = zeros(size(idxNew));
+                        newSourceFcnRelPos(idxNew) = 1:sum(idxNew);
+                                                
+                        inputSeqIndx = obj.pipe(newSourceFcnRelPos == origSourceFcnRelPos(next_steps(ii).inputStepIndx)).seq;
+                    else
+                        % Default to folder:
+                        inputSource = '_FOLDER_';
+                    end
+                end
+                
+                try
+                    task = obj.setInput(next_steps(ii),inputSource,inputSeqIndx,sourceFile);
+                catch ME
+                    disp(next_steps(ii));
+                    disp(inputSource)
+                    task = [];
+                    fprintf('ERROR OCCURRED:\n%s',getReport(ME));
+                end
+                
+                if isempty(task)
+                    % User cancelled.
+                    state = false;
+                    break
+                end
+                obj.pipe = [obj.pipe;task];
+            end
             
+            if ~state
+                obj.pipe = original_pipe;
+                obj.current_seq = original_seq;
+                obj.current_seqIndx = original_seqIndx;
+                fprintf('Operation Failed! Restored pipeline to original.\n')
+                
+            else
+                fprintf('Function "%s" removed from the pipeline.\n',stepToDelete.name);
+            end
             
-            
-            
-            
-            
-            
-            
-            
+            if nargout; varargout{1} = state;end
             
         end
         %%%%% -------------------------------------------------------------
@@ -434,9 +491,7 @@ classdef PipelineManager < handle
             
             if isempty(obj.pipe)
                 disp('Pipeline is empty!')
-                if nargout == 1
-                    varargout{1} = '';
-                end
+                if nargout;varargout{1} = '';end                
                 return
             end
             
@@ -1608,44 +1663,50 @@ classdef PipelineManager < handle
                 skipNames = {seqIn(indxEqual).name};
             end
         end
-        %%%%%%--Helpers for "addTask" method -----------------------------
-        function task = setInput(obj,task,inputSource,inputFromSeq)
+        %%%%%%--Helpers for "addTask" and "rmTask" methods -----------------------------
+        function task = setInput(obj,task,inputSource,inputFromSeq,sourceFile)
             % SETINPUT selects the input to the function in "task". It
             % controls for multiple outputs and for functions with no
             % input. It updates the fields of "task" with the input
             % information.
             % !If the User cancels any of the dialogs, the function returns
             % an empty array.
-                        
-            % Check if this is the very first step of the pipeline:            
-            b_FirstPipeStep = ~obj.current_seq;
+            
+            % Check if this is the very first step of the pipeline:
+            b_FirstPipeStep = isempty(obj.pipe);
             b_genNewSeq = true; % Flag to create new sequence.
             inputStepIndx = 0; % Pre-set step index.
+            if nargin < 5; sourceFile = ''; end
             switch upper(inputSource)
-                case '_CURRENT_DATA_'                    
+                case '_CURRENT_DATA_'
                     % Default behaviour for functions with data as input.
                     % Get the current sequence:
                     if ~b_FirstPipeStep
                         b_genNewSeq = false;
                         [newInputSource,inputStepIndx] = lookBackOnSeq(obj.pipe(end));
                     else
-                        newInputSource = 'folder';                        
+                        newInputSource = 'folder';
                     end
-                    %
-                    if task.b_hasDataIn                        
+                    
+                    if task.b_hasDataIn
                         if strcmpi(newInputSource,'folder') || newInputSource.b_hasFileOut
                             inputSource = obj.selectInputFileName(newInputSource,task.name);
                         end
                     else
                         % For functions without data as input, just add a
                         % new step in the sequence.
-                        inputStepIndx = length(obj.pipe);                        
+                        inputStepIndx = length(obj.pipe);
                     end
                     
                 case '_FOLDER_'
                     % Default behaviour for functions accessing the save
                     % folder.
-                    % DO NOTHING
+                    if task.b_hasDataIn
+                        inputSource = obj.selectInputFileName(inputSource,task.name);
+                    else
+                        inputSource = upper(inputSource);
+                    end
+                    % DO NOTHING. Default behaviour.
                 otherwise
                     % For user-defined new sequence.
                     % Here, one can set the input source as:
@@ -1671,28 +1732,53 @@ classdef PipelineManager < handle
                         % user-defined one does not have data as output:
                         idxSourceFcn = ( strcmpi(inputSource, {obj.pipe.name}) & arrayfun(@(x) any(x.seq == inputFromSeq),obj.pipe)' );
                         [stepSource, inputStepIndx] = lookBackOnSeq(obj.pipe(idxSourceFcn));
-                        idxSourceFcn = ( strcmpi(stepSource.name, {obj.pipe.name}) & arrayfun(@(x) any(x.seq == inputFromSeq),obj.pipe)' );
-                        assert(any(idxSourceFcn),'The function "%s" was not found in sequence #%d!',stepSource.name, inputFromSeq);                                                
-                        % Check if the source function has Data or File as output:
-                        if obj.pipe(idxSourceFcn).b_hasDataOut
-                            % For functions with Data as output, force saving data
-                            % to temporary file and use the file as input source.
-                            obj.pipe(idxSourceFcn).b_save2File = true;
-                            obj.pipe(idxSourceFcn) = obj.setSaveFilename(obj.pipe(idxSourceFcn), true);
-                            inputSource = obj.pipe(idxSourceFcn).saveFileName;
-%                             inputStepIndx = find(idxSourceFcn);
-                        elseif obj.pipe(idxSourceFcn).b_hasFileOut
-                            % For functions that output one or more files:
-                            nOutFiles = length(obj.funcList(strcmpi(obj.pipe(idxSourceFcn).name,{obj.funcList.name})).info.outFileName);
-                            if nOutFiles > 1
-                                inputSource = obj.selectInputFileName(obj.pipe(idxSourceFcn),task.name);
+                        % Raise warning if the source function was changed:
+                        if ~isequaln(obj.pipe(idxSourceFcn),stepSource)
+                            if isstruct(stepSource)
+                                StepSourceName = stepSource.name;
                             else
-                                inputSource = obj.funcList(strcmpi(obj.pipe(idxSourceFcn).name,{obj.funcList.name})).info.outFileName;
+                                StepSourceName = stepSource;
                             end
-%                             inputStepIndx = find(idxSourceFcn);
-                        else                          
-                            % DEV: TO AN ERROR FOR NOW:
-                            error('Unable to create new sequence from a source function without output. Please, select another function and try again.')
+                            warning('The input source function "%s" cannot be a source to "%s". The source function was changed to "%s" instead.',...
+                                obj.pipe(idxSourceFcn).name,task.name, StepSourceName);
+                        end
+                        if inputStepIndx
+                            idxSourceFcn = ( strcmpi(stepSource.name, {obj.pipe.name}) & arrayfun(@(x) any(x.seq == inputFromSeq),obj.pipe)' );
+                            assert(any(idxSourceFcn),'The function "%s" was not found in sequence #%d!',stepSource.name, inputFromSeq);
+                            % Check if the source function has Data or File as output:
+                            if obj.pipe(idxSourceFcn).b_hasDataOut
+                                % For functions with Data as output, force saving data
+                                % to temporary file and use the file as input source.
+                                obj.pipe(idxSourceFcn).b_save2File = true;
+                                obj.pipe(idxSourceFcn) = obj.setSaveFilename(obj.pipe(idxSourceFcn), true);
+                                inputSource = obj.pipe(idxSourceFcn).saveFileName;
+                            elseif obj.pipe(idxSourceFcn).b_hasFileOut
+                                %
+                                if ~isempty(sourceFile)
+                                    % Do not create a new sequence
+                                    b_genNewSeq = any(strcmp(task.name, {obj.pipe([obj.pipe.seq] == obj.pipe(idxSourceFcn).seq).name}));
+                                    % Set source file
+                                    inputSource = sourceFile;
+                                else
+                                    % For functions that output one or more files:
+                                    nOutFiles = length(obj.funcList(strcmpi(obj.pipe(idxSourceFcn).name,{obj.funcList.name})).info.outFileName);
+                                    if nOutFiles > 1
+                                        inputSource = obj.selectInputFileName(obj.pipe(idxSourceFcn),task.name);
+                                    else
+                                        inputSource = obj.funcList(strcmpi(obj.pipe(idxSourceFcn).name,{obj.funcList.name})).info.outFileName;
+                                    end
+                                end
+                            else
+                                % DEV
+                                error('DEV: This should never be reached')
+                            end
+                        else
+                            % The source is the folder:
+                            if task.b_hasDataIn
+                                inputSource = obj.selectInputFileName(inputSource,task.name);
+                            else
+                                inputSource = upper(inputSource);
+                            end
                         end
                     end
             end
@@ -1723,7 +1809,6 @@ classdef PipelineManager < handle
                 % This function deals with functions with inputs!
                 % Build a sequence that backtraces the from the startStep
                 % up to the folder.
-                
                 newInputSource = startStep;
                 flag = true;
                 while flag
@@ -1838,7 +1923,8 @@ classdef PipelineManager < handle
             % Validate if the filename already exists in the pipeline:
             if ~obj.b_overwriteFiles
                 % Validate if the filename already exists in the pipeline:
-                if any(strcmp(saveFilename,{obj.pipe.saveFileName}))
+                idxFcn = arrayfun(@(x) isequaln(step,x),obj.pipe);
+                if any(strcmp(saveFilename,{obj.pipe(~idxFcn).saveFileName}))
                     saveFilename = appendNumToName(saveFilename);
                     warning('Found duplicate names in the pipeline. The data will be saved as "%s" to avoid overwriting',saveFilename)
                 end
