@@ -1,10 +1,9 @@
-function saveData(filename,SaveFolder,data,varargin)
+function saveData(filename,data,varargin)
 % SAVE2DAT saves data to binary .dat files.
 % Inputs:
-%   filename (str): name of the file to save the data.
-%   SaveFolder (str): path to folder where the file will be saved.
+%   filename (str):Full path of the file to be saved.
 %   data (numerical array | struct): non-empty "single" numeric 3D matrix
-%   OR data packaged in a structure (see genDataStructure.m, for details, basic explanation below).
+%       OR data packaged in a structure (see genDataStructure.m, for details, basic explanation below).
 %
 %   (Optional): !Options available only for numerical data!
 %       AcqInfoStream(struct): structure with acquisition information. See "AcqInfos.mat"
@@ -23,7 +22,7 @@ function saveData(filename,SaveFolder,data,varargin)
 %                             containing the observation IDs.
 %               b_hasEvents (bool): Boolean flag indicating if the data is
 %                                   split by events.
-%               b_hasMultipleMeasures(bool): Boolean flag indicating if th
+%               b_hasMultipleMeasures(bool): Boolean flag indicating if the
 %                                           data structure contain multiple measures (structure with
 %                                           more than a single field).
 %               dataCategory (struct): structure containing the data
@@ -39,22 +38,21 @@ function saveData(filename,SaveFolder,data,varargin)
 % Arguments validation
 p = inputParser;
 addRequired(p,'filename', @(x) validateattributes(x, {'char', 'string'}, {'nonempty'}));
-addRequired(p,'SaveFolder',@isfolder);
 addRequired(p, 'data', @(x) ( isnumeric(x) & strcmpi(class(x),'single') ) | isstruct(x));
 addOptional(p, 'AcqInfoStream', struct.empty(0,1),@isstruct);
 addParameter(p,'Append',false,@islogical);
-parse(p, filename, SaveFolder, data,varargin{:});
+parse(p, filename, data,varargin{:});
 %%%%%%
 filename = convertStringsToChars(filename);
-SaveFolder = convertStringsToChars(SaveFolder);
-[~,file,~] = fileparts(filename);
+[SaveFolder,file,~] = fileparts(filename);
+% Force file extensions depending on the type of data to be saved:
 if isstruct(data)
     % Save to .mat file:
     filename = [file, '.datstat']; % Add extension for data in structure
     save2mat(fullfile(SaveFolder,filename),data);
 else
      % Save to .dat file:   
-     filename = [file '.dat']; % Add extension for data as numeric array.
+     filename = [file '.dat']; % Force extension for data as numeric array.
      save2dat(filename,SaveFolder,data,p.Results.AcqInfoStream, p.Results.Append);
 end
 disp(['Data saved as "' filename '" in folder "' SaveFolder '"']);

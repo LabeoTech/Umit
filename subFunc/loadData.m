@@ -6,6 +6,7 @@ function [outFile, Info] = loadData(DatFileName)
 % Output:
 %   outFile (numerical array) : data matrix containing the mapped
 %       data.
+%   Optional:
 %   Info (struct): file meta data. For the new data format, this is
 %       the same as the structure from the "AcqInfos.mat" file. For the older
 %       data format, it corresponds to the content of the ".mat" file

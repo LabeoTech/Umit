@@ -58,14 +58,14 @@ for ii = 1:length(uniqNames)
     end
     % Save first file:
     saveFilename = [uniqNames{ii},'.dat'];
-    saveDat(fullfile(SaveFolder,saveFilename),data,AcqInfo);
+    saveData(fullfile(SaveFolder,saveFilename),data,AcqInfo);
     % Append the rest of the sequence to the existing .dat file:
     for ind = 2:length(fileSeq)
         data = readTiff(fullfile(fileSeq(ind).folder,fileSeq(ind).name));
         % Apply binning
         data = binData(data,opts.BinningSpatial,opts.BinningTemp);
         % Append the data to the .dat file
-        saveDat(fullfile(SaveFolder,saveFilename),data,'Append',true);
+        saveData(fullfile(SaveFolder,saveFilename),data,'Append',true);
     end
     outFile = vertcat(outFile,saveFilename);
 end
