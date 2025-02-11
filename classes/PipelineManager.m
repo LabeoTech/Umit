@@ -23,7 +23,7 @@ classdef PipelineManager < handle
         SaveFolderList cell % List of Save folders
         RawFolderList cell % List of Raw folders corresponding to the items in SaveFolderList.
     end
-    properties %(GetAccess = {?DataViewer})
+    properties (GetAccess = {?DataViewer})
         current_data % Data available in the workspace during pipeline.
         current_info struct% Structure with info about the functions ran on "current_data". This will be saved to the dataHistory file.
         current_saveFolder char % Current path to save folder during pipeline execution.
@@ -473,7 +473,7 @@ classdef PipelineManager < handle
                     disp(next_steps(ii));
                     disp(inputSource)
                     task = [];
-                    fprintf('ERROR OCCURRED:\n%s',getReport(ME));
+                    fprintf('FAILED TO REMOVE "%s"! ERROR OCCURRED:\n%s',stepToDelete.name,getReport(ME));
                 end
                 
                 if isempty(task)
@@ -514,7 +514,7 @@ classdef PipelineManager < handle
             str = sprintf('Pipeline Summary:\n\n');
             for i = 1:length(obj.pipe)
                 str =  [str sprintf('--->> Step # %d (sequence #%d) <<---\n', i,obj.pipe(i).seq)]; %#ok
-                str = [str,sprintf('Function name: %s\n%s\n--------------------\n',...
+                str = [str,sprintf('Function name: "%s"\n%s\n--------------------\n',...
                     obj.pipe(i).name,obj.genToolTipTxt(obj.pipe(i)))];   %#ok
             end
             if nargout == 0
@@ -845,21 +845,15 @@ classdef PipelineManager < handle
             txt = [txt sprintf('%%%%\ndisp(''Script execution completed!'');\n%%%%%%%%%%%%%%%%%%%%%%%% END OF FILE %%%%%%%%%%%%%%%%%%%%%%%%')];
             
             % Save the generated script text to the specified file.
+            [folder,file,~] = fileparts(filename);
+            if isempty(folder);folder = pwd;end
+            filename = fullfile(folder,[file '.m']);
             fid = fopen(filename, 'w');
             fprintf(fid, '%s', txt);
             fclose(fid);
-            
-            % Get the folder containing the generated script.
-            folder = fileparts(filename);
-            
+                      
             % Display a message indicating that the script has been generated.
-            disp('Script generated!')
-            
-            % If the folder is empty, set it to the current directory.
-            if isempty(folder)
-                folder = pwd;
-            end
-            
+            disp('Script generated!')                                    
             % Open the folder containing the generated script.
             openFolder(folder);
         end
@@ -1287,7 +1281,7 @@ classdef PipelineManager < handle
         %%%%%%-------------------------------------------------------------        
     end
     
-    methods %(Access = {?DataViewer})
+    methods (Access = {?DataViewer})
         %%%%%-- Methods for interfacing with DataViewer -------------------
         function loadDataFromDataViewer(obj,data,fileDataHistoryInfo)
             % LOADDATAFROMDATAVIEWER methods imports the imaging data from
@@ -1390,12 +1384,10 @@ classdef PipelineManager < handle
                         b_genNewSeq = false;
                         [newInputSource,inputStepIndx] = lookBackOnSeq(obj.pipe(end));
                     else
-                        if ~obj.b_inputFromDataViewer
-                            newInputSource = 'folder';
-                        end
+                        newInputSource = 'folder';
                     end
                     
-                    if task.b_hasDataIn
+                    if task.b_hasDataIn && ~obj.b_inputFromDataViewer                        
                         if strcmpi(newInputSource,'folder') || newInputSource.b_hasFileOut
                             inputSource = obj.selectInputFileName(newInputSource,task.name);
                         end
@@ -1403,8 +1395,7 @@ classdef PipelineManager < handle
                         % For functions without data as input, just add a
                         % new step in the sequence.
                         inputStepIndx = length(obj.pipe);
-                    end
-                    
+                    end                    
                 case '_FOLDER_'
                     % Default behaviour for functions accessing the save
                     % folder.
@@ -1417,8 +1408,7 @@ classdef PipelineManager < handle
                 case '_DATAVIEWER_'
                     disp('FIRST STEP FROM DV!');
                     % DO NOTHING. Default behaviour.
-                    inputSource = '_CURRENT_DATA_';
-                                       
+                    inputSource = '_CURRENT_DATA_';                                       
                 otherwise
                     % For user-defined new sequence.
                     % Here, one can set the input source as:
@@ -2519,7 +2509,7 @@ classdef PipelineManager < handle
                 fn = fn'; vals = vals';
             end
             info = vertcat(fn,vals);
-            txt = [sprintf('Parameters:\n'), sprintf('%s: "%s"\n',info{:})];
+            txt = [sprintf('Parameters:'), sprintf('\n\t%s: "%s"',info{:})];
         end
         
         function tipTxt = genToolTipTxt(obj,step)
@@ -2536,7 +2526,11 @@ classdef PipelineManager < handle
             if step.inputStepIndx
                 source = obj.pipe(step.inputStepIndx).name;
             else
-                source = 'Folder';
+                if obj.b_inputFromDataViewer
+                    source = 'DataViewer';
+                else
+                    source = 'Folder';
+                end
             end
             % Add input source to data tip:
             tipTxt = [tipTxt, sprintf('\n%s',repmat('-',1,20)),sprintf('\nInput From: "%s"',source)];
@@ -2817,8 +2811,8 @@ classdef PipelineManager < handle
                     src.Value = evnt.PreviousValue;
                 end
             end
-        end
-               
+        end               
+        
     end
     
 end
