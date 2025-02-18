@@ -77,9 +77,9 @@ end
 
 % Check if the data has the same dimensions as in AcqInfoStream:
 load(fullfile(saveFolder,'AcqInfos.mat'));%#ok
-assert(isequaln(size(data),[AcqInfoStream.Height, AcqInfoStream.Width, AcqInfoStream.Length]),...
+assert(isequaln([size(data,1), size(data,2)],[AcqInfoStream.Height, AcqInfoStream.Width]),...
     'Umitoolbox:saveData:invalidInput',...
-    'Operation aborted! Data does not have the same dimensions saved in the "AcqInfos.mat" file!');
+    'Operation aborted! Data does not have the same Frame dimensions as in the "AcqInfos.mat" file!');
 clear AcqInfoStream
 
 % Set permission type:
@@ -87,9 +87,7 @@ permission = 'w';
 if b_append
     % Set data writing permission to "append":
     permission = 'a';
-    % Update Data Length in AcqInfos.mat file:
-    load(fullfile(saveFolder,'AcqInfos.mat'));%#ok      
-    AcqInfoStream.Length = AcqInfoStream.Length + size(data,3);
+    %
     save(fullfile(saveFolder,'AcqInfos.mat'),'AcqInfoStream');
     clear AcqInfoStream;
 end

@@ -1,142 +1,135 @@
-function [outData, metaData] = apply_aggregate_function(data, metaData, varargin)
+function outData = apply_aggregate_function(data, SaveFolder, varargin)
 % APPLY_AGGREGATE_FUNCTION applies an aggregate function to one
-% dimensions of a .DAT file. 
-% !! Removed option to perform aggregation over multiple dimensions. BrunoO
-% (09-06-2022).
+% dimensions of a .DAT file. Works with image-time-series only!
 
 % Inputs:
-%   data: numerical matrix containing imaging data.
-%   metaData: .mat file with meta data associated with "data".
+%   data: numerical matrix containing image-time-series data.
+%   SaveFolder (char): folder containing "data" and the associated AcqInfos.mat file.
 %   opts (optional) : structure containing the function's parameters:
 %       aggregateFcn (default = "mean") : name of the aggregate function.
-%       dimensionName (default = "T") : name of the dimension(s) to perform
-%       the calculation.
+%       dimension (default = "Time") : name of the dimension to perform
+%       the calculation:
 % Output:
-%   outData: numerical matrix containing aggregated imaging data.   
-%   metaData: .mat file with meta data associated with "outData".
+%   outData: structure containing stats-ready aggregated data.
 
 % Defaults:
-default_Output = 'aggFcn_applied.dat'; %ok This is here for PIPELINEMANAGER.M.
-default_opts = struct('aggregateFcn', 'mean', 'dimensionName', 'T');
-opts_values = struct('aggregateFcn', {{'mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}}, 'dimensionName',{{'X','Y','T','E'}});% This is here only as a reference for PIPELINEMANAGER.m.
+default_Output = ' dataAgg.dat'; %#ok This is here for PIPELINEMANAGER.M.
+default_opts = struct('aggregateFcn', 'mean', 'dimension', 'Time');
+opts_values = struct('aggregateFcn', {{'mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}}, 'dimension',{{'Space','Time','Events'}});% This is here only as a reference for PIPELINEMANAGER.m.
 %%% Arguments parsing and validation %%%
+% Validator for data from structure:
+validateDataStructure = @(x) isstruct(x) && isDatStat(x) && isDataImageTimeSeries(x);
 % Parse inputs:
 p = inputParser;
-addRequired(p,'data',@(x) isnumeric(x)); % Validate if the input is a 3-D numerical matrix:
-addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
+addRequired(p,'data',@(x) (isnumeric(x) && ndims(x) == 3) || validateDataStructure(x)); % Validate if the input is numerical or a structure
+addRequired(p,'SaveFolder',@(x) isfolder(x)); % Validate if the SaveFolder exists.
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x) && ...
     ismember(x.aggregateFcn, opts_values.aggregateFcn) && ...
-    ismember(x.dimensionName, opts_values.dimensionName));
+    ismember(x.dimension, opts_values.dimension));
 % Parse inputs:
-parse(p,data, metaData, varargin{:});
+parse(p,data, SaveFolder, varargin{:});
 %Initialize Variables:
-data = p.Results.data; 
-metaData = p.Results.metaData;
 opts = p.Results.opts;
 clear p
-%%%%%%%%%%%%%%%%%%%%%%%
-
-% Parse dimension names from opts struct:
-str = opts.dimensionName;
-str = split(str, ',');
-dim_names = cellfun(@(x) upper(strip(x)), str, 'UniformOutput', false); 
-% Validate if dimension name(s) is(are) in File meta data:
-errID = 'Umitoolbox:apply_aggregate_function:InvalidName';
-errMsg = 'Input dimension name(s) was not found in file meta data';
-[idx_dims, dimVec] = ismember(dim_names, metaData.dim_names);
-assert(all(idx_dims), errID, errMsg);
-data_dim_names = metaData.dim_names;
-% Look for "E"vent dimension:
-idx_evnt = strcmp('E',data_dim_names(dimVec));
-
-% Permute data to bring "dimVec" to firsts dimensions:
-orig_sz = size(data);
-data = permute(data,[dimVec, setdiff(1:ndims(data), dimVec)]);
-perm_dim_names = metaData.dim_names([dimVec, setdiff(1:ndims(data), dimVec)]); 
-perm_sz = size(data);
-% Apply aggregate function in each dimension:
-for i = 1:length(dimVec)
-    if idx_evnt(i)
-        [data, new_eventID] = applyAggFcn(data, opts.aggregateFcn, i, metaData.eventID);
-    else
-        data = applyAggFcn(data, opts.aggregateFcn, i, []);
+%
+if isstruct(data)
+    % For data in structure, build new structure and store aggregated
+    % values:
+    dataAgg = struct();
+    fn = fieldnames(data.data);
+    evList = [];
+    if data.b_hasEvents
+        evList = data.eventID;
+    end    
+    for ii =1:length(fn)
+        [dataAgg.(fn{ii}), newEvList] = applyAggFcn(data.data.(fn{ii}), opts.aggregateFcn,opts.dimension,data.b_hasEvents,evList);
     end
-end
-% Find singleton dimensions:
-singDims = ( size(data) == 1 );
-% Permute data back and remove singleton dimensions:
-[~,locB] = ismember(metaData.dim_names,perm_dim_names);
-outData = squeeze(permute(data, locB));
-% Update dim_names:
-singDims = singDims(locB);
-% new_dim_names = metaData.dim_names;
-data_dim_names (singDims) = [];
-
-% Create metaData structure based on aggregated data:
-extraParams = metaData;
-if exist('new_eventID', 'var')
-    % IF "E"vent dimension was processed, update eventID variable in metaData file:
-    extraParams.eventID = new_eventID;    
-end
-metaData = genMetaData(outData, data_dim_names,extraParams);
-end
-
-% Local function:
-function [out, evntID_out] = applyAggFcn(vals, aggfcn, idxDim, evntList)
-% APPLYAGGFCN performs the aggregate function of name "fcn_name" on the
-% dimension of the data "vals". All aggregate functions EXCLUDE NaNs!
-% Inputs:
-% vals = multi-D numeric data.
-% idxDim = index of the dimension of vals to be aggregated.
-% evntList (int array OR empty) = array of indices to group by (used in
-% "Event" dimension).
-
-if ~isempty(evntList)
-    % If the dimension is an Event, group by event and aggregate each group:
-    % Permute "vals" to have "idxDim" as first dimension and reshape "vals" to 
-    % force to have 2 dimensions:
-    orig_sz = size(vals);
-    % permute:
-    dimorder = [idxDim,setdiff(1:ndims(vals), idxDim)];
-    vals = permute(vals,dimorder);
-    perm_sz = size(vals);
-    % reshape:
-    vals = reshape(vals, size(vals,1), []);
-    % Create empty matrix with size = unique(evntList) x size(vals,2):
-    ID_list = unique(evntList);
-    out = zeros(numel(ID_list), size(vals,2), class(vals));
-    % Calculate aggregate function across events :
-    for i = 1:numel(ID_list)
-        idx = (evntList == ID_list(i));
-        out(i,:) = calcAgg(vals(idx,:), 1);
+    if ~isempty(newEvList)
+        data.eventID = newEvList;
     end
-    % Reshape data to match permuted "vals":
-    out = reshape(out,[size(out,1), perm_sz(2:end)]);
-    % Permute data to original size of vals:
-    out = ipermute(out,dimorder);    
-    evntID_out = ID_list;
+    % Create new stats-ready structure:
+    outData = genDataStructure(dataAgg,data,obsID,'hasEvents',data.b_hasEvents,'extraInfo',data);
 else
-    out = calcAgg(vals,idxDim);
+    % For 3D arrays:
+    dataAgg = applyAggFcn(data, opts.aggregateFcn, opts.dimension, false,[]);
+    % Create new stats-ready structure:
+    % Get Frame Rate from Folder:
+    info = load(fullfile(SaveFolder,'AcqInfos.mat'));
+    extraInfo.FrameRateHz = info.AcqInfoStream.FrameRateHz;
+    outData = genDataStructure(dataAgg, data,'extraInfo',extraInfo);
 end
 
-    function out = calcAgg(vals,idxDim)
-        switch aggfcn
-            case 'mean'
-                out = mean(vals, idxDim,'omitnan');
-            case 'median'
-                out = median(vals, idxDim, 'omitnan');
-            case 'mode'
-                out = mode(vals, idxDim);
-            case 'std'
-                out = std(vals, 0, idxDim, 'omitnan');
-            case 'max'
-                out = max(vals, [], idxDim, 'omitnan');
-            case 'min'
-                out = min(vals, [], idxDim, 'omitnan');
-            case 'sum'
-                out = sum(vals, idxDim, 'omitnan');
-            otherwise
-                out = vals;
+end
+
+% Local functions:
+
+function [out,new_eventID] = applyAggFcn(vals,aggFcn,dimName,b_hasEvents,eventID)
+% applyAggFcn performs aggregation on the specified dimension of the input data.
+%
+% This function aggregates the input array `vals` based on the specified
+% dimension `dimName` ('SPACE', 'TIME', or 'EVENTS') using the provided
+% aggregation function `aggFcn`. If the data is split by events, it permutes
+% the array before aggregation. The function also returns a new event ID
+% array `new_eventID` when aggregating across events.
+%
+% Input:
+%   vals        - Input array to be aggregated.
+%   aggFcn      - Aggregation function handle (e.g., @mean, @sum).
+%   dimName     - Name of the dimension to aggregate ('SPACE', 'TIME', 'EVENTS').
+%   b_hasEvents - Boolean flag indicating if the data is split by events.
+%   eventID     - Event ID array for aggregating across events.
+
+% Permute array, if the data is split by events:
+if b_hasEvents
+    vals = permute(vals,[2 3 4 1]);
+end
+new_eventID = [];
+% Perform aggregation of selected dimension:
+switch upper(dimName)
+    case 'SPACE'
+        % Aggregates in X and Y dimensions:
+        out = calcAgg(vals,aggFcn,[1 2]);
+    case 'TIME'
+        % Aggregates in time dimension:
+        out = calcAgg(vals,aggFcn,3);
+    case 'EVENTS'
+        % Aggregates across events:
+        new_eventID = unique(eventID,'stable');
+        out = zeros([size(vals,1) size(vals,2), size(vals,3), length(new_eventID)],'single');
+        for ii = 1:length(new_eventID)
+            idxID = eventID == new_eventID(ii);
+            out(:,:,:,ii) = calcAgg(vals(:,:,:,idxID),aggFcn,4);
         end
-    end
+    otherwise
+        error('Unknown dimension identifier!')
+end
+%Permute array back to original:
+if b_hasEvents
+    out = ipermute(out,[2 3 4 1]);
+end
+% Remove singleton dimensions:
+out = squeeze(out);
+end
+
+function out = calcAgg(vals,aggfcn,idxDim)
+% Aggregate the values in the selected dimension.
+
+switch aggfcn
+    case 'mean'
+        out = mean(vals, idxDim,'omitnan');
+    case 'median'
+        out = median(vals, idxDim, 'omitnan');
+    case 'mode'
+        out = mode(vals, idxDim);
+    case 'std'
+        out = std(vals, 0, idxDim, 'omitnan');
+    case 'max'
+        out = max(vals, [], idxDim, 'omitnan');
+    case 'min'
+        out = min(vals, [], idxDim, 'omitnan');
+    case 'sum'
+        out = sum(vals, idxDim, 'omitnan');
+    otherwise
+        out = vals;
+end
 end

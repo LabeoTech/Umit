@@ -319,7 +319,8 @@ classdef EventsManager < handle
             [obj.timestamps,indx] = sort(obj.timestamps);
             obj.state = obj.state(indx);
             obj.eventID = obj.eventID(indx);
-            
+            % Set Default selectedEvents:
+            obj.selectedEvents = true(size(obj.eventID));
             % For digital stimulation, update event ID and event Name lists:
             if obj.b_isDigital
                 % Overwrite dummy eventIDs with real ones from the info.txt.
@@ -643,7 +644,7 @@ classdef EventsManager < handle
         function clearIgnoredEvents(obj)
             % Resets the lists of ignored conditions and repetitions to the default state (i.e. all trials included).
             if all(obj.selectedEvents(:));return;end
-            % When there is no triggers detected. This should not be reached.
+            % When there are no triggers detected. This should not be reached.
             if isempty(obj.eventID);obj.selectedEvents = [];return;end
             % Set logical matrix with TRUEs to keep all repetitions.
             obj.selectedEvents = true(size(obj.eventID));
@@ -731,8 +732,8 @@ classdef EventsManager < handle
             end
             fprintf('Events info loaded from folder %s\n', Folder);
         end
-        
-        function [frMat, conditionList, repetitionList] = getFrameMatrix(obj,varargin)
+        %%%%% Data splitting methods --------------------------------------
+        function [frMat, conditionList, repetitionList] = getFrameMatrix(obj,datLen,varargin)
             % GETFRAMEMATRIX generates a matrix with dimensions Repetition x Frame indices
             % for each trial. The matrix output consists of the
             % frame indices split by trial (repetition). The matrix can be
@@ -746,6 +747,8 @@ classdef EventsManager < handle
             %
             % Inputs:
             %   obj: The object containing the data and methods.
+            %   datLen (num scalar): Number of frames from Image time
+            %       series.
             %   conditionName (char): Name of the condition to extract the trials.
             %   repetitionIndex (vector, int | optional): Repetition index(ices) of
             %       the condition. If not provided, all repetitions will be used.
@@ -758,10 +761,11 @@ classdef EventsManager < handle
             % Input parsing and validation:
             p = inputParser();
             addRequired(p,'obj');
+            addRequired(p,'datLen',@isscalar);
             addOptional(p,'conditionName','',@(x) ischar(x) | isStringScalar(x) )
             addOptional(p,'repetitionIndex',[],@(x) ( isnumeric(x) && all(x > 0) ) || isempty(x))
             %
-            parse(p,obj,varargin{:});
+            parse(p,obj,datLen,varargin{:});
             conditionName = convertStringsToChars(p.Results.conditionName);
             repetitionIndex = p.Results.repetitionIndex;
             % Deny filtering repetition without condition name:
@@ -783,7 +787,7 @@ classdef EventsManager < handle
             
             for ii = 1:length(frStart)
                 frVec = frStart(ii):frStart(ii)+trialLen(ii)-1;
-                b_outbound_frames = frVec < 1 | frVec > obj.AcqInfo.Length;
+                b_outbound_frames = frVec < 1 | frVec > datLen;
                 frVec(b_outbound_frames) = nan;
                 frMat(ii,1:length(frVec)) = frVec;
             end
@@ -810,18 +814,14 @@ classdef EventsManager < handle
             % Input parsing and validation:
             p = inputParser();
             addRequired(p,'obj');
-            addRequired(p,'data');
+            addRequired(p,'data',@(x) isnumeric(x) & ndims(x) == 3);
             addParameter(p,'condition','',@(x) ischar(x) | isStringScalar(x) )
             addParameter(p,'repetition',[],@(x) ( isnumeric(x) && all(x > 0) ) || isempty(x))
             
             parse(p,obj,data,varargin{:});
-            
-            % Check if the input data matches the dimensions stored in
-            % AcqInfo:
-            assert(isequaln(size(data),[obj.AcqInfo.Height, obj.AcqInfo.Width, obj.AcqInfo.Length]),...
-                'Failed to split data by events! The dimensions of the input data do not match the ones in the AcqInfo structure!');
+                        
             % get frame matrix
-            [frMat,conditionList, repetitionList] = obj.getFrameMatrix(p.Results.condition,...
+            [frMat,conditionList, repetitionList] = obj.getFrameMatrix(size(data,3),p.Results.condition,...
                 p.Results.repetition);
             % Split the data:
             dataByEv = nan(size(frMat,1),size(data,1),size(data,2),size(frMat,2),'single');
@@ -836,7 +836,7 @@ classdef EventsManager < handle
             end
             disp('Finished splitting data by events');
         end
-        
+        %%%%%--------------------------------------------------------------
         function evInfo = exportEventInfo(obj)
             % EXPORTEVENTINFO packages the event-related information into a structure.
             %

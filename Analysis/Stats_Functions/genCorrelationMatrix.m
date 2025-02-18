@@ -22,7 +22,7 @@ function outData = genCorrelationMatrix(data, metaData, varargin)
 default_Output = 'corrMatrix.mat'; %#ok This line is here just for Pipeline management.
 default_opts = struct('ROImasks_filename', 'myROIs.roimsk', 'CorrAlgorithm', 'centroid_vs_centroid', 'SpatialAggFcn', 'mean','b_FisherZ_transform', false, 'b_genSPCMaps', false);
 opts_values = struct('ROImasks_filename', {{'myROIs.roimsk'}}, 'CorrAlgorithm',{{'centroid_vs_centroid','centroid_vs_agg', 'avg_vs_avg'}}, 'SpatialAggFcn', {{'mean', 'max', 'min', 'median'}},'b_FisherZ_transform',[true,false],'b_genSPCMaps',[true,false]);%  % This is here only as a reference for PIPELINEMANAGER.m.
-
+%
 default_object = ''; % This line is here just for Pipeline management to be able to detect this input.
 %%% Arguments parsing and validation %%%
 p = inputParser;

@@ -17,10 +17,9 @@ default_Output = 'dataByEv.mat'; %#ok This line is here just for Pipeline manage
 % Arguments validation:
 assert(isnumeric(data) & ndims(data) == 3, 'Data has to be a 3D array with dimensions Y,X,T!'); % Validate if the input is a 3-D numerical matrix
 assert(isfolder(SaveFolder),'The folder "%s" doesn''t exist!',SaveFolder);
-% Instantiate EventsManager:
+assert(isfile(fullfile(SaveFolder, 'events.mat')), 'The "events.mat" file is missing in "%s"',SaveFolder);
+% Instantiate EventsManager and load events information:
 ev = EventsManager(SaveFolder);
-% Load the info in the 'events.mat' file:
-ev.loadEvents(SaveFolder);
 % Split the data by events: Here, the trials will be cropped to the
 % shortest length for uniformity.
 dataByEv = ev.splitDataByEvents(data);

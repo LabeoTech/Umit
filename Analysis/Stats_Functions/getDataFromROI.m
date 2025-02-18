@@ -1,6 +1,6 @@
 function outData = getDataFromROI(data, varargin)
 % GETDATAFROMROI extracts and aggregates data from regions of interest
-% (ROIs) in imaging data using an "ROI_xxxxxx.mat" file located in
+% (ROIs) in imaging data using an "ROI_xxxxxx.roimsk" file located in
 % subject's folder.
 
 % Inputs:
@@ -20,7 +20,6 @@ addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ...
 % Parse inputs:
 parse(p,data, varargin{:});
 % Initialize Variables:
-data = p.Results.data;
 opts = p.Results.opts;
 clear p
 %%%%%%%%%%%%%%%%
@@ -109,6 +108,7 @@ switch fcn_name
     case 'sum'
         out = sum(vals, 1, 'omitnan');
     otherwise
+        fprintf("No aggregation function applied.\n")
         out = vals;
 end
 end

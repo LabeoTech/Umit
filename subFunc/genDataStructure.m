@@ -3,16 +3,16 @@ function out = genDataStructure(data,varargin)
 % and merges the DATA and METADATA into a single structure ("out").
 %
 % Inputs:
-%   data = numeric array (e.g. Y,X,T image time series) OR struct OR cell array
+%   data: numeric array (e.g. Y,X,T image time series) OR struct OR cell array
 %       with length equal to the number of elements of observations (obsID).
 %   Optional:
-%   obsID = 1D cell array of characters containing the description of each
+%   obsID: 1D cell array of characters containing the description of each
 %       observation.
 %   hasEvents(bool | default= false): Set to TRUE, to indicate that the 
 %       data is split by events.
 %   extraInfo (struct): other meta data associated with "data".
 % Output:
-%   out = structure containing data and extraInfo.
+%   out: structure containing data and extraInfo.
 
 % Arguments validation
 p = inputParser;

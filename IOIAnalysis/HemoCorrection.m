@@ -1,8 +1,5 @@
 function [fData, fMetaData] = HemoCorrection(Folder, fData, bSave, varargin)
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% General Infos:
-%
-% This function is used to remove the hemodynamic fluctuations from any
+% HEMOCORRECTION is used to remove the hemodynamic fluctuations from any
 % fluorescence signal.
 %
 % Inputs:
@@ -12,24 +9,20 @@ function [fData, fMetaData] = HemoCorrection(Folder, fData, bSave, varargin)
 %       containing the fluorescence signal.
 % 3. bSave (logical): If TRUE, this function saves the corrected
 %       fluorescence signal to a .DAT file named "fluo_corrected.dat".
+%
 % Optional inputs:
 %
 % 4. ChannelList(cell): list of reflectance channel names to be used by the
 %       Hemodynamic correction algorithm. It must be two or more from the
 %       list {"Red","Amber","Green"}. If not provided (default), a dialog box
 %       will appear to select the channels.
-% 5. fMetaData (struct): Name-value pair argument. Meta data structure
-%       associated with the fluorescence signal. This parameter must be provided
-%       if the input "fData" is a 3D array.
-% 6. LowPassFreq(num scalar): Name-value pair argument. Cut-off frequency
+% 5. LowPassFreq(num scalar): Name-value pair argument. Cut-off frequency
 %       in Hertz for a low pass filter applied to the reflectance signals prior
 %       to the hemodynamic correction.
 % Ouput:
 %   - fData(3D num. array):  the result of the correction will be given back
 %       through this output.
-%   - fMetaData (struct): meta data associated with the signal stored in
-%       fData.
-
+%
 % Examples:
 %
 %   1. Using the function with minimal parameters, prompting the user to
@@ -66,33 +59,21 @@ function [fData, fMetaData] = HemoCorrection(Folder, fData, bSave, varargin)
 %      [fData, fMetaData] = HemoCorrection(Folder, fData, bSave);
 %      % The corrected data is now available in the "fData" variable
 %
-%   5. Using the function to perform the correction using the fluorescence
-%       data as input and output the corrected data.
-%      [fData, fMetaData] = loadDatFile('fluodata.dat');
-%        bSave = false;
-%      [fData,fMetaData] = HemoCorrection(Folder,fData,bSave,'fMetaData',fMetaData);
-
 
 %%% Arguments parsing and validation %%%
 p = inputParser;
 addRequired(p,'Folder',@isfolder)
-addRequired(p,'fData',@(x) ischar(x) || isnumeric(x))
+addRequired(p,'fData',@(x) ischar(x) || ( isnumeric(x) && ndims(x) == 3 ))
 addRequired(p,'bSave',@isscalar)
 addOptional(p,'ChannelList',{''},@(x) iscell(x) && ischar([x{:}]));
-addParameter(p,'fMetaData',[],@(x) isa(x,'matlab.io.MatFile') | isstruct(x));
 addParameter(p,'LowPassFreq',[],@isscalar)
 % Parse inputs:
 parse(p,Folder,fData,bSave,varargin{:});
 % Instantiate input parameters:
-Folder = p.Results.Folder;
-fData = p.Results.fData;
-bSave = p.Results.bSave;
 cList = p.Results.ChannelList;
-fMetaData = p.Results.fMetaData;
 sFreq = p.Results.LowPassFreq;
 clear p
 %
-
 if( ~strcmp(Folder(end),filesep) )
     Folder = strcat(Folder, filesep);
 end
@@ -142,36 +123,31 @@ else
         end
     end
 end
+
 % Open fluo data file:
 if ischar(fData)
     fprintf('Loading non-corrected fluo file "%s"...\n',fData);
     [~,file,~] = fileparts(fData);
     fDataFile= [file,'.dat']; % Enforce file extension to .DAT
-    fMetaData = load([Folder, file, '.mat']);
-    % Load fluo file:    
-    eval(['fid = fopen(''' Folder fDataFile ''');']);
-    fData = fread(fid, inf, '*single');%#ok
-    fData = reshape(fData, fMetaData.datSize(1,1)*fMetaData.datSize(1,2), []);
-    fData = reshape(fData, fMetaData.datSize(1,1), fMetaData.datSize(1,2), []);
-    fclose(fid);
-    fprintf('Done.\n')
+    savefDataFile = [file, '_corrected.dat']; % To be used when bSave = TRUE.
+    [fData, fMetaData] = loadData([Folder,fDataFile]);
 else
-    if isempty(fMetaData)
-        error('MetaData .MAT file must be provided when the data is provided as input!')
-    end
+    savefDataFile = 'fluo_corrected.dat'; % Default save file name. To be used when bSave = TRUE.
+    % Get meta data from folder:
+    load([Folder,'AcqInfos.mat']);%#ok
+    fMetaData = AcqInfoStream; clear AcqInfoStream
 end
 
-NbFrames = fMetaData.datLength;
-HemoData = zeros(size(fn,2), prod(fMetaData.datSize), NbFrames, 'single');
+HemoData = zeros(size(fn,2), fMetaData.Width*fMetaData.Height, fMetaData.Length, 'single');
 
 if( isempty(sFreq) )
     bFilt = false;
-    sFreq = fMetaData.Freq/2;
+    sFreq = fMetaData.FrameRateHz/2;
 else
     bFilt = true;
-    if( sFreq >= fMetaData.Freq/2 )
+    if( sFreq >= fMetaData.FrameRateHz/2 )
         bFilt = false;
-        sFreq = fMetaData.Freq/2;
+        sFreq = fMetaData.FrameRateHz/2;
     else
         fprintf('Low pass temporal filter cut-off set at %0.1f Hz.\n',sFreq);
     end
@@ -180,15 +156,15 @@ end
 for ind = 1:size(fn,2)
     fprintf('Opening: %s \n', fn{ind});
     eval(['fid = fopen(''' Folder fn{ind} ''');']);
-    tmp = fread(fid, inf, '*single');
-    tmp = reshape(tmp, fMetaData.datSize(1,1)*fMetaData.datSize(1,2), []);
+    tmp = fread(fid, inf, '*single');%#ok
+    tmp = reshape(tmp, fMetaData.Height*fMetaData.Width, []);
     if( bFilt )
         fprintf('Time Filtering...\n');
-        f = fdesign.lowpass('N,F3dB', 4, sFreq, fMetaData.Freq);
+        f = fdesign.lowpass('N,F3dB', 4, sFreq, fMetaData.FrameRateHz);
         lpass = design(f,'butter');
         tmp = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(tmp')))';
     end
-    tmp = reshape(tmp, fMetaData.datSize(1,1), fMetaData.datSize(1,2), []);
+    tmp = reshape(tmp, fMetaData.Height, fMetaData.Width, []);
     fprintf('Spatial Filtering...\n');
     tmp = imgaussfilt(tmp,1, 'Padding', 'symmetric');
     tmp = reshape(tmp, [], size(tmp,3));
@@ -197,18 +173,18 @@ for ind = 1:size(fn,2)
     fprintf('Done.\n');
     fclose(fid);
 end
-if( size(HemoData, 2) ~= fMetaData.datLength )
+if( size(HemoData, 2) ~= fMetaData.Length )
     sz = size(HemoData);
     dimCanaux = find(sz == size(fn,2));
-    dimPix = find(sz == prod(fMetaData.datSize));
-    dimTime = find(sz == prod(fMetaData.datLength));
+    dimPix = find(sz == fMetaData.Width*fMetaData.Height);
+    dimTime = find(sz == fMetaData.Length);
     
     HemoData = permute(HemoData,[dimCanaux, dimPix, dimTime]);
 end
 clear tmp fn fid ind NbPts
 
 % Correction:
-fData = reshape(fData,prod(fMetaData.datSize),[]);
+fData = reshape(fData,fMetaData.Width*fMetaData.Height,[]);
 m_fData = mean(fData,2);
 fData = (fData - m_fData)./m_fData;
 fprintf('Hemodynamic Correction: ');
@@ -224,24 +200,16 @@ close(h);
 warning('on', 'MATLAB:rankDeficientMatrix');
 clear B X;
 fData = bsxfun(@times, fData, m_fData) + m_fData;
-fData = reshape(fData, fMetaData.datSize(1,1), fMetaData.datSize(1,2), []);
+fData = reshape(fData, fMetaData.Height, fMetaData.Width, []);
 fprintf('Finished Hemodyn on Fluorescence.\n')
-% Update output meta data file:
-[~,filename,~] = fileparts(fMetaData.datFile);
-if isempty(filename)
-    filename = 'fluo';
-end
-fMetaData.datFile = [filename '_corrected.dat']; % Update datfile.
 % Save corrected data to file:
 if ( bSave )
-    fprintf('Saving corrected fluo file...\n');      
+    fprintf('Saving corrected fluo file...\n');
     % Save .DAT file:
-    fid = fopen([Folder fMetaData.datFile],'W');
+    fid = fopen([Folder savefDataFile],'W');
     fwrite(fid, fData, '*single');
     fclose(fid);
-    % Save .MAT file:    
-    save([Folder fMetaData.datFile], '-struct','fMetaData')
-    fprintf('Corrected fluo data saved in "%s" as "%s"\n',Folder, fMetaData.datFile);
+    fprintf('Corrected fluo data saved in "%s" as "%s"\n',Folder, savefDataFile);
 end
 
 end

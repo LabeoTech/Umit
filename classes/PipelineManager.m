@@ -83,6 +83,8 @@ classdef PipelineManager < handle
             if isempty([RawFolderList{:}])
                 % Default action when no RawFolderList is provided:
                 RawFolderList = repmat({'MISSING'},size(SaveFolderList));
+                b_rawFolderExists = false;
+                warning('No Raw Folder provided. Functions that use this parameter (e.g. run_ImagesClassification) will fail!');                    
             else
                 % Validate RawFolderList:
                 b_rawFolderExists = isfolder(RawFolderList);
@@ -106,9 +108,11 @@ classdef PipelineManager < handle
             % Enforce full path:
             [~,saveFolderInfo] = cellfun(@(x) fileattrib(x),SaveFolderList);
             [~,rawFolderInfo] = cellfun(@(x) fileattrib(x),RawFolderList(b_rawFolderExists));
-            % Store folder lists:
+            % Store folder lists:            
             obj.SaveFolderList = {saveFolderInfo.Name}';
-            obj.RawFolderList = {rawFolderInfo.Name}';
+            if ~isempty(rawFolderInfo)
+                obj.RawFolderList = {rawFolderInfo.Name}';
+            end
             % Truncate SaveFolderList
             obj.SaveFolderList_truncated = obj.truncateFolderList(obj.SaveFolderList);
             % Create timestamp tag:
@@ -527,9 +531,10 @@ classdef PipelineManager < handle
         function showFuncList(obj)
             % Displays a list of analysis function from "obj.funcList" in
             % the command window.
-            disp('List of available functions (index : Name) :');
+            disp('List of available functions (Caterogy):');            
+            folderList = erase(obj.truncateFolderList({obj.funcList.folder}),['...' filesep]);
             for i = 1:length(obj.funcList)
-                fprintf('%d : %s\n', i, obj.funcList(i).name);
+                fprintf('%d : %s (%s)\n', i, obj.funcList(i).name, folderList{i});
             end
         end
         
