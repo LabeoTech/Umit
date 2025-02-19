@@ -113,7 +113,7 @@ disp('**************************');
 
 if( ~b_IgnoreStim ) %If user doesn't want to ignore Stimulation:
         
-    if( AcqInfoStream.Stimulation == 0 )
+    if~isfield(AcqInfoStream, 'Stimulation') || ( AcqInfoStream.Stimulation == 0 ) 
         AcqInfoStream.Stimulation = 1;
     end
     Fields = fieldnames(AcqInfoStream); %Recovers Stimulation information from info.txt file
