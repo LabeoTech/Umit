@@ -1,0 +1,79 @@
+---
+permalink: /documentation/userDocs/other/events-file-explanation.html
+layout: default
+title: Events file
+parent: Advanced User Resources
+grand_parent: Documentation
+---
+<html lang="en">
+<head>    
+    <style media="screen">
+        ul,
+        ol {
+            line-height: 1.5;
+        }
+    </style>
+    <meta charset="utf-8">
+    <title>Events.mat file</title>
+</head>
+<body>
+    <h2>The <b>events.mat</b> file</h2>
+    <p>
+        The <samp>events.mat</samp> file contains the information necessary for <b>umIT</b> to process event-triggered data. The <samp>events.mat</samp> file was created primarily to store TTL (transistor-transistor logic) events, as this is a ubiquitous way of communication between equipment in neuroscience labs. In brief, it contains a list of timestamps with the associated event identifier (TTL channel index) and its state (HIGH or LOW). Given its simple organization, it can be used beyond the scope of TTL events detection to store any type of data format, as long as the aforementioned basic information is included.
+    </p>
+    <h3>How it is organized</h3>
+    <hr>
+    <p>
+        The <samp>events.mat</samp> file contains the following variables:
+    </p>
+    <table style="table-layout: fixed;">
+        <tr>
+            <th style="width:130px" align="left">Variable</th>
+            <th align="left">Description</th>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">timestamps</td>
+            <td>A vector of timestamps (in seconds) from the beginning of the recording. Data type: <i>single</i>.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">state</td>
+            <td>A vector with the state of each event (1 for HIGH and 0 for LOW). Data type: <i>uint8</i>.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">eventID</td>
+            <td>A vector of unique identifiers for each event. This represents the index of an event. Data type: <i>uint16</i>.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">eventNameList</td>
+            <td>A cell array of names for each <i>eventID</i>. The index in the <i>eventID</i> variable corresponds to the position of the name in the array. Data type: <i>cell</i>.</td>
+        </tr>
+    </table>
+    <h3>To create your own function</h3>
+    <hr>
+    <p>
+        Since there is not a single way to set up an experiment, it is difficult to have a single function that is applicable to every situation. Thus, one can create their own function (click <a href="../other/how-to-create-custom-functions.html">here</a> for details) to detect events and save them to an <samp>events.mat</samp> file. Here is a list of functions that can be used to help you creating a function to process events:
+    </p>
+    <table style="table-layout: fixed;">
+        <tr>
+          <th style="width:130px" align="left">Function</th>
+          <th style="width:130px" align="left">Folder</th>
+          <th align="left">Description</th>
+        </tr>
+        <tr>
+          <td class="add_font_monospace">saveEventsFile</td>
+          <td class="add_font_monospace">../IOIAnalysis</td>
+          <td>Saves the event information to an <samp>events.mat</samp> file. It validates the inputs to ensure that the file is properly set.</td>
+        </tr>          
+        <tr>
+            <td class="add_font_monospace">getEventsFromTTL</td>
+            <td class="add_font_monospace">../subFunc</td>
+            <td>Detects the events from a TTL signal.</td>
+        </tr>                        
+        <tr>
+            <td class="add_font_monospace"><a href="../fcns/getEventsFromCSV.html">getEventsFromCSV</a></td>
+            <td class="add_font_monospace">../Analysis/DataImport</td>
+            <td>Reads events information stored in a .CSV file and saves it to an <samp>events.mat</samp> file.</td>
+        </tr>                        
+      </table>
+</body>
+</html>

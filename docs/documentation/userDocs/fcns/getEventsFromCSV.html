@@ -1,0 +1,121 @@
+---
+permalink: /documentation/userDocs/fcns/getEventsFromCSV.html
+layout: default
+title: getEventsFromCSV
+parent: Data import & export
+grand_parent: Functions
+nav_order: 4
+---
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+      .mycollapsible {
+      background-color: #eeeeee;
+      color: black;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      margin-bottom: 10px;
+      }
+      .active, .mycollapsible:hover {
+      background-color: #888;
+      }
+      .content {
+      padding: 0 18px;
+      display: none;
+      overflow: hidden;
+      background-color: #fff;
+      border: 1px solid black;
+      margin-bottom: 10px;
+      }
+    </style>
+    <title>getEventsFromCSV</title>
+  </head>
+  <body>
+     <h2>getEventsFromCSV</h2>
+    <hr>
+    <p>
+       Imports events from a .CSV file.
+    </p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+        This function creates an <i>events.mat</i> file from event information stored in a .CSV file.
+        It is a generic function that can be used to import events from different devices using a list of 
+        <i>timestamps</i>, <i>states</i>, and <i>eventIDs</i>. The function can automatically search for a .CSV file in the specified RawFolder or use a specific csvFile name if provided. Here is a brief description of the required CSV file format:
+    </p>
+    <ul>
+        <li><b>timestamps</b>: A column containing the event timestamps (in seconds) from the beginning of the recording. Data type: <i>single</i>.</li>
+        <li><b>state</b>: A column containing the state of each event. Set 1 for HIGH and 0 for LOW. Data type: <i>uint8</i>.</li>
+        <li><b>eventID</b>: A column containing the unique identifier for each event. In this case, it can be the name of a condition, for example. Data type: <i>string</i>.</li>
+    </ul>
+    <h3 id="example">Example CSV File Format</h3>
+    <hr>
+    <table style="table-layout: fixed;">
+        <tr>
+            <th style="width:100px" align="left">timestamps</th>
+            <th style="width:100px" align="left">state</th>
+            <th style="width:100px" align="left">eventID</th>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">1.32</td>
+            <td>1</td>
+            <td>eventA</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">1.5</td>
+            <td>0</td>
+            <td>eventA</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">2.3</td>
+            <td>1</td>
+            <td>eventB</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">2.58</td>
+            <td>0</td>
+            <td>eventB</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">6.01</td>
+            <td>1</td>
+            <td>eventA</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">6.29</td>
+            <td>0</td>
+            <td>eventA</td>
+        </tr>
+    </table>
+    <h3>Output</h3>
+    <hr>
+    <p>
+       This function creates an <samp>events.mat</samp> file containing the events information from the .CSV file and saves it in the Save folder. The <samp>events.mat</samp> file includes the processed event data, such as <i>timestamps</i>, <i>state</i>, and <i>event IDs</i>. This file can be used by other functions (e.g. <a href="./split_data_by_event.html">split_data_by_event</a>) to process event-triggered imaging datasets. 
+    </p> 
+    <h3 id="parameters">Parameters</h3>
+    <hr>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>csvFile</b></samp> - Name of the .CSV file <br>
+      <span class="title-desc"><i> 'auto' (default) | other </i></span>
+    </button>
+    <div class="content">
+      <p>
+        Name of the .CSV file containing the event information ('timestamps','state' and 'eventID'). If not provided ('auto'), the function will look for a .CSV file in the Raw Folder and use the first one found to create the "events.mat" file.
+      </p>
+    </div>   
+    <!-- JavaScript code to collapse sections -->
+    <script src="../../collapsible_behaviour.js"></script>
+    <hr>
+  </body>
+</html>
