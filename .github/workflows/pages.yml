@@ -37,6 +37,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+      - name: List contents of root directory
+        run: ls -la
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
