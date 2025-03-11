@@ -1,18 +1,21 @@
 function outData = run_HemoCorrection(SaveFolder,data, metaData, varargin)
 % RUN_HEMOCORRECTION calls the function
 % HEMOCORRECTION from the IOI library (LabeoTech).
-% In brief, this function removes hemodynamic fluctuations from any
-% fluorescence signal using the information of two or more channels.
-
+% In brief, this function applies a pixelwise linear regression 
+% of the fluorescence signal onto the reflectance signals (Valley et al,
+% 2020).
+%
 % Inputs:
 %   data: numerical matrix containing image time series (with dimensions "Y", "X", "T").
 %   metaData: .mat file with meta data associated with "data".
 %   opts (optional) : structure containing the Reflectance Channels to be
 %   used in the correction.
-
-% The algorithm used here is described in:
+%
+% Note: 
+% The algorithm used here corresponds to the "Regression model" described
+% in: 
 % Valley, Matthew & Moore, Michael & Zhuang, Jun & Mesa, Natalia & Castelli, Dan & Sullivan,
-% David & Reimers, Mark & Waters, Jack. (2019). Separation of hemodynamic signals from
+% David & Reimers, Mark & Waters, Jack. (2020). Separation of hemodynamic signals from
 % GCaMP fluorescence measured with widefield imaging. Journal of Neurophysiology. 123.
 % 10.1152/jn.00304.2019.
 
