@@ -189,7 +189,7 @@ classdef StatsManager < handle
             [data, labels] = obj.createTable;
             % Transform data table to cell array to avoid invalid variable names from labels:
             varNames = data.Properties.VariableNames;
-            varNames(8:end) = labels;
+            varNames(9:end) = labels;
             data = table2cell(data);
             data = vertcat(varNames, data);
             % Write to .csv file:
@@ -1140,19 +1140,20 @@ classdef StatsManager < handle
             data = num2cell(data);
             % Prepare metaData to be added to "out" table:
             % Build table:
-            out = table('Size', [length(stats_info), 7 + size(data,2)],...
+            out = table('Size', [length(stats_info), 8 + size(data,2)],...
                 'VariableTypes',...
-                [{'cellstr', 'cellstr', 'cellstr', 'cellstr', 'datetime', 'cellstr', 'cellstr'}...
+                [{'cellstr', 'cellstr', 'cellstr', 'cellstr', 'datetime','double', 'cellstr', 'cellstr'}...
                 repmat({obj.MfileArr{1}.Datatype},1,size(data,2))]);
             out(:,1:5) = [{stats_info.groupID}', {stats_info.SubjectID}', {stats_info.AcquisitionID}', ...
                 {stats_info.ModalityID}' arrayfun(@(x) datetime(x.RecStartDateTime), stats_info, 'UniformOutput',false)'];
-            out(:,6) = repmat({obs_ID},length(stats_info),1);
-            out(:,7) = repmat({fieldName}, length(stats_info),1);
-            out(:,8:end) = data;
+            out(:,6) = {stats_info.AcquisitionIndx}';
+            out(:,7) = repmat({obs_ID},length(stats_info),1);
+            out(:,8) = repmat({fieldName}, length(stats_info),1);
+            out(:,9:end) = data;
             % Set table header:
             generic_label = arrayfun(@(x) ['Val_' num2str(x)], 1:size(data,2), 'UniformOutput',false);
             out.Properties.VariableNames = [{'GroupName','Subject', 'Acquisition', 'Modality',...
-                'RecordingTime', 'ObsID', 'MeasureID'}, generic_label];
+                'RecordingTime','AcquisitionIndx', 'ObsID', 'MeasureID'}, generic_label];
         end
         
         function getEventList(obj)

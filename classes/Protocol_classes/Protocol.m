@@ -255,13 +255,13 @@ classdef Protocol < handle
             indSubj = find(cellfun(@any, idxInfo.iNewAcq));
             for ii = 1:length(indSubj)
                 indAcq = find(idxInfo.iNewAcq{indSubj(ii)});
-                % Find subject in "protocol":
-                currSubj = obj.Array.ObjList(indSubj(ii));
-                % Find subject in new array:
-                indSubjNew = find(strcmp({newArray.ID},currSubj.ID));
+                % Find subject in "newArray":
+                currSubj = newArray(indSubj(ii));
+                % Find subject in Protocol:
+                indSubjNew = find(strcmp({obj.Array.ObjList.ID},currSubj.ID));
                 % Add new acquisition(s) to the existing Subject:
-                arrayfun(@(x) currSubj.Array.addObj(x.Array.ObjList(indAcq)), ...
-                    newArray(indSubjNew));%#ok
+                arrayfun(@(x) obj.Array.ObjList(indSubjNew).Array.addObj(currSubj.Array.ObjList(x)), ...
+                    indAcq);%#ok
             end
             %   Add new Subjects:
             if any(idxInfo.iNewSubj)

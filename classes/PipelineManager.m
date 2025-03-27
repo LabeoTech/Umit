@@ -224,6 +224,14 @@ classdef PipelineManager < handle
                     elseif all(cellfun(@ischar, listVals{i})) && numel(listVals{i}) > 1 && size(listVals{i},1) > size(listVals{i},2)
                         typeVals{i} = 'charArrayMultiSelect'; % Cell array of strings with multi-selection option.
                     else
+                        % Transform number array to text before calling
+                        % dialog function:
+                        if isnumeric(currVals{i})
+                            if size(currVals{i},2) < size(currVals{i},1)
+                                currVals{i} = currVals{i}';
+                            end
+                            currVals{i} = strjoin(strsplit(num2str(currVals{i})),';');
+                        end
                         typeVals{i} = 'mixArray'; % Cell array of strings and numbers.
                     end
                 end
@@ -1950,7 +1958,7 @@ classdef PipelineManager < handle
                     % Parse optional params values struct:
                     optsVals = 'opts_values\s*=.*?(?=\n)';
                     str_opts = regexpi(txt, optsVals, 'match', 'once');
-                    if ~isempty(str_opts)
+                    if ~isempty(str_opts)                        
                         eval(str_opts)
                         info.opts_vals = opts_values;
                     end
@@ -2472,7 +2480,7 @@ for i = 1:length(idx)
 end
 g.RowHeight = [rh, {60}];
 % Update figure height:
-dlg.InnerPosition(4) = sum([g.RowHeight{:}, 2*g.RowSpacing]);
+dlg.InnerPosition(4) = sum([g.RowHeight{:}, (length(listVals)-1)*g.RowSpacing]);
 for i = 1:length(fields)
     lb = uilabel(g,'Text', [fields{i} ': ']);
     lb.FontSize = myFontSize;
