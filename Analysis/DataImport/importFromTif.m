@@ -22,6 +22,19 @@ outFile = {};
 clear p
 %%%%
 
+% Read info.json file in RawFolder:
+assert(isfile(fullfile(RawFolder,'info.json')),'Failed to import TIF file(s). The "info.json" file is missing in "%s"!',RawFolder)
+info_tif = jsondecode(fileread(fullfile(RawFolder,'info.json')));
+for ii = 1:length(info_tif.Tiffiles)
+    % Look for multiple TIFs.
+    % Here, we try to find Image sequences stored in multiple files with
+    % the file name as prefix followed by a number. All files will be
+    % concatenated into a single .dat file.
+    tif_list = lookForMultipleFiles(RawFolder,info_tif.Tiffiles(ii).filename)
+    
+
+
+
 % Read all TIF and TXT files inside "RawFolder":
 tif_list = [dir(fullfile(RawFolder,'*.tif'));dir(fullfile(RawFolder,'*.tiff'))];
 txt_list = dir(fullfile(RawFolder,'*.txt'));
