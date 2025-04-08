@@ -1,0 +1,17 @@
+{
+  "DateTime": "20250331_193300", 
+  "Tiffiles": [
+    {
+      "filename": "img_red.tif",
+      "FrameRateHz": 10,
+      "ExposureMsec": 0.1,
+      "IlluminationColor": "Red"      
+    },
+    {
+      "filename": "img_fluo_475_003.tif",
+      "FrameRateHz": 10,
+      "ExposureMsec": 0.1,
+      "IlluminationColor": "fluo"      
+    }
+  ]
+}

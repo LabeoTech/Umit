@@ -93,7 +93,7 @@ for ii = 1:length(tif_metadata.Tiffiles)
     % Save data to .dat file:
     save2Dat(metaData.datFile, data, metaData); 
     % Update "outFile" list:
-    outFile = [outFile, {datFileName}];
+    outFile = [outFile, {datFileName}];%#ok
     close(w);
 end
    
@@ -104,7 +104,8 @@ function tifNames = getTIFlist(folder,filename)
 % GETTIFLIST Retrieves the list of TIFF files forming an image sequence.
 %
 % This function searches for multiple TIFF files that follow a common 
-% naming pattern, indicating they are part of a sequential dataset.
+% naming pattern (string followed by a number with or without a separator ("_" or "-"),
+% indicating they are part of a sequential dataset.
 %
 % Parameters:
 %   folder   - Path to the folder containing the TIFF files.

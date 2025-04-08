@@ -49,7 +49,11 @@ nav_order: 2
     <h3 id="description">Description</h3>
     <hr>
     <p>
-      This function imports imaging data stored in a multi-frame .TIF file and saves in a <samp>.dat</samp> file to be used in <b><i>umIToolbox</i></b>. The function reads all valid <samp>.TIF</samp> files (see section below) inside a folder (RawFolder) and saves the output files (to a SaveFolder). This function has optional parameters that allows one to perform spatial and temporal binning to the data.
+      This function imports imaging data stored in a multi-frame .TIF file and saves it in a <samp>.dat</samp> file to be used in <b><i>umIToolbox</i></b>. 
+      The function reads all valid <samp>.TIF</samp> files (see section below) inside a folder (RawFolder) and saves the output files to a SaveFolder. 
+      It supports importing sequences of files that have filenames ending in a number, with optional separators ("_" or "-") or no separator at all (e.g. red001.tif or red_001.tif or red-001.tif). 
+      Additionally, the metadata is stored in a <samp>.json</samp> file instead of the previous <samp>.txt</samp> format.
+      This function has optional parameters that allow one to perform spatial and temporal binning on the data.
     </p>
     <h3>Input data format</h3>
     <hr>
@@ -65,56 +69,71 @@ nav_order: 2
           <li>uint32</li>
         </ul>
       </li>
-      <li>have a <samp>.txt</samp> file with the same name as the <samp>.TIF</samp> file located in the folder which contains meta data about the recording (see section below)</li>
+      <li>have a <samp>.json</samp> file named <samp>info.json</samp> located in the folder, which contains metadata about the recording (see section below)</li>
     </ul>
-    <h4>The meta data text file</h4>
-    <p>
-      In order to import the data from the .TIF file(s), this function uses some information stored in a text file with the same name of the associated .TIF file. For example, the file <samp>fluo.tif</samp> should have the file <samp>fluo.txt</samp>in the same folder. A template of the file is located in <b><i>umIT</i></b>'s folder as <code class="stringformat">'.\Analysis\Tiff_data_import_info_template.txt'</code>. Otherwise, copy the template below and save it to a <samp>.txt</samp> file:
-    </p>
-    <p style="text-align: center;"><i>Template of text file for .TIF file meta data:</i></p>
-    <div class="codeinput">
-      <code>
-        Scan info<br>
-        DateTime: yyyymmdd_HHMMSS<br>
-        FrameRateHz: 30.000000<br>
-        ExposureMsec: 0.100000<br>
-        Illumination1: &lt;CHANNEL_NAME&gt;<br>
-      </code>
-    </div>
-    <p>
-      The parameters are the following:
-    </p>
-    <ul>
-      <li><b>DateTime</b>: recording timestamp (start) in the format yyyymmdd_HHMMSS (e.g. 20220101_120510 for a recording that started January 1st 2022 at 12:05:10)
-          <div class="infonote">
-            <p><strong>Note</strong><br>
-              This parameter is optional.
-            </p>
-          </div>
-      </li>
-      <li><b>FrameRateHz</b>: (float) recording frame rate (in Hertz)</li>
-      <li><b>ExposureMsec</b>: (float) illumination exposure (in milliseconds)</li>
-      <li><b>Illumination1</b>: (char) name of the imaging channel</li>
-    </ul>
-    <div class="warnnote">
-      <p><strong>Important</strong><br>
-        Use the template as show and change only the values (after the ": "). Do not change the names of the parameters from the text file! Otherwise, the function will fail.
-      </p>
-    </div>
+    <h4>The meta data JSON file</h4>
+<p>
+  In order to import the data from the .TIF file(s), this function uses information stored in a JSON file named <samp>info.json</samp>. 
+  This file contains both global metadata associated with the recording and individual parameters for each TIF file in the dataset.
+</p>
+<p style="text-align: center;"><i>Template of JSON file for .TIF file metadata:</i></p>
+<div class="codeinput">
+  <pre><code>
+    {
+      "DateTime": "yyyymmdd_HHMMSS",
+      "Tiffiles": [
+        {
+          "filename": "img_red.tif",
+          "FrameRateHz": 30.0,
+          "ExposureMsec": 0.1,
+          "IlluminationColor": "Red"
+        },
+        {
+          "filename": "img_fluo_475_003.tif",
+          "FrameRateHz": 30.0,
+          "ExposureMsec": 0.1,
+          "IlluminationColor": "fluo"
+        }
+      ]
+    }
+  </code></pre>  
+</div>
+<div class="infonote">
+  <p><strong>Note</strong><br>
+    A copy of this .json template is stored in the toolbox folder in <i>../Umit/Analysis/Toff_data_import_info_template.json</i>. You can use it to build your own. Notice that the file need to be renamed to <b>info.json</b> to be used by the import function.
+  </p>
+</div>
+<p>
+  The parameters are organized as follows:
+</p>
+<ul>
+  <li><b>DateTime</b>: Recording timestamp (start) in the format yyyymmdd_HHMMSS (e.g. 20220101_120510 for a recording that started January 1st, 2022 at 12:05:10).
+      <div class="infonote">
+        <p><strong>Note</strong><br>
+          This parameter is optional and can include additional metadata such as mouse ID, mouse age, etc.
+        </p>
+      </div>
+  </li>
+  <li><b>Tiffiles</b>: A list of entries, each containing metadata specific to an individual TIF file in the dataset. Each entry includes:
+      <ul>
+        <li><b>filename</b>: Name of the TIF file. If there is a file sequence, type the name of one of the existing files.</li>
+        <li><b>FrameRateHz</b>: (float) Recording frame rate in Hertz.</li>
+        <li><b>ExposureMsec</b>: (float) Illumination exposure in milliseconds.</li>
+        <li><b>IlluminationColor</b>: (char) Name of the imaging channel.</li>
+      </ul>
+  </li>
+</ul>
+<div class="warnnote">
+  <p><strong>Important</strong><br>
+    Ensure that each TIF file entry includes at least the parameters listed above for proper data import. 
+    Additional metadata can be added as needed to store extra information relevant to the experiment.
+  </p>
+</div>
     <h3>Output</h3>
     <hr>
     <p>
-      A <samp>.dat</samp> file will be created and stored in the SaveFolder with the channel name (located in the <samp>Illumination1</samp> parameter from the metadata text file). For example, for the .TIF file <samp>img_fluo.tif</samp> with the text file <samp>img_fluo.txt</samp> containing the information below, the resulting output will be a .dat file named <samp>fluo.dat</samp>.
+      A <samp>.dat</samp> file will be created and stored in the SaveFolder with the channel name (located in the <samp>IlluminationColor</samp> parameter from the metadata JSON file). The associated <samp>.mat</samp> file will contain all meta data associated with the .TIF files (those inside the "Tiffiles" list). Note that the meta data in the outer section of the JSON file is not automatically stored. This section can be used to create your own <a href="../../tutorials/tt_creating_a_new_project.html">protocol function</a>, for example.
     </p>
-    <div class="codeinput">
-      <code>
-        Scan info<br>
-        DateTime: 20220101_120510<br>
-        FrameRateHz: 30<br>
-        ExposureMsec: 0.1<br>
-        Illumination1: fluo<br>
-      </code>
-    </div>
     <h3 id="parameters">Parameters</h3>
     <hr>
     <p>The parameters of this function are the following:</p>
@@ -132,12 +151,12 @@ nav_order: 2
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
       <samp><b>BinningTemp</b></samp> - Temporal binning <br>
-      <span class="title-desc"><i>1(default), 2, 4, 8, 16 or 32</i></span>
+      <span class="title-desc"><i>1(default) to 8</i></span>
     </button>
     <div class="content">
       <p>
         Performs binning across frames (i.e. over the time dimension) using a linear interpolation. The <samp>BinningTemp</samp> values represent the scale factor for the temporal dimension of a recording. For example, for a recording with original frame rate of 10Hz, a <samp>BinningTemp</samp> value of <b>2</b> will reduce the number of frames in half, resulting in a frame rate of 5Hz.<br>
-        A <samp>BinningSpatial</samp> value of <b>1</b> equals to no binning.
+        A <samp>BinningTemp</samp> value of <b>1</b> equals to no binning.
       </p>
     </div>
     <!-- JavaScript code to collapse sections -->
