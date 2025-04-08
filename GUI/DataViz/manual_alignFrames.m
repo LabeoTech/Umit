@@ -151,12 +151,14 @@ switch answer
         warpData(tform,refFr,ref_frame_info,Rfixed,SaveFolder,applyToFile, outFileName)
     case 'No, redo'
         b_redo = true;
-        disp('Operation cancellec by User')
+        disp('Operation cancelled by User')
     otherwise
         disp('Operation cancelled!')
         return
 end
 disp('Done!');
+% Save "tform" and the frames used in the aligment in the savefolder:
+save(fullfile(SaveFolder,'alignmentParams.mat'),'tform','refFr','targetFr');
 end
 % Local functions:
 function warpData(tform,refFr,ref_frame_info, Rfixed,SaveFolder, applyToFile, SaveFileName)

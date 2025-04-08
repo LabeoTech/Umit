@@ -20,7 +20,7 @@ opts_values = struct('UseFile',{{'auto'}}, 'RefFile',{{'ImagingReferenceFrame.ma
 p = inputParser;
 addRequired(p,'data',@(x) isnumeric(x) & ismember(ndims(x),[2 3])); % Validate if the input is a 3-D numerical matrix:
 addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
-addRequired(p,'SaveFolder',@isfolder);
+addRequired(p,'SaveFolder',isfolder);
 addRequired(p,'object', @(x) isa(x,'Modality') || isa(x,'Acquisition'));
 addOptional(p,'opts', default_opts,@(x) isstruct(x) && ~isempty(x) && ischar(x.UseFile));
 % Parse inputs:
@@ -229,7 +229,7 @@ extraParams.refPt = ref_frame_info.refPt;
 extraParams.pxPermm = ref_frame_info.pxPermm;
 metaData = genMetaData(outData, extraParams.dim_names, extraParams);
 % Save "tform" and the frames used in the aligment in the savefolder:
-save(fullfile(SaveFolder,'alignmentParams.mat'),'tform','refFr','targetFr');
+save(fullfile(SaveFolder,'alignmentParams.mat'),'tform','refFr','target
 % Show Figure
 fig.Visible = 'on';
 end

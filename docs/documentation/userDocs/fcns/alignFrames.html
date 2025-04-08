@@ -84,8 +84,9 @@ grand_parent: Functions
     </button>
     <div class="content">
       <p>
-        First, the <i>reference</i> and <i>target</i> frames are spatially filtered to remove low frequency inhomogeneities such as illumination inconsistencies across the image. Then the filtered images are used to apply the registration.
+        First, the <i>reference</i> and <i>target</i> frames are spatially filtered to remove low frequency inhomogeneities such as illumination inconsistencies across the image. Then the filtered images are used to apply the registration. The geometric transformations are limited to translation, rotation and scaling (i.e. Nonreflective similarity).
       </p>
+
       <p>
         This function applies two registration methods: first, it uses phase correlation to align the images (for more information click <a href="https://www.mathworks.com/help/images/ref/imregcorr.html?searchHighlight=imregcorr&s_tid=srchtitle_imregcorr_1">here</a>). If this first alignment yields a MI value lower than the non-registered image, the function will ignore this alignment and go direct to the next step. Otherwise, it will use this first approximation as input to the next step.
       </p>
@@ -113,6 +114,9 @@ grand_parent: Functions
     </p>
     <p style="text-align: center;">
       <img src="../../assets/img/align_tt_alignFrame_output_fig.png" alt="align_tt_alignFrame_output_fig" width="660">
+    </p>
+    <p>
+      This function creates a <samp>.mat</samp> in the SaveFolder named <samp>alignmentParams.mat</samp>. This file contains the geometric transformation used in the alignment procedure (<samp>tform</samp>) as well as the original (non-aligned) frames used during the optimization of the aligment (reference frame: <samp>refFr</samp> and target frame: <samp>targetFr</samp>).
     </p>
     <h3 id="parameters">Parameters</h3>
     <hr>

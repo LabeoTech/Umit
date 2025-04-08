@@ -1,3 +1,11 @@
+---
+permalink: /documentation/userDocs/tools/manual_image_registration_tool_olderVersion.html
+layout: default
+title: Manual image registration
+parent: Tools
+grand_parent: Documentation
+nav_order: 4
+---
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -97,6 +105,9 @@
       </p>
       <img src="../../assets/img/manual_image_registration_tool_output_filename.png" alt="manual_image_registration_tool_output_filename" width="200">
       <p>Now, the geometric transformations will be applied to each frame of the <i>input file</i> and saved to a <samp>.dat</samp> file in the object's save folder.</p>
+      <p>
+        Also, a <samp>.mat</samp> will be created in the SaveFolder named <samp>alignmentParams.mat</samp>. This file contains the geometric transformation used in the alignment procedure (<samp>tform</samp>) as well as the reference and target frames (non-aligned): <samp>refFr</samp> and <samp>targetFr</samp>, respectively.
+      </p>
       <hr>
 </body>
 </html>
