@@ -22,7 +22,7 @@ matFiles = dir(fullfile(folder, '*.mat'));
 warning('off'); % Disable warning to suppress messages from .mat files that do not have "datSize" variable.
 validMatFiles = false(size(matFiles));
 for ii = 1:length(matFiles)
-    data = load(fullfile(folder, matFiles(ii).name), 'datSize');
+    data = load(fullfile(folder, matFiles(ii).name), 'dim_names');
     validMatFiles(ii) = ~isempty(fieldnames(data));
 end
 warning('on');

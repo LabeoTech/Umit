@@ -73,7 +73,7 @@ out.dim_names = dim_names;
 % Set dimension of data that will be labeled. Default = 2;
 dim_label = 2;
 if ismember('E', dim_names)
-    % Create labels based in event names:        
+    % Create labels based in event names:
     % Find "Events" dimension in data:
     idx_dim = zeros(length(out.data),ndims(out.data{1}));
     for ii = 1:length(out.data)
@@ -100,7 +100,12 @@ end
 % Check if "label" has the same length of data:
 errID = 'Umitoolbox:genDataMetaStructure:IncompatibleSize';
 errMsg = 'The length of "labels" is different from the length of "data".';
-assert(isequaln(size(out.data,dim_label),length(label)), errID, errMsg);
+if iscell(out.data(1))
+    assert(isequaln(size(out.data{1},dim_label),length(label)), errID, errMsg);
+else
+    fn = fieldnames(out.data);
+    assert(isequaln(size(out.data(1).(fn{1}),dim_label),length(label)), errID, errMsg);
+end
 % Add "label":
 out.label = label;
 end

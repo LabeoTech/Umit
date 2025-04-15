@@ -1170,7 +1170,7 @@ classdef StatsManager < handle
                 return
             end
             all_evNames = cellfun(@(x) x.eventNameList, obj.stats_data(idxEv,obj.hMap('MatFile')), 'UniformOutput', false)';
-            obj.list_of_events = unique(vertcat(all_evNames{:}));
+            obj.list_of_events = unique(vertcat(all_evNames{:}),'stable');
             
             
         end
