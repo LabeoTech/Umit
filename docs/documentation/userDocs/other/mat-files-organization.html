@@ -16,7 +16,7 @@ grand_parent: Documentation
         line-height: 1.5;
       }
     </style>
-    <title>.MAT files organizationimage.png</title>      
+    <title>.MAT files organization</title>      
 </head>
 <body>
     <h2>How the <samp>.MAT</samp> files are organized</h2>
@@ -55,7 +55,7 @@ grand_parent: Documentation
         </tr>
         <tr>
             <td class="add_font_monospace">Freq</td>
-            <td>The name of the acquisition/recording</td>
+            <td>The recording sample rate in Hz</td>
         </tr>
         <tr>
             <td class="add_font_monospace">Stim</td>
@@ -83,8 +83,8 @@ grand_parent: Documentation
         </tr>
         <tr>
             <td class="add_font_monospace">dataHistory</td>
-            <td>structure array with meta data about the analysis pipeline performed to create this file</td>
-        </tr>
+            <td>Structure array with metadata about the pipeline steps used to create the file. This is used by the <a href="../tools/pipeline_configuration_tool.html">Pipeline Manager Tool</a> to skip steps during a pipeline execution</td>
+        </tr>                
         <tr>
             <td class="add_font_monospace">dim_names</td>
             <td>Cell array with dimension identifiers. Some examples: <b>O</b>bservation, <b>E</b>vent, <b>T</b>ime, <b>X</b> and <b>Y</b></td>

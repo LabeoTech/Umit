@@ -1,0 +1,123 @@
+---
+permalink: /documentation/userDocs/other/dat-files-organization.html
+layout: default
+title: Organization of .dat files
+parent: Advanced User Resources
+grand_parent: Documentation
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <style media="screen">
+        ul, ol {
+            line-height: 1.5;
+        }
+    </style>
+    <title>.DAT Files and Metadata</title>      
+</head>
+<body>
+    <h2>How <samp>.DAT</samp> Files Are Organized</h2>
+    <hr>
+    <p>
+        Imaging datasets are stored in binary files with the extension <samp>.dat</samp>. Each <samp>.dat</samp> file contains only a single channel. For example, in a recording where a fluorescence channel was acquired with red and green illuminations, each channel is stored separately in a dedicated <samp>.dat</samp> file. These files are created using one of the available <a href="/userDocs/fcns/dataImport_index.html"><i>Data Import</i></a> functions. 
+        The binary files store only imaging data as 4-byte (32-bit) floating-point values (<a href="https://www.mathworks.com/help/matlab/ref/single.html">single</a> precision). 
+        To properly read a <samp>.dat</samp> file, the necessary information about data dimensions and precision is stored in an associated <samp>.mat</samp> file with the same name as the <samp>.dat</samp> file. This metadata file also stores other relevant details, such as the <samp>frame rate</samp> and <samp>exposure time</samp>.
+    </p>
+    
+    <h3>The Metadata File</h3>
+    <hr>
+    <p>
+       As mentioned above, the <samp>.mat</samp> file associated with a binary <samp>.dat</samp> file contains all the metadata required to open and process the data in the toolbox. Below is an example of the metadata file contents:
+    </p>
+    
+    <table style="table-layout: fixed;">
+        <tr>
+            <th style="width:130px" align="left">Field</th>
+            <th align="left">Description</th>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">Datatype</td>
+            <td>Format of numerical data (e.g., <samp>single</samp>)</td>
+        </tr>           
+        <tr>
+            <td class="add_font_monospace">Freq</td>
+            <td>Recording sample rate in Hz</td>
+        </tr>                                    
+        <tr>
+            <td class="add_font_monospace">datSize</td>
+            <td>Size of the first and second dimensions of data</td>            
+        </tr>
+        <tr>
+            <td class="add_font_monospace">datLength</td>
+            <td>Size of the third and additional dimensions of data</td>            
+        </tr>            
+        <tr>
+            <td class="add_font_monospace">dim_names</td>
+            <td>Cell array with dimension identifiers, such as <b>T</b>ime, <b>X</b>, and <b>Y</b></td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">dataHistory</td>
+            <td>Structure array with metadata about the pipeline steps used to create the file. This is used by the <a href="../tools/pipeline_configuration_tool.html">Pipeline Manager Tool</a> to skip steps during a pipeline execution</td>
+        </tr>                        
+        <tr>
+            <td class="add_font_monospace">tExposure</td>
+            <td>Illumination exposure time (in milliseconds)</td>
+        </tr>
+    </table>
+    
+    <h4>Minimal Required Information</h4>
+    <hr>
+    <p>
+        The minimal required metadata stored in the file should include:
+    </p>
+    <ul>
+        <li><strong>dim_names:</strong> A cell array containing dimension identifiers such as X, Y, T(ime), and E(vent).</li>
+        <li><strong>Datatype:</strong> The data's precision (e.g., <samp>single</samp>).</li>
+        <li><strong>datSize</strong> and <strong>datLength</strong></li>
+    </ul>
+    
+    <h4>Metadata Changes During Data Processing</h4>
+    <hr>
+    <p>
+        During a typical preprocessing pipeline, raw imaging data—typically stored as an image time series with dimensions Y, X, and T—can change. 
+        When a new file is created, its metadata is inherited from the input file. If a parameter is modified during processing, the corresponding field is updated in the new metadata file.
+        For example, if temporal binning is applied, the <samp>Freq</samp> parameter is adjusted accordingly while the rest of the metadata remains unchanged.
+    </p>
+    
+    <div class="infonote">
+        <p>
+            <strong>A Note on Dimension Names</strong><br>
+            The <samp><b>dim_names</b></samp> variable is used by some analysis functions as well as visualization tools to define how the data dimensions are structured.
+            For instance, if an image time series is split by events and averaged, its dimensions will transition from a 3D format (Y, X, T) to a 4D structure (E, Y, X, T).
+            A dictionary of valid dimension names can be found in the <samp>.mat</samp> file: <samp>/subFunc/dimension_names.mat</samp>.
+        </p>
+    </div>
+    
+    <h4>Resources for Creating Custom Data Import Functions</h4>
+    <hr>
+    <p>
+        The toolbox provides helper functions for creating custom import functions that allow reading and saving <samp>.dat</samp> files. These functions are stored in the <samp>../subFunc/</samp> folder:
+    </p>
+    
+    <table>
+        <tr>
+            <td class="add_font_monospace">loadDatFile</td>
+            <td>Reads a <samp>.dat</samp> file</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">mapDatFile</td>
+            <td>Maps the <samp>.dat</samp> file in RAM (see MATLAB's <a href="https://www.mathworks.com/help/matlab/ref/memmapfile.html">memmapfile</a> documentation)</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">save2Dat</td>
+            <td>Saves data to a <samp>.dat</samp> file, including associated metadata</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">genMetaData</td>
+            <td>Helps generate valid metadata for use with the <samp>save2Dat</samp> function. <b>Extra meta data can be included here.</b></td>
+        </tr>
+    </table>
+</body>
+</html>
