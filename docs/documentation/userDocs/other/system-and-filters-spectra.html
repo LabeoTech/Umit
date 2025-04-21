@@ -1,0 +1,56 @@
+---
+permalink: /documentation/userDocs/other/system-and-filters-spectra.html
+layout: default
+title: Setting up cameras and filters spectra
+parent: Advanced User Resources
+grand_parent: Documentation
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <style media="screen">
+        ul, ol {
+            line-height: 1.5;
+        }
+    </style>
+    <title>Setting up cameras and filters spectra</title>      
+</head>
+<body>
+    <h2>Setting up cameras and filters spectra</h2>
+    <hr>
+    <p>
+        Some analysis functions (e.g., <a href="../fcns/run_HemoCompute.html">run_HemoCompute</a>) in the toolbox need to use the optical parameters from the acquisition system, such as the spectral profiles of filters, illumination sources, and cameras. This information is stored in <samp>.mat</samp> files inside the folder <samp>.../Umit/SystemOpticalParams</samp> and can be updated as needed. Here is a description of each file:
+    </p>
+    
+    <h3><samp>SysSpect.mat</samp></h3>
+    <p>
+        Contains a list of all available spectral profiles from filters and cameras. The spectrum of each item consists of a vector with a length of 301 samples. The data is normalized from 0 to 1, and the wavelength ranges from 400 to 700 nm. Here is an example of the spectral profile of a band-pass filter at 472 nm (<samp>FF0247230</samp>):
+    </p>
+    <p align="center">
+        <img src="../../assets/img/FF02-472-30-FilterSpect.png" alt="FF02-472/30 Spectral Profile" width="450">
+    </p>
+    <p>
+        You can add your own profile to this list, if your filter/camera/illumination profile is not listed.
+    </p>
+    <h3><samp>FilterSets.mat</samp></h3>
+    <p>
+        This file contains a list of filter combinations (or sets) used. Each variable is a Matlab <a href="https://www.mathworks.com/help/matlab/ref/struct.html">structure</a> that contains the fields <b>Excitation</b> and <b>Emission</b>. The value of each field is the name of the spectral profile stored in the <samp>SysSpect.mat</samp> file. You can add your own filter sets to this file, provided that the spectral profile is listed in the <samp>SysSpect.mat</samp> file.
+    </p>
+    
+    <h3><samp>CameraSpect.mat</samp></h3>
+    <p>
+        This file contains a list of camera models and their corresponding spectral profiles in the <samp>SysSpect.mat</samp> file. The existing cameras are the following:
+    </p>
+    <ul>
+        <li>CS2100M</li>
+        <li>D1024</li>
+        <li>D1312</li>
+    </ul>
+    <p>
+        As with the <samp>FilterSets.mat</samp> file, you can add your own camera model with the corresponding spectral profile.
+    </p>
+    <hr>
+</body>
+</html>

@@ -127,26 +127,10 @@ if b_normalize && (indxNorm == 1 || indxNorm == 0)
 end
 disp('Data checked!')
 % clear iRed iGreen iYellow indC;
-
-% Filter setting
-switch( lower(FilterSet) )
-    case 'gcamp'
-        Filters.Excitation = 'GCaMP';
-        Filters.Emission = 'GCaMP';
-    case 'jrgeco'
-        Filters.Excitation = 'none';
-        Filters.Emission = 'jRGECO';
-    otherwise
-        Filters.Excitation = 'none';
-        Filters.Emission = 'none';
-end
 Infos = load([DataFolder 'AcqInfos.mat']);
-Filters.Camera = Infos.AcqInfoStream.Camera_Model;
-clear Infos;
-
 %Computation itself:
-A = ioi_epsilon_pathlength('Hillman', 100, 60, 40, Filters);
-
+A = ioi_epsilon_pathlength('Hillman', 100, 60, 40, FilterSet, Infos.AcqInfoStream.Camera_Model);
+clear Infos;
 f = fdesign.lowpass('N,F3dB', 4, 1, Freq); %Low Pass
 lpass_high = design(f,'butter');
 f = fdesign.lowpass('N,F3dB', 4, 1/120, Freq); %Low Pass
