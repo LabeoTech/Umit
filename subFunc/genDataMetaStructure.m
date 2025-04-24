@@ -95,7 +95,7 @@ if ismember('E', dim_names)
     end
 elseif strcmpi(label,'val')
     % Use generic labels:
-    label = arrayfun(@(x) strjoin({label, num2str(x)}, '_'), 1:size(out.data,dim_label), 'UniformOutput', 0);
+    label = arrayfun(@(x) strjoin({label, num2str(x)}, '_'), 1:size(out.data{1},dim_label), 'UniformOutput', 0);
 end
 % Check if "label" has the same length of data:
 errID = 'Umitoolbox:genDataMetaStructure:IncompatibleSize';
