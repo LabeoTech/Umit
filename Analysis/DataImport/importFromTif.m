@@ -37,6 +37,12 @@ clear p
 % Read info.json file in RawFolder:
 assert(isfile(fullfile(RawFolder,'info.json')),'Failed to import TIF file(s). The "info.json" file is missing in "%s"!',RawFolder)
 tif_metadata = jsondecode(fileread(fullfile(RawFolder,'info.json')));
+if isstruct(tif_metadata.Tiffiles)
+    % Force the structure Tiffiles to cell array for conformity. Doing this because if the
+    % json contains different channels (TIF files) with different fielnames
+    % it will be decoded as a cell array.
+    tif_metadata.Tiffiles = arrayfun(@(x) x, tif_metadata.Tiffiles,'UniformOutput',false);
+end
 if isempty(tif_metadata.Tiffiles)
     error('Missing information about TIF files! Please check info.json file and try again!')
 end
@@ -46,9 +52,9 @@ for ii = 1:length(tif_metadata.Tiffiles)
     % Here, we try to find Image sequences stored in multiple files with
     % the file name as prefix followed by a number. All files will be
     % concatenated into a single .dat file.
-    tif_list = getTIFlist(RawFolder,tif_metadata.Tiffiles(ii).filename); 
+    tif_list = getTIFlist(RawFolder,tif_metadata.Tiffiles{ii}.filename); 
     if isempty(tif_list)
-        error('Data Import failed! No TIF found with name "%s" in folder "%s"!',tif_metadata.Tiffiles(ii).filename,RawFolder)
+        error('Data Import failed! No TIF found with name "%s" in folder "%s"!',tif_metadata.Tiffiles{ii}.filename,RawFolder)
     end
     % Get information from all files and preallocate the data:
     tif_info = cellfun(@imfinfo,tif_list, 'UniformOutput',false);
@@ -76,17 +82,20 @@ for ii = 1:length(tif_metadata.Tiffiles)
         data = imresize3(data, [size(data,1), size(data,2),...
             size(data,3)/opts.BinningTemp], 'linear');
         % Update Temporal frequency:
-        tif_metadata.Tiffiles(ii).FrameRateHz = tif_metadata.Tiffiles(ii).FrameRateHz/opts.BinningTemp;
+        tif_metadata.Tiffiles{ii}.FrameRateHz = tif_metadata.Tiffiles{ii}.FrameRateHz/opts.BinningTemp;
     end
     % Spatial Binning
     if( opts.BinningSpatial > 1 )
         data = imresize(data,1/opts.BinningSpatial);
     end
     % Save everything to a .dat file in SaveFolder:
-    datFileName = [lower(tif_metadata.Tiffiles(ii).IlluminationColor) '.dat'];    
+    datFileName = [lower(tif_metadata.Tiffiles{ii}.IlluminationColor) '.dat'];    
     % Generate meta data:
-    extraParams.tExposure = tif_metadata.Tiffiles(ii).ExposureMsec;
-    extraParams.Freq = tif_metadata.Tiffiles(ii).FrameRateHz;
+    extraParams = tif_metadata.Tiffiles{ii};    
+    extraParams.tExposure = tif_metadata.Tiffiles{ii}.ExposureMsec;
+    extraParams.Freq = tif_metadata.Tiffiles{ii}.FrameRateHz;
+    fieldsToDelete = {'filename','FrameRateHz','ExposureMsec','IlluminationColor'};
+    extraParams = rmfield(extraParams,fieldsToDelete);
     metaData = genMetaData(data,{'Y','X','T'}, extraParams);
     % Update datFile:
     metaData.datFile = fullfile(SaveFolder, datFileName);
