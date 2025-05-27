@@ -1483,7 +1483,11 @@ classdef PipelineManager < handle
                 end
                 if ~strcmpi(selFile,'self')
                     thisSeq(ii).inputFileName = selFile;
-                    obj.loadInputFile(thisSeq(ii));% Load step;
+                    try
+                        obj.loadInputFile(thisSeq(ii));% Load step;
+                    catch
+                        return
+                    end
                 end
                 if ~isempty(thisSeq(ii).saveFileName) && ~strcmpi(thisSeq(ii).saveFileName,selFile) && ~obj.ProtocolObj.b_isDummy
                     obj.saveDataToFile(thisSeq(ii),false)
@@ -1568,7 +1572,11 @@ classdef PipelineManager < handle
                     idxFrom = idxFromDisk;
                     % Load the input file dataHistory:
                     [~,inputFile,~] = fileparts(seqIn(idxFromDisk).inputFileName);
-                    fileMetaData = load(fullfile(path,[inputFile,'.mat']));
+                    try
+                        fileMetaData = load(fullfile(path,[inputFile,'.mat']));
+                    catch
+                        return
+                    end
                     
                 elseif  any(idxFromDataViewer > 0) && ~isempty(obj.dv_originalMetaData)
                     idxFrom = idxFromDataViewer;
