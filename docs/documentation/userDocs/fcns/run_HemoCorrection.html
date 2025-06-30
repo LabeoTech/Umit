@@ -48,18 +48,22 @@ grand_parent: Functions
     <h3 id="description">Description</h3>
     <hr>
     <p>
-      This function removes most of the hemodynamic fluctuations from the fluorescence signal.The function uses multi-channel recordings to measure the light absorption of the hemoglobin in order to remove it from the fluorescence channel. In brief, this function applies a <b>pixelwise linear regression</b> of the fluorescence signal onto the reflectance signals <a href="#references">[1,2]</a>.
-    </p>
+      This function removes most of the hemodynamic fluctuations from the fluorescence signal.The function uses multi-channel recordings to measure the light absorption of the hemoglobin in order to remove it from the fluorescence channel. In brief, this function offers two methods to perform the separation of the hemodynamic signals from the fluorescence ones:</p>
+      <ol>
+        <li>Pixelwise linear regression <a href="#references">[1,2]</a></li>
+        <li>Ratiometric <a href="#references">[3]</a></li>
+      </ol>
     <h3>Input</h3>
     <hr>
     <p>
-      Series of <samp>.dat</samp> files containing image time series data with dimensions Y,X,T. This function uses one to three files containing reflectance (red, yellow and green) data and applies the hemodynamic correction to the file containing the fluorescence data. The file names must be the following:<br>
+      Series of <samp>.dat</samp> files containing image time series data with dimensions Y,X,T. This function uses one to three files containing reflectance (red, yellow and green) data and applies the hemodynamic correction to the file containing the fluorescence data. The file names can be the following:<br>
     </p>
     <ul>
       <li><i>fluo.dat | fluo_475.dat</i>: fluorescence channel</li>
       <li><i>red.dat</i>: red channel</li>
       <li><i>yellow.dat</i>: yellow/amber channel</li>
       <li><i>green.dat</i>: green channel</li>
+      <li><i>Other</i>: other file name <b>(only useable for the Ratiometric algorithm for now!)</b></li>
     </ul>
     <p>The abovementioned files are created using one of the availabel Data Import functions (<a href="./run_ImagesClassification.html">run_ImagesClassification</a>  or <a href="./importFromTif.html">importFromTif</a>)</p>
     <h3>Output</h3>
@@ -68,6 +72,16 @@ grand_parent: Functions
       Image time series with dimension Y,X,T containing the corrected fluorescence signal.</p>
     <h3 id="parameters">Parameters</h3>
     <hr>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>Algorithm</b></samp> - Hemodynamic correction algoritm<br>
+      <span class="title-desc"><i> LinearRegression (default) | Ratiometric </i></span>
+    </button>
+    <div class="content">
+      <p>
+        Algorithm to be used to separate hemodynamic signals from the fluorescence channel (see <a href="#references">references</a> for details).
+      </p>
+    </div>
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
       <samp><b>Red</b></samp> - Red channel<br>
@@ -98,6 +112,16 @@ grand_parent: Functions
         If <b>true</b>, the function includes the <b>Amber</b> channel in the hemodynamic correction algorithm.
       </p>
     </div>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>Other</b></samp> - other reference channel<br>
+      <span class="title-desc"><i>empty (default) | channel name </i></span>
+    </button>
+    <div class="content">
+      <p>
+        Other channel to be used to remove the hemodynamic signals from the fluorescence one. Note that this option is only available for the Ratiometric algorithm for now. Please, ensure to type the file extension ".dat".
+      </p>
+    </div>
     <h3 id="references">References</h3>
     <hr>
     <ol>
@@ -105,6 +129,11 @@ grand_parent: Functions
       </li>
       <li>
         Bakker, Marleen E., Ismaël Djerourou, Samuel Belanger, Frédéric Lesage, and Matthieu P. Vanni. 2023. “Alteration of Functional Connectivity despite Preserved Cerebral Oxygenation during Acute Hypoxia.” Scientific Reports 13 (1): 13269. <a href="https://doi.org/10.1038/s41598-023-40321-3" >https://doi.org/10.1038/s41598-023-40321-3</a>.
+      </li>
+      <li>
+         Wekselblatt, Joseph B., Erik D. Flister, Denise M. Piscopo, and Cristopher M. Niell. 2016. 
+         “Large-Scale Imaging of Cortical Dynamics during Sensory Perception and Behavior.”
+          Journal of Neurophysiology 115 (6): 2852–66. https://doi.org/10.1152/jn.01056.2015.
       </li>
     </ol>
     <!-- JavaScript code to collapse sections -->
