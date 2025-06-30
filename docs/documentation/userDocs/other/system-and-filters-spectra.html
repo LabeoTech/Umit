@@ -8,49 +8,141 @@ grand_parent: Documentation
 
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="utf-8">
     <style media="screen">
-        ul, ol {
+        ul,
+        ol {
             line-height: 1.5;
         }
     </style>
-    <title>Setting up cameras and filters spectra</title>      
+    <title>Setting up cameras and filters spectra</title>
 </head>
+
 <body>
     <h2>Setting up cameras and filters spectra</h2>
     <hr>
     <p>
-        Some analysis functions (e.g., <a href="../fcns/run_HemoCompute.html">run_HemoCompute</a>) in the toolbox need to use the optical parameters from the acquisition system, such as the spectral profiles of filters, illumination sources, and cameras. This information is stored in <samp>.mat</samp> files inside the folder <samp>.../Umit/IOIAnalysis/SystemOpticalParams</samp> and can be updated as needed. Here is a description of each file:
+        Some analysis functions (e.g., <a href="../fcns/run_HemoCompute.html">run_HemoCompute</a>) in the toolbox need
+        to use the optical parameters from the acquisition system, such as the spectral profiles of filters,
+        illumination sources, and cameras. This information is stored in <samp>.mat</samp> files inside the folder
+        <samp>.../Umit/IOIAnalysis/SystemOpticalParams</samp> and can be updated as needed.
     </p>
-    
+    <p>
+        The list of filter spectra as well as camera and filter set profiles can be modified using the GUI in DataViewer
+        (Utilities >> System Optical Parameters):
+    </p>
+    <p align="center">
+        <img src="../../assets/img/SystSpectParams_GUI.png" alt="">
+    </p>
+    <p>Here is a description of the elements of the interface:</p>
+    <h3>Available System Spectra</h3>
+    <p>
+        The left‐hand “Available System Spectra” list lets you view and manage every stored spectral curve.
+    </p>
+    <ul>
+        <li>
+            <b>Import New Spectrum</b><br>
+            Click <b>Add</b> and select a <samp>.txt</samp> file (two columns: wavelength [nm], transmittance [0–1]).
+            You can download these exports from vendor sites such as
+            <a href="https://searchlight.idex-hs.com/">SearchLight</a>.
+        </li>
+        <li>
+            <b>Preview Spectrum</b><br>
+            Select any entry to display its static transmittance curve in the graph area.
+        </li>
+        <li>
+            <b>Delete Spectrum</b><br>
+            Highlight an entry, click <b>Delete</b>, and confirm. Built-in spectra are greyed out and protected.
+        </li>
+    </ul>
+
+    <h3>Filter Sets &amp; Camera Profiles</h3>
+    <p>
+        The bottom‐center table defines imaging channels by pairing excitation and emission spectra.
+    </p>
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Excitation Filter</th>
+                <th>Emission Filter</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>CS2100M</td>
+                <td>Camera</td>
+                <td>none</td>
+                <td>ThorQLux</td>
+            </tr>
+            <tr>
+                <td>D1024</td>
+                <td>Camera</td>
+                <td>none</td>
+                <td>PF1024</td>
+            </tr>
+            <tr>
+                <td>GCaMP</td>
+                <td>Filter</td>
+                <td>FF01496LP</td>
+                <td>FF01496LP</td>
+            </tr>
+        </tbody>
+    </table>
+    <ul>
+        <li>
+            <b>Create New Profile</b><br>
+            Click <b>New Profile</b>, select Type (Camera or Filter Set), enter the new profile name and select the excitation/emission
+            spectra from the dropdowns, then click <b>Finish</b>.
+        </li>
+        <li>
+            <b>Delete Profile</b><br>
+            Select a row, click <b>Delete</b>, and confirm.
+        </li>
+    </ul>
+
+    <h3>Restoring Defaults</h3>
+    <p>
+        Click the <b>Restore</b> button (top-right) to revert all unsaved edits back to the last saved state.
+    </p>
+
+    <h3>Saving &amp; Applying Changes</h3>
+    <p>Once you’ve finalized your edits, just close the GUI and the changes will be saved. All modifications are stored in the <samp>.mat</samp> configuration files—see the <a ref="#details-about-the-mat-files">Details about the .mat files</a> section for format and path.
+        
+    <h2>Details about the .mat files</h2>
+
     <h3><samp>SysSpect.mat</samp></h3>
     <p>
-        Contains a list of all available spectral profiles from filters and cameras. The spectrum of each item consists of a vector with a length of 301 samples. The data is normalized from 0 to 1, and the wavelength ranges from 400 to 700 nm. Here is an example of the spectral profile of a band-pass filter at 472 nm (<samp>FF0247230</samp>):
+        Contains a list of all available spectral profiles from filters and cameras. The spectrum of each item consists
+        of a vector with a length of 301 samples. The data is normalized from 0 to 1, and the wavelength ranges from 400
+        to 700 nm. Here is an example of the spectral profile of a band-pass filter at 472 nm (<samp>FF0247230</samp>):
     </p>
     <p align="center">
         <img src="../../assets/img/FF02-472-30-FilterSpect.png" alt="FF02-472/30 Spectral Profile" width="450">
     </p>
-    <p>
-        You can add your own profile to this list, if your filter/camera/illumination profile is not listed.
-    </p>
+   
     <h3><samp>FilterSets.mat</samp></h3>
     <p>
-        This file contains a list of filter combinations (or sets) used. Each variable is a Matlab <a href="https://www.mathworks.com/help/matlab/ref/struct.html">structure</a> that contains the fields <b>Excitation</b> and <b>Emission</b>. The value of each field is the name of the spectral profile stored in the <samp>SysSpect.mat</samp> file. You can add your own filter sets to this file, provided that the spectral profile is listed in the <samp>SysSpect.mat</samp> file.
+        This file contains a list of filter combinations (or sets) used. Each variable is a Matlab <a
+            href="https://www.mathworks.com/help/matlab/ref/struct.html">structure</a> that contains the fields
+        <b>Excitation</b> and <b>Emission</b>. The value of each field is the name of the spectral profile stored in the
+        <samp>SysSpect.mat</samp> file.
     </p>
-    
+
     <h3><samp>CameraSpect.mat</samp></h3>
     <p>
-        This file contains a list of camera models and their corresponding spectral profiles in the <samp>SysSpect.mat</samp> file. The existing cameras are the following:
+        This file contains a list of camera models and their corresponding spectral profiles in the
+        <samp>SysSpect.mat</samp> file. The default cameras are the following:
     </p>
     <ul>
         <li><a href="https://www.thorlabs.com/thorproduct.cfm?partnumber=CS2100M-USB">CS2100M</a></li>
         <li><a href="https://www.photonfocus.com/products/camerafinder/camera/mv1-d1024e-80-g2/">D1024</a></li>
         <li><a href="https://www.photonfocus.com/products/camerafinder/camera/mv1-d1312-100-g2/">D1312</a></li>
-    </ul>
-    <p>
-        As with the <samp>FilterSets.mat</samp> file, you can add your own camera model with the corresponding spectral profile.
-    </p>
+    </ul>    
     <hr>
 </body>
+
 </html>

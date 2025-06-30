@@ -5,7 +5,7 @@ function outFile = run_HemoCompute(SaveFolder, varargin)
 % Defaults:
 default_Output = {'HbO.dat', 'HbR.dat'}; % This line is here just for Pipeline management.
 default_opts = struct('FilterSet', genFieldsFromFile('FilterSets.mat',1), 'b_normalize', true, 'Red', true, 'Green', true, 'Amber', true, 'HbT_concentration_uM',100,'StO2perc',60);
-opts_values = struct('FilterSet',{genFieldsFromFile('FilterSets.mat')},'b_normalize',[true,false],'Red',[false, true], 'Green',[false, true],'Amber',[false, true],'HbT_concentration_uM',[eps,Inf],'StO2perc',[eps 100]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
+opts_values = struct('FilterSet',{genFieldsFromFile('FilterSets.mat')'},'b_normalize',[true,false],'Red',[false, true], 'Green',[false, true],'Amber',[false, true],'HbT_concentration_uM',[eps,Inf],'StO2perc',[eps 100]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 %%% Arguments parsing and validation %%%
 p = inputParser;
 % Save folder:
