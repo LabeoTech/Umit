@@ -49,7 +49,7 @@ grand_parent: Functions
     <h3 id="description">Description</h3>
     <hr>
     <p>
-      This function uses reflectance (intrinsic) signals to estimate the concentration levels of oxygenated (HbO) and deoxygenated (HbR) hemoglobin using the modified Beer-Lambert law as described in <a href="https://doi.org/10.1152/jn.00304.2019">Valley et al. 2020</a>. The baseline values for HbO and HbR are estimated as 60&mu;M and 40&mu;M, respectively.   
+      This function uses reflectance (intrinsic) signals to estimate the concentration levels of oxygenated (HbO) and deoxygenated (HbR) hemoglobin using the modified Beer-Lambert law as described in <a href="https://dx.doi.org/10.1088/0031-9155/33/12/008">Delpy et al. 1988</a>. The total hemoglobin concentration was assumed to be 100&mu;M with oxygen saturation at 60% (<a href="https://www.sciencedirect.com/science/article/pii/S1053811905002697">Dunn et al.  2005</a>) while the estimated pathlength values were obtained from <a href="https://royalsocietypublishing.org/doi/10.1098/rstb.2015.0360">Ma et al.2016</a>.   
       <div class="warnnote">
         <p><strong>Important</strong><br>
           This function uses specific spectral properties of illumination and filters. For details, read the documentation on how to access and edit the imaging hardware specs (<a href="../other/system-and-filters-spectra.html">here</a>)
@@ -132,6 +132,26 @@ grand_parent: Functions
     <div class="content">
       <p>
         If <b>true</b>, the function includes the <b>Amber</b> channel in the estimation of oxy/deoxygenated hemoglobin.
+      </p>
+    </div>
+        <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>HbT_concentration_uM</b></samp> - Total hemoglobin concentration (&mu;M)<br>
+      <span class="title-desc"><i> 100 &mu;M (default) | positive number </i></span>
+    </button>
+    <div class="content">
+      <p>
+        Total hemoglobin concentration in micromolars (see description for references).
+      </p>
+    </div>
+        <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>StO2perc</b></samp> - Oxygen saturation (%)<br>
+      <span class="title-desc"><i> 60% (default) | positive value up to 100 </i></span>
+    </button>
+    <div class="content">
+      <p>
+        Percentage of oxygen saturation to be used in the estimation of hemoglobin concentrations (see description for references).
       </p>
     </div>
     <!-- JavaScript code to collapse sections -->
