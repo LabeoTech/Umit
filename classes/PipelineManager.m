@@ -2504,7 +2504,8 @@ for i = 1:length(fields)
         case {'numericRange'}
             vo = uieditfield(g, 'numeric', 'ValueChangedFcn', @lockTextField);
         otherwise
-            vo = uieditfield(g, 'ValueChangedFcn', @lockTextField);
+%             vo = uieditfield(g, 'ValueChangedFcn', @lockTextField);
+            vo = uieditfield(g); % Now, empty fields are allowed for text.
     end
     % Set position of element in uigrid:
     vo.Layout.Row = i;

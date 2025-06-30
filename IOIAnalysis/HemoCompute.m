@@ -1,28 +1,50 @@
-function [HbO, HbR] = HemoCompute(DataFolder, SaveFolder, FilterSet, Illumination, b_normalize)
+function [HbO, HbR] = HemoCompute(DataFolder, SaveFolder, FilterSet, Illumination, b_normalize,varargin)
 % HEMOCOMPUTE approximates concentration variation of oxygenated (HbO) and
 % de-oxygenated (HbR) hemoglobin from two or three illumination wavelengths 
 % of intrinsic signals. 
 % Inputs:
 %   DataFolder (char): path to folder where the input files "red",
-%   "green","yellow" are stored.
+%   "green", "yellow" are stored.
 %   SaveFolder (char): path where to save the HbO and HbR files. If empty,
 %   the data will not be saved to a .dat file.
 %   FilterSet (char): type of excitation/emission set of filters used. It is one
-%    of the folowing:
+%    of the following:
 %           - gCaMP 
 %           - jrGECO
 %           - none
 %   Illumination (cell): names of illumination colors used ("red", "green",
-%    "yellow"). A minimal of two must be provided. 
-%   b_normalize (bool): Set to TRUE, to normalize the data (when the input
+%    "yellow"). A minimum of two must be provided. 
+%   b_normalize (bool): Set to TRUE to normalize the data (when the input
 %   data is not normalized already).
+%
+%   HbT_uM (optional, numerical): Total hemoglobin concentration in micromolar. 
+%   Default is 100 uM if not provided.
+%
+%   O2_sat (optional, numerical): Oxygen saturation percentage. Default is 60% 
+%   if not provided.
+%
 % Outputs:
-%   HbO (numerical array): data with the same dimensions of the reflectance
+%   HbO (numerical array): data with the same dimensions as the reflectance
 %   channels containing the approximate variations of the oxygenated
 %   hemoglobin.
-%   HbR (numerical array): data with the same dimensions of the reflectance
+%   HbR (numerical array): data with the same dimensions as the reflectance
 %   channels containing the approximate variations of the deoxygenated
 %   hemoglobin.
+
+
+
+% Check for extra inputs:
+if nargin == 6
+    HbT_uM = varargin{6};
+elseif nargin == 7
+    HbT_uM = varargin{6};
+    O2_sat = varargin{7};
+else
+    HbT_uM = 100;
+    O2_sat = 60;
+end
+
+
 
 %Inputs Validation
 if( ~strcmp(DataFolder(end), filesep) )
@@ -35,10 +57,10 @@ elseif( ~strcmp(SaveFolder(end), filesep) )
     SaveFolder = strcat(SaveFolder, filesep);
 end
 
-if( ~contains(lower(FilterSet), {'gcamp', 'jrgeco', 'none'}) )
-    disp('Invalid Filter set name');
-    return;
-end
+% if( ~contains(lower(FilterSet), {'gcamp', 'jrgeco', 'none'}) )
+%     disp('Invalid Filter set name');
+%     return;
+% end
 idx = contains(lower(Illumination), 'amber');
 if( any(idx) )
     Illumination{idx} = 'yellow';
@@ -129,7 +151,7 @@ disp('Data checked!')
 % clear iRed iGreen iYellow indC;
 Infos = load([DataFolder 'AcqInfos.mat']);
 %Computation itself:
-A = ioi_epsilon_pathlength('Hillman', 100, 60, 40, FilterSet, Infos.AcqInfoStream.Camera_Model);
+A = ioi_epsilon_pathlength('Hillman', HbT_uM, O2_sat, 100 - O2_sat, FilterSet, Infos.AcqInfoStream.Camera_Model);
 clear Infos;
 f = fdesign.lowpass('N,F3dB', 4, 1, Freq); %Low Pass
 lpass_high = design(f,'butter');

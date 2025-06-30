@@ -81,6 +81,7 @@ nav_order: 2
   <pre><code>
     {
       "DateTime": "yyyymmdd_HHMMSS",
+      "Camera_Model": "CS2100M"
       "Tiffiles": [
         {
           "filename": "img_red.tif",
@@ -100,7 +101,7 @@ nav_order: 2
 </div>
 <div class="infonote">
   <p><strong>Note</strong><br>
-    A copy of this .json template is stored in the toolbox folder in <i>../Umit/Analysis/Toff_data_import_info_template.json</i>. You can use it to build your own. Notice that the file need to be renamed to <b>info.json</b> to be used by the import function.
+    A copy of this .json template is stored in the toolbox folder in <i>../Umit/Analysis/Tiff_data_import_info_template.json</i>. You can use it to build your own. Notice that the file need to be renamed to <b>info.json</b> to be used by the import function.
   </p>
 </div>
 <p>
@@ -113,6 +114,8 @@ nav_order: 2
           This parameter is optional and can include additional metadata such as mouse ID, mouse age, etc.
         </p>
       </div>
+  </li>
+  <li><b>Camera_Model</b>: The camera model name is necessary for some functions such as <a href="../fcns/run_HemoCompute.html">run_HemoCompute</a>. The camera spectral information should be stored in the <b>CameraSpect.mat</b> file for it to work (click <a href=""> HERE for details</a> ).
   </li>
   <li><b>Tiffiles</b>: A list of entries, each containing metadata specific to an individual TIF file in the dataset. Each entry includes:
       <ul>

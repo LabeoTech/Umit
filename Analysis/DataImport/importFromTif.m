@@ -1,9 +1,9 @@
 function outFile = importFromTif(RawFolder,SaveFolder,varargin)
 % IMPORTFROMTIF Imports single-channel imaging data stored in TIF format.
-% 
-% This function reads TIFF files located in the specified "RawFolder" and 
-% their associated metadata from "info.json". It concatenates multi-file 
-% image sequences, applies optional spatial and temporal binning, and 
+%
+% This function reads TIFF files located in the specified "RawFolder" and
+% their associated metadata from "info.json". It concatenates multi-file
+% image sequences, applies optional spatial and temporal binning, and
 % saves the processed data as .dat files in "SaveFolder".
 %
 % Parameters:
@@ -52,7 +52,7 @@ for ii = 1:length(tif_metadata.Tiffiles)
     % Here, we try to find Image sequences stored in multiple files with
     % the file name as prefix followed by a number. All files will be
     % concatenated into a single .dat file.
-    tif_list = getTIFlist(RawFolder,tif_metadata.Tiffiles{ii}.filename); 
+    tif_list = getTIFlist(RawFolder,tif_metadata.Tiffiles{ii}.filename);
     if isempty(tif_list)
         error('Data Import failed! No TIF found with name "%s" in folder "%s"!',tif_metadata.Tiffiles{ii}.filename,RawFolder)
     end
@@ -64,15 +64,15 @@ for ii = 1:length(tif_metadata.Tiffiles)
     w = waitbar(0, 'Importing frames from TIFF files...');
     w.Children(1).Title.Interpreter = 'none';
     cnt = 1;
-    for jj = 1:length(tif_list)        
-        this_tif_info = tif_info{jj};                        
+    for jj = 1:length(tif_list)
+        this_tif_info = tif_info{jj};
         % Import frames:
         w.Children.Title.String = sprintf('Importing frames from file "%s"...',tif_list{jj});
         for kk = 1:length(this_tif_info)
             data(:,:,cnt) = imread(this_tif_info(1).Filename, 'Info', this_tif_info(kk));
             waitbar(kk/length(this_tif_info),w);
             cnt = cnt + 1;
-        end        
+        end
     end
     % Force data to "single" format :
     data = single(data);
@@ -89,9 +89,9 @@ for ii = 1:length(tif_metadata.Tiffiles)
         data = imresize(data,1/opts.BinningSpatial);
     end
     % Save everything to a .dat file in SaveFolder:
-    datFileName = [lower(tif_metadata.Tiffiles{ii}.IlluminationColor) '.dat'];    
+    datFileName = [lower(tif_metadata.Tiffiles{ii}.IlluminationColor) '.dat'];
     % Generate meta data:
-    extraParams = tif_metadata.Tiffiles{ii};    
+    extraParams = tif_metadata.Tiffiles{ii};
     extraParams.tExposure = tif_metadata.Tiffiles{ii}.ExposureMsec;
     extraParams.Freq = tif_metadata.Tiffiles{ii}.FrameRateHz;
     fieldsToDelete = {'filename','FrameRateHz','ExposureMsec','IlluminationColor'};
@@ -100,19 +100,21 @@ for ii = 1:length(tif_metadata.Tiffiles)
     % Update datFile:
     metaData.datFile = fullfile(SaveFolder, datFileName);
     % Save data to .dat file:
-    save2Dat(metaData.datFile, data, metaData); 
+    save2Dat(metaData.datFile, data, metaData);
     % Update "outFile" list:
     outFile = [outFile, {datFileName}];%#ok
     close(w);
 end
-   
-    disp('Finished importFromTif.')
+% Create AcqInfo.mat file from global fields of the json file:
+AcqInfoStream = rmfield(tif_metadata,'Tiffiles');
+save(fullfile(SaveFolder,'AcqInfo.mat'), 'AcqInfoStream')
+disp('Finished importFromTif.')
 end
 % Local functions
 function tifNames = getTIFlist(folder,filename)
 % GETTIFLIST Retrieves the list of TIFF files forming an image sequence.
 %
-% This function searches for multiple TIFF files that follow a common 
+% This function searches for multiple TIFF files that follow a common
 % naming pattern (string followed by a number with or without a separator ("_" or "-"),
 % indicating they are part of a sequential dataset.
 %
@@ -153,7 +155,7 @@ elseif length(tifList) > 1
     exp = ['^' prefix '[-_]?(\d+)\.tif$'];
     sufixes = regexp(tifNames, exp, 'tokens','ignorecase');
     idx = ~cellfun(@isempty,sufixes);
-        
+    
     if ~any(idx) && any(strcmp({tifList.name},filename))
         % There were other similar files in the folder but they don't seem to
         % be part of a sequence. In this case return the filename.
@@ -164,7 +166,7 @@ elseif length(tifList) > 1
     tifNames = tifNames(idx);
     sufixes = sufixes(idx);sufixes = [sufixes{:}]; sufixes = [sufixes{:}];
     [~,fileOrd] = sort(cellfun(@str2double,sufixes));
-    tifNames = tifNames(fileOrd);    
+    tifNames = tifNames(fileOrd);
 else
     % No files found!
     tifNames = {};
