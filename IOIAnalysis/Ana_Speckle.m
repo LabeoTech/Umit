@@ -27,7 +27,7 @@ function varargout = Ana_Speckle(Folder, bNormalize, varargin)
 % A structure containing the data's meta data is also given as output.
 
 disp('Running Ana speckle...')
-if ~isempty(varargin{:})
+if ~isempty(varargin)
     filename = varargin{:};
     if endsWith(filename, '.dat')
         filename = erase(filename, '.dat');
