@@ -1,0 +1,4 @@
+{%- if site.footer_content -%}
+{% assign current_year = 'now' | date: '%Y' %}
+  <p class="text-small text-grey-dk-100 mb-0">{{ site.footer_content | replace: 'YEAR', current_year }}</p>
+{%- endif -%}
