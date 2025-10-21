@@ -20,7 +20,7 @@ outFile = default_Output;
 clear p
 % Translate opts to char cell array:
 fields = fieldnames(opts);
-fields = setdiff(fields, {'FilterSet', 'b_normalize'});
+fields = setdiff(fields, {'FilterSet', 'b_normalize','HbT_concentration_uM','StO2perc'});
 idx = cellfun(@(x) opts.(x), fields);
 list = fields(idx)';
 

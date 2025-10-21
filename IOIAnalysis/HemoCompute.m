@@ -35,10 +35,10 @@ function [HbO, HbR] = HemoCompute(DataFolder, SaveFolder, FilterSet, Illuminatio
 
 % Check for extra inputs:
 if nargin == 6
-    HbT_uM = varargin{6};
+    HbT_uM = varargin{1};
 elseif nargin == 7
-    HbT_uM = varargin{6};
-    O2_sat = varargin{7};
+    HbT_uM = varargin{1};
+    O2_sat = varargin{2};
 else
     HbT_uM = 100;
     O2_sat = 60;
