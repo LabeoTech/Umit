@@ -61,11 +61,11 @@ save([SaveFolder 'AcqInfos.mat'],'AcqInfoStream'); %To keep this information and
 hWima = 5;
 imgFilesList = dir([DataFolder 'img*.bin']); 
 % Check if all files exist:
-imgFileNames = sort({imgFilesList.name})';
-imgFileIndx = str2double(erase(imgFileNames,"img_" | ".bin"));
-if ~strcmpi(imgFileNames{1}, 'img_00000.bin') | any(diff(imgFileIndx)~=1)
-    error('Image binary files missing! Classification aborted.')
-end
+% imgFileNames = sort({imgFilesList.name})';
+% imgFileIndx = str2double(erase(imgFileNames,"img_" | ".bin"));
+% if ~strcmpi(imgFileNames{1}, 'img_00000.bin') | any(diff(imgFileIndx)~=1)
+%     error('Image binary files (img_xxxxx.bin) missing! Classification aborted.')
+% end
 %Images files header description (see User Manual, page 26 for more
 %details):
 header = memmapfile([DataFolder imgFilesList(1).name], ...
