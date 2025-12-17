@@ -141,7 +141,17 @@ end
 % Data Format and Header Information:
 
 hWima = 5;
+<<<<<<< HEAD
 imgFilesList = dir([DataFolder 'img*.bin']);
+=======
+imgFilesList = dir([DataFolder 'img*.bin']); 
+% Check if all files exist:
+imgFileNames = sort({imgFilesList.name})';
+imgFileIndx = str2double(erase(imgFileNames,"img_" | ".bin"));
+if ~strcmpi(imgFileNames{1}, 'img_00000.bin') | any(diff(imgFileIndx)~=1)
+    error('Image binary files missing! Classification aborted.')
+end
+>>>>>>> 5431f4f (dev: ImagesClassification: added control for missing img_0000x.bin files.)
 %Images files header description (see User Manual, page 26 for more
 %details):
 header = memmapfile([DataFolder imgFilesList(1).name], ...
