@@ -86,9 +86,10 @@ else
         end
     end
 end
-
-NbFrames = fMetaData.datLength;
-HemoData = zeros(size(fn,2), prod(fMetaData.datSize), NbFrames, 'single');
+%--------------------------------------------------------------------------
+% NbFrames = fMetaData.datLength;
+% HemoData = zeros(size(fn,2), prod(fMetaData.datSize), NbFrames, 'single');
+%--------------------------------------------------------------------------
 
 if( nargin <= 4 )
     bFilt = false;
@@ -101,55 +102,131 @@ else
         sFreq = fMetaData.Freq/2;
     end
 end
-% Reading Hemo file:
-for ind = 1:size(fn,2)
-    fprintf('Opening: %s \n', fn{ind});
-    eval(['fid = fopen(''' Folder fn{ind} ''');']);
-    tmp = fread(fid, inf, '*single');
-    tmp = reshape(tmp, fMetaData.datSize(1,1)*fMetaData.datSize(1,2), []);
-    if( bFilt )
-        fprintf('Time Filtering...\n');
-        f = fdesign.lowpass('N,F3dB', 4, sFreq, fMetaData.Freq);
-        lpass = design(f,'butter');
-        tmp = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(tmp')))';
-    end
-    tmp = reshape(tmp, fMetaData.datSize(1,1), fMetaData.datSize(1,2), []);
-    fprintf('Spatial Filtering...\n');
-    tmp = imgaussfilt(tmp,1, 'Padding', 'symmetric');
-    tmp = reshape(tmp, [], size(tmp,3));
-    tmp = (tmp - mean(tmp,2))./mean(tmp,2);
-    HemoData(ind, :, :) = tmp;
-    fprintf('Done.\n');
-    fclose(fid);
-end
-if( size(HemoData, 2) ~= fMetaData.datLength )
-    sz = size(HemoData);
-    dimCanaux = find(sz == size(fn,2));
-    dimPix = find(sz == prod(fMetaData.datSize));
-    dimTime = find(sz == prod(fMetaData.datLength));
-    
-    HemoData = permute(HemoData,[dimCanaux, dimPix, dimTime]);
-end
-clear tmp fn fid ind NbPts
 
-% Correction:
-fData = reshape(fData,prod(fMetaData.datSize),[]);
-m_fData = mean(fData,2);
-fData = (fData - m_fData)./m_fData;
-fprintf('Hemodynamic Correction: ');
-warning('off', 'MATLAB:rankDeficientMatrix');
-h = waitbar(0, 'Fitting Hemodyn on Fluorescence');
-for indF = 1:size(fData,1)
-    X = [ones(1, size(fData,2)); linspace(0,1,size(fData,2)); reshape(HemoData(:,indF,:),sz(dimCanaux), sz(dimTime))];
-    B = X'\fData(indF,:)';
-    fData(indF,:) = fData(indF,:) - (X'*B)';
-    waitbar(indF/size(fData,1), h);
+
+%--------------------------------------------------------------------------
+% Get file handles of hemodynamic channels
+fid = cell(1,length(fn));
+for k = 1:length(fn)
+    fid{k} = fopen(fullfile(Folder,fn{k}),'r');
+end
+
+% RAM management
+Ny = size(fData, 1);
+Nx = size(fData, 2);
+Nt = size(fData, 3);
+numChannels = length(fn);
+
+if bFilt    
+    overheadFactor = 8;     
+else    
+    overheadFactor = 3;
+end
+nChunks = calculateMaxChunkSize(fData, overheadFactor);
+chunkSizePixels = ceil(Nx / nChunks);
+
+% Spatial filter settings
+spatSigma = 1;
+pad = ceil(3 * spatSigma);   % 3σ Gaussian support
+
+% Design temporal filter 
+if bFilt
+    f = fdesign.lowpass('N,F3dB', 4, sFreq, fMetaData.Freq);
+    lpass = design(f, 'butter');
+end
+
+% Normalize fluorescence
+fData = reshape(fData, prod(fMetaData.datSize(1:2)), []);
+m_fData = mean(fData, 2);
+fData = (fData - m_fData) ./ m_fData;
+
+%% ========================================================================
+%                          Main chunk loop
+% ========================================================================
+h = waitbar(0, 'Fitting Hemodynamics...');
+for ii = 1:nChunks    
+    h.Name = ['Hemodynamic Corr. (chunk ' num2str(ii) '/' num2str(nChunks) ')'];drawnow()
+    % ----- X-range for this chunk
+    pxStart = (ii - 1) * chunkSizePixels + 1;
+    pxEnd   = min(ii * chunkSizePixels, Nx);
+    idxPixels = pxStart:pxEnd;
+    % ----- Padding
+    padStart = min(pad, pxStart - 1);
+    padStop  = min(pad, Nx - pxEnd);
+    idxPixels_with_pad = (pxStart - padStart):(pxEnd + padStop);
+    % ----- Build pixel index list (matches reshape order)
+    [COL, ROW] = meshgrid(idxPixels, 1:Ny);
+    indList = sub2ind([Ny, Nx], ROW(:), COL(:));
+    Np = numel(indList);
+    % ----- Preallocate hemodynamic block
+    HemoData = zeros(numChannels, Np, Nt, 'single');
+
+    %% ---------------------------------------------------------------
+    %  Load, filter, normalize hemodynamic channels
+    % ---------------------------------------------------------------
+    for kk = 1:numChannels
+        waitbar(.99, h, ['Reading file [' fn{kk} ']']);drawnow()
+        % Read padded spatial slab
+        tmp = readSpatialSlab(fid{kk}, Ny, Nx, Nt, idxPixels_with_pad, 'single');
+        tmp_sz = size(tmp);
+
+        % Reshape to [pixels × time] for temporal filtering
+        tmp = reshape(tmp, [], tmp_sz(3));
+
+        % Temporal filtering (optional)
+        if bFilt
+            waitbar(.99, h, ['Applying temporal filter [' fn{kk} ']']);drawnow()
+            tmp = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(tmp')))';
+        end
+
+        % Restore spatial shape for Gaussian blur
+        tmp = reshape(tmp, tmp_sz);
+        tmp = imgaussfilt(tmp, spatSigma, 'Padding', 'symmetric');
+
+        % Crop padding
+        tmp = tmp(:, padStart+1:end-padStop, :);
+
+        % Back to [pixels × time]
+        tmp = reshape(tmp, [], tmp_sz(3));
+
+        % Normalize each pixel
+        m = mean(tmp, 2);
+        tmp = (tmp - m) ./ m;
+
+        % Store
+        HemoData(kk, :, :) = tmp;
+    end
+    
+    %% ---------------------------------------------------------------
+    %  Hemodynamic regression
+    % ---------------------------------------------------------------
+    warning('off', 'MATLAB:rankDeficientMatrix');
+    waitbar(0, h, 'Performing Hemodynamic correction...');drawnow()
+    for indF = 1:Np
+        X = [ ones(1, Nt); linspace(0, 1, Nt);squeeze(HemoData(:, indF, :)) ];
+        B = X' \ fData(indList(indF), :)';
+        fData(indList(indF), :) = fData(indList(indF), :) - (X' * B)';
+        % Update waitbar
+        if mod(indF, 500) == 0
+            waitbar(indF / Np, h);
+        end
+    end
+    
+    warning('on', 'MATLAB:rankDeficientMatrix');
+
 end
 close(h);
-warning('on', 'MATLAB:rankDeficientMatrix');
-clear B X;
-fData = bsxfun(@times, fData, m_fData) + m_fData;
-fData = reshape(fData, fMetaData.datSize(1,1), fMetaData.datSize(1,2), []);
+
+% Close Hemo Data files
+for kk = 1:length(fid)
+    fclose(fid{kk});
+end
+% Undo normalization
+fData = fData .* m_fData + m_fData;
+fData = reshape(fData, fMetaData.datSize(1), fMetaData.datSize(2), []);
+
+
+
 if( nargout == 0 )
     [~,filename,ext] = fileparts(fMetaData.datFile);
     eval(['fid = fopen(''' Folder filename ext ''', ''w'');']);
@@ -159,5 +236,5 @@ else
     varargout{:} = fData;
 end
 
-fprintf('Finished Hemodyn on Fluorescence.\n')
+fprintf('Finished Hemodynamic Correction.\n');
 end
