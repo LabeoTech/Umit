@@ -76,7 +76,7 @@ X = [ones(szData(3),1), Sig'];
 clear Sig
 % 
 A = zeros(length(X),size(outData,1),'single');
-nChunks = calculateMaxChunkSize(outData,7);
+nChunks = calculateMaxChunkSize(numel(outData),7);
 indxChk = round(linspace(0,size(outData,1),nChunks));
 mData = 0;
 if nChunks > 1    

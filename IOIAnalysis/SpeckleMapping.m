@@ -76,7 +76,7 @@ switch lower(sType)
         Kernel = ones(1,1,5,'double');
 end
 % Check if the data needs to be chunked to be processed by "stdfilt":
-nChunks = calculateMaxChunkSize(DatOut,20);
+nChunks = calculateMaxChunkSize(numel(DatOut),10);
 if nChunks > 1
     % If there is not enough RAM to run the std filter in the whole data,
     % split it in smaller sizes

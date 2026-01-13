@@ -1,50 +1,80 @@
-function nChunks = calculateMaxChunkSize(data,sizeFactor)
-% CALCULATEMAXCHUNKSIZE reads the available memory and calculates the
-% number of chunks of the data to be processed by a given function.
-% Inputs:
-%   data(numerical array): data to be processed.
-%   sizeFactor(scalar): multiplication factor of the size of data used to
-%       estimate the amount of memory to be used by the data processing.
-% Outputs:
-%   nChunks(scalar): number of chunks of data to be processed in order to
-%   avoid out-of-memory errors.
+function nChunks = calculateMaxChunkSize(numElements, overheadFactor, precision)
+% CALCULATEMAXCHUNKSIZE Estimate number of chunks to avoid out-of-memory.
+%
+%   nChunks = CALCULATEMAXCHUNKSIZE(numElements, overheadFactor)
+%   nChunks = CALCULATEMAXCHUNKSIZE(numElements, overheadFactor, precision)
+%
+%   INPUTS:
+%       numElements    - Total number of data elements to process (scalar)
+%       overheadFactor - Multiplicative factor for processing memory
+%       precision      - Optional: numeric type as string (default: 'single')
+%                        Supported types: 'double','single','logical',
+%                        'int8','uint8','int16','uint16','int32','uint32',
+%                        'int64','uint64'
+%
+%   OUTPUT:
+%       nChunks        - Recommended number of chunks to safely process data
+%
+%   NOTES:
+%       - Memory usage is estimated as:
+%         bytesPerElement * numElements * overheadFactor
+%       - Uses available physical RAM to compute the safe number of chunks.
+%       - If RAM detection fails, nChunks defaults to 1.
 
+% --- Default precision ---
+if nargin < 3
+    precision = 'single';
+end
 
-% Calculate the data byte size
-s = whos('data');
-% clear data;
-dataByteSize = s.bytes;
-maxBytes = sizeFactor*dataByteSize;
+% --- Determine bytes per element based on numeric type ---
+switch lower(precision)
+    case {'double','int64','uint64'}
+        bytesPerElement = 8;
+    case {'single','int32','uint32'}
+        bytesPerElement = 4;
+    case {'int16','uint16'}
+        bytesPerElement = 2;
+    case {'int8','uint8','logical'}
+        bytesPerElement = 1;
+    otherwise
+        error('Unsupported numeric type: %s', precision);
+end
 
-% Get available RAM:
+% --- Estimate memory needed for processing ---
+estimatedBytes = numElements * bytesPerElement * overheadFactor;
+
+% --- Detect available RAM ---
 try
-    switch computer
-        case 'PCWIN64'
-            [~,sys]= memory;
-            bytesAvailable = sys.PhysicalMemory.Available;
-        case 'GLNXA64'
-            [status, result] = system('free -b | grep Mem | awk ''{print $7}''');
-            if status
-                error('Failed to retrieve RAM information in Linux System!')
-            end
-            bytesAvailable = str2double(result);
-        case 'MACI64'
-            [status, result] = system('vm_stat | grep "Pages free" | awk ''{print $3}''');
-            if status
-                error('Failed to retrieve RAM information in MacOS!')
-            end
-            page_size = str2double(system('getconf PAGESIZE'));
-            bytesAvailable = str2double(result)*page_size;
-        otherwise
-            error('Unsupported Platform!');
+    if ispc
+        [~, sys] = memory;
+        bytesAvailable = sys.PhysicalMemory.Available;
+    elseif isunix && ~ismac
+        [status, result] = system('free -b | awk ''/Mem:/ {print $7}''');
+        if status
+            error('Failed to retrieve RAM info on Linux');
+        end
+        bytesAvailable = str2double(result);
+    elseif ismac
+        [status, result] = system('vm_stat | awk ''/Pages free:/ {print $3}''');
+        if status
+            error('Failed to retrieve RAM info on macOS');
+        end
+        page_size = str2double(system('getconf PAGESIZE'));
+        bytesAvailable = str2double(result) * page_size;
+    else
+        error('Unsupported platform');
     end
-    
-    % Calculate the number of chunks to be used given the available memory:
-    nChunks = ceil(maxBytes/bytesAvailable);
+
+    % --- Compute number of chunks ---
+    nChunks = max(1, ceil(estimatedBytes / bytesAvailable));
+
 catch ME
-    except = MException('calculateMaxChunkSize:NoOSAccess',['Failed to assess available RAM for OS "' computer '"']);
-    except = addCause(except,ME);
-    warning(getReport(except,'extended', 'hyperlinks','off')); % Raise warning instead of error.
+    % --- Fallback if RAM detection fails ---
+    ex = MException('calculateMaxChunkSize:NoOSAccess', ...
+                    ['Failed to assess available RAM for OS: ', computer]);
+    ex = addCause(ex, ME);
+    warning(getReport(ex,'extended','hyperlinks','off'));
     nChunks = 1;
 end
+
 end
