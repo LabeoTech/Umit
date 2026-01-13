@@ -238,7 +238,7 @@ for ii = 1:nChunks
     %  Load, filter, normalize hemodynamic channels
     % ---------------------------------------------------------------
     for kk = 1:numChannels
-        waitbar(kk/numChannels, h, ['Reading file [' fn{kk} ']']);drawnow()
+        waitbar(0.99, h, ['Reading file [' fn{kk} ']']);drawnow()
         % Read padded spatial slab
         tmp = readSpatialSlab(fid{kk}, Ny, Nx, Nt, idxPixels_with_pad, 'single');
         tmp_sz = size(tmp);
@@ -248,7 +248,7 @@ for ii = 1:nChunks
 
         % Temporal filtering (optional)
         if bFilt
-            waitbar(0, h, ['Applying temporal filter [' fn{kk} ']']);drawnow()
+            waitbar(0.99, h, ['Applying temporal filter [' fn{kk} ']']);drawnow()
             tmp = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(tmp')))';
         end
 
