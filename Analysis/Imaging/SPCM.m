@@ -19,7 +19,7 @@ default_opts = struct('b_FisherZ_transform', false);
 opts_values = struct('b_FisherZ_transform',[false, true]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 %%% Arguments parsing and validation %%%
 p = inputParser;
-addRequired(p,'data',@(x) isnumeric(x) & ndims(x) == 3); % Validate if the input is a 3-D numerical matrix:
+addRequired(p,'data',@(x) isnumeric(x) & ndims(x) == 3 | ischar(x)); % Validate if the input is a 3-D numerical matrix:
 addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
 % Optional Parameters:
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
@@ -31,6 +31,9 @@ metaData = p.Results.metaData;
 opts = p.Results.opts;
 clear p
 %%%%
+if ischar(data)
+    error("This function does not support RAM-safe mode operation.")
+end
 % Check if data is a 3-D matrix with dimensions 'X', 'Y' and 'T':
 [idx, locB] = ismember({'Y', 'X', 'T'}, metaData.dim_names);
 if ~all(idx) || any(locB(1:2)>2)

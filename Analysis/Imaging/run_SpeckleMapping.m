@@ -1,4 +1,4 @@
-function [outData, metaData] = run_SpeckleMapping(SaveFolder, varargin)
+function [outData, metaData] = run_SpeckleMapping(SaveFolder, data,varargin)
 % RUN_SPECKLEMAPPING calls the function
 % SPECKLEMAPPING from the IOI library (LabeoTech).
 % In brief, this function calculates the spatial OR temporal standard
@@ -14,16 +14,23 @@ opts_values = struct('sType',{{'Spatial', 'Temporal'}},'channel', {{'fluo_475','
 p = inputParser;
 % Save folder:
 addRequired(p, 'SaveFolder', @isfolder);
+addRequired(p,'data',@(x) (isnumeric(x) && ndims(x)==3) || ischar(x));
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
 % Parse inputs:
-parse(p,SaveFolder, varargin{:});
+parse(p,SaveFolder,data, varargin{:});
 SaveFolder = p.Results.SaveFolder;
 opts = p.Results.opts;
 clear p
 
 % Run SpeckleMapping function from IOI library:
 disp(['Calculating ' opts.sType ' standard deviation in ' opts.channel '...'])
-outData = SpeckleMapping(SaveFolder, opts.sType, opts.channel, opts.bSaveMap, opts.bLogScale);
+if ischar(data)
+    b_lowRAMmode = true;
+else
+    b_lowRAMmode = false;
+end
+
+outData = SpeckleMapping(SaveFolder, opts.sType, opts.channel, opts.bSaveMap, opts.bLogScale,b_lowRAMmode);
 origMetaData = load(fullfile(SaveFolder, [opts.channel '.mat']));
 
 % Create meta data:
@@ -31,7 +38,14 @@ origMetaData = load(fullfile(SaveFolder, [opts.channel '.mat']));
 origMetaData.Freq = 0;
 % Use first and second input's dimensions:
 new_dims = origMetaData.dim_names(1:2);
-% Create new meta data file based on function's input metaData:
-metaData = genMetaData(outData, new_dims, origMetaData);
+if ischar(outData)
+    metaData.dim_names = new_dims;
+    metaData.datLength = 1;
+    metaData.Freq = 0;
+    metaData.datFile = outData;
+else
+    % Create new meta data file based on function's input metaData:
+    metaData = genMetaData(outData, new_dims, origMetaData);
+end
 disp('Finished Speckle Mapping.')
 end

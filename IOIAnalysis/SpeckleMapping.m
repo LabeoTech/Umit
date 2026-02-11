@@ -1,125 +1,166 @@
-function DatOut = SpeckleMapping(folderPath, sType, channel, bSaveMap, bLogScale)
-%%%%%%%%%%%%%%%%%%%% Speckle Mapping function %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Show the standard deviation (spatialy or temporaly) of speckle
-% acquisition. This measure is proportional to the strength of blood flow
-% in vessels.
+function DatOut = SpeckleMapping(folderPath, sType, channel, bSaveMap, bLogScale, bRAMSafeMode)
+% SPECKLEMAPPING computes speckle contrast maps from a 3D acquisition.
+% Supports low-RAM processing with bRAMSafeMode flag.
 %
 % INPUTS:
-%
-% 1- folderPath: Folder containing the speckle data (called speckle.dat)
-%
-% 2- sType: how the stdev should be computed. Two options:
-%       - Spatial: stdev will be computed on a 5x5 area in the XY plane
-%       - Temporal: stdev will be computed on a 5x1 vector in the time dimension 
-%
-% 3- channel (optional): Channel to analyse, for example 'green', 'red',
-% etc. (speckle by default)
-%
-% 4- bSaveMap: Save a map of averaged stddev over the acquisition (.tiff
-% file)
-%
-% 5- bLogScale: boolean flag to put data on a -log10 scale
-%           - true: ouput data is equal to -log10(data)
-%           - false: data = data;
+%   folderPath: folder containing speckle.dat and .mat metadata
+%   sType: 'spatial' or 'temporal'
+%   channel: optional, channel to process ('speckle' default)
+%   bSaveMap: boolean, save a .tiff map
+%   bLogScale: boolean, apply -log10 scaling
+%   bRAMSafeMode: boolean, enable low RAM hybrid processing
 %
 % OUTPUT:
-%
-% 1- DatOut: StDev variation averaged over time.
+%   DatOut: speckle map (or filename if bRAMSafeMode is true)
 
-if(nargin < 3)
-    channel = 'speckle';
-%     bSaveStack = 1;
-    bSaveMap = 1;
-    bLogScale = 1;
-end
+if nargin < 3, channel='speckle'; end
+if nargin < 4, bSaveMap=1; end
+if nargin < 5, bLogScale=1; end
+if nargin < 6, bRAMSafeMode=0; end
 
-if( ~strcmp(folderPath(end), filesep) )
-    folderPath = strcat(folderPath, filesep);
+if ~strcmp(folderPath(end), filesep)
+    folderPath = [folderPath filesep];
 end
 
 channel = lower(channel);
-if(~exist([folderPath channel '.dat'],'file') )
-    disp([channel '.dat file is missing. Did you run ImagesClassificiation?']);
-    return;
+datFile = [folderPath channel '.dat'];
+matFile = [folderPath channel '.mat'];
+
+if ~exist(datFile,'file')
+    error('%s file is missing.', datFile);
 end
 
-disp(['Opening ' channel '.dat']);
+Infos = load(matFile);
+Ny = Infos.datSize(1);
+Nx = Infos.datSize(2);
+Nt = Infos.datLength;
 
-try
-    Infos = matfile([folderPath channel '.mat']);
-    fid = fopen([folderPath channel '.dat']);
+md = Infos;
+md.datLength = 1;
+md.Freq = 0;
+md.dim_names = {'Y','X'};
+
+if bRAMSafeMode
+    % --- Low RAM mode: hybrid chunked approach ---
+    outFilename = [folderPath 'SPECKLEMAP.dat'];
+    frameOut = zeros(Ny,Nx,Infos.Datatype);
+    mData = zeros(Ny,Nx,Infos.Datatype);
+    fidIn = fopen(datFile,'r');
+    cIn = onCleanup(@() safeFclose(fidIn));
+    disp('Pass 1 - Calculating temporal mean...')
+    for t = 1:Nt
+        fseek(fidIn, (t-1)*Ny*Nx*getByteSize('single'),'bof');
+        frame = fread(fidIn, Ny*Nx, ['*' Infos.Datatype]);
+        frame = reshape(frame, Ny, Nx);
+        mData = mData + frame;        
+    end
+    mData = mData/Nt;
+    disp('Pass 2 - Calculating Speckle Contrast ...')
+    switch lower(sType)
+        case 'spatial'
+            % Iterate over time using fread + fseek                       
+            Kernel = single(fspecial('disk',2)>0);                
+            
+            for t = 1:Nt
+                fseek(fidIn, (t-1)*Ny*Nx*getByteSize('single'),'bof');
+                frame = fread(fidIn, Ny*Nx, ['*' Infos.Datatype]);
+                frame = reshape(frame, Ny, Nx);
+                frame = frame./mData;
+                               
+                frame = stdfilt(frame, Kernel);
+                frame = remOutlier(frame);
+                
+                
+                frameOut = frameOut + frame;
+                
+            end
+            frameOut = frameOut./Nt;            
+            
+        case 'temporal'
+            % Iterate over X chunks using spatialSlabIO                        
+            Kernel = ones(1,1,5,'single');
+            
+            nChunks = calculateMaxChunkSize(Nx*Ny*Nt*getByteSize(Infos.Datatype), 2);
+            chunkX = ceil(Nx / nChunks);
+            
+            for c = 1:nChunks
+                xStart = (c-1)*chunkX + 1;
+                xEnd   = min(xStart + chunkX - 1, Nx);
+                xIdx   = xStart:xEnd;
+                
+                slab = spatialSlabIO('read', fidIn, Ny, Nx, Nt, xIdx, Infos.Datatype);
+                slab = slab./mean(slab,3);
+                slab = stdfilt(slab, Kernel);
+                slab = remOutlier(slab);               
+                frameOut = frameOut + mean(slab,3);                
+            end
+            
+        otherwise
+            error('Invalid sType. Use "spatial" or "temporal".');
+    end
+    if bLogScale
+        frameOut = -log10(frame);
+    end
+    % Close file handle
+    fclose(fidIn);
+    % Save Speckle map to file
+    md = genMetaData(frameOut,{'Y','X'},Infos);
+    md.datFile = outFilename;
+    save2Dat(outFilename,single(frameOut),md);          
+    
+    DatOut = outFilename; % return filename for low RAM
+    
+else
+    % --- Standard execution: full RAM loading (original approach) ---
+    fid = fopen(datFile,'r');
     dat = fread(fid, inf, '*single');
-    dat = reshape(dat, Infos.datSize(1,1), Infos.datSize(1,2),[]);
-    dat = dat./mean(dat,3);
-catch 
-    disp(['Failed to open ' channel ' files'])
-    return
+    fclose(fid);
+    dat = reshape(dat, Ny, Nx, Nt);
+    dat = dat ./ mean(dat,3);
+
+    disp('Mapping computation...');
+    switch lower(sType)
+        case 'spatial'
+            Kernel = single(fspecial('disk',2)>0);
+        case 'temporal'
+            Kernel = ones(1,1,5,'single');
+        otherwise
+            error('Invalid sType. Use "spatial" or "temporal".');
+    end
+
+    DatOut = stdfilt(dat, Kernel);
+    DatOut = remOutlier(DatOut);
+    % Calculate time average of Speckle Contrast values
+    DatOut = mean(DatOut, 3);
+    if bLogScale
+        DatOut = -log10(DatOut);
+    end
+    DatOut =  single(DatOut);
 end
 
-disp('Mapping Computation');
-switch lower(sType)
-    case 'spatial'
-        Kernel = zeros(5,5,1,'single');
-        Kernel(:,:,1) = single(fspecial('disk',2)>0);        
-    case 'temporal'
-        Kernel = ones(1,1,5,'single');        
-end
-
-DatOut = stdfilt(dat,Kernel);
-DatOut = single(DatOut);
-
-%Remove outliers
-DatOut = remOutlier(DatOut);
-% Get the average speckle contrast map:
-DatOut = mean(DatOut./mean(dat,3),3);
-
-if( bLogScale )
-    DatOut = -log10(DatOut);
-end
-
-%Generate output
-% copyfile([folderPath channel '.mat'], [folderPath flow '.mat'])
-% if( bSaveStack )
-%     disp('Saving');
-%     mFileOut = matfile([folderPath 'flow.mat'], 'Writable', true);
-%     mFileOut.FirstDim = Infos.FirstDim;
-%     mFileOut.Freq = Infos.Freq;
-%     mFileOut.Stim = Infos.Stim;
-%     mFileOut.datLength = Infos.datLength;
-%     mFileOut.datSize = Infos.datSize;
-%     mFileOut.datFile = 'flow.dat';
-% 
-%     fid = fopen([folderPath 'flow.dat'],'w'); 
-%     fwrite(fid, single(DatOut), 'single');
-%     fclose(fid);
-% end
-if( bSaveMap )
-%     Map = mean(DatOut,3);
-    obj = Tiff(fullfile(folderPath, 'std_speckle.tiff'), 'w');    
-    setTag(obj, 'ImageWidth', size(DatOut,2));
-    setTag(obj, 'ImageLength', size(DatOut,1));
-    setTag(obj, 'Photometric',Tiff.Photometric.MinIsBlack);
-    setTag(obj, 'SampleFormat',Tiff.SampleFormat.IEEEFP);
-    setTag(obj, 'BitsPerSample', 32);
-    setTag(obj, 'SamplesPerPixel', 1);
-    setTag(obj, 'Compression',Tiff.Compression.None);
-    setTag(obj, 'PlanarConfiguration',Tiff.PlanarConfiguration.Chunky);
+% Save TIFF map if requested
+if bSaveMap
+    obj = Tiff(fullfile(folderPath,'std_speckle.tiff'),'w');
+    setTag(obj,'ImageWidth',size(DatOut,2));
+    setTag(obj,'ImageLength',size(DatOut,1));
+    setTag(obj,'Photometric',Tiff.Photometric.MinIsBlack);
+    setTag(obj,'SampleFormat',Tiff.SampleFormat.IEEEFP);
+    setTag(obj,'BitsPerSample',32);
+    setTag(obj,'SamplesPerPixel',1);
+    setTag(obj,'Compression',Tiff.Compression.None);
+    setTag(obj,'PlanarConfiguration',Tiff.PlanarConfiguration.Chunky);
     write(obj, DatOut);
+    close(obj);
 end
+
 disp('Done');
 end
 
 function data = remOutlier(data)
-% Custom function to remove outliers from data by imputing the value of the
-% 99th percentile to higher values.
-dataSort = data;
-dataSort(isnan(dataSort)) = []; % remove NaNs
-dataSort = sort(dataSort(:)); % sort data in ascending order
-idx99 = .99*length(dataSort);
-if round(idx99) == idx99
-    val99th = dataSort(idx99+1);
-else
-    val99th = (dataSort(floor(idx99+1))+dataSort(ceil(idx99+1)))/2;
-end
+% Replace values above 99th percentile with 99th percentile
+dataSort = data(~isnan(data));
+dataSort = sort(dataSort(:));
+idx99 = floor(0.99*length(dataSort));
+val99th = dataSort(idx99);
 data(data>val99th) = val99th;
 end

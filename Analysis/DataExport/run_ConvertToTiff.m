@@ -13,7 +13,7 @@ function run_ConvertToTiff(data, metaData, SaveFolder)
 %%% Arguments parsing and validation %%%
 p = inputParser;
 % Save folder:
-addRequired(p,'data',@(x) isnumeric(x)); % Validate if the input is numerical matrix:
+addRequired(p,'data',@(x) isnumeric(x) | ischar(x)); % Validate if the input is numerical matrix:
 addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
 addRequired(p, 'SaveFolder', @isfolder);
 % Parse inputs:
@@ -30,8 +30,20 @@ else
     outFileName = ['img_' outFileName];
 end
 
+if ischar(data)
+    [~,filename,ext] = fileparts(data);
+    filename = [filename,ext];
+    b_fromFile = true;
+    
+else
+    b_fromFile = false;
+end
+
 % If the data is separated by Events, create one TIFF file per trial
 if any(strcmpi(metaData.dim_names, 'E'))
+    if b_fromFile
+        mapFile = mapDatFile(fullfile(SaveFolder,filename));
+    end
     % Create list of suffix to identify conditions and trials:
     IDlist = unique(metaData.eventID);
     str = cell(size(metaData.eventID));
@@ -42,10 +54,19 @@ if any(strcmpi(metaData.dim_names, 'E'))
     end
     disp('Creating one TIF file per trial...');
     for i = 1:size(data,1)
-        ConvertToTiff(SaveFolder, squeeze(data(i,:,:,:)), str{i})
+        if b_fromFile
+            tmp = squeeze(mapFile.Data.data(i,:,:,:));
+            ConvertToTiff(SaveFolder, tmp, str{i});
+        else
+            ConvertToTiff(SaveFolder, squeeze(data(i,:,:,:)), str{i})
+        end
     end
 else
-    ConvertToTiff(SaveFolder, data, [outFileName '.tif']);
+    if b_fromFile
+        ConvertToTiff(SaveFolder, filename);
+    else
+        ConvertToTiff(SaveFolder, data, [outFileName '.tif']);
+    end
 end
 
 end

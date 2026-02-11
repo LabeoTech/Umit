@@ -24,7 +24,7 @@ opts_values = struct('Red',[false, true], 'Green',[false, true],'Amber',[false, 
 %%% Arguments parsing and validation %%%
 p = inputParser;
 addRequired(p, 'SaveFolder', @isfolder);
-addRequired(p,'data',@(x) isnumeric(x) & ndims(x) == 3); % Validate if the input is a 3-D numerical matrix:
+addRequired(p,'data',@(x) isnumeric(x) & ndims(x) == 3 | ischar(x)); % Validate if the input is a 3-D numerical matrix:
 addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
 addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
 % Parse inputs:

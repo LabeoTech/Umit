@@ -31,7 +31,9 @@ function slab = readSpatialSlab(fid, Ny, Nx, Nt, xIdx, precision)
             fseek(fid, offset, 'bof');
 
             % Read contiguous Y×X block
-            slab(:,:,t) = fread(fid, [Ny, nX], precision);
+            slice = fread(fid, [Ny, nX], precision);
+            
+            slab(:,:,t) = slice;
         end
 
     else
@@ -49,30 +51,4 @@ function slab = readSpatialSlab(fid, Ny, Nx, Nt, xIdx, precision)
             end
         end
     end
-end
-
-
-% ======================================================================
-% Local funciton
-% ======================================================================
-function bytes = getPrecisionBytes(precision)
-% Returns number of bytes per element for a given MATLAB precision string
-
-    switch lower(precision)
-        case {'double','int64','uint64'}
-            bytes = 8;
-
-        case {'single','int32','uint32'}
-            bytes = 4;
-
-        case {'int16','uint16'}
-            bytes = 2;
-
-        case {'int8','uint8','logical'}
-            bytes = 1;
-
-        otherwise
-            error('Unsupported precision "%s".', precision);
-    end
-
 end

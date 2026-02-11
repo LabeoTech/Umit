@@ -1,127 +1,194 @@
 function [outData, metaData] = split_data_by_event(data, metaData, SaveFolder, varargin)
-% SPLIT_DATA_BY_EVENT reshapes an image time series dataset in a 4D matrix of 
-% dimensions: {E,Y,X,T}%
+% SPLIT_DATA_BY_EVENT Reshapes an image time series dataset into a 4D matrix
+% organized by event.
+%
+%   outData dimensions: {E, Y, X, T}
+%
 % Inputs:
-%   data: 3D numerical matrix with dimensions: {Y,X,T}
-%   metaData: .mat file with meta data associated with "data".
-%   opts (optional) : structure containing extra parameters.
+%   data        - 3D numeric matrix {Y,X,T} or char path to .dat file
+%   metaData    - Metadata structure or matlab.io.MatFile
+%   SaveFolder  - Folder containing events.mat and output location
+%
+% Optional inputs (name-value via struct):
+%   preEventTime_sec  - Seconds before event ('auto' or numeric)
+%   postEventTime_sec - Seconds after event ('auto' or numeric)
+%   PadWith           - Padding value for out-of-bound snippets
+%                       ('mean', 'NaN', or numeric)
+%
+% Outputs:
+%   outData  - 4D matrix {E,Y,X,T} (empty if low-RAM mode)
+%   metaData - Updated metadata for output data
 
-% Outputs: 
-%   outData: 4D numerical matrix with dimensions {E,Y,X,T}.   
-%   metaData: .mat file with meta data associated with "outData".
+% Defaults (used by PipelineManager)
+default_Output = 'data_splitByEvent.dat'; %#ok<NASGU>
+default_opts = struct('preEventTime_sec','auto', 'postEventTime_sec','auto', 'PadWith','mean');
+opts_values = struct( 'preEventTime_sec',{{'auto',Inf}}, 'postEventTime_sec',{{'auto',Inf}}, 'PadWith',{{'mean','NaN',Inf}});%#ok For PipelineManager
 
-% Defaults:
-default_Output = 'data_splitByEvent.dat';  %#ok. This line is here just for Pipeline management.
-default_opts = struct('preEventTime_sec','auto', 'postEventTime_sec','auto', 'PadWith', 'mean');
-opts_values = struct('preEventTime_sec', {{'auto',Inf}}, 'postEventTime_sec', {{'auto',Inf}}, 'PadWith',{{'mean','NaN',Inf}});%#ok. This is here only as a reference for PIPELINEMANAGER.m. 
-
-%%% Arguments parsing and validation %%%
+%% Input parsing
 p = inputParser;
-addRequired(p,'data',@(x) isnumeric(x) & ndims(x) == 3); % Validate if the input is a 3-D numerical matrix:
-addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
-addRequired(p, 'SaveFolder', @isfolder);
-addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x) && ...
-    ismember(x.PadWith, {'mean', 'NaN'}) || isnumeric(x)); % Padding options for cases where movie snippets dont have the same length.
-% Parse inputs:
-parse(p,data, metaData, SaveFolder, varargin{:});
-%Initialize Variables:
-data = p.Results.data; 
-metaData = p.Results.metaData;
-folder = p.Results.SaveFolder;
-opts = p.Results.opts;
-clear p
-%%%%
+addRequired(p,'data', @(x) (isnumeric(x) && ndims(x)==3) || ischar(x));
+addRequired(p,'metaData', @(x) isstruct(x) || isa(x,'matlab.io.MatFile'));
+addRequired(p,'SaveFolder', @isfolder);
+addOptional(p,'opts', default_opts, @(x) (isstruct(x) && ~isempty(x) && ...
+     isfield(x,'PadWith') && ismember(x.PadWith,{'mean','NaN'})) || isnumeric(x));
+parse(p, data, metaData, SaveFolder, varargin{:});
 
-% Load "events.mat" file:
-evFile = fullfile(folder, 'events.mat');
+data     = p.Results.data;
+metaData = p.Results.metaData;
+folder   = p.Results.SaveFolder;
+opts     = p.Results.opts;
+
+clear p
+
+%% Load events file
+evFile = fullfile(folder,'events.mat');
 if ~isfile(evFile)
-    errID = 'umIToolbox:split_data_by_event:FileNotFound';
-    errMsg = ['Event file ("events.mat") not found in ' folder]; 
-    errMsg = strrep(errMsg, filesep, [filesep filesep]);
-    error(errID, errMsg);
-else
-    evDat = load(fullfile(folder, 'events.mat'));
+    error('umIToolbox:split_data_by_event:FileNotFound', ...
+        'Event file ("events.mat") not found in %s', folder);
 end
-% Get pre/post event times from metaData or try to find the best timing
-% based on the timestamps of events:
-if strcmp(opts.preEventTime_sec, 'auto') || strcmp(opts.postEventTime_sec, 'auto')
-    if isfield(metaData, 'preEventTime_sec')
-        % Grab info from file's metaData:        
-        fprintf('Using info from data''s metadata:\n\tPre event time: %d seconds.\n\tPost event time: %d seconds.\n',...
-            [metaData.preEventTime_sec, metaData.postEventTime_sec]);
-        opts.preEventTime_sec = metaData.preEventTime_sec;
+evDat = load(evFile);
+
+%% Determine pre/post event times
+if strcmp(opts.preEventTime_sec,'auto') || strcmp(opts.postEventTime_sec,'auto')
+    if isfield(metaData,'preEventTime_sec')
+        opts.preEventTime_sec  = metaData.preEventTime_sec;
         opts.postEventTime_sec = metaData.postEventTime_sec;
-    else        
-       % Calculate pre/post times from "events" file:
-       disp('Calculating from events...')       
-       tmTrial= round(mean(diff(evDat.timestamps(evDat.state == 1)), 'omitnan'));
-       % Use 20% of the time as pre and 80 % as post:
-       opts.preEventTime_sec = round(.2*tmTrial,2);
-       opts.postEventTime_sec = tmTrial - opts.preEventTime_sec;
-       fprintf('Pre and post-event times calculated from "events" file:\n\tPre event time: %0.2f seconds.\n\tPost event time: %0.2f seconds.\n',...
-            [opts.preEventTime_sec, opts.postEventTime_sec]);
+    else
+        tmTrial = round(mean(diff(evDat.timestamps(evDat.state==1)),'omitnan'));
+        opts.preEventTime_sec  = round(0.2*tmTrial,2);
+        opts.postEventTime_sec = tmTrial - opts.preEventTime_sec;
     end
-% else
-%     % Given that the variables of pre and post event times accept the
-%     % string "auto" as input, numbers is also interpreted as strings and 
-%     % need to be transformed back to numerical data types:
-%     opts.preEventTime_sec = str2double(opts.preEventTime_sec);
-%     opts.postEventTime_sec = str2double(opts.postEventTime_sec);
 end
-    
-%%%%%%%%%%%
-szdat = size(data);
-sr = metaData.Freq;
-preFr = round(sr*opts.preEventTime_sec);
-postFr = round(sr*opts.postEventTime_sec);
+
+%% Derived parameters
+szdat     = [metaData.datSize metaData.datLength]; % [Y X T]
+sr        = metaData.Freq;
+
+preFr     = round(sr * opts.preEventTime_sec);
+postFr    = round(sr * opts.postEventTime_sec);
 centralFr = preFr + 1;
+
 len_trial = preFr + postFr;
-n_trial = sum(evDat.state == 1);
-timestamps = evDat.timestamps(evDat.state == 1);
-new_dims = {'E', 'Y', 'X','T'};
-[~, locB]= ismember(new_dims([2,3]), metaData.dim_names);
-% Create empty matrix:
-outData = nan([n_trial, szdat(locB), len_trial], 'single');
+timestamps = evDat.timestamps(evDat.state==1);
+n_trial    = numel(timestamps);
+
+new_dims = {'E','Y','X','T'};
+
+%% Low-RAM vs in-memory mode
+if ischar(data)
+    b_RAMSafeMode = true;
+
+    newMD              = metaData;
+    newMD.dim_names    = new_dims;
+    newMD.datSize      = [n_trial szdat(1)];
+    newMD.datLength    = [szdat(2) len_trial];
+    szYXTE = [newMD.datSize, newMD.datLength];
+    szYXTE = szYXTE([2 3 4 1]);
+    outFile = fullfile(SaveFolder,'DATABYEVENTS.dat');
+    preallocateDatFile(outFile, newMD);
+
+    fidOut = fopen(outFile,'r+');
+    cOut = onCleanup(@() safeFclose(fidOut));
+
+    [~,fname,ext] = fileparts(data);
+    fidIn = fopen(fullfile(SaveFolder,[fname ext]),'r');
+    cIn = onCleanup(@() safeFclose(fidIn));
+else
+    b_RAMSafeMode = false;
+    outData = nan([n_trial szdat(1) szdat(2) len_trial],'single');
+end
+
 disp('Splitting data by events...')
-% Fill empty matrix with data segments
-fix_snippet = false;
+
+%% Constants for I/O
+bytesPerElem = getByteSize('single');
+frameBytes   = szdat(1) * szdat(2) * bytesPerElem;
+
+%% Main loop
 for i = 1:n_trial
-    trialFr = round(sr*timestamps(i));
-    start = trialFr - preFr;
-    stop = trialFr + postFr - 1;
-    if start < 1
-        start = 1;
-        fix_snippet = true;
-    elseif stop > szdat(3)
-        stop = szdat(3);
+    fix_snippet = false;
+
+    trialFr = round(sr * timestamps(i));
+    startFrIn = trialFr - preFr;
+    stopFrIn  = trialFr + postFr - 1;
+
+    if startFrIn < 1
+        startFrIn = 1;
         fix_snippet = true;
     end
-    snippet = data(:,:,start:stop);
-    startFr = centralFr - (trialFr - start);
-    stopFr = centralFr + (stop - trialFr);
+    if stopFrIn > szdat(3)
+        stopFrIn = szdat(3);
+        fix_snippet = true;
+    end
+
+    % Read snippet
+    if b_RAMSafeMode
+        fseek(fidIn, (startFrIn-1)*frameBytes, 'bof');
+        nFrames = stopFrIn - startFrIn + 1;
+        snippet = fread(fidIn, szdat(1)*szdat(2)*nFrames, '*single');
+        snippet = reshape(snippet, szdat(1), szdat(2), []);
+    else
+        snippet = data(:,:,startFrIn:stopFrIn);
+    end
+
+    % Placement indices
+    startFrOut = centralFr - (trialFr - startFrIn);
+    stopFrOut  = startFrOut + size(snippet,3) - 1;
+
+    trialData = nan(szdat(1), szdat(2), len_trial, 'single');
+
     if fix_snippet
-        warning(['Snippet size is out of bounds from Data.'...
-            ' Missing data points will be replaced with ' opts.PadWith]);
         switch opts.PadWith
             case 'mean'
-                avg = mean(snippet, 3, 'omitnan');
-                avg = repmat(avg,1,1,size(outData,4));
-                outData(i,:,:,:) = avg;
+                avg = mean(snippet,3,'omitnan');
+                trialData = repmat(avg,1,1,len_trial);
             case 'NaN'
-                % empty
+                % already NaN
             otherwise
-                outData(i,:,:,:) = opts.PadWith;
+                trialData(:) = opts.PadWith;
         end
     end
-    outData(i,:,:,startFr:stopFr) = snippet;
+    
+    trialData(:,:,startFrOut:stopFrOut) = snippet;
+    
+    if b_RAMSafeMode
+        % Write trial to output file (permuted to YXTE for faster writing)
+        fprintf('Writing trial #%i to file...\n',i)
+        writeTrial_YXTE(fidOut,i,trialData,szYXTE,'single');        
+    else
+        outData(i,:,:,:) = trialData;
+    end
 end
-disp('Done!');
-% Add variables to metaData.
+
+
+
+
+disp('Done!')
+
+%% Update metadata
+
 extraParams = metaData;
-extraParams.preEventTime_sec = opts.preEventTime_sec;
-extraParams.preEventTime_sec = opts.preEventTime_sec;
+extraParams.preEventTime_sec  = opts.preEventTime_sec;
 extraParams.postEventTime_sec = opts.postEventTime_sec;
-extraParams.eventID = evDat.eventID(evDat.state == 1);
-extraParams.eventNameList = evDat.eventNameList;
-metaData = genMetaData(outData, new_dims, extraParams);
+extraParams.eventID           = evDat.eventID(evDat.state==1);
+extraParams.eventNameList     = evDat.eventNameList;
+
+if ~b_RAMSafeMode
+    metaData = genMetaData(outData, new_dims, extraParams);
+else
+    metaData = newMD;
+    metaData.preEventTime_sec  = opts.preEventTime_sec;
+    metaData.postEventTime_sec = opts.postEventTime_sec;
+    metaData.eventID           = evDat.eventID(evDat.state==1);
+    metaData.eventNameList     = evDat.eventNameList;
+    
+    % Close files
+    fclose(fidIn);
+    fclose(fidOut);
+    % Permute back the output file
+    
+    permuteDat_YXTE_to_EYXT_inplace(outFile,szYXTE,'single');
+    outData = outFile;
+end
+
 end

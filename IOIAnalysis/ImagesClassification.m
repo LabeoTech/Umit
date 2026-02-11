@@ -144,8 +144,9 @@ hWima = 5;
 imgFilesList = dir([DataFolder 'img*.bin']); 
 % Check if all files exist:
 imgFileNames = sort({imgFilesList.name})';
-imgFileIndx = str2double(erase(imgFileNames,"img_" | ".bin"));
-if ~strcmpi(imgFileNames{1}, 'img_00000.bin') | any(diff(imgFileIndx)~=1)
+imgFileIndx = erase(imgFileNames,'img_');imgFileIndx = erase(imgFileIndx,'.bin');
+imgFileIndx = str2double(imgFileIndx);
+if ~strcmpi(imgFileNames{1}, 'img_00000.bin') || any(diff(imgFileIndx)~=1)
     error('Image binary files missing! Classification aborted.')
 end
 

@@ -15,7 +15,7 @@ classdef DataViewer_pipelineMngr < handle
             'funcStr', '','b_save2File', logical.empty, 'saveFileName', '',...
             'inputFileName','', 'seq',[],'seqIndx',[]); 
     end
-    properties (SetAccess = private)       
+    properties (SetAccess = public)       
         data % numerical array containing imaging data
         metaData % structure or matfile containing meta data associated with "data".
         SaveFolder % folder where data created will be stored (Save Directory).
@@ -24,10 +24,11 @@ classdef DataViewer_pipelineMngr < handle
         dataHistory % structure containing the History of analysis functions applied to the current data.
         current_seq = 1 % index of current sequence in pipeline .
         current_seqIndx = 0 % index of step in current sequence in pipeline.
+        RAMSafeMode = false % If TRUE, the manager will pass the file name instead of the data to the analysis functions.
     end
     
     methods
-        function obj = DataViewer_pipelineMngr(data, metaData, SaveFolder, RawFolder)
+        function obj = DataViewer_pipelineMngr(dataFile, SaveFolder, RawFolder, lowRAMmode)
             if isdeployed
                 [obj.fcnDir,~,~] = fileparts(which('funcTemplate.m'));
                 a = load(fullfile(obj.fcnDir,'deployFcnList.mat'));
@@ -40,10 +41,41 @@ classdef DataViewer_pipelineMngr < handle
                 obj.fcnDir = fullfile(rootDir, 'Analysis');
                 obj.createFcnList;
             end
-            obj.data = data;
-            obj.metaData = metaData;
+            
+            % Check data size in bytes for RAM space availability
+            % assessment
+            if ~isempty(dataFile)
+                [~,filename,ext] = fileparts(dataFile);
+                obj.metaData = load(fullfile(obj.SaveFolder,[filename, '.mat']));
+                %----------------------------------------------------------
+                % TESTING
+                %----------------------------------------------------------
+                if exist('lowRAMmode','var')
+                    obj.RAMSafeMode = lowRAMmode;
+                else
+                    dataBytes = prod([obj.metaData.datSize, obj.metaData.datLength])*4;
+                    obj.setRAMmanagementMode(dataBytes);
+                end
+                
+                %----------------------------------------------------------
+                % TESTING: REENABLE AND DELETE ABOVE SECTION AFTER TESTING
+%                 dataBytes = prod([obj.metaData.datSize, obj.metaData.datLength])*4;                
+%                 obj.setRAMmanagementMode(dataBytes);
+                %----------------------------------------------------------
+                if obj.RAMSafeMode
+                    % Point to the data file instead of storing the
+                    % structure                    
+                    obj.data = fullfile(obj.SaveFolder,[filename, ext]);
+                else
+                    disp('Loading input data...')
+                    % Load the data from file                    
+                    obj.data = loadDatFile(fullfile(obj.SaveFolder,[filename, ext]));                   
+                end
+            end           
+            %                         
             obj.SaveFolder = SaveFolder;
             obj.RawFolder = RawFolder;
+            
         end
         %%%%% SETTERS %%%%
         function set.metaData(obj, metaData)
@@ -374,6 +406,8 @@ classdef DataViewer_pipelineMngr < handle
             h = waitbar(0, 'Initiating pipeline...');
             h.Children.Title.Interpreter = 'none';
             outMsg = '';
+            nStepsExecuted = 0;
+                        
             for i = 1:length(obj.pipe)
                 waitbar(i/length(obj.pipe), h,...
                     ['Processing ' obj.pipe(i).name '... Step' num2str(i)...
@@ -390,24 +424,88 @@ classdef DataViewer_pipelineMngr < handle
                     opts = obj.pipe(i).opts;%#ok the "opts" structure is used in the EVAL function.
                     % Run the function:
                     eval(obj.pipe(i).funcStr);
+                    if any(strcmp('outData',obj.pipe(i).argsOut)) && ischar(obj.data)
+                        % Update meta data of saved file with the one from
+                        % the output if appliccable
+                        [~,filename,~] = fileparts(obj.data);
+                        if any(strcmpi('metadata',obj.pipe(i).argsOut))
+                            md = obj.metaData;                            
+                            save(fullfile(obj.SaveFolder,[filename '.mat']), '-struct','md');
+                        else
+                            % Update the current metadata instead
+                            obj.metaData = load(fullfile(obj.SaveFolder,[filename,'.mat']));
+                        end
+                        
+                        [~,filename,ext] = fileparts(obj.data);
+                        obj.data = [filename,ext];                        
+                        obj.data = obj.safeMoveOrCopy(obj.data,'PipelineTMPfile.dat');
+                    end
+                                                                                
                     % Update the metaData with the current function info:
                     obj.updateDataHistory(obj.pipe(i));
                     % If user wants, save the output to a file:
                     if obj.pipe(i).b_save2File
-                        save2Dat(fullfile(obj.SaveFolder, obj.pipe(i).saveFileName), obj.data, obj.metaData);
+                        if ~ischar(obj.data) && any(strcmp('outData',obj.pipe(i).argsOut))
+                            % Standard mode
+                            save2Dat(fullfile(obj.SaveFolder, obj.pipe(i).saveFileName), obj.data, obj.metaData);
+                        elseif ischar(obj.data) && any(strcmp('outData',obj.pipe(i).argsOut))
+                            % RAM Safe mode                            
+                            if i == length(obj.pipe)
+                                % Rename temporary pipeline file to save file name:
+                                obj.safeMoveOrCopy('PipelineTMPfile.dat',obj.pipe(i).saveFileName);                                
+                            else
+                                % Make a save as copy
+                                disp('Saving intermediate step as copy of pipeline temporary file. Please wait...')
+                                copyfile(fullfile(obj.SaveFolder,'PipelineTMPfile.dat'),...
+                                    fullfile(obj.SaveFolder,obj.pipe(i).saveFileName));
+                                copyfile(fullfile(obj.SaveFolder,'PipelineTMPfile.mat'),...
+                                    fullfile(obj.SaveFolder,strrep(obj.pipe(i).saveFileName,'.dat','.mat')));
+                            end
+                        end
                     end
                     outMsg = 'Pipeline Finished.';
                 catch ME
                     outMsg = getReport(ME,'extended', 'hyperlinks', 'off');
+                    % Remove temporary file
+                    if isfile(fullfile(obj.SaveFolder,'PipelineTMPfile.dat'))
+                        % Save file as Data Saved Before Error
+                        filename = ['DataSavedBeforeError_' datestr(now,'yyyymmdd_HHMMSS') '.dat'];
+                        obj.safeMoveOrCopy('PipelineTMPfile.dat',filename)                        
+                    end
                     break
                 end
+                nStepsExecuted = nStepsExecuted + 1;
+            end
+            if isempty(outMsg)
+                outMsg = 'Pipeline Finished.';
             end
             close(h);
+            
+            if obj.RAMSafeMode
+                if any(strcmp('outData',obj.pipe(end).argsOut)) && nStepsExecuted && ~obj.pipe(end).b_save2File
+                    % Safe last step to a file with a time tag
+                    [~,filename,~] = fileparts(obj.pipe(end).outFileName);
+                    outFilename = [filename  '_' datestr(now,'yyyymmdd_hhMMSS') '.dat'];
+                    % Rename temporary files to output file
+                    if isfile(fullfile(obj.SaveFolder,obj.data))
+                        obj.data = obj.safeMoveOrCopy(obj.data,outFilename);                                             
+                    end
+                else
+                    % Cleanup temporary files
+                    if isfile(fullfile(obj.SaveFolder,'PipelineTMPfile.dat'))
+                        delete(fullfile(obj.SaveFolder,'PipelineTMPfile.dat'));
+                        delete(fullfile(obj.SaveFolder,'PipelineTMPfile.mat'));
+                    end                    
+                end
+            end
+            
+            
             if nargout == 0
                 disp(outMsg)
             else
                 varargout{1} = outMsg;
             end
+            
         end
         
         function savePipe(obj)
@@ -654,6 +752,12 @@ classdef DataViewer_pipelineMngr < handle
                 else
                     obj.metaData.dataHistory = curr_dtHist;
                 end
+                % Overwrite meta data in file from RAMSafeMode
+                if obj.RAMSafeMode
+                    md = obj.metaData;
+                    save(fullfile(obj.SaveFolder,strrep(obj.data,'.dat','.mat')),...
+                        '-struct','md');
+                end
             end
         end
         
@@ -690,6 +794,89 @@ classdef DataViewer_pipelineMngr < handle
                 b_skip = true;
             end
         end
+        
+        function setRAMmanagementMode(obj, dataBytes)
+            % Checks if there is enough space in RAM for pipeline
+            % execution. If not, the pipeline will run on RAM Safe Mode. 
+            % RAM Safe Mode consists on passing "data" as a string pointing
+            % to the file instead of passing the array to the analysis
+            % function. 
+            %
+            % Note: The analysis functions should support both standard and
+            %       Safe mode execution to work.
+            
+            % Evaluate available RAM:            
+            try
+                switch computer
+                    case 'PCWIN64'
+                        [~, sys] = memory;
+                        totalRAM     = sys.PhysicalMemory.Total;
+                        availableRAM = sys.PhysicalMemory.Available;
+                        
+                    case 'GLNXA64'
+                        [~, t] = system("free -b | grep Mem | awk '{print $2}'");
+                        [~, a] = system("free -b | grep Mem | awk '{print $7}'");
+                        totalRAM     = str2double(t);
+                        availableRAM = str2double(a);
+                        
+                    case 'MACI64'
+                        [~, t] = system('sysctl -n hw.memsize');
+                        totalRAM = str2double(t);
+                        
+                        [~, p] = system("vm_stat | grep 'Pages free' | awk '{print $3}'");
+                        pageSize = str2double(system('getconf PAGESIZE'));
+                        availableRAM = str2double(p) * pageSize;
+                        
+                    otherwise
+                        error('Unsupported platform');
+                end
+            catch ME
+                warning('calculateMaxChunkSize:NoOSAccess', ...
+                    'RAM query failed, falling back to 1 chunk.\n%s', ME.message);
+                obj.RAMSafeMode = false;
+                return
+                
+            end
+            
+            % Set RAM safe mode if there is not enough space in RAM to:
+            % accomodate 2x the size of data + an overhead of 15 percent of
+            % the total RAM.  
+            
+            obj.RAMSafeMode = (2*dataBytes + 0.15*totalRAM) > availableRAM;
+                        
+        end
+        
+        
+        function targetFilename = safeMoveOrCopy(obj, sourceFilename, targetFilename)
+            
+            sourceMat =strrep(sourceFilename,'.dat','.mat');
+            targetMat =strrep(targetFilename,'.dat','.mat');
+            
+            try
+                % Rename output file from function to temporary
+                % Pipeline file
+                
+                movefile(fullfile(obj.SaveFolder, sourceFilename),...
+                    fullfile(obj.SaveFolder,targetFilename))
+                movefile(fullfile(obj.SaveFolder,sourceMat),...
+                    fullfile(obj.SaveFolder,targetMat));                                               
+                return
+            catch
+                % move failed ? file likely locked
+            end
+            
+            % Fallback: copy instead
+            warning([ ...
+                'The file %s appears to be in use and cannot be renamed.\n' ...
+                'A copy was created instead.\n' ...
+                'Please delete the original file manually when possible.' ],sourceFilename);
+            
+            copyfile(fullfile(obj.SaveFolder, sourceFilename),...
+                fullfile(obj.SaveFolder,targetFilename))
+            copyfile(fullfile(obj.SaveFolder,sourceMat),...
+                fullfile(obj.SaveFolder,targetMat));
+        end
+               
     end
 end
 

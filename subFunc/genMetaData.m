@@ -47,6 +47,9 @@ metaData.datFile = '';
 ds = double(size(p.Results.data));
 metaData.datSize = ds([1 2]);
 metaData.datLength = ds(3:end); % Accounts for 3+ dimensions.
+if isempty(metaData.datLength)
+    metaData.datLength = 1;
+end
 metaData.Datatype = class(p.Results.data);
 
 % Merge extrParams struct with metaData struct

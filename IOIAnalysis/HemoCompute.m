@@ -1,4 +1,4 @@
-function [HbO, HbR] = HemoCompute(DataFolder, SaveFolder, FilterSet, Illumination, b_normalize)
+ function [HbO, HbR] = HemoCompute(DataFolder, SaveFolder, FilterSet, Illumination, b_normalize, b_RAMsafeMode)
 % HEMOCOMPUTE approximates concentration variation of oxygenated (HbO) and
 % de-oxygenated (HbR) hemoglobin from two or three illumination wavelengths 
 % of intrinsic signals. 
@@ -24,7 +24,7 @@ function [HbO, HbR] = HemoCompute(DataFolder, SaveFolder, FilterSet, Illuminatio
 %   channels containing the approximate variations of the deoxygenated
 %   hemoglobin.
 
-%Inputs Validation
+% Inputs Validation
 if( ~strcmp(DataFolder(end), filesep) )
     DataFolder = strcat(DataFolder, filesep);
 end
@@ -47,10 +47,14 @@ if( sum(contains({'red', 'yellow', 'green'}, lower(Illumination))) < 2 )
     disp('At least two different illumination wavelengths are needed for Hb computation');
     return;
 end
+
+if ~exist('b_RAMsafeMode','var')
+    b_RAMsafeMode = false;
+end
 % Tags:
 fTags = {'fidR', 'fidG', 'fidY'};
 cTags = {'iRed', 'iGreen', 'iYellow'};
-colors = {'Red', 'Green', 'Yellow'};
+% colors = {'Red', 'Green', 'Yellow'};
 %Files Opening:
 NbFrames = inf;
 fidR = 0;
@@ -60,18 +64,21 @@ for indC = 1:size(Illumination,2)
     switch lower(Illumination{indC})
         case 'red'
             fidR = fopen([DataFolder 'red.dat']);
+            c_r = onCleanup(@() safeFclose(fidR));
             iRed = matfile([DataFolder 'red.mat']);
             NbFrames = min([NbFrames, iRed.datLength(1,end)]);
             NbPix = iRed.datSize;
             Freq = iRed.Freq;
         case 'green'
             fidG = fopen([DataFolder 'green.dat']);
+            c_g = onCleanup(@() safeFclose(fidG));
             iGreen = matfile([DataFolder 'green.mat']);
             NbFrames = min([NbFrames, iGreen.datLength(1,end)]);
             NbPix = iGreen.datSize;
             Freq = iGreen.Freq;
         case 'yellow'
             fidY = fopen([DataFolder 'yellow.dat']);
+            c_y = onCleanup(@() safeFclose(fidY));
             iYellow = matfile([DataFolder 'yellow.mat']);
             NbFrames = min([NbFrames, iYellow.datLength(1,end)]);
             NbPix = iYellow.datSize;
@@ -98,7 +105,19 @@ for i = 1:3
     if eval([fTags{i} '== 0'])
         continue
     end
-    eval(['Mdat = mean(fread(' fTags{i} ', Inf, ''*single''),''all'', ''omitnan'');']);
+    % Subset 10 frames to assess if the data was normalized or not.
+    frIdx = unique(floor(linspace(1,datsz(3),10)));
+    tmp = zeros(datsz(1),datsz(2),'single');          
+    for jj = 1:length(frIdx)
+        
+        eval(['fseek(' fTags{i} ',(frIdx(jj) - 1)*prod(datsz([1 2]))*4,''bof'');']);
+        eval(['frame = fread(' fTags{i} ',datsz([1 2]),''*single'');']);        
+        tmp = tmp + frame';
+    end
+    tmp = tmp./length(frIdx);
+    Mdat = mean(tmp,'all','omitnan');
+    
+    clear mapFile
     if Mdat >.75 && Mdat <1.25
         % If the data is centered at one.
         indxNorm(i) = 1;
@@ -144,42 +163,75 @@ Infos = load([DataFolder 'AcqInfos.mat']);
 Filters.Camera = Infos.AcqInfoStream.Camera_Model;
 clear Infos;
 
-%Computation itself:
+% Computation itself:
 A = ioi_epsilon_pathlength('Hillman', 100, 60, 40, Filters);
 
 f = fdesign.lowpass('N,F3dB', 4, 1, Freq); %Low Pass
 lpass_high = design(f,'butter');
 f = fdesign.lowpass('N,F3dB', 4, 1/120, Freq); %Low Pass
 lpass_low = design(f,'butter');
-% NbPts = floor(NbFrames/100);
-if numel(datsz) == 4  
-    % For 4D data with dimensions {'E','Y','X','T}:
-    nIter = double(datsz(1));
-    offset = 4;
-    Size = [prod(datsz(2:3)), datsz(4)];
-    Precision = '*single';
-    Skip = (datsz(1)-1)*4;
+
+% Calculate the number of chunks to use
+if numel(datsz) == 4    
+    % For 4D data with dimensions {'E','Y','X','T}, chunk over the "Events"
+    % dimension
+    hasEvents = true;
+    szYXTE = datsz;
+    szYXTE = szYXTE([2 3 4 1]);    
 else
     % For 3D data with dimensions {'Y','X','T}:
-    MemFact = 16;
-    Precision = [int2str(NbPix(1)*MemFact) '*single'];    
-    Skip = (NbPix(1)*NbPix(2) - NbPix(1)*MemFact)*4;
-    nIter = NbPix(2)/MemFact;
-    offset = NbPix(1)*MemFact*4;
-    Size = [NbPix(1)*MemFact, NbFrames];
+    hasEvents = false;
+    % Calculate number of chunks over X.
+    nChunks = calculateMaxChunkSize(prod(datsz)*4,12,.1);          
+    chunkX = ceil(NbPix(2) / nChunks);  
 end
-HbO = zeros(datsz, 'single');
-HbR = zeros(datsz, 'single');
+  
+if ~b_RAMsafeMode
+    HbO = zeros(datsz, 'single');
+    HbR = zeros(datsz, 'single');
+else
+    metaData = load(iFile.Properties.Source);
+    
+    metaData.datFile = 'HbO.dat';
+    preallocateDatFile(fullfile(SaveFolder,'HbO.dat'),metaData);
+    fid_hbo = fopen(fullfile(SaveFolder,'HbO.dat'),'r+');
+    c_hbo = onCleanup(@() safeFclose(fid_hbo));
+    
+    metaData.datFile = 'HbR.dat';    
+    preallocateDatFile(fullfile(SaveFolder,'HbR.dat'),metaData);
+    fid_hbr = fopen(fullfile(SaveFolder,'HbR.dat'),'r+');
+    c_hbr = onCleanup(@() safeFclose(fid_hbr));
+end   
+    
 
 % Computation loop
 h = waitbar(0,'Computing');
-for indP = 1:nIter
+
+for indP = 1:nChunks
+    
+    % Set indices for chunking
+    if ~hasEvents            
+        xStart  = (indP-1)*chunkX + 1;
+        xEnd    = min(xStart + chunkX -1, NbPix(2));
+        xIdx    = xStart:xEnd;
+    end
+    
+    if b_RAMsafeMode
+        h.Name = ['HemoCompute (chunk ' num2str(indP) '/' num2str(nChunks) ')'];drawnow()
+    end
     if( fidR )
-%         fseek(fidR, (indP-1)*NbPix(1)*MemFact*4,'bof');
-%         Red = fread(fidR,[NbPix(1)*MemFact, NbFrames],Precision,(NbPix(1)*NbPix(2) - NbPix(1)*MemFact)*4);
-        fseek(fidR,(indP-1)*offset,'bof');
-        Red = fread(fidR,Size,Precision,Skip);        
+        waitbar(indP/nChunks,h,'Red channel [Reading file...]')
+        % Read file
+        if hasEvents
+            % Read one full trial          
+            Red = readTrial(fidR, indP, datsz, 'single');           
+        else
+            Red = spatialSlabIO('read',fidR,NbPix(1),NbPix(2),NbFrames,xIdx,'single');
+        end
+        Red = reshape(Red,[],NbFrames);   
+        
         if b_normalize 
+            waitbar(indP/nChunks,h,'Red channel [Normalizing data...]')
             Red = single(filtfilt(lpass_high.sosMatrix, lpass_high.ScaleValues, double(Red)'))';
             tmp = single(filtfilt(lpass_low.sosMatrix, lpass_low.ScaleValues, double(Red)'))';
             tmp(tmp<min(Red(:))) = min(Red(:));
@@ -191,11 +243,18 @@ for indP = 1:nIter
         Red = -log(Red);
     end
     if( fidG )
-%         fseek(fidG, (indP-1)*NbPix(1)*MemFact*4,'bof');
-%         Green = fread(fidG,[NbPix(1)*MemFact, NbFrames],Precision,(NbPix(1)*NbPix(2) - NbPix(1)*MemFact)*4);
-        fseek(fidG,(indP-1)*offset,'bof');
-        Green = fread(fidG,Size,Precision,Skip);
+        waitbar(indP/nChunks,h,'Green channel [Reading file...]')
+        % Read file
+        if hasEvents
+            % Read one full trial            
+            Green = readTrial(fidG, indP, datsz, 'single'); 
+        else
+            Green = spatialSlabIO('read',fidG,NbPix(1),NbPix(2), NbFrames,xIdx,'single');
+        end
+        Green = reshape(Green,[],NbFrames);
+
         if b_normalize
+            waitbar(indP/nChunks,h,'Green channel [Normalizing data...]')
             Green = single(filtfilt(lpass_high.sosMatrix, lpass_high.ScaleValues, double(Green)'))';
             tmp = single(filtfilt(lpass_low.sosMatrix, lpass_low.ScaleValues, double(Green)'))';
             tmp(tmp<min(Green(:))) = min(Green(:));
@@ -206,12 +265,19 @@ for indP = 1:nIter
         end
         Green = -log(Green);
     end
-    if( fidY )
-%         fseek(fidY, (indP-1)*NbPix(1)*MemFact*4,'bof');
-%         Yel = fread(fidY,[NbPix(1)*MemFact, NbFrames],Precision,(NbPix(1)*NbPix(2) - NbPix(1)*MemFact)*4);
-        fseek(fidY,(indP-1)*offset,'bof');
-        Yel = fread(fidY,Size,Precision,Skip);
+    if( fidY )        
+        waitbar(indP/nChunks,h,'Yellow channel [Reading file...]')
+        % Read file
+        if hasEvents
+            % Read one full trial            
+            Yel = readTrial(fidY, indP, datsz, 'single'); 
+        else
+            Yel = spatialSlabIO('read',fidY,NbPix(1),NbPix(2), NbFrames,xIdx,'single');
+        end
+        
+        Yel = reshape(Yel,[],NbFrames);
         if b_normalize
+            waitbar(indP/nChunks,h,'Yellow channel [Normalizing data...]')
             Yel = single(filtfilt(lpass_high.sosMatrix, lpass_high.ScaleValues, double(Yel)'))';
             tmp = single(filtfilt(lpass_low.sosMatrix, lpass_low.ScaleValues, double(Yel)'))';
             tmp(tmp<min(Yel(:))) = min(Yel(:));
@@ -223,6 +289,9 @@ for indP = 1:nIter
         Yel = -log(Yel);
     end
     clear tmp;   
+    
+    waitbar(indP/nChunks,h,'Computing [HbO] and [HbR]...')
+    
     if(  fidR*fidG*fidY > 0)
         Ainv = pinv(A);
         Hbs = Ainv*([Red(:), Green(:), Yel(:)]') .* 1e6;
@@ -240,25 +309,54 @@ for indP = 1:nIter
         Hbs = Ainv*([Red(:), Yel(:)]') .* 1e6;
         clear Red Yel;
     end
-    
-    
+        
     if numel(datsz) == 4
         Hbs = reshape(Hbs, [2 1, datsz(2:end)]);
         Hbs = real(Hbs);
-        HbO(indP,:,:,:) = squeeze(Hbs(1,:,:,:,:));
-        HbR(indP,:,:,:) = squeeze(Hbs(2,:,:,:,:));
+        if ~b_RAMsafeMode
+            HbO(indP,:,:,:) = squeeze(Hbs(1,:,:,:,:));
+            HbR(indP,:,:,:) = squeeze(Hbs(2,:,:,:,:));
+        end            
+                  
     else
-        Hbs = reshape(Hbs, 2, NbPix(1), MemFact, []);
+        Hbs = reshape(Hbs, 2, NbPix(1), numel(xIdx), []);
         Hbs = real(Hbs);
-        HbO(:,(indP-1)*MemFact + (1:MemFact),:) = squeeze(Hbs(1,:,:,:));
-        HbR(:,(indP-1)*MemFact + (1:MemFact),:) = squeeze(Hbs(2,:,:,:));
+        if ~b_RAMsafeMode
+            HbO(:,xIdx,:) = squeeze(Hbs(1,:,:,:));
+            HbR(:,xIdx,:) = squeeze(Hbs(2,:,:,:));
+        end
     end
     
-    waitbar(indP/nIter,h);
+    if b_RAMsafeMode
+        waitbar(indP/nChunks,h,'Writing to files...')
+        if hasEvents
+            writeTrial_YXTE(fid_hbo,indP,squeeze(Hbs(1,:,:,:,:)),szYXTE,'single'); % HbO
+            writeTrial_YXTE(fid_hbr,indP,squeeze(Hbs(2,:,:,:,:)),szYXTE,'single'); % HbR                 
+        else
+            spatialSlabIO('write',fid_hbo,NbPix(1),NbPix(2), NbFrames,xIdx,'single',squeeze(Hbs(1,:,:,:))); % HbO
+            spatialSlabIO('write',fid_hbr,NbPix(1),NbPix(2), NbFrames,xIdx,'single',squeeze(Hbs(2,:,:,:))); % HbR
+        end
+    end
+    
 end
+
+    
 close(h);
+if b_RAMsafeMode
+    fclose(fid_hbr);
+    fclose(fid_hbo);
+    HbO = 'HbO.dat';
+    HbR = 'HbR.dat';
+    if hasEvents
+        % Permute back to EYXT
+        permuteDat_YXTE_to_EYXT_inplace(fullfile(SaveFolder,'HbO.dat'),szYXTE,'single');
+        permuteDat_YXTE_to_EYXT_inplace(fullfile(SaveFolder,'HbR.dat'),szYXTE,'single');
+    end
+    
+    return
+end
 % Save File management:
-if( bSave )
+if bSave
     % Delete existing HbO and HbR files in folder before creating new ones:
     warning('off')
     delete([SaveFolder 'HbO.dat']);

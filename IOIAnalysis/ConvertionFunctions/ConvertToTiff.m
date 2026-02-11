@@ -95,7 +95,7 @@ end
             if ~any(idx)
                 continue
             end
-            Infos = matfile([FolderPath InfList(idx).name]);
+            Infos = load([FolderPath InfList(idx).name]);
             outFName = [FolderPath 'img_'];
             switch(ChanName)
                 case 'green.dat'

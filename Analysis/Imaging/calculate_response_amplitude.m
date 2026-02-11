@@ -1,150 +1,152 @@
 function [outData, metaData] = calculate_response_amplitude(data, metaData, varargin)
-% CALCULATE_RESPONSE_AMPLITUDE works with data split into events ("E" dimension in 
-% "dim_names" variable). It calculates the signal amplitude in time ("T").
-% The calculation consists on a value "postEvent_value" calculated in a time window
-% between the event trigger and a given time in seconds ("timeWindow") minus a value
-% "preEvent_value" calculated between the beginning of the trial an the Event frame.
-% Default values for post and preEventTimes are 'max' and
-% 'median'.
- 
+% CALCULATE_RESPONSE_AMPLITUDE calculates signal amplitude for event-split data.
+% Works on data with "E" dimension.
+%
 % Inputs:
-%   data: numerical matrix containing image time series split by event (dimensions "E", "Y", "X", "T").
-%   metaData: .mat file with meta data associated with "data".
-%   opts (optional) : structure containing extra parameters.
+%   data: 4D numeric matrix (E,Y,X,T) or filename of .dat file
+%   metaData: struct or matfile with associated metadata
+%   opts (optional): structure with fields:
+%       preEvent_value: 'mean','median','min','max','AUC' (default: 'median')
+%       postEvent_value: 'mean','median','min','max','AUC' (default: 'max')
+%       TimeWindow_sec: [start,end] relative to trigger or 'all' (default: 'all')
+%
+% Outputs:
+%   outData: 3D numerical matrix (E,Y,X) with response amplitudes
+%   metaData: updated metadata structure
 
-% Outputs: 
-%   outData: numerical matrix with dimensions {E,Y,X}.   
-%   metaData: .mat file with meta data associated with "outData".
-
-% Defaults: !Instantiate one default per line!
-default_Output = 'amplitude_Map.dat'; %#ok This line is here just for Pipeline management.
+% Defaults
+default_Output = 'amplitude_Map.dat'; %#ok
 default_opts = struct('preEvent_value', 'median', 'postEvent_value', 'max', 'TimeWindow_sec', 'all');
-opts_values = struct('preEvent_value', {{'mean', 'median', 'min','max','AUC'}}, 'postEvent_value',{{'mean', 'median', 'min','max','AUC'}},'TimeWindow_sec',{{'all',Inf}});% This is here only as a reference for PIPELINEMANAGER.m. 
+opts_values = struct('preEvent_value', {{'mean','median','min','max','AUC'}},'postEvent_value', {{'mean','median','min','max','AUC'}}, 'TimeWindow_sec', {{'all',Inf}});
 
-%%% Arguments parsing and validation %%%
-% Parse inputs:
+% Parse inputs
 p = inputParser;
-addRequired(p,'data',@(x) isnumeric(x)); % Validate if the input is a 3-D numerical matrix:
-addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
-addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
-% Parse inputs:
-parse(p,data, metaData, varargin{:});
-%Initialize Variables:
-data = p.Results.data; 
+addRequired(p,'data', @(x) isnumeric(x) || ischar(x));
+addRequired(p,'metaData', @(x) isstruct(x) || isa(x,'matlab.io.MatFile'));
+addOptional(p,'opts', default_opts, @(x) isstruct(x));
+parse(p, data, metaData, varargin{:});
+
+data = p.Results.data;
 metaData = p.Results.metaData;
 opts = p.Results.opts;
 clear p
-%%%%
-% Further validation of optional arguments:
-errID = 'Umitoolbox:calculate_respose_amplitude:InvalidDataType';
-errMsg = 'Invalid Input. Input must be member of {"mean", "median", "min","max"} or a numeric scalar';
-valid_Opts1 = @(x) (ismember(char(x), opts_values.preEvent_value) || (isscalar(x) && isnumeric(x)));
-assert(valid_Opts1(opts.preEvent_value), errID, errMsg);
-assert(valid_Opts1(opts.postEvent_value), errID, errMsg);
+
+% Validate options
+validFcn = @(x) ismember(x, opts_values.preEvent_value);
+assert(validFcn(opts.preEvent_value), 'Invalid preEvent_value');
+assert(validFcn(opts.postEvent_value), 'Invalid postEvent_value');
 if isnumeric(opts.TimeWindow_sec)
-    if numel(opts.TimeWindow_sec)~= 2 || diff(opts.TimeWindow_sec < 0)
-        error('Invalid time window. The input must be a pair of increasing positive numbers.');
-    end
+    assert(numel(opts.TimeWindow_sec)==2 && diff(opts.TimeWindow_sec)>0, ...
+        'TimeWindow_sec must be a 2-element increasing vector');
 else
-    assert(strcmpi(opts.TimeWindow_sec, 'all'), 'Invalid input value for TimeWindow_sec parameter.')
+    assert(strcmpi(opts.TimeWindow_sec,'all'), 'TimeWindow_sec must be "all" or numeric');
 end
-    
-% Get dimension names:
+
+% Validate that data has "E" and "T"
 dims = metaData.dim_names;
-% Validate if data has the following dimension names "E" and "T":
-errID = 'Umitoolbox:calculate_respose_amplitude:WrongInput';
-errMsg = 'Input Data is invalid. It must have an "Event" and a "Time" dimensions.';
-assert(all(ismember({'E', 'T'}, dims)), errID, errMsg);
+assert(all(ismember({'E','T'}, dims)), 'Data must have "E" and "T" dimensions');
 
-% Identify "T" dimension and permute data so Time is the first dimension:
-idxT = find(strcmp('T', dims));
-orig_dim_indx = 1:numel(dims);
-new_dim_indx = [idxT setdiff(orig_dim_indx, idxT)];
-data = permute(data, new_dim_indx);
-
-disp('Calculating response amplitude...')
-
-% Store data size:
-data_sz = size(data);
-
-% Reshape data:
-data = reshape(data,data_sz(1), []);
-
-% Perform amplitude calculation:
-trigFrame = round(metaData.preEventTime_sec * metaData.Freq);
-if strcmpi(opts.TimeWindow_sec,'all')
-    % Use all post-event time when the user selected "all":
-    frOn = trigFrame + 1;
-    frOff  = size(data,1);
+% Determine data dimensions
+bIsFile = ischar(data);
+if bIsFile
+    inFile = data;
+    sz = [metaData.datSize, metaData.datLength];
+    fidIn = fopen(inFile,'r');
+    cIn = onCleanup(@() safeFclose(fidIn));
+    Ne = metaData.datSize(1); Ny = metaData.datSize(2); Nx = metaData.datLength(1); Nt = metaData.datLength(2);
+    outFile = fullfile(fileparts(inFile), 'CALCRESPONSEAMP.dat');
+    % Set output file's meta data
+    md = metaData;
+    md.datSize = [Ne,Ny];
+    md.datLength = Nx;
+    md.dim_names = {'E','Y','X'};
+    
+    
 else
-    % Otherwise, select the post-event time window of choice in "opts":
-    % Get frames values:
+    [Ne, Ny, Nx, Nt] = size(data);
+end
+outData = zeros(Ne, Ny, Nx, 'single');
+
+% Determine trigger frame
+trigFrame = round(metaData.preEventTime_sec*metaData.Freq);
+
+% Determine post-event frames
+if isnumeric(opts.TimeWindow_sec)
     frOn = round(opts.TimeWindow_sec(1)*metaData.Freq) + trigFrame;
     frOff = round(opts.TimeWindow_sec(2)*metaData.Freq) + trigFrame;
-    
-    % Reset to default if input values are out of range
-    if frOn > size(data,1) || frOff > size(data,1) || frOn > frOff
-        warning('TimeWindow onset is out of range! Reset to default ("all")')
-        frOn = trigFrame + 1;
-        frOff = size(data,1);
+    if frOn > Nt || frOff > Nt || frOn>frOff
+        warning('TimeWindow_sec out of range, using full post-event window');
+        frOn = trigFrame+1; frOff = Nt;
     end
+else
+    frOn = trigFrame+1; frOff = Nt;
 end
 
-% Get baseline (pre_trigger) and postTrigger data:
-bsln = data(1:trigFrame,:);
-postTrig = data(frOn:frOff,:);
+disp('Calculating response amplitude...');
 
-% Use aggregate function OR value defined by User:
-if strcmpi(opts.postEvent_value,'auc') || strcmpi(opts.preEvent_value,'auc')
-    % If the user chose the Area under the curve as a measure, force the
-    % preEvent value to be the same:
-    opts.preEvent_value = 'AUC';
+% Loop over trials
+for e = 1:Ne
+    if bIsFile
+        % Read trial from file                
+        trialData = readTrial(fidIn,e,sz,'single');                
+    else
+        trialData = squeeze(data(e,:,:,:));
+    end
+    
+    % Reshape to 2D (pixels x time)
+    trial2D = reshape(trialData, Ny*Nx, Nt);
+    
+    % Baseline and post-trigger
+    bslnData = trial2D(:,1:trigFrame);
+    postData = trial2D(:,frOn:frOff);
+    
+    % Apply aggregation functions
+    if strcmpi(opts.preEvent_value,'AUC') || strcmpi(opts.postEvent_value,'AUC')
+        opts.preEvent_value = 'AUC';
+        opts.postEvent_value = 'AUC';
+    end
+    
+    bslnVal = applyAggFcn(bslnData, opts.preEvent_value);
+    postVal = applyAggFcn(postData, opts.postEvent_value);
+    
+    % Calculate amplitude
+    amp = postVal - bslnVal;
+    amp = reshape(amp, Ny, Nx);
+    outData(e,:,:) = amp;
+    
 end
-bsln = applyAggFcn(bsln, opts.preEvent_value);
-postTrig = applyAggFcn(postTrig, opts.postEvent_value);
-% Reshape data to match original data size:
-new_sz = data_sz;
-new_sz(1) = 1;
-bsln = reshape(bsln, new_sz);
-postTrig = reshape(postTrig, new_sz);
-% calculate amplitude:
-outData = postTrig - bsln;
-% Find singleton dimensions:
-singletonDims = size(outData) == 1;
-% Permute outData to original data size and remove singleton dimensions:
-outData = squeeze(permute(outData,[2:numel(dims) 1])); 
-% Do the same in dimension names:
-singletonDims = singletonDims([2:numel(dims) 1]);
-new_dim_names = dims(~singletonDims);
 
-% Create new metaData:
+if bIsFile
+    % Write the whole Amp array to output file
+    fidOut = fopen(outFile,'w');
+    fwrite(fidOut,outData,'single');
+    fclose(fidOut);
+    fclose(fidIn);
+    outData = outFile;
+    metaData = md;
+    save(strrep(outFile,'.dat','.mat'),'-struct','metaData');
+    return
+end
+
+% Update metadata
+new_dim_names = {'E','Y','X'};
 metaData = genMetaData(outData, new_dim_names, metaData);
-disp('Done!')
+disp('Done!');
+
 end
 
-% Local function:
-function out = applyAggFcn(vals, aggfcn)
-% APPLYAGGFCN performs the aggregate function of name "fcn_name" on the 1st
-% dimension of the data "vals". All aggregate functions EXCLUDE NaNs!
-
-switch aggfcn
+% -----------------------
+function out = applyAggFcn(vals, fcn)
+switch fcn
     case 'mean'
-        out = mean(vals, 1, 'omitnan');
+        out = mean(vals,2,'omitnan');
     case 'median'
-        out = median(vals, 1, 'omitnan');
-        %     case 'mode'
-        %         out = mode(vals, 1);
-        %     case 'std'
-        %         out = std(vals, 0, 1, 'omitnan');
+        out = median(vals,2,'omitnan');
     case 'max'
-        out = max(vals, [], 1, 'omitnan');
+        out = max(vals,[],2,'omitnan');
     case 'min'
-        out = min(vals, [], 1, 'omitnan');
-        %     case 'sum'
-        %         out = sum(vals, 1, 'omitnan');
-        %     otherwise
-        %         out = vals;
+        out = min(vals,[],2,'omitnan');
     case 'AUC'
-        out = trapz(vals);
+        out = trapz(vals,2);
 end
 end
