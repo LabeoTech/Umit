@@ -28,7 +28,7 @@ classdef DataViewer_pipelineMngr < handle
     end
     
     methods
-        function obj = DataViewer_pipelineMngr(dataFile, SaveFolder, RawFolder, lowRAMmode)
+        function obj = DataViewer_pipelineMngr(dataFile, SaveFolder, RawFolder)
             if isdeployed
                 [obj.fcnDir,~,~] = fileparts(which('funcTemplate.m'));
                 a = load(fullfile(obj.fcnDir,'deployFcnList.mat'));
@@ -46,21 +46,14 @@ classdef DataViewer_pipelineMngr < handle
             % assessment
             if ~isempty(dataFile)
                 [~,filename,ext] = fileparts(dataFile);
-                obj.metaData = load(fullfile(obj.SaveFolder,[filename, '.mat']));
+                obj.metaData = load(fullfile(SaveFolder,[filename, '.mat']));
+               
                 %----------------------------------------------------------
-                % TESTING
+                % Checking available RAM and setting pipeline mode
+                % (Standard vs RAM-safe mode)
                 %----------------------------------------------------------
-                if exist('lowRAMmode','var')
-                    obj.RAMSafeMode = lowRAMmode;
-                else
-                    dataBytes = prod([obj.metaData.datSize, obj.metaData.datLength])*4;
-                    obj.setRAMmanagementMode(dataBytes);
-                end
-                
-                %----------------------------------------------------------
-                % TESTING: REENABLE AND DELETE ABOVE SECTION AFTER TESTING
-%                 dataBytes = prod([obj.metaData.datSize, obj.metaData.datLength])*4;                
-%                 obj.setRAMmanagementMode(dataBytes);
+                dataBytes = prod([obj.metaData.datSize, obj.metaData.datLength])*4;                
+                obj.setRAMmanagementMode(dataBytes);
                 %----------------------------------------------------------
                 if obj.RAMSafeMode
                     % Point to the data file instead of storing the
