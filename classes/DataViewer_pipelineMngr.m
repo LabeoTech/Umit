@@ -52,17 +52,19 @@ classdef DataViewer_pipelineMngr < handle
                 % Checking available RAM and setting pipeline mode
                 % (Standard vs RAM-safe mode)
                 %----------------------------------------------------------
-                dataBytes = prod([obj.metaData.datSize, obj.metaData.datLength])*4;                
+                dataBytes = prod([obj.metaData.datSize, obj.metaData.datLength])*4;
                 obj.setRAMmanagementMode(dataBytes);
+                
                 %----------------------------------------------------------
                 if obj.RAMSafeMode
                     % Point to the data file instead of storing the
                     % structure                    
                     obj.data = fullfile(obj.SaveFolder,[filename, ext]);
                 else
-                    disp('Loading input data...')
-                    % Load the data from file                    
+                    disp('Loading input data. Please wait....')
+                    % Load the data from file                                        
                     obj.data = loadDatFile(fullfile(obj.SaveFolder,[filename, ext]));                   
+                    disp('Data loaded.')
                 end
             end           
             %                         
@@ -463,7 +465,7 @@ classdef DataViewer_pipelineMngr < handle
                     if isfile(fullfile(obj.SaveFolder,'PipelineTMPfile.dat'))
                         % Save file as Data Saved Before Error
                         filename = ['DataSavedBeforeError_' datestr(now,'yyyymmdd_HHMMSS') '.dat'];
-                        obj.safeMoveOrCopy('PipelineTMPfile.dat',filename)                        
+                        obj.data = obj.safeMoveOrCopy('PipelineTMPfile.dat',filename);                   
                     end
                     break
                 end
@@ -475,8 +477,9 @@ classdef DataViewer_pipelineMngr < handle
             close(h);
             
             if obj.RAMSafeMode
-                if any(strcmp('outData',obj.pipe(end).argsOut)) && nStepsExecuted && ~obj.pipe(end).b_save2File
-                    % Safe last step to a file with a time tag
+                if any(strcmp('outData',obj.pipe(end).argsOut)) && nStepsExecuted == length(obj.pipe) && ~obj.pipe(end).b_save2File
+                    % Save last step to a file with a time tag to avoid
+                    % being deleted during cleanup
                     [~,filename,~] = fileparts(obj.pipe(end).outFileName);
                     outFilename = [filename  '_' datestr(now,'yyyymmdd_hhMMSS') '.dat'];
                     % Rename temporary files to output file
@@ -850,7 +853,7 @@ classdef DataViewer_pipelineMngr < handle
                 % Pipeline file
                 
                 movefile(fullfile(obj.SaveFolder, sourceFilename),...
-                    fullfile(obj.SaveFolder,targetFilename))
+                    fullfile(obj.SaveFolder,targetFilename));
                 movefile(fullfile(obj.SaveFolder,sourceMat),...
                     fullfile(obj.SaveFolder,targetMat));                                               
                 return
@@ -865,7 +868,7 @@ classdef DataViewer_pipelineMngr < handle
                 'Please delete the original file manually when possible.' ],sourceFilename);
             
             copyfile(fullfile(obj.SaveFolder, sourceFilename),...
-                fullfile(obj.SaveFolder,targetFilename))
+                fullfile(obj.SaveFolder,targetFilename));
             copyfile(fullfile(obj.SaveFolder,sourceMat),...
                 fullfile(obj.SaveFolder,targetMat));
         end
