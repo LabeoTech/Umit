@@ -46,7 +46,7 @@ if isempty(FileList)
     return;
 end
 
-Iptr = matfile(fullfile(Folder, [filename '.mat']));
+Iptr = load(fullfile(Folder, [filename '.mat']));
 ny = Iptr.datSize(1,1);
 nx = Iptr.datSize(1,2);
 nt = Iptr.datLength;
@@ -78,7 +78,7 @@ if bRAMsafe
     cOut = onCleanup(@() safeFclose(fidOut));
     
     % Pass 1: Calculate temporal mean
-    fprintf("PASS 1: Calculating temporal mean\n")
+    fprintf("PASS 1/3: Calculating temporal mean\n")
     MeanMap = zeros(ny, nx, 'single');
     lastPct = -1;
     for t = 1:nt
@@ -94,7 +94,7 @@ if bRAMsafe
         end
     end
     MeanMap = MeanMap / nt;
-    fprintf('\nPASS 2: Computing flow...\n')
+    fprintf('\nPASS 2/3: Computing flow...\n')
     % Pass 2: Compute flow and write each frame directly
     lastPct = -1;
 
@@ -117,7 +117,7 @@ if bRAMsafe
         fseek(fidOut, (t-1)*ny*nx*getByteSize('single'),'bof');
         fwrite(fidOut, flow, 'single');
         % Print progress
-        pct = floor(100 * t / nt);
+        pct = floor(100 * t / (nt-1));
         if pct ~= lastPct && mod(pct,10) == 0
             fprintf('%d%% ', pct);
             lastPct = pct;
@@ -129,8 +129,9 @@ if bRAMsafe
     % Determine chunking along X
     nChunks = calculateMaxChunkSize(ny * nx * (nt-1) * getByteSize('single'), 2);
     chunkX  = ceil(nx / nChunks);
-    fprintf('\nPASS 3: Applying Temporal median filter...')
-    
+    fprintf('\nPASS 3/3: Applying Temporal median filter...')
+    lastPct = -1;
+    fprintf('0%% ');
     for c = 1:nChunks
         xStart = (c-1)*chunkX + 1;
         xEnd   = min(xStart + chunkX - 1, nx);
@@ -148,10 +149,12 @@ if bRAMsafe
             'write', fidOut, ny, nx, nt-1, xIdx, 'single',slab);
         % Print progress
         pct = floor(100 * c / nChunks);
-        fprintf('%d%% ', pct);        
+        if pct ~= lastPct
+            fprintf('%d%% ', pct);
+            lastPct = pct;
+        end
     end
-    
-    fprintf("\nFinished")
+       
     fclose(fidIn);
     fclose(fidOut);
     

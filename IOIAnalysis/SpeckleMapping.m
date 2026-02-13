@@ -47,42 +47,118 @@ if bRAMSafeMode
     mData = zeros(Ny,Nx,Infos.Datatype);
     fidIn = fopen(datFile,'r');
     cIn = onCleanup(@() safeFclose(fidIn));
-    disp('Pass 1 - Calculating temporal mean...')
-    for t = 1:Nt
-        fseek(fidIn, (t-1)*Ny*Nx*getByteSize('single'),'bof');
-        frame = fread(fidIn, Ny*Nx, ['*' Infos.Datatype]);
-        frame = reshape(frame, Ny, Nx);
-        mData = mData + frame;        
+    %     disp('Pass 1/2 - Calculating temporal mean...')
+    %     lastPct = -1;
+    %     for t = 1:Nt
+    %         fseek(fidIn, (t-1)*Ny*Nx*getByteSize('single'),'bof');
+    %         frame = fread(fidIn, Ny*Nx, ['*' Infos.Datatype]);
+    %         frame = reshape(frame, Ny, Nx);
+    %         mData = mData + frame;
+    %         % Print progress
+    %         pct = floor(100 * t / Nt);
+    %         if pct ~= lastPct && mod(pct,10) == 0
+    %             fprintf('%d%% ', pct);
+    %             lastPct = pct;
+    %         end
+    %     end
+    %     mData = mData/Nt;
+    disp('Pass 1/2 - Calculating temporal mean...')
+    
+    bytesPerFrame = Ny * Nx * getByteSize(Infos.Datatype);
+    totalBytes    = Nx * Ny * Nt * getByteSize(Infos.Datatype);
+    
+    % RAM-adaptive chunking over time
+    nChunks = calculateMaxChunkSize(totalBytes, 1, .1);
+    chunkT  = ceil(Nt / nChunks);
+    
+    lastPct = -1;
+    fprintf('0%% ');
+    
+    for c = 1:nChunks
+        
+        tStart  = (c-1)*chunkT + 1;
+        tEnd    = min(tStart + chunkT - 1, Nt);
+        nFrames = tEnd - tStart + 1;
+        
+        % Seek once to first frame of chunk
+        fseek(fidIn, (tStart-1)*bytesPerFrame, 'bof');
+        
+        % Read contiguous block
+        slab = fread(fidIn, Ny*Nx*nFrames, ['*' Infos.Datatype]);
+        
+        % Reshape to [Ny x Nx x nFrames]
+        slab = reshape(slab, Ny, Nx, nFrames);
+        
+        % Accumulate sum across time (algorithm unchanged)
+        mData = mData + sum(slab, 3);
+        
+        % Progress
+        pct = floor(100 * c / nChunks);
+        if pct ~= lastPct
+            fprintf('%d%% ', pct);
+            lastPct = pct;
+        end
+        
+        clear slab       
     end
-    mData = mData/Nt;
-    disp('Pass 2 - Calculating Speckle Contrast ...')
+    
+    mData = mData / Nt;
+    
+    fprintf('\nPass 2/2 - Calculating Speckle Contrast (%s algorithm)...\n',sType)
     switch lower(sType)
         case 'spatial'
-            % Iterate over time using fread + fseek                       
-            Kernel = single(fspecial('disk',2)>0);                
+            % Iterate over time in RAM-adaptive chunks using fseek + fread
             
-            for t = 1:Nt
-                fseek(fidIn, (t-1)*Ny*Nx*getByteSize('single'),'bof');
-                frame = fread(fidIn, Ny*Nx, ['*' Infos.Datatype]);
-                frame = reshape(frame, Ny, Nx);
-                frame = frame./mData;
-                               
-                frame = stdfilt(frame, Kernel);
-                frame = remOutlier(frame);
+            Kernel = single(fspecial('disk',2) > 0);
+            
+            bytesPerFrame = Ny * Nx * getByteSize(Infos.Datatype);
+            totalBytes    = Nx * Ny * Nt * getByteSize(Infos.Datatype);
+            
+            % Determine number of chunks from available RAM
+            nChunks = calculateMaxChunkSize(totalBytes,10, .1);            
+            chunkT  = ceil(Nt / nChunks);
+            
+            lastPct = -1;
+            fprintf('0%% ');
+            
+            for c = 1:nChunks
                 
+                tStart = (c-1)*chunkT + 1;
+                tEnd   = min(tStart + chunkT - 1, Nt);
+                nFrames = tEnd - tStart + 1;
                 
-                frameOut = frameOut + frame;
+                % Seek once to first frame of this chunk
+                fseek(fidIn, (tStart-1) * bytesPerFrame, 'bof');
                 
+                % Read contiguous block of frames
+                frameBlock = fread(fidIn, Ny * Nx * nFrames, ['*' Infos.Datatype]);
+                
+                % Reshape into [Ny x Nx x nFrames]
+                frameBlock = reshape(frameBlock, Ny, Nx, nFrames);
+                
+                frameBlock = frameBlock ./ mData;
+                
+                frameBlock  = stdfilt(frameBlock, Kernel);
+                frameBlock  = remOutlier(frameBlock);
+                frameBlock = sum(frameBlock,3);
+                frameOut = frameOut + frameBlock;
+                % Print progress
+                pct = floor(100 * c / nChunks);
+                if pct ~= lastPct
+                    fprintf('%d%% ', pct);
+                    lastPct = pct;
+                end
             end
-            frameOut = frameOut./Nt;            
+            frameOut = frameOut./Nt;
             
         case 'temporal'
-            % Iterate over X chunks using spatialSlabIO                        
+            % Iterate over X chunks using spatialSlabIO
             Kernel = ones(1,1,5,'single');
             
-            nChunks = calculateMaxChunkSize(Nx*Ny*Nt*getByteSize(Infos.Datatype), 2);
+            nChunks = calculateMaxChunkSize(Nx*Ny*Nt*getByteSize(Infos.Datatype), 12,.15);
             chunkX = ceil(Nx / nChunks);
-            
+            lastPct = -1;
+            fprintf('0%% ');
             for c = 1:nChunks
                 xStart = (c-1)*chunkX + 1;
                 xEnd   = min(xStart + chunkX - 1, Nx);
@@ -90,23 +166,29 @@ if bRAMSafeMode
                 
                 slab = spatialSlabIO('read', fidIn, Ny, Nx, Nt, xIdx, Infos.Datatype);
                 slab = slab./mean(slab,3);
-                slab = stdfilt(slab, Kernel);
-                slab = remOutlier(slab);               
-                frameOut = frameOut + mean(slab,3);                
+                slab = stdfilt(slab, Kernel); % RAM-greedy part
+                slab = remOutlier(slab);
+                frameOut(:,xIdx) = mean(slab,3);
+                pct = floor(100 * c / nChunks);
+                if pct ~= lastPct 
+                    fprintf('%d%% ', pct);
+                    lastPct = pct;
+                end
+                clear slab
             end
             
         otherwise
             error('Invalid sType. Use "spatial" or "temporal".');
     end
     if bLogScale
-        frameOut = -log10(frame);
+        frameOut = -log10(frameOut);
     end
     % Close file handle
     fclose(fidIn);
     % Save Speckle map to file
     md = genMetaData(frameOut,{'Y','X'},Infos);
     md.datFile = outFilename;
-    save2Dat(outFilename,single(frameOut),md);          
+    save2Dat(outFilename,single(frameOut),md);
     
     DatOut = outFilename; % return filename for low RAM
     
@@ -117,7 +199,7 @@ else
     fclose(fid);
     dat = reshape(dat, Ny, Nx, Nt);
     dat = dat ./ mean(dat,3);
-
+    
     disp('Mapping computation...');
     switch lower(sType)
         case 'spatial'
@@ -127,7 +209,7 @@ else
         otherwise
             error('Invalid sType. Use "spatial" or "temporal".');
     end
-
+    
     DatOut = stdfilt(dat, Kernel);
     DatOut = remOutlier(DatOut);
     % Calculate time average of Speckle Contrast values
