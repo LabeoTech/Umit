@@ -53,19 +53,83 @@ state = state(order);
 saveEventsFile(saveFolder, eventID, timestamps, state, num2cell(unique(eventID)))
 end
 
-% Local function
 function [ID,state,timestamps] = getEventFromChannel(data, FrameRateHz)
-ID = [];state = [];timestamps = [];
-id_list = unique(data(:)); id_list(id_list == 0) = [];
-for i = 1:length(id_list)
-    on_indx = find(data(1:end-1)<.5 & data(2:end)>.5 & data(2:end) == id_list(i));
-    off_indx = find(data(1:end-1)>.5 & data(2:end)<.5 & data(1:end-1) == id_list(i));
-    timestamps =[timestamps; (sort([on_indx;off_indx]))./FrameRateHz];
-    state =[state; repmat([true;false], numel(on_indx),1)];
-    ID = [ID; repmat(id_list(i),numel([on_indx,off_indx]),1)];
+
+ID = [];
+state = [];
+timestamps = [];
+
+data = data(:);  % ensure column
+
+% -------------------------------------------------------------
+% Detect all transitions in encoded eventID signal
+% -------------------------------------------------------------
+
+change_idx = find(diff(data) ~= 0) + 1;
+
+if isempty(change_idx)
+    return
 end
-% Rearrange arrays by chronological order:
-[timestamps,idxTime] = sort(timestamps);
-state = state(idxTime);
-ID = ID(idxTime);
+
+prev_vals = data(change_idx - 1);
+new_vals  = data(change_idx);
+
+% -------------------------------------------------------------
+% Build chronological transition list
+% -------------------------------------------------------------
+
+for k = 1:length(change_idx)
+
+    idx = change_idx(k);
+
+    % Falling edge (previous ID ends)
+    if prev_vals(k) ~= 0
+        ID(end+1,1)         = prev_vals(k);
+        state(end+1,1)      = false;
+        timestamps(end+1,1) = idx / FrameRateHz;
+    end
+
+    % Rising edge (new ID begins)
+    if new_vals(k) ~= 0
+        ID(end+1,1)         = new_vals(k);
+        state(end+1,1)      = true;
+        timestamps(end+1,1) = idx / FrameRateHz;
+    end
+end
+
+% -------------------------------------------------------------
+% If signal starts already active, prepend rising edge
+% -------------------------------------------------------------
+
+if data(1) ~= 0
+    ID         = [data(1); ID];
+    state      = [true; state];
+    timestamps = [1/FrameRateHz; timestamps];
+end
+
+% -------------------------------------------------------------
+% If signal ends active, append falling edge
+% -------------------------------------------------------------
+
+if data(end) ~= 0
+    ID(end+1,1)         = data(end);
+    state(end+1,1)      = false;
+    timestamps(end+1,1) = length(data)/FrameRateHz;
+end
+
+% -------------------------------------------------------------
+% Ensure strict alternation (true/false/true/false…)
+% -------------------------------------------------------------
+
+% Sort chronologically (safety)
+[timestamps, order] = sort(timestamps);
+ID    = ID(order);
+state = state(order);
+
+% Remove accidental duplicates if any (same timestamp & same state)
+dup = [false; diff(timestamps)==0 & diff(state)==0];
+timestamps(dup) = [];
+ID(dup)         = [];
+state(dup)      = [];
+
 end

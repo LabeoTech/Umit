@@ -46,6 +46,7 @@ function ImagesClassification(DataFolder, SaveFolder, BinningSpatial, BinningTem
 %       'AI6' : External Analog channel #6.
 %       'AI7' : External Analog channel #7.
 %       'AI8' : External Analog channel #8.
+%       'StimDig' : Digital stim (Special Case).
 % 8- Trigger polarity (optional | default = positive): Set to "negative" if
 %   the trigger onset and offset is marked by a falling and rising edges,
 %   respectively.
@@ -63,27 +64,30 @@ end
 
 AcqInfoStream = ReadInfoFile(DataFolder);
 
+% % Manage Stim:
+% if strcmpi(chanName, 'Internal-Main')
+%     stimChan = 2;
+% elseif strcmpi(chanName, 'Internal-Aux')
+%     stimChan = 3;
+% 
+% else
+%     % Get position of the channel in the AnalogIN matrix:
+%     fn = fieldnames(AcqInfoStream);fn = fn(startsWith(fn,'AICh','IgnoreCase',true));
+%     if ~isempty(fn)
+%         % Look for the channel name directly from the info.txt file:
+%         chanNameList = cellfun(@(x) AcqInfoStream.(x),fn,'UniformOutput',false);
+%     else
+%         % Consider the following channel organization when there are no channel names in the info.txt file:
+%         chanNameList = {'CameraTrig','Internal-main', 'Internal-Aux','AI1', 'AI2','AI3','AI4','AI5','AI6','AI7','AI8'}; % List of existing Analog channel names.
+%     end
+%     [~,stimChan] = ismember(upper(chanName), upper(chanNameList));
+%     if stimChan == 0
+%         warning('Invalid channel name! The "Internal-main" channel will be read instead.');
+%         stimChan = 2;
+%     end
+% end
 
-if strcmpi(chanName, 'Internal-Main')
-    stimChan = 2;
-elseif strcmpi(chanName, 'Internal-Aux')
-    stimChan = 3;
-else
-    % Get position of the channel in the AnalogIN matrix:
-    fn = fieldnames(AcqInfoStream);fn = fn(startsWith(fn,'AICh','IgnoreCase',true));
-    if ~isempty(fn)
-        % Look for the channel name directly from the info.txt file:
-        chanNameList = cellfun(@(x) AcqInfoStream.(x),fn,'UniformOutput',false);
-    else
-        % Consider the following channel organization when there are no channel names in the info.txt file:
-        chanNameList = {'CameraTrig','Internal-main', 'Internal-Aux','AI1', 'AI2','AI3','AI4','AI5','AI6','AI7','AI8'}; % List of existing Analog channel names.
-    end
-    [~,stimChan] = ismember(upper(chanName), upper(chanNameList));
-    if stimChan == 0
-        warning('Invalid channel name! The "Internal-main" channel will be read instead.');
-        stimChan = 2;
-    end
-end
+
 
 if( ~strcmp(DataFolder(end), filesep) )
     DataFolder = strcat(DataFolder, filesep);
@@ -112,26 +116,28 @@ disp('**************************');
 % tAIChan = AcqInfoStream.AINChannels; %Number of Analog Inputs
 
 if( ~b_IgnoreStim ) %If user doesn't want to ignore Stimulation:
-        
-    if~isfield(AcqInfoStream, 'Stimulation') || ( AcqInfoStream.Stimulation == 0 ) 
-        AcqInfoStream.Stimulation = 1;
-    end
-    Fields = fieldnames(AcqInfoStream); %Recovers Stimulation information from info.txt file
-    idx = contains(Fields, 'stimulation','IgnoreCase',true);
-    Fields = Fields(idx);
-    
-    for indS = 1:length(Fields)
-        tmp = ReadAnalogsIn(DataFolder, SaveFolder, AcqInfoStream, stimChan,trigPolarity); %Read analog inputs.
-        if(isnumeric(AcqInfoStream.(Fields{indS})) && ...
-                AcqInfoStream.(Fields{indS}) > 0)
-            break;
+
+                        
+        if~isfield(AcqInfoStream, 'Stimulation') || ( AcqInfoStream.Stimulation == 0 )
+            AcqInfoStream.Stimulation = 1;
         end
-    end
-    if( isempty(tmp) ) %No stimulation found in info.txt file.
-        fprintf('Stimulation not detected. \n');
-        b_IgnoreStim = 1;
-    end
-    clear tmp
+        Fields = fieldnames(AcqInfoStream); %Recovers Stimulation information from info.txt file
+        idx = contains(Fields, 'stimulation','IgnoreCase',true);
+        Fields = Fields(idx);
+        
+        for indS = 1:length(Fields)
+            tmp = ReadAnalogsIn(DataFolder, SaveFolder, AcqInfoStream, chanName,trigPolarity); %Read analog inputs.
+            if(isnumeric(AcqInfoStream.(Fields{indS})) && ...
+                    AcqInfoStream.(Fields{indS}) > 0)
+                break;
+            end
+        end
+        if( isempty(tmp) ) %No stimulation found in info.txt file.
+            fprintf('Stimulation not detected. \n');
+            b_IgnoreStim = 1;
+        end
+        clear tmp
+
 else
     fprintf('Stimulation ignored. \n');
     

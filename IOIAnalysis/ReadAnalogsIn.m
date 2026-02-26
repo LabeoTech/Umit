@@ -1,4 +1,4 @@
-function varargout = ReadAnalogsIn(FolderPath, SaveFolder, Infos, stimChan,trigPolarity)
+function varargout = ReadAnalogsIn(FolderPath, SaveFolder, Infos, chanName,trigPolarity)
 out = [];
 if( ~strcmp(FolderPath, filesep) )
     FolderPath = strcat(FolderPath, filesep);
@@ -20,11 +20,35 @@ for ind = 1:size(aiFilesList,1)
 end
 clear tmp ind data aiFilesList;
 
+% Manage Stim Channel name:
+if strcmpi(chanName, 'Internal-Main')
+    stimChan = 2;
+elseif strcmpi(chanName, 'Internal-Aux')
+    stimChan = 3;
+    
+else
+    % Get position of the channel in the AnalogIN matrix:
+    fn = fieldnames(Infos);fn = fn(startsWith(fn,'AICh','IgnoreCase',true));
+    if ~isempty(fn)
+        % Look for the channel name directly from the info.txt file:
+        chanNameList = cellfun(@(x) Infos.(x),fn,'UniformOutput',false);
+    else
+        % Consider the following channel organization when there are no channel names in the info.txt file:
+        chanNameList = {'CameraTrig','Internal-main', 'Internal-Aux','AI1', 'AI2','AI3','AI4','AI5','AI6','AI7','AI8','StimDig'}; % List of existing Analog channel names.
+    end
+    [~,stimChan] = ismember(upper(chanName), upper(chanNameList));
+    if stimChan == 0
+        warning('Invalid channel name! The "Internal-main" channel will be read instead.');
+        stimChan = 2;
+    end
+end
+
 % Detect Triggers in each channel:
 Stim = {};
 for i = 1:length(stimChan)
     Stim{i} = detectTriggers(stimChan(i), Infos, AnalogIN, trigPolarity);
 end
+
 disp('Checking stim info...')
 idxMiss = cellfun(@(x) isequaln(sum(x),0), Stim);
 if all(idxMiss)
@@ -76,11 +100,18 @@ end
 % Detect Stimulation triggers in channel 2:
 % StimTrig is on the second channel (except if slave):
 if stimChan > 3
-    % Also, we filter the signal to remove high-frequency noise. This is
-    % common with photodiodes, for instance:
-    f = fdesign.lowpass('N,F3dB', 4, 200, 10000); % Apply low-pass filter @200Hz to remove high-frequency noise.
-    lpass = design(f,'butter');
-    AnalogIN(:,stimChan) = filtfilt(lpass.sosMatrix, lpass.ScaleValues, AnalogIN(:,stimChan)')';
+    
+    if Infos.Stimulation ~= 2
+        % For ANALOG STIM ONLY (SKIP THIS FOR DIGITAL)
+        
+        % Also, we filter the signal to remove high-frequency noise. This is
+        % common with photodiodes, for instance:
+        
+        f = fdesign.lowpass('N,F3dB', 4, 200, 20000); % Apply low-pass filter @200Hz to remove high-frequency noise.
+        lpass = design(f,'butter');
+        
+        AnalogIN(:,stimChan) = filtfilt(lpass.sosMatrix, lpass.ScaleValues, AnalogIN(:,stimChan)')';
+    end
     % If the stim channel is external, set the amplitude as the half of the
     % signal amplitude:
     minThr = 0.15; % Minimal threshold value for detection.
@@ -97,8 +128,10 @@ elseif ( ~isfield(Infos, 'Stimulation1_Amplitude') )
     % value is not available (retrocompatibility issue)
     %     Infos.Stimulation1_Amplitude = 5;
     thr = 2.5;
+    
 else
-    thr = Infos.Stimulation1_Amplitude/2;
+    %     thr = Infos.Stimulation1_Amplitude/2;
+    thr = 1;
 end
 
 % Detect trigger rising edges:
@@ -129,8 +162,8 @@ if( ~isfield(Infos, 'Stimulation') )
 end
 
 if Infos.Stimulation == 1
-    Period = median(StimTrig(2:end)-StimTrig(1:(end-1)))/Infos.AISampleRate;    
-    StimLim = find(diff(StimTrig)>20000);
+    Period = median(StimTrig(2:end)-StimTrig(1:(end-1)))/Infos.AISampleRate;
+    StimLim = find(diff(StimTrig)>0000);
     NbStim = length(StimLim)+1;
     if( NbStim == length(StimTrig) ) %Single Pulse trigged Stims
         StimLim = StimTrigOff; % Update StimLim
@@ -155,43 +188,84 @@ if Infos.Stimulation == 1
     end
     Stim = Stim(CamTrig);
 elseif Infos.Stimulation == 2
-    NbStimAI = length(StimTrig);
+    
+    NbStimAI    = length(StimTrig);
     NbStimCycle = Infos.Stimulation_Repeat;
-    NbStim = sum(~cellfun(@isempty, regexpi(fieldnames(Infos), 'stim\d{1}'))); % Search for field "Stim" + one digit;
-    NbColIll = sum(startsWith(fieldnames(Infos), 'Illumination'));
-    InterFrame = mean(diff(CamTrig));
-    if (NbColIll == 1)
-        expander = [zeros(1,ceil(NbColIll*InterFrame*1.1)) ones(1,ceil(NbColIll*InterFrame*1.1))]./ceil(NbColIll*InterFrame*1.1);
-    else
-        expander = [zeros(1,ceil((NbColIll-1)*InterFrame*1.1)) ones(1,ceil((NbColIll-1)*InterFrame*1.1))];
+    NbStim      = sum(~cellfun(@isempty, regexpi(fieldnames(Infos), 'stim\d{1}')));
+    NbColIll    = sum(startsWith(fieldnames(Infos), 'Illumination'));
+    
+    % -------------------------------------------------------------
+    % Robust pulse-onset detection (AI resolution ? frame mapping)
+    % -------------------------------------------------------------
+    
+    % 1) Threshold AI signal (preserve pulse width)
+    StimAI = AnalogIN(:,stimChan) > thr;
+    
+    % Optional smoothing if noisy (uncomment if needed)
+    % StimAI = movmean(AnalogIN(:,stimChan),5) > thr;
+    
+    % 2) Detect rising edges at AI resolution
+    StimTrigAI = find(diff(StimAI) == 1) + 1;
+    
+    if isempty(StimTrigAI)
+        warning('No stimulation onsets detected after thresholding.')
+        Stim = zeros(length(CamTrig),1,'single');
+        return
     end
     
-    Stim = diff(AnalogIN(:,stimChan),1,1)>2.5;
-    Stim = conv(Stim,expander,'same')>0.1;
-    Stim = Stim(CamTrig);
+    % 3) Map AI indices to imaging frame indices
+    % Each frame k spans [CamTrig(k), CamTrig(k+1))
+    frameIdx = discretize(StimTrigAI, [CamTrig; Inf]);
     
-    if( NbStimAI ~= NbStimCycle*NbStim )
+    % Remove invalid mappings
+    frameIdx = frameIdx(~isnan(frameIdx));
+    
+    % Frame-level onset vector
+    StimFrameOnsets = zeros(length(CamTrig),1,'single');
+    
+    % If multiple pulses fall inside same frame, keep first only
+    uniqueFrames = unique(frameIdx,'stable');
+    StimFrameOnsets(uniqueFrames) = 1;
+    
+    % -------------------------------------------------------------
+    % Sanity check
+    % -------------------------------------------------------------
+    if NbStimAI ~= NbStimCycle*NbStim
         disp('Acquisition might have been stopped before the end. Not all stimulations were acquired!');
     end
     
-    StimTrig = find(diff(Stim)>0.5)+1;
+    % -------------------------------------------------------------
+    % Encode Stim "Codes" into frame timestamps
+    % -------------------------------------------------------------
+    
+    StimTrig = find(StimFrameOnsets > 0);
+    
     StimIDs = [];
     StimDurations = [];
     for indS = 1:NbStim
-        eval(['StimIDs = cat(1, StimIDs, Infos.Stim' int2str(indS) '.Code);']);
+        eval(['StimIDs = cat(1, StimIDs, Infos.Stim' int2str(indS) '.ID);']);
         eval(['StimDurations = cat(1, StimDurations, Infos.Stim' int2str(indS) '.Duration);']);
     end
-    % Encode Stim "Codes" into Trigger timestamps:
-    Stim = zeros(size(CamTrig),'single'); % Reset "Stim"
+    
+    % Reset Stim vector (frame resolution)
+    Stim = zeros(length(CamTrig),1,'single');
+    
     for ind = 1:length(StimTrig)
+        
         if isfield(Infos,'Events_Order')
             ID = Infos.Events_Order(ind);
         else
             ID = mod(ind-1, NbStim) + 1;
         end
+        
         St = StimTrig(ind);
-        En = round(StimDurations(ID).*Infos.FrameRateHz + St);
+        En = round(StimDurations(ID) * Infos.FrameRateHz + St);
+        
+        % Clip to valid frame range
+        En = min(En, length(Stim));
+        
         Stim(St:En) = StimIDs(ID);
     end
+    
 end
 end
