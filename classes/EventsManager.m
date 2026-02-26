@@ -478,7 +478,7 @@ classdef EventsManager < handle
                 fn = regexp(fieldnames(obj.AcqInfo),'Stim\d+','match','once');
                 fn(cellfun(@isempty,fn)) = [];
                 IDs = cellfun(@(x) obj.AcqInfo.(x).ID,fn);
-                Names = cellfun(@(x) obj.AcqInfo.(x).Name,fn, 'UniformOutput',false);
+                Names = cellfun(@(x) num2str(obj.AcqInfo.(x).Name),fn, 'UniformOutput',false);
                 [~,idx] = sort(IDs);
                 obj.eventNameList = Names(idx);
                 disp('Trigger timestamps generated.');
