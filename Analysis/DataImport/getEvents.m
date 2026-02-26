@@ -31,11 +31,11 @@ opts.CSVVolNames = strip(opts.CSVColNames);
 if strcmpi(opts.ConditionFileName, 'auto') && ~strcmpi(opts.CSVColNames,'all') && ~strcmpi(opts.ConditionFileType,'CSV')
     % Force file type to 'CSV' if column names were set
     opts.ConditionFileType = 'CSV';
-    warning('Condition file type set to "CSV" given that specific columns were stated in parameters!');    
+    warning('Condition file type set to "CSV" given that specific columns were stated in parameters!');
 end
 if strcmpi(opts.CSVColNames, 'all')
     opts.CSVColNames = {''};
-else    
+else
     opts.CSVColNames = strsplit(opts.CSVColNames,',');
 end
 if strcmpi(opts.ConditionFileName, 'auto')
@@ -44,29 +44,34 @@ end
 
 % Instantiate EventsManager class:
 evObj = EventsManager(RawFolder,opts.ConditionFileType);
-
-for ii = 1:length(opts.StimChannel)
-    % Update internal channel names. These may change depending on the OiS
-    % acquisition software version.
-    if strcmpi(opts.StimChannel{ii}, 'internal-main')
-        warning(['Translated ''Internal-Main'' channel to ''' evObj.AIChanList{2}]);
-        opts.StimChannel{ii} = evObj.AIChanList{2};
-    elseif strcmpi(opts.StimChannel{ii}, 'internal-aux')
-        warning(['Translated ''Internal-Aux'' channel to ''' evObj.AIChanList{3}]);
-        opts.StimChannel{ii} = evObj.AIChanList{3};
+if evObj.b_isDigital & ~isempty(evObj.timestamps)
+    % Automatic detection of digital triggers. Skip Opts
+    warning('Automatic detection of Digital Stimulation in channel "%s"\nParameters from "getEvents" function were bypassed.\n', evObj.trigChanName{1});
+    evObj.saveEvents(SaveFolder);
+else
+    for ii = 1:length(opts.StimChannel)
+        % Update internal channel names. These may change depending on the OiS
+        % acquisition software version.
+        if strcmpi(opts.StimChannel{ii}, 'internal-main')
+            warning(['Translated ''Internal-Main'' channel to ''' evObj.AIChanList{2}]);
+            opts.StimChannel{ii} = evObj.AIChanList{2};
+        elseif strcmpi(opts.StimChannel{ii}, 'internal-aux')
+            warning(['Translated ''Internal-Aux'' channel to ''' evObj.AIChanList{3}]);
+            opts.StimChannel{ii} = evObj.AIChanList{3};
+        end
     end
+    evObj.AIChanList
+    % Update EventsManager object properties:
+    evObj.trigThr = opts.Threshold;
+    evObj.trigType = opts.TriggerType;
+    evObj.trigPolarity = opts.TriggerPolarity;
+    evObj.trigChanName = opts.StimChannel;
+    evObj.minInterStim = opts.minInterStimTime;
+    % Detect triggers:
+    evObj.getTriggers(true); % Verbose
+    % Update event names:
+    evObj.readEventFile(opts.ConditionFileName,'CSVcols', opts.CSVColNames);
+    % Save events to file:
+    evObj.saveEvents(SaveFolder);
 end
-evObj.AIChanList
-% Update EventsManager object properties:
-evObj.trigThr = opts.Threshold;
-evObj.trigType = opts.TriggerType;
-evObj.trigPolarity = opts.TriggerPolarity;
-evObj.trigChanName = opts.StimChannel;
-evObj.minInterStim = opts.minInterStimTime;
-% Detect triggers:
-evObj.getTriggers(true); % Verbose
-% Update event names:
-evObj.readEventFile(opts.ConditionFileName,'CSVcols', opts.CSVColNames);
-% Save events to file:
-evObj.saveEvents(SaveFolder);
 end
