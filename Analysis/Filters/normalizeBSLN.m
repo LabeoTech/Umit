@@ -114,21 +114,25 @@ if any(strcmpi('E', dimNames))
     Ny = dims(strcmpi('Y', dimNames));
     Nx = dims(strcmpi('X', dimNames));
     Nt = dims(strcmpi('T', dimNames));
+    % Preallocate output dat file
+    preallocateDatFile(outFile, metaData);
+    fidOut = fopen(outFile,'r+');
 else
     % Continuous data: [Y,X,T]
     hasEvents = false;
     Ny = dims(strcmpi('Y', dimNames));
     Nx = dims(strcmpi('X', dimNames));
     Nt = dims(strcmpi('T', dimNames));
+    % Save MetaData file
+    save(strrep(outFile,'.dat','.mat'),'-struct','metaData');    
+    fidOut = fopen(outFile,'w');
 end
 
 disp('Starting RAM safe baseline normalization...');
-% Preallocate output dat file
-preallocateDatFile(outFile, metaData);
+
 
 fidIn  = fopen(inFile,'r');
 cIn = onCleanup(@() safeFclose(fidIn));
-fidOut = fopen(outFile,'r+');
 cOut= onCleanup(@() safeFclose(fidOut));
 
 if hasEvents

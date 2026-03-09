@@ -232,12 +232,13 @@ bytesPerElem = 4; % single
 
 % --- LOW-RAM MODE ------------------------------------------------
 if ischar(data)
-    % Preallocate output file
+    % Save output file meta data
     outFile = fullfile(object.SaveFolder, default_Output);
-    preallocateDatFile(outFile, metaData);
+    save(strrep(outFile,'.dat','.mat'),'-struct','metaData');
+    
     fidIn  = fopen(data,'r');
     cIn = onCleanup(@() safeFclose(fidIn));
-    fidOut = fopen(outFile,'r+');
+    fidOut = fopen(outFile,'w');
     cOut = onCleanup(@() safeFclose(fidOut));
     
     % NaN mask from first frame

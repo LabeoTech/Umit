@@ -54,9 +54,10 @@ if ischar(outData)
     Nx = metaData.datSize(2);
     Nt = metaData.datLength;
 
-    % Preallocate output .dat file
-    preallocateDatFile(outFile, metaData);
-    fidOut = fopen(outFile,'r+');
+    % Save MetaData
+    save(fullfile(strrep(outFile,'.dat','.mat')),'-struct','metaData');
+    
+    fidOut = fopen(outFile,'w');
     cOut = onCleanup(@() safeFclose(fidOut));
     if fidOut == -1
         fclose(fidIn);
