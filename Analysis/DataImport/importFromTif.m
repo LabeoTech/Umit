@@ -41,7 +41,7 @@ function outFile = importFromTif(RawFolder, SaveFolder, varargin)
 % Defaults (for PipelineManager reference)
 default_Output = {'fluo.dat', 'red.dat', 'green.dat', 'yellow.dat', 'speckle.dat'}; %#ok
 default_opts   = struct('BinningSpatial', 1, 'BinningTemp', 1);
-
+opts_values    = struct('BinningSpatial', 2.^[0:5], 'BinningTemp',2.^[0:5]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 % -------------------------------------------------------------------------
 % Argument parsing
 % -------------------------------------------------------------------------
