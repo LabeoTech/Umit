@@ -250,8 +250,9 @@ end
 
 % Spatial filter settings
 spatSigma = 1;
-
+pad = ceil(3 * spatSigma);  
 h = waitbar(0, 'Fitting Hemodynamics...');
+h_out = onCleanup(@() delete(h));
 for ii = 1:nChunks
     
     if nChunks == 1
@@ -289,17 +290,19 @@ for ii = 1:nChunks
         
         tmp_sz = size(tmp);
         
-        % Reshape for temporal filtering
-        tmp = reshape(tmp, [], tmp_sz(3));
+       
         
         % Temporal filtering (optional)
         if LPcutoffFreq
+            % Reshape for temporal filtering
+            tmp = reshape(tmp, [], tmp_sz(3));
             waitbar(.99, h, ['Applying temporal filter [' ,colorName, ext ']']);drawnow()
             tmp = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(tmp')))';
+            % Restore spatial shape for Gaussian blur
+            tmp = reshape(tmp, tmp_sz);
         end
         
-        % Restore spatial shape for Gaussian blur
-        tmp = reshape(tmp, tmp_sz);
+        
         tmp = imgaussfilt(tmp, spatSigma, 'Padding', 'symmetric');
         
         % Crop padding
@@ -321,13 +324,17 @@ for ii = 1:nChunks
     % ---------------------------------------------------------------
     warning('off', 'MATLAB:rankDeficientMatrix');
     waitbar(0, h, 'Performing Hemodynamic correction...');drawnow()
-    for indF = 1:Np
-        X = [ ones(1, Nt); linspace(0, 1, Nt);squeeze(HemoData(:, indF, :)) ];
-        B = X' \ fData(indList(indF), :)';
-        fData(indList(indF), :) = fData(indList(indF), :) - (X' * B)';
+    for indP = 1:Np
+        if size(HemoData,1) == 1
+            X = [ ones(1, Nt); linspace(0, 1, Nt);squeeze(HemoData(:, indP, :))' ];
+        else
+            X = [ ones(1, Nt); linspace(0, 1, Nt);squeeze(HemoData(:, indP, :)) ];
+        end
+        B = X' \ fData(indList(indP), :)';
+        fData(indList(indP), :) = fData(indList(indP), :) - (X' * B)';
         % Update waitbar
-        if mod(indF, 500) == 0
-            waitbar(indF / Np, h);
+        if mod(indP, 500) == 0
+            waitbar(indP / Np, h);
         end
     end
     
@@ -432,6 +439,7 @@ c_out = onCleanup(@() safeFclose(fid_out));
 %                          Main chunk loop
 % ========================================================================
 h = waitbar(0, 'Fitting Hemodynamics...');
+h_out = onCleanup(@() delete(h));
 for ii = 1:nChunks
     h.Name = ['Hemodynamic Corr. (chunk ' num2str(ii) '/' num2str(nChunks) ')'];drawnow()
     % ----- X-range for this chunk
@@ -508,14 +516,18 @@ for ii = 1:nChunks
     % ---------------------------------------------------------------    
     waitbar(0, h, 'Performing Hemodynamic correction...');drawnow()
     warning('off', 'MATLAB:rankDeficientMatrix');
-    for indF = 1:Np
+    for indP = 1:Np
+        if size(HemoData,1) == 1
+            X = [ ones(1, Nt); linspace(0, 1, Nt);squeeze(HemoData(:, indP, :))' ];
+        else
+            X = [ ones(1, Nt); linspace(0, 1, Nt);squeeze(HemoData(:, indP, :)) ];
+        end
         
-        X = [ ones(1, Nt); linspace(0, 1, Nt);squeeze(HemoData(:, indF, :)) ];
-        B = X' \ fData(indF, :)';
-        fData(indF, :) = fData(indF, :) - (X' * B)';
+        B = X' \ fData(indP, :)';
+        fData(indP, :) = fData(indP, :) - (X' * B)';
         % Update waitbar
-        if mod(indF, 500) == 0
-            waitbar(indF / Np, h);
+        if mod(indP, 500) == 0
+            waitbar(indP / Np, h);
         end
     end
     clear B X HemoData
