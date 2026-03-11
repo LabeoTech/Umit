@@ -1,0 +1,196 @@
+---
+permalink: /documentation/userDocs/other/roimanager-file-explanation.html
+layout: default
+title: ROImanager data organization
+parent: Advanced User Resources
+grand_parent: Documentation
+---
+<html lang="en">
+<head>    
+    <style media="screen">
+        ul,
+        ol {
+            line-height: 1.5;
+        }
+    </style>
+    <meta charset="utf-8">
+    <title>ROImanager data organization</title>
+</head>
+<body>
+    <h2>ROImanager data organization</h2>
+    <p>
+        The ROI session file used by <a href="../apps/ROImanager.html"><b>ROImanager</b></a> is a MATLAB MAT-file that stores both the image context and the ROI definitions associated with that image. Older files use the naming convention <samp>ROImasks_xxxxx.mat</samp>, while newer files use the extension <samp>.roimsk</samp>. Despite the different file extensions, both formats can be read as MATLAB MAT-files. In the newer format, the file can be loaded with <samp>load(filename, '-mat')</samp>.
+    </p>
+    <p>
+        In brief, the file contains two structures: <samp>img_info</samp>, which stores the reference image and image-related settings, and <samp>ROI_info</samp> (a structure array), which stores the list of ROIs and their associated statistics. This file organization allows <a href="../apps/ROImanager.html"><b>ROImanager</b></a> to reopen a saved ROI session and restore the ROIs and also the image used to create them.
+    </p>
+
+    <h3>How it is organized</h3>
+    <hr>
+    <p>
+        The ROI session file contains the following variables:
+    </p>
+    <table style="table-layout: fixed;">
+        <tr>
+            <th style="width:130px" align="left">Variable</th>
+            <th align="left">Description</th>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">img_info</td>
+            <td>A scalar structure containing image-related information such as the reference image, calibration, display parameters, logical mask, and alignment reference data.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">ROI_info</td>
+            <td>A structure array in which each element represents one ROI and stores its metadata, geometry, and descriptive statistics.</td>
+        </tr>
+    </table>
+
+    <h3>The <samp>img_info</samp> structure</h3>
+    <hr>
+    <p>
+        The <samp>img_info</samp> variable stores the image context used by <a href="../apps/ROImanager.html"><b>ROImanager</b></a>. It contains the following fields:
+    </p>
+    <table style="table-layout: fixed;">
+        <tr>
+            <th style="width:160px" align="left">Field</th>
+            <th align="left">Description</th>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">imageData</td>
+            <td>The reference image on which the ROIs were drawn and from which the ROI statistics were computed.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">refPt</td>
+            <td>The image reference point (origin) used for spatial measurements. The values are always expressed in pixels.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">pxPermm</td>
+            <td>The spatial calibration in pixels per millimeter. If this value is nonzero, all distance-related statistics are expressed in millimeters instead of pixels.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">cmap</td>
+            <td>The colormap used to display the image.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">clims</td>
+            <td>The current display intensity limits for the image.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">clims_def</td>
+            <td>The default display intensity limits for the image.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">reference_frame</td>
+            <td>A reference image used during data alignment. This field is generally empty and is populated when the user creates an Image Reference File (see how to create an Image Reference File in <a href="../apps/ROImanager.html">here</a>).</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">logical_mask</td>
+            <td>A binary mask associated with the image used to exclude irrelevant regions during ROI creation.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">datFile</td>
+            <td>The source data file name, when applicable.</td>
+        </tr>
+    </table>
+
+    <h3>The <samp>ROI_info</samp> structure array</h3>
+    <hr>
+    <p>
+        The <samp>ROI_info</samp> variable is a structure array in which each element defines one ROI. Each ROI contains the following fields:
+    </p>
+    <table style="table-layout: fixed;">
+        <tr>
+            <th style="width:160px" align="left">Field</th>
+            <th align="left">Description</th>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">Name</td>
+            <td>The ROI label.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">Color</td>
+            <td>An RGB triplet used to display the ROI.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">Type</td>
+            <td>The ROI type. Depending on the ROI, this can be of type <i>Shape</i> or <i>Point</i>.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">Shape</td>
+            <td>A MATLAB <a href="https://www.mathworks.com/help/matlab/ref/polyshape.html"><samp>polyshape</samp></a> object defining the ROI geometry.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">DOC</td>
+            <td>The Date Of Creation of the ROI.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">Stats</td>
+            <td>A structure containing the ROI mask, geometric measurements, and descriptive statistics computed from <samp>img_info.imageData</samp>.</td>
+        </tr>
+    </table>
+
+    <h3>The <samp>ROI_info.Stats</samp> structure</h3>
+    <hr>
+    <p>
+        The <samp>Stats</samp> field stores measurements associated with each ROI. These statistics correspond to the data stored in <samp>img_info.imageData</samp>.
+    </p>
+    <table style="table-layout: fixed;">
+        <tr>
+            <th style="width:160px" align="left">Field</th>
+            <th align="left">Description</th>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">ShapeArea</td>
+            <td>The area of the ROI.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">ShapeCentroid</td>
+            <td>The centroid coordinates of the ROI.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">EuclDistFromOrig</td>
+            <td>The Euclidean distance between the ROI centroid and the reference point <samp>img_info.refPt</samp>.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">ROI_binary_mask</td>
+            <td>A binary image mask representing the ROI.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">n_pix_inside</td>
+            <td>The number of pixels inside the ROI.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">min</td>
+            <td>The minimum pixel value inside the ROI.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">max</td>
+            <td>The maximum pixel value inside the ROI.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">mean</td>
+            <td>The mean pixel value inside the ROI.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">median</td>
+            <td>The median pixel value inside the ROI.</td>
+        </tr>
+        <tr>
+            <td class="add_font_monospace">std</td>
+            <td>The standard deviation of the pixel values inside the ROI.</td>
+        </tr>
+    </table>
+
+    <h3>Notes on measurements</h3>
+    <hr>
+    <ol>
+
+    </ol>
+        <li>The descriptive statistics stored in <samp>ROI_info(k).Stats</samp> are computed from <samp>img_info.imageData</samp>.</li>
+        <li>If <samp>img_info.pxPermm ~= 0</samp>, distance-related statistics are expressed in millimeters instead of pixels. Otherwise, spatial measurements remain in pixel units.</li>
+        <li>The <samp>reference_frame</samp> field is generally empty. It is used only when an <i>Image Reference File</i> is created, in which case it stores the reference image used during data alignment.</li>
+    </p>
+    </ol>
+        
+</body>
+</html>
