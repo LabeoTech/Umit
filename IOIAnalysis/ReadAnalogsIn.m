@@ -1,9 +1,32 @@
-function varargout = ReadAnalogsIn(FolderPath, SaveFolder, Infos, chanName,trigPolarity)
+function varargout = ReadAnalogsIn(FolderPath, SaveFolder, Infos, chanName, trigPolarity, b_LPF)
+% ReadAnalogsIn  Read and process analog input recordings to detect triggers.
+%
+%   out = ReadAnalogsIn(FolderPath, SaveFolder, Infos, chanName, trigPolarity, b_LPF)
+%   reads analog binary files (ai_*.bin) from FolderPath, detects camera and
+%   stimulation triggers, and saves stimulation parameters to
+%   SaveFolder/StimParameters.mat. Infos is a struct with recording metadata
+%   (e.g., AISampleRate, AINChannels, FrameRateHz). chanName specifies the
+%   stimulation channel (e.g., 'Internal-Main', 'Internal-Aux' or a custom
+%   channel label). trigPolarity can be 'positive' or 'negative'. b_LPF is
+%   an optional boolean to apply a low-pass filter to external stim
+%   channels.
+%
+%   [out] = ReadAnalogsIn(...) returns a struct with detected stimulation
+%   information and frame rate. If no stimulations are detected, a default
+%   StimParameters.mat is saved and out is empty.
+%
+%   Notes:
+%     - The function expects analog files named ai_*.bin with a 5*4 byte
+%       header and doubles stored thereafter, organized per Infos.AINChannels.
+%     - If chanName is empty or 'Internal-Main', the internal main channel is
+%       used. If the provided chanName is not found, defaults to internal main.
 out = [];
 if( ~strcmp(FolderPath, filesep) )
     FolderPath = strcat(FolderPath, filesep);
 end
-
+if ~exist("b_LPF",'var')
+    b_LPF = false;
+end
 % List of analog files containing raw data:
 aiFilesList = dir([FolderPath 'ai_*.bin']);
 
@@ -21,7 +44,7 @@ end
 clear tmp ind data aiFilesList;
 
 % Manage Stim Channel name:
-if strcmpi(chanName, 'Internal-Main')
+if strcmpi(chanName, 'Internal-Main') || isempty(chanName)
     stimChan = 2;
 elseif strcmpi(chanName, 'Internal-Aux')
     stimChan = 3;
@@ -33,7 +56,7 @@ else
         % Look for the channel name directly from the info.txt file:
         chanNameList = cellfun(@(x) Infos.(x),fn,'UniformOutput',false);
     else
-        % Consider the following channel organization when there are no channel names in the info.txt file:
+        % FALLBACK - Consider the following channel organization when there are no channel names in the info.txt file:
         chanNameList = {'CameraTrig','Internal-main', 'Internal-Aux','AI1', 'AI2','AI3','AI4','AI5','AI6','AI7','AI8','StimDig'}; % List of existing Analog channel names.
     end
     [~,stimChan] = ismember(upper(chanName), upper(chanNameList));
@@ -46,7 +69,7 @@ end
 % Detect Triggers in each channel:
 Stim = {};
 for i = 1:length(stimChan)
-    Stim{i} = detectTriggers(stimChan(i), Infos, AnalogIN, trigPolarity);
+    Stim{i} = detectTriggers(stimChan(i), Infos, AnalogIN, trigPolarity,b_LPF);
 end
 
 disp('Checking stim info...')
@@ -86,7 +109,7 @@ end
 end
 
 % Local functions:
-function Stim = detectTriggers(stimChan, Infos, AnalogIN, trigPolarity)
+function Stim = detectTriggers(stimChan, Infos, AnalogIN, trigPolarity,b_LPF)
 Stim = 0;
 % CamTrig is on the first channel:
 CamTrig = find((AnalogIN(1:(end-1),1) < 1.25) & (AnalogIN(2:end,1) >= 1.25))+1;
@@ -100,18 +123,17 @@ end
 % Detect Stimulation triggers in channel 2:
 % StimTrig is on the second channel (except if slave):
 if stimChan > 3
-    
-    if Infos.Stimulation ~= 2
-        % For ANALOG STIM ONLY (SKIP THIS FOR DIGITAL)
-        
+
+    if b_LPF
         % Also, we filter the signal to remove high-frequency noise. This is
         % common with photodiodes, for instance:
-        
+
         f = fdesign.lowpass('N,F3dB', 4, 200, 20000); % Apply low-pass filter @200Hz to remove high-frequency noise.
         lpass = design(f,'butter');
-        
+
         AnalogIN(:,stimChan) = filtfilt(lpass.sosMatrix, lpass.ScaleValues, AnalogIN(:,stimChan)')';
     end
+
     % If the stim channel is external, set the amplitude as the half of the
     % signal amplitude:
     minThr = 0.15; % Minimal threshold value for detection.
@@ -157,13 +179,13 @@ if isempty(StimTrig)
     return
 end
 % Add Stimulation field for retrocompatibility:
-if( ~isfield(Infos, 'Stimulation') )
+if( ~isfield(Infos, 'Stimulation') || Infos.Stimulation == 0 )
     Infos.Stimulation = 1;
 end
 
-if Infos.Stimulation == 1
+if Infos.Stimulation == 1 
     Period = median(StimTrig(2:end)-StimTrig(1:(end-1)))/Infos.AISampleRate;
-    StimLim = find(diff(StimTrig)>0000);
+    StimLim = find(diff(StimTrig)>20000); % Force minimum 2s interstim.
     NbStim = length(StimLim)+1;
     if( NbStim == length(StimTrig) ) %Single Pulse trigged Stims
         StimLim = StimTrigOff; % Update StimLim
@@ -174,7 +196,8 @@ if Infos.Stimulation == 1
         for indS = 1:NbStim
             Stim(StimTrig(indS):StimLim(indS)) = 1;
         end
-    else %Pulses train Stim
+    else 
+        % Pulses train Stim
         Stim = zeros(length(AnalogIN(:,stimChan)),1);
         if( NbStim > 1 )
             Stim(StimTrig(1):StimTrig(StimLim(1))) = 1;
@@ -188,14 +211,16 @@ if Infos.Stimulation == 1
     end
     Stim = Stim(CamTrig);
 elseif Infos.Stimulation == 2
-    
+    if b_LPF
+        warning('Low-Pass Filter not applied to Digital Filter');
+    end
     NbStimAI    = length(StimTrig);
     NbStimCycle = Infos.Stimulation_Repeat;
     NbStim      = sum(~cellfun(@isempty, regexpi(fieldnames(Infos), 'stim\d{1}')));
     NbColIll    = sum(startsWith(fieldnames(Infos), 'Illumination'));
     
     % -------------------------------------------------------------
-    % Robust pulse-onset detection (AI resolution ? frame mapping)
+    % Pulse-onset detection 
     % -------------------------------------------------------------
     
     % 1) Threshold AI signal (preserve pulse width)
