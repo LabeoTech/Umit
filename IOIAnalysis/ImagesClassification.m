@@ -64,13 +64,16 @@ addRequired(p,'BinningSpatial',@(x)isnumeric(x)&&isscalar(x)&&x>=1);
 addRequired(p,'BinningTemp',@(x)isnumeric(x)&&isscalar(x)&&x>=1);
 addRequired(p,'b_IgnoreStim',@(x)isscalar(x) && (isnumeric(x)||islogical(x)));
 addOptional(p,'b_SubROI',false,@(x)isscalar(x) && (isnumeric(x)||islogical(x)));
-addOptional(p,'chanName','',@(x) ( iscell(x) && ischar(x{:}) ) || (ischar(x)||isstring(x)));
+addOptional(p,'chanName','',@(x) ( iscell(x) && ischar([x{:}]) ) || (ischar(x)||isstring(x)));
 addOptional(p,'trigPolarity','positive',@(x)ischar(x)||isstring(x));
 addOptional(p,'b_ApplyLPfilterToAnalogIn',false,@(x)isscalar(x) && (isnumeric(x)||islogical(x)));
 parse(p,DataFolder,SaveFolder,BinningSpatial,BinningTemp,b_IgnoreStim,b_SubROI,chanName,trigPolarity,b_ApplyLPfilterToAnalogIn);
 
 b_SubROI = p.Results.b_SubROI;
 chanName = p.Results.chanName;
+if ischar(chanName) || isstring(chanName)
+    chanName = {chanName};
+end
 trigPolarity = char(p.Results.trigPolarity);
 b_ApplyLPfilterToAnalogIn = p.Results.b_ApplyLPfilterToAnalogIn;
 

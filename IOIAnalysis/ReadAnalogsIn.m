@@ -43,35 +43,52 @@ for ind = 1:size(aiFilesList,1)
 end
 clear tmp ind data aiFilesList;
 
-% Manage Stim Channel name:
-if strcmpi(chanName, 'Internal-Main') || isempty(chanName)
-    stimChan = 2;
-elseif strcmpi(chanName, 'Internal-Aux')
-    stimChan = 3;
-    
+% Get list of channels from info.txt file:
+fn = fieldnames(Infos);fn = fn(startsWith(fn,'AICh','IgnoreCase',true));
+if ~isempty(fn)
+    chanNameList = cellfun(@(x) Infos.(x),fn,'UniformOutput',false);
+    % Translate the generic names of the internal Analog channels to the
+    % actual ones
+    if any(startsWith(chanName,'Internal','IgnoreCase',true))
+        nameTranslator = containers.Map({'internal-main','internal-aux'},chanNameList([2 3]));
+        for ii = 1:length(chanName)
+            if isKey(nameTranslator, lower(chanName{ii}))
+                chanName{ii} = nameTranslator(lower(chanName{ii}));
+            end
+        end
+    end
+
 else
-    % Get position of the channel in the AnalogIN matrix:
-    fn = fieldnames(Infos);fn = fn(startsWith(fn,'AICh','IgnoreCase',true));
-    if ~isempty(fn)
-        % Look for the channel name directly from the info.txt file:
-        chanNameList = cellfun(@(x) Infos.(x),fn,'UniformOutput',false);
-    else
-        % FALLBACK - Consider the following channel organization when there are no channel names in the info.txt file:
-        chanNameList = {'CameraTrig','Internal-main', 'Internal-Aux','AI1', 'AI2','AI3','AI4','AI5','AI6','AI7','AI8','StimDig'}; % List of existing Analog channel names.
-    end
-    [~,stimChan] = ismember(upper(chanName), upper(chanNameList));
-    if stimChan == 0
-        warning('Invalid channel name! The "Internal-main" channel will be read instead.');
-        stimChan = 2;
-    end
+    % FALLBACK - Consider the following channel organization when there are no channel names in the info.txt file:
+    chanNameList = {'CameraTrig','Internal-Main', 'Internal-Aux','AI1', 'AI2','AI3','AI4','AI5','AI6','AI7','AI8','StimDig'}; % List of existing Analog channel names.
 end
 
+% Get channel indices list
+[~,stimChan] = ismember(upper(chanName), upper(chanNameList));
+for ii = 1:length(stimChan)
+    if stimChan(ii) == 0
+        warning('Invalid channel name "%s"! The "Internal-Main" channel will be read instead.', chanName{ii});
+        stimChan(ii) = 2;
+    end
+end
 % Detect Triggers in each channel:
+% save current warning modes
+prev = warning;
+
+% disable stack trace and verbose suppression message
+warning off backtrace
+warning off verbose
+
 Stim = {};
 for i = 1:length(stimChan)
     Stim{i} = detectTriggers(stimChan(i), Infos, AnalogIN, trigPolarity,b_LPF);
 end
 
+
+% Be sure to delete existing StmParameters.mat file
+if isfile(fullfile(SaveFolder,'StimParameters.mat'))
+    delete(fullfile(SaveFolder,'StimParameters.mat'));
+end
 disp('Checking stim info...')
 idxMiss = cellfun(@(x) isequaln(sum(x),0), Stim);
 if all(idxMiss)
@@ -83,6 +100,8 @@ if all(idxMiss)
     if nargout
         varargout{:} = out;
     end
+    % restore previous warning modes
+    warning(prev)
     return
 end
 % Remove data with missing triggers:
@@ -106,6 +125,8 @@ disp('StimParameters saved!')
 if nargout
     varargout{:} = out;
 end
+% restore previous warning modes
+warning(prev)
 end
 
 % Local functions:
@@ -144,13 +165,13 @@ if stimChan > 3
         % This will force the detection to fail (not ideal).
         thr = minThr;
     end
-    
+
 elseif ( ~isfield(Infos, 'Stimulation1_Amplitude') )
     % Set threshold amplitude for internal channels to 2.5V when the amplitude
     % value is not available (retrocompatibility issue)
     %     Infos.Stimulation1_Amplitude = 5;
     thr = 2.5;
-    
+
 else
     %     thr = Infos.Stimulation1_Amplitude/2;
     thr = 1;
@@ -183,7 +204,7 @@ if( ~isfield(Infos, 'Stimulation') || Infos.Stimulation == 0 )
     Infos.Stimulation = 1;
 end
 
-if Infos.Stimulation == 1 
+if Infos.Stimulation == 1
     Period = median(StimTrig(2:end)-StimTrig(1:(end-1)))/Infos.AISampleRate;
     StimLim = find(diff(StimTrig)>20000); % Force minimum 2s interstim.
     NbStim = length(StimLim)+1;
@@ -196,7 +217,7 @@ if Infos.Stimulation == 1
         for indS = 1:NbStim
             Stim(StimTrig(indS):StimLim(indS)) = 1;
         end
-    else 
+    else
         % Pulses train Stim
         Stim = zeros(length(AnalogIN(:,stimChan)),1);
         if( NbStim > 1 )
@@ -218,79 +239,79 @@ elseif Infos.Stimulation == 2
     NbStimCycle = Infos.Stimulation_Repeat;
     NbStim      = sum(~cellfun(@isempty, regexpi(fieldnames(Infos), 'stim\d{1}')));
     NbColIll    = sum(startsWith(fieldnames(Infos), 'Illumination'));
-    
+
     % -------------------------------------------------------------
-    % Pulse-onset detection 
+    % Pulse-onset detection
     % -------------------------------------------------------------
-    
+
     % 1) Threshold AI signal (preserve pulse width)
     StimAI = AnalogIN(:,stimChan) > thr;
-    
+
     % Optional smoothing if noisy (uncomment if needed)
     % StimAI = movmean(AnalogIN(:,stimChan),5) > thr;
-    
+
     % 2) Detect rising edges at AI resolution
     StimTrigAI = find(diff(StimAI) == 1) + 1;
-    
+
     if isempty(StimTrigAI)
         warning('No stimulation onsets detected after thresholding.')
         Stim = zeros(length(CamTrig),1,'single');
         return
     end
-    
+
     % 3) Map AI indices to imaging frame indices
     % Each frame k spans [CamTrig(k), CamTrig(k+1))
     frameIdx = discretize(StimTrigAI, [CamTrig; Inf]);
-    
+
     % Remove invalid mappings
     frameIdx = frameIdx(~isnan(frameIdx));
-    
+
     % Frame-level onset vector
     StimFrameOnsets = zeros(length(CamTrig),1,'single');
-    
+
     % If multiple pulses fall inside same frame, keep first only
     uniqueFrames = unique(frameIdx,'stable');
     StimFrameOnsets(uniqueFrames) = 1;
-    
+
     % -------------------------------------------------------------
     % Sanity check
     % -------------------------------------------------------------
     if NbStimAI ~= NbStimCycle*NbStim
         disp('Acquisition might have been stopped before the end. Not all stimulations were acquired!');
     end
-    
+
     % -------------------------------------------------------------
     % Encode Stim "Codes" into frame timestamps
     % -------------------------------------------------------------
-    
+
     StimTrig = find(StimFrameOnsets > 0);
-    
+
     StimIDs = [];
     StimDurations = [];
     for indS = 1:NbStim
         eval(['StimIDs = cat(1, StimIDs, Infos.Stim' int2str(indS) '.ID);']);
         eval(['StimDurations = cat(1, StimDurations, Infos.Stim' int2str(indS) '.Duration);']);
     end
-    
+
     % Reset Stim vector (frame resolution)
     Stim = zeros(length(CamTrig),1,'single');
-    
+
     for ind = 1:length(StimTrig)
-        
+
         if isfield(Infos,'Events_Order')
             ID = Infos.Events_Order(ind);
         else
             ID = mod(ind-1, NbStim) + 1;
         end
-        
+
         St = StimTrig(ind);
         En = round(StimDurations(ID) * Infos.FrameRateHz + St);
-        
+
         % Clip to valid frame range
         En = min(En, length(Stim));
-        
+
         Stim(St:En) = StimIDs(ID);
     end
-    
+
 end
 end
