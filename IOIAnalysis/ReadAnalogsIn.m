@@ -29,7 +29,13 @@ if ~exist("b_LPF",'var')
 end
 % List of analog files containing raw data:
 aiFilesList = dir([FolderPath 'ai_*.bin']);
-
+% Check if all files exist:
+aiFileNames = sort({aiFilesList.name})';
+aiFileIndx = erase(aiFileNames,'ai_');aiFileIndx = erase(aiFileIndx,'.bin');
+aiFileIndx = str2double(aiFileIndx);
+if ~strcmpi(aiFileNames{1}, 'ai_00000.bin') || any(diff(aiFileIndx)~=1)
+    error('Analog IN binary files missing! Impossible to read Analog In. Please ensure that all files are available and try again.')
+end
 % Opening of the files:
 AnalogIN = [];
 for ind = 1:size(aiFilesList,1)
