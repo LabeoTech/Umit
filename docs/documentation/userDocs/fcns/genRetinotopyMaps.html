@@ -55,6 +55,12 @@ grand_parent: Functions
     <p>
       This function accepts only image time series as input with dimensions Y, X and T. The input data must contain the cortical responses to at least <b>two</b> opposite directions in order to calculate either the azimuth or elevation maps. The directions of the visual stimuli are encoded in degrees where the cardinal directions left-right, bottom-up, right-left and top-down correspond to 0&deg;, 90&deg;, 180&deg; and 270&deg;, respectively. This information should be stored in a <samp>events.mat</samp> file located in the same directory of the input data.
     </p>
+    <p>
+      The function supports both a fully labeled <samp>events.mat</samp> file and a generic <samp>events.mat</samp> file. A fully labeled file contains the direction names directly in <samp>eventNameList</samp> (for example 0, 90, 180 and 270). A generic file contains only a single event type and relies on the <samp>Direction</samp> parameter to define how the stimulus was acquired.
+    </p>
+    <p>
+      <b>Important:</b> when a generic <samp>events.mat</samp> file is used, the <samp>Direction</samp> parameter must describe the real acquisition protocol, not a subset that the user wants to analyze. In other words, <samp>Azimuth_only</samp> and <samp>Elevation_only</samp> do <b>not</b> mean “select only these directions from a four-direction recording”. They mean that the experiment itself was acquired using only those two opposite directions. If the acquisition actually contained all four directions and the user selects <samp>Azimuth_only</samp>, the function may incorrectly merge azimuth and elevation events together and generate wrong maps.
+    </p>
 
     <h3 id="the-algorithm"> The algorithm</h3>
     <hr>
@@ -119,12 +125,18 @@ grand_parent: Functions
     <p>The parameters of this function are the following:</p>
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
-      <samp><b>nSweeps</b></samp> - number of stimulus sweeps <br>
-      <span class="title-desc"><i> positive integer</i></span>
+      <samp><b>Direction</b></samp> - acquisition direction mode <br>
+      <span class="title-desc"><i> 'All' (default) | 'Azimuth_only' | 'Elevation_only'</i></span>
     </button>
     <div class="content">
       <p>
-        Number of times that the visual stimulus was presented. This value is used to select the first harmonic.
+        Defines how the retinotopy experiment was acquired. Use <samp>All</samp> when the recording contains the four cardinal directions 0, 90, 180 and 270. Use <samp>Azimuth_only</samp> when the experiment was acquired using only the opposite horizontal directions 0 and 180. Use <samp>Elevation_only</samp> when the experiment was acquired using only the opposite vertical directions 90 and 270.
+      </p>
+      <p>
+        This parameter is especially important when the function is used with a generic <samp>events.mat</samp> file. In that case, the function uses <samp>Direction</samp> to assign direction labels internally before calculating the maps.
+      </p>
+      <p>
+        <b>Important:</b> this parameter must match the real acquisition. It is not a subset selector for a four-direction dataset. Selecting <samp>Azimuth_only</samp> or <samp>Elevation_only</samp> on data that was actually acquired with all four directions can produce incorrect maps because different stimulus directions may be grouped together as if they belonged to the same axis.
       </p>
     </div>
 
@@ -138,7 +150,7 @@ grand_parent: Functions
         This is used in <a href="#refs">[4]</a> to calculate the azimuth and elevation maps. Set this parameter to <b>true</b> to preprocess each direction movie as the average of each trial normalized by the median of an inter-trial period. To make this work, the trigger timestamps of each trial must be stored in the <samp>events.mat</samp> file and an inter-trial time period between trial must exist.
       </p>
       <p>
-        If the average movie is used, the value of the <samp>nSweeps</samp> parameter is set to 1 sweep, given that each trial represents a single sweep of the visual stimulus.
+        When the average movie is used, the first harmonic is calculated from the average trial movie of each direction.
       </p>
     </div>
     <button title="click to expand" type="button" class="mycollapsible">
@@ -178,7 +190,7 @@ grand_parent: Functions
         Kalatsky, Valery A., and Michael P. Stryker. 2003. ‘New Paradigm for Optical Imaging’. Neuron 38 (4): 529–45. <a href="https://doi.org/10.1016/S0896-6273(03)00286-1">https://doi.org/10.1016/S0896-6273(03)00286-1</a>.
       </li>
       <li>
-        Marshel, James H., Marina E. Garrett, Ian Nauhaus, and Edward M. Callaway. 2011. ‘Functional Specialization of Seven Mouse Visual Cortical Areas’. Neuron 72 (6): 1040–54.
+        Marshel, James&nbsp;H., Marina&nbsp;E. Garrett, Ian Nauhaus, and Edward&nbsp;M. Callaway. 2011. ‘Functional Specialization of Seven Mouse Visual Cortical Areas’. Neuron 72 (6): 1040–54.
         <a href="https://doi.org/10.1016/j.neuron.2011.12.004">https://doi.org/10.1016/j.neuron.2011.12.004</a>.
       </li>
       <li>
