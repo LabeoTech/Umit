@@ -1,29 +1,83 @@
 function outFile = genRetinotopyMaps(data, metaData, SaveFolder, varargin)
-% GENRETINOTOPYMAPS create amplitude and phase maps for each cardinal
-% direction as well as the azimuth and elevation maps when at least two
-% perpendicular directions are present in the input data.
+%GENRETINOTOPYMAPS Generate retinotopy amplitude and phase maps.
 %
-% The timestamps marking the individual directions must be encoded in the "events.mat" file.
-
-% Inputs:
-%   data: numerical matrix containing image time series (with dimensions "Y", "X", "T").
-%   metaData: .mat file with meta data associated with "data".
-%   opts (optional): structure containing extra parameters. See "default_opts" variable below for details!
+%   OUTFILE = GENRETINOTOPYMAPS(DATA, METADATA, SAVEFOLDER)
+%   generates azimuth and/or elevation retinotopy maps from an image time
+%   series and the stimulation timing information stored in the
+%   "events.mat" file located in SAVEFOLDER.
 %
-% Outputs:
-%   outFile: filenames of the generated data.
+%   OUTFILE = GENRETINOTOPYMAPS(..., OPTS)
+%   uses the optional settings structure OPTS.
+%
+%   INPUTS
+%       data
+%           Numeric array or filename. If numeric, it must contain image
+%           time-series data with dimensions Y x X x T. If a filename is
+%           provided, the function runs in low-RAM mode.
+%
+%       metaData
+%           Structure containing metadata associated with DATA. The field
+%           "dim_names" must include {'Y','X','T'}.
+%
+%       SaveFolder
+%           Folder containing the "events.mat" file and where the output
+%           maps will be saved.
+%
+%       opts
+%           Optional structure with fields:
+%
+%           b_useAverageMovie : logical scalar
+%               If true, compute maps from the average trial movie.
+%               If false, compute maps from concatenated stimulus epochs.
+%
+%           Direction : char | string
+%               Indicates which stimulus directions are present in the
+%               recording. Accepted values are:
+%                   'All'
+%                   'Azimuth_only'
+%                   'Elevation_only'
+%
+%               This option is also used to locally standardize generic
+%               event labels from "events.mat" into the expected direction
+%               names without modifying the file on disk.
+%
+%           ViewingDist_cm : numeric scalar
+%               Viewing distance in cm. If provided together with screen
+%               dimensions, phase maps are rescaled to visual degrees.
+%
+%           ScreenXsize_cm : numeric scalar
+%               Screen width in cm.
+%
+%           ScreenYsize_cm : numeric scalar
+%               Screen height in cm.
+%
+%   OUTPUT
+%       outFile
+%           Cell array containing the filenames of the generated output
+%           maps.
+%
+%   NOTES
+%       - The function expects an "events.mat" file in SAVEFOLDER with the
+%         fields: eventID, timestamps, state, and eventNameList.
+%       - Standard direction labels are '0', '90', '180', and '270'.
+%       - If the events file contains generic labels, the function can
+%         locally standardize event names and event IDs according to
+%         opts.Direction without modifying the original file on disk.
 
 % Defaults:
-default_Output = {'AzimuthMap.dat' 'ElevationMap.dat'};  %#ok. This line is here just for Pipeline management.
+default_Output = {'AzimuthMap.dat' 'ElevationMap.dat'}; %#ok<NASGU> % For pipeline management only.
+
 % Parse inputs:
-default_opts = struct('nSweeps', 1, 'b_useAverageMovie', false, 'ViewingDist_cm', 0,'ScreenXsize_cm',0,'ScreenYsize_cm',0);
-opts_values = struct('nSweeps', [1,Inf], 'b_useAverageMovie', [true,false], 'ViewingDist_cm', [0,Inf],'ScreenXsize_cm',[0,Inf],'ScreenYsize_cm',[0,Inf]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
+default_opts = struct('b_useAverageMovie', false, 'Direction', 'All', 'ViewingDist_cm', 0, 'ScreenXsize_cm', 0, 'ScreenYsize_cm', 0);
+opts_values = struct('b_useAverageMovie', [true, false], 'Direction', {{'All', 'Azimuth_only', 'Elevation_only'}}, 'ViewingDist_cm', [0, Inf], 'ScreenXsize_cm', [0, Inf], 'ScreenYsize_cm', [0, Inf]);%#ok<NASGU> % Reference for PipelineManager.m
+
 p = inputParser;
-addRequired(p,'data');
-addRequired(p,'metaData');
-addRequired(p,'SaveFolder', @isfolder);
-addOptional(p,'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
-parse(p,data, metaData, SaveFolder, varargin{:});
+addRequired(p, 'data');
+addRequired(p, 'metaData');
+addRequired(p, 'SaveFolder', @isfolder);
+addOptional(p, 'opts', default_opts, @(x) isstruct(x) && ~isempty(x));
+parse(p, data, metaData, SaveFolder, varargin{:});
+
 opts = p.Results.opts;
 SaveFolder = p.Results.SaveFolder;
 dataIn = p.Results.data;
@@ -32,26 +86,82 @@ clear p
 % Validate inputs
 errID1 = 'umIToolbox:genRetinotopyMaps:WrongInput';
 errID2 = 'umIToolbox:genRetinotopyMaps:MissingInput';
-assert(all(ismember({'Y','X','T'},metaData.dim_names)), errID1,'Input data must have dimensions "Y","X","T".')
-assert(isfile(fullfile(SaveFolder,'events.mat')), errID2,'"events.mat" file not found!');
-evntInfo = load(fullfile(SaveFolder,'events.mat'));
-assert(all(ismember(evntInfo.eventNameList, {'0','90','180','270'})), ...
-    errID2,'Invalid directions found in "events.mat" file! Must be 0,90,180,270.')
+
+assert(all(ismember({'Y','X','T'}, metaData.dim_names)), ...
+    errID1, 'Input data must have dimensions "Y", "X", and "T".');
+
+assert(isfile(fullfile(SaveFolder, 'events.mat')), ...
+    errID2, '"events.mat" file not found.');
+
+evntInfo = load(fullfile(SaveFolder, 'events.mat'));
+
+% Define expected direction labels according to selected mode
+switch lower(string(opts.Direction))
+    case "all"
+        nDir = 4;
+        evNames = {'0', '90', '180', '270'};
+    case "azimuth_only"
+        nDir = 2;
+        evNames = {'0', '180'};
+    case "elevation_only"
+        nDir = 2;
+        evNames = {'90', '270'};
+    otherwise
+        error('umIToolbox:genRetinotopyMaps:InvalidDirection', ...
+            'Unknown Direction option: %s.', string(opts.Direction));
+end
+
+% Validate that the number of active epochs is compatible with the selected
+% direction mode
+assert(~mod(sum(evntInfo.state), nDir), ...
+    'umIToolbox:genRetinotopyMaps:InvalidSweeps', ...
+    'Invalid number of sweeps for Direction = "%s".', string(opts.Direction));
+
+% Store the number of sweeps per direction
+evntInfo.nSweeps = sum(evntInfo.state) / nDir;
+
+% If events.mat uses generic labels, locally standardize event names and IDs
+if ~any(ismember(evntInfo.eventNameList, {'0', '90', '180', '270'}))
+    switch lower(string(opts.Direction))
+        case "all"
+            ID = repelem([1; 1; 2; 2; 3; 3; 4; 4], evntInfo.nSweeps, 1);
+        case {"azimuth_only", "elevation_only"}
+            ID = repelem([1; 1; 2; 2], evntInfo.nSweeps, 1);
+    end
+
+    evntInfo.eventNameList = evNames;
+    evntInfo.eventID = ID;
+end
+
+% Validate direction names after possible local standardization.
+% This stricter check enforces an exact match between the expected set of
+% direction labels and the labels present in events.mat.
+assert(isequal(sort(string(evntInfo.eventNameList(:))), sort(string(evNames(:)))), ...
+    'umIToolbox:genRetinotopyMaps:InvalidDirectionNames', ...
+    'Invalid direction names in events.mat. Expected labels: %s.', ...
+    strjoin(evNames, ', '));
 
 outFile = {};
 
-% Decide mode
-if ischar(dataIn) % Low-RAM mode
+% Decide processing mode
+if ischar(dataIn) || (isstring(dataIn) && isscalar(dataIn))
+    % Low-RAM mode: DATA is a filename
     outFile = RAMsafeMode(dataIn, metaData, SaveFolder, evntInfo, opts, outFile);
-else % Standard in-memory mode
+else
+    % Standard mode: DATA is already loaded in memory
     outFile = standardMode(dataIn, metaData, SaveFolder, evntInfo, opts, outFile);
 end
+
 
 %% ==================== NESTED STANDARD MODE ====================
     function outFile = standardMode(data, metaData, SaveFolder, evntInfo, opts, outFile)
         ampMaps = cell(size(evntInfo.eventNameList));
         phiMaps = ampMaps;
-        freqFFT = opts.b_useAverageMovie * 0 + round(opts.nSweeps)+1;
+        if opts.b_useAverageMovie
+            freqFFT = 2;
+        else
+            freqFFT = round(evntInfo.nSweeps) + 1;
+        end
         
         framestamps = round(evntInfo.timestamps*metaData.Freq);
         w = waitbar(0,'Calculating FFT ...','Name','genRetinotopyMaps');
@@ -73,7 +183,7 @@ end
                     avg_mov = avg_mov + DeltaR;
                 end
                 avg_mov = avg_mov/length(indxOn);
-                fDat = fft(avg_mov,[],3);
+                fDat = fft(avg_mov(:,:,bsln_len+1:end),[],3);
             else
                 frOn = [];
                 for ii = 1:length(indxOn)
@@ -100,7 +210,12 @@ end
         ampMaps = cell(size(evntInfo.eventNameList));
         phiMaps = ampMaps;
         framestamps = round(evntInfo.timestamps*metaData.Freq);
-        freqFFT = opts.b_useAverageMovie * 0 + round(opts.nSweeps)+1;
+
+        if opts.b_useAverageMovie
+            freqFFT = 2;
+        else
+            freqFFT = round(evntInfo.nSweeps) + 1;
+        end
         
         w = waitbar(0,'Calculating FFT (Low RAM usage) ...','Name','genRetinotopyMaps');
         w.Children.Title.Interpreter = 'none';
