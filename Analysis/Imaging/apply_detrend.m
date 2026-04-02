@@ -1,70 +1,158 @@
-function outData = apply_detrend(data)
-% APPLY_DETREND applies a linear detrend to the time domain of image time
-% series or image time series split by events. To calculate the linear
-% trend, this function uses some frames at the start and at the end of the
-% time series to calculate the slope. If the data is an image time series
-% split by events, the number of frames corresponds to the baseline time
-% stored in the "baselinePeriod" variable from the "events.mat" file.
+function outData = apply_detrend(data, metaData)
+% APPLY_DETREND applies a linear detrend along the time dimension of image
+% time series or event-split image time series.
 %
 % Inputs:
-%   data (3D num array | struct): Image time series ('Y','X','T') or
-%       image time series split by events ('E', 'Y', 'X', 'T').
-% Output:
-%   outData (3D num array | struct): Detrended "data".
-
-% Defaults:
-default_Output = 'data_detrended.dat'; %#ok This line is here just for Pipeline management.
-%%% Arguments parsing and validation %%%
-% Validator for data from structure:
-validateDataStructure = @(x) isstruct(x) && isDatStat(x) && isDataImageTimeSeries(x) && x.b_hasEvents;
-% Parse inputs:
-p = inputParser;
-addRequired(p,'data',@(x) (isnumeric(x) && ndims(x) == 3) || validateDataStructure(x)); % Validate if the input is numerical or a structure
-parse(p, data);
+%   data: 3D or 4D numerical matrix (Y,X,T) or (E,Y,X,T), or filename of .dat file
+%   metaData: struct or matfile containing metadata
 %
-outData = data;clear data p;
+% Outputs:
+%   outData: detrended data (or .dat filename if input was a file)
 
-if isstruct(outData)
-    % Detrend data already split by events:
-    fn = fieldnames(outData.data);
-    for ii = 1:length(fn)
-        outData.data.(fn{ii}) = detrendData(outData.data.(fn{ii}),outData.baselinePeriod,outData.FrameRateHz);
-    end
+default_Output = 'data_detrended.dat'; %#ok
+
+% Input validation
+errID = 'umIToolbox:apply_detrend:WrongInput';
+if isnumeric(data)
+    dims = ndims(data);
+    assert(dims==3 || dims==4, errID, 'Data must be 3D or 4D.');
+    outData = data;
+    bIsFile = false;
 else
-    % Detrend image time series:
-    outData = detrendData(outData,0,0);
-end        
+    assert(ischar(data), errID, 'Data must be numeric or a filename.');
+    inFile = data;
+    bIsFile = true;
+end
+
+% Metadata and dimensions
+dataSize = [metaData.datSize, metaData.datLength];
+bHasEvents = any(strcmpi('E', metaData.dim_names));
+if bHasEvents
+    Ne = dataSize(1); Ny = dataSize(2); Nx = dataSize(3); Nt = dataSize(4);
+else
+    Ne = 1; Ny = dataSize(1); Nx = dataSize(2); Nt = dataSize(3);
+end
+
+% Determine baseline frames
+if isfield(metaData, 'preEventTime_sec')
+    frames = round(metaData.preEventTime_sec*metaData.Freq);
+    frames = max(frames,3);
+    if mod(frames,2)==0, frames = frames+1; end
+else
+    frames = 7;
+end
+
+if bIsFile
+    outFile = fullfile(fileparts(inFile), 'DATADETRENDED.dat');
+    preallocateDatFile(outFile, metaData);
+
+    fidIn  = fopen(inFile,'r');
+    cIn = onCleanup(@() safeFclose(fidIn));
+    fidOut = fopen(outFile,'r+');
+    cOut = onCleanup(@() safeFclose(fidOut));
+    
+    if bHasEvents
+        
+        % --- Event-split data: fread trial by trial ---
+        
+        for e = 1:Ne            
+            % Read trial
+            fprintf('Chunk %i/%i [Reading file ...]\n',e,Ne)
+            trialData = readTrial(fidIn,e,[Ne,Ny,Nx,Nt],'single');
+            fprintf('Chunk %i/%i [Detrending data ...]\n',e,Ne)
+            trialData = reshape(trialData, Ny*Nx, Nt);
+            % Detrending
+            delta_y = median(trialData(:,end-frames+1:end),2,'omitnan') - ...
+                      median(trialData(:,1:frames),2,'omitnan');
+            delta_x = Nt - frames;
+            M = delta_y ./ delta_x;
+            b = median(trialData(:,1:frames),2,'omitnan');
+            
+            trend = M .* linspace(-2,Nt-3,Nt) + b;
+            
+            trialData = trialData - trend + b;            
+            clear delta_x delta_y M b trend
+            
+            trialData = reshape(trialData, Ny, Nx, Nt);
+            
+            % Write to outFile
+            fprintf('Chunk %i/%i [Writing to file ...]\n',e,Ne)
+            writeTrial_YXTE(fidOut,e,trialData,[Ny,Nx,Nt,Ne],'single');
+            clear trialData
+        end
+        fclose(fidOut);
+        permuteDat_YXTE_to_EYXT_inplace(outFile,[Ny,Nx,Nt,Ne],'single')
+        fprintf('Chunk %i/%i [Completed]\n',e,Ne)
+        
+    else
+        % --- Non-event data: chunk along X dimension ---
+        nChunks = calculateMaxChunkSize(Nx*Ny*Nt*4,2,.3);
+        chunkX  = ceil(Nx / nChunks);
+        
+        for c = 1:nChunks
+            xStart = (c-1)*chunkX + 1;
+            xEnd   = min(xStart + chunkX - 1, Nx);
+            xIdx   = xStart:xEnd;
+            fprintf('Chunk %i/%i [Reading file ...]\n',c,nChunks)
+            slab = spatialSlabIO('read', fidIn, Ny, Nx, Nt, xIdx, metaData.Datatype);
+            fprintf('Chunk %i/%i [Detrending data ...]\n',c,nChunks)
+            slab = reshape(slab, Ny*numel(xIdx), Nt);
+            % Detrending
+            delta_y = median(slab(:,end-frames+1:end),2,'omitnan') - ...
+                      median(slab(:,1:frames),2,'omitnan');
+            delta_x = Nt - frames;
+            M = delta_y ./ delta_x;
+            b = median(slab(:,1:frames),2,'omitnan');
+            
+            trend = M .* linspace(-2,Nt-3,Nt) + b;
+            
+            slab = slab - trend + b;
+            clear delta_x delta_y M b trend
+            slab = reshape(slab, Ny, numel(xIdx), Nt);     
+            
+            % Write to file
+            fprintf('Chunk %i/%i [Writing to file ...]\n',c,nChunks)
+            spatialSlabIO('write', fidOut, Ny, Nx, Nt, xIdx, metaData.Datatype, slab);
+            fprintf('Chunk %i/%i [Completed]\n',c,nChunks)
+            clear slab
+        end
+        fclose(fidOut);
+    end
+
+    fclose(fidIn);    
+    outData = outFile;
+
+else
+    % --- Array mode ---
+    orig_sz = size(outData);
+
+    if bHasEvents
+        for e = 1:orig_sz(1)
+            slab = squeeze(outData(e,:,:,:));
+            slab = reshape(slab, Ny*Nx, Nt);
+            delta_y = median(slab(:,end-frames+1:end),2,'omitnan') - ...
+                      median(slab(:,1:frames),2,'omitnan');
+            delta_x = Nt - frames;
+            M = delta_y ./ delta_x;
+            b = median(slab(:,1:frames),2,'omitnan');
+            trend = M .* linspace(-2,Nt-3,Nt) + b;
+
+            slab = slab - trend + b;
+            outData(e,:,:,:) = reshape(slab, Ny, Nx, Nt);
+        end
+    else
+        slab = reshape(outData, Ny*Nx, Nt);
+        delta_y = median(slab(:,end-frames+1:end),2,'omitnan') - ...
+                  median(slab(:,1:frames),2,'omitnan');
+        delta_x = Nt - frames;
+        M = delta_y ./ delta_x;
+        b = median(slab(:,1:frames),2,'omitnan');
+        trend = M .* linspace(-2,Nt-3,Nt) + b;
+
+        slab = slab - trend + b;
+        outData = reshape(slab, orig_sz);
+    end
+end
 
 disp('Finished detrend!');
-end
-% Local function:
-function data_detrended = detrendData(data,baselinePeriod,FrameRateHz)
-
-orig_sz = size(data);
-% Here, we assume that the Time dimension is the last one.
-data = reshape(data, [], orig_sz(end));
-% Calculate linear trend:
-disp('Detrending...');
-% Check for baseline info:
-if baselinePeriod
-    frames = round(baselinePeriod*FrameRateHz);
-    if frames <=2
-        frames = 3;
-    end
-    % use odd number of frames:
-    if mod(frames,2) == 0
-        frames = frames + 1;
-    end
-else
-    frames = 7; % Force to 7, the number of frames to calculate linear slope.
-end
-delta_y = median(data(:,end-frames:end),2, 'omitnan') - median(data(:,1:frames),2,'omitnan');
-delta_x =(size(data,2)- frames);
-M = delta_y./delta_x; clear delta_*
-b = median(data(:,1:frames),2,'omitnan');
-trend = bsxfun(@times,M,linspace(-2,size(data,2)-3,...
-    size(data,2))) + b;
-% Remove trend if data was already normalized
-data_detrended = data - trend + b;
-data_detrended = reshape(data_detrended, orig_sz);
 end
