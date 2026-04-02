@@ -17,7 +17,7 @@ default_opts = struct('UseFile', 'auto', 'RefFile','ImagingReferenceFrame.mat');
 opts_values = struct('UseFile',{{'auto'}}, 'RefFile',{{'ImagingReferenceFrame.mat'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
 %%% Arguments parsing and validation %%%
 p = inputParser;
-addRequired(p,'data',@(x) isnumeric(x) & ismember(ndims(x),[2 3])); % Validate if the input is a 3-D numerical matrix:
+addRequired(p,'data',@(x) (isnumeric(x) && ismember(ndims(x),[2 3])) || ischar(x)); % Validate if the input is a 3-D numerical matrix:
 addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
 addRequired(p,'object', @(x) isa(x,'Modality') || isa(x,'Acquisition'));
 addOptional(p,'opts', default_opts,@(x) isstruct(x) && ~isempty(x) && ischar(x.UseFile));
@@ -116,7 +116,9 @@ refFr_mask = imgaussfilt(refFr, .5) - imgaussfilt(refFr, radius);
 % targetFr_mask = imsharpen(targetFr,'Radius', 1.5, 'Amount', 1);
 
 targetFr_mask = imgaussfilt(targetFr, .5) - imgaussfilt(targetFr, radius);
-
+% Remove NaNs from masks:
+refFr_mask(isnan(refFr_mask)) = 0;
+targetFr_mask(isnan(targetFr_mask)) = 0;
 % Perform image registration:
 tform_init = imregcorr(targetFr_mask,refFr_mask, 'similarity', 'Window', true);
 Rfixed = imref2d(size(refFr));
@@ -211,13 +213,89 @@ plot(s3,1,1,'rx', 'Tag', 'rDot'); hold(s3,'off');
 linkaxes([s1,s2,s3], 'xy');
 %%%%%%
 
-% Apply mask to data file:
+% ============================================================
+% Apply alignment to data (standard + low-RAM hybrid mode)
+% ============================================================
 h = waitbar(0,'Initiating alignment...');
-outData = zeros(size(refFr_mask,1),size(refFr_mask,2), size(data,3), 'single');
-for i = 1:size(outData,3)
-    waitbar(i/size(outData,3), h, 'Performing alignment...')
-    outData(:,:,i) = imwarp(data(:,:,i), tform, 'nearest', 'OutputView', Rfixed);
+
+ny = size(refFr_mask,1);
+nx = size(refFr_mask,2);
+
+idxT = strcmp(metaData.dim_names,'T');
+if any(idxT)
+    nt = metaData.datLength(idxT);
+else
+    nt = 1;
 end
+
+bytesPerElem = 4; % single
+
+% --- LOW-RAM MODE ------------------------------------------------
+if ischar(data)
+    % Save output file meta data
+    outFile = fullfile(object.SaveFolder, default_Output);
+    save(strrep(outFile,'.dat','.mat'),'-struct','metaData');
+    
+    fidIn  = fopen(data,'r');
+    cIn = onCleanup(@() safeFclose(fidIn));
+    fidOut = fopen(outFile,'w');
+    cOut = onCleanup(@() safeFclose(fidOut));
+    
+    % NaN mask from first frame
+    fseek(fidIn,0,'bof');
+    firstFrame = fread(fidIn, ny*nx, '*single');
+    firstFrame = reshape(firstFrame,ny,nx);
+    nan_mask = isnan(firstFrame);
+    nan_mask_warped = imwarp(nan_mask, tform, 'nearest', 'OutputView', Rfixed);
+    
+    for t = 1:nt
+        waitbar(t/nt,h,'Performing alignment...')
+        
+        % Read frame
+        fseek(fidIn,(t-1)*ny*nx*bytesPerElem,'bof');
+        frame = fread(fidIn, ny*nx, ['*' metaData.Datatype]);
+        frame = reshape(frame,ny,nx);
+        
+        % Remove NaNs
+        frame(nan_mask) = 0;
+        
+        % Warp
+        frame = imwarp(frame, tform, 'nearest', 'OutputView', Rfixed);
+        
+        % Restore NaNs
+        frame(nan_mask_warped) = NaN;
+        
+        % Write output
+        fseek(fidOut,(t-1)*ny*nx*bytesPerElem,'bof');
+        fwrite(fidOut, frame, metaData.Datatype);
+    end
+    
+    fclose(fidIn);
+    fclose(fidOut);
+    
+    outData = outFile;
+    
+    % --- STANDARD MODE -----------------------------------------------
+else
+    outData = zeros(ny,nx,nt,'single');
+    
+    nan_mask = isnan(data(:,:,1));
+    nan_mask_warped = imwarp(nan_mask, tform, 'nearest', 'OutputView', Rfixed);
+    
+    for t = 1:nt
+        waitbar(t/nt,h,'Performing alignment...')
+        
+        frame = data(:,:,t);
+        frame(nan_mask) = 0;
+        
+        frame = imwarp(frame, tform, 'nearest', 'OutputView', Rfixed);
+        frame(nan_mask_warped) = NaN;
+        
+        outData(:,:,t) = frame;
+    end
+end
+
+%-------------------------------------------------------------------------
 waitbar(1,h, 'Alignment finished!'); pause(.5);
 disp('Check figure to validate alignment.')
 waitbar(1,h, 'Check the Figure!'); pause(.5);
