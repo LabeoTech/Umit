@@ -1,93 +1,178 @@
-function outData = normalizeLPF(data, SaveFolder, varargin)
-% NORMALIZELPF performs a data normalization by low pass filtering.
+function outData = normalizeLPF(data, metaData, varargin)
+% NORMALIZELPF performs a data normalization by low-pass filtering.
 % The filtering algorithm consists in creating two low-passed versions of the
-% signal with a given cut-off frequency ("LowCutOff" and "HighCutOff") and
+% signal with a given cut-off frequency ("LowCutOffHz" and "HighCutOffHz") and
 % subsequently subtracting the two filtered signals.
-% In this case, the signal(R) is expressed as DeltaR.
-% Optionally, the subtracted signals can be normalized to the low cut-off signal
+% Optionally, the subtracted signals can be normalized by the low cut-off signal
 % to express the signal as DeltaR/R.
-% This function is a wrapper of the IOI library function "NormalisationFiltering.m".
-% For more information on the algorithm, refer to the function's documentation.
+%
+% This function is a wrapper of the IOI library function
+% "NormalisationFiltering.m".
 %
 % Limitations:
-% The data must be an Image time series with dimensions {Y,X,T} or split by events ('E','Y','X','T').
+%   The data must be an Image time series with dimensions:
+%   {Y, X, T} or {E, Y, X, T}.
 %
 % Inputs:
-%   data: numerical matrix containing image time series (with dimensions "Y", "X", "T" or "E","Y", "X", "T").
-%   SaveFolder (char): folder containing "data" and the associated AcqInfos.mat file.
-%   opts (optional): structure containing extra parameters. See "default_opts" variable below for details!
+%   data     : numeric array containing image time series
+%   metaData : struct or matlab.io.MatFile with associated meta data
+%   opts     : (optional) structure with fields:
+%       - LowCutOffHz   : low cut-off frequency (Hz)
+%       - HighCutOffHz  : high cut-off frequency (Hz)
+%       - Normalize     : true ? ?R/R, false ? ?R
+%       - bApplyExpFit  : apply exponential decay correction
+%
 % Outputs:
-%   outData: numerical matrix with dimensions {Y,X,T}.
-
-% Defaults:
-default_Output = 'normLPF.dat';  %#ok. This line is here just for Pipeline management.
-default_opts = struct('LowCutOffHz', 0.0083, 'HighCutOffHz', 1, 'Normalize', true, 'bApplyExpFit', false);
-opts_values = struct('LowCutOffHz', [0,Inf], 'HighCutOffHz',[eps,Inf],'Normalize',[false, true],'bApplyExpFit', [true,false]);%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
-% Some notes on the CutOff values:
-% 1) The HighCutOffHz value of 0 will be translated as the Nyquist of the sample rate
-% 2) For the LowCutOff, values equal to zero will give a low-passed signal at "HighCutOff".
+%   outData  : filtered data, same size as input
+%   metaData : unchanged meta data
 
 
-%%% Arguments parsing and validation %%%
+default_Output = 'normLPF.dat'; %#ok  Required by PipelineManager
+default_opts = struct('LowCutOffHz', 0.0083, 'HighCutOffHz', 1,'Normalize', true, 'bApplyExpFit', false);% Required by PipelineManager
+opts_values = struct('LowCutOffHz', [0, Inf], 'HighCutOffHz', [eps, Inf], 'Normalize', [false, true], 'bApplyExpFit', [true, false]); %#ok  Required by PipelineManager
+
 p = inputParser;
-addRequired(p,'data',@(x) (isnumeric(x) && ndims(x) == 3) || isstruct(x)); % Validate if the input is numerical or a structure.
-addRequired(p,'SaveFolder',@(x) isfolder(x)); % Validate if the SaveFolder exists.
-addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
-% Parse inputs:
-parse(p,data, SaveFolder, varargin{:});
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Initialize Variables and remove inputParser object:
-outData = data;
-opts = p.Results.opts;
-clear p data
-%%%%
-if isstruct(outData)
-    Freq = outData.FrameRateHz;
-else
-    info = load(fullfile(SaveFolder,'AcqInfos.mat'));
-    Freq = info.AcqInfoStream.FrameRateHz;
-end    
-% Check if cut-off frequencies are in the acceptable range:
-errID = 'umIToolbox:normalizeLPF:InvalidInput';
-% Check Low cut-off frequency:
-if opts.LowCutOffHz < 0 || opts.LowCutOffHz > Freq/2
-    error(errID,['Invalid cut off value! LowCutOffHz must be between 0 and ' num2str(Freq/2) '!'])
+addRequired(p, 'data', @(x) isnumeric(x) | ischar(x));
+addRequired(p, 'metaData', @(x) isa(x,'matlab.io.MatFile') || isstruct(x));
+addOptional(p, 'opts', default_opts, @(x) isstruct(x) && ~isempty(x));
+parse(p, data, metaData, varargin{:});
+
+outData  = p.Results.data;
+metaData = p.Results.metaData;
+opts     = p.Results.opts;
+clear p
+
+% -------------------------------------------------------------------------
+% Validate dimensions
+% -------------------------------------------------------------------------
+errID  = 'umIToolbox:normalizeLPF:InvalidInput';
+errMsg = 'Data must have dimensions {"Y","X","T"} or {"E","Y","X","T"}.';
+assert(all(ismember({'Y','X','T'}, metaData.dim_names)), errID, errMsg);
+
+idxE = strcmpi(metaData.dim_names, 'E');
+b_HasEvents = any(idxE);
+
+% -------------------------------------------------------------------------
+% Validate cut-off frequencies
+% -------------------------------------------------------------------------
+Fs = metaData.Freq;
+
+if opts.LowCutOffHz < 0 || opts.LowCutOffHz > Fs/2
+    error(errID, ...
+        'LowCutOffHz must be between 0 and Nyquist frequency.');
 end
-% Check High cut-off frequency:
+
+if opts.HighCutOffHz <= 0 || opts.HighCutOffHz > Fs/2
+    error(errID, ...
+        'HighCutOffHz must be > 0 and <= Nyquist frequency.');
+end
+
 if opts.HighCutOffHz < opts.LowCutOffHz
-    error(errID,'Invalid cut off value! HighCutOffHz must be higher than LowCutOffHz!');
+    error(errID, ...
+        'HighCutOffHz must be >= LowCutOffHz.');
 end
 
-if opts.HighCutOffHz == 0 ||  opts.HighCutOffHz > Freq/2
-    error(errID,['Invalid cut off value! HighCutOffHz must be a positive number less than or equal to ' num2str(Freq/2) '!']);
-end
-
-% Process data:
-if isstruct(outData)
-    % For data from .DATASTAT files
-    % Check if the data is an Image time series
-    errID = 'umIToolbox:normalizeLPF:InvalidInput';
-    errMsg = 'Wrong Input Data type. Data must be an Image time series.';
-    assert(strcmpi(outData.dataCategory.data,'Image-time-series'),errID,errMsg);    
-    if outData.b_hasEvents
-        % The data is split by events       
-        for ii = 1:size(outData.data.data,1)
-            disp(['Filtering Event #' num2str(ii) '/' size(outData.data.data,1) '...']);
-            outData.data.data(ii,:,:,:) = NormalisationFiltering(pwd, squeeze(outData.data.data(ii,:,:,:)), opts.LowCutOffHz, opts.HighCutOffHz, ...
-                opts.Normalize,opts.bApplyExpFit, Freq);
+% ========================================================================
+% CASE 1 — DATA IS ON DISK (.dat)
+% ========================================================================
+if ischar(outData)
+       
+    inFile  = outData;
+    outFile = fullfile(fileparts(inFile), 'NORMALIZEDDATA.dat');
+    outData = outFile;
+    sz = [metaData.datSize, metaData.datLength];        
+    % ---------------------------------------------------------------------
+    % EVENT-SPLIT DATA ON DISK
+    % ---------------------------------------------------------------------
+    if b_HasEvents
+        Ne = sz(1);
+%         Ny = sz(2);
+%         Nx = sz(3);
+%         Nt = sz(4);
+        
+        % Preallocate output file
+        preallocateDatFile(outFile, metaData);
+        fid_out = fopen(outFile,'r+');   
+        c_out = onCleanup(@() safeFclose(fid_out));
+        fid_in = fopen(inFile, 'r');
+        c_in = onCleanup(@() safeFclose(fid_in));
+        
+        disp('Filtering event-split data (disk-based)...');
+        
+        for e = 1:Ne
+            % Read one full trial (safe in RAM)
+            trial = readTrial(fid_in,e,sz,'single');
+                        
+            % Run filtering on single trial
+            trial = NormalisationFiltering( ...
+                pwd, trial, ...
+                opts.LowCutOffHz, ...
+                opts.HighCutOffHz, ...
+                opts.Normalize, ...
+                opts.bApplyExpFit, ...
+                Fs);
+            
+            % Write back   
+            writeTrial_YXTE(fid_out,e,trial,sz([2 3 4 1]),'single')            
         end
-    else
-        % The data is an image-time-series.
-        outData.data.data = NormalisationFiltering(SaveFolder, outData.data.data, opts.LowCutOffHz, opts.HighCutOffHz, ...
-        opts.Normalize,opts.bApplyExpFit, Freq);
-    end            
-else
-    % For Image time series from .DAT files:        
-    outData = NormalisationFiltering(SaveFolder, outData, opts.LowCutOffHz, opts.HighCutOffHz, ...
-        opts.Normalize,opts.bApplyExpFit, Freq);
-    disp('Finished with normalization filtering.')
+        
+        fclose(fid_in);
+        fclose(fid_out);
+        % Fix Permutted output file
+        permuteDat_YXTE_to_EYXT_inplace(outFile,sz([2 3 4 1]),'single');
+        
+        % ---------------------------------------------------------------------
+        % NO EVENTS — LET NormalisationFiltering HANDLE HYBRID MODE
+        % ---------------------------------------------------------------------
+    else               
+        NormalisationFiltering( ...
+            pwd, inFile, ...
+            opts.LowCutOffHz, ...
+            opts.HighCutOffHz, ...
+            opts.Normalize, ...
+            opts.bApplyExpFit, ...
+            Fs,outFile);
+    end
+    
+    return
 end
 
-disp('Finished with temporal filter.')
+% ========================================================================
+% CASE 2 — DATA IS IN MEMORY
+% ========================================================================
+idx_nan = isnan(outData);
+outData(idx_nan) = 0;
+
+disp('Filtering data...');
+
+if b_HasEvents
+    % Reorder to E,Y,X,T
+    dimorder = 1:ndims(outData);
+    dimorder = [dimorder(idxE), dimorder(~idxE)];
+    outData = permute(outData, dimorder);
+    
+    for e = 1:size(outData,1)
+        outData(e,:,:,:) = NormalisationFiltering( ...
+            pwd, squeeze(outData(e,:,:,:)), ...
+            opts.LowCutOffHz, ...
+            opts.HighCutOffHz, ...
+            opts.Normalize, ...
+            opts.bApplyExpFit, ...
+            Fs);
+    end
+    
+    outData = ipermute(outData, dimorder);
+else
+    outData = NormalisationFiltering( ...
+        pwd, outData, ...
+        opts.LowCutOffHz, ...
+        opts.HighCutOffHz, ...
+        opts.Normalize, ...
+        opts.bApplyExpFit, ...
+        Fs);
+end
+
+outData(idx_nan) = NaN;
+disp('Finished with temporal filter.');
 
 end
