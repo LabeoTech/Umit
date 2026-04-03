@@ -1,135 +1,292 @@
-function outData = apply_aggregate_function(data, SaveFolder, varargin)
-% APPLY_AGGREGATE_FUNCTION applies an aggregate function to one
-% dimensions of a .DAT file. Works with image-time-series only!
-
+function [outData, metaData] = apply_aggregate_function(data, metaData, varargin)
+% APPLY_AGGREGATE_FUNCTION applies an aggregate function along Time (T) or Event (E)
+% dimensions in low RAM mode.
+%
+% Usage:
+%   outData = apply_aggregate_function(data, metaData, opts)
+%
 % Inputs:
-%   data: numerical matrix containing image-time-series data.
-%   SaveFolder (char): folder containing "data" and the associated AcqInfos.mat file.
-%   opts (optional) : structure containing the function's parameters:
-%       aggregateFcn (default = "mean") : name of the aggregate function.
-%       dimension (default = "Time") : name of the dimension to perform
-%       the calculation:
-% Output:
-%   outData: structure containing stats-ready aggregated data.
+%   data     : numerical matrix or filename of .dat file
+%   metaData : structure or matfile associated with data
+%   opts     : struct with fields:
+%              aggregateFcn  : 'mean','median','mode','std','max','min','sum'
+%              dimensionName : 'T' or 'E'
+%
+% Outputs:
+%   outData  : aggregated data (or filename in low RAM mode)
+%   metaData : updated metadata
 
-% Defaults:
-default_Output = ' dataAgg.dat'; %#ok This is here for PIPELINEMANAGER.M.
-default_opts = struct('aggregateFcn', 'mean', 'dimension', 'Time');
-opts_values = struct('aggregateFcn', {{'mean', 'max', 'min', 'median', 'mode', 'sum', 'std'}}, 'dimension',{{'Space','Time','Events'}});% This is here only as a reference for PIPELINEMANAGER.m.
-%%% Arguments parsing and validation %%%
-% Validator for data from structure:
-validateDataStructure = @(x) isstruct(x) && isDatStat(x) && isDataImageTimeSeries(x);
-% Parse inputs:
+% Default options
+default_Output = 'aggFcn_applied.dat'; %#ok This is here for PIPELINEMANAGER.M.
+default_opts = struct('aggregateFcn','mean','dimensionName','T');
+opts_values = struct('aggregateFcn',{{'mean','std','max','min','sum'}},'dimensionName',{{'T','E'}});
+
 p = inputParser;
-addRequired(p,'data',@(x) (isnumeric(x) && ndims(x) == 3) || validateDataStructure(x)); % Validate if the input is numerical or a structure
-addRequired(p,'SaveFolder',@(x) isfolder(x)); % Validate if the SaveFolder exists.
-addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x) && ...
+addRequired(p,'data',@(x) isnumeric(x) || ischar(x));
+addRequired(p,'metaData', @(x) isstruct(x) || isa(x,'matlab.io.MatFile'));
+addOptional(p,'opts',default_opts,@(x) isstruct(x) && ...
     ismember(x.aggregateFcn, opts_values.aggregateFcn) && ...
-    ismember(x.dimension, opts_values.dimension));
-% Parse inputs:
-parse(p,data, SaveFolder, varargin{:});
-%Initialize Variables:
+    ismember(x.dimensionName, opts_values.dimensionName));
+parse(p,data,metaData,varargin{:});
+data = p.Results.data;
+metaData = p.Results.metaData;
 opts = p.Results.opts;
 clear p
-%
-if isstruct(data)
-    % For data in structure, build new structure and store aggregated
-    % values:
-    dataAgg = struct();
-    fn = fieldnames(data.data);
-    evList = [];
-    if data.b_hasEvents
-        evList = data.eventID;
-    end    
-    for ii =1:length(fn)
-        [dataAgg.(fn{ii}), newEvList] = applyAggFcn(data.data.(fn{ii}), opts.aggregateFcn,opts.dimension,data.b_hasEvents,evList);
+
+% Determine if low RAM mode
+bLowRAM = ischar(data);
+
+% Map dimension
+dimName = upper(opts.dimensionName);
+data_dim_names = metaData.dim_names;
+
+if ~ismember(dimName, data_dim_names)
+    error('apply_aggregate_function:InvalidDim',...
+        'Dimension %s not found in metadata.', dimName);
+end
+dimIdx = find(strcmp(dimName,data_dim_names));
+
+
+if bLowRAM
+    % Preallocate output file
+    outFile = fullfile(pwd,'AGGFCN_DATA.dat'); % default name
+    outMeta = metaData;
+    sz = [metaData.datSize metaData.datLength];
+    % Remove aggregated dimension
+    newSz = sz;
+    if strcmpi(opts.dimensionName,'t')
+        newSz(dimIdx) = [];
+        outMeta.dim_names(dimIdx) = [];
     end
-    if ~isempty(newEvList)
-        data.eventID = newEvList;
+    outMeta.datSize = newSz([1:2]);
+    outMeta.datLength = newSz([3:end]);
+    
+    
+    fidIn = fopen(data,'r');
+    c_in = onCleanup(@() safeFclose(fidIn));
+    fidOut = fopen(outFile,'w');
+    c_out = onCleanup(@() safeFclose(fidOut));
+    % Determine chunk size
+    
+    dims = sz;
+    % Only T or E aggregation supported
+    switch dimName
+        case 'T'
+            % Aggregate along time for data with or without events                        
+            
+            if numel(dims) == 4
+                % Data has E,Y,X,T
+                nE  = dims(1);
+                nY  = dims(2);
+                nX  = dims(3);
+                nT  = dims(4);
+                
+                % Preallocate output: aggregate along time => size [E,Y,X]
+                aggData = zeros(nE, nY, nX, 'single');
+                
+                for e = 1:nE
+                    trialData = readTrial(fidIn,e,[nE,nY,nX,nT],'single');
+                    trialData = permute(trialData,[3 1 2]);                   
+                    % Aggregate along T (3rd dimension)
+                    aggData(e,:,:) = calcAgg(trialData, opts.aggregateFcn);
+                end
+                
+            elseif numel(dims) == 3
+                % Data has Y,X,T
+                nY = dims(1);
+                nX = dims(2);
+                nT = dims(3);
+                
+                % Preallocate output: aggregate along time => size [Y,X]
+                aggData = zeros(nY, nX, 'single');
+                
+                nElem = nY*nX*nT;
+                nIter = calculateMaxChunkSize(nY*nX*nT*4,2);
+                if nIter >1
+                    % Determine X chunking
+                    xPerIter = ceil(nX / nIter);
+                    
+                    xStart = 1;
+                    
+                    for ii = 1:nIter
+                        
+                        % X indices for this chunk
+                        xEnd   = min(xStart + xPerIter - 1, nX);                                                
+                        
+                        % Read slab: [Y, xCount, T]
+                        slab = spatialSlabIO('read',fidIn, nY,nX,nT, xStart:xEnd, 'single');
+                        
+                        % Rearrange to [T, Y, Xchunk]
+                        slab = permute(slab, [3 1 2]);
+                        
+                        % Aggregate along T ? [Y, Xchunk]
+                        aggChunk = calcAgg(slab, opts.aggregateFcn);
+                        
+                        % Store result into output
+                        aggData(:, xStart:xEnd) = aggChunk;
+                        
+                        % Advance X index
+                        xStart = xEnd + 1;
+                    end
+
+                else
+                    % Read the entire block
+                    trialData = fread(fidIn, nElem, ['*' metaData.Datatype]);
+                    trialData = reshape(trialData, nY, nX, nT);
+                    trialData = permute(trialData,[3 1 2]);
+                    % Aggregate along T (3rd dimension)
+                    aggData(:,:) = calcAgg(trialData, opts.aggregateFcn);
+                end
+                
+            else
+                error('Unsupported data dimensions for case ''T''.');
+            end
+            
+            % Write output
+            fwrite(fidOut, cast(aggData,'single'), 'single');
+            
+            
+        case 'E'
+            % Aggregate along Event dimension by condition for interleaved data [E,Y,X,T]
+            nE  = dims(1);
+            nY  = dims(2);
+            nX  = dims(3);
+            nT  = dims(4);                       
+            
+            % Unique conditions
+            evIdx = unique(metaData.eventID);
+            nCond = numel(evIdx);
+            
+            % Preallocate output depending on aggregation
+            switch lower(opts.aggregateFcn)
+                case {'mean','sum','std'}
+                    aggData = zeros(nCond, nY, nX, nT, 'double'); % double for stability
+                case {'min','max'}
+                    aggData = zeros(nCond, nY, nX, nT, 'single');
+                otherwise
+                    error('Unsupported aggregation function');
+            end
+                        
+            for c = 1:nCond
+                condEvents = find(metaData.eventID == evIdx(c));
+                nEventsCond = numel(condEvents);
+                
+                % Reset temporary aggregation for this condition
+                switch lower(opts.aggregateFcn)
+                    case {'mean','sum'}
+                        tempAgg = zeros(nY, nX, nT, 'double');
+                    case {'min','max'}
+                        tempAgg = zeros(nY, nX, nT, 'single');
+                    case 'std'
+                        meanVal = zeros(nY, nX, nT, 'double');
+                        M2 = zeros(nY, nX, nT, 'double');
+                end
+                
+                % Loop over all events of this condition
+                for ee = 1:nEventsCond
+                    e = condEvents(ee);
+                    
+                    % Read event e from interleaved file
+                    trialData = readTrial(fidIn,e,[nE,nY,nX,nT],'single');
+                                        
+                    % Incremental aggregation
+                    switch lower(opts.aggregateFcn)
+                        case {'mean','sum'}
+                            tempAgg = tempAgg + double(trialData);
+                        case 'max'
+                            if ee == 1
+                                tempAgg = trialData;
+                            else
+                                tempAgg = max(tempAgg, trialData);
+                            end
+                        case 'min'
+                            if ee == 1
+                                tempAgg = trialData;
+                            else
+                                tempAgg = min(tempAgg, trialData);
+                            end
+                        case 'std'
+                            if ee == 1
+                                meanVal = double(trialData);
+                                M2 = zeros(nY,nX,nT,'double');
+                            else
+                                delta = double(trialData) - meanVal;
+                                meanVal = meanVal + delta / ee;
+                                M2 = M2 + delta .* (double(trialData) - meanVal);
+                            end
+                    end
+                end
+                
+                % Finalize aggregation for this condition
+                switch lower(opts.aggregateFcn)
+                    case 'mean'
+                        aggData(c,:,:,:) = tempAgg / nEventsCond;
+                    case 'sum'
+                        aggData(c,:,:,:) = tempAgg;
+                    case 'std'
+                        aggData(c,:,:,:) = sqrt(M2 / (nEventsCond - 1));
+                    otherwise
+                        aggData(c,:,:,:) = tempAgg; % min/max already finalized
+                end
+            end
+            
+            % Write output
+            fwrite(fidOut, cast(aggData, 'single'), 'single');
     end
-    % Create new stats-ready structure:
-    outData = genDataStructure(dataAgg,data,obsID,'hasEvents',data.b_hasEvents,'extraInfo',data);
+    metaData = genMetaData(aggData,outMeta.dim_names,outMeta);
+    save(strrep(outFile,'.dat','.mat'),'-struct','metaData');
+    % Save aggregate data to file
+    fclose(fidIn);
+    fclose(fidOut);
+    outData = outFile;
+        
 else
-    % For 3D arrays:
-    dataAgg = applyAggFcn(data, opts.aggregateFcn, opts.dimension, false,[]);
-    % Create new stats-ready structure:
-    % Get Frame Rate from Folder:
-    info = load(fullfile(SaveFolder,'AcqInfos.mat'));
-    extraInfo.FrameRateHz = info.AcqInfoStream.FrameRateHz;
-    outData = genDataStructure(dataAgg, data,'extraInfo',extraInfo);
-end
-
-end
-
-% Local functions:
-
-function [out,new_eventID] = applyAggFcn(vals,aggFcn,dimName,b_hasEvents,eventID)
-% applyAggFcn performs aggregation on the specified dimension of the input data.
-%
-% This function aggregates the input array `vals` based on the specified
-% dimension `dimName` ('SPACE', 'TIME', or 'EVENTS') using the provided
-% aggregation function `aggFcn`. If the data is split by events, it permutes
-% the array before aggregation. The function also returns a new event ID
-% array `new_eventID` when aggregating across events.
-%
-% Input:
-%   vals        - Input array to be aggregated.
-%   aggFcn      - Aggregation function handle (e.g., @mean, @sum).
-%   dimName     - Name of the dimension to aggregate ('SPACE', 'TIME', 'EVENTS').
-%   b_hasEvents - Boolean flag indicating if the data is split by events.
-%   eventID     - Event ID array for aggregating across events.
-
-% Permute array, if the data is split by events:
-if b_hasEvents
-    vals = permute(vals,[2 3 4 1]);
-end
-new_eventID = [];
-% Perform aggregation of selected dimension:
-switch upper(dimName)
-    case 'SPACE'
-        % Aggregates in X and Y dimensions:
-        out = calcAgg(vals,aggFcn,[1 2]);
-    case 'TIME'
-        % Aggregates in time dimension:
-        out = calcAgg(vals,aggFcn,3);
-    case 'EVENTS'
-        % Aggregates across events:
-        new_eventID = unique(eventID,'stable');
-        out = zeros([size(vals,1) size(vals,2), size(vals,3), length(new_eventID)],'single');
-        for ii = 1:length(new_eventID)
-            idxID = eventID == new_eventID(ii);
-            out(:,:,:,ii) = calcAgg(vals(:,:,:,idxID),aggFcn,4);
+    newDims = metaData.dim_names;
+    % Standard: full RAM
+    if strcmpi(opts.dimensionName, 't')
+        outData = applyAggFcnFull(data, opts.aggregateFcn, dimIdx);
+        newDims(dimIdx) = [];
+    else
+        % For events, perform aggregate function by condition
+        disp('working on events')
+        sz = [metaData.datSize metaData.datLength];
+        evIdx = unique(metaData.eventID);
+        outData = zeros(numel(evIdx),sz(2),sz(3),sz(4),'single');
+        for ii = 1:length(evIdx)
+            idx = metaData.eventID == evIdx(ii);
+            outData(ii,:,:,:) = applyAggFcnFull(data(idx,:,:,:),opts.aggregateFcn,dimIdx);
         end
-    otherwise
-        error('Unknown dimension identifier!')
+        % Update reduced event ID list in meta data
+        metaData.eventID = evIdx;
+    end
+    
+    metaData = genMetaData(outData,newDims,metaData);
+    disp('Done')
 end
-%Permute array back to original:
-if b_hasEvents
-    out = ipermute(out,[2 3 4 1]);
-end
-% Remove singleton dimensions:
-out = squeeze(out);
 end
 
-function out = calcAgg(vals,aggfcn,idxDim)
-% Aggregate the values in the selected dimension.
-
-switch aggfcn
-    case 'mean'
-        out = mean(vals, idxDim,'omitnan');
-    case 'median'
-        out = median(vals, idxDim, 'omitnan');
-    case 'mode'
-        out = mode(vals, idxDim);
-    case 'std'
-        out = std(vals, 0, idxDim, 'omitnan');
-    case 'max'
-        out = max(vals, [], idxDim, 'omitnan');
-    case 'min'
-        out = min(vals, [], idxDim, 'omitnan');
-    case 'sum'
-        out = sum(vals, idxDim, 'omitnan');
-    otherwise
-        out = vals;
+%% Local functions
+function out = calcAgg(vals, aggFcn)
+switch aggFcn
+    case 'mean',   out = mean(vals,1,'omitnan');
+    case 'median', out = median(vals,1,'omitnan');
+    case 'mode',   out = mode(vals,1);
+    case 'std',    out = std(vals,0,1,'omitnan');
+    case 'max',    out = max(vals,[],1,'omitnan');
+    case 'min',    out = min(vals,[],1,'omitnan');
+    case 'sum',    out = sum(vals,1,'omitnan');
+    otherwise,     out = vals;
 end
+end
+
+function outData = applyAggFcnFull(data, aggFcn, dimIdx)
+% Permute to bring dimIdx first
+permOrder = [dimIdx setdiff(1:ndims(data), dimIdx)];
+dataP = permute(data, permOrder);
+szP = size(dataP);
+dataP = reshape(dataP, szP(1), []);
+out = calcAgg(dataP, aggFcn);
+outData = reshape(out, [1 szP(2:end)]);
+% Permute back
+outData = ipermute(outData, permOrder);
 end
