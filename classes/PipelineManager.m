@@ -61,7 +61,7 @@ classdef PipelineManager < handle
         globalPipeLog table
     end
 
-    properties (GetAccess = {?DataViewer})        
+    properties (GetAccess = {?DataViewer})
         dataHistory struct % Local copy of the content from the dataHistory file in the data's SaveFolder.
     end
 
@@ -145,7 +145,7 @@ classdef PipelineManager < handle
 
     methods
 
-        function obj = PipelineManager(saveFolderListArg,varargin)
+        function obj = PipelineManager(SaveFolderList,varargin)
             % PIPELINEMANAGER Constructs an instance of this class
             %
             % Input:
@@ -157,7 +157,7 @@ classdef PipelineManager < handle
             %       List of Raw folder paths associated with SaveFolderList.
             %       The list must have the same length as SaveFolderList.
             %       Each item is validated independently with ISFOLDER:
-            %           - valid folder   -> stored as full path
+            %           - valid folder    -> stored as full path
             %           - invalid / empty -> replaced by 'Missing'
             %
             %   ProjectFolder (char):
@@ -181,22 +181,22 @@ classdef PipelineManager < handle
             addOptional(p,'RawFolderList',{''}, listValidationFun);
             addOptional(p,'ProjectFolder',pwd,@ischar);
 
-            parse(p,saveFolderListArg, varargin{:});
+            parse(p,SaveFolderList, varargin{:});
 
-            saveFolderListIn = p.Results.SaveFolderList;
-            rawFolderListIn  = p.Results.RawFolderList;
+            saveFolderListInRaw = p.Results.SaveFolderList;
+            rawFolderListInRaw  = p.Results.RawFolderList;
             obj.projectFolder = p.Results.ProjectFolder;
             clear p
 
             % -------------------------------------------------------------
             % Normalize list containers
             % -------------------------------------------------------------
-            saveFolderListIn = cellstr(string(saveFolderListIn(:)));
+            saveFolderListIn = normalizePathList(saveFolderListInRaw);
 
-            if isempty(rawFolderListIn)
+            if isempty(rawFolderListInRaw)
                 rawFolderListIn = cell(0,1);
             else
-                rawFolderListIn = cellstr(string(rawFolderListIn(:)));
+                rawFolderListIn = normalizePathList(rawFolderListInRaw);
             end
 
             % -------------------------------------------------------------
@@ -295,21 +295,45 @@ classdef PipelineManager < handle
                 obj.fcnDir = fullfile(rootDir, 'Analysis');
                 obj.createFcnList;
             end
+
+            % =============================================================
+            % Local helper
+            % =============================================================
+            function pathList = normalizePathList(pathInput)
+                %NORMALIZEPATHLIST Convert char/string/cell input to N-by-1 cell array of char.
+
+                if ischar(pathInput)
+                    if isrow(pathInput)
+                        pathList = {pathInput};
+                    else
+                        pathList = cellstr(pathInput);
+                    end
+
+                elseif isstring(pathInput)
+                    pathList = cellstr(pathInput(:));
+
+                elseif iscell(pathInput)
+                    pathList = cellfun(@(x) char(string(x)), pathInput(:), 'UniformOutput', false);
+
+                else
+                    pathList = cell(0,1);
+                end
+            end
         end
         function state = setParameters(obj, stepName)
-    %SETPARAMETERS Edit parameter values of a step in the pipeline.
-    %
-    %   state = obj.setParameters()
-    %   state = obj.setParameters(stepName)
-    %
-    %   Inputs:
-    %       stepName - Optional step tag. If omitted, the user is prompted
-    %                  to choose one from the current pipeline.
-    %
-    %   Output:
-    %       state - True if the parameter dialog was completed and the
-    %               values were applied. False if the operation was
-    %               cancelled or no editable parameters exist.
+            %SETPARAMETERS Edit parameter values of a step in the pipeline.
+            %
+            %   state = obj.setParameters()
+            %   state = obj.setParameters(stepName)
+            %
+            %   Inputs:
+            %       stepName - Optional step tag. If omitted, the user is prompted
+            %                  to choose one from the current pipeline.
+            %
+            %   Output:
+            %       state - True if the parameter dialog was completed and the
+            %               values were applied. False if the operation was
+            %               cancelled or no editable parameters exist.
 
             state = false;
 
@@ -580,7 +604,7 @@ classdef PipelineManager < handle
                         rollbackAndWarn( ...
                             'PipelineManager:addStep:DuplicateFunctionInBranch', ...
                             'Function "%s" already exists upstream in this branch. Step "%s" was not added.', ...
-                            funcName, stepTag);
+                            {funcName, stepTag});
                         return
                     end
                 end
@@ -952,17 +976,34 @@ classdef PipelineManager < handle
                 % Extract candidate node IDs from error messages (best-effort)
                 ids = localExtractNodeIDs(report.errors);
 
-                if isempty(ids)
-                    % Fallback: remove latest node (usually the one that broke it)
-                    ids = obj.nodes(end).id;
-                end
-
-                % Remove duplicates / already removed
+                % Keep only IDs that still exist in the graph
                 ids = unique(ids,'stable');
+                ids = ids(ismember(ids, [obj.nodes.id]));
                 ids = ids(~ismember(ids, removed));
 
+                % Fallback for dangling-edge cases:
+                % when validation only mentions a missing endpoint that is already
+                % absent from obj.nodes, remove the still-present endpoint(s) of
+                % the bad connection(s).
+                if isempty(ids) && ~isempty(obj.connections)
+
+                    existingIDs = [obj.nodes.id];
+
+                    badConnMask = ~ismember([obj.connections.sourceNodeID], existingIDs) | ...
+                        ~ismember([obj.connections.targetNodeID], existingIDs);
+
+                    badConns = obj.connections(badConnMask);
+
+                    if ~isempty(badConns)
+                        candidateIDs = unique([badConns.sourceNodeID, badConns.targetNodeID], 'stable');
+                        ids = candidateIDs(ismember(candidateIDs, existingIDs));
+                        ids = ids(~ismember(ids, removed));
+                    end
+                end
+
                 if isempty(ids)
-                    break
+                    % Final fallback: remove latest node
+                    ids = obj.nodes(end).id;
                 end
 
                 % Remove all identified nodes this pass
@@ -1052,12 +1093,14 @@ classdef PipelineManager < handle
             function ids = localExtractNodeIDs(errs)
                 % Parse integers following "nodeID" or "node" patterns.
                 ids = [];
-                if isempty(errs); return; end
+                if isempty(errs)
+                    return
+                end
 
                 for ii = 1:numel(errs)
-                    s = errs{ii};
+                    thisErr = errs{ii};
 
-                    tok = regexp(s, 'nodeID(?:\(s\))?\s*[:=]?\s*(\d+)', 'tokens');
+                    tok = regexp(thisErr, 'nodeID(?:\(s\))?\s*[:=]?\s*(\d+)', 'tokens');
                     if ~isempty(tok)
                         for jj = 1:numel(tok)
                             ids(end+1) = str2double(tok{jj}{1}); %#ok<AGROW>
@@ -1065,7 +1108,7 @@ classdef PipelineManager < handle
                         continue
                     end
 
-                    tok = regexp(s, 'node\s+(\d+)', 'tokens');
+                    tok = regexp(thisErr, 'node\s+(\d+)', 'tokens');
                     if ~isempty(tok)
                         for jj = 1:numel(tok)
                             ids(end+1) = str2double(tok{jj}{1}); %#ok<AGROW>
@@ -7442,7 +7485,8 @@ classdef PipelineManager < handle
                 keep = true(size(leafIDs));
                 for iLeaf = 1:numel(leafIDs)
                     idx = obj.getNodeIndexByID(leafIDs(iLeaf));
-                    if isfield(obj.nodes(idx),'runtime') && isfield(obj.nodes(idx).runtime,'leafCachedFile') && ...
+                    if isfield(obj.nodes(idx),'runtime') && ...
+                            isfield(obj.nodes(idx).runtime,'leafCachedFile') && ...
                             ~isempty(obj.nodes(idx).runtime.leafCachedFile)
                         keep(iLeaf) = false;
                     end
@@ -7473,7 +7517,18 @@ classdef PipelineManager < handle
                 nodeIdx = obj.getNodeIndexByID(nid);
                 reqSet(nodeIdx) = true;
 
+                % Guard against empty connection registries with no fields
+                if isempty(obj.connections) || ...
+                        ~isstruct(obj.connections) || ...
+                        ~isfield(obj.connections, 'targetNodeID')
+                    return
+                end
+
                 parentConns = obj.connections([obj.connections.targetNodeID] == nid);
+
+                if isempty(parentConns)
+                    return
+                end
 
                 for iConn = 1:numel(parentConns)
 
@@ -7502,25 +7557,28 @@ classdef PipelineManager < handle
                     return
                 end
 
-                ports = unique(ports, 'stable');
-                flds  = matlab.lang.makeValidName(ports);
+                ports = unique(string(ports), 'stable');
 
-                if ~isfield(obj.nodes(srcIdx),'runtime') || ~isfield(obj.nodes(srcIdx).runtime,'preloadedData')
+                nodeLocal = obj.nodes(srcIdx);
+
+                if ~isfield(nodeLocal,'runtime') || ...
+                        ~isfield(nodeLocal.runtime,'preloadedData') || ...
+                        ~isstruct(nodeLocal.runtime.preloadedData)
                     return
                 end
 
-                pre = obj.nodes(srcIdx).runtime.preloadedData;
-                if ~isstruct(pre) || isempty(fieldnames(pre))
-                    return
-                end
+                preloadStruct = nodeLocal.runtime.preloadedData;
 
-                if ~all(isfield(pre, flds))
-                    return
-                end
+                for iPort = 1:numel(ports)
+                    fld = matlab.lang.makeValidName(char(ports(iPort)));
 
-                for iF = 1:numel(flds)
-                    rec = pre.(flds{iF});
-                    if ~isstruct(rec) || ~isfield(rec,'file') || isempty(rec.file)
+                    if ~isfield(preloadStruct, fld)
+                        return
+                    end
+
+                    preRec = preloadStruct.(fld);
+
+                    if ~(isstruct(preRec) && isfield(preRec,'file') && ~isempty(preRec.file))
                         return
                     end
                 end
@@ -10314,1354 +10372,6 @@ classdef PipelineManager < handle
         end
 
     end
-
-    % ========= POTENTIAL OBSOLETE METHODS ================================
-
-    methods (Access = private)
-
-        %%%%%%-- DEPRECATED FUNCTIONS FOR REVIEW -------------------------
-
-        function step = setSaveFilename(obj,step,b_genTmpFile)
-            % SETSAVEFILENAME validates and sets the "saveFileName" during
-            % the addTask process. This method applies only to functions
-            % that generated Data as output (not files).
-            % Inputs:
-            %   step (struct): task that is being added to the pipeline.
-            %   b_genTmpFile (bool): If TRUE, generates a random file name
-            %       with prefix 'tmpFile_'.
-
-            if ~step.b_save2File;return;end
-            if ~step.b_hasDataOut
-                warning('The function "%s" does not have data as output. The Save file command will be ignored.',step.name);
-                step.b_save2File = false;
-                return
-            end
-            % Get step's function information:
-            funcInfo = obj.funcList(strcmp({obj.funcList.name},step.name)).info;
-            % Get file extension:
-            [~,~,ext] = fileparts(funcInfo.outFileName);
-            % Set save file name:
-            if ~isempty(step.saveFileName)
-                % Enforce file extension:
-                [~,filename,~] = fileparts(step.saveFileName);
-                saveFilename = [filename, ext];
-            else
-                if b_genTmpFile
-                    % Create temporary file:
-                    [~,~,ext] = fileparts(funcInfo.outFileName);
-                    saveFilename = ['tmpFile_' num2str(randi(99999,1,1),'%05i') ext];
-                else
-                    % Save with default name
-                    saveFilename = funcInfo.outFileName;
-                end
-            end
-
-            % Validate if the filename already exists in the pipeline and in the SaveFolder:
-            idxFcn = arrayfun(@(x) isequaln(step,x),obj.pipe);
-            nameList = [{obj.pipe(~idxFcn).saveFileName}, getFileList(obj.SaveFolderList)'];
-
-            if obj.b_overwriteFiles || ~any(strcmp(saveFilename,nameList))
-                step.saveFileName = saveFilename;
-                return
-            end
-            % Append indices to file names:
-            [stepPrefix,stepNameIndx,fileExt] = splitName(saveFilename);
-            [allPrefixes,allIndices] = cellfun(@(x) splitName(x),nameList,'UniformOutput',false);
-
-            idx = strcmp(stepPrefix,allPrefixes);
-            if any(idx) && ~startsWith(saveFilename,'tmpFile_')
-                % Append file name with incremented index:
-                % Not applied to temporary files!
-                newIndex = max([stepNameIndx, [allIndices{idx}]]) + 1;
-                saveFilename = [stepPrefix, '_', num2str(newIndex), fileExt];
-                warning('Found duplicate names in the pipeline. The data will be saved as "%s" to avoid overwriting.',saveFilename)
-            end
-
-            % Update save file name:
-            step.saveFileName = saveFilename;
-
-            %%% LOCAL FUNCTIONS
-
-            function [prefix,index,fext] = splitName(Name)
-                % Splits the file names to identify duplicates.
-                prefix = [];
-                index = [];
-                fext = [];
-                if isempty(Name);return;end
-                [~,Name,fext] = fileparts(Name);
-                out1 = regexp(Name,'^(.*?)_(\d+)$','tokens');
-                out2 = regexp(Name,'^(.*?)$','tokens');
-                if isempty(out1)
-                    prefix = out2{1}{1};
-                    index = 0;
-                else
-                    prefix = out1{1}{1};
-                    index = str2double(out1{1}{2});
-                end
-            end
-        end
-
-        %%%%%%--Pipeline Log ----------------------------------------------
-        function txt = textifyOpts(~,opts)
-            % TEXTIFYOPTS creates a formatted text version of the "opts"
-            % structure.
-
-            logicMap = containers.Map([true,false],{'Yes','No'});
-            fn = fieldnames(opts);
-            vals = cell(size(fn));
-            for ii = 1:length(fn)
-                val = opts.(fn{ii});
-                if isnumeric(val)
-                    vals{ii} = num2str(val);
-                elseif ischar(val)
-                    vals{ii} = val;
-                elseif iscell(val)
-                    vals{ii} = strjoin(val,', ');
-                elseif islogical(val)
-                    vals{ii} = logicMap(val);
-                else
-                    error('Unknown value data type')
-                end
-            end
-            if size(fn,1)> size(fn,2)
-                fn = fn'; vals = vals';
-            end
-            info = vertcat(fn,vals);
-            txt = [sprintf('Parameters:'), sprintf('\n\t%s: "%s"',info{:})];
-        end
-        function tipTxt = genToolTipTxt(obj,step)
-            % Add tooltips for each one:
-            if ~isempty(step.opts)
-                tipTxt = obj.textifyOpts(step.opts);
-                if ~isempty(step.saveFileName)  && ~startsWith(step.saveFileName,'tmpFile_')
-                    tipTxt = [tipTxt, sprintf('\n%s',repmat('-',1,20)),  sprintf('\nSave to file: "%s"',step.saveFileName)];
-                end
-            else
-                tipTxt = 'No Parameters';
-            end
-
-            if step.inputStepIndx
-                source = obj.pipe(step.inputStepIndx).name;
-            else
-                if obj.b_inputFromDataViewer
-                    source = 'DataViewer';
-                else
-                    source = 'Folder';
-                end
-            end
-            % Add input source to data tip:
-            tipTxt = [tipTxt, sprintf('\n%s',repmat('-',1,20)),sprintf('\nInput From: "%s"',source)];
-            sourceFile = step.inputSource;
-            if strcmpi(step.inputSource, '_CURRENT_DATA_') || startsWith(sourceFile, 'tmpFile_')
-                return;
-            end
-            if step.b_hasDataIn
-                % Add source file name
-                tipTxt = [tipTxt, sprintf('\nInput File: "%s"',sourceFile)];
-            end
-        end
-        function removeSubtree(obj, rootID)
-            %REMOVESUBTREE Remove a node subtree from the legacy graph model.
-            %
-            %   This helper is preserved for review as part of the deprecated
-            %   workflow-editing implementation.
-
-
-            stack = rootID;
-
-            while ~isempty(stack)
-
-                current = stack(end);
-                stack(end) = [];
-
-                % Find children
-                childIDs = [obj.connections( ...
-                    [obj.connections.sourceNodeID] == current).targetNodeID];
-
-                stack = [stack childIDs]; %#ok<AGROW>
-
-                % Remove connections
-                obj.connections = obj.connections( ...
-                    ~([obj.connections.sourceNodeID] == current | ...
-                    [obj.connections.targetNodeID] == current) );
-
-                % Remove node
-                obj.nodes([obj.nodes.id] == current) = [];
-            end
-        end
-        function reconnectNodeInputs(obj, nodeID, varargin)
-            %RECONNECTNODEINPUTS Reconnect DATA inputs using type-driven logic.
-            %
-            %   - Only inputs with isData == true are considered.
-            %   - Existing connections are removed based on targetNodeID + type match.
-            %   - Upstream candidates are selected via semantic type intersection.
-            %   - No semantic reliance on input/output names.
-
-            p = inputParser;
-            addRequired(p,'nodeID',@(x)isnumeric(x)&&isscalar(x));
-            addParameter(p,'branchNodeID',[]);
-            parse(p,nodeID,varargin{:});
-            branchNodeID = p.Results.branchNodeID;
-
-            idx = find([obj.nodes.id] == nodeID,1);
-            if isempty(idx)
-                error('Unknown node.');
-            end
-
-            node = obj.nodes(idx);
-
-            if strcmpi(node.kind,'folder')
-                error('Folder nodes cannot receive inputs.');
-            end
-
-            if ~isfield(node.info,'inputs') || isempty(node.info.inputs)
-                return
-            end
-
-            for k = 1:numel(node.info.inputs)
-
-                % Only process DATA ports
-                if ~node.info.inputs(k).isData
-                    continue
-                end
-
-                requiredType = node.info.inputs(k).type;
-
-                % ---------------------------------------------------------
-                % Remove existing connections based on semantic compatibility
-                % ---------------------------------------------------------
-                if ~isempty(obj.connections)
-
-                    keepMask = true(1,numel(obj.connections));
-
-                    for jj = 1:numel(obj.connections)
-
-                        c = obj.connections(jj);
-
-                        if c.targetNodeID ~= nodeID
-                            continue
-                        end
-
-                        srcTypes = c.sourceOutputType;
-                        dstTypes = requiredType;
-
-                        srcHasWildcard = any(strcmp(srcTypes,'UnknownDataType'));
-                        dstHasWildcard = any(strcmp(dstTypes,'UnknownDataType'));
-
-                        isCompatible = srcHasWildcard || dstHasWildcard || ...
-                            ~isempty(intersect(srcTypes,dstTypes));
-
-                        if isCompatible
-                            keepMask(jj) = false;
-                        end
-                    end
-
-                    obj.connections = obj.connections(keepMask);
-                end
-
-                % ---------------------------------------------------------
-                % Search upstream (type-driven)
-                % ---------------------------------------------------------
-                candidates = obj.searchUpstreamFromNode(requiredType, ...
-                    'branchNodeID', branchNodeID, ...
-                    'excludeNodeID', nodeID);
-
-                if ~isempty(candidates)
-
-                    % Deterministic choice: first compatible candidate
-                    srcNodeID  = candidates(1).nodeID;
-                    outputName = candidates(1).outputName;
-
-                    obj.connectNodes(srcNodeID, nodeID, outputName, node.info.inputs(k).name);
-
-                else
-                    % -----------------------------------------------------
-                    % Fallback to file injection
-                    % -----------------------------------------------------
-                    sel = obj.promptUserToSelectSource(requiredType,'file',[]);
-                    if isempty(sel)
-                        error('User cancelled file injection.');
-                    end
-
-                    srcNodeID = obj.ensureFileSourceNode(sel.path, requiredType);
-                    obj.connectNodes(srcNodeID, nodeID, sel.outputName, node.info.inputs(k).name);
-                end
-            end
-        end
-        function order = topologicalSort(obj)
-            %TOPOLOGICALSORT Compute a topological ordering for the legacy graph.
-            %
-            %   This helper is preserved for review as part of the deprecated
-            %   graph utility implementation.
-
-
-            nodeIDs = [obj.nodes.id];
-            n = numel(nodeIDs);
-
-            order = [];
-            inDegree = zeros(1,n);
-
-            % Map ID to index
-            id2idx = containers.Map(nodeIDs,1:n);
-
-            % Compute in-degree
-            for c = 1:numel(obj.connections)
-                tgtID = obj.connections(c).targetNodeID;
-                inDegree(id2idx(tgtID)) = inDegree(id2idx(tgtID)) + 1;
-            end
-
-            queue = nodeIDs(inDegree == 0);
-
-            while ~isempty(queue)
-
-                currentID = queue(1);
-                queue(1) = [];
-
-                order(end+1) = currentID; %#ok<AGROW>
-
-                % Remove outgoing edges
-                outgoing = find([obj.connections.sourceNodeID] == currentID);
-
-                for k = outgoing
-                    tgtID = obj.connections(k).targetNodeID;
-                    tgtIdx = id2idx(tgtID);
-
-                    inDegree(tgtIdx) = inDegree(tgtIdx) - 1;
-
-                    if inDegree(tgtIdx) == 0
-                        queue(end+1) = tgtID; %#ok<AGROW>
-                    end
-                end
-            end
-
-        end
-        function tf = wouldCreateCycle(obj, srcNodeID, dstNodeID)
-            %WOULDCREATECYCLE Check if adding src→dst would create a cycle.
-
-            tf = false;
-
-            if isempty(obj.connections)
-                return
-            end
-
-            % Build adjacency list from existing connections
-            edges = obj.connections;
-
-            % Start traversal from dstNodeID
-            stack = dstNodeID;
-            visited = [];
-
-            while ~isempty(stack)
-
-                current = stack(end);
-                stack(end) = [];
-
-                if current == srcNodeID
-                    tf = true;
-                    return
-                end
-
-                if ismember(current, visited)
-                    continue
-                end
-
-                visited(end+1) = current; %#ok<AGROW>
-
-                % Find children of current
-                childIDs = [edges([edges.sourceNodeID] == current).targetNodeID];
-
-                stack = [stack, childIDs]; %#ok<AGROW>
-            end
-        end
-        function task = setInput(obj,task,inputSource,inputFromSeq,sourceFile)
-            % SETINPUT selects the input to the function in "task". It
-            % controls for multiple outputs and for functions with no
-            % input. It updates the fields of "task" with the input
-            % information.
-            % !If the User cancels any of the dialogs, the function returns
-            % an empty array.
-
-            % Check if this is the very first step of the pipeline:
-            b_FirstPipeStep = isempty(obj.pipe);
-            b_genNewSeq = true; % Flag to create new sequence.
-            inputStepIndx = 0; % Pre-set step index.
-            if nargin < 5; sourceFile = ''; end
-            switch upper(inputSource)
-                case '_CURRENT_DATA_'
-                    % Default behaviour for functions with data as input.
-                    % Get the current sequence:
-                    if ~b_FirstPipeStep
-                        b_genNewSeq = false;
-                        [newInputSource,inputStepIndx] = lookBackOnSeq(obj.pipe(end));
-                    else
-                        newInputSource = 'folder';
-                    end
-
-                    if task.b_hasDataIn && ~obj.b_inputFromDataViewer
-                        if strcmpi(newInputSource,'folder') || newInputSource.b_hasFileOut
-                            inputSource = obj.selectInputFileName(newInputSource,task.name);
-                        end
-                    else
-                        % For functions without data as input, just add a
-                        % new step in the sequence.
-                        inputStepIndx = length(obj.pipe);
-                    end
-                case '_FOLDER_'
-                    % Default behaviour for functions accessing the save
-                    % folder.
-                    if task.b_hasDataIn
-                        inputSource = obj.selectInputFileName(inputSource,task.name);
-                    else
-                        inputSource = upper(inputSource);
-                    end
-                    % DO NOTHING. Default behaviour.
-                case '_DATAVIEWER_'
-                    disp('FIRST STEP FROM DV!');
-                    % DO NOTHING. Default behaviour.
-                    inputSource = '_CURRENT_DATA_';
-                otherwise
-                    % For user-defined new sequence.
-                    % Here, one can set the input source as:
-                    %   1) a function from the existing pipeline.
-                    %   2) a file (.dat or .pdat).
-
-                    % Check if the task function needs data:
-                    assert(task.b_hasDataIn,...
-                        ['The function "' task.name '" does not have "data" as input. Operation aborted!'])
-                    % Check if the input source is a file or a function:
-                    if endsWith(inputSource,'.dat') || endsWith(inputSource,'.pdat')
-                        % The input source is a file from the save folder.
-                        fileList = getFileList(obj.SaveFolderList); % Get list of existing data files in the first SaveFolder.
-                        idxFile = strcmp(fileList,inputSource);
-                        % Check if the input file exists:
-                        assert(any(idxFile),'Failed to find file "%s" in SaveFolder!',inputSource);
-                    else
-                        % The input source is an existing function in the
-                        % pipeline. Here, the "inputFromSeq" parameter is used to
-                        % locate the function.
-                        % Check if the source function exists in the
-                        % sequence
-                        idxSourceFcn = ( strcmpi(inputSource, {obj.pipe.name}) & arrayfun(@(x) any(x.seq == inputFromSeq),obj.pipe)' );
-                        assert(any(idxSourceFcn),'The function "%s" doesn''t exist in sequence "%d"',inputSource,inputFromSeq);
-                        % Update source function, in case where the
-                        % user-defined one does not have data as output:
-
-                        [stepSource, inputStepIndx] = lookBackOnSeq(obj.pipe(idxSourceFcn));
-                        % Raise warning if the source function was changed:
-                        if ~isequaln(obj.pipe(idxSourceFcn),stepSource)
-                            if isstruct(stepSource)
-                                StepSourceName = stepSource.name;
-                            else
-                                StepSourceName = stepSource;
-                            end
-                            warning('The input source function "%s" cannot be a source to "%s". The source function was changed to "%s" instead.',...
-                                obj.pipe(idxSourceFcn).name,task.name, StepSourceName);
-                        end
-                        if inputStepIndx
-                            idxSourceFcn = ( strcmpi(stepSource.name, {obj.pipe.name}) & arrayfun(@(x) any(x.seq == inputFromSeq),obj.pipe)' );
-                            assert(any(idxSourceFcn),'The function "%s" was not found in sequence #%d!',stepSource.name, inputFromSeq);
-                            % Check if the source function has Data or File as output:
-                            if obj.pipe(idxSourceFcn).b_hasDataOut
-                                % For functions with Data as output, force saving data
-                                % to temporary file and use the file as input source.
-                                obj.pipe(idxSourceFcn).b_save2File = true;
-                                obj.pipe(idxSourceFcn) = obj.setSaveFilename(obj.pipe(idxSourceFcn), true);
-                                inputSource = obj.pipe(idxSourceFcn).saveFileName;
-                            elseif obj.pipe(idxSourceFcn).b_hasFileOut
-                                %
-                                if ~isempty(sourceFile)
-                                    % Do not create a new sequence
-                                    b_genNewSeq = any(strcmp(task.name, {obj.pipe([obj.pipe.seq] == obj.pipe(idxSourceFcn).seq).name}));
-                                    % Set source file
-                                    inputSource = sourceFile;
-                                else
-                                    % For functions that output one or more files:
-                                    nOutFiles = length(obj.funcList(strcmpi(obj.pipe(idxSourceFcn).name,{obj.funcList.name})).info.outFileName);
-                                    if nOutFiles > 1
-                                        inputSource = obj.selectInputFileName(obj.pipe(idxSourceFcn),task.name);
-                                    else
-                                        inputSource = obj.funcList(strcmpi(obj.pipe(idxSourceFcn).name,{obj.funcList.name})).info.outFileName;
-                                    end
-                                end
-                            else
-                                % DEV
-                                error('DEV: This should never be reached.')
-                            end
-                        else
-                            % The source is the folder:
-                            if task.b_hasDataIn
-                                inputSource = obj.selectInputFileName(inputSource,task.name);
-                            else
-                                inputSource = upper(inputSource);
-                            end
-                        end
-                    end
-            end
-
-            if isempty(inputSource)
-                % The User cancelled the process during
-                % "selectInputFileName" execution.
-                task = [];
-                return
-            end
-            % Create a new sequence.
-            if b_genNewSeq
-                obj.current_seq = obj.current_seq + 1;
-                obj.current_seqIndx = 0; % Reset current sequence index.
-            end
-            % Increment step index:
-            obj.current_seqIndx = obj.current_seqIndx + 1;
-            % Update task structure
-            task.inputSource = inputSource;
-            task.inputStepIndx = inputStepIndx;
-            task.seq = obj.current_seq;
-            task.seqIndx = obj.current_seqIndx;
-            %%% LOCAL FUNCTION
-            function [newInputSource, newInputStepIndx]= lookBackOnSeq(startStep)
-                % Look back on current sequence to get the last
-                % function with any outputs. If no outputs are fuond, the
-                % FOLDER is used as input.
-                % This function deals with functions with inputs!
-                % Build a sequence that backtraces the from the startStep
-                % up to the folder.
-                newInputSource = startStep;
-                flag = true;
-                while flag
-                    if newInputSource.b_hasDataOut || newInputSource.b_hasFileOut
-                        break
-                    end
-                    % Move up in the pipeline
-                    if ~newInputSource.inputStepIndx
-                        % This means that the previous step is the folder
-                        newInputSource = 'Folder';
-                        break
-                    else
-                        % Move up in the pipeline
-                        newInputSource = obj.pipe(newInputSource.inputStepIndx);
-
-                    end
-                end
-                if ~ischar(newInputSource)
-                    newInputStepIndx = find(arrayfun(@(x) isequaln(newInputSource,x),obj.pipe));
-                else
-                    newInputStepIndx = 0;
-                end
-            end
-        end
-        function filename = selectInputFileName(obj,source,target)
-            % SELECTINPUTFILENAME creates a dialog box for the User to
-            % select a file that will be the input to the "task". If
-            % the "task" field "inputFrom" is a function with multiple
-            % files, it will show the possible outputs from the given
-            % function. However, if the "inputFrom" is "_LOCAL_", the
-            % prompt will show a list of existing files from the first
-            % element in the saveFolderList.
-            % Input:
-            %   source (char): name of the pipeline function OR a folder to get file list from.
-            % Output:
-            %   filename (char): name of the input file. Empty, if user
-            %   cancels.
-
-            % For functions as "source":
-            if isstruct(source)
-                % Get source function info:
-                funcInfo = obj.funcList(strcmp(source.name,{obj.funcList.name}));
-                % Create dialog box so the user selects the file:
-                [indxFile, tf] = listdlg('ListString', funcInfo.info.outFileName,...
-                    'SelectionMode','single','PromptString',{'Select a file from:',...
-                    ['"' funcInfo.name '" as input to :' ], ['"' target '":']}, 'ListSize',[250,280],'Name', 'Select file');
-                if ~tf
-                    disp('Operation cancelled by User')
-                    filename = '';
-                    return
-                end
-                filename = funcInfo.info.outFileName{indxFile};
-            else
-                % For "FOLDER" as source, display the .dat/.pdat files from the
-                % first item of the SaveFolderList:
-                fileList = getFileList(obj.SaveFolderList);
-                % If not files exist in the item's save folder, raise a
-                % warning and abort:
-                if isempty(fileList)
-                    w = warndlg(['No valid data files found in folder: ' obj.SaveFolderList{1}], 'Operation aborted!');
-                    waitfor(w);
-                    filename = '';
-                    return
-                end
-                % Create dialog box
-                [indxFile, tf] = listdlg('ListString', fileList,'SelectionMode','single',...
-                    'PromptString',{'Select a file as input to:', ['"' target '"']},'ListSize',[250,280],'Name','Select file');
-                if ~tf
-                    disp('Operation cancelled by User');
-                    filename = '';
-                    return
-                end
-                filename = fileList{indxFile};
-            end
-        end
-        function [vals, consumed] = resolveDataInputs(obj, nodeIDLocal, saveFolder)
-            %RESOLVEDATAINPUTS Resolve all DATA inputs (declared order). (Not used by current loop.)
-
-            vals = {};
-            consumed = {};
-
-            nodeLocal = obj.nodes(obj.getNodeIndexByID(nodeIDLocal));
-            if ~isfield(nodeLocal.info,'inputs') || isempty(nodeLocal.info.inputs)
-                return
-            end
-
-            for iIn = 1:numel(nodeLocal.info.inputs)
-                inDef = nodeLocal.info.inputs(iIn);
-                if isfield(inDef,'isData') && inDef.isData
-                    [v, keyUsed] = obj.resolveDataInputValue(nodeIDLocal, inDef.name, saveFolder);
-                    vals{end+1} = v; %#ok<AGROW>
-                    if ~isempty(keyUsed)
-                        consumed{end+1} = keyUsed; %#ok<AGROW>
-                    end
-                end
-            end
-        end
-        function applyCooldownToDownstream(obj, srcNodeID, srcOutName)
-            %APPLYCOOLDOWNTODOWNSTREAM Set cooldownRemaining on downstream consumer nodes (Auto mode).
-            %
-            %   applyCooldownToDownstream(obj, srcNodeID, srcOutName)
-            %
-            % This is used in Auto mode when a DATA output becomes file-backed. It reduces
-            % oscillations by forcing downstream nodes to prefer passing filenames for a
-            % few steps (cooldown window).
-            %
-            % Behavior:
-            %   - For each connection where sourceNodeID==srcNodeID and sourceOutputName==srcOutName:
-            %       sets obj.nodes(dstIdx).runtime.cooldownRemaining = max(current, obj.ramCooldownSteps)
-            %   - If srcOutName is empty, applies to all outgoing connections from srcNodeID.
-
-            if ~strcmpi(obj.ramMode,'auto')
-                return
-            end
-
-            if nargin < 3 || isempty(srcOutName)
-                matchAllPorts = true;
-                srcOutName = '';
-            else
-                matchAllPorts = false;
-                srcOutName = char(string(srcOutName));
-            end
-
-            if isempty(obj.connections)
-                return
-            end
-
-            for iConn = 1:numel(obj.connections)
-
-                conn = obj.connections(iConn);
-
-                if conn.sourceNodeID ~= srcNodeID
-                    continue
-                end
-
-                if ~matchAllPorts
-                    if ~strcmpi(char(string(conn.sourceOutputName)), srcOutName)
-                        continue
-                    end
-                end
-
-                dstIdx = obj.getNodeIndexByID(conn.targetNodeID);
-
-                if ~isfield(obj.nodes(dstIdx),'runtime') || isempty(obj.nodes(dstIdx).runtime)
-                    obj.nodes(dstIdx).runtime = struct();
-                end
-                if ~isfield(obj.nodes(dstIdx).runtime,'cooldownRemaining') || isempty(obj.nodes(dstIdx).runtime.cooldownRemaining)
-                    obj.nodes(dstIdx).runtime.cooldownRemaining = 0;
-                end
-
-                obj.nodes(dstIdx).runtime.cooldownRemaining = max( ...
-                    obj.nodes(dstIdx).runtime.cooldownRemaining, ...
-                    obj.ramCooldownSteps );
-            end
-        end
-        function port = firstDataOutputPort(obj, nodeLocal) %#ok<INUSL>
-            %FIRSTDATAOUTPUTPORT Return first DATA output port name or ''.
-
-            port = '';
-            if ~isfield(nodeLocal.info,'outputs') || isempty(nodeLocal.info.outputs)
-                return
-            end
-            for iOut = 1:numel(nodeLocal.info.outputs)
-                if isfield(nodeLocal.info.outputs(iOut),'isData') && nodeLocal.info.outputs(iOut).isData
-                    port = char(string(nodeLocal.info.outputs(iOut).name));
-                    return
-                end
-            end
-        end
-        function candidates = searchUpstreamFromNode(obj, requiredType, varargin)
-            %SEARCHUPSTREAMFROMNODE  Find a compatible upstream output along a branch.
-            %
-            %   candidates = searchUpstreamFromNode(obj, requiredType)
-            %   candidates = searchUpstreamFromNode(obj, requiredType, 'branchNodeID', id)
-            %   candidates = searchUpstreamFromNode(obj, requiredType, 'branchNodeID', id, 'excludeNodeID', nid)
-            %
-            % Returns:
-            %   candidates struct array with fields: .nodeID .outputName .type
-            %
-            % Matching rules:
-            %   - requiredType is a cell array of char
-            %   - Compatibility via:
-            %       * intersect(sourceTypes, requiredType)
-            %       * OR UnknownDataType wildcard on either side
-            %   - Only outputs with isData == true are considered
-
-            p = inputParser;
-            addRequired(p,'requiredType');
-            addParameter(p,'branchNodeID',[]);
-            addParameter(p,'excludeNodeID',[]);
-            parse(p,requiredType,varargin{:});
-
-            branchNodeID  = p.Results.branchNodeID;
-            excludeNodeID = p.Results.excludeNodeID;
-
-            candidates = struct('nodeID',{},'outputName',{},'type',{});
-
-            if isempty(obj.nodes)
-                return
-            end
-
-            % Ensure topo order is current
-            obj.updateTopoOrder();
-
-            % Choose branch anchor
-            if isempty(branchNodeID)
-                startID = obj.getLatestLeaf();
-            else
-                if ~any([obj.nodes.id] == branchNodeID)
-                    error('PipelineManager:searchUpstreamFromNode:InvalidBranchNodeID', ...
-                        'branchNodeID %d not found.', branchNodeID);
-                end
-                startID = branchNodeID;
-            end
-
-            if isempty(startID)
-                return
-            end
-
-            currentID = startID;
-            visited   = [];
-
-            while ~isempty(currentID)
-
-                if ismember(currentID, visited)
-                    break
-                end
-                visited(end+1) = currentID; %#ok<AGROW>
-
-                % Skip excluded node (prevents self-connect)
-                if ~isempty(excludeNodeID) && currentID == excludeNodeID
-                    % move upstream only
-                else
-
-                    node = obj.nodes([obj.nodes.id] == currentID);
-
-                    if isfield(node,'info') && ...
-                            isfield(node.info,'outputs') && ...
-                            ~isempty(node.info.outputs)
-
-                        outs = node.info.outputs;
-
-                        for j = 1:numel(outs)
-
-                            % Only DATA outputs are considered
-                            if ~outs(j).isData
-                                continue
-                            end
-
-                            srcTypes = outs(j).type;
-                            dstTypes = requiredType;
-
-                            srcHasWildcard = any(strcmp(srcTypes,'UnknownDataType'));
-                            dstHasWildcard = any(strcmp(dstTypes,'UnknownDataType'));
-
-                            isCompatible = srcHasWildcard || dstHasWildcard || ...
-                                ~isempty(intersect(srcTypes,dstTypes));
-
-                            if isCompatible
-                                candidates(1).nodeID     = currentID;
-                                candidates(1).outputName = outs(j).name;
-                                candidates(1).type       = outs(j).type;
-                                return
-                            end
-                        end
-                    end
-                end
-
-                % Move upstream
-                parentEdges = obj.connections([obj.connections.targetNodeID] == currentID);
-
-                if isempty(parentEdges)
-                    break
-                end
-
-                if isscalar(parentEdges)
-                    currentID = parentEdges(1).sourceNodeID;
-                else
-                    % Choose closest parent by topo order
-                    topo = obj.topoOrder;
-
-                    parentIDs = [parentEdges.sourceNodeID];
-                    parentPos = arrayfun(@(id) find(topo == id, 1, 'first'), parentIDs);
-                    parentPos(isnan(parentPos)) = -Inf;
-
-                    [~, ix] = max(parentPos);
-                    currentID = parentIDs(ix);
-                end
-            end
-        end
-        function branchRoots = getBranchRoots(obj)
-            %GETBRANCHROOTS Return node IDs that fan out from at least one output port.
-            %
-            % A node is a "branch root" if ANY of its output ports is connected to
-            % two or more DISTINCT downstream nodes.
-            %
-            % Uses obj.connections fields:
-            %   - sourceNodeID
-            %   - targetNodeID
-            %   - sourceOutputName
-            %
-            % OUTPUT:
-            %   branchRoots (1xN double) Unique node IDs (stable order).
-
-            branchRoots = double.empty(1,0);
-
-            if isempty(obj.connections)
-                return
-            end
-
-            % Support both struct-array and table storage for connections
-            if istable(obj.connections)
-                srcIDs   = obj.connections.sourceNodeID;
-                tgtIDs   = obj.connections.targetNodeID;
-                outNames = string(obj.connections.sourceOutputName);
-            else
-                % struct array
-                reqFields = {'sourceNodeID','targetNodeID','sourceOutputName'};
-                for f = 1:numel(reqFields)
-                    if ~isfield(obj.connections, reqFields{f})
-                        error('getBranchRoots:MissingField', ...
-                            'obj.connections is missing required field "%s".', reqFields{f});
-                    end
-                end
-                srcIDs   = [obj.connections.sourceNodeID];
-                tgtIDs   = [obj.connections.targetNodeID];
-                outNames = string({obj.connections.sourceOutputName});
-            end
-
-            if isempty(srcIDs)
-                return
-            end
-
-            % Normalize shapes
-            srcIDs   = srcIDs(:);
-            tgtIDs   = tgtIDs(:);
-            outNames = outNames(:);
-
-            % Defensive: remove rows with missing output name
-            valid = strlength(outNames) > 0 & ~isnan(srcIDs) & ~isnan(tgtIDs);
-            srcIDs   = srcIDs(valid);
-            tgtIDs   = tgtIDs(valid);
-            outNames = outNames(valid);
-
-            if isempty(srcIDs)
-                return
-            end
-
-            % Group by (sourceNodeID, sourceOutputName)
-            keys = string(srcIDs) + "|" + outNames;
-            uKeys = unique(keys, 'stable');
-
-            roots = double.empty(0,1);
-
-            for i = 1:numel(uKeys)
-                m = (keys == uKeys(i));
-
-                % Count distinct downstream node IDs
-                nTargets = numel(unique(tgtIDs(m)));
-
-                if nTargets >= 2
-                    parts = split(uKeys(i), "|");
-                    roots(end+1,1) = str2double(parts(1)); %#ok<AGROW>
-                end
-            end
-
-            branchRoots = unique(roots, 'stable').';
-        end
-        function leafID = getLatestLeaf(obj)
-            %GETLATESTLEAF Return the "active" leaf node (latest stream leaf in topo order).
-            %
-            % Leaf = node with no outgoing edges.
-            % Preference:
-            %   1) stream leaves (kind='stream') latest in topo order
-            %   2) any leaf latest in topo order (fallback)
-
-            leafID = [];
-
-            if isempty(obj.nodes)
-                return
-            end
-
-            obj.updateTopoOrder();
-            topo = obj.topoOrder;
-
-            nodeIDs = [obj.nodes.id];
-
-            if isempty(obj.connections)
-                % No edges: choose last stream node if present, else last node
-                kinds = {obj.nodes.kind};
-                streamMask = strcmpi(kinds,'stream');
-                if any(streamMask)
-                    streamIDs = nodeIDs(streamMask);
-                    leafID = streamIDs(end);
-                else
-                    leafID = nodeIDs(end);
-                end
-                return
-            end
-
-            srcIDs = [obj.connections.sourceNodeID];
-            hasOutgoing = ismember(nodeIDs, srcIDs);
-
-            leafIDs = nodeIDs(~hasOutgoing);
-            if isempty(leafIDs)
-                return
-            end
-
-            % Prefer stream leaves
-            leafNodes = obj.nodes(ismember([obj.nodes.id], leafIDs));
-            streamLeafIDs = [leafNodes(strcmpi({leafNodes.kind},'stream')).id];
-
-            if ~isempty(streamLeafIDs)
-                idsToRank = streamLeafIDs;
-            else
-                idsToRank = leafIDs;
-            end
-
-            pos = arrayfun(@(id) find(topo == id, 1, 'first'), idsToRank);
-            pos(isnan(pos)) = -Inf;
-
-            [~, ix] = max(pos);
-            leafID = idsToRank(ix);
-        end
-        function outputName = getLastOutputName(obj, nodeID)
-            %GETLASTOUTPUTNAME Return the last output name for a legacy node.
-            %
-            %   This helper is preserved for review as part of the deprecated
-            %   output-selection implementation.
-
-
-            node = obj.nodes([obj.nodes.id]==nodeID);
-
-            if isempty(node.info.outputs)
-                error('Previous node has no outputs.');
-            end
-
-            outputName = node.info.outputs(end).name;
-        end
-        function handle = createDataHandle(dataOrFile, metaDataInput)
-            %CREATEDATAHANDLE Create a legacy data-handle wrapper.
-            %
-            %   This helper is preserved for review as part of the deprecated
-            %   RAM-management implementation.
-
-
-            if isnumeric(dataOrFile)
-                handle.location = 'memory';
-                handle.value = dataOrFile;
-                handle.filename = '';
-                handle.sizeBytes = numel(dataOrFile) * 4; % 'single' precision always
-            else
-                handle.location = 'file';
-                handle.value = [];
-                handle.filename = char(dataOrFile);
-                handle.sizeBytes = dir(handle.filename).bytes;
-            end
-
-            handle.metaData = metaData;
-
-        end
-        function [refCount, id2idx] = computeReferenceCounts(obj)
-            %COMPUTEREFERENCECOUNTS Compute legacy reference counts for cached data.
-            %
-            %   This helper is preserved for review as part of the deprecated
-            %   memory-management implementation.
-
-
-            nodeIDs = [obj.nodes.id];
-            nNodes  = numel(nodeIDs);
-
-            % --- Map nodeID → index ---
-            id2idx = containers.Map(nodeIDs, 1:nNodes);
-
-            % --- Initialize refCount ---
-            refCount = cell(1, nNodes);
-
-            for i = 1:nNodes
-                nOut = numel(obj.nodes(i).info.outputs);
-                refCount{i} = zeros(1, nOut);
-            end
-
-            % --- Count downstream usage ---
-            for c = 1:numel(obj.connections)
-
-                srcID   = obj.connections(c).sourceNodeID;
-                outName = obj.connections(c).sourceOutputName;
-
-                srcIdx  = id2idx(srcID);
-
-                outputs = obj.nodes(srcIdx).info.outputs;
-                outIdx  = find(strcmpi({outputs.name}, outName), 1);
-
-                refCount{srcIdx}(outIdx) = ...
-                    refCount{srcIdx}(outIdx) + 1;
-
-            end
-
-        end
-        function cache = releaseMemory(obj, cache, refCount)
-            %RELEASEMEMORY Release cached values in the legacy memory manager.
-            %
-            %   This helper is preserved for review as part of the deprecated
-            %   memory-management implementation.
-
-
-            nNodes = numel(cache);
-
-            for i = 1:nNodes
-
-                if isempty(cache{i})
-                    continue
-                end
-
-                nOut = numel(refCount{i});
-
-                for k = 1:nOut
-
-                    if refCount{i}(k) == 0
-
-                        dh = cache{i}.outputs{k};
-
-                        if strcmp(dh.location, 'memory') ...
-                                && ~isempty(dh.value)
-
-                            cache{i}.outputs{k}.value = [];
-
-                        end
-
-                    end
-                end
-            end
-
-        end
-        function inputs = applyMemoryPolicy(obj, inputs)
-            %APPLYMEMORYPOLICY Apply the legacy in-memory caching policy.
-            %
-            %   This helper is preserved for review as part of the deprecated
-            %   memory-management implementation.
-
-
-            for i = 1:numel(inputs)
-
-                dh = inputs{i};
-
-                switch lower(obj.dataMode)
-
-                    case 'normal'
-
-                        if strcmp(dh.location,'file')
-                            data = obj.loadData(dh.filename);
-                            inputs{i} = data;
-                        else
-                            inputs{i} = dh.value;
-                        end
-
-                    case 'ramsafe'
-
-                        if strcmp(dh.location,'memory')
-                            error('RAM-safe mode requires file-backed inputs.');
-                        end
-                        inputs{i} = dh.filename;
-
-                    case 'hybrid'
-
-                        if strcmp(dh.location,'file')
-                            if obj.hasEnoughRAM(dh.sizeBytes)
-                                data = obj.loadData(dh.filename);
-                                inputs{i} = data;
-                            else
-                                inputs{i} = dh.filename;
-                            end
-                        else
-                            inputs{i} = dh.value;
-                        end
-
-                end
-
-            end
-
-        end
-        function fcnStr = createFcnString(obj,task)
-            % This method creates a string containing the function to be
-            % called during the current task of the pipeline by an EVAL
-            % statement. This method is called from "run_taskOnTarget"
-            % method.
-            % !! If new input or output arguments are created, meaning new
-            % argument keywords, this function has to be updated in order the
-            % function string to work.
-
-            % Input:
-            %   task (struct): info of current function to be run on the
-            %       current object.
-            % Output:
-            %   fcnStr (char): string containing call to analysis function
-            %   in the current task.
-
-            % Create analysis function string:
-            fcnStr = '';
-
-            argsIn = replace(task.argsIn, ["RawFolder", "SaveFolder", "data"],...
-                {['''' obj.current_rawFolder ''''],['''' obj.current_saveFolder ''''],...
-                'obj.current_data'});
-            argsOut = replace(task.argsOut, ["outData", "outFile"],...
-                {'obj.current_data', 'obj.current_outFile'});
-            if isempty(argsOut)
-                fcnStr = [fcnStr ';' task.name '(' strjoin(argsIn,',') ');'];
-            else
-                fcnStr = [fcnStr ';' '[' strjoin(argsOut, ',') ']=' task.name '(' strjoin(argsIn,',') ');'];
-            end
-            fcnStr = strip(fcnStr,'left', ';');
-
-        end
-        function thisStep  = updateStepInfo(obj,step, b_storeInfo)
-            % UPDATESTEPINFO creates or  updates the "current_info"
-            % structure. The latter contains all information about the functions'
-            % parameters used to create the current "data" and when it was run.
-            %
-            % Input:
-            %    step(struct) : current step of the pipeline;
-            % Output:
-            %   thisStep(struct): current info from current step
-
-            funcInfo = obj.funcList(strcmp(step.name, {obj.funcList.name}));
-            % Create a local structure with the function's info:
-            thisStep = obj.getStepInfo(funcInfo, step.opts, step.inputSource, step.saveFileName);
-            if any(strcmp(step.argsOut, 'outFile'))
-                % Update saveFileName list with the actual files generated by the function in "step".
-                thisStep.saveFileName = obj.current_outFile;
-            end
-
-            if ~b_storeInfo
-                return
-            end
-
-            % Append to current dataHistory:
-            obj.current_info = [obj.current_info;thisStep];
-
-            if any(strcmp(step.argsOut, 'outFile'))
-                % In case the step ouput is a file, update the
-                % dataHistory for each one:
-                for jj = 1:length(obj.current_outFile)
-                    obj.saveDataHistory(obj.current_saveFolder,obj.current_outFile{jj});
-                end
-            end
-        end
-        function out = getStepInfo(~,fcnInfo, optsStruct, inputFileName, saveFileName)
-            % This function creates a structure containing information about an
-            % analysis function.
-
-            % Inputs:
-            %   fcnInfo (struct): structure containing the function's basic informations with
-            %       fields:
-            %           -name (char): name of the analysis function.
-            %           -folder (char): path where the analysis function file is located.
-            %           -creationDatetime(datetime): timestamp of the creation of the
-            %               analysis function file.
-            %   optsStruct (struct): structure containing optional parameters of the
-            %       analysis function.
-            %   inputFileName(cell|char): name of the input file(s) to the function.
-            %   saveFileName(cell|char): name of the output file(s) from the function.
-            %   This field is used just by functions that create files already. Just to
-            %   keep track of the files that were created.
-            % Output:
-            %   out (struct): structure with the information necessary for the
-            %       dataHistory variable in the data's metaData.
-
-            if ischar(saveFileName)
-                saveFileName = {{saveFileName}};
-            end
-            out = struct('runDatetime', datetime('now'), 'name', {fcnInfo.name},...
-                'folder', {fcnInfo.folder}, 'creationDatetime',...
-                datetime(fcnInfo.datenum, 'ConvertFrom', 'datenum'),...
-                'opts', optsStruct, 'inputSource',inputFileName, 'saveFileName',saveFileName);
-        end
-        function deleteTemporaryFiles(~,folder)
-            % DELETETEMPORARYFILES removes .dat and .mat files from
-            % "folder" that were automatically generated during the
-            % pipeline due to the existence of branches. The files to be
-            % deleted are appended with the "timeTag" of the current
-            % pipeline.
-
-            % Get list of files in folder:
-            list = getFileList(folder);
-            % delete files with the "timeTag":
-            idxTemp = startsWith(list,'tmpFile_');
-            if any(idxTemp)
-                fprintf('Deleting pipeline temporary files in folder "%s"...\n',folder);
-                cellfun(@(x) delete(fullfile(folder,x)),list(idxTemp));
-                disp('Done.')
-            end
-        end
-        function genErrorReport(obj)
-            % GENERRORREPORT saves the error messages from the Pipeline
-            % Summary table to a .txt file inside the folder
-            % "PipelineErrorLogs" folder in protocol's save folder.
-
-            % Check if any error occurred in the pipeline
-            if all(obj.PipelineSummary.Completed)
-                return
-            end
-
-            % Ask User if he/she wants to save the error log:
-            answer = questdlg('One or more steps of the pipeline failed. Generate error log file?',...
-                'Errors found!', 'Yes','No','Yes');
-            waitfor(answer);
-            if strcmpi(answer, 'no')
-                return
-            end
-            % Repackage error messages into string:
-            str = sprintf(['-------------------- Pipeline error log --------------------\n'...
-                'Pipeline executed at:%s\nReport generated at: %s\nTotal number of failed tasks: %d\n%s\n'],...
-                datestr(datetime(obj.timeTag,'InputFormat','_ddMMyyyyHHmmss')),...
-                datestr(datetime('now')),sum(obj.PipelineSummary.Completed), repmat('-',1,60));
-            % Get error messages in execution order:
-            errorTab = obj.PipelineSummary(~obj.PipelineSummary.Completed,:);
-            headers = errorTab.Properties.VariableNames;
-            sel_headers = {'SaveFolder','TaskName','InputSource','RunDateTime','Messages'};
-            [~,indx_headers] = ismember(headers,sel_headers);
-            for ii = 1:height(errorTab)
-                %%%% TBD %%%%%
-
-
-
-
-
-
-
-
-                %%%%%% OLD SECTION %%%%%%%%%%%%
-                info = table2cell(errorTab(ii,:));
-                id = [headers(indx_headers([2 1 3 4])); info(indx_headers([2 1 3])) {datestr(info{indx_h})}];
-                % Trim error messsage to remove references to
-                % PipelineManager methods:
-                idx = strfind(info{indx_headers(4)},'Error in PipelineManager');
-                msg = info{indx_headers(4)}(1:idx(1)-1);
-                str = [str, sprintf('Recording Info:\n\t%s : %s\n\t%s : %s\n\t%s : %s\n\t%s : %s\n\t%s : %s\n\t%s : %s\n',id{:})];%#ok
-                str = [str, sprintf('Error Message:\n""\n%s\n""\n%s\n', msg,repmat('-',1,60))];%#ok
-            end
-            % Save to .txt file:
-            if obj.b_inputFromDataViewer
-                % For DataViewer:
-                folder = obj.projectFolder;
-            else
-                folder = fullfile(obj.projectFolder,'PipelineErrorLogs');
-            end
-            if ~exist(folder,'dir')
-                mkdir(folder);
-            end
-            filename = ['error_log_' datestr(datetime(obj.timeTag,'InputFormat','_ddMMyyyyHHmmss'),'dd_mm_yyyy_HH_MM'), '.txt'];
-            fid = fopen(fullfile(folder,filename), 'w');
-            fprintf(fid,'%s',str);
-            fclose(fid);
-            % Open system's file explorer:
-            openFolder(folder);
-        end
-        %%%%%%-- WAITBAR methods-------------------------------------------
-        function setWaitBar(obj,tag,varargin)
-            % This method creates two "waitbar" dialogs.
-            % The first shows the progress of the pipeline runs across objects
-            % while the second one shows the progress of tasks in a given
-            % object.
-            % Inputs:
-            %   tag (char): "Initialize" : creates the 2 waitbars.
-            %               "UpdateItem" : updates bar1.
-            %               "UpdateTask" : updates bar2.
-
-            p = inputParser;
-            addRequired(p,'obj')
-            addRequired(p,'tag',@ischar)
-            addOptional(p, 'currBarVal',0, @(x) isnumeric(x) & x >= 0)
-            addOptional(p, 'totalBarVal',1, @(x) isnumeric(x) & x >= 0)
-            addParameter(p,'taskName','',@ischar);
-            parse(p,obj,tag,varargin{:})
-            barVal = p.Results.currBarVal;
-            totalBarVal = p.Results.totalBarVal;
-            taskName = p.Results.taskName;
-            clear p
-
-            % Control for invalid waitbar handles:
-            if ~strcmp(tag, 'Initialize')
-                b_HandleExist = (ishandle(obj.h_wbItem) & ishandle(obj.h_wbTask));
-                if ~b_HandleExist
-                    return
-                end
-            end
-
-
-            switch tag
-                case 'Initialize'
-                    obj.h_wbItem = waitbar(0,'Initializing Pipeline...',...
-                        'Name','Pipeline Progress',...
-                        'CreateCancelBtn', @obj.wb_cancelBtn);
-                    setappdata(obj.h_wbItem, 'b_abortPipe', 0);
-                    obj.h_wbItem.Children(2).Title.Interpreter = 'none';
-
-                    obj.h_wbTask = waitbar(0,'Initializing Task...','Name','',...
-                        'CloseRequestFcn',@DoNothing);
-                    obj.h_wbTask.Children(1).Title.Interpreter = 'none';
-
-                case 'UpdateItem'
-                    waitbar(barVal/totalBarVal, obj.h_wbItem, ['Item ' num2str(barVal)...
-                        '/' num2str(totalBarVal)]);
-                    obj.h_wbTask.Name = obj.current_saveFolder;
-                case 'UpdateTask'
-                    waitbar(barVal, obj.h_wbTask, ['Running "' taskName '"']);
-            end
-
-            function DoNothing(~,~)
-                % Empty callback to avoid closing Waitbar #2
-            end
-        end
-        function wb_cancelBtn(obj,src,evnt)
-            % Callback of cancel button in waitbar1 ("h_wbItem").
-            % This callback triggers the cancellation of the current
-            % pipeline when the user clicks on the cancel button.
-
-            fprintf('>>>>>>>>>>>>>>>>>>Cancelling Pipeline...>>>>>>>>>>>\n');
-
-            src.String = 'Wait!';
-            if strcmp(evnt.EventName, 'Action')
-                set(src.Parent.Children(2).Title, 'String', 'Please Wait. Stopping Pipeline...');
-                setappdata(obj.h_wbItem, 'b_abortPipe', 1);
-            end
-        end
-        %%%%%%-------------------------------------------------------------
-        function indx = findStep(~,step,thisPipe)
-            % This function gives the index of the task "step" in the pipeline "pipe"
-            % It compares all fields from the structure to identify the
-            % step.
-
-            step_reduced = rmfield(step,{'b_save2File','saveFileName'});
-            pipe_reduced = arrayfun(@(x) rmfield(thisPipe,{'b_save2File','saveFileName'}));
-
-            indx = find(arrayfun(@(x) isequal(x,step_reduced),pipe_reduced));
-        end
-    end
-    % =====================================================================
 
     methods (Static)
 
