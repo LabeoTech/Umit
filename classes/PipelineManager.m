@@ -2217,6 +2217,77 @@ classdef PipelineManager < handle
             obj.autoValidate();
             fprintf('Pipeline successfully cleared.\n');
         end
+        function outFile = exportPipeErrorLog(obj, outputFolder)
+            %EXPORTPIPEERRORLOG Export a CSV summary of errors from the latest pipeline execution.
+            %
+            %   outFile = exportPipeErrorLog(obj)
+            %   outFile = exportPipeErrorLog(obj, outputFolder)
+            %
+            %   This method summarizes error-related rows from obj.globalPipeLog and
+            %   writes them to a timestamped CSV file.
+            %
+            %   Inputs:
+            %       outputFolder - Optional destination folder. Defaults to pwd.
+            %
+            %   Output:
+            %       outFile - Full path to the created CSV file.
+            %
+            %   Notes:
+            %       - Uses obj.globalPipeLog from the latest executePipeline run.
+            %       - Exports rows whose status is not "Completed" or whose short error
+            %         message is not empty / not "No Errors".
+            %       - If no error rows are found, an empty CSV with headers is written.
+
+            if nargin < 2 || isempty(outputFolder)
+                outputFolder = pwd;
+            end
+
+            outputFolder = char(string(outputFolder));
+
+            if isempty(obj.globalPipeLog) || ~istable(obj.globalPipeLog)
+                error('PipelineManager:exportPipeErrorLog:EmptyGlobalLog', ...
+                    'globalPipeLog is empty. Run executePipeline first.');
+            end
+
+            if ~isfolder(outputFolder)
+                mkdir(outputFolder);
+            end
+
+            errMask = false(height(obj.globalPipeLog), 1);
+
+            % -------------------------------------------------------------
+            % Status-based filtering
+            % -------------------------------------------------------------
+            if ismember('Status', obj.globalPipeLog.Properties.VariableNames)
+                statusVals = string(obj.globalPipeLog.Status);
+                errMask = errMask | ~strcmpi(statusVals, "Completed");
+            end
+
+            % -------------------------------------------------------------
+            % Message-based filtering
+            % -------------------------------------------------------------
+            if ismember('Messages_short', obj.globalPipeLog.Properties.VariableNames)
+                msgVals = string(obj.globalPipeLog.Messages_short);
+                msgVals = strtrim(msgVals);
+
+                hasMsg = strlength(msgVals) > 0 & ...
+                    ~strcmpi(msgVals, "No Errors") & ...
+                    ~strcmpi(msgVals, "Missing") & ...
+                    ~ismissing(msgVals);
+
+                errMask = errMask | hasMsg;
+            end
+
+            errorLogTable = obj.globalPipeLog(errMask, :);
+
+            timeStamp = char(datetime('now', 'Format', 'yyyyMMdd_HHmmss'));
+            outFile = fullfile(outputFolder, ['pipeErrorLog_' timeStamp '.csv']);
+
+            writetable(errorLogTable, outFile);
+
+            fprintf('Pipeline error log exported: %s\n', outFile);
+            fprintf('Rows exported: %d\n', height(errorLogTable));
+        end
         function generateScript(obj, filename)
             %GENERATESCRIPT Generate a standalone MATLAB script from the current DAG pipeline.
             %

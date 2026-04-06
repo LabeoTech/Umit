@@ -67,7 +67,7 @@ addRequired(p,'data',@(x) (isnumeric(x) && ndims(x)==3) || ischar(x));
 addRequired(p,'SaveFolder',@isfolder);
 addOptional(p,'opts',default_opts,@(x) isstruct(x));
 
-parse(p,data,varargin{:});
+parse(p,data,SaveFolder,varargin{:});
 
 opts = p.Results.opts;
 
@@ -86,7 +86,7 @@ if opts.b_UseMask
         'umIToolbox:GSR:InvalidInput',...
         'Logical mask size does not match data frame size.');
 else    
-    logical_mask = true(size(data)); % TODO: This will fail for data as filename. TO BE CHANGED.
+    logical_mask = true(size(data,[1 2])); % TODO: This will fail for data as filename. TO BE CHANGED.    
 end
 
 % -------------------------------------------------------------------------
