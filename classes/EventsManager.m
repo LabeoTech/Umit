@@ -2093,7 +2093,20 @@ classdef EventsManager < handle
 
             data = double(data(:));
 
-            if any(data < 0)
+            % Detect meaningful biphasic content robustly.
+            % A few noisy samples slightly below zero should not trigger rectification.
+            dataRange = max(data) - min(data);
+
+            % Negative excursion must be both:
+            %   1) larger than a small absolute floor, and
+            %   2) relevant relative to the signal amplitude.
+            negAmpThr = max(0.02, 0.1 * max(dataRange, obj.minTrigAmp));
+
+            % Require more than an isolated sample below threshold.
+            minNegSamples = max(3, ceil(0.001 * numel(data)));  % ~0.1% of samples, at least 3
+            nNegSamples = nnz(data < -negAmpThr);
+
+            if nNegSamples >= minNegSamples
                 disp('Biphasic signal detected.')
                 data = abs(data);
             end
