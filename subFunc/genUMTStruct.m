@@ -1,214 +1,368 @@
 function out = genUMTStruct(data, varargin)
-%GENUMTSTRUCT Validate and package derived data into a single structure.
+%GENUMTSTRUCT Create or append one measurement entry to a .umt structure.
 %
-%   out = genUMTStruct(data)
-%   out = genUMTStruct(data, obsID)
-%   out = genUMTStruct(data, obsID, 'hasEvents', true)
-%   out = genUMTStruct(data, obsID, 'extraInfo', S)
+%   Create a new .umt structure:
+%       out = genUMTStruct(value, 'kind', kind, 'dimNames', dimNames)
+%       out = genUMTStruct(value, 'kind', kind, 'entryName', name, ...
+%                          'dimNames', dimNames, 'labels', labels)
+%
+%   Append a new entry to an existing .umt structure:
+%       out = genUMTStruct(umt, 'value', value, 'entryName', name, ...
+%                          'dimNames', dimNames)
+%       out = genUMTStruct(umt, 'value', value, 'entryName', name, ...
+%                          'dimNames', dimNames, 'labels', labels, ...
+%                          'overwrite', true)
 %
 %   Inputs:
-%       data    - Numeric array, struct array, or cell array with one
-%                 element per observation.
+%       data    - Either:
+%                 1) Numeric/logical payload used to create a new .umt
+%                    structure, or
+%                 2) Existing .umt structure to which one entry will be
+%                    appended (or overwritten if requested).
 %
-%                 Accepted forms:
-%                 1) numeric array
-%                    A single observation containing one measure named "data".
-%                 2) struct array
-%                    One element per observation, with one or more measure
-%                    fields per observation.
-%                 3) cell array
-%                    One element per observation. Each cell becomes a struct
-%                    element with a single measure field named "data".
+%   Name-Value options for create mode:
+%       kind      - Required. Allowed values are defined by getUMTSchema.
+%       entryName - Name of the created entry. Default: 'main'
+%       dimNames  - Required. Allowed values are defined by getUMTSchema.
+%       labels    - Optional shared top-level labels struct. Default: struct()
 %
-%   Optional positional input:
-%       obsID   - 1D cell array of character vectors or strings describing
-%                 each observation. Default: {'genericObs'}
-%
-%   Name-Value options:
-%       hasEvents  - Logical scalar. True if data are split by events.
-%                    Default: false
-%       extraInfo  - Struct containing additional metadata to merge into
-%                    the output. Default: struct()
+%   Name-Value options for append mode:
+%       value     - Required. Numeric/logical payload to append.
+%       entryName - Required. Name of the entry to append.
+%       dimNames  - Required. Allowed values are defined by getUMTSchema.
+%       labels    - Optional shared top-level labels struct to merge into
+%                   the output. Default: struct()
+%       overwrite - Logical scalar. If true, existing entry names and
+%                   conflicting labels can be replaced. Default: false
 %
 %   Output:
-%       out     - Structure containing:
-%                 out.obsID
-%                 out.data
-%                 out.b_hasEvents
-%                 out.b_hasMultipleMeasures
-%                 out.dataCategory
-%                 plus any non-reserved fields from extraInfo
+%       out       - Validated .umt structure using the current schema.
 %
 %   Notes:
-%       Data categories are assigned per measure as:
-%           'scalar'
-%           'time-vector'
-%           'map'
-%           'image-time-series'
-%           'unknown'
-%
-%       Reserved field names in extraInfo are ignored with a warning:
-%           'obsID'
-%           'data'
-%           'b_hasEvents'
-%           'b_hasMultipleMeasures'
-%           'dataCategory'
+%       - This function appends one entry per call. Multiple measurements
+%         can be added by calling genUMTStruct repeatedly on the same
+%         output structure.
+%       - Shared labels are stored only at the top level as out.labels.
+%       - Final output is validated with validateUMTStruct before return.
 
-% -------------------------------------------------------------------------
-% Parse inputs
-% -------------------------------------------------------------------------
-p = inputParser;
-p.FunctionName = 'genUMTStruct';
+errID = 'Umitoolbox:genUMTStruct:invalidInput';
 
-addRequired(p, 'data', @(x) ...
-    (isnumeric(x) && ~isempty(x)) || ...
-    (isstruct(x) && ~isempty(x)) || ...
-    (iscell(x) && ~isempty(x)));
-addOptional(p, 'obsID', {'genericObs'}, @iValidateObsID);
-addParameter(p, 'hasEvents', false, @(x) islogical(x) && isscalar(x));
-addParameter(p, 'extraInfo', struct(), @(x) isstruct(x) && isscalar(x));
-
-parse(p, data, varargin{:});
-
-data = p.Results.data;
-obsID = iNormalizeObsID(p.Results.obsID);
-b_hasEvents = p.Results.hasEvents;
-extraInfo = p.Results.extraInfo;
-
-% -------------------------------------------------------------------------
-% Remove reserved fields from extraInfo
-% -------------------------------------------------------------------------
-reservedFields = {'obsID', 'data', 'b_hasEvents', 'b_hasMultipleMeasures', 'dataCategory'};
-extraFields = fieldnames(extraInfo);
-conflictFields = extraFields(ismember(extraFields, reservedFields));
-
-if ~isempty(conflictFields)
-    warning('Umitoolbox:genUMTStruct:reservedExtraInfoFields', ...
-        ['Ignoring reserved field(s) in extraInfo: %s.'], strjoin(conflictFields, ', '));
-    extraInfo = rmfield(extraInfo, conflictFields);
+if iLooksLikeUMT(data)
+    out = iAppendToExistingUMT(data, varargin{:});
+else
+    out = iCreateNewUMT(data, varargin{:});
 end
 
-% -------------------------------------------------------------------------
-% Normalize input data into a struct array
-% -------------------------------------------------------------------------
-if isnumeric(data)
-    data = struct('data', data);
-
-elseif iscell(data)
-    tmp = repmat(struct('data', []), numel(data), 1);
-    for ii = 1:numel(data)
-        tmp(ii).data = data{ii};
-    end
-    data = tmp;
-end
-
-% At this point, data must be a struct array.
-if ~isstruct(data) || isempty(data)
-    error('Umitoolbox:genUMTStruct:invalidInput', ...
-        '"data" must resolve to a non-empty struct array.');
-end
-
-% -------------------------------------------------------------------------
-% Validate observation count
-% -------------------------------------------------------------------------
-errID = 'Umitoolbox:genUMTStruct:IncompatibleSize';
-errMsg = 'The length of data is different from the number of observations.';
-assert(numel(data) == numel(obsID), errID, errMsg);
-
-% -------------------------------------------------------------------------
-% Validate struct-array field consistency
-% -------------------------------------------------------------------------
-fn = fieldnames(data);
-if isempty(fn)
-    error('Umitoolbox:genUMTStruct:invalidInput', ...
-        'Input struct data must contain at least one field.');
-end
-
-for ii = 2:numel(data)
-    if ~isequal(fieldnames(data(ii)), fn)
-        error('Umitoolbox:genUMTStruct:invalidInput', ...
-            'All elements of the input struct array must have the same fields.');
-    end
-end
-
-% -------------------------------------------------------------------------
-% Categorize each measure and validate consistency across observations
-% -------------------------------------------------------------------------
-dataCategory = struct();
-
-for ii = 1:numel(fn)
-    refCat = iClassifyMeasure(data(1).(fn{ii}), b_hasEvents);
-
-    for jj = 2:numel(data)
-        thisCat = iClassifyMeasure(data(jj).(fn{ii}), b_hasEvents);
-        if ~strcmp(thisCat, refCat)
-            error('Umitoolbox:genUMTStruct:inconsistentMeasureType', ...
-                'Measure "%s" does not have consistent dimensionality across observations.', fn{ii});
-        end
-    end
-
-    dataCategory.(fn{ii}) = refCat;
-end
-
-% -------------------------------------------------------------------------
-% Assemble output
-% -------------------------------------------------------------------------
-out = extraInfo;
-out.obsID = obsID;
-out.data = data;
-out.b_hasEvents = b_hasEvents;
-out.b_hasMultipleMeasures = numel(fn) > 1;
-out.dataCategory = dataCategory;
-
-% Final format validation for .umt compatibility
 validateUMTStruct(out);
+
 end
 
 % =========================================================================
 % Local helpers
 % =========================================================================
 
-function tf = iValidateObsID(x)
-%IVALIDATEOBSID Validate obsID cell array.
-tf = iscell(x) && isvector(x) && ...
-    all(cellfun(@(c) ischar(c) || (isstring(c) && isscalar(c)), x));
+function out = iCreateNewUMT(value, varargin)
+%ICREATENEWUMT Create a new .umt structure with one entry.
+
+errID = 'Umitoolbox:genUMTStruct:invalidInput';
+schema = getUMTSchema(1);
+
+if ~(isnumeric(value) || islogical(value))
+    error(errID, ...
+        'Operation aborted. New entry value must be numeric or logical.');
 end
 
-function obsID = iNormalizeObsID(obsID)
-%INORMALIZEOBSID Convert obsID entries to char row cell array.
-obsID = cellfun(@char, cellstr(string(obsID)), 'UniformOutput', false);
-obsID = reshape(obsID, 1, []);
+p = inputParser;
+p.FunctionName = 'genUMTStruct';
+
+addParameter(p, 'kind', '', @(x) ischar(x) || (isstring(x) && isscalar(x)));
+addParameter(p, 'entryName', 'main', @iValidateEntryNameInput);
+addParameter(p, 'dimNames', {}, @iValidateDimNamesInput);
+addParameter(p, 'labels', struct(), @(x) isstruct(x) && isscalar(x));
+
+parse(p, varargin{:});
+
+if ~iHasNameValue(varargin, 'kind')
+    error(errID, ...
+        'Operation aborted. "kind" must be provided when creating a new UMT structure.');
 end
 
-function dataCat = iClassifyMeasure(x, b_hasEvents)
-%ICLASSIFYMEASURE Classify one measure by dimensionality.
-
-if b_hasEvents
-    x = iRemoveEventDimensionForClassification(x);
+if ~iHasNameValue(varargin, 'dimNames')
+    error(errID, ...
+        'Operation aborted. "dimNames" must be provided when creating a new UMT structure.');
 end
 
-if isscalar(x)
-    dataCat = 'scalar';
-elseif isvector(x)
-    dataCat = 'time-vector';
-elseif ndims(x) == 2
-    dataCat = 'map';
-elseif ndims(x) == 3
-    dataCat = 'image-time-series';
-else
-    dataCat = 'unknown';
-end
+kind = iNormalizeKind(p.Results.kind, schema, errID);
+entryName = iNormalizeEntryName(p.Results.entryName, errID);
+dimNames = iNormalizeDimNames(p.Results.dimNames, schema, errID, entryName);
+labels = iNormalizeLabelsStruct(p.Results.labels, schema, errID);
+
+out = struct();
+out.version = schema.version;
+out.kind = kind;
+out.data = struct();
+out.data.(entryName) = struct('value', value, 'dimNames', {dimNames});
+
+if ~isempty(fieldnames(labels))
+    out.labels = labels;
 end
 
-function x = iRemoveEventDimensionForClassification(x)
-%IREMOVEEVENTDIMENSIONFORCLASSIFICATION Remove leading event dimension.
+end
 
-if isempty(x)
+function out = iAppendToExistingUMT(umt, varargin)
+%IAPPENDTOEXISTINGUMT Append one entry to an existing .umt structure.
+
+errID = 'Umitoolbox:genUMTStruct:invalidInput';
+
+validateUMTStruct(umt);
+out = umt;
+schema = getUMTSchema(out.version);
+
+p = inputParser;
+p.FunctionName = 'genUMTStruct';
+
+addParameter(p, 'value', [], @(x) isnumeric(x) || islogical(x));
+addParameter(p, 'entryName', '', @iValidateEntryNameInput);
+addParameter(p, 'dimNames', {}, @iValidateDimNamesInput);
+addParameter(p, 'labels', struct(), @(x) isstruct(x) && isscalar(x));
+addParameter(p, 'overwrite', false, @(x) islogical(x) && isscalar(x));
+
+parse(p, varargin{:});
+
+if ~iHasNameValue(varargin, 'value')
+    error(errID, ...
+        'Operation aborted. "value" must be provided when appending to an existing UMT structure.');
+end
+
+if ~iHasNameValue(varargin, 'entryName')
+    error(errID, ...
+        'Operation aborted. "entryName" must be provided when appending to an existing UMT structure.');
+end
+
+if ~iHasNameValue(varargin, 'dimNames')
+    error(errID, ...
+        'Operation aborted. "dimNames" must be provided when appending to an existing UMT structure.');
+end
+
+value = p.Results.value;
+entryName = iNormalizeEntryName(p.Results.entryName, errID);
+dimNames = iNormalizeDimNames(p.Results.dimNames, schema, errID, entryName);
+labels = iNormalizeLabelsStruct(p.Results.labels, schema, errID);
+overwrite = p.Results.overwrite;
+
+if isfield(out.data, entryName) && ~overwrite
+    error(errID, ...
+        ['Operation aborted. Entry "%s" already exists. Use overwrite=true ' ...
+         'to replace it.'], ...
+        entryName);
+end
+
+out.data.(entryName) = struct('value', value, 'dimNames', {dimNames});
+out = iMergeTopLevelLabels(out, labels, overwrite, errID);
+
+end
+
+function out = iMergeTopLevelLabels(out, newLabels, overwrite, errID)
+%IMERGETOPLEVELLABELS Merge shared labels into an output structure.
+
+newFields = fieldnames(newLabels);
+
+if isempty(newFields)
     return
 end
 
-nDims = ndims(x);
-idx = repmat({':'}, 1, nDims);
-idx{1} = 1;
-x = squeeze(x(idx{:}));
+if ~isfield(out, 'labels') || isempty(fieldnames(out.labels))
+    out.labels = newLabels;
+    return
+end
+
+for iField = 1:numel(newFields)
+    thisField = newFields{iField};
+
+    if isfield(out.labels, thisField)
+        if ~isequal(out.labels.(thisField), newLabels.(thisField))
+            if overwrite
+                out.labels.(thisField) = newLabels.(thisField);
+            else
+                error(errID, ...
+                    ['Operation aborted. labels.%s already exists with a ' ...
+                     'different value. Use overwrite=true to replace it.'], ...
+                    thisField);
+            end
+        end
+    else
+        out.labels.(thisField) = newLabels.(thisField);
+    end
+end
+
+end
+
+function tf = iLooksLikeUMT(x)
+%ILOOKSLIKEUMT Return true when input resembles a .umt structure.
+
+tf = isstruct(x) && isscalar(x) && ...
+    all(ismember({'version', 'kind', 'data'}, fieldnames(x)));
+
+end
+
+function tf = iValidateEntryNameInput(x)
+%IVALIDENTRYNAMEINPUT Lightweight validator for parser entryName input.
+
+tf = ischar(x) || (isstring(x) && isscalar(x));
+
+end
+
+function entryName = iNormalizeEntryName(entryNameIn, errID)
+%INORMALIZEENTRYNAME Normalize and validate one entry name.
+
+entryName = char(string(entryNameIn));
+
+if isempty(entryName) || ~isvarname(entryName)
+    error(errID, ...
+        ['Operation aborted. "entryName" must be a valid MATLAB field ' ...
+         'name.']);
+end
+
+end
+
+function tf = iValidateDimNamesInput(x)
+%IVALIDATEDIMNAMESINPUT Lightweight validator for parser dimNames input.
+
+tf = isempty(x) || isstring(x) || iscell(x);
+
+end
+
+function kind = iNormalizeKind(kindIn, schema, errID)
+%INORMALIZEKIND Normalize and validate kind.
+
+if ~(ischar(kindIn) || (isstring(kindIn) && isscalar(kindIn)))
+    error(errID, ...
+        'Operation aborted. "kind" must be a character vector or string scalar.');
+end
+
+kind = lower(char(string(kindIn)));
+
+if ~ismember(kind, schema.allowedKinds)
+    error(errID, ...
+        'Operation aborted. Invalid kind "%s".', kind);
+end
+
+end
+
+function dimNames = iNormalizeDimNames(dimNamesIn, schema, errID, entryName)
+%INORMALIZEDIMNAMES Normalize and validate dimNames.
+
+allowedDims = schema.allowedDims;
+
+if isempty(dimNamesIn)
+    dimNames = {};
+    return
+end
+
+if isstring(dimNamesIn)
+    if ~isvector(dimNamesIn)
+        error(errID, ...
+            'Operation aborted. "%s.dimNames" must be a 1D text array.', ...
+            entryName);
+    end
+    rawDims = cellstr(dimNamesIn(:).');
+elseif iscell(dimNamesIn) && isvector(dimNamesIn) && ...
+        all(cellfun(@(c) ischar(c) || (isstring(c) && isscalar(c)), dimNamesIn))
+    rawDims = cellstr(string(dimNamesIn(:).'));
+else
+    error(errID, ...
+        ['Operation aborted. "%s.dimNames" must be a cell array of ' ...
+         'character vectors or a string vector.'], ...
+        entryName);
+end
+
+dimNames = cell(1, numel(rawDims));
+for iDim = 1:numel(rawDims)
+    idx = find(strcmpi(rawDims{iDim}, allowedDims), 1, 'first');
+    if isempty(idx)
+        error(errID, ...
+            'Operation aborted. Invalid dimension name "%s".', rawDims{iDim});
+    end
+    dimNames{iDim} = allowedDims{idx};
+end
+
+end
+
+function labels = iNormalizeLabelsStruct(labelsIn, schema, errID)
+%INORMALIZELABELSSTRUCT Normalize and validate top-level labels struct.
+
+allowedDims = schema.allowedDims;
+
+if ~isstruct(labelsIn) || ~isscalar(labelsIn)
+    error(errID, ...
+        'Operation aborted. "labels" must be a scalar struct.');
+end
+
+labels = struct();
+rawFields = fieldnames(labelsIn);
+
+if isempty(rawFields)
+    return
+end
+
+canonicalFields = cell(size(rawFields));
+
+for iField = 1:numel(rawFields)
+    idx = find(strcmpi(rawFields{iField}, allowedDims), 1, 'first');
+    if isempty(idx)
+        error(errID, ...
+            'Operation aborted. Invalid label dimension "%s".', rawFields{iField});
+    end
+    canonicalFields{iField} = allowedDims{idx};
+end
+
+if numel(unique(canonicalFields)) ~= numel(canonicalFields)
+    error(errID, ...
+        ['Operation aborted. "labels" contains duplicate dimensions after ' ...
+         'case normalization.']);
+end
+
+for iField = 1:numel(rawFields)
+    labels.(canonicalFields{iField}) = ...
+        iNormalizeLabelVector(labelsIn.(rawFields{iField}), errID, canonicalFields{iField});
+end
+
+end
+
+function labels = iNormalizeLabelVector(labelsIn, errID, dimName)
+%INORMALIZELABELVECTOR Normalize one label vector.
+
+if isstring(labelsIn) && isvector(labelsIn)
+    labels = cellstr(labelsIn(:).');
+elseif iscell(labelsIn) && isvector(labelsIn) && ...
+        all(cellfun(@(c) ischar(c) || (isstring(c) && isscalar(c)), labelsIn))
+    labels = cellstr(string(labelsIn(:).'));
+else
+    error(errID, ...
+        ['Operation aborted. labels.%s must be a cell array of character ' ...
+         'vectors or a string vector.'], ...
+        dimName);
+end
+
+end
+
+function tf = iHasNameValue(args, name)
+%IHASNAMEVALUE Return true when a name-value list contains the given name.
+
+tf = false;
+
+if mod(numel(args), 2) ~= 0
+    return
+end
+
+for iArg = 1:2:numel(args)
+    key = args{iArg};
+    if ischar(key) || (isstring(key) && isscalar(key))
+        if strcmpi(char(string(key)), name)
+            tf = true;
+            return
+        end
+    end
+end
+
 end
