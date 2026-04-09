@@ -1,78 +1,395 @@
-function getEvents(RawFolder,SaveFolder, varargin)
-% GETEVENTS detects events from LabeoTech Imaging system's analog channels
-% (e.g., ai_0000x.bin) and saves the event information to "events.mat" file
-% in the SaveFolder to be used by other umIT functions.
+function outFile = getEvents(RawFolder, SaveFolder, varargin)
+% GETEVENTS Detect events from LabeoTech Imaging trigger channels.
+%
+% This function detects stimulation events from the LabeoTech Imaging raw
+% acquisition files and saves the detected event information to
+% "events.mat" in "SaveFolder". The saved file can then be used by other
+% analysis functions in the pipeline.
+%
+% Syntax:
+%   outFile = getEvents(RawFolder, SaveFolder)
+%   outFile = getEvents(RawFolder, SaveFolder, 'Name', Value, ...)
+%   info    = getEvents('pipelineInfo')
+%
+% Inputs:
+%   RawFolder   - Path to the raw acquisition folder.
+%   SaveFolder  - Path to the destination folder where "events.mat" will be
+%                 saved.
+%
+% Name-Value parameters:
+%   StimChannel       - Trigger channel name(s). Accepted values are:
+%                       'Internal-main', 'Internal-Aux', 'AI1'...'AI8'
+%   Threshold         - Trigger threshold or 'auto'
+%   TriggerType       - 'EdgeSet' or 'EdgeToggle'
+%   TriggerPolarity   - 'Positive' or 'Negative'
+%   minInterStimTime  - Minimum inter-stimulus interval in seconds
+%   FilterFreq        - Low-pass cutoff frequency in Hz applied to the
+%                       trigger signal before detection. Use 0 to disable
+%                       filtering.
+%   ConditionFileType - 'none', 'CSV', or 'Vpixx'
+%   ConditionFileName - Condition file name or 'auto'
+%   CSVColNames       - Comma-separated CSV column names or 'all'
+%   baselinePeriod    - Event baseline duration in seconds or 'auto'
+%
+% Output:
+%   outFile     - Full path to the generated "events.mat" file. Returns
+%                 empty if no event file was generated.
+%
+% Notes:
+%   - Digital stimulation is detected automatically by EventsManager. When
+%     digital stimulation is present, trigger-detection options are
+%     bypassed.
+%   - This function is a file-producing pipeline step. Its pipelineInfo
+%     output is declared as outputMode='file' and isData=false.
 
-% Defaults:
-default_opts = struct('StimChannel','Internal-main', 'Threshold','auto','TriggerType','EdgeSet', 'minInterStimTime', 2,'ConditionFileType','none','ConditionFileName','auto','CSVColNames','all','baselinePeriod','auto');
-opts_values = struct('StimChannel',{{'Internal-main', 'Internal-Aux','AI1', 'AI2','AI3','AI4','AI5','AI6','AI7','AI8'}'},'Threshold',{{'auto',Inf}}, 'TriggerType', {{'EdgeSet', 'EdgeToggle'}},'minInterStimTime',[0.5, Inf],'ConditionFileType',{{'none','CSV','Vpixx'}}, 'ConditionFileName',{{'auto'}},'CSVColNames',{{'all'}},'baselinePeriod', {{'auto',Inf}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
-% Arguments validation:
+
+% -------------------------------------------------------------------------
+% Allowed values used both by pipelineInfo and runtime validation
+% -------------------------------------------------------------------------
+allowedStimChannel = {'Internal-main', 'Internal-Aux', 'AI1', 'AI2', 'AI3', 'AI4', 'AI5', 'AI6', 'AI7', 'AI8'};
+allowedThreshold = {'auto', Inf};
+allowedTriggerType = {'EdgeSet', 'EdgeToggle'};
+allowedTriggerPolarity = {'Positive', 'Negative'};
+allowedMinInterStimTime = [0.5, Inf];
+allowedFilterFreq = [0, Inf];
+allowedConditionFileType = {'none', 'CSV', 'Vpixx'};
+allowedConditionFileName = {'auto'};
+allowedCSVColNames = {'all'};
+allowedBaselinePeriod = {'auto', Inf};
+
+% -------------------------------------------------------------------------
+% pipelineInfo query
+% -------------------------------------------------------------------------
+if nargin == 1 && (ischar(RawFolder) || (isstring(RawFolder) && isscalar(RawFolder))) ...
+        && strcmpi(strtrim(char(string(RawFolder))), 'pipelineInfo')
+    outFile = localGetPipelineInfo();
+    return
+end
+
+% -------------------------------------------------------------------------
+% Parse inputs
+% -------------------------------------------------------------------------
 p = inputParser;
 addRequired(p, 'RawFolder', @isfolder);
 addRequired(p, 'SaveFolder', @isfolder);
-addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
+
+addParameter(p, 'StimChannel', 'Internal-main', ...
+    @(x) (ischar(x) || (isstring(x) && isscalar(x))) || ...
+    (iscell(x) && all(cellfun(@(c) ischar(c) || (isstring(c) && isscalar(c)), x))) || ...
+    (isstring(x) && ~isscalar(x)));
+
+addParameter(p, 'Threshold', 'auto', ...
+    @(x) (ischar(x) || (isstring(x) && isscalar(x))) || (isnumeric(x) && isscalar(x) && isfinite(x)));
+
+addParameter(p, 'TriggerType', 'EdgeSet', ...
+    @(x) ischar(x) || (isstring(x) && isscalar(x)));
+
+addParameter(p, 'TriggerPolarity', 'Positive', ...
+    @(x) ischar(x) || (isstring(x) && isscalar(x)));
+
+addParameter(p, 'minInterStimTime', 2, ...
+    @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= allowedMinInterStimTime(1) && x <= allowedMinInterStimTime(2));
+
+addParameter(p, 'FilterFreq', 0, ...
+    @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= allowedFilterFreq(1) && x <= allowedFilterFreq(2));
+
+addParameter(p, 'ConditionFileType', 'none', ...
+    @(x) ischar(x) || (isstring(x) && isscalar(x)));
+
+addParameter(p, 'ConditionFileName', 'auto', ...
+    @(x) (ischar(x) || (isstring(x) && isscalar(x))) && isscalar(string(x)));
+
+addParameter(p, 'CSVColNames', 'all', ...
+    @(x) (ischar(x) || (isstring(x) && isscalar(x))) && isscalar(string(x)));
+
+addParameter(p, 'baselinePeriod', 'auto', ...
+    @(x) (ischar(x) || (isstring(x) && isscalar(x))) || (isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0));
+
 parse(p, RawFolder, SaveFolder, varargin{:});
-%Initialize Variables:
+
 RawFolder = p.Results.RawFolder;
 SaveFolder = p.Results.SaveFolder;
-opts = p.Results.opts;
+
+stimChannel = p.Results.StimChannel;
+threshold = p.Results.Threshold;
+triggerType = char(validatestring(char(string(p.Results.TriggerType)), allowedTriggerType));
+triggerPolarity = char(validatestring(char(string(p.Results.TriggerPolarity)), allowedTriggerPolarity));
+minInterStimTime = p.Results.minInterStimTime;
+filterFreq = p.Results.FilterFreq;
+conditionFileType = char(validatestring(char(string(p.Results.ConditionFileType)), allowedConditionFileType));
+conditionFileName = strtrim(char(string(p.Results.ConditionFileName)));
+csvColNames = strtrim(char(string(p.Results.CSVColNames)));
+baselinePeriod = p.Results.baselinePeriod;
+
 clear p
-%%%%
-if ischar(opts.StimChannel)
-    opts.StimChannel = {opts.StimChannel};
+
+% -------------------------------------------------------------------------
+% Normalize and validate StimChannel
+% -------------------------------------------------------------------------
+if ischar(stimChannel) || (isstring(stimChannel) && isscalar(stimChannel))
+    stimChannel = {char(string(stimChannel))};
+elseif isstring(stimChannel)
+    stimChannel = cellstr(stimChannel(:)).';
+else
+    stimChannel = cellfun(@(c) char(string(c)), stimChannel(:), 'UniformOutput', false).';
 end
-if all(cellfun(@isempty,opts.StimChannel))
-    warning('No stim channels selected. Event file creation aborted.')
+
+stimChannel = cellfun(@strtrim, stimChannel, 'UniformOutput', false);
+stimChannel = stimChannel(~cellfun(@isempty, stimChannel));
+
+if isempty(stimChannel)
+    warning('No stim channels selected. Event file creation aborted.');
+    outFile = '';
     return
 end
-% Check and prepare parameters for EventsManager object:
-opts.ConditionFileName = strip(opts.ConditionFileName);
-opts.CSVColNames = strip(opts.CSVColNames);
-if strcmpi(opts.ConditionFileName, 'auto') && ~strcmpi(opts.CSVColNames,'all') && ~strcmpi(opts.ConditionFileType,'CSV')
-    % Force file type to 'CSV' if column names were set
-    opts.ConditionFileType = 'CSV';
-    warning('Condition file type set to "CSV" given that specific columns were stated in parameters!');    
+
+for iCh = 1:numel(stimChannel)
+    stimChannel{iCh} = char(validatestring(stimChannel{iCh}, allowedStimChannel));
 end
 
-if strcmpi(opts.CSVColNames, 'all')
-    opts.CSVColNames = {''};
-else    
-    opts.CSVColNames = strsplit(opts.CSVColNames,',');
+% -------------------------------------------------------------------------
+% Validate Threshold
+% -------------------------------------------------------------------------
+if ischar(threshold) || (isstring(threshold) && isscalar(threshold))
+    threshold = char(validatestring(char(string(threshold)), allowedThreshold(1)));
+elseif ~(isnumeric(threshold) && isscalar(threshold) && isfinite(threshold))
+    error('umIToolbox:getEvents:WrongInput', ...
+        'Threshold must be a finite numeric scalar or ''auto''.');
 end
 
-if strcmpi(opts.ConditionFileName, 'auto')
-    opts.ConditionFileName = '';
+% -------------------------------------------------------------------------
+% Validate baselinePeriod
+% -------------------------------------------------------------------------
+if ischar(baselinePeriod) || (isstring(baselinePeriod) && isscalar(baselinePeriod))
+    baselinePeriod = char(validatestring(char(string(baselinePeriod)), allowedBaselinePeriod(1)));
+elseif ~(isnumeric(baselinePeriod) && isscalar(baselinePeriod) && isfinite(baselinePeriod) && baselinePeriod >= 0)
+    error('umIToolbox:getEvents:WrongInput', ...
+        'baselinePeriod must be a non-negative numeric scalar or ''auto''.');
 end
 
-% Instantiate EventsManager class:
-evObj = EventsManager(SaveFolder,RawFolder,opts.ConditionFileType);
+% -------------------------------------------------------------------------
+% Normalize condition-file related parameters
+% -------------------------------------------------------------------------
+if strcmpi(conditionFileName, 'auto') && ...
+        ~strcmpi(csvColNames, allowedCSVColNames{1}) && ...
+        ~strcmpi(conditionFileType, 'CSV')
+    conditionFileType = 'CSV';
+    warning(['Condition file type set to "CSV" because specific columns ' ...
+        'were provided in "CSVColNames".']);
+end
 
-for ii = 1:length(opts.StimChannel)
-    % Update internal channel names. These may change depending on the OiS
-    % acquisition software version.
-    if strcmpi(opts.StimChannel{ii}, 'internal-main')
-        warning(['Translated ''Internal-Main'' channel to ''' evObj.AIChanList{2} '''']);
-        opts.StimChannel{ii} = evObj.AIChanList{2};
-    elseif strcmpi(opts.StimChannel{ii}, 'internal-aux')
-        warning(['Translated ''Internal-Aux'' channel to ''' evObj.AIChanList{3} '''']);
-        opts.StimChannel{ii} = evObj.AIChanList{3};
+if strcmpi(csvColNames, allowedCSVColNames{1})
+    csvColNames = {''};
+else
+    csvColNames = strsplit(csvColNames, ',');
+    csvColNames = strtrim(csvColNames);
+    csvColNames = csvColNames(~cellfun(@isempty, csvColNames));
+    if isempty(csvColNames)
+        csvColNames = {''};
     end
 end
-% Update EventsManager object properties:
-evObj.trigThr = opts.Threshold;
-evObj.trigType = opts.TriggerType;
-if ~isempty(evObj.trigChanName{:})
-    evObj.trigChanName = opts.StimChannel;
+
+if strcmpi(conditionFileName, allowedConditionFileName{1})
+    conditionFileName = '';
 end
-evObj.minInterStim = opts.minInterStimTime;
-% Detect triggers:
-evObj.getTriggers(evObj.trigChanName,true); % Verbose
-% Update event names:
-evObj.readConditionFile(opts.ConditionFileName,'CSVcols', opts.CSVColNames);
-% Set pre and post event times:
-if ~strcmpi(opts.baselinePeriod,'auto')
-    evObj.setBaselinePeriod(opts.baselinePeriod);
-end    
-% Save events to file:
-evObj.saveEvents(SaveFolder);
+
+% -------------------------------------------------------------------------
+% Instantiate EventsManager
+% -------------------------------------------------------------------------
+evObj = EventsManager(SaveFolder, RawFolder, conditionFileType);
+
+if evObj.b_isDigital && ~isempty(evObj.timestamps)
+    if filterFreq > 0
+        warning(['FilterFreq was ignored because digital stimulation was ' ...
+            'detected automatically by EventsManager.']);
+    end
+
+    warning(['Automatic detection of digital stimulation in channel "%s". ' ...
+        'Trigger parameters from getEvents were bypassed.'], evObj.trigChanName{1});
+
+    if isnumeric(baselinePeriod)
+        evObj.setBaselinePeriod(baselinePeriod);
+    end
+
+    evObj.saveEvents(SaveFolder);
+
+else
+    for ii = 1:numel(stimChannel)
+        if strcmpi(stimChannel{ii}, 'Internal-main')
+            if numel(evObj.AIChanList) < 2
+                error('umIToolbox:getEvents:MissingInternalMainChannel', ...
+                    'Could not translate "Internal-main" because AIChanList is incomplete.');
+            end
+            warning('Translated "Internal-main" channel to "%s".', evObj.AIChanList{2});
+            stimChannel{ii} = evObj.AIChanList{2};
+
+        elseif strcmpi(stimChannel{ii}, 'Internal-Aux')
+            if numel(evObj.AIChanList) < 3
+                error('umIToolbox:getEvents:MissingInternalAuxChannel', ...
+                    'Could not translate "Internal-Aux" because AIChanList is incomplete.');
+            end
+            warning('Translated "Internal-Aux" channel to "%s".', evObj.AIChanList{3});
+            stimChannel{ii} = evObj.AIChanList{3};
+        end
+    end
+
+    evObj.trigThr = threshold;
+    evObj.trigType = triggerType;
+    evObj.trigPolarity = triggerPolarity;
+    evObj.trigChanName = stimChannel;
+    evObj.minInterStim = minInterStimTime;
+
+    evObj.getTriggers('', true, 'FilterFreq', filterFreq);
+    evObj.readConditionFile(conditionFileName, 'CSVcols', csvColNames);
+
+    if isnumeric(baselinePeriod)
+        evObj.setBaselinePeriod(baselinePeriod);
+    end
+
+    evObj.saveEvents(SaveFolder);
+end
+
+outFile = fullfile(SaveFolder, 'events.mat');
+
+% -------------------------------------------------------------------------
+% Local pipelineInfo factory
+% -------------------------------------------------------------------------
+    function info = localGetPipelineInfo()
+
+        info = PipelineManager.createPipelineInfo( ...
+            mfilename, ...
+            'Detect events from LabeoTech Imaging trigger channels and save events.mat.');
+
+        info = PipelineManager.addInput( ...
+            info, ...
+            'RawFolder', ...
+            'RawFolder', ...
+            'Path to the raw acquisition folder.', ...
+            'kind', 'input', ...
+            'position', 1, ...
+            'callType', 'positional', ...
+            'isData', false);
+
+        info = PipelineManager.addInput( ...
+            info, ...
+            'SaveFolder', ...
+            'SaveFolder', ...
+            'Path to the destination folder where events.mat will be saved.', ...
+            'kind', 'input', ...
+            'position', 2, ...
+            'callType', 'positional', ...
+            'isData', false);
+
+        info = PipelineManager.addInput( ...
+            info, ...
+            'StimChannel', ...
+            'parameter', ...
+            'Trigger channel name(s).', ...
+            'kind', 'parameter', ...
+            'default', 'Internal-main', ...
+            'allowed', allowedStimChannel, ...
+            'callType', 'namevalue');
+
+        info = PipelineManager.addInput( ...
+            info, ...
+            'Threshold', ...
+            'parameter', ...
+            'Trigger threshold or ''auto''.', ...
+            'kind', 'parameter', ...
+            'default', 'auto', ...
+            'allowed', allowedThreshold, ...
+            'callType', 'namevalue');
+
+        info = PipelineManager.addInput( ...
+            info, ...
+            'TriggerType', ...
+            'parameter', ...
+            'Trigger detection mode.', ...
+            'kind', 'parameter', ...
+            'default', 'EdgeSet', ...
+            'allowed', allowedTriggerType, ...
+            'callType', 'namevalue');
+
+        info = PipelineManager.addInput( ...
+            info, ...
+            'TriggerPolarity', ...
+            'parameter', ...
+            'Trigger polarity.', ...
+            'kind', 'parameter', ...
+            'default', 'Positive', ...
+            'allowed', allowedTriggerPolarity, ...
+            'callType', 'namevalue');
+
+        info = PipelineManager.addInput( ...
+            info, ...
+            'minInterStimTime', ...
+            'parameter', ...
+            'Minimum inter-stimulus interval in seconds.', ...
+            'kind', 'parameter', ...
+            'default', 2, ...
+            'allowed', allowedMinInterStimTime, ...
+            'callType', 'namevalue');
+
+        info = PipelineManager.addInput( ...
+            info, ...
+            'FilterFreq', ...
+            'parameter', ...
+            'Low-pass cutoff frequency in Hz applied to the trigger signal before detection. Use 0 to disable filtering.', ...
+            'kind', 'parameter', ...
+            'default', 0, ...
+            'allowed', allowedFilterFreq, ...
+            'callType', 'namevalue');
+
+        info = PipelineManager.addInput( ...
+            info, ...
+            'ConditionFileType', ...
+            'parameter', ...
+            'Condition file type.', ...
+            'kind', 'parameter', ...
+            'default', 'none', ...
+            'allowed', allowedConditionFileType, ...
+            'callType', 'namevalue');
+
+        info = PipelineManager.addInput( ...
+            info, ...
+            'ConditionFileName', ...
+            'parameter', ...
+            'Condition file name or ''auto''.', ...
+            'kind', 'parameter', ...
+            'default', 'auto', ...
+            'allowed', {allowedConditionFileName{1}}, ...
+            'callType', 'namevalue');
+
+        info = PipelineManager.addInput( ...
+            info, ...
+            'CSVColNames', ...
+            'parameter', ...
+            'Comma-separated CSV column names or ''all''.', ...
+            'kind', 'parameter', ...
+            'default', 'all', ...
+            'allowed', {allowedCSVColNames{1}}, ...
+            'callType', 'namevalue');
+
+        info = PipelineManager.addInput( ...
+            info, ...
+            'baselinePeriod', ...
+            'parameter', ...
+            'Baseline period in seconds or ''auto''.', ...
+            'kind', 'parameter', ...
+            'default', 'auto', ...
+            'allowed', allowedBaselinePeriod, ...
+            'callType', 'namevalue');
+
+        info = PipelineManager.addOutput( ...
+            info, ...
+            'outFile', ...
+            'Unknown', ...
+            'file', ...
+            'Detected events file saved in SaveFolder.', ...
+            'events.mat', ...
+            1, ...
+            'isData', false, ...
+            'saveFileName', '');
+    end
+
 end

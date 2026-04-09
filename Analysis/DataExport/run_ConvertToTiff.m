@@ -41,6 +41,7 @@ end
 
 % If the data is separated by Events, create one TIFF file per trial
 if any(strcmpi(metaData.dim_names, 'E'))
+    %% THIS SECTION IS DEPRECATED AND NEEDS UPDATE USING NEW .UMT STRUCT FORMAT
     if b_fromFile
         mapFile = mapDatFile(fullfile(SaveFolder,filename));
     end
