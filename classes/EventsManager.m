@@ -12,6 +12,7 @@ classdef EventsManager < handle
     properties
         trigThr = 'auto'; % Trigger detection threshold in volts. When set to 'auto', the threshold is placed at 80% of the signal span above the minimum value.
         trigType char = 'EdgeSet' % Trigger interpretation mode.
+        trigPolarity char = 'positive' % Trigger polarity. {'positive','negative'}.
         trigChanName = {''}; % Name of AI channel(s) containing the triggers.
         minInterStim single {mustBeNonnegative} = 2 % Minimal inter-stimulus interval in seconds used to merge burst stimuli.
         RawFolder char % Folder containing the ai_xxxx.bin files and optionally the event list file.
@@ -214,6 +215,28 @@ classdef EventsManager < handle
                 obj.trigType = 'EdgeToggle';
             else
                 error('Invalid trigger type "%s". It must be either "EdgeSet" or "EdgeToggle".', trigType);
+            end
+        end
+
+        function set.trigPolarity(obj, trigPolarity)
+            %SET.TRIGPOLARITY Validate and set trigger polarity.
+            %
+            % Valid trigger polarities are:
+            %   'positive' : event ON is detected on an upward threshold crossing
+            %   'negative' : event ON is detected on a downward threshold crossing
+            %
+            % Matching is case-insensitive. The stored value is canonicalized for
+            % consistency.
+
+            trigPolarity = convertStringsToChars(trigPolarity);
+            validateattributes(trigPolarity, {'char'}, {'scalartext'}, 'set.trigPolarity');
+
+            if strcmpi(trigPolarity, 'positive')
+                obj.trigPolarity = 'positive';
+            elseif strcmpi(trigPolarity, 'negative')
+                obj.trigPolarity = 'negative';
+            else
+                error('Invalid trigger polarity "%s". It must be either "positive" or "negative".', trigPolarity);
             end
         end
 
@@ -634,16 +657,25 @@ classdef EventsManager < handle
                     thrStr = char(obj.trigThr);
                 end
 
+                if strcmpi(obj.trigPolarity, 'negative')
+                    trialStateStr = 'LOW';
+                    interTrialStateStr = 'HIGH';
+                else
+                    trialStateStr = 'HIGH';
+                    interTrialStateStr = 'LOW';
+                end
+
                 fprintf(['Total number of triggers: %d\n' ...
                     'Total number of conditions: %d\n' ...
-                    'Average trial length (HIGH state): %0.3f s\n' ...
-                    'Average inter-trial length (LOW state): %0.3f s\n' ...
+                    'Average trial length (%s state): %0.3f s\n' ...
+                    'Average inter-trial length (%s state): %0.3f s\n' ...
                     'Trigger detection threshold: %s V\n' ...
-                    'Trigger type: %s\n'], ...
+                    'Trigger type: %s\n' ...
+                    'Trigger polarity: %s\n'], ...
                     sum(obj.state), length(obj.eventNameList), ...
-                    mean(deltaT(obj.state == 1), 'omitnan'), ...
-                    mean(deltaT(obj.state == 0), 'omitnan'), ...
-                    thrStr, obj.trigType)
+                    trialStateStr, mean(deltaT(obj.state == 1), 'omitnan'), ...
+                    interTrialStateStr, mean(deltaT(obj.state == 0), 'omitnan'), ...
+                    thrStr, obj.trigType, obj.trigPolarity)
                 disp('--------------------------------')
             end
 
@@ -798,32 +830,38 @@ classdef EventsManager < handle
                 end
 
                 if b_verbose
-                    if isempty(out.timestamps)
-                        disp('No triggers detected in external signal.')
+                    disp('Trigger detection completed.')
+                    disp('---------- Trigger info ----------')
+                    deltaT = [diff(obj.timestamps); nan];
+
+                    if isnumeric(obj.trigThr)
+                        thrStr = sprintf('%0.2f', obj.trigThr);
                     else
-                        disp('Trigger detection completed.')
-                        disp('---------- Trigger info ----------')
-                        deltaT = [diff(out.timestamps); nan];
-
-                        if isnumeric(out.trigThr)
-                            thrStr = sprintf('%0.2f', out.trigThr);
-                        else
-                            thrStr = char(out.trigThr);
-                        end
-
-                        fprintf(['Total number of triggers: %d\n' ...
-                            'Total number of conditions: %d\n' ...
-                            'Average trial length (HIGH state): %0.3f s\n' ...
-                            'Average inter-trial length (LOW state): %0.3f s\n' ...
-                            'Trigger detection threshold: %s V\n' ...
-                            'Trigger type: %s\n'], ...
-                            sum(out.state), 1, ...
-                            mean(deltaT(out.state == 1), 'omitnan'), ...
-                            mean(deltaT(out.state == 0), 'omitnan'), ...
-                            thrStr, out.trigType)
-                        disp('--------------------------------')
+                        thrStr = char(obj.trigThr);
                     end
+
+                    if strcmpi(obj.trigPolarity, 'negative')
+                        trialStateStr = 'LOW';
+                        interTrialStateStr = 'HIGH';
+                    else
+                        trialStateStr = 'HIGH';
+                        interTrialStateStr = 'LOW';
+                    end
+
+                    fprintf(['Total number of triggers: %d\n' ...
+                        'Total number of conditions: %d\n' ...
+                        'Average trial length (%s state): %0.3f s\n' ...
+                        'Average inter-trial length (%s state): %0.3f s\n' ...
+                        'Trigger detection threshold: %s V\n' ...
+                        'Trigger type: %s\n' ...
+                        'Trigger polarity: %s\n'], ...
+                        sum(obj.state), length(obj.eventNameList), ...
+                        trialStateStr, mean(deltaT(obj.state == 1), 'omitnan'), ...
+                        interTrialStateStr, mean(deltaT(obj.state == 0), 'omitnan'), ...
+                        thrStr, obj.trigType, obj.trigPolarity)
+                    disp('--------------------------------')
                 end
+
 
             catch ME
                 % Full rollback on failure.
@@ -1429,8 +1467,9 @@ classdef EventsManager < handle
             %
             % Notes:
             %   - Saving is aborted if no triggers were detected.
-            %   - This method also saves sr and trigThr so external-signal round-trips
-            %     preserve the signal sampling rate and detection threshold.
+            %   - This method also saves sr, trigThr, and trigPolarity so
+            %     external-signal round-trips preserve the signal sampling rate and
+            %     trigger detection settings.
 
             if nargin < 2 || isempty(saveFolder)
                 saveFolder = obj.SaveFolder;
@@ -1450,6 +1489,7 @@ classdef EventsManager < handle
             AnalogIN = obj.AnalogIN; %#ok<NASGU>
             sr = obj.sr; %#ok<NASGU>
             trigThr = obj.trigThr; %#ok<NASGU>
+            trigPolarity = obj.trigPolarity; %#ok<NASGU>
             eventID = obj.eventID; %#ok<NASGU>
             timestamps = obj.timestamps; %#ok<NASGU>
             state = obj.state; %#ok<NASGU>
@@ -1466,6 +1506,7 @@ classdef EventsManager < handle
                 'AnalogIN', ...
                 'sr', ...
                 'trigThr', ...
+                'trigPolarity', ...
                 'eventID', ...
                 'state', ...
                 'timestamps', ...
@@ -1522,6 +1563,7 @@ classdef EventsManager < handle
                 'AnalogIN', ...
                 'sr', ...
                 'trigThr', ...
+                'trigPolarity', ...
                 'timestamps', ...
                 'state', ...
                 'eventID', ...
@@ -1553,7 +1595,6 @@ classdef EventsManager < handle
             if bCanLoadInfo
                 obj.setInfo;
             elseif obj.b_hasExternalSignal
-                % External-signal mode can exist without acquisition metadata.
                 obj.AIChanList = {};
             else
                 error(['Failed to load acquisition metadata for saved events. ' ...
@@ -1567,7 +1608,6 @@ classdef EventsManager < handle
                 if ~isempty(obj.AIChanList)
                     obj.trigChanName = evInfo.trigChanName;
                 else
-                    % External-signal mode without metadata: keep a neutral value.
                     obj.trigChanName = {''};
                 end
             end
@@ -2055,6 +2095,7 @@ classdef EventsManager < handle
             end
         end
 
+
         function [timestamps, state, trimInfo] = detectTrig(obj, data)
             %DETECTTRIG Detect trigger transitions from a 1-D signal.
             %
@@ -2067,8 +2108,8 @@ classdef EventsManager < handle
             %       Trigger transition timestamps in seconds.
             %   state : logical column vector
             %       Trigger state at each timestamp:
-            %           true  = ON / rising
-            %           false = OFF / falling
+            %           true  = ON / onset
+            %           false = OFF / offset
             %   trimInfo : struct
             %       Information about boundary-partial triggers handled during
             %       detection.
@@ -2076,6 +2117,8 @@ classdef EventsManager < handle
             % Notes:
             %   - If trigThr = 'auto', threshold is set to 80% of the signal span above
             %     the minimum value.
+            %   - trigPolarity controls whether onset is detected on an upward
+            %     ('positive') or downward ('negative') threshold crossing.
             %   - Biphasic signals are rectified with abs().
             %   - Leading/trailing boundary-partial pulses generate warnings.
             %   - Ambiguous mid-stream mismatches are rejected with an error.
@@ -2093,24 +2136,32 @@ classdef EventsManager < handle
 
             data = double(data(:));
 
-            % Detect meaningful biphasic content robustly.
-            % A few noisy samples slightly below zero should not trigger rectification.
-            dataRange = max(data) - min(data);
+            % -------------------------------------------------------------
+            % Robust biphasic classification
+            % -------------------------------------------------------------
+            % Do not classify a signal as biphasic only because a few noisy samples
+            % go below zero. Instead, require meaningful positive and negative
+            % excursions relative to the signal center.
+            dataCenter = median(data);
+            dataCentered = data - dataCenter;
+            dataRange = max(dataCentered) - min(dataCentered);
 
-            % Negative excursion must be both:
-            %   1) larger than a small absolute floor, and
-            %   2) relevant relative to the signal amplitude.
-            negAmpThr = max(0.02, 0.1 * max(dataRange, obj.minTrigAmp));
+            ampThr = max(0.02, 0.1 * max(dataRange, obj.minTrigAmp));
+            minSideSamples = max(3, ceil(0.001 * numel(data))); % ~0.1% of samples, at least 3
 
-            % Require more than an isolated sample below threshold.
-            minNegSamples = max(3, ceil(0.001 * numel(data)));  % ~0.1% of samples, at least 3
-            nNegSamples = nnz(data < -negAmpThr);
+            bHasPositivePhase = nnz(dataCentered > ampThr) >= minSideSamples;
+            bHasNegativePhase = nnz(dataCentered < -ampThr) >= minSideSamples;
 
-            if nNegSamples >= minNegSamples
+            bRectifiedBiphasic = bHasPositivePhase && bHasNegativePhase;
+
+            if bRectifiedBiphasic
                 disp('Biphasic signal detected.')
                 data = abs(data);
             end
 
+            % -------------------------------------------------------------
+            % Resolve threshold
+            % -------------------------------------------------------------
             if ischar(obj.trigThr) || isStringScalar(obj.trigThr)
                 assert(strcmpi(obj.trigThr, 'auto'), ...
                     'Invalid trigger threshold mode. Use a numeric scalar or ''auto''.');
@@ -2126,36 +2177,49 @@ classdef EventsManager < handle
                     'detectTrig', 'obj.trigThr');
             end
 
-            tmRise = find(data(1:end-1) < obj.trigThr & data(2:end) > obj.trigThr);
-            tmFall = find(data(1:end-1) > obj.trigThr & data(2:end) < obj.trigThr);
+            % -------------------------------------------------------------
+            % Determine onset/offset crossings
+            % -------------------------------------------------------------
+            % For biphasic signals, rectification turns the problem into a
+            % positive-polarity one.
+            if bRectifiedBiphasic || strcmpi(obj.trigPolarity, 'positive')
+                tmRise = find(data(1:end-1) < obj.trigThr & data(2:end) > obj.trigThr); % onset
+                tmFall = find(data(1:end-1) > obj.trigThr & data(2:end) < obj.trigThr); % offset
+            else
+                tmRise = find(data(1:end-1) > obj.trigThr & data(2:end) < obj.trigThr); % onset
+                tmFall = find(data(1:end-1) < obj.trigThr & data(2:end) > obj.trigThr); % offset
+            end
 
             if isempty(tmRise) && isempty(tmFall)
                 return
             end
 
+            % Leading unmatched offset
             if ~isempty(tmFall) && (isempty(tmRise) || tmFall(1) < tmRise(1))
                 trimInfo.nLeadDropped = 1;
                 trimInfo.trimApplied = true;
                 tmFall(1) = [];
-                warning(['Signal appears to start while the trigger is already HIGH. ' ...
+                warning(['Signal appears to start while the trigger is already ON. ' ...
                     'Discarding the leading partial trigger event to preserve alignment.']);
             end
 
+            % Trailing unmatched onset
             if ~isempty(tmRise) && (isempty(tmFall) || tmRise(end) > tmFall(end))
                 if obj.b_isDigital || strcmpi(obj.trigType, 'EdgeToggle')
                     trimInfo.bTrailingRiseKept = true;
-                    warning(['Signal appears to end before the final trigger returns LOW. ' ...
+                    warning(['Signal appears to end before the final trigger returns to the idle state. ' ...
                         'Keeping the trailing onset. OFF time will be reconstructed from known durations ' ...
                         'for digital triggers or interpreted by toggle semantics.']);
                 else
                     trimInfo.nTrailDropped = 1;
                     trimInfo.trimApplied = true;
                     tmRise(end) = [];
-                    warning(['Signal appears to end before the final trigger returns LOW. ' ...
+                    warning(['Signal appears to end before the final trigger returns to the idle state. ' ...
                         'Discarding the trailing partial trigger event to preserve alignment.']);
                 end
             end
 
+            % Validate mismatch after boundary handling
             if obj.b_isDigital || strcmpi(obj.trigType, 'EdgeToggle')
                 bOk = (numel(tmRise) == numel(tmFall)) || (numel(tmRise) == numel(tmFall) + 1);
                 assert(bOk, ...
@@ -2167,11 +2231,15 @@ classdef EventsManager < handle
                     'Detection aborted because event alignment would be ambiguous.']);
             end
 
+            % -------------------------------------------------------------
+            % Build raw transition list
+            % -------------------------------------------------------------
             timestamps = single([tmRise; tmFall] ./ obj.sr);
             state = [true(numel(tmRise),1); false(numel(tmFall),1)];
             [timestamps, idx] = sort(timestamps);
             state = state(idx);
 
+            % Toggle mode: use consecutive onset edges as ON/OFF states
             if strcmpi(obj.trigType, 'EdgeToggle')
                 riseTimes = timestamps(state == 1);
                 timestamps = riseTimes;
@@ -2180,6 +2248,9 @@ classdef EventsManager < handle
                 return
             end
 
+            % -------------------------------------------------------------
+            % Burst consolidation for non-digital EdgeSet triggers only
+            % -------------------------------------------------------------
             if ~obj.b_isDigital
                 onTimes = timestamps(state == 1);
                 stimLim = find(diff(onTimes) >= obj.minInterStim);
@@ -2203,6 +2274,9 @@ classdef EventsManager < handle
                 return
             end
 
+            % -------------------------------------------------------------
+            % Digital stimulation: derive OFF timestamps from known durations
+            % -------------------------------------------------------------
             fn = regexp(fieldnames(obj.AcqInfo),'Stim\d+','match','once');
             fn(cellfun(@isempty,fn)) = [];
             stimInfo = cellfun(@(x) obj.AcqInfo.(x), fn, 'UniformOutput', false);
