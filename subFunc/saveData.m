@@ -1,4 +1,4 @@
-function saveData(filename, data, varargin)
+function outFile = saveData(filename, data, varargin)
 %SAVEDATA Save raw image-series data or derived UMIT data to disk.
 %
 %   saveData(filename, data)
@@ -49,11 +49,11 @@ if isempty(saveFolder)
 end
 
 if isstruct(data)
-    outFile = fullfile(saveFolder, [fileBase, '.umt']);
-    save2umt(outFile, data);
+    outFile = [fileBase,'.umt'];    
+    save2umt(fullfile(saveFolder, outFile), data);
 else
-    outFile = fullfile(saveFolder, [fileBase, '.dat']);
-    save2dat(outFile, data, p.Results.AcqInfoStream, p.Results.Append);
+    outFile = [fileBase, '.dat'];
+    save2dat(fullfile(saveFolder,outFile), data, p.Results.AcqInfoStream, p.Results.Append);
 end
 
 disp(['Data saved as "' outFile '"']);

@@ -9,7 +9,6 @@ classdef PipelineManager < handle
         b_alwaysSaveLeaf logical = false %
         b_avoidOverwrite logical = true %
 
-
         %----RAM Management Settings ----
         % Execution mode for RAM handling:
         %   'auto'    : PipelineManager decides whether to pass DATA as arrays or filenames.
@@ -851,24 +850,48 @@ classdef PipelineManager < handle
                     fName = string(base) + string(ext);
 
                     defExt = "";
-                    if isfield(nodeOut.info.outputs(outIdx),'defOutfilename') && ~isempty(nodeOut.info.outputs(outIdx).defOutfilename)
+                    hasDefaultBaseName = false;
+
+                    if isfield(nodeOut.info.outputs(outIdx),'defOutfilename') && ...
+                            ~isempty(nodeOut.info.outputs(outIdx).defOutfilename)
+
                         def = nodeOut.info.outputs(outIdx).defOutfilename;
+
                         if iscell(def) && ~isempty(def)
                             def = def{1};
                         end
+
                         if isstring(def) || ischar(def)
-                            [~,~,defExt] = fileparts(char(string(def)));
+                            def = strtrim(char(string(def)));
+
+                            if ~isempty(def)
+                                hasDefaultBaseName = true;
+                                [~,~,defExt] = fileparts(def);
+                            end
                         end
                     end
 
+                    % ---------------------------------------------------------
+                    % Extension policy:
+                    %   1) If the output declares a default extension, enforce it.
+                    %   2) If the output declares a default filename but no extension,
+                    %      allow extensionless saveas and let saveData infer the real
+                    %      extension later from the payload type.
+                    %   3) If the output declares no default filename at all, require the
+                    %      user to provide an explicit extension.
+                    % ---------------------------------------------------------
                     if strlength(defExt) > 0
+
                         [~, base2, ~] = fileparts(char(fName));
                         fName = string(base2) + string(defExt);
+
                     else
                         [~,~,userExt] = fileparts(char(fName));
-                        if isempty(userExt)
+
+                        if isempty(userExt) && ~hasDefaultBaseName
                             error('addStep:SaveAsNoExtension', ...
-                                'Output "%s" has no default extension; provide an extension in saveas.', ...
+                                ['Output "%s" has no default filename/extension; ' ...
+                                'provide an extension in saveas.'], ...
                                 nodeOut.info.outputs(outIdx).name);
                         end
                     end
@@ -2234,8 +2257,7 @@ classdef PipelineManager < handle
             %
             %   Notes:
             %       - Uses obj.globalPipeLog from the latest executePipeline run.
-            %       - Exports rows whose status is not "Completed" or whose short error
-            %         message is not empty / not "No Errors".
+            %       - Exports rows whose status indicates failure / partial execution.
             %       - If no error rows are found, an empty CSV with headers is written.
 
             if nargin < 2 || isempty(outputFolder)
@@ -2256,26 +2278,27 @@ classdef PipelineManager < handle
             errMask = false(height(obj.globalPipeLog), 1);
 
             % -------------------------------------------------------------
-            % Status-based filtering
+            % Status-based filtering (primary source of truth)
             % -------------------------------------------------------------
             if ismember('Status', obj.globalPipeLog.Properties.VariableNames)
-                statusVals = string(obj.globalPipeLog.Status);
-                errMask = errMask | ~strcmpi(statusVals, "Completed");
+                statusVals = strip(string(obj.globalPipeLog.Status));
+
+                errMask = strcmpi(statusVals, "Failed") | ...
+                    strcmpi(statusVals, "Partially executed");
             end
 
             % -------------------------------------------------------------
-            % Message-based filtering
+            % Fallback when Status is absent: use message content
             % -------------------------------------------------------------
-            if ismember('Messages_short', obj.globalPipeLog.Properties.VariableNames)
-                msgVals = string(obj.globalPipeLog.Messages_short);
-                msgVals = strtrim(msgVals);
+            if ~ismember('Status', obj.globalPipeLog.Properties.VariableNames) && ...
+                    ismember('Messages_short', obj.globalPipeLog.Properties.VariableNames)
 
-                hasMsg = strlength(msgVals) > 0 & ...
+                msgVals = strip(string(obj.globalPipeLog.Messages_short));
+
+                errMask = strlength(msgVals) > 0 & ...
                     ~strcmpi(msgVals, "No Errors") & ...
                     ~strcmpi(msgVals, "Missing") & ...
                     ~ismissing(msgVals);
-
-                errMask = errMask | hasMsg;
             end
 
             errorLogTable = obj.globalPipeLog(errMask, :);
@@ -2337,7 +2360,7 @@ classdef PipelineManager < handle
                     'Pipeline is empty.');
             end
 
-            [isValid, report] = obj.validateGraph('throwOnError', false);
+            [isValid, ~] = obj.validateGraph('throwOnError', false);
             if ~isValid
                 error('PipelineManager:generateScript:InvalidGraph', ...
                     'Pipeline is invalid. Run obj.diagnosePipeline() before exporting.');
@@ -2616,6 +2639,8 @@ classdef PipelineManager < handle
             appendLine('            end');
             appendLine('');
             appendLine('            srcPath = localPickSourceFile(sourceFiles, targetPaths(ii));');
+            appendLine('            srcPath = localToAbsolutePath(srcPath);');
+            appendLine('            dstPath = localToAbsolutePath(dstPath);');
             appendLine('');
             appendLine('            if strcmpi(string(srcPath), string(dstPath))');
             appendLine('                continue');
@@ -2648,7 +2673,7 @@ classdef PipelineManager < handle
             appendLine('    if ischar(outValue) || (isstring(outValue) && isscalar(outValue))');
             appendLine('        tmp = string(outValue);');
             appendLine('        if isfile(char(tmp))');
-            appendLine('            sourceFiles = tmp;');
+            appendLine('            sourceFiles = string(localToAbsolutePath(char(tmp)));');
             appendLine('        end');
             appendLine('        return');
             appendLine('    end');
@@ -2657,7 +2682,10 @@ classdef PipelineManager < handle
             appendLine('        tmp = outValue(:);');
             appendLine('        keep = false(size(tmp));');
             appendLine('        for ii = 1:numel(tmp)');
-            appendLine('            keep(ii) = isfile(char(tmp(ii)));');
+            appendLine('            if isfile(char(tmp(ii)))');
+            appendLine('                keep(ii) = true;');
+            appendLine('                tmp(ii) = string(localToAbsolutePath(char(tmp(ii))));');
+            appendLine('            end');
             appendLine('        end');
             appendLine('        sourceFiles = tmp(keep);');
             appendLine('        sourceFiles = unique(sourceFiles, ''stable'');');
@@ -2669,7 +2697,10 @@ classdef PipelineManager < handle
             appendLine('            tmp = string(outValue(:));');
             appendLine('            keep = false(size(tmp));');
             appendLine('            for ii = 1:numel(tmp)');
-            appendLine('                keep(ii) = isfile(char(tmp(ii)));');
+            appendLine('                if isfile(char(tmp(ii)))');
+            appendLine('                    keep(ii) = true;');
+            appendLine('                    tmp(ii) = string(localToAbsolutePath(char(tmp(ii))));');
+            appendLine('                end');
             appendLine('            end');
             appendLine('            sourceFiles = tmp(keep);');
             appendLine('            sourceFiles = unique(sourceFiles, ''stable'');');
@@ -2704,6 +2735,25 @@ classdef PipelineManager < handle
             appendLine('    end');
             appendLine('');
             appendLine('    srcPath = char(sourceFiles(1));');
+            appendLine('end');
+            appendLine('');
+
+            appendLine('function absPath = localToAbsolutePath(pathIn)');
+            appendLine('%LOCALTOABSOLUTEPATH Convert a relative path to an absolute path when possible.');
+            appendLine('    absPath = char(string(pathIn));');
+            appendLine('');
+            appendLine('    if isfile(absPath)');
+            appendLine('        f = dir(absPath);');
+            appendLine('        if ~isempty(f) && isfield(f, ''folder'')');
+            appendLine('            absPath = fullfile(f.folder, f.name);');
+            appendLine('            return');
+            appendLine('        end');
+            appendLine('    end');
+            appendLine('');
+            appendLine('    [folderPart, namePart, extPart] = fileparts(absPath);');
+            appendLine('    if isempty(folderPart)');
+            appendLine('        absPath = fullfile(pwd, [namePart extPart]);');
+            appendLine('    end');
             appendLine('end');
             appendLine('');
 
@@ -6178,22 +6228,29 @@ classdef PipelineManager < handle
         end
 
         %%%%%%--Pipeline Execution ----------------------------------------
-        function applyAlwaysSaveLeafPolicyAfterNode(obj, nodeID, saveFolder)
-            %APPLYALWAYSSAVELEAFPOLICYAFTERNODE Force leaf DATA outputs to be saved (execution-time policy).
+        function savedFiles = applyAlwaysSaveLeafPolicyAfterNode(obj, nodeID, saveFolder)
+            %APPLYALWAYSSAVELEAFPOLICYAFTERNODE Force leaf DATA outputs to be saved.
             %
-            % This method enforces obj.b_alwaysSaveLeaf at execution time (not during addStep).
+            %   savedFiles = applyAlwaysSaveLeafPolicyAfterNode(obj, nodeID, saveFolder)
             %
-            % Behavior:
-            %   - If obj.b_alwaysSaveLeaf is false: no-op.
-            %   - If nodeID is not a leaf node: no-op.
-            %   - For each DATA output of the leaf:
-            %       * If outputs(i).saveFileName is empty -> set to outputs(i).defOutfilename
-            %       * If obj.b_avoidOverwrite is true -> resolve unique names vs disk and pipeline
-            %       * Save via obj.saveNodeDataOutputs (supports RAM-backed and file-backed outputs)
+            %   This method enforces obj.b_alwaysSaveLeaf at execution time.
             %
-            % Notes:
-            %   - This method mutates obj.nodes(nodeIdx).info.outputs(i).saveFileName (persistent in pipeline).
-            %   - If an output has no defOutfilename, it is skipped (cannot infer a name).
+            %   Behavior:
+            %       - If obj.b_alwaysSaveLeaf is false: no-op.
+            %       - If nodeID is not a leaf node: no-op.
+            %       - For each DATA output of the leaf:
+            %           * If outputs(i).saveFileName is empty, infer it from
+            %             outputs(i).defOutfilename
+            %           * If obj.b_avoidOverwrite is true, resolve a unique name
+            %             against disk and current pipeline reservations
+            %           * Save via obj.saveNodeDataOutputs
+            %
+            %   Notes:
+            %       - This method mutates obj.nodes(nodeIdx).info.outputs(i).saveFileName.
+            %       - Outputs with no usable defOutfilename are skipped.
+            %       - Returns the folder-bound filenames actually saved by the manager.
+
+            savedFiles = strings(0,1);
 
             if ~isprop(obj,'b_alwaysSaveLeaf') || ~obj.b_alwaysSaveLeaf
                 return
@@ -6212,7 +6269,9 @@ classdef PipelineManager < handle
                 return
             end
 
+            % -------------------------------------------------------------
             % Collect DATA outputs that need an inferred save name
+            % -------------------------------------------------------------
             dataOutIdx = [];
             requested  = strings(0,1);
 
@@ -6238,9 +6297,16 @@ classdef PipelineManager < handle
                 def = '';
                 if isfield(outDef,'defOutfilename') && ~isempty(outDef.defOutfilename)
                     def = outDef.defOutfilename;
-                    if iscell(def) && ~isempty(def)
-                        def = def{1}; % best-effort: first default
+
+                    if iscell(def)
+                        if numel(def) == 1 && ~isempty(def{1})
+                            def = def{1};
+                        elseif ~isempty(def)
+                            % Best-effort: take the first default when multiple are present
+                            def = def{1};
+                        end
                     end
+
                     def = char(string(def));
                 end
 
@@ -6257,26 +6323,46 @@ classdef PipelineManager < handle
                 return
             end
 
-            % Resolve uniqueness if requested
-            fixed = requested;
+            % -------------------------------------------------------------
+            % Resolve collisions if requested
+            % -------------------------------------------------------------
             if isprop(obj,'b_avoidOverwrite') && obj.b_avoidOverwrite
-                [fixed, ~] = obj.resolveUniqueSaveNames(saveFolder, requested);
+                [fixedNames, ~] = obj.resolveUniqueSaveNames(saveFolder, requested);
             else
-                % Still warn if collisions exist (disk or pipeline) but do not rename
-                obj.resolveUniqueSaveNames(saveFolder, requested);
+                fixedNames = requested;
             end
 
-            % Apply back to node outputs
-            for i = 1:numel(dataOutIdx)
-                idxOut = dataOutIdx(i);
-                node.info.outputs(idxOut).saveFileName = char(fixed(i));
+            % -------------------------------------------------------------
+            % Persist inferred save names back into the node definition
+            % -------------------------------------------------------------
+            overrideFileNames = struct();
+
+            for k = 1:numel(dataOutIdx)
+                iOut = dataOutIdx(k);
+
+                obj.nodes(nodeIdx).info.outputs(iOut).saveFileName = char(fixedNames(k));
+
+                outName = char(string(obj.nodes(nodeIdx).info.outputs(iOut).name));
+                outFld  = matlab.lang.makeValidName(outName);
+                overrideFileNames.(outFld) = char(fixedNames(k));
             end
 
-            % Commit node mutation
-            obj.nodes(nodeIdx) = node;
+            % Keep local copy in sync as well
+            node = obj.nodes(nodeIdx);
 
-            % Save now (works for RAM-backed or file-backed)
-            obj.saveNodeDataOutputs(obj.nodes(nodeIdx), saveFolder);
+            % -------------------------------------------------------------
+            % Save now using the standard manager-side save path
+            % -------------------------------------------------------------
+            savedFiles = obj.saveNodeDataOutputs( ...
+                node, ...
+                saveFolder, ...
+                'overrideFileNames', overrideFileNames, ...
+                'skipIfAlreadySaved', false, ...
+                'updateDataHistoryOnMove', true);
+
+            if ~isempty(savedFiles)
+                savedFiles = unique(string(savedFiles(:)), 'stable');
+            end
         end
         function validateRamSafeCompatibility(obj)
             %VALIDATERAMSAFECOMPATIBILITY Validate RAM-safe compatibility of the DAG.
@@ -6618,7 +6704,25 @@ classdef PipelineManager < handle
 
                 obj.updatePipeLog(saveFolder, obj.nodes(nodeIdx), 'executed');
                 obj.enforceSingleRamValueAfterNode(nodeID, saveFolder);
-                obj.applyAlwaysSaveLeafPolicyAfterNode(nodeID, saveFolder);
+
+                leafFiles = obj.applyAlwaysSaveLeafPolicyAfterNode(nodeID, saveFolder);
+
+                if ~isempty(leafFiles)
+                    leafFiles = string(leafFiles(:));
+                    leafFiles = unique(leafFiles, 'stable');
+
+                    % Do not duplicate history entries already appended from createdFiles.
+                    createdFilesStr = string(createdFiles(:));
+
+                    for iLeaf = 1:numel(leafFiles)
+                        if ~any(strcmpi(leafFiles(iLeaf), createdFilesStr))
+                            appendDataHistoryEntryForStep(node, char(leafFiles(iLeaf)), saveFolder, rawFolder);
+                        end
+                    end
+
+                    obj.saveDataHistory(saveFolder);
+                end
+
                 obj.tickCooldown(nodeID);
             end
 
@@ -8157,10 +8261,10 @@ classdef PipelineManager < handle
             end
         end
         function createdFiles = registerOutputs(obj, nodeLocal, outCell, folder)
-            %REGISTEROUTPUTS Register DATA outputs in obj.dataStore and return created filenames.
+            %REGISTEROUTPUTS Register outputs in obj.dataStore and return created filenames.
             %
             %   CREATEDFILES = REGISTEROUTPUTS(OBJ, NODELOCAL, OUTCELL, FOLDER)
-            %   registers pipeline-relevant DATA outputs produced by NODELOCAL.
+            %   registers pipeline-relevant outputs produced by NODELOCAL.
             %
             %   Compatibility policy for metaData:
             %       - Outputs named "metaData" are ignored.
@@ -8174,6 +8278,19 @@ classdef PipelineManager < handle
             %         OUTCELL (not from outCell{:}).
             %       - Each created file is registered in dataStore using a filename-based
             %         key for backward compatibility.
+            %
+            %   Modern output contract:
+            %       - outputMode = 'data' -> function returns data (array/struct/etc.)
+            %       - outputMode = 'file' -> function returns filename(s) that already
+            %                                exist on disk
+            %
+            %   For outputMode = 'file':
+            %       - The returned value must be text-like (char/string/cellstr)
+            %       - Relative filenames are resolved against FOLDER
+            %       - Returned files must exist after function execution
+            %       - The primary output key remains <nodeID>:<outputName>
+            %       - Compatibility keys <nodeID>:<filename.ext> are also registered so
+            %         selectedFile-based flows can resolve concrete file identities
 
             createdFiles = strings(0,1);
 
@@ -8181,7 +8298,7 @@ classdef PipelineManager < handle
                 return
             end
 
-            nodeIDLocal = nodeLocal.id;
+            nodeIDLocal  = nodeLocal.id;
             outputsLocal = nodeLocal.info.outputs;
 
             % ---------------------------------------------------------
@@ -8234,17 +8351,19 @@ classdef PipelineManager < handle
                             continue
                         end
 
-                        fullFn = string(fullfile(folder, char(fName)));
-                        key = obj.makeKey(nodeIDLocal, char(fName)); % legacy: key by filename
+                        [fullFn, folderBoundName] = localResolveReturnedFile(folder, fName);
 
                         rec = struct( ...
                             'ramValue', [], ...
-                            'fileName', fullFn, ...
+                            'fileName', string(fullFn), ...
                             'isTemp', false, ...
                             'remainingConsumers', 0);
 
-                        obj.dataStore(key) = rec;
-                        createdFiles(end+1,1) = fName; %#ok<AGROW>
+                        % Legacy compatibility: key by filename
+                        keyCompat = obj.makeKey(nodeIDLocal, char(folderBoundName));
+                        obj.dataStore(keyCompat) = rec;
+
+                        createdFiles(end+1,1) = folderBoundName; %#ok<AGROW>
                     end
 
                     if ~isempty(createdFiles)
@@ -8258,7 +8377,7 @@ classdef PipelineManager < handle
             end
 
             % ---------------------------------------------------------
-            % Case B: Standard outputs (DATA outputs)
+            % Case B: Standard outputs
             % ---------------------------------------------------------
             n = min(numel(outputsLocal), numel(outCell));
 
@@ -8276,9 +8395,13 @@ classdef PipelineManager < handle
                 end
 
                 outName = char(string(outDef.name));
-                key = obj.makeKey(nodeIDLocal, outName);
+                key     = obj.makeKey(nodeIDLocal, outName);
+                val     = outCell{iOut};
 
-                val = outCell{iOut};
+                outputModeLocal = 'data';
+                if isfield(outDef,'outputMode') && ~isempty(outDef.outputMode)
+                    outputModeLocal = lower(strtrim(char(string(outDef.outputMode))));
+                end
 
                 rec = struct( ...
                     'ramValue', [], ...
@@ -8286,6 +8409,51 @@ classdef PipelineManager < handle
                     'isTemp',   false, ...
                     'remainingConsumers', obj.getConsumerCount(key) );
 
+                % =====================================================
+                % Modern file-producing outputs
+                % =====================================================
+                if strcmpi(outputModeLocal, 'file')
+
+                    fileList = localNormalizeReturnedFileList(val, nodeLocal, outName);
+                    if isempty(fileList)
+                        error('PipelineManager:registerOutputs:MissingFileOutput', ...
+                            ['Node "%s" output "%s" has outputMode="file" but returned no filename.\n' ...
+                            'File outputs must return filename(s).'], ...
+                            char(string(nodeLocal.name)), outName);
+                    end
+
+                    primarySet = false;
+
+                    for iF = 1:numel(fileList)
+
+                        [fullFn, folderBoundName] = localResolveReturnedFile(folder, fileList(iF));
+
+                        % Primary key for the output port: keep first concrete file
+                        if ~primarySet
+                            rec.fileName = string(fullFn);
+                            rec.isTemp   = false;
+                            obj.dataStore(key) = rec;
+                            primarySet = true;
+                        end
+
+                        % Compatibility key by concrete filename
+                        keyCompat = obj.makeKey(nodeIDLocal, char(folderBoundName));
+                        recCompat = struct( ...
+                            'ramValue', [], ...
+                            'fileName', string(fullFn), ...
+                            'isTemp',   false, ...
+                            'remainingConsumers', 0);
+
+                        obj.dataStore(keyCompat) = recCompat;
+                        createdFiles(end+1,1) = folderBoundName; %#ok<AGROW>
+                    end
+
+                    continue
+                end
+
+                % =====================================================
+                % Modern manager-owned data outputs
+                % =====================================================
                 if strcmpi(obj.ramMode,'ramsafe')
 
                     if isnumeric(val) || islogical(val)
@@ -8297,14 +8465,11 @@ classdef PipelineManager < handle
                         [~,fn,ext] = fileparts(char(string(tmpFile)));
                         createdFiles(end+1,1) = string(fn) + string(ext); %#ok<AGROW>
 
-                    elseif ischar(val) || isstring(val)
-                        fName = strtrim(string(val));
-                        if strlength(fName) > 0
-                            rec.ramValue = [];
-                            rec.fileName = string(fullfile(folder, char(fName)));
-                            rec.isTemp   = false;
-                            createdFiles(end+1,1) = fName; %#ok<AGROW>
-                        end
+                    elseif ischar(val) || isstring(val) || iscell(val)
+                        error('PipelineManager:registerOutputs:InvalidDataOutput', ...
+                            ['Node "%s" output "%s" has outputMode="data" but returned text-like file information.\n' ...
+                            'Data outputs must return data, not filename(s).'], ...
+                            char(string(nodeLocal.name)), outName);
                     else
                         rec.ramValue = val;
                     end
@@ -8327,15 +8492,11 @@ classdef PipelineManager < handle
                         createdFiles(end+1,1) = string(fn) + string(ext); %#ok<AGROW>
                     end
 
-                elseif ischar(val) || isstring(val)
-
-                    fName = strtrim(string(val));
-                    if strlength(fName) > 0
-                        rec.fileName = string(fullfile(folder, char(fName)));
-                        rec.isTemp   = false;
-                        createdFiles(end+1,1) = fName; %#ok<AGROW>
-                    end
-
+                elseif ischar(val) || isstring(val) || iscell(val)
+                    error('PipelineManager:registerOutputs:InvalidDataOutput', ...
+                        ['Node "%s" output "%s" has outputMode="data" but returned text-like file information.\n' ...
+                        'Data outputs must return data, not filename(s).'], ...
+                        char(string(nodeLocal.name)), outName);
                 else
                     rec.ramValue = val;
                 end
@@ -8345,6 +8506,64 @@ classdef PipelineManager < handle
 
             if ~isempty(createdFiles)
                 createdFiles = unique(createdFiles,'stable');
+            end
+
+            % =========================================================
+            % Local helpers
+            % =========================================================
+            function fileListOut = localNormalizeReturnedFileList(valIn, nodeIn, outNameIn)
+                %LOCALNORMALIZERETURNEDFILELIST Normalize returned filename(s) to string column.
+
+                if ischar(valIn) || (isstring(valIn) && isscalar(valIn))
+                    fileListOut = string(valIn);
+
+                elseif isstring(valIn)
+                    fileListOut = valIn(:);
+
+                elseif iscell(valIn)
+                    try
+                        fileListOut = string(valIn(:));
+                    catch
+                        error('PipelineManager:registerOutputs:InvalidFileOutput', ...
+                            ['Node "%s" output "%s" has outputMode="file" but returned an invalid cell array.\n' ...
+                            'File outputs must return filename(s).'], ...
+                            char(string(nodeIn.name)), outNameIn);
+                    end
+
+                else
+                    error('PipelineManager:registerOutputs:InvalidFileOutput', ...
+                        ['Node "%s" output "%s" has outputMode="file" but returned a non-text value.\n' ...
+                        'File outputs must return filename(s).'], ...
+                        char(string(nodeIn.name)), outNameIn);
+                end
+
+                fileListOut = strip(fileListOut(:));
+                fileListOut = fileListOut(strlength(fileListOut) > 0);
+            end
+
+            function [fullPathOut, folderBoundNameOut] = localResolveReturnedFile(folderIn, fileTokenIn)
+                %LOCALRESOLVERETURNEDFILE Resolve returned filename to concrete full path.
+                %
+                % Relative filenames are resolved against the current execution folder.
+                % Returned files must already exist on disk.
+
+                fileTokenChar = char(string(fileTokenIn));
+
+                if isfile(fileTokenChar)
+                    fullPathOut = fileTokenChar;
+                else
+                    fullPathOut = fullfile(folderIn, fileTokenChar);
+                end
+
+                if ~isfile(fullPathOut)
+                    error('PipelineManager:registerOutputs:MissingReturnedFile', ...
+                        ['A file-producing output returned "%s", but the file was not found.\n' ...
+                        'Expected path: %s'], ...
+                        fileTokenChar, fullPathOut);
+                end
+
+                [~, fBase, fExt] = fileparts(fullPathOut);
+                folderBoundNameOut = string(fBase) + string(fExt);
             end
         end
         function tickCooldown(obj, nodeID)
@@ -8373,22 +8592,24 @@ classdef PipelineManager < handle
             end
         end
         function tmpFile = writeTempData(obj, dataVal, folder, nodeIDLocal, outName)
-            %WRITETEMPDATA Write temporary DATA output using the output default extension.
+            %WRITETEMPDATA Write temporary DATA output and return its full saved path.
             %
             %   tmpFile = writeTempData(obj, dataVal, folder, nodeIDLocal, outName)
             %
-            %   Uses the matching output definition defOutfilename to determine the
-            %   temporary file extension, then saves the data with:
-            %       saveData(fullPath, dataVal)
+            %   Behavior:
+            %       - Validates that the requested output exists on the step
+            %       - Creates an extensionless temporary base name
+            %       - Saves the payload through saveData
+            %       - Normalizes the returned value from saveData to a full path
+            %       - Registers the full path in obj.tempFiles
 
             % Resolve node
             nodeIdx = obj.getNodeIndexByID(nodeIDLocal);
             node = obj.nodes(nodeIdx);
 
-            outExt = '';
             bFoundOutput = false;
 
-            % Look up the matching output definition
+            % Look up the matching output definition only to validate the output name exists
             if isfield(node,'info') && isfield(node.info,'outputs') && ~isempty(node.info.outputs)
                 for iOut = 1:numel(node.info.outputs)
 
@@ -8399,20 +8620,6 @@ classdef PipelineManager < handle
 
                     if strcmpi(thisName, char(string(outName)))
                         bFoundOutput = true;
-
-                        if isfield(node.info.outputs(iOut),'defOutfilename') && ...
-                                ~isempty(node.info.outputs(iOut).defOutfilename)
-
-                            defFile = node.info.outputs(iOut).defOutfilename;
-
-                            if iscell(defFile) && ~isempty(defFile)
-                                defFile = defFile{1};
-                            end
-
-                            [~,~,defExt] = fileparts(char(string(defFile)));
-                            outExt = char(string(defExt));
-                        end
-
                         break
                     end
                 end
@@ -8424,20 +8631,27 @@ classdef PipelineManager < handle
                     char(string(outName)), nodeIDLocal);
             end
 
-            if isempty(strtrim(outExt))
-                error('PipelineManager:writeTempData:MissingExtension', ...
-                    'Output "%s" for step "%s" must define defOutfilename with a valid file extension.', ...
-                    char(string(outName)), char(string(node.name)));
+            % Create extensionless temp base name and let saveData infer extension
+            stamp = datestr(now,'yyyymmdd_HHMMSSFFF');
+            tmpBasePath = fullfile(folder, sprintf('tmp_%d_%s_%s', ...
+                nodeIDLocal, char(string(outName)), stamp));
+
+            savedPath = saveData(tmpBasePath, dataVal);
+            savedPath = char(string(savedPath));
+
+            % Normalize to full path if saveData returned only a filename
+            if ~isfile(savedPath)
+                savedPath = fullfile(folder, savedPath);
             end
 
-            stamp = datestr(now,'yyyymmdd_HHMMSSFFF');
-            tmpFile = fullfile(folder, sprintf('tmp_%d_%s_%s%s', ...
-                nodeIDLocal, char(string(outName)), stamp, outExt));
+            if ~isfile(savedPath)
+                error('PipelineManager:writeTempData:SaveFailed', ...
+                    'Temporary file was not found after saveData. Expected path: %s', ...
+                    savedPath);
+            end
 
-            saveData(tmpFile, dataVal);
-
-            obj.tempFiles(end+1) = string(tmpFile); %#ok<AGROW>
-            tmpFile = string(tmpFile);
+            tmpFile = string(savedPath);
+            obj.tempFiles(end+1,1) = tmpFile; %#ok<AGROW>
         end
         function decrementConsumers(obj, key)
             %DECREMENTCONSUMERS Decrement remainingConsumers; release RAM/delete temp if zero.
@@ -8540,36 +8754,36 @@ classdef PipelineManager < handle
             %   savedFiles = saveNodeDataOutputs(..., 'skipIfAlreadySaved', TF)
             %   savedFiles = saveNodeDataOutputs(..., 'updateDataHistoryOnMove', TF)
             %
-            %   INPUTS:
-            %       node       (struct) Step definition from obj.nodes.
-            %       saveFolder (char|string) Destination folder for saved outputs.
+            %   Inputs:
+            %       node       - Step definition from obj.nodes.
+            %       saveFolder - Destination folder for saved outputs.
             %
-            %   OPTIONAL NAME-VALUE PAIRS:
-            %       'overrideFileNames'       (struct) Optional output-specific
-            %                                 filename overrides. Fields must use
-            %                                 matlab.lang.makeValidName(outputName).
-            %                                 When provided, an override filename
-            %                                 takes precedence over outDef.saveFileName.
+            %   Optional name-value pairs:
+            %       'overrideFileNames'       - Optional output-specific filename
+            %                                   overrides. Fields must use
+            %                                   matlab.lang.makeValidName(outputName).
+            %                                   When provided, an override filename
+            %                                   takes precedence over outDef.saveFileName.
             %
-            %       'skipIfAlreadySaved'      (logical) If true, do not create a new
-            %                                 file when the output is already backed
-            %                                 by an existing non-temporary file.
+            %       'skipIfAlreadySaved'      - If true, do not create a new file when
+            %                                   the output is already backed by an
+            %                                   existing non-temporary file.
             %
-            %       'updateDataHistoryOnMove' (logical) If true, and a temporary
-            %                                 file is promoted/moved to a new
-            %                                 filename, update matching entries in
-            %                                 obj.dataHistory and save dataHistory.mat.
+            %       'updateDataHistoryOnMove' - If true, and a temporary file is
+            %                                   promoted/moved to a new filename,
+            %                                   update matching entries in
+            %                                   obj.dataHistory and save dataHistory.mat.
             %
-            %   BEHAVIOR:
+            %   Behavior:
             %       - Temporary file-backed outputs are promoted first.
             %       - RAM-backed outputs are saved with saveData.
             %       - Permanent file-backed outputs are copied if needed.
             %       - If a temporary file is promoted, obj.dataStore and obj.tempFiles
             %         are updated so downstream steps resolve the new filename.
             %
-            %   OUTPUT:
-            %       savedFiles (string column) Folder-bound filenames saved by the
-            %       manager during this call.
+            %   Output:
+            %       savedFiles - Folder-bound filenames saved by the manager during
+            %                    this call.
 
             savedFiles = strings(0,1);
 
@@ -8648,28 +8862,24 @@ classdef PipelineManager < handle
                 rec = obj.dataStore(key);
                 dstPath = fullfile(saveFolder, fName);
 
-                hasRamValue  = isfield(rec,'ramValue') && ~isempty(rec.ramValue);
-                hasFileValue = isfield(rec,'fileName') && ...
-                    strlength(string(rec.fileName)) > 0 && ...
-                    isfile(char(string(rec.fileName)));
-
-                isTempSrc = false;
-                if isfield(rec,'isTemp')
-                    isTempSrc = logical(rec.isTemp);
-                end
+                hasRamValue  = isfield(rec,'ramValue')  && ~isempty(rec.ramValue);
+                hasFileValue = isfield(rec,'fileName')  && ~isempty(rec.fileName);
+                isTempSrc    = isfield(rec,'isTemp')    && logical(rec.isTemp);
 
                 % ---------------------------------------------------------
-                % Skip if already permanently saved and user requested no
-                % duplicate recovery/save file creation.
+                % Fast skip: already backed by a non-temp file and user requested skip
                 % ---------------------------------------------------------
                 if skipIfAlreadySaved && hasFileValue && ~isTempSrc
-                    continue
+                    srcPath = char(string(rec.fileName));
+                    if isfile(srcPath)
+                        [~,srcBase,srcExt] = fileparts(srcPath);
+                        savedFiles(end+1,1) = string(srcBase) + string(srcExt); %#ok<AGROW>
+                        continue
+                    end
                 end
 
                 % ---------------------------------------------------------
-                % Case A: Temporary file-backed -> promote/move first
-                % This takes precedence over RAM-backed save so that recovery can
-                % rename an existing temp file instead of rewriting it from RAM.
+                % Case A: Temporary file-backed -> move/promote
                 % ---------------------------------------------------------
                 if hasFileValue && isTempSrc
 
@@ -8677,9 +8887,11 @@ classdef PipelineManager < handle
                     [~,srcBase,srcExt] = fileparts(srcPath);
                     oldFileName = string(srcBase) + string(srcExt);
 
-                    if strcmpi(string(srcPath), string(dstPath))
+                    [finalDstPath, finalFileName] = localResolveFinalPath(dstPath, srcPath);
 
-                        rec.fileName = string(dstPath);
+                    if strcmpi(string(srcPath), string(finalDstPath))
+
+                        rec.fileName = string(finalDstPath);
                         rec.isTemp   = false;
                         obj.dataStore(key) = rec;
 
@@ -8688,17 +8900,17 @@ classdef PipelineManager < handle
                             obj.tempFiles(tempMask) = [];
                         end
 
-                        savedFiles(end+1,1) = string(fName); %#ok<AGROW>
+                        savedFiles(end+1,1) = finalFileName; %#ok<AGROW>
                         continue
                     end
 
-                    ok = movefile(srcPath, dstPath);
+                    ok = movefile(srcPath, finalDstPath);
                     if ~ok
                         error('PipelineManager:saveNodeDataOutputs:MoveFailed', ...
-                            'Failed to move temp file "%s" -> "%s".', srcPath, dstPath);
+                            'Failed to move temp file "%s" -> "%s".', srcPath, finalDstPath);
                     end
 
-                    rec.fileName = string(dstPath);
+                    rec.fileName = string(finalDstPath);
                     rec.isTemp   = false;
                     obj.dataStore(key) = rec;
 
@@ -8713,13 +8925,13 @@ classdef PipelineManager < handle
                         for iHist = 1:numel(obj.dataHistory)
                             if isfield(obj.dataHistory(iHist),'file') && ...
                                     strcmpi(char(string(obj.dataHistory(iHist).file)), char(oldFileName))
-                                obj.dataHistory(iHist).file = char(string(fName));
+                                obj.dataHistory(iHist).file = char(finalFileName);
                                 b_historyChanged = true;
                             end
                         end
                     end
 
-                    savedFiles(end+1,1) = string(fName); %#ok<AGROW>
+                    savedFiles(end+1,1) = finalFileName; %#ok<AGROW>
                     continue
                 end
 
@@ -8728,13 +8940,21 @@ classdef PipelineManager < handle
                 % ---------------------------------------------------------
                 if hasRamValue
 
-                    saveData(dstPath, rec.ramValue);
+                    savedPath = saveData(dstPath, rec.ramValue);
+                    savedPath = char(string(savedPath));
 
-                    rec.fileName = string(dstPath);
+                    if ~isfile(savedPath)
+                        savedPath = fullfile(saveFolder, savedPath);
+                    end
+
+                    [~,savedBase,savedExt] = fileparts(savedPath);
+                    savedFileName = string(savedBase) + string(savedExt);
+
+                    rec.fileName = string(savedPath);
                     rec.isTemp   = false;
                     obj.dataStore(key) = rec;
 
-                    savedFiles(end+1,1) = string(fName); %#ok<AGROW>
+                    savedFiles(end+1,1) = savedFileName; %#ok<AGROW>
                     continue
                 end
 
@@ -8744,28 +8964,29 @@ classdef PipelineManager < handle
                 if hasFileValue
 
                     srcPath = char(string(rec.fileName));
+                    [finalDstPath, finalFileName] = localResolveFinalPath(dstPath, srcPath);
 
-                    if strcmpi(string(srcPath), string(dstPath))
+                    if strcmpi(string(srcPath), string(finalDstPath))
 
-                        rec.fileName = string(dstPath);
+                        rec.fileName = string(finalDstPath);
                         rec.isTemp   = false;
                         obj.dataStore(key) = rec;
 
-                        savedFiles(end+1,1) = string(fName); %#ok<AGROW>
+                        savedFiles(end+1,1) = finalFileName; %#ok<AGROW>
                         continue
                     end
 
-                    ok = copyfile(srcPath, dstPath);
+                    ok = copyfile(srcPath, finalDstPath);
                     if ~ok
                         error('PipelineManager:saveNodeDataOutputs:CopyFailed', ...
-                            'Failed to copy file "%s" -> "%s".', srcPath, dstPath);
+                            'Failed to copy file "%s" -> "%s".', srcPath, finalDstPath);
                     end
 
-                    rec.fileName = string(dstPath);
+                    rec.fileName = string(finalDstPath);
                     rec.isTemp   = false;
                     obj.dataStore(key) = rec;
 
-                    savedFiles(end+1,1) = string(fName); %#ok<AGROW>
+                    savedFiles(end+1,1) = finalFileName; %#ok<AGROW>
                     continue
                 end
 
@@ -8781,6 +9002,31 @@ classdef PipelineManager < handle
             if ~isempty(savedFiles)
                 savedFiles = unique(savedFiles,'stable');
             end
+
+            % =============================================================
+            % Local helper
+            % =============================================================
+            function [finalPath, finalFileName] = localResolveFinalPath(dstPathIn, srcPathIn)
+                %LOCALRESOLVEFINALPATH Resolve final destination path/file name.
+                %
+                % If dstPathIn already has an extension, keep it.
+                % Otherwise, inherit the extension from srcPathIn when available.
+
+                finalPath = char(string(dstPathIn));
+
+                [dstFolder, dstBase, dstExt] = fileparts(finalPath);
+
+                if isempty(dstExt)
+                    [~,~,srcExtLocal] = fileparts(char(string(srcPathIn)));
+                    if ~isempty(srcExtLocal)
+                        finalPath = fullfile(dstFolder, [dstBase srcExtLocal]);
+                    end
+                end
+
+                [~,finalBase,finalExt] = fileparts(finalPath);
+                finalFileName = string(finalBase) + string(finalExt);
+            end
+
         end
         function md = getMetaData(obj, node, saveFolder)
             %GETMETADATA Return metadata for legacy functions without loading the data array.
@@ -10454,9 +10700,9 @@ classdef PipelineManager < handle
             %   INFO = PipelineManager.createPipelineInfo(NAME, DESCRIPTION)
             %
             % PURPOSE
-            %   Create a standardized metadata struct (pipelineInfo) used by PipelineManager
-            %   to:
-            %     - Build and validate DAG nodes/edges
+            %   Create a standardized metadata struct (pipelineInfo) used by
+            %   PipelineManager to:
+            %     - Build and validate DAG nodes and edges
             %     - Infer function call signature (positional vs name-value)
             %     - Support parameter editing in the UI
             %     - Support data-flow execution and RAM-management policies
@@ -10465,50 +10711,70 @@ classdef PipelineManager < handle
             %   info.name        (char)  User-facing function name.
             %   info.version     (char)  Function version string. Default '1.0.0'.
             %   info.description (char)  Short function description.
-            %   info.legacyOpts  (logical) True for legacy functions that accept a single
-            %                 positional "opts" struct instead of name-value parameters.
+            %   info.legacyOpts  (logical) True for legacy functions that accept a
+            %                 single positional "opts" struct instead of name-value
+            %                 parameters.
             %
             %   info.arguments   (struct array) Execution contract (call signature):
             %       .name        (char)  Argument name (e.g., 'data', 'MaskFile', 'opts').
             %       .kind        (char)  'input' or 'parameter'.
             %       .position    (double) 1-based call position.
             %       .callType    (char)  'positional' or 'namevalue'.
-            %       .isData      (logical) True only for DATA inputs (semantic data-flow).
+            %       .isData      (logical) True only for DATA inputs used in semantic
+            %                    data-flow wiring.
             %
             %   info.inputs      (struct array) Semantic inputs (pipeline wiring):
             %       .name        (char)  Input port name.
             %       .type        (cellstr) Accepted semantic types.
             %       .description (char)
             %       .isData      (logical) True when this input is a DATA-flow input.
-            %       .supportsFile (logical) (DATA only) true if input can accept filename.
-            %       .dataMode    (char) (DATA only) 'either'|'ram'|'file'.
+            %       .supportsFile (logical) DATA inputs only. True if the input can
+            %                    accept a filename / file-backed source.
+            %       .dataMode    (char) DATA inputs only. One of:
+            %                    'either' : input can be delivered as RAM data or file
+            %                    'ram'    : input requires in-memory data
+            %                    'file'   : input requires a filename / file-backed source
             %
             %   info.parameters  (struct array) User-editable parameters:
             %       .name        (char)
             %       .type        (char)  'numeric', 'char', class(default), etc.
             %       .default     (any)
-            %       .allowed     (cell)  finite set of allowed values, if applicable.
+            %       .allowed     (cell)  Finite set of allowed values, if applicable.
             %       .description (char)
             %
             %   info.outputs     (struct array) Semantic outputs:
             %       .name        (char)  Output port name.
-            %       .type        (cellstr)
-            %       .position    (double) 1-based output position in MATLAB call.
-            %       .outputMode  (char)  'data' or 'file' (semantic output category).
+            %       .type        (cellstr) Semantic output type(s).
+            %       .position    (double) 1-based output position in the MATLAB call.
+            %       .outputMode  (char)  Output contract:
+            %                    'data' : function returns data
+            %                    'file' : function returns filename(s)
             %       .description (char)
-            %       .defOutfilename (char|cell) Default filename(s) suggested by function.
-            %       .isData      (logical) True if this output is part of the DATA-flow.
-            %       .supportsFile (logical) (DATA only) true if output may be filename.
-            %       .dataMode    (char) (DATA only) 'either'|'ram'|'file'.
-            %       .saveFileName (char) PipelineManager-assigned save target (optional).
+            %       .defOutfilename (char|cell) Default filename(s) associated with
+            %                    the output. For data outputs, this is the manager-side
+            %                    default name. For file outputs, this is the declared
+            %                    default file identity.
+            %       .isData      (logical) True if this output participates in the
+            %                    DATA-flow graph.
+            %       .saveFileName (char) Optional PipelineManager-assigned save target
+            %                    for manager-saved DATA outputs.
             %
             %   info.notes       (cellstr) Arbitrary notes.
             %
             % NOTES
-            %   - The RAM-related fields supportsFile/dataMode are only meaningful for
-            %     ports where isData==true.
-            %   - The execution contract (info.arguments) is what runPipelineOnFolder uses
-            %     to build the function call.
+            %   - supportsFile and dataMode are meaningful only for DATA inputs.
+            %   - Output behavior is defined by outputMode:
+            %         outputMode='data' -> function returns data
+            %         outputMode='file' -> function returns filename(s)
+            %   - PipelineManager may decide internally whether a DATA output is kept
+            %     in RAM or spilled to a temporary file to satisfy downstream input
+            %     requirements and RAM policy.
+            %   - File outputs are expected to be produced by the function itself and
+            %     returned as filename(s).
+            %
+            % SEE ALSO
+            %   PipelineManager.addInput
+            %   PipelineManager.addOutput
 
             arguments
                 name = ''
@@ -10770,36 +11036,39 @@ classdef PipelineManager < handle
         function info = addOutput(info, name, type, outputMode, description, defOutfilename, position, varargin)
             %ADDOUTPUT Add an output definition to pipelineInfo.outputs.
             %
-            %   info = PipelineManager.addOutput(info, name, type, outputMode, description, defOutfilename, position, ...)
+            %   info = PipelineManager.addOutput(info, name, type, outputMode, ...
+            %       description, defOutfilename, position, ...)
             %
-            % REQUIRED INPUTS
+            %   REQUIRED INPUTS
             %   name        (text) output variable / output port name
             %   type        (char|string|cellstr) semantic type(s)
             %   outputMode  (text) 'data' or 'file'
             %
-            % OPTIONAL INPUTS
+            %   OPTIONAL INPUTS
             %   description     (text) optional
             %   defOutfilename  (text|cell) default filename or list of filenames
             %   position        (numeric) output position in the MATLAB function call
             %
-            % NAME-VALUE OPTIONS (DATA outputs only)
+            %   NAME-VALUE OPTIONS
             %   'isData'        : logical (default true)
-            %   'supportsFile'  : logical (default false)
-            %   'dataMode'      : 'either'|'ram'|'file' (default 'either')
             %   'saveFileName'  : char/string (default '')
             %
-            % STRICT VALIDATION
-            %   - outputMode must be 'data' or 'file'
-            %   - dataMode must be one of 'either','ram','file' (DATA outputs only)
-            %   - supportsFile logical
+            %   Behavior:
+            %       - Validates and appends one output definition to info.outputs.
+            %       - If a DATA output does not declare defOutfilename, a default name
+            %         is auto-generated from the function name:
+            %             <functionName>_data
+            %             <functionName>_data_2
+            %             <functionName>_data_3
+            %             ...
+            %       - The auto-generated default name is extensionless on purpose.
+            %         For outputMode='data', saveData may infer .dat / .umt later.
+            %       - For outputMode='file', defOutfilename is the declared default
+            %         filename identity for that file-producing output.
             %
-            % FILE-OUTPUT POLICY
-            %   - File-producing outputs must declare default filenames.
-            %   - NAME refers to the function output variable / output port, not the
-            %     physical file name.
-            %   - defOutfilename declares the physical file identity or allowed file list.
-            %   - File outputs force supportsFile=true.
-            %   - File outputs that participate in DATA flow force dataMode='file'.
+            %   Warning:
+            %       - When a default name is auto-generated, a warning is raised to
+            %         encourage explicit naming in the function's pipelineInfo.
 
             arguments
                 info struct
@@ -10816,8 +11085,6 @@ classdef PipelineManager < handle
 
             % Defaults
             isData       = true;
-            supportsFile = false;
-            dataMode     = 'either';
             saveFileName = '';
 
             for k = 1:2:numel(varargin)
@@ -10827,22 +11094,22 @@ classdef PipelineManager < handle
                 switch key
                     case 'isdata'
                         isData = logical(val);
-                    case 'supportsfile'
-                        supportsFile = logical(val);
-                    case 'datamode'
-                        dataMode = lower(strtrim(char(string(val))));
                     case 'savefilename'
                         saveFileName = char(string(val));
                 end
             end
 
+            % -------------------------------------------------------------
             % Normalize NAME
+            % -------------------------------------------------------------
             name = strtrim(char(string(name)));
             if isempty(name)
                 error('addOutput:InvalidName', 'Output name cannot be empty.');
             end
 
+            % -------------------------------------------------------------
             % Normalize TYPE -> 1xN cellstr
+            % -------------------------------------------------------------
             if ischar(type) || isstring(type)
                 typeCell = {strtrim(char(string(type)))};
             elseif iscell(type)
@@ -10853,7 +11120,9 @@ classdef PipelineManager < handle
             end
             typeCell = unique(typeCell, 'stable');
 
+            % -------------------------------------------------------------
             % Validate outputMode
+            % -------------------------------------------------------------
             outputMode = lower(strtrim(char(string(outputMode))));
             validOutModes = {'data', 'file'};
             if ~ismember(outputMode, validOutModes)
@@ -10861,14 +11130,9 @@ classdef PipelineManager < handle
                     'outputMode must be one of: %s', strjoin(validOutModes, ', '));
             end
 
-            % Validate dataMode
-            validModes = {'either', 'ram', 'file'};
-            if ~ismember(dataMode, validModes)
-                error('addOutput:InvalidDataMode', ...
-                    'dataMode must be one of: %s', strjoin(validModes, ', '));
-            end
-
-            % Normalize defOutfilename to a cleaned list for validation
+            % -------------------------------------------------------------
+            % Normalize defOutfilename
+            % -------------------------------------------------------------
             if ischar(defOutfilename) || isstring(defOutfilename)
                 defOutList = {strtrim(char(string(defOutfilename)))};
             elseif iscell(defOutfilename)
@@ -10879,60 +11143,91 @@ classdef PipelineManager < handle
             end
 
             defOutList = defOutList(~cellfun(@isempty, defOutList));
-            defOutList = unique(defOutList, 'stable');
 
-            % -------------------------------------------------------------
-            % File-output policy enforcement
-            % -------------------------------------------------------------
-            if strcmp(outputMode, 'file')
-
-                if isempty(defOutList)
-                    error('addOutput:MissingDefaultFileName', ...
-                        ['File outputs must declare at least one default output filename ' ...
-                        'through defOutfilename.']);
-                end
-
-                % File outputs are always file-capable
-                supportsFile = true;
-
-                % If this output participates in DATA flow, keep it file-backed
-                if isData
-                    dataMode = 'file';
-                end
+            % Strip any path components if user provided them
+            for iDef = 1:numel(defOutList)
+                [~, b, e] = fileparts(defOutList{iDef});
+                defOutList{iDef} = [b e];
             end
 
-            % DATA-only fields only meaningful when isData==true
-            if ~isData
-                supportsFile = false;
-                dataMode = 'either';
-                saveFileName = '';
+            % -------------------------------------------------------------
+            % Auto-generate default output name for DATA outputs when missing
+            % -------------------------------------------------------------
+            if isData && isempty(defOutList)
+
+                funcPrefix = localResolveFunctionPrefix(info);
+
+                nExistingDataOutputs = 0;
+                if isfield(info, 'outputs') && ~isempty(info.outputs)
+                    for iOut = 1:numel(info.outputs)
+                        if isfield(info.outputs(iOut), 'isData') && info.outputs(iOut).isData
+                            nExistingDataOutputs = nExistingDataOutputs + 1;
+                        end
+                    end
+                end
+
+                autoIdx = nExistingDataOutputs + 1;
+
+                if autoIdx == 1
+                    autoName = sprintf('%s_data', funcPrefix);
+                else
+                    autoName = sprintf('%s_data_%d', funcPrefix, autoIdx);
+                end
+
+                defOutList = {autoName};
+
+                warning('PipelineManager:addOutput:AutoDefaultOutputName', ...
+                    ['Output "%s" did not declare defOutfilename. Using auto-generated default "%s". ' ...
+                    'If you want a custom name, update the pipelineInfo creation in the function itself.'], ...
+                    name, autoName);
             end
 
-            % Preserve original scalar/cell style of defOutfilename
+            % -------------------------------------------------------------
+            % Rebuild defOutfilename output shape
+            % -------------------------------------------------------------
             if isempty(defOutList)
-                defOutfilenameNorm = '';
+                defOutfilename = '';
             elseif numel(defOutList) == 1
-                defOutfilenameNorm = defOutList{1};
+                defOutfilename = defOutList{1};
             else
-                defOutfilenameNorm = defOutList;
+                defOutfilename = defOutList(:)';
             end
 
+            % -------------------------------------------------------------
+            % Build output struct
+            % -------------------------------------------------------------
             newOutput = struct( ...
                 'name', name, ...
                 'type', {typeCell}, ...
-                'position', position, ...
                 'outputMode', outputMode, ...
                 'description', char(string(description)), ...
-                'defOutfilename', defOutfilenameNorm, ...
+                'defOutfilename', defOutfilename, ...
+                'position', position, ...
                 'isData', logical(isData), ...
-                'supportsFile', logical(supportsFile), ...
-                'dataMode', dataMode, ...
                 'saveFileName', char(string(saveFileName)));
 
-            if isempty(info.outputs)
+            if ~isfield(info, 'outputs') || isempty(info.outputs)
                 info.outputs = newOutput;
             else
                 info.outputs(end+1) = newOutput;
+            end
+
+            % =============================================================
+            % Local helper
+            % =============================================================
+            function funcPrefix = localResolveFunctionPrefix(infoLocal)
+                funcPrefix = 'output';
+
+                if isfield(infoLocal, 'name') && ~isempty(infoLocal.name)
+                    funcPrefix = char(string(infoLocal.name));
+                elseif isfield(infoLocal, 'functionName') && ~isempty(infoLocal.functionName)
+                    funcPrefix = char(string(infoLocal.functionName));
+                end
+
+                funcPrefix = matlab.lang.makeValidName(strtrim(funcPrefix));
+                if isempty(funcPrefix)
+                    funcPrefix = 'output';
+                end
             end
         end
     end
