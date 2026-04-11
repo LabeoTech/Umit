@@ -9,14 +9,12 @@ function [outFile, Info] = loadData(fileName)
 %   Outputs:
 %       outFile  - For .dat files, numeric array loaded from disk.
 %                  For .umt files, struct loaded from the MAT-backed file.
-%       Info     - For .dat files, AcqInfoStream metadata.
-%                  For .umt files, [].
+%       Info     - Unified metadata structure from loadMetaData.
 %
 %   Notes:
-%       - .dat files are reconstructed using folder-global AcqInfos.mat.
+%       - .dat files are assumed to be single precision.
+%       - .dat metadata are resolved through loadMetaData.
 %       - .umt files are MAT-files with a custom extension.
-%       - Legacy sidecar metadata (.mat or _info.mat) is supported for
-%         backward compatibility when present.
 
 p = inputParser;
 p.FunctionName = 'loadData';
@@ -44,11 +42,11 @@ end
 
 fprintf('Opening file "%s" ...\n', fileName);
 
-Info = [];
+Info = loadMetaData(fileName);
 
 switch ext
     case '.dat'
-        [outFile, Info] = loadDat(fileName);
+        outFile = iLoadDat(fileName, Info);
 
     case '.umt'
         outFile = load(fileName, '-mat');
@@ -58,52 +56,11 @@ end
 disp('Done.');
 end
 
-% -------------------------------------------------------------------------
-function [data, AcqInfoStream] = loadDat(fileName)
-%LOADDAT Load .dat file using folder-global AcqInfos.mat.
-
-folderPath = fileparts(fileName);
-acqInfoFile = fullfile(folderPath, 'AcqInfos.mat');
-
-if ~isfile(acqInfoFile)
-    error('Umitoolbox:loadData:missingAcqInfos', ...
-        'Missing "AcqInfos.mat" in folder "%s".', folderPath);
-end
-
-S = load(acqInfoFile, 'AcqInfoStream');
-if ~isfield(S, 'AcqInfoStream')
-    error('Umitoolbox:loadData:invalidAcqInfos', ...
-        '"AcqInfos.mat" does not contain variable "AcqInfoStream".');
-end
-
-AcqInfoStream = S.AcqInfoStream;
-
-if ~isstruct(AcqInfoStream) || ~isscalar(AcqInfoStream) || ...
-        ~isfield(AcqInfoStream, 'Height') || ~isfield(AcqInfoStream, 'Width')
-    error('Umitoolbox:loadData:invalidAcqInfos', ...
-        '"AcqInfoStream" must be a scalar struct containing "Height" and "Width".');
-end
-
-% Retrocompatibility with old sidecar metadata
-[folderPath, baseName, ~] = fileparts(fileName);
-legacyFiles = { ...
-    fullfile(folderPath, [baseName, '.mat']), ...
-    fullfile(folderPath, [baseName, '_info.mat'])};
-
-legacyFiles = legacyFiles(cellfun(@isfile, legacyFiles));
-
-if ~isempty(legacyFiles)
-    matInfo = load(legacyFiles{1});
-
-    if isfield(matInfo, 'datSize') && numel(matInfo.datSize) >= 2
-        AcqInfoStream.Height = matInfo.datSize(1);
-        AcqInfoStream.Width  = matInfo.datSize(2);
-    end
-
-    if isfield(matInfo, 'Freq')
-        AcqInfoStream.FrameRateHz = matInfo.Freq;
-    end
-end
+% =========================================================================
+% Local helpers
+% =========================================================================
+function data = iLoadDat(fileName, Info)
+%ILOADDAT Load .dat file using unified metadata from loadMetaData.
 
 fid = fopen(fileName, 'r');
 if fid == -1
@@ -114,18 +71,16 @@ cleanupObj = onCleanup(@() safeFclose(fid)); %#ok<NASGU>
 
 data = fread(fid, inf, '*single');
 
-frameSize = double(AcqInfoStream.Height) * double(AcqInfoStream.Width);
+frameSize = double(Info.Height) * double(Info.Width);
 if frameSize <= 0 || mod(frameSize, 1) ~= 0
     error('Umitoolbox:loadData:invalidFrameSize', ...
-        'Invalid frame dimensions in AcqInfoStream.');
+        'Invalid frame dimensions in metadata.');
 end
 
 if mod(numel(data), frameSize) ~= 0
     error('Umitoolbox:loadData:invalidFileLength', ...
-        ['File size is incompatible with frame dimensions from ' ...
-         '"AcqInfos.mat".']);
+        'File size is incompatible with metadata frame dimensions.');
 end
 
-nFrames = numel(data) / frameSize;
-data = reshape(data, AcqInfoStream.Height, AcqInfoStream.Width, nFrames);
+data = reshape(data, Info.Height, Info.Width, Info.datLength);
 end
