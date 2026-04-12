@@ -1725,17 +1725,19 @@ classdef EventsManager < handle
             %       Repetition indices to include.
             %
             % Outputs:
-            %   dataByEv      : 4-D single array
-            %       Trial-split data with dimensions E x Y x X x Ttrial.
+            %   dataByEv       : 4-D single array
+            %       Trial-split data with dimensions Y x X x Ttrial x E.
             %   conditionIDlist : vector
             %       Condition ID for each returned trial.
-            %   repetitionList: vector
+            %   repetitionList : vector
             %       Repetition index for each returned trial.
             %
             % Notes:
             %   - Frames outside the valid range are padded with NaNs.
             %   - If trials have unequal lengths, the output is cropped to the shortest
             %     valid trial length.
+            %   - The event dimension is stored last to match the current YXTE
+            %     convention used elsewhere in the analysis code.
 
             p = inputParser();
             addRequired(p, 'obj');
@@ -1747,28 +1749,33 @@ classdef EventsManager < handle
             [frMat, conditionIDlist, repetitionList] = obj.getFrameMatrix( ...
                 size(data,3), p.Results.condition, p.Results.repetition);
 
-            dataByEv = nan(size(frMat,1), size(data,1), size(data,2), size(frMat,2), 'single');
-
             if isempty(frMat)
+                dataByEv = nan(size(data,1), size(data,2), 0, 0, 'single');
                 return
             end
 
+            nTrials = size(frMat, 1);
+            nFramesPerTrial = size(frMat, 2);
+
+            % Allocate directly in Y x X x T x E order to avoid an extra permute.
+            dataByEv = nan(size(data,1), size(data,2), nFramesPerTrial, nTrials, 'single');
+
             b_validFrames = ~isnan(frMat);
-            for ii = 1:size(frMat,1)
-                dataByEv(ii,:,:,b_validFrames(ii,:)) = data(:,:,frMat(ii,b_validFrames(ii,:)));
+            for ii = 1:nTrials
+                frameIdx = frMat(ii, b_validFrames(ii,:));
+                dataByEv(:,:,b_validFrames(ii,:),ii) = data(:,:,frameIdx);
             end
 
             if any(isnan(frMat(:)))
                 disp('Cropping trials to shortest length...');
                 firstNaNCol = find(any(isnan(frMat),1), 1, 'first');
                 if ~isempty(firstNaNCol)
-                    dataByEv(:,:,:,firstNaNCol:end) = [];
+                    dataByEv(:,:,firstNaNCol:end,:) = [];
                 end
             end
 
             disp('Finished splitting data by events');
         end
-
         function evInfo = exportEventInfo(obj)
             %EXPORTEVENTINFO Package event-related information into a structure.
             %
