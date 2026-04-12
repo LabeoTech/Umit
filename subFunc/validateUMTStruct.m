@@ -1,7 +1,8 @@
-function validateUMTStruct(umt)
+function validateUMTStruct(umt, varargin)
 %VALIDATEUMTSTRUCT Validate UMIT processed-data structure for .umt files.
 %
 %   validateUMTStruct(umt)
+%   validateUMTStruct(umt, 'requireEventInfo', false)
 %
 %   Validates whether the input structure follows the current .umt schema.
 %   The schema definition is obtained from getUMTSchema using umt.version.
@@ -13,10 +14,18 @@ function validateUMTStruct(umt)
 %
 %   Optional top-level fields:
 %       labels
+%       eventInfo
 %
 %   Required fields for each entry in "umt.data":
 %       value
 %       dimNames
+%
+%   Name-Value options:
+%       requireEventInfo - Logical scalar. Default: true.
+%                          If true, top-level eventInfo is required when at
+%                          least one entry uses the "E" dimension.
+%                          If false, E-based entries may exist without
+%                          eventInfo during intermediate construction.
 %
 %   Rules:
 %       - umt.version must be numeric scalar and supported by getUMTSchema.
@@ -25,14 +34,25 @@ function validateUMTStruct(umt)
 %       - Each entry value must be numeric or logical.
 %       - Scalars must use dimNames = {}.
 %       - One-dimensional data must be stored as column vectors.
+%       - Trailing singleton dimensions declared in dimNames are allowed
+%         even if MATLAB suppresses them in ndims(value).
 %       - Labels, if provided, must be shared top-level labels and must
 %         match the corresponding dimension sizes in all entries that use
 %         that dimension.
+%       - eventInfo, if provided, must be shared top-level event metadata
+%         and must match the shared size of the "E" dimension.
 %
 %   Error:
 %       Throws an error if validation fails.
 
 errID = 'Umitoolbox:validateUMTStruct:invalidInput';
+
+p = inputParser;
+p.FunctionName = 'validateUMTStruct';
+addParameter(p, 'requireEventInfo', true, @(x) islogical(x) && isscalar(x));
+parse(p, varargin{:});
+
+requireEventInfo = p.Results.requireEventInfo;
 
 if ~isstruct(umt) || ~isscalar(umt)
     error(errID, ...
@@ -79,8 +99,9 @@ if isempty(entryNames)
         'Operation aborted. "data" must contain at least one entry.');
 end
 
-% Track dimension lengths by name for shared top-level label validation.
 dimUsage = struct();
+eLengths = [];
+bUsesEvents = false;
 
 for iEntry = 1:numel(entryNames)
 
@@ -116,22 +137,7 @@ for iEntry = 1:numel(entryNames)
     end
 
     dimNames = iNormalizeDimNames(entryData.dimNames, schema, errID, entryName);
-    dimSizes = iGetEffectiveDimensionSizes(value, errID, entryName);
-
-    if isempty(dimSizes)
-        if ~isempty(dimNames)
-            error(errID, ...
-                'Operation aborted. Scalar entry "%s" must use dimNames = {}.', ...
-                entryName);
-        end
-    else
-        if numel(dimNames) ~= numel(dimSizes)
-            error(errID, ...
-                ['Operation aborted. The number of dimNames in entry "%s" ' ...
-                 'does not match the effective dimensionality of its value.'], ...
-                entryName);
-        end
-    end
+    dimSizes = iGetDeclaredDimensionSizes(value, dimNames, errID, entryName);
 
     if ~iIsAllowedPattern(kind, dimNames, schema)
         error(errID, ...
@@ -148,6 +154,12 @@ for iEntry = 1:numel(entryNames)
         else
             dimUsage.(thisDim) = thisLen;
         end
+    end
+
+    idxE = find(strcmp(dimNames, 'E'), 1, 'first');
+    if ~isempty(idxE)
+        bUsesEvents = true;
+        eLengths(end+1) = dimSizes(idxE); %#ok<AGROW>
     end
 end
 
@@ -176,6 +188,31 @@ if isfield(umt, 'labels')
                  'entries that use dimension "%s".'], ...
                 thisDim, thisDim);
         end
+    end
+end
+
+if bUsesEvents
+
+    if numel(unique(eLengths)) ~= 1
+        error(errID, ...
+            ['Operation aborted. All entries that use the "E" dimension ' ...
+             'must have the same E length when shared top-level eventInfo ' ...
+             'is used.']);
+    end
+
+    if isfield(umt, 'eventInfo')
+        iValidateEventInfoStruct(umt.eventInfo, eLengths(1), schema, errID);
+    elseif requireEventInfo
+        error(errID, ...
+            ['Operation aborted. Top-level "eventInfo" is required when at ' ...
+             'least one entry uses the "E" dimension.']);
+    end
+
+else
+    if isfield(umt, 'eventInfo')
+        error(errID, ...
+            ['Operation aborted. Top-level "eventInfo" is only allowed when ' ...
+             'at least one entry uses the "E" dimension.']);
     end
 end
 
@@ -243,35 +280,51 @@ end
 
 end
 
-function dimSizes = iGetEffectiveDimensionSizes(value, errID, entryName)
-%IGETEFFECTIVEDIMENSIONSIZES Return effective dimension sizes for validation.
+function dimSizes = iGetDeclaredDimensionSizes(value, dimNames, errID, entryName)
+%IGETDECLAREDDIMENSIONSIZES Return dimension sizes compatible with dimNames.
 %
-% Scalars return [].
-% One-dimensional data must be stored along the first dimension.
-% Higher-dimensional data return size(value).
+% This helper does not rely on ndims(value). It allows trailing singleton
+% dimensions declared in dimNames even when MATLAB suppresses them in ndims.
 
-if isscalar(value)
+nDimsExpected = numel(dimNames);
+
+if nDimsExpected == 0
+    if ~isscalar(value)
+        error(errID, ...
+            'Operation aborted. Scalar entry "%s" must use dimNames = {}.', ...
+            entryName);
+    end
     dimSizes = [];
     return
+end
+
+if isscalar(value)
+    error(errID, ...
+        'Operation aborted. Scalar entry "%s" must use dimNames = {}.', ...
+        entryName);
 end
 
 sz = size(value);
-nonSingletonDims = find(sz ~= 1);
 
-if isempty(nonSingletonDims)
-    dimSizes = [];
-    return
+% Enforce column-vector storage for true 1-D data.
+nonSingletonDims = find(sz ~= 1);
+if numel(nonSingletonDims) == 1 && nonSingletonDims ~= 1
+    error(errID, ...
+        ['Operation aborted. Entry "%s" is one-dimensional but not stored ' ...
+         'as a column vector.'], ...
+        entryName);
 end
 
-if numel(nonSingletonDims) == 1
-    if nonSingletonDims ~= 1
+if numel(sz) < nDimsExpected
+    sz(end+1:nDimsExpected) = 1;
+elseif numel(sz) > nDimsExpected
+    if any(sz(nDimsExpected+1:end) ~= 1)
         error(errID, ...
-            ['Operation aborted. Entry "%s" is one-dimensional but not stored ' ...
-             'as a column vector.'], ...
+            ['Operation aborted. Entry "%s.value" has more dimensions than ' ...
+             'declared in dimNames, and the extra dimensions are not singleton.'], ...
             entryName);
     end
-    dimSizes = sz(1);
-    return
+    sz = sz(1:nDimsExpected);
 end
 
 dimSizes = sz;
@@ -345,6 +398,109 @@ else
         ['Operation aborted. labels.%s must be a cell array of character ' ...
          'vectors or a string vector.'], ...
         dimName);
+end
+
+end
+
+function iValidateEventInfoStruct(eventInfoIn, eLen, schema, errID)
+%IVALIDATEEVENTINFOSTRUCT Validate shared top-level event metadata.
+
+if ~isstruct(eventInfoIn) || ~isscalar(eventInfoIn)
+    error(errID, ...
+        'Operation aborted. "eventInfo" must be a scalar struct.');
+end
+
+rawFields = fieldnames(eventInfoIn);
+reqFields = schema.requiredEventInfoFields;
+
+if ~all(ismember(reqFields, rawFields))
+    error(errID, ...
+        ['Operation aborted. "eventInfo" is missing one or more required ' ...
+         'fields: %s.'], ...
+        strjoin(reqFields, ', '));
+end
+
+unknownFields = setdiff(rawFields, reqFields);
+if ~isempty(unknownFields)
+    error(errID, ...
+        'Operation aborted. Unsupported field(s) in "eventInfo": %s.', ...
+        strjoin(unknownFields, ', '));
+end
+
+eventID = eventInfoIn.eventID;
+repIdx = eventInfoIn.repetitionIndex;
+evName = eventInfoIn.eventName;
+axisMode = eventInfoIn.eventAxisMode;
+
+if ~isnumeric(eventID) || ~isvector(eventID) || isempty(eventID) || ...
+        any(~isfinite(eventID(:))) || any(eventID(:) < 1) || ...
+        any(mod(eventID(:),1) ~= 0)
+    error(errID, ...
+        ['Operation aborted. eventInfo.eventID must be a non-empty vector ' ...
+         'of positive integers.']);
+end
+eventID = eventID(:);
+
+if ~isnumeric(repIdx) || ~isvector(repIdx) || isempty(repIdx) || ...
+        any(~isfinite(repIdx(:))) || any(repIdx(:) < 0) || ...
+        any(mod(repIdx(:),1) ~= 0)
+    error(errID, ...
+        ['Operation aborted. eventInfo.repetitionIndex must be a non-empty ' ...
+         'vector of non-negative integers.']);
+end
+repIdx = repIdx(:);
+
+if isstring(evName) && isvector(evName)
+    evName = cellstr(evName(:));
+elseif iscell(evName) && isvector(evName) && ...
+        all(cellfun(@(c) ischar(c) || (isstring(c) && isscalar(c)), evName))
+    evName = cellstr(string(evName(:)));
+else
+    error(errID, ...
+        ['Operation aborted. eventInfo.eventName must be a string vector ' ...
+         'or a cell array of character vectors.']);
+end
+
+if ~(ischar(axisMode) || (isstring(axisMode) && isscalar(axisMode)))
+    error(errID, ...
+        'Operation aborted. eventInfo.eventAxisMode must be a text scalar.');
+end
+
+axisMode = lower(char(string(axisMode)));
+if ~ismember(axisMode, schema.allowedEventAxisModes)
+    error(errID, ...
+        'Operation aborted. Invalid eventAxisMode "%s".', axisMode);
+end
+
+nE = numel(eventID);
+
+if numel(repIdx) ~= nE || numel(evName) ~= nE
+    error(errID, ...
+        ['Operation aborted. eventInfo fields eventID, repetitionIndex, ' ...
+         'and eventName must all have the same number of elements.']);
+end
+
+if nE ~= eLen
+    error(errID, ...
+        ['Operation aborted. Shared "eventInfo" length (%d) does not match ' ...
+         'the size of the "E" dimension (%d).'], ...
+        nE, eLen);
+end
+
+switch axisMode
+    case 'instances'
+        if any(repIdx(:) < 1)
+            error(errID, ...
+                ['Operation aborted. eventInfo.repetitionIndex must contain ' ...
+                 'positive integers when eventAxisMode="instances".']);
+        end
+
+    case 'aggregated_repetitions'
+        if any(repIdx(:) ~= 0)
+            error(errID, ...
+                ['Operation aborted. eventInfo.repetitionIndex must be all ' ...
+                 'zeros when eventAxisMode="aggregated_repetitions".']);
+        end
 end
 
 end
