@@ -1,83 +1,87 @@
 function varargout = NormalisationFiltering(FolderData, FileData, lowFreq, ...
     highFreq, bDivide, bExpfit, varargin)
-%%%%% Data Normalisation by low-pass filtering %%%%%
+%NORMALISATIONFILTERING Data normalization by low-pass filtering.
 %
-% General Infos:
-%
-% This function can be used to normalise channels (delta F/F or delta R/R),
-% or to do a low-pass filtering.
+% This function can be used to normalize channels (delta F/F or delta R/R),
+% or to perform low-pass filtering.
 %
 % Inputs:
 %
-% Option A: data to be normalised will be opened within this function
-%
+% Option A: data to be normalized are opened within this function
 %   1- FolderData:  Folder containing the data to be opened
-%   2- FileData:    Channel to open ('red', 'green', 'fluo_475', etc.)
+%   2- FileData:    Channel/file to open
 %   3- lowFreq:     low frequency cut-off, set to 0 to ignore
 %   4- highFreq:    high frequency cut-off, set to 0 to ignore
-%   5- bDivide:     if 1, the data returned (below highFreq) is normalised
-%                   by the low freq signal (below lowFreq)
-%                   if 0, the low freq signal (below lowFreq) is
-%                   substracted from the data returned (below highFreq)
-%   6- bExpFit:     if 1, a double exponential curve is fit on each pixel
-%                   to correct for illumination decay
+%   5- bDivide:     if true, the high-passed signal is normalized by the
+%                   low-passed signal; if false, the low-passed signal is
+%                   subtracted
+%   6- bExpFit:     if true, apply double exponential decay correction
 %
-% Option B: data to be normalised is given directly
-%
+% Option B: data to be normalized are given directly
 %   1- FolderData:  Folder containing the data
-%   2- FileData:    Data, as a 3D matrix (Y, X, Time)
+%   2- FileData:    Data as a 3D matrix (Y, X, Time)
 %   3- lowFreq:     low frequency cut-off, set to 0 to ignore
 %   4- highFreq:    high frequency cut-off, set to 0 to ignore
-%   5- bDivide:     if 1, the data returned (below highFreq) is normalised
-%                   by the low freq signal (below lowFreq)
-%                   if 0, the low freq signal (below lowFreq) is
-%                   substracted from the data returned (below highFreq)
-%   6- bExpFit:     if 1, a double exponential curve is fit on each pixel
-%                   to correct for illumination decay
-%   7- Freq:        (Optional) data sample rate
+%   5- bDivide:     if true, the high-passed signal is normalized by the
+%                   low-passed signal; if false, the low-passed signal is
+%                   subtracted
+%   6- bExpFit:     if true, apply double exponential decay correction
+%   7- Freq:        (Optional) sample rate
 %
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Optional inputs:
+%   Freq         - Sample rate override
+%   saveFilename - Output filename in file mode
+%
+% Notes:
+%   - File mode uses loadMetaData(...) to retrieve compatibility metadata.
+%   - If dim_names are missing:
+%         * non-event data assume legacy order {'Y','X','T'}
+%         * event data assume legacy order {'E','Y','X','T'}
+%     and a warning is raised.
+%   - Non-event file data are expected to be stored as Y,X,T on disk.
+%   - The core filtering algorithm is unchanged.
 
 %%% Arguments parsing and validation %%%
 p = inputParser;
 addRequired(p, 'FolderData', @isfolder)
-addRequired(p, 'FileData', @(x) ischar(x) || isnumeric(x))
+addRequired(p, 'FileData', @(x) ischar(x) || isstring(x) || isnumeric(x))
 addRequired(p, 'lowFreq', @(x) isscalar(x) && isnumeric(x))
 addRequired(p, 'highFreq', @(x) isscalar(x) && isnumeric(x))
 addRequired(p, 'bDivide', @(x) isscalar(x) && (isnumeric(x) || islogical(x)))
 addRequired(p, 'bExpFit', @(x) isscalar(x) && (isnumeric(x) || islogical(x)))
 addOptional(p, 'Freq', [], @(x) (isscalar(x) && isnumeric(x)) || isempty(x))
-addOptional(p, 'saveFilename', '', @ischar);
+addOptional(p, 'saveFilename', '', @(x) ischar(x) || (isstring(x) && isscalar(x)))
 
-parse(p, FolderData, FileData, lowFreq, highFreq, bExpfit, bDivide, varargin{:});
+parse(p, FolderData, FileData, lowFreq, highFreq, bDivide, bExpfit, varargin{:});
 
-% NOTE: preserve original call signature semantics
 lowFreq   = p.Results.lowFreq;
 highFreq  = p.Results.highFreq;
 bDivide   = p.Results.bDivide;
 bExpFit   = p.Results.bExpFit;
+freqArg   = p.Results.Freq;
+saveFile  = char(string(p.Results.saveFilename));
 
-if isa(p.Results.FileData, 'char')
+if ischar(p.Results.FileData) || (isstring(p.Results.FileData) && isscalar(p.Results.FileData))
     if nargout
         OutData = NormFiltFromFile( ...
             p.Results.FolderData, ...
-            p.Results.FileData, ...
+            char(string(p.Results.FileData)), ...
             lowFreq, highFreq, bDivide, bExpFit, ...
-            true, p.Results.saveFilename);
+            true, saveFile, freqArg);
         varargout{1} = OutData;
     else
         NormFiltFromFile( ...
             p.Results.FolderData, ...
-            p.Results.FileData, ...
+            char(string(p.Results.FileData)), ...
             lowFreq, highFreq, bDivide, bExpFit, ...
-            false, p.Results.saveFilename);
+            false, saveFile, freqArg);
     end
 else
     OutData = NormFiltDirect( ...
         p.Results.FolderData, ...
         p.Results.FileData, ...
         lowFreq, highFreq, bDivide, bExpFit, ...
-        p.Results.Freq);
+        freqArg);
     varargout{1} = OutData;
 end
 
@@ -85,6 +89,7 @@ end
 
 
 function OutData = NormFiltDirect(FolderData, OutData, lowFreq, highFreq, bDivide, bExpFit, Freq)
+%NORMFILTDIRECT Filter an in-memory YXT array.
 
 ExpFun = @(P,x) abs(P(1)).*exp(-abs(P(2)).*x) + abs(P(3)).*exp(-abs(P(4)).*x) ...
     - abs(P(5))*x + P(6);
@@ -92,12 +97,21 @@ Opt = optimset(@fminsearch);
 Opt.Display = 'off';
 
 if isempty(Freq)
-    FileData = dir(fullfile(FolderData, '*.mat'));
-    Tags = {'red','green','yellow','fluo_'};
-    idx = arrayfun(@(x) contains(FileData(x).name, Tags), 1:size(FileData,1));
-    idx = find(idx, 1, 'first');
-    Infos = matfile(fullfile(FolderData, FileData(idx).name));
-    Freq = Infos.Freq;
+    datFiles = dir(fullfile(FolderData, '*.dat'));
+    umtFiles = dir(fullfile(FolderData, '*.umt'));
+
+    if ~isempty(datFiles)
+        meta = loadMetaData(fullfile(FolderData, datFiles(1).name));
+        Freq = meta.Freq;
+    elseif ~isempty(umtFiles)
+        meta = loadMetaData(fullfile(FolderData, umtFiles(1).name));
+        Freq = meta.Freq;
+    else
+        error('NormalisationFiltering:MissingFrequency', ...
+            ['Freq was not provided and no supported data file (*.dat or *.umt) ' ...
+             'was found in "%s" to infer it.'], ...
+            FolderData);
+    end
 end
 
 % Temporal filtering
@@ -124,8 +138,9 @@ dims = size(OutData);
 if bExpFit
     rng('shuffle');
     S = mean(reshape(OutData, [], dims(3)), 1);
+    initB = double(rand(1,6) .* [30 1 20 1 1 mean(double(S))]);
     B = fminsearch(@(P) sum((double(S) - ExpFun(P, (1:size(S,2)))).^2), ...
-        rand(1,6) .* [30 1 20 1 1 double(mean(S))], Opt);
+        initB, Opt);
     Approx = ExpFun([B(1:4) 0 0], 1:size(S,2));
     Pred = [ones(1, size(S,2)); linspace(0,1,size(S,2)); Approx]';
 end
@@ -168,51 +183,133 @@ fprintf('\n');
 end
 
 
-function OutData = NormFiltFromFile(FolderData, FileName, lowFreq, highFreq, bDivide, bExpFit, bReturn, outFile)
+function OutData = NormFiltFromFile(FolderData, FileName, lowFreq, highFreq, bDivide, bExpFit, bReturn, outFile, freqOverride)
+%NORMFILTFROMFILE Filter data from disk using compatibility metadata.
 
-if ~strcmp(FolderData(end), filesep)
-    FolderData = [FolderData filesep];
+if nargin < 9
+    freqOverride = [];
 end
 
-% --- Load metadata
-metaFile = [FolderData strrep(FileName, '.dat', '.mat')];
-fMetaData = load(metaFile);
-dimNames  = fMetaData.dim_names;
-datSize   = [fMetaData.datSize fMetaData.datLength];
-Freq      = fMetaData.Freq;
-dataType  = fMetaData.Datatype;
+% -------------------------------------------------------------------------
+% Resolve input file path
+% -------------------------------------------------------------------------
+if isempty(fileparts(FileName))
+    inFile = fullfile(FolderData, FileName);
+else
+    inFile = FileName;
+end
+
+if ~isfile(inFile)
+    error('NormalisationFiltering:InputFileNotFound', ...
+        'Input file not found: "%s".', inFile);
+end
+
+[inFolder, inBase, ~] = fileparts(inFile);
+
+% -------------------------------------------------------------------------
+% Load metadata through compatibility layer
+% -------------------------------------------------------------------------
+fMetaData = loadMetaData(inFile);
+
+if ~isfield(fMetaData, 'datSize') || ~isfield(fMetaData, 'datLength') || ...
+        ~isfield(fMetaData, 'Datatype')
+    error('NormalisationFiltering:InvalidMetaData', ...
+        ['loadMetaData("%s") did not return the required fields: ' ...
+         'datSize, datLength, Datatype.'], ...
+        inFile);
+end
+
+storedSize = [fMetaData.datSize fMetaData.datLength];
+dataType = char(string(fMetaData.Datatype));
+
+if isfield(fMetaData, 'dim_names') && ~isempty(fMetaData.dim_names)
+    dimNames = cellstr(string(fMetaData.dim_names));
+else
+    if numel(storedSize) == 4
+        dimNames = {'E','Y','X','T'};
+    elseif numel(storedSize) == 3
+        dimNames = {'Y','X','T'};
+    else
+        error('NormalisationFiltering:MissingDimNames', ...
+            'Failed to infer dim_names for "%s".', inFile);
+    end
+    warning('NormalisationFiltering:MissingDimNames', ...
+        ['Metadata field dim_names was missing for "%s". ' ...
+         'Assuming legacy order {%s}.'], ...
+        inFile, strjoin(dimNames, ','));
+end
+
+if numel(dimNames) ~= numel(storedSize)
+    if numel(storedSize) == 4
+        dimNames = {'E','Y','X','T'};
+    elseif numel(storedSize) == 3
+        dimNames = {'Y','X','T'};
+    else
+        error('NormalisationFiltering:InvalidDimNames', ...
+            'dim_names length does not match stored data size for "%s".', inFile);
+    end
+    warning('NormalisationFiltering:InvalidDimNames', ...
+        ['Metadata dim_names length did not match stored size for "%s". ' ...
+         'Assuming legacy order {%s}.'], ...
+        inFile, strjoin(dimNames, ','));
+end
+
+if isfield(fMetaData, 'Freq') && ~isempty(fMetaData.Freq)
+    Freq = fMetaData.Freq;
+elseif ~isempty(freqOverride)
+    Freq = freqOverride;
+else
+    error('NormalisationFiltering:MissingFrequency', ...
+        'Failed to determine Freq for "%s".', inFile);
+end
 
 hasEvents = any(strcmpi(dimNames, 'E'));
+idxT = find(strcmpi(dimNames, 'T'), 1, 'first');
+assert(~isempty(idxT), 'NormalisationFiltering:MissingTimeDimension', ...
+    'dim_names must contain a T dimension.');
 
-% --- Output filenames
+% -------------------------------------------------------------------------
+% Resolve output filename
+% -------------------------------------------------------------------------
 if isempty(outFile)
-    outName = [erase(FileName, '.dat') '_NormFilt.dat'];
+    outDat = fullfile(inFolder, [inBase '_NormFilt.dat']);
 else
-    [~, outName, ~] = fileparts(outFile);
-end
-outDat = [FolderData outName '.dat'];
+    outFile = char(string(outFile));
+    [outFolder, outBase, outExt] = fileparts(outFile);
 
-% --- Preallocate output file
+    if isempty(outFolder)
+        outFolder = inFolder;
+    end
+    if isempty(outExt)
+        outExt = '.dat';
+    end
+    if ~isfolder(outFolder)
+        mkdir(outFolder);
+    end
+
+    outDat = fullfile(outFolder, [outBase outExt]);
+end
+
+% -------------------------------------------------------------------------
+% Preallocate output file
+% -------------------------------------------------------------------------
 preallocateDatFile(outDat, fMetaData);
 
-fidIn  = fopen([FolderData FileName], 'r');
+fidIn  = fopen(inFile, 'r');
+assert(fidIn ~= -1, 'NormalisationFiltering:OpenInputFailed', ...
+    'Failed to open input file "%s".', inFile);
 cIn = onCleanup(@() safeFclose(fidIn)); %#ok<NASGU>
+
 fidOut = fopen(outDat, 'r+');
+assert(fidOut ~= -1, 'NormalisationFiltering:OpenOutputFailed', ...
+    'Failed to open output file "%s".', outDat);
 cOut = onCleanup(@() safeFclose(fidOut)); %#ok<NASGU>
 
 % ---------------- Filter design ----------------
 if lowFreq > 0
-    % Restore master low-frequency safety adjustment in file mode
-    if hasEvents
-        nTimeSamples = datSize(4);
-        if (1/lowFreq) > (nTimeSamples / Freq)
-            lowFreq = 1 / (2 * (nTimeSamples / Freq));
-        end
-    else
-        nTimeSamples = datSize(3);
-        if (1/lowFreq) > (nTimeSamples / Freq)
-            lowFreq = 1 / (2 * (nTimeSamples / Freq));
-        end
+    nTimeSamples = storedSize(idxT);
+    if (1/lowFreq) > (nTimeSamples / Freq)
+        lowFreq = 1 / (2 * (nTimeSamples / Freq));
     end
 
     f = fdesign.lowpass('N,F3dB', 4, lowFreq, Freq);
@@ -239,36 +336,42 @@ Opt = optimset('Display', 'off');
 fprintf('NormalisationFiltering (file mode)\n');
 
 %% =========================================================
-% EVENT MODE: E,Y,X,T
+% EVENT MODE
 %% =========================================================
 if hasEvents
 
-    Ne = datSize(1);
-    Ny = datSize(2);
-    Nx = datSize(3);
-    Nt = datSize(4);
+    idxY = find(strcmpi(dimNames, 'Y'), 1, 'first');
+    idxX = find(strcmpi(dimNames, 'X'), 1, 'first');
+    idxE = find(strcmpi(dimNames, 'E'), 1, 'first');
 
-    elemsPerTrial = Ny * Nx * Nt;
-    bytesPerTrial = elemsPerTrial * getByteSize(dataType);
+    assert(~isempty(idxY) && ~isempty(idxX) && ~isempty(idxE), ...
+        'NormalisationFiltering:InvalidDimNames', ...
+        'Event data must define Y, X, T, and E dimensions.');
+
+    nElem = prod(storedSize);
+    raw = fread(fidIn, nElem, ['*' dataType]);
+    assert(numel(raw) == nElem, 'NormalisationFiltering:UnexpectedEOF', ...
+        'Unexpected end of file while reading "%s".', inFile);
+
+    storedData = reshape(raw, storedSize);
+    permToYXTE = [idxY idxX idxT idxE];
+    dataYXTE = permute(storedData, permToYXTE);
+
+    [Ny, Nx, Nt, Ne] = size(dataYXTE);
 
     for e = 1:Ne
         fprintf('Trial %d / %d\n', e, Ne);
+        slab = dataYXTE(:,:,:,e);
 
-        % --- Read one full trial
-        fseek(fidIn, (e-1) * bytesPerTrial, 'bof');
-        slab = fread(fidIn, elemsPerTrial, ['*' dataType]);
-        slab = reshape(slab, Ny, Nx, Nt);
-
-        % --- Exp fit (trial-wise)
         if bExpFit
             S = mean(reshape(slab, [], Nt), 1);
+            initB = double(rand(1,6) .* [30 1 20 1 1 mean(double(S))]);
             B = fminsearch(@(P) sum((double(S) - ExpFun(P, 1:Nt)).^2), ...
-                rand(1,6) .* [30 1 20 1 1 mean(S)], Opt);
+                initB, Opt);
             Approx = ExpFun([B(1:4) 0 0], 1:Nt);
             Pred = [ones(1,Nt); linspace(0,1,Nt); Approx]';
         end
 
-        % --- Process Y lines
         for y = 1:Ny
             Signal = double(squeeze(slab(y,:,:)));
 
@@ -297,24 +400,31 @@ if hasEvents
             end
         end
 
-        % --- Write trial back
-        fseek(fidOut, (e-1) * bytesPerTrial, 'bof');
-        fwrite(fidOut, slab, dataType);
-        clear slab
+        dataYXTE(:,:,:,e) = slab;
     end
 
+    storedOut = ipermute(dataYXTE, permToYXTE);
+    fwrite(fidOut, storedOut, dataType);
+
 %% =========================================================
-% NO EVENTS: Y,X,T -> chunked over X
+% NO EVENTS: Y,X,T only
 %% =========================================================
 else
-    Ny = datSize(1);
-    Nx = datSize(2);
-    Nt = datSize(3);
+    if ~isequal(dimNames, {'Y','X','T'})
+        error('NormalisationFiltering:InvalidDimNames', ...
+            ['Non-event file data must use dim_names {''Y'',''X'',''T''}. ' ...
+             'Received {%s} for "%s".'], ...
+            strjoin(dimNames, ','), inFile);
+    end
+
+    Ny = storedSize(1);
+    Nx = storedSize(2);
+    Nt = storedSize(3);
 
     if bExpFit
-        nChunks = calculateMaxChunkSize(prod(datSize) * getByteSize(dataType), 2, .3);
+        nChunks = calculateMaxChunkSize(prod(storedSize) * getByteSize(dataType), 2, .3);
     else
-        nChunks = calculateMaxChunkSize(prod(datSize) * getByteSize(dataType), 1, .3);
+        nChunks = calculateMaxChunkSize(prod(storedSize) * getByteSize(dataType), 1, .3);
     end
 
     chunkX = ceil(Nx / nChunks);
@@ -328,11 +438,11 @@ else
         fprintf('Chunk #%i [Reading data from file...]\n', c)
         slab = spatialSlabIO('read', fidIn, Ny, Nx, Nt, xIdx, dataType);
 
-        % --- Exp fit (slab-wise)
         if bExpFit
             S = mean(reshape(slab, [], Nt), 1);
+            initB = double(rand(1,6) .* [30 1 20 1 1 mean(double(S))]);
             B = fminsearch(@(P) sum((double(S) - ExpFun(P, 1:Nt)).^2), ...
-                rand(1,6) .* [30 1 20 1 1 mean(S)], Opt);
+                initB, Opt);
             Approx = ExpFun([B(1:4) 0 0], 1:Nt);
             Pred = [ones(1,Nt); linspace(0,1,Nt); Approx]';
         end
@@ -385,14 +495,14 @@ end
 fclose(fidIn);
 fclose(fidOut);
 
-% Output
 if bReturn
     fid = fopen(outDat, 'r');
+    assert(fid ~= -1, 'NormalisationFiltering:OpenReturnFileFailed', ...
+        'Failed to reopen output file "%s".', outDat);
     OutData = fread(fid, inf, ['*' dataType]);
     fclose(fid);
-    OutData = reshape(OutData, datSize);
+    OutData = reshape(OutData, storedSize);
 
-    % Delete temporary output file only
     if exist(outDat, 'file')
         delete(outDat)
     end
