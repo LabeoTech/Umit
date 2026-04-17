@@ -19,18 +19,18 @@ function schema = getUMTSchema(version)
 %                 schema.optionalTopFields
 %                 schema.requiredEntryFields
 %                 schema.optionalEntryFields
+%                 schema.knownEntryMetaFields
 %                 schema.requiredEventInfoFields
+%                 schema.optionalEventInfoFields
 %                 schema.allowedEventAxisModes
 %                 schema.allowedPatterns
 %
 %   Notes:
-%       - This function centralizes all allowed kinds, dimension names, and
-%         dimension layouts for .umt files.
-%       - Store only "version" inside the .umt file. The actual schema
-%         definition is maintained here in code.
-%       - Shared event metadata is stored at the top level in "eventInfo"
-%         and is required only for fully validated UMT structures when at
-%         least one entry uses the "E" dimension.
+%       - Shared event metadata is stored at the top level in "eventInfo".
+%       - Entry-specific processing metadata is stored inside each entry as
+%         entry.meta.
+%       - labels remain display/reference metadata only and must not be
+%         required for data processing.
 
 if nargin < 1 || isempty(version)
     version = 1;
@@ -54,13 +54,15 @@ switch version
         schema.optionalTopFields = {'labels', 'eventInfo'};
 
         schema.requiredEntryFields = {'value', 'dimNames'};
-        schema.optionalEntryFields = {};
+        schema.optionalEntryFields = {'meta'};
+        schema.knownEntryMetaFields = {'FrameRateHz'};
 
         schema.requiredEventInfoFields = { ...
             'eventID', ...
             'repetitionIndex', ...
             'eventName', ...
             'eventAxisMode'};
+        schema.optionalEventInfoFields = {'baselinePeriod'};
 
         schema.allowedEventAxisModes = {'instances', 'aggregated_repetitions'};
 

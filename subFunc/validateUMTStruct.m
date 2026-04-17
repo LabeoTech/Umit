@@ -4,9 +4,6 @@ function validateUMTStruct(umt, varargin)
 %   validateUMTStruct(umt)
 %   validateUMTStruct(umt, 'requireEventInfo', false)
 %
-%   Validates whether the input structure follows the current .umt schema.
-%   The schema definition is obtained from getUMTSchema using umt.version.
-%
 %   Required top-level fields:
 %       version
 %       kind
@@ -20,30 +17,14 @@ function validateUMTStruct(umt, varargin)
 %       value
 %       dimNames
 %
-%   Name-Value options:
-%       requireEventInfo - Logical scalar. Default: true.
-%                          If true, top-level eventInfo is required when at
-%                          least one entry uses the "E" dimension.
-%                          If false, E-based entries may exist without
-%                          eventInfo during intermediate construction.
+%   Optional entry fields:
+%       meta
 %
-%   Rules:
-%       - umt.version must be numeric scalar and supported by getUMTSchema.
-%       - umt.kind must be one of the allowed kinds from the schema.
-%       - umt.data must be a non-empty scalar struct.
-%       - Each entry value must be numeric or logical.
-%       - Scalars must use dimNames = {}.
-%       - One-dimensional data must be stored as column vectors.
-%       - Trailing singleton dimensions declared in dimNames are allowed
-%         even if MATLAB suppresses them in ndims(value).
-%       - Labels, if provided, must be shared top-level labels and must
-%         match the corresponding dimension sizes in all entries that use
-%         that dimension.
-%       - eventInfo, if provided, must be shared top-level event metadata
-%         and must match the shared size of the "E" dimension.
-%
-%   Error:
-%       Throws an error if validation fails.
+%   Notes:
+%       - labels are shared top-level display/reference metadata only.
+%       - eventInfo is shared top-level event metadata.
+%       - entry.meta stores entry-specific processing metadata, such as
+%         FrameRateHz.
 
 errID = 'Umitoolbox:validateUMTStruct:invalidInput';
 
@@ -104,7 +85,6 @@ eLengths = [];
 bUsesEvents = false;
 
 for iEntry = 1:numel(entryNames)
-
     entryName = entryNames{iEntry};
     entryData = umt.data.(entryName);
 
@@ -145,6 +125,10 @@ for iEntry = 1:numel(entryNames)
             entryName, kind);
     end
 
+    if isfield(entryData, 'meta')
+        iValidateEntryMeta(entryData.meta, schema, errID, entryName);
+    end
+
     for iDim = 1:numel(dimNames)
         thisDim = dimNames{iDim};
         thisLen = dimSizes(iDim);
@@ -164,7 +148,6 @@ for iEntry = 1:numel(entryNames)
 end
 
 if isfield(umt, 'labels')
-
     labels = iNormalizeLabelsStruct(umt.labels, schema, errID);
     labelDims = fieldnames(labels);
     usedDims  = fieldnames(dimUsage);
@@ -192,7 +175,6 @@ if isfield(umt, 'labels')
 end
 
 if bUsesEvents
-
     if numel(unique(eLengths)) ~= 1
         error(errID, ...
             ['Operation aborted. All entries that use the "E" dimension ' ...
@@ -207,7 +189,6 @@ if bUsesEvents
             ['Operation aborted. Top-level "eventInfo" is required when at ' ...
              'least one entry uses the "E" dimension.']);
     end
-
 else
     if isfield(umt, 'eventInfo')
         error(errID, ...
@@ -218,37 +199,24 @@ end
 
 end
 
-% =========================================================================
-% Local helpers
-% =========================================================================
-
 function kind = iNormalizeKind(kindIn, schema, errID)
-%INORMALIZEKIND Normalize and validate top-level kind.
-
 if ~(ischar(kindIn) || (isstring(kindIn) && isscalar(kindIn)))
     error(errID, ...
         'Operation aborted. "kind" must be a character vector or string scalar.');
 end
-
 kind = lower(char(string(kindIn)));
-
 if ~ismember(kind, schema.allowedKinds)
     error(errID, ...
         'Operation aborted. Invalid kind "%s".', kind);
 end
-
 end
 
 function dimNames = iNormalizeDimNames(dimNamesIn, schema, errID, entryName)
-%INORMALIZEDIMNAMES Normalize and validate dimNames.
-
 allowedDims = schema.allowedDims;
-
 if isempty(dimNamesIn)
     dimNames = {};
     return
 end
-
 if isstring(dimNamesIn)
     if ~isvector(dimNamesIn)
         error(errID, ...
@@ -277,17 +245,10 @@ for iDim = 1:numel(rawDims)
     end
     dimNames{iDim} = allowedDims{idx};
 end
-
 end
 
 function dimSizes = iGetDeclaredDimensionSizes(value, dimNames, errID, entryName)
-%IGETDECLAREDDIMENSIONSIZES Return dimension sizes compatible with dimNames.
-%
-% This helper does not rely on ndims(value). It allows trailing singleton
-% dimensions declared in dimNames even when MATLAB suppresses them in ndims.
-
 nDimsExpected = numel(dimNames);
-
 if nDimsExpected == 0
     if ~isscalar(value)
         error(errID, ...
@@ -297,16 +258,12 @@ if nDimsExpected == 0
     dimSizes = [];
     return
 end
-
 if isscalar(value)
     error(errID, ...
         'Operation aborted. Scalar entry "%s" must use dimNames = {}.', ...
         entryName);
 end
-
 sz = size(value);
-
-% Enforce column-vector storage for true 1-D data.
 nonSingletonDims = find(sz ~= 1);
 if numel(nonSingletonDims) == 1 && nonSingletonDims ~= 1
     error(errID, ...
@@ -314,7 +271,6 @@ if numel(nonSingletonDims) == 1 && nonSingletonDims ~= 1
          'as a column vector.'], ...
         entryName);
 end
-
 if numel(sz) < nDimsExpected
     sz(end+1:nDimsExpected) = 1;
 elseif numel(sz) > nDimsExpected
@@ -326,43 +282,30 @@ elseif numel(sz) > nDimsExpected
     end
     sz = sz(1:nDimsExpected);
 end
-
 dimSizes = sz;
-
 end
 
 function tf = iIsAllowedPattern(kind, dimNames, schema)
-%IISALLOWEDPATTERN Return true when dimNames is allowed for the given kind.
-
 if isempty(dimNames)
     tf = true;
     return
 end
-
 allowedPatterns = schema.allowedPatterns.(kind);
 tf = any(cellfun(@(c) isequal(dimNames, c), allowedPatterns));
-
 end
 
 function labels = iNormalizeLabelsStruct(labelsIn, schema, errID)
-%INORMALIZELABELSSTRUCT Normalize and validate top-level labels struct.
-
 allowedDims = schema.allowedDims;
-
 if ~isstruct(labelsIn) || ~isscalar(labelsIn)
     error(errID, ...
         'Operation aborted. "labels" must be a scalar struct.');
 end
-
 labels = struct();
 rawFields = fieldnames(labelsIn);
-
 if isempty(rawFields)
     return
 end
-
 canonicalFields = cell(size(rawFields));
-
 for iField = 1:numel(rawFields)
     idx = find(strcmpi(rawFields{iField}, allowedDims), 1, 'first');
     if isempty(idx)
@@ -371,23 +314,18 @@ for iField = 1:numel(rawFields)
     end
     canonicalFields{iField} = allowedDims{idx};
 end
-
 if numel(unique(canonicalFields)) ~= numel(canonicalFields)
     error(errID, ...
         ['Operation aborted. "labels" contains duplicate dimensions after ' ...
          'case normalization.']);
 end
-
 for iField = 1:numel(rawFields)
     labels.(canonicalFields{iField}) = ...
         iNormalizeLabelVector(labelsIn.(rawFields{iField}), errID, canonicalFields{iField});
 end
-
 end
 
 function labels = iNormalizeLabelVector(labelsIn, errID, dimName)
-%INORMALIZELABELVECTOR Normalize one label vector.
-
 if isstring(labelsIn) && isvector(labelsIn)
     labels = cellstr(labelsIn(:).');
 elseif iscell(labelsIn) && isvector(labelsIn) && ...
@@ -399,12 +337,35 @@ else
          'vectors or a string vector.'], ...
         dimName);
 end
+end
 
+function iValidateEntryMeta(metaIn, schema, errID, entryName)
+if ~isstruct(metaIn) || ~isscalar(metaIn)
+    error(errID, ...
+        'Operation aborted. Entry "%s.meta" must be a scalar struct.', entryName);
+end
+
+metaFields = fieldnames(metaIn);
+reservedFields = [{'value','dimNames','meta'}, schema.requiredEntryFields, schema.optionalEntryFields];
+colliding = intersect(metaFields, reservedFields);
+if ~isempty(colliding)
+    error(errID, ...
+        ['Operation aborted. Entry "%s.meta" contains reserved field name(s): %s.'], ...
+        entryName, strjoin(colliding, ', '));
+end
+
+if isfield(metaIn, 'FrameRateHz')
+    val = metaIn.FrameRateHz;
+    if ~isnumeric(val) || ~isscalar(val) || ~isfinite(val) || val <= 0
+        error(errID, ...
+            ['Operation aborted. Entry "%s.meta.FrameRateHz" must be a ' ...
+             'positive numeric scalar.'], ...
+            entryName);
+    end
+end
 end
 
 function iValidateEventInfoStruct(eventInfoIn, eLen, schema, errID)
-%IVALIDATEEVENTINFOSTRUCT Validate shared top-level event metadata.
-
 if ~isstruct(eventInfoIn) || ~isscalar(eventInfoIn)
     error(errID, ...
         'Operation aborted. "eventInfo" must be a scalar struct.');
@@ -412,6 +373,7 @@ end
 
 rawFields = fieldnames(eventInfoIn);
 reqFields = schema.requiredEventInfoFields;
+allowedFields = [schema.requiredEventInfoFields, schema.optionalEventInfoFields];
 
 if ~all(ismember(reqFields, rawFields))
     error(errID, ...
@@ -420,7 +382,7 @@ if ~all(ismember(reqFields, rawFields))
         strjoin(reqFields, ', '));
 end
 
-unknownFields = setdiff(rawFields, reqFields);
+unknownFields = setdiff(rawFields, allowedFields);
 if ~isempty(unknownFields)
     error(errID, ...
         'Operation aborted. Unsupported field(s) in "eventInfo": %s.', ...
@@ -465,7 +427,6 @@ if ~(ischar(axisMode) || (isstring(axisMode) && isscalar(axisMode)))
     error(errID, ...
         'Operation aborted. eventInfo.eventAxisMode must be a text scalar.');
 end
-
 axisMode = lower(char(string(axisMode)));
 if ~ismember(axisMode, schema.allowedEventAxisModes)
     error(errID, ...
@@ -473,13 +434,11 @@ if ~ismember(axisMode, schema.allowedEventAxisModes)
 end
 
 nE = numel(eventID);
-
 if numel(repIdx) ~= nE || numel(evName) ~= nE
     error(errID, ...
         ['Operation aborted. eventInfo fields eventID, repetitionIndex, ' ...
          'and eventName must all have the same number of elements.']);
 end
-
 if nE ~= eLen
     error(errID, ...
         ['Operation aborted. Shared "eventInfo" length (%d) does not match ' ...
@@ -494,7 +453,6 @@ switch axisMode
                 ['Operation aborted. eventInfo.repetitionIndex must contain ' ...
                  'positive integers when eventAxisMode="instances".']);
         end
-
     case 'aggregated_repetitions'
         if any(repIdx(:) ~= 0)
             error(errID, ...
@@ -503,4 +461,12 @@ switch axisMode
         end
 end
 
+if isfield(eventInfoIn, 'baselinePeriod')
+    bp = eventInfoIn.baselinePeriod;
+    if ~isnumeric(bp) || ~isscalar(bp) || ~isfinite(bp) || bp <= 0
+        error(errID, ...
+            ['Operation aborted. eventInfo.baselinePeriod must be a ' ...
+             'positive numeric scalar when provided.']);
+    end
+end
 end
