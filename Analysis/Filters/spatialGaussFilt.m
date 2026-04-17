@@ -1,131 +1,450 @@
-function outData = spatialGaussFilt(data, metaData, varargin)
-% SPATIALGAUSSFILT performs a spatial Gaussian filter on an image time series.
+function outData = spatialGaussFilt(data, SaveFolder, varargin)
+%SPATIALGAUSSFILT Apply a spatial Gaussian filter to image data.
 %
-% Limitations:
-%   The data must be an image time series with dimensions {Y,X,T}.
+%   outData = spatialGaussFilt(data, SaveFolder)
+%   outData = spatialGaussFilt(data, SaveFolder, 'Sigma', sigma)
 %
-% Inputs:
-%   data: numerical matrix or filename of a .dat file containing image time series (Y×X×T)
-%   metaData: .mat file or struct with metadata
-%   opts (optional): structure with extra parameters
-%       - Sigma: Gaussian sigma (positive scalar)
+%   This function applies a spatial Gaussian filter using IMGAUSSFILT.
 %
-% Outputs:
-%   outData: filtered data (if input is array). For file input, a new .dat file is created.
+%   Supported execution modes:
+%       1) STANDARD MODE (in-memory)
+%          - Triggered when "data" is a numeric array or a UMT struct
+%       2) LOW-RAM MODE (file-backed)
+%          - Triggered when "data" is a .dat filename
+%
+%   Accepted input forms:
+%       1) Numeric array with dimensions Y x X or Y x X x T
+%       2) Filename to a .dat file storing Y x X x T data
+%       3) UMT struct with image entries using dimensions:
+%              {'Y','X'}
+%              {'Y','X','T'}
+%              {'Y','X','E'}
+%              {'Y','X','T','E'}
+%       4) Filename to a .umt file containing one UMT struct
+%
+%   Input/output behavior:
+%       - If the input is a numeric array, the output is a numeric array.
+%       - If the input is a .dat filename, the output is a .dat filename.
+%       - If the input is a UMT struct, the output is a UMT struct.
+%       - If the input is a .umt filename, the file is loaded in RAM and
+%         the output is a UMT struct.
+%
+%   Inputs:
+%       data       - Input data in one of the accepted forms above.
+%       SaveFolder - Folder used for file resolution and AcqInfos.mat lookup.
+%
+%   Name-Value parameters:
+%       Sigma      - Positive scalar Gaussian sigma. Default: 1
+%
+%   Output:
+%       outData    - Filtered output with the same representation type as
+%                    the input.
+%
+%   Notes:
+%       - Raw .dat files are assumed to store continuous YXT data in single
+%         precision.
+%       - UMT entries with an E dimension preserve shared top-level
+%         eventInfo unchanged.
+%       - NaN values are replaced by zero before filtering and restored
+%         afterward, preserving the original algorithm behavior.
+%       - Spatial NaN masks are tracked in YX only to avoid large logical
+%         allocations across T/E dimensions.
 
-% Defaults:
-default_Output = 'spatFilt.dat'; %#ok Pipeline management
-default_opts = struct('Sigma',1);
-opts_values = struct('Sigma',[0,Inf]); %#ok Pipeline management
+default_Output = [upper(mfilename) '_PREALLOC_DATA.dat'];
 
-% Input parsing
-p = inputParser;
-addRequired(p,'data',@(x) isnumeric(x) || ischar(x));
-addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') || isstruct(x));
-addOptional(p,'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
-parse(p, data, metaData, varargin{:});
-
-outData = p.Results.data;
-metaData = p.Results.metaData;
-opts = p.Results.opts;
-clear p
-
-% Validate Sigma
-errID = 'umIToolbox:spatialGaussFilt:InvalidInput';
-assert(opts.Sigma>0, errID,'Sigma must be a positive value!');
-
-%% 
-if ischar(outData)
-    % --- File mode ---
-    inFile = outData;
-    outFile = fullfile(fileparts(inFile), 'DATASPATIALFILTERED.dat');
-
-    fprintf('Spatial Gaussian filtering on file: %s\n', inFile);
-
-    % Open file
-    fidIn = fopen(inFile,'r');
-    cIn = onCleanup(@() safeFclose(fidIn));
-    if fidIn == -1
-        error('Cannot open input file: %s', inFile);
-    end
-
-    % Metadata
-    Ny = metaData.datSize(1);
-    Nx = metaData.datSize(2);
-    Nt = metaData.datLength;
-
-    % Save MetaData
-    save(fullfile(strrep(outFile,'.dat','.mat')),'-struct','metaData');
-    
-    fidOut = fopen(outFile,'w');
-    cOut = onCleanup(@() safeFclose(fidOut));
-    if fidOut == -1
-        fclose(fidIn);
-        error('Cannot create output file: %s', outFile);
-    end
-
-    % Calculate optimal chunk size along time
-    frameBytes = Ny*Nx*getByteSize(metaData.Datatype); % single
-    totalBytes = frameBytes*Nt;
-    nChunks = calculateMaxChunkSize(totalBytes,2,.1);
-    chunkFrames = ceil(Nt/nChunks);
-
-    fprintf('Filtering %d frames in %d chunk(s)...\n', Nt, nChunks);
-    
-
-    for c = 1:nChunks
-        
-        tStart = (c-1)*chunkFrames + 1;
-        tEnd = min(tStart + chunkFrames - 1, Nt);
-        nThisChunk = tEnd - tStart + 1;
-
-        % Move to start of chunk
-        fseek(fidIn, (tStart-1)*frameBytes, 'bof');
-        fprintf('Chunk #%i [Reading file ...]\n',c)
-        % Read chunk and reshape
-        slab = fread(fidIn, [Nx*Ny, nThisChunk], '*single');
-        slab = reshape(slab, Ny, Nx, nThisChunk);
-        
-        fprintf('Chunk #%i [Filtering...]\n',c)
-        % Apply Gaussian filter per frame
-        slab = imgaussfilt(slab, opts.Sigma, 'FilterDomain','spatial');
-           
-        % Write chunk back to output
-        fseek(fidOut, (tStart-1)*frameBytes, 'bof');
-        
-        fprintf('Chunk #%i [Writing to file...]\n',c)
-        fwrite(fidOut, slab, 'single'); % transpose back
-        fprintf('Chunk #%i [Completed]\n',c)
-        clear slab
-        
-    end
-
-    fclose(fidIn);
-    fclose(fidOut);
-    fprintf('Finished spatial Gaussian filtering.\n');
-
-    outData = outFile;
-
-else
-    % --- Array mode ---
-    errMsg = 'Data must be a 3D matrix with dimensions {Y,X,T}.';
-    assert(ndims(outData)==3, errID, errMsg);
-
-    idx_nan = isnan(outData);
-    outData(idx_nan) = 0;
-
-    fprintf('Filtering %d frames in memory...\n', size(outData,3));
-    outData = imgaussfilt(outData,opts.Sigma, 'FilterDomain','spatial');
-%     w = waitbar(0,'Filtering frames...');
-%     for t = 1:size(outData,3)
-%         waitbar(t/size(outData,3), w);
-%         outData(:,:,t) = imgaussfilt(outData(:,:,t), opts.Sigma, 'FilterDomain','spatial');
-%     end
-%     close(w);
-
-    % Restore NaNs
-    outData(idx_nan) = NaN;
-    fprintf('Finished spatial Gaussian filtering.\n');
+if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) ...
+        && strcmpi(strtrim(char(string(data))), 'pipelineInfo')
+    outData = localPipelineInfo();
+    return
 end
 
+p = inputParser;
+p.FunctionName = mfilename;
+
+addRequired(p, 'data');
+addRequired(p, 'SaveFolder', @(x) ischar(x) || (isstring(x) && isscalar(x)));
+addParameter(p, 'Sigma', 1, @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x > 0);
+
+parse(p, data, SaveFolder, varargin{:});
+
+SaveFolder = char(string(p.Results.SaveFolder));
+Sigma = double(p.Results.Sigma);
+
+if ~isfolder(SaveFolder)
+    error('spatialGaussFilt:InvalidSaveFolder', ...
+        'SaveFolder "%s" does not exist.', SaveFolder);
+end
+
+% -------------------------------------------------------------------------
+% Case 1: Numeric array in RAM
+% -------------------------------------------------------------------------
+if isnumeric(data) || islogical(data)
+    validateattributes(data, {'numeric','logical'}, {'nonempty'}, mfilename, 'data');
+
+    if ~(ismatrix(data) || ndims(data) == 3)
+        error('spatialGaussFilt:InvalidArrayInput', ...
+            'Numeric input must be a YX image or a YXT image time series.');
+    end
+
+    outData = iSpatialGaussBlock(data, Sigma);
+    return
+end
+
+% -------------------------------------------------------------------------
+% Case 2: File input
+% -------------------------------------------------------------------------
+if ischar(data) || (isstring(data) && isscalar(data))
+
+    dataFile = char(string(data));
+
+    if ~isfile(dataFile)
+        altPath = fullfile(SaveFolder, dataFile);
+        if isfile(altPath)
+            dataFile = altPath;
+        else
+            error('spatialGaussFilt:InputFileNotFound', ...
+                'Input file "%s" was not found.', data);
+        end
+    end
+
+    [~,~,ext] = fileparts(dataFile);
+    ext = lower(ext);
+
+    switch ext
+        case '.dat'
+            outData = iSpatialGaussDatFile(dataFile, SaveFolder, Sigma, default_Output);
+            return
+
+        case '.umt'
+            warning('spatialGaussFilt:UMTFileLoadsInRAM', ...
+                ['RAM-safe mode is not available for data stored in this format. ' ...
+                 'Loading the UMT content into RAM.']);
+            data = loadData(dataFile);
+
+        otherwise
+            error('spatialGaussFilt:UnsupportedInputFile', ...
+                'Unsupported input file extension "%s".', ext);
+    end
+end
+
+% -------------------------------------------------------------------------
+% Case 3: UMT struct
+% -------------------------------------------------------------------------
+if ~isstruct(data)
+    error('spatialGaussFilt:UnsupportedInputType', ...
+        ['Input "data" must be a YX/YXT array, a .dat filename, ' ...
+         'a UMT struct, or a .umt filename containing a UMT struct.']);
+end
+
+[entryNames, entryData, entryDims, labels, sourceEventInfo, hasE] = ...
+    iExtractValidUMTData(data);
+
+outStruct = data;
+outStruct.data = struct();
+
+for iEntry = 1:numel(entryNames)
+
+    value = entryData{iEntry};
+    dimNames = entryDims{iEntry};
+
+    switch strjoin(dimNames, '')
+        case 'YX'
+            filtData = iSpatialGaussBlock(value, Sigma);
+
+        case 'YXT'
+            filtData = iSpatialGaussBlock(value, Sigma);
+
+        case 'YXE'
+            filtData = zeros(size(value), 'like', value);
+            for iEvent = 1:size(value, 3)
+                filtData(:,:,iEvent) = iSpatialGaussBlock(value(:,:,iEvent), Sigma);
+            end
+
+        case 'YXTE'
+            filtData = zeros(size(value), 'like', value);
+            for iEvent = 1:size(value, 4)
+                filtData(:,:,:,iEvent) = iSpatialGaussBlock(value(:,:,:,iEvent), Sigma);
+            end
+
+        otherwise
+            error('spatialGaussFilt:InvalidUMTEntryDims', ...
+                'Unsupported dimNames in entry "%s".', entryNames{iEntry});
+    end
+
+    outStruct.data.(entryNames{iEntry}) = struct( ...
+        'value', filtData, ...
+        'dimNames', {dimNames});
+end
+
+if ~isempty(fieldnames(labels))
+    outStruct.labels = labels;
+elseif isfield(outStruct, 'labels')
+    outStruct = rmfield(outStruct, 'labels');
+end
+
+if any(hasE)
+    outStruct = appendUMTEventInfo(outStruct, ...
+        'eventID', sourceEventInfo.eventID, ...
+        'repetitionIndex', sourceEventInfo.repetitionIndex, ...
+        'eventName', sourceEventInfo.eventName, ...
+        'eventAxisMode', sourceEventInfo.eventAxisMode, ...
+        'overwrite', true);
+else
+    if isfield(outStruct, 'eventInfo')
+        outStruct = rmfield(outStruct, 'eventInfo');
+    end
+    validateUMTStruct(outStruct, 'requireEventInfo', true);
+end
+
+outData = outStruct;
+
+% =========================================================================
+% Local pipeline info
+% =========================================================================
+    function info = localPipelineInfo()
+        info = PipelineManager.createPipelineInfo(mfilename, ...
+            'Apply a spatial Gaussian filter to image data.');
+
+        info.version = '1.0.0';
+
+        info = PipelineManager.addInput( ...
+            info, ...
+            'data', ...
+            {'Image','ImageTimeSeries','ProcessedData','UnknownDataType'}, ...
+            ['Input data. Accepted forms: YX/YXT array, .dat filename, ' ...
+             'UMT struct, or .umt file containing one UMT struct.'], ...
+            'kind', 'input', ...
+            'position', 1, ...
+            'callType', 'positional', ...
+            'isData', true, ...
+            'supportsFile', true, ...
+            'dataMode', 'either');
+
+        info = PipelineManager.addInput( ...
+            info, ...
+            'SaveFolder', ...
+            'SaveFolder', ...
+            'Folder used for file resolution and AcqInfos.mat lookup.', ...
+            'kind', 'input', ...
+            'position', 2, ...
+            'callType', 'positional', ...
+            'isData', false);
+
+        info = PipelineManager.addInput( ...
+            info, ...
+            'Sigma', ...
+            'parameter', ...
+            'Positive scalar Gaussian sigma.', ...
+            'kind', 'parameter', ...
+            'default', 1, ...
+            'callType', 'namevalue');
+
+        info = PipelineManager.addOutput( ...
+            info, ...
+            'outData', ...
+            {'Image','ImageTimeSeries','ProcessedData','UnknownDataType'}, ...
+            'data', ...
+            'Spatially filtered output.', ...
+            default_Output, ...
+            1, ...
+            'isData', true);
+    end
+end
+
+% =========================================================================
+% Local helper: spatial filtering with NaN restore
+% =========================================================================
+function outBlock = iSpatialGaussBlock(inBlock, sigma)
+%ISPATIALGAUSSBLOCK Apply imgaussfilt while preserving spatial NaN regions.
+
+if ismatrix(inBlock)
+    spatialMask = isnan(inBlock);
+
+    if any(spatialMask(:))
+        work = inBlock;
+        work(spatialMask) = 0;
+        outBlock = imgaussfilt(work, sigma, 'FilterDomain', 'spatial');
+        outBlock(spatialMask) = NaN;
+    else
+        outBlock = imgaussfilt(inBlock, sigma, 'FilterDomain', 'spatial');
+    end
+
+elseif ndims(inBlock) == 3
+    spatialMask = any(isnan(inBlock), 3);
+
+    if any(spatialMask(:))
+        work = inBlock;
+        for iT = 1:size(work, 3)
+            frame = work(:,:,iT);
+            frame(spatialMask) = 0;
+            work(:,:,iT) = frame;
+        end
+
+        outBlock = imgaussfilt(work, sigma, 'FilterDomain', 'spatial');
+
+        for iT = 1:size(outBlock, 3)
+            frame = outBlock(:,:,iT);
+            frame(spatialMask) = NaN;
+            outBlock(:,:,iT) = frame;
+        end
+    else
+        outBlock = imgaussfilt(inBlock, sigma, 'FilterDomain', 'spatial');
+    end
+
+else
+    error('spatialGaussFilt:InvalidBlockDims', ...
+        'iSpatialGaussBlock expects a 2-D or 3-D block.');
+end
+end
+
+% =========================================================================
+% Local helper: low-RAM .dat execution
+% =========================================================================
+function outFile = iSpatialGaussDatFile(inFile, SaveFolder, sigma, defaultOutput)
+%ISPATIALGAUSSDATFILE Apply spatial filtering to a raw YXT .dat file.
+
+[Ny, Nx, Nt] = iGetRawDatInfo(SaveFolder, inFile);
+
+outFile = fullfile(fileparts(inFile), defaultOutput);
+preallocateDatFile(outFile, [Ny, Nx, Nt], 'single');
+
+fidIn  = fopen(inFile, 'r');
+assert(fidIn ~= -1, 'spatialGaussFilt:OpenInputFailed', ...
+    'Failed to open input file "%s".', inFile);
+cIn = onCleanup(@() safeFclose(fidIn)); %#ok<NASGU>
+
+fidOut = fopen(outFile, 'r+');
+assert(fidOut ~= -1, 'spatialGaussFilt:OpenOutputFailed', ...
+    'Failed to open output file "%s".', outFile);
+cOut = onCleanup(@() safeFclose(fidOut)); %#ok<NASGU>
+
+frameBytes = Ny * Nx * getByteSize('single');
+totalBytes = frameBytes * Nt;
+nChunks = calculateMaxChunkSize(totalBytes, 2, 0.1);
+chunkFrames = ceil(Nt / nChunks);
+
+for c = 1:nChunks
+    tStart = (c-1) * chunkFrames + 1;
+    tEnd   = min(tStart + chunkFrames - 1, Nt);
+    nThisChunk = tEnd - tStart + 1;
+
+    fseek(fidIn, (tStart-1) * frameBytes, 'bof');
+    slab = fread(fidIn, [Nx*Ny, nThisChunk], '*single');
+    slab = reshape(slab, Ny, Nx, nThisChunk);
+
+    slab = imgaussfilt(slab, sigma, 'FilterDomain', 'spatial');
+
+    fseek(fidOut, (tStart-1) * frameBytes, 'bof');
+    fwrite(fidOut, slab, 'single');
+end
+
+fclose(fidIn);
+fclose(fidOut);
+end
+
+% =========================================================================
+% Local helper: raw .dat dimensions from AcqInfos.mat / file size
+% =========================================================================
+function [Ny, Nx, Nt] = iGetRawDatInfo(SaveFolder, inFile)
+%IGETRAWDATINFO Return YXT dimensions for a raw .dat file.
+
+acqFile = fullfile(SaveFolder, 'AcqInfos.mat');
+if ~isfile(acqFile)
+    error('spatialGaussFilt:MissingAcqInfos', ...
+        'AcqInfos.mat was not found in SaveFolder "%s".', SaveFolder);
+end
+
+S = load(acqFile);
+if isfield(S, 'AcqInfoStream')
+    acqInfo = S.AcqInfoStream;
+else
+    fn = fieldnames(S);
+    acqInfo = S.(fn{1});
+end
+
+if ~isfield(acqInfo, 'Height') || ~isfield(acqInfo, 'Width')
+    error('spatialGaussFilt:InvalidAcqInfos', ...
+        'AcqInfoStream must contain Height and Width.');
+end
+
+Ny = double(acqInfo.Height);
+Nx = double(acqInfo.Width);
+
+if isfield(acqInfo, 'Length') && ~isempty(acqInfo.Length)
+    Nt = double(acqInfo.Length);
+else
+    fileInfo = dir(inFile);
+    nElem = fileInfo.bytes / getByteSize('single');
+    if mod(nElem, Ny * Nx) ~= 0
+        error('spatialGaussFilt:InvalidRawDatLength', ...
+            'File size is incompatible with YXT dimensions for "%s".', inFile);
+    end
+    Nt = nElem / (Ny * Nx);
+end
+end
+
+% =========================================================================
+% Local helper: validate/extract UMT data
+% =========================================================================
+function [entryNames, entryData, entryDims, labels, eventInfo, hasE] = iExtractValidUMTData(umt)
+%IEXTRACTVALIDUMTDATA Validate and extract image-backed UMT entries.
+
+validateUMTStruct(umt, 'requireEventInfo', false);
+
+if ~strcmpi(umt.kind, 'image')
+    error('spatialGaussFilt:InvalidUMTKind', ...
+        ['Operation aborted. UMT input must have kind = "image". ' ...
+         'This function does not support non-image UMT structures.']);
+end
+
+entryNames = fieldnames(umt.data);
+if isempty(entryNames)
+    error('spatialGaussFilt:EmptyUMTData', ...
+        'Operation aborted. UMT data is empty.');
+end
+
+entryData = cell(size(entryNames));
+entryDims = cell(size(entryNames));
+hasE = false(size(entryNames));
+
+allowed = { ...
+    {'Y','X'}, ...
+    {'Y','X','T'}, ...
+    {'Y','X','E'}, ...
+    {'Y','X','T','E'}};
+
+for iEntry = 1:numel(entryNames)
+    thisEntry = umt.data.(entryNames{iEntry});
+    thisDims = cellstr(string(thisEntry.dimNames));
+
+    isAllowed = any(cellfun(@(x) isequal(thisDims, x), allowed));
+    if ~isAllowed
+        error('spatialGaussFilt:InvalidUMTEntry', ...
+            ['Operation aborted. All UMT entries must use dimNames ' ...
+             '{''Y'',''X''}, {''Y'',''X'',''T''}, {''Y'',''X'',''E''}, or ' ...
+             '{''Y'',''X'',''T'',''E''}. Invalid entry: "%s".'], ...
+            entryNames{iEntry});
+    end
+
+    entryData{iEntry} = thisEntry.value;
+    entryDims{iEntry} = thisDims;
+    hasE(iEntry) = any(strcmp(thisDims, 'E'));
+end
+
+if any(hasE)
+    if ~isfield(umt, 'eventInfo')
+        error('spatialGaussFilt:MissingEventInfo', ...
+            ['Operation aborted. The input UMT contains entries with an E ' ...
+             'dimension but has no shared top-level eventInfo.']);
+    end
+    eventInfo = umt.eventInfo;
+else
+    eventInfo = struct();
+end
+
+if isfield(umt, 'labels')
+    labels = umt.labels;
+else
+    labels = struct();
+end
 end
