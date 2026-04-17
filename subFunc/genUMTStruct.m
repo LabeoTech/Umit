@@ -4,14 +4,15 @@ function out = genUMTStruct(data, varargin)
 %   Create a new .umt structure:
 %       out = genUMTStruct(value, 'kind', kind, 'dimNames', dimNames)
 %       out = genUMTStruct(value, 'kind', kind, 'entryName', name, ...
-%                          'dimNames', dimNames, 'labels', labels)
+%                          'dimNames', dimNames, 'labels', labels, ...
+%                          'eventInfo', eventInfo)
 %
 %   Append a new entry to an existing .umt structure:
 %       out = genUMTStruct(umt, 'value', value, 'entryName', name, ...
 %                          'dimNames', dimNames)
 %       out = genUMTStruct(umt, 'value', value, 'entryName', name, ...
 %                          'dimNames', dimNames, 'labels', labels, ...
-%                          'overwrite', true)
+%                          'eventInfo', eventInfo, 'overwrite', true)
 %
 %   Inputs:
 %       data    - Either:
@@ -25,6 +26,7 @@ function out = genUMTStruct(data, varargin)
 %       entryName - Name of the created entry. Default: 'main'
 %       dimNames  - Required. Allowed values are defined by getUMTSchema.
 %       labels    - Optional shared top-level labels struct. Default: struct()
+%       eventInfo - Optional shared top-level event metadata struct.
 %
 %   Name-Value options for append mode:
 %       value     - Required. Numeric/logical payload to append.
@@ -32,18 +34,29 @@ function out = genUMTStruct(data, varargin)
 %       dimNames  - Required. Allowed values are defined by getUMTSchema.
 %       labels    - Optional shared top-level labels struct to merge into
 %                   the output. Default: struct()
+%       eventInfo - Optional shared top-level event metadata struct to
+%                   merge into the output.
 %       overwrite - Logical scalar. If true, existing entry names and
-%                   conflicting labels can be replaced. Default: false
+%                   conflicting top-level metadata can be replaced.
+%                   Default: false
 %
 %   Output:
-%       out       - Validated .umt structure using the current schema.
+%       out       - Partially validated .umt structure using the current schema.
 %
 %   Notes:
 %       - This function appends one entry per call. Multiple measurements
 %         can be added by calling genUMTStruct repeatedly on the same
 %         output structure.
 %       - Shared labels are stored only at the top level as out.labels.
-%       - Final output is validated with validateUMTStruct before return.
+%       - Shared event metadata is stored only at the top level as
+%         out.eventInfo.
+%       - This function allows intermediate construction of E-based UMT
+%         structures without eventInfo. Full validation is performed by
+%         validateUMTStruct(...,'requireEventInfo',true) or by
+%         appendUMTEventInfo.
+%       - Trailing singleton dimensions declared in dimNames are preserved
+%         by reshaping the stored value to the declared dimensionality
+%         before validation.
 
 errID = 'Umitoolbox:genUMTStruct:invalidInput';
 
@@ -53,7 +66,7 @@ else
     out = iCreateNewUMT(data, varargin{:});
 end
 
-validateUMTStruct(out);
+validateUMTStruct(out, 'requireEventInfo', false);
 
 end
 
@@ -79,6 +92,7 @@ addParameter(p, 'kind', '', @(x) ischar(x) || (isstring(x) && isscalar(x)));
 addParameter(p, 'entryName', 'main', @iValidateEntryNameInput);
 addParameter(p, 'dimNames', {}, @iValidateDimNamesInput);
 addParameter(p, 'labels', struct(), @(x) isstruct(x) && isscalar(x));
+addParameter(p, 'eventInfo', struct(), @(x) isstruct(x) && isscalar(x));
 
 parse(p, varargin{:});
 
@@ -97,6 +111,8 @@ entryName = iNormalizeEntryName(p.Results.entryName, errID);
 dimNames = iNormalizeDimNames(p.Results.dimNames, schema, errID, entryName);
 labels = iNormalizeLabelsStruct(p.Results.labels, schema, errID);
 
+value = iForceDeclaredShape(value, dimNames, errID, entryName);
+
 out = struct();
 out.version = schema.version;
 out.kind = kind;
@@ -107,6 +123,10 @@ if ~isempty(fieldnames(labels))
     out.labels = labels;
 end
 
+if iHasNameValue(varargin, 'eventInfo') && ~isempty(fieldnames(p.Results.eventInfo))
+    out.eventInfo = iNormalizeEventInfoStruct(p.Results.eventInfo, schema, errID);
+end
+
 end
 
 function out = iAppendToExistingUMT(umt, varargin)
@@ -114,7 +134,7 @@ function out = iAppendToExistingUMT(umt, varargin)
 
 errID = 'Umitoolbox:genUMTStruct:invalidInput';
 
-validateUMTStruct(umt);
+validateUMTStruct(umt, 'requireEventInfo', false);
 out = umt;
 schema = getUMTSchema(out.version);
 
@@ -125,6 +145,7 @@ addParameter(p, 'value', [], @(x) isnumeric(x) || islogical(x));
 addParameter(p, 'entryName', '', @iValidateEntryNameInput);
 addParameter(p, 'dimNames', {}, @iValidateDimNamesInput);
 addParameter(p, 'labels', struct(), @(x) isstruct(x) && isscalar(x));
+addParameter(p, 'eventInfo', struct(), @(x) isstruct(x) && isscalar(x));
 addParameter(p, 'overwrite', false, @(x) islogical(x) && isscalar(x));
 
 parse(p, varargin{:});
@@ -150,6 +171,8 @@ dimNames = iNormalizeDimNames(p.Results.dimNames, schema, errID, entryName);
 labels = iNormalizeLabelsStruct(p.Results.labels, schema, errID);
 overwrite = p.Results.overwrite;
 
+value = iForceDeclaredShape(value, dimNames, errID, entryName);
+
 if isfield(out.data, entryName) && ~overwrite
     error(errID, ...
         ['Operation aborted. Entry "%s" already exists. Use overwrite=true ' ...
@@ -159,6 +182,62 @@ end
 
 out.data.(entryName) = struct('value', value, 'dimNames', {dimNames});
 out = iMergeTopLevelLabels(out, labels, overwrite, errID);
+
+if iHasNameValue(varargin, 'eventInfo') && ~isempty(fieldnames(p.Results.eventInfo))
+    newEventInfo = iNormalizeEventInfoStruct(p.Results.eventInfo, schema, errID);
+    out = iMergeTopLevelEventInfo(out, newEventInfo, overwrite, errID);
+end
+
+end
+
+function valueOut = iForceDeclaredShape(valueIn, dimNames, errID, entryName)
+%IFORCEDECLAREDSHAPE Reshape value to match the declared dimensionality.
+%
+% This preserves trailing singleton dimensions declared in dimNames even
+% though MATLAB may suppress them in ndims(value).
+
+nDimsExpected = numel(dimNames);
+
+if nDimsExpected == 0
+    if ~isscalar(valueIn)
+        error(errID, ...
+            'Operation aborted. Scalar entry "%s" must use dimNames = {}.', ...
+            entryName);
+    end
+    valueOut = valueIn;
+    return
+end
+
+if isscalar(valueIn)
+    error(errID, ...
+        'Operation aborted. Scalar entry "%s" must use dimNames = {}.', ...
+        entryName);
+end
+
+sz = size(valueIn);
+
+% Enforce column-vector storage for true 1-D data.
+nonSingletonDims = find(sz ~= 1);
+if numel(nonSingletonDims) == 1 && nonSingletonDims ~= 1
+    error(errID, ...
+        ['Operation aborted. Entry "%s" is one-dimensional but not stored ' ...
+         'as a column vector.'], ...
+        entryName);
+end
+
+if numel(sz) < nDimsExpected
+    sz(end+1:nDimsExpected) = 1;
+elseif numel(sz) > nDimsExpected
+    if any(sz(nDimsExpected+1:end) ~= 1)
+        error(errID, ...
+            ['Operation aborted. Entry "%s.value" has more dimensions than ' ...
+             'declared in dimNames, and the extra dimensions are not singleton.'], ...
+            entryName);
+    end
+    sz = sz(1:nDimsExpected);
+end
+
+valueOut = reshape(valueIn, sz);
 
 end
 
@@ -193,6 +272,32 @@ for iField = 1:numel(newFields)
     else
         out.labels.(thisField) = newLabels.(thisField);
     end
+end
+
+end
+
+function out = iMergeTopLevelEventInfo(out, newEventInfo, overwrite, errID)
+%IMERGETOPLEVELEVENTINFO Merge shared event metadata into an output structure.
+
+if isempty(fieldnames(newEventInfo))
+    return
+end
+
+if ~isfield(out, 'eventInfo') || isempty(fieldnames(out.eventInfo))
+    out.eventInfo = newEventInfo;
+    return
+end
+
+if isequal(out.eventInfo, newEventInfo)
+    return
+end
+
+if overwrite
+    out.eventInfo = newEventInfo;
+else
+    error(errID, ...
+        ['Operation aborted. "eventInfo" already exists with a different ' ...
+         'value. Use overwrite=true to replace it.']);
 end
 
 end
@@ -343,6 +448,117 @@ else
          'vectors or a string vector.'], ...
         dimName);
 end
+
+end
+
+function eventInfo = iNormalizeEventInfoStruct(eventInfoIn, schema, errID)
+%INORMALIZEEVENTINFOSTRUCT Normalize and validate shared top-level event info.
+%
+% This helper validates only the internal consistency of eventInfo.
+% Matching to the actual E dimension length is handled by validateUMTStruct
+% and appendUMTEventInfo.
+
+if ~isstruct(eventInfoIn) || ~isscalar(eventInfoIn)
+    error(errID, ...
+        'Operation aborted. "eventInfo" must be a scalar struct.');
+end
+
+eventInfo = struct();
+rawFields = fieldnames(eventInfoIn);
+
+if isempty(rawFields)
+    return
+end
+
+reqFields = schema.requiredEventInfoFields;
+
+if ~all(ismember(reqFields, rawFields))
+    error(errID, ...
+        ['Operation aborted. "eventInfo" is missing one or more required ' ...
+         'fields: %s.'], ...
+        strjoin(reqFields, ', '));
+end
+
+unknownFields = setdiff(rawFields, reqFields);
+if ~isempty(unknownFields)
+    error(errID, ...
+        'Operation aborted. Unsupported field(s) in "eventInfo": %s.', ...
+        strjoin(unknownFields, ', '));
+end
+
+eventID = eventInfoIn.eventID;
+repIdx  = eventInfoIn.repetitionIndex;
+evName  = eventInfoIn.eventName;
+axisMode = eventInfoIn.eventAxisMode;
+
+if ~isnumeric(eventID) || ~isvector(eventID) || isempty(eventID) || ...
+        any(~isfinite(eventID(:))) || any(eventID(:) < 1) || ...
+        any(mod(eventID(:),1) ~= 0)
+    error(errID, ...
+        ['Operation aborted. eventInfo.eventID must be a non-empty vector ' ...
+         'of positive integers.']);
+end
+eventID = eventID(:);
+
+if ~isnumeric(repIdx) || ~isvector(repIdx) || isempty(repIdx) || ...
+        any(~isfinite(repIdx(:))) || any(repIdx(:) < 0) || ...
+        any(mod(repIdx(:),1) ~= 0)
+    error(errID, ...
+        ['Operation aborted. eventInfo.repetitionIndex must be a non-empty ' ...
+         'vector of non-negative integers.']);
+end
+repIdx = repIdx(:);
+
+if isstring(evName) && isvector(evName)
+    evName = cellstr(evName(:));
+elseif iscell(evName) && isvector(evName) && ...
+        all(cellfun(@(c) ischar(c) || (isstring(c) && isscalar(c)), evName))
+    evName = cellstr(string(evName(:)));
+else
+    error(errID, ...
+        ['Operation aborted. eventInfo.eventName must be a string vector ' ...
+         'or a cell array of character vectors.']);
+end
+
+if ~(ischar(axisMode) || (isstring(axisMode) && isscalar(axisMode)))
+    error(errID, ...
+        'Operation aborted. eventInfo.eventAxisMode must be a text scalar.');
+end
+
+axisMode = lower(char(string(axisMode)));
+if ~ismember(axisMode, schema.allowedEventAxisModes)
+    error(errID, ...
+        'Operation aborted. Invalid eventAxisMode "%s".', axisMode);
+end
+
+nE = numel(eventID);
+
+if numel(repIdx) ~= nE || numel(evName) ~= nE
+    error(errID, ...
+        ['Operation aborted. eventInfo fields eventID, repetitionIndex, ' ...
+         'and eventName must all have the same number of elements.']);
+end
+
+switch axisMode
+    case 'instances'
+        if any(repIdx(:) < 1)
+            error(errID, ...
+                ['Operation aborted. eventInfo.repetitionIndex must contain ' ...
+                 'positive integers when eventAxisMode="instances".']);
+        end
+
+    case 'aggregated_repetitions'
+        if any(repIdx(:) ~= 0)
+            error(errID, ...
+                ['Operation aborted. eventInfo.repetitionIndex must be all ' ...
+                 'zeros when eventAxisMode="aggregated_repetitions".']);
+        end
+end
+
+eventInfo.eventID = eventID;
+eventInfo.repetitionIndex = repIdx;
+eventInfo.eventName = evName;
+eventInfo.eventAxisMode = axisMode;
 
 end
 

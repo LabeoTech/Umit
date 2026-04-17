@@ -1637,7 +1637,7 @@ classdef EventsManager < handle
             fprintf('Events info loaded from folder %s\n', Folder);
         end
 
-        function [frMat, conditionList, repetitionList] = getFrameMatrix(obj, datLen, varargin)
+        function [frMat, conditionIDlist, repetitionList] = getFrameMatrix(obj, datLen, varargin)
             %GETFRAMEMATRIX Generate a repetition-by-frame index matrix for trial splitting.
             %
             % This method outputs frame indices for each selected trial. It supports:
@@ -1653,7 +1653,7 @@ classdef EventsManager < handle
             %
             % Outputs:
             %   frMat           : repetition-by-frame matrix of frame indices
-            %   conditionList   : condition ID for each returned trial
+            %   conditionIDlist   : condition ID for each returned trial
             %   repetitionList  : repetition index for each returned trial
             %
             % Notes:
@@ -1682,7 +1682,7 @@ classdef EventsManager < handle
             assert(~isempty(obj.baselinePeriod), ...
                 'baselinePeriod is not set. Detect triggers and set a valid baseline before calling getFrameMatrix.');
 
-            [evIdx, conditionList, repetitionList] = obj.getEventIndex(conditionName, repetitionIndex);
+            [evIdx, conditionIDlist, repetitionList] = obj.getEventIndex(conditionName, repetitionIndex);
             if isempty(evIdx)
                 frMat = [];
                 return
@@ -1711,7 +1711,7 @@ classdef EventsManager < handle
             frMat = frMat(evIdx, :);
         end
 
-        function [dataByEv, conditionList, repetitionList] = splitDataByEvents(obj, data, varargin)
+        function [dataByEv, conditionIDlist, repetitionList] = splitDataByEvents(obj, data, varargin)
             %SPLITDATABYEVENTS Split a 3-D image time series into event-locked trials.
             %
             % Input:
@@ -1725,17 +1725,19 @@ classdef EventsManager < handle
             %       Repetition indices to include.
             %
             % Outputs:
-            %   dataByEv      : 4-D single array
-            %       Trial-split data with dimensions E x Y x X x Ttrial.
-            %   conditionList : vector
+            %   dataByEv       : 4-D single array
+            %       Trial-split data with dimensions Y x X x Ttrial x E.
+            %   conditionIDlist : vector
             %       Condition ID for each returned trial.
-            %   repetitionList: vector
+            %   repetitionList : vector
             %       Repetition index for each returned trial.
             %
             % Notes:
             %   - Frames outside the valid range are padded with NaNs.
             %   - If trials have unequal lengths, the output is cropped to the shortest
             %     valid trial length.
+            %   - The event dimension is stored last to match the current YXTE
+            %     convention used elsewhere in the analysis code.
 
             p = inputParser();
             addRequired(p, 'obj');
@@ -1744,31 +1746,36 @@ classdef EventsManager < handle
             addParameter(p, 'repetition', [], @(x) (isnumeric(x) && all(x > 0)) || isempty(x))
             parse(p, obj, data, varargin{:});
 
-            [frMat, conditionList, repetitionList] = obj.getFrameMatrix( ...
+            [frMat, conditionIDlist, repetitionList] = obj.getFrameMatrix( ...
                 size(data,3), p.Results.condition, p.Results.repetition);
 
-            dataByEv = nan(size(frMat,1), size(data,1), size(data,2), size(frMat,2), 'single');
-
             if isempty(frMat)
+                dataByEv = nan(size(data,1), size(data,2), 0, 0, 'single');
                 return
             end
 
+            nTrials = size(frMat, 1);
+            nFramesPerTrial = size(frMat, 2);
+
+            % Allocate directly in Y x X x T x E order to avoid an extra permute.
+            dataByEv = nan(size(data,1), size(data,2), nFramesPerTrial, nTrials, 'single');
+
             b_validFrames = ~isnan(frMat);
-            for ii = 1:size(frMat,1)
-                dataByEv(ii,:,:,b_validFrames(ii,:)) = data(:,:,frMat(ii,b_validFrames(ii,:)));
+            for ii = 1:nTrials
+                frameIdx = frMat(ii, b_validFrames(ii,:));
+                dataByEv(:,:,b_validFrames(ii,:),ii) = data(:,:,frameIdx);
             end
 
             if any(isnan(frMat(:)))
                 disp('Cropping trials to shortest length...');
                 firstNaNCol = find(any(isnan(frMat),1), 1, 'first');
                 if ~isempty(firstNaNCol)
-                    dataByEv(:,:,:,firstNaNCol:end) = [];
+                    dataByEv(:,:,firstNaNCol:end,:) = [];
                 end
             end
 
             disp('Finished splitting data by events');
         end
-
         function evInfo = exportEventInfo(obj)
             %EXPORTEVENTINFO Package event-related information into a structure.
             %
@@ -1801,9 +1808,7 @@ classdef EventsManager < handle
             evInfo.eventID = obj.eventID(obj.state);
             evInfo.selectedEvents = obj.selectedEvents(obj.state);
         end
-    end
 
-    methods
         function [tmstmp, state] = getConditionTimestamps(obj, conditionName, varargin)
             %GETCONDITIONTIMESTAMPS Return timestamps and states for a condition.
             %
@@ -1863,32 +1868,51 @@ classdef EventsManager < handle
             state = obj.state(fullMask);
         end
 
-        function [evIdx, conditionList, repetitionList] = getEventIndex(obj, conditionName, repetitionIndex)
+        function [evIdx, conditionIDlist, repetitionList, eventNameList] = getEventIndex(obj, conditionName, repetitionIndex)
             %GETEVENTINDEX Retrieve ON-event indices based on condition and repetition.
             %
-            % This helper method returns a logical index over ON events only, together
-            % with the corresponding condition and repetition lists.
+            %   [evIdx, conditionIDlist, repetitionList, eventNameList] = ...
+            %       getEventIndex(obj)
             %
-            % Inputs:
-            %   conditionName   : char | string scalar | cellstr
-            %       Condition name(s) used to filter events. If empty, all conditions
-            %       are used.
-            %   repetitionIndex : numeric vector
-            %       Repetition indices to keep. If empty, all repetitions are used.
+            %   [evIdx, conditionIDlist, repetitionList, eventNameList] = ...
+            %       getEventIndex(obj, conditionName)
             %
-            % Outputs:
-            %   evIdx          : logical vector
-            %       Logical index over ON events only.
-            %   conditionList  : vector
-            %       Condition IDs for the selected ON events.
-            %   repetitionList : vector
-            %       Repetition indices for the selected ON events.
+            %   [evIdx, conditionIDlist, repetitionList, eventNameList] = ...
+            %       getEventIndex(obj, conditionName, repetitionIndex)
             %
-            % Notes:
-            %   - Filtering is performed on ON events only.
-            %   - Ignored events are excluded automatically.
-            %   - Repetition filtering is validated against the currently selected
-            %     condition subset.
+            %   This helper method returns a logical index over ON events only, together
+            %   with the corresponding condition IDs, repetition indices, and event
+            %   names for the selected events.
+            %
+            %   Inputs:
+            %       conditionName   : char | string scalar | cellstr
+            %           Condition name(s) used to filter events. If empty, all
+            %           conditions are used.
+            %
+            %       repetitionIndex : numeric vector
+            %           Repetition indices to keep. If empty, all repetitions are used.
+            %
+            %   Outputs:
+            %       evIdx           : logical vector
+            %           Logical index over ON events only.
+            %
+            %       conditionIDlist : numeric vector
+            %           Condition IDs for the selected ON events.
+            %
+            %       repetitionList  : numeric vector
+            %           Repetition indices for the selected ON events.
+            %
+            %       eventNameList   : cell array of character vectors
+            %           Event names for the selected ON events. The output has the same
+            %           number of elements and ordering as "conditionIDlist".
+            %
+            %   Notes:
+            %       - Filtering is performed on ON events only.
+            %       - Ignored events are excluded automatically.
+            %       - Repetition filtering is validated against the currently selected
+            %         condition subset.
+            %       - eventNameList is generated from obj.eventNameList using the
+            %         selected condition IDs.
 
             if nargin < 2
                 conditionName = '';
@@ -1898,8 +1922,9 @@ classdef EventsManager < handle
             end
 
             evIdx = [];
-            conditionList = [];
+            conditionIDlist = [];
             repetitionList = [];
+            eventNameList = {};
 
             if isempty(obj.eventID)
                 return
@@ -1959,12 +1984,19 @@ classdef EventsManager < handle
                 evIdxFull = onMaskBase & ismember(obj.repetitionID, repetitionIndex);
             end
 
-            conditionList = obj.eventID(evIdxFull);
+            conditionIDlist = obj.eventID(evIdxFull);
             repetitionList = obj.repetitionID(evIdxFull);
             evIdx = evIdxFull(obj.state);
-        end
-    end
 
+            % Return event names with the same size/order as conditionIDlist.
+            if isempty(conditionIDlist)
+                eventNameList = {};
+            else
+                eventNameList = obj.eventNameList(conditionIDlist);
+            end
+        end
+
+    end
     methods (Access = private)
         function setInfo(obj)
             %SETINFO Read acquisition metadata and update dependent class properties.

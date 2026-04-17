@@ -4,8 +4,8 @@ function schema = getUMTSchema(version)
 %   schema = getUMTSchema()
 %   schema = getUMTSchema(version)
 %
-%   Returns the toolbox schema definition used by genUMTStruct and
-%   validateUMTStruct.
+%   Returns the toolbox schema definition used by genUMTStruct,
+%   validateUMTStruct, and appendUMTEventInfo.
 %
 %   Inputs:
 %       version - Numeric scalar schema version. Default: 1
@@ -19,6 +19,8 @@ function schema = getUMTSchema(version)
 %                 schema.optionalTopFields
 %                 schema.requiredEntryFields
 %                 schema.optionalEntryFields
+%                 schema.requiredEventInfoFields
+%                 schema.allowedEventAxisModes
 %                 schema.allowedPatterns
 %
 %   Notes:
@@ -26,6 +28,9 @@ function schema = getUMTSchema(version)
 %         dimension layouts for .umt files.
 %       - Store only "version" inside the .umt file. The actual schema
 %         definition is maintained here in code.
+%       - Shared event metadata is stored at the top level in "eventInfo"
+%         and is required only for fully validated UMT structures when at
+%         least one entry uses the "E" dimension.
 
 if nargin < 1 || isempty(version)
     version = 1;
@@ -46,10 +51,18 @@ switch version
         schema.allowedDims  = {'Y', 'X', 'T', 'E', 'ROI', 'Measure'};
 
         schema.requiredTopFields = {'version', 'kind', 'data'};
-        schema.optionalTopFields = {'labels'};
+        schema.optionalTopFields = {'labels', 'eventInfo'};
 
         schema.requiredEntryFields = {'value', 'dimNames'};
         schema.optionalEntryFields = {};
+
+        schema.requiredEventInfoFields = { ...
+            'eventID', ...
+            'repetitionIndex', ...
+            'eventName', ...
+            'eventAxisMode'};
+
+        schema.allowedEventAxisModes = {'instances', 'aggregated_repetitions'};
 
         schema.allowedPatterns = struct();
         schema.allowedPatterns.image = { ...
