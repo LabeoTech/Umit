@@ -508,7 +508,7 @@ repIdx = repIdx(:);
 
 if isstring(evName) && isvector(evName)
     evName = cellstr(evName(:));
-elif iscell(evName) && isvector(evName) && ...
+elseif iscell(evName) && isvector(evName) && ...
         all(cellfun(@(c) ischar(c) || (isstring(c) && isscalar(c)), evName))
     evName = cellstr(string(evName(:)));
 else
