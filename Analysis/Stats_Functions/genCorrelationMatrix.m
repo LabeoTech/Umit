@@ -1,177 +1,344 @@
-function outData = genCorrelationMatrix(data, metaData, varargin)
-% GENCORRELATIONMATRIX creates a correlation matrix from an Image time
-% series with dimensions Y,X,T using Regions of Interest (ROIs) stored in a
-% "<NAME>.roimsk" file (created by the ROImanager App).
-% The function offers 3 distinct ways of calculating the correlation
-% between ROIs:
-%   1- Centroid vs centroid: correlates the centroid pixels between ROIs.
-%   2- Centroid vs Aggregation: correlates the centroid pixel of a source
-%       ROI agains the aggregation of pixels in the target area. Here the
-%       aggregation function applied comprises: max, min, mean and median.
-%   3- Average vs Average: correlates the spatial average of pixels from
-%       each ROI.
+function outFile = genCorrelationMatrix(data, SaveFolder, varargin)
+%GENCORRELATIONMATRIX Generate ROI correlation matrices from image-backed data.
 %
-% Inputs:
-%   data (3D numerical matrix): Image time series with dimensions {'Y','X','T}.
-%   metaData (struct): structure containing smeta data associated with "data".
-% Output:
-%   outData: structure containing the correlation values of each ROI.
+%   outFile = genCorrelationMatrix(data, SaveFolder)
+%   outFile = genCorrelationMatrix(data, SaveFolder, 'ROImasks_filename', fileName, ...)
+%
+%   Supported inputs:
+%       1) Numeric Y x X x T array
+%       2) Raw .dat filename storing continuous Y x X x T data
+%       3) Image UMT struct
+%       4) .umt filename containing one image UMT struct
+%
+%   Name-Value parameters:
+%       ROImasks_filename    - ROI file name or full path.
+%                              Default: 'myROI.roimsk'
+%       CorrAlgorithm        - Correlation algorithm:
+%                              'centroid_vs_centroid'
+%                              'centroid_vs_agg'
+%                              'avg_vs_avg'
+%                              Default: 'centroid_vs_centroid'
+%       SpatialAggFcn        - Spatial aggregation used by
+%                              'centroid_vs_agg':
+%                              'mean','max','min','median'
+%                              Default: 'mean'
+%       b_FisherZ_transform  - Apply truncated Fisher Z transform.
+%                              Default: false
+%       b_genSPCMaps         - Generate seed-pixel correlation maps and
+%                              save them as an image UMT file in SaveFolder.
+%                              Default: false
+%       object               - Optional legacy Acquisition / Modality object.
+%                              Kept only for ROI-file lookup compatibility.
+%
+%   Output:
+%       outFile - File manifest cell array containing the generated UMT
+%                 file name(s) saved in SaveFolder.
+%
+%   Notes:
+%       - The ROI file lookup still relies on findMyROIfile(...). That path
+%         is intentionally preserved for now and should be revised later.
+%       - The main output is a roi UMT correlation matrix file.
+%       - SPC maps are saved as a second image UMT file when requested.
 
-% Defaults: IMPORTANT, keep all default statements in one line each so the
-% Pipeline Managers will be able to read it!
-default_Output = 'corrMatrix.mat'; %#ok This line is here just for Pipeline management.
-default_opts = struct('ROImasks_filename', 'myROIs.roimsk', 'CorrAlgorithm', 'centroid_vs_centroid', 'SpatialAggFcn', 'mean','b_FisherZ_transform', false, 'b_genSPCMaps', false);
-opts_values = struct('ROImasks_filename', {{'myROIs.roimsk'}}, 'CorrAlgorithm',{{'centroid_vs_centroid','centroid_vs_agg', 'avg_vs_avg'}}, 'SpatialAggFcn', {{'mean', 'max', 'min', 'median'}},'b_FisherZ_transform',[true,false],'b_genSPCMaps',[true,false]);%  % This is here only as a reference for PIPELINEMANAGER.m.
-%
-default_object = ''; % This line is here just for Pipeline management to be able to detect this input.
-%%% Arguments parsing and validation %%%
-p = inputParser;
-addRequired(p,'data',@(x) isnumeric(x)); % Validate if the input is a 3-D numerical matrix:
-addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
-% Optional Parameters:
-% Validation criteria for optinal params:
-valid_spatAgg = @(x) ismember(x.SpatialAggFcn, opts_values.SpatialAggFcn);
-valid_corrAlg = @(x) ismember(x.CorrAlgorithm, opts_values.CorrAlgorithm);
-% Add optional params:
-addOptional(p, 'opts', default_opts,@(x) isstruct(x) && valid_spatAgg(x) && valid_corrAlg(x));
-addOptional(p, 'object', default_object, @(x) isempty(x) || isa(x,'Acquisition') || isa(x,'Modality'));
-% Initialize Variables:
-parse(p, data, metaData, varargin{:});
-data = p.Results.data;
-metaData = p.Results.metaData;
-opts = p.Results.opts;
-object = p.Results.object;
-clear p
-%%%%
-% Find ROI file:
-opts.ROImasks_filename = findMyROIfile(opts.ROImasks_filename,object);
 
-% Validate data dimensions
-errID = 'Umitoolbox:genCorrelationMatrix:WrongFormat';
-errMsg = 'Invalid data format. The input Data must be an Image time series with dimensions {"Y","X","T"}';
-assert(isequal(metaData.dim_names, {'Y','X','T'}),errID,errMsg);
-%
-% Load ROI file:
-roi_data = load(opts.ROImasks_filename);
-% reshape matrix:
-data_sz = size(data);
-data = reshape(data, [],data_sz(3));
-% Calculate the correlation for each ROI:
-roi_names = {roi_data.ROI_info.Name}';
-roi_corrVals = cell(size(roi_names));
-% Create list of centroids:
-centroid_list = arrayfun(@(x) find(bwmorph(x.Stats.ROI_binary_mask,'shrink',Inf)),...
-    roi_data.ROI_info, 'UniformOutput', false);
-% In cases where there are non-contiguous ROIs, get first centroid (Arbitrary decision here!):
-centroid_list = cellfun(@(x) x(1),centroid_list);
-% Create SPCMaps for each centroid:
-if opts.b_genSPCMaps
-    SPCMaps = cell(length(centroid_list),1);
-    w = waitbar(0,'Creating SPCMaps...');
-    for i = 1:length(centroid_list)
-        tmp_out = zeros(1,size(data,1),'single');
-        for j = 1:size(tmp_out,2)
-            rho = corrcoef(data(centroid_list(i),:)', data(j,:)');
-            tmp_out(j) = rho(1,2);
-        end
-        SPCMaps{i} = reshape(tmp_out, data_sz(1), data_sz(2));
-        if opts.b_FisherZ_transform
-            % Apply Z-Fisher transform to SPCMaps
-            SPCMaps{i} = ZFisher_truncated(SPCMaps{i});
-        end
-        waitbar(i/length(centroid_list),w);
-    end
-    delete(w);
-    disp('Seed Pixel Correlation Maps created!');
+default_Output = {'corrMatrix.umt', 'corrMatrix_SPCMaps.umt'};
+
+if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) ...
+        && strcmpi(strtrim(char(string(data))), 'pipelineInfo')
+    outFile = localPipelineInfo();
+    return
 end
 
-% Get centroids, if applicable:
-if startsWith(opts.CorrAlgorithm, 'centroid', 'IgnoreCase', true)
-    switch opts.CorrAlgorithm
-        case 'centroid_vs_centroid'
-            roiVals = data(centroid_list,:);
-            clear data;
-            % Calculate Pearson's correlation:
-            B = corrcoef(roiVals');
-        case 'centroid_vs_agg'
-            B = zeros(length(centroid_list),length(centroid_list), 'single');
-            target = arrayfun(@(x) data(x.Stats.ROI_binary_mask(:),:), roi_data.ROI_info,...
-                'UniformOutput',false);
-            for i = 1:length(centroid_list)
-                source = data(centroid_list(i),:);
-                rho_vals = cell(size(target));
-                for j = 1:numel(target)
-                    tmp = target{j};
-                    vals = zeros(1,size(target{j},1), 'single');
-                    for k = 1:size(tmp,1)
-                        rho_tmp = corrcoef(source,tmp(k,:));
-                        vals(k) = rho_tmp(1,2);
-                    end
-                    rho_vals{j} = vals;
+p = inputParser;
+p.FunctionName = mfilename;
+
+addRequired(p, 'data');
+addRequired(p, 'SaveFolder', @(x) ischar(x) || (isstring(x) && isscalar(x)));
+addParameter(p, 'ROImasks_filename', 'myROI.roimsk', @(x) ischar(x) || (isstring(x) && isscalar(x)));
+addParameter(p, 'CorrAlgorithm', 'centroid_vs_centroid', @(x) (ischar(x) || (isstring(x) && isscalar(x))) && ...
+    ismember(lower(char(string(x))), {'centroid_vs_centroid','centroid_vs_agg','avg_vs_avg'}));
+addParameter(p, 'SpatialAggFcn', 'mean', @(x) (ischar(x) || (isstring(x) && isscalar(x))) && ...
+    ismember(lower(char(string(x))), {'mean','max','min','median'}));
+addParameter(p, 'b_FisherZ_transform', false, @(x) islogical(x) && isscalar(x));
+addParameter(p, 'b_genSPCMaps', false, @(x) islogical(x) && isscalar(x));
+addParameter(p, 'object', [], @(x) isempty(x) || isa(x,'Acquisition') || isa(x,'Modality'));
+
+parse(p, data, SaveFolder, varargin{:});
+
+SaveFolder = char(string(p.Results.SaveFolder));
+roiFile = char(string(p.Results.ROImasks_filename));
+corrAlgorithm = lower(char(string(p.Results.CorrAlgorithm)));
+spatialAggFcn = lower(char(string(p.Results.SpatialAggFcn)));
+bFisherZ = p.Results.b_FisherZ_transform;
+bGenSPCMaps = p.Results.b_genSPCMaps;
+object = p.Results.object;
+
+assert(isfolder(SaveFolder), 'Umitoolbox:genCorrelationMatrix:InvalidSaveFolder', ...
+    'SaveFolder "%s" does not exist.', SaveFolder);
+
+% NOTE:
+% This legacy ROI lookup path is intentionally preserved for now. It should
+% be revised once ROI file creation/management are fully modernized.
+roiFile = findMyROIfile(roiFile, object);
+assert(isfile(roiFile), 'Umitoolbox:genCorrelationMatrix:MissingROIFile', ...
+    'ROI file was not found: "%s".', roiFile);
+
+roiData = load(roiFile);
+assert(isfield(roiData, 'ROI_info') && isstruct(roiData.ROI_info), ...
+    'Umitoolbox:genCorrelationMatrix:InvalidROIFile', ...
+    'ROI file must contain a struct variable named "ROI_info".');
+assert(isfield(roiData, 'img_info') && isstruct(roiData.img_info) && ...
+    isfield(roiData.img_info, 'imageData'), ...
+    'Umitoolbox:genCorrelationMatrix:InvalidROIFile', ...
+    'ROI file must contain img_info.imageData.');
+
+[value, dimNames] = iResolveImageInput(data, SaveFolder);
+assert(isequal(dimNames, {'Y','X','T'}), ...
+    'Umitoolbox:genCorrelationMatrix:WrongFormat', ...
+    'Input data must be an Image time series with dimensions {''Y'',''X'',''T''}.');
+assert(isequal(size(value,1), size(roiData.img_info.imageData,1)) && ...
+    isequal(size(value,2), size(roiData.img_info.imageData,2)), ...
+    'Umitoolbox:genCorrelationMatrix:IncompatibleSizes', ...
+    'Input frame size is different from the frame size in the ROI file.');
+
+roiNames = {roiData.ROI_info.Name}';
+[centroidList, roiMasks] = iExtractROIGeometry(roiData);
+
+corrMatrix = iComputeCorrelationMatrix(value, roiMasks, centroidList, corrAlgorithm, spatialAggFcn);
+if bFisherZ
+    corrMatrix = iZFisherTruncated(corrMatrix);
+end
+
+labels = struct();
+labels.ROI = roiNames(:).';
+corrUMT = genUMTStruct(corrMatrix, ...
+    'kind', 'roi', ...
+    'entryName', 'CorrMatrix', ...
+    'dimNames', {'ROI','ROI'}, ...
+    'labels', labels);
+
+corrFile = 'corrMatrix.umt';
+saveData(fullfile(SaveFolder, corrFile), corrUMT);
+outFile = {corrFile};
+
+if bGenSPCMaps
+    spcMaps = iComputeSPCMaps(value, centroidList);
+    if bFisherZ
+        for iMap = 1:numel(spcMaps)
+            spcMaps{iMap} = iZFisherTruncated(spcMaps{iMap});
+        end
+    end
+
+    spcUMT = [];
+    for iMap = 1:numel(spcMaps)
+        entryName = matlab.lang.makeValidName(roiNames{iMap});
+        if isempty(entryName)
+            entryName = sprintf('ROI_%d', iMap);
+        end
+        if iMap == 1
+            spcUMT = genUMTStruct(spcMaps{iMap}, ...
+                'kind', 'image', ...
+                'entryName', entryName, ...
+                'dimNames', {'Y','X'});
+        else
+            spcUMT = genUMTStruct(spcUMT, ...
+                'value', spcMaps{iMap}, ...
+                'entryName', entryName, ...
+                'dimNames', {'Y','X'});
+        end
+    end
+
+    spcFile = 'corrMatrix_SPCMaps.umt';
+    saveData(fullfile(SaveFolder, spcFile), spcUMT);
+    outFile = [outFile, {spcFile}]; %#ok<AGROW>
+end
+
+    function info = localPipelineInfo()
+        info = PipelineManager.createPipelineInfo(mfilename, ...
+            'Generate ROI correlation matrices from image-backed inputs.');
+        info.version = '1.0.0';
+
+        info = PipelineManager.addInput(info, 'data', ...
+            {'ImageTimeSeries','ProcessedData','UnknownDataType'}, ...
+            'Image-backed input.', ...
+            'kind', 'input', 'position', 1, 'callType', 'positional', ...
+            'isData', true, 'supportsFile', true, 'dataMode', 'either');
+
+        info = PipelineManager.addInput(info, 'SaveFolder', 'SaveFolder', ...
+            'Folder used for relative path resolution and output saving.', ...
+            'kind', 'input', 'position', 2, 'callType', 'positional', 'isData', false);
+
+        info = PipelineManager.addInput(info, 'ROImasks_filename', 'parameter', ...
+            'ROI file name or full path.', ...
+            'kind', 'parameter', 'default', 'myROI.roimsk', 'callType', 'namevalue');
+
+        info = PipelineManager.addInput(info, 'CorrAlgorithm', 'parameter', ...
+            'ROI correlation algorithm.', ...
+            'kind', 'parameter', 'default', 'centroid_vs_centroid', ...
+            'allowed', {'centroid_vs_centroid','centroid_vs_agg','avg_vs_avg'}, ...
+            'callType', 'namevalue');
+
+        info = PipelineManager.addInput(info, 'SpatialAggFcn', 'parameter', ...
+            'Spatial aggregation for centroid_vs_agg.', ...
+            'kind', 'parameter', 'default', 'mean', ...
+            'allowed', {'mean','max','min','median'}, 'callType', 'namevalue');
+
+        info = PipelineManager.addInput(info, 'b_FisherZ_transform', 'parameter', ...
+            'Apply Fisher Z transform to correlation values.', ...
+            'kind', 'parameter', 'default', false, 'callType', 'namevalue');
+
+        info = PipelineManager.addInput(info, 'b_genSPCMaps', 'parameter', ...
+            'Generate and save SPC maps as a second UMT output file.', ...
+            'kind', 'parameter', 'default', false, 'callType', 'namevalue');
+
+        info = PipelineManager.addInput(info, 'object', 'parameter', ...
+            'Optional legacy Acquisition/Modality object for ROI lookup.', ...
+            'kind', 'parameter', 'default', [], 'callType', 'namevalue');
+
+        info = PipelineManager.addOutput(info, 'outFile', 'Unknown', ...
+            'file', 'Generated UMT file manifest saved in SaveFolder.', ...
+            default_Output, 1, 'isData', true, 'saveFileName', '');
+    end
+end
+
+function [value, dimNames] = iResolveImageInput(data, SaveFolder)
+%IRESOLVEIMAGEINPUT Resolve supported image input forms.
+
+if isnumeric(data) || islogical(data)
+    validateattributes(data, {'numeric','logical'}, {'nonempty','3d'}, mfilename, 'data');
+    value = single(data);
+    dimNames = {'Y','X','T'};
+    return
+end
+
+if ischar(data) || (isstring(data) && isscalar(data))
+    dataFile = char(string(data));
+    if ~isfile(dataFile)
+        altPath = fullfile(SaveFolder, dataFile);
+        if isfile(altPath)
+            dataFile = altPath;
+        else
+            error('Umitoolbox:genCorrelationMatrix:InputFileNotFound', ...
+                'Input file "%s" was not found.', data);
+        end
+    end
+
+    [~,~,ext] = fileparts(dataFile);
+    ext = lower(ext);
+    switch ext
+        case '.dat'
+            value = single(loadData(dataFile));
+            dimNames = {'Y','X','T'};
+            return
+        case '.umt'
+            data = loadData(dataFile);
+        otherwise
+            error('Umitoolbox:genCorrelationMatrix:UnsupportedInputFile', ...
+                'Unsupported input file extension "%s".', ext);
+    end
+end
+
+assert(isstruct(data) && isscalar(data), ...
+    'Umitoolbox:genCorrelationMatrix:UnsupportedInputType', ...
+    'Unsupported input type for genCorrelationMatrix.');
+validateUMTStruct(data, 'requireEventInfo', false);
+assert(strcmpi(char(string(data.kind)), 'image'), ...
+    'Umitoolbox:genCorrelationMatrix:InvalidUMTKind', ...
+    'Input UMT must have kind = "image".');
+
+entryNames = fieldnames(data.data);
+assert(~isempty(entryNames), 'Umitoolbox:genCorrelationMatrix:EmptyUMTData', ...
+    'Input UMT contains no image entries.');
+entry = data.data.(entryNames{1});
+value = single(entry.value);
+dimNames = cellstr(string(entry.dimNames));
+end
+
+function [centroidList, roiMasks] = iExtractROIGeometry(roiData)
+%IEXTRACTROIGEOMETRY Extract ROI masks and centroid pixels.
+
+nROI = numel(roiData.ROI_info);
+roiMasks = cell(nROI,1);
+centroidList = zeros(nROI,1);
+
+for iROI = 1:nROI
+    roiMasks{iROI} = roiData.ROI_info(iROI).Stats.ROI_binary_mask(:);
+    cIdx = find(bwmorph(roiData.ROI_info(iROI).Stats.ROI_binary_mask, 'shrink', Inf));
+    centroidList(iROI) = cIdx(1);
+end
+end
+
+function B = iComputeCorrelationMatrix(data, roiMasks, centroidList, corrAlgorithm, spatialAggFcn)
+%ICOMPUTECORRELATIONMATRIX Compute ROI correlation matrix.
+
+[nY, nX, nT] = size(data);
+data2D = reshape(single(data), nY*nX, nT);
+nROI = numel(roiMasks);
+
+switch corrAlgorithm
+    case 'centroid_vs_centroid'
+        roiVals = data2D(centroidList, :);
+        B = corrcoef(roiVals');
+
+    case 'avg_vs_avg'
+        roiVals = zeros(nROI, nT, 'single');
+        for iROI = 1:nROI
+            roiVals(iROI,:) = mean(data2D(roiMasks{iROI}, :), 1, 'omitnan');
+        end
+        B = corrcoef(roiVals');
+
+    case 'centroid_vs_agg'
+        B = zeros(nROI, nROI, 'single');
+        for iROI = 1:nROI
+            source = data2D(centroidList(iROI), :);
+            for jROI = 1:nROI
+                target = data2D(roiMasks{jROI}, :);
+                rhoVals = zeros(1, size(target,1), 'single');
+                for k = 1:size(target,1)
+                    rhoTmp = corrcoef(source, target(k,:));
+                    rhoVals(k) = rhoTmp(1,2);
                 end
-                switch opts.SpatialAggFcn
-                    %'mean', 'max', 'min', 'median'
+                switch spatialAggFcn
                     case 'mean'
-                        B(i,:) = cellfun(@(x) mean(x, 'omitnan'), rho_vals);
+                        B(iROI,jROI) = mean(rhoVals, 'omitnan');
                     case 'median'
-                        B(i,:) = cellfun(@(x) median(x, 'omitnan'), rho_vals);
+                        B(iROI,jROI) = median(rhoVals, 'omitnan');
                     case 'min'
-                        B(i,:) = cellfun(@(x) min(x,[],'omitnan'), rho_vals);
+                        B(iROI,jROI) = min(rhoVals, [], 'omitnan');
                     case 'max'
-                        B(i,:) = cellfun(@(x) max(x,[],'omitnan'), rho_vals);
-                    otherwise
-                        % This shouldn't be reached. Only in cases where
-                        % we want to make a huge matrix such as the fig. 4
-                        % in Bauer et al., 2017??
-                        disp('Huge Matrix not available yet!')
-                        error('Centroid versus No aggregation option is unavailable for now!')
+                        B(iROI,jROI) = max(rhoVals, [], 'omitnan');
                 end
             end
+        end
+end
+
+B = single(B);
+end
+
+function SPCMaps = iComputeSPCMaps(data, centroidList)
+%ICOMPUTESPCMAPS Compute seed-pixel correlation maps.
+
+[nY, nX, ~] = size(data);
+data2D = reshape(single(data), nY*nX, []);
+nROI = numel(centroidList);
+SPCMaps = cell(nROI,1);
+
+for iROI = 1:nROI
+    seed = data2D(centroidList(iROI), :);
+    tmpOut = zeros(1, size(data2D,1), 'single');
+    for j = 1:size(data2D,1)
+        rho = corrcoef(seed, data2D(j,:));
+        tmpOut(j) = rho(1,2);
     end
-else
-    % In case where avg_vs_avg
-    roiVals = zeros(numel(roi_corrVals),data_sz(3), 'single');
-    for i = 1:numel(roi_corrVals)
-        roiVals(i,:) = mean(data(roi_data.ROI_info(i).Stats.ROI_binary_mask(:),:),1,'omitnan');
-    end
-    clear data;
-    % Calculate Pearson's correlation:
-    B = corrcoef(roiVals');
-end
-% Apply Z-Fisher transformation to the correlation matrix:
-if opts.b_FisherZ_transform
-    disp('Applying Z-Fisher transform to correlation matrix...')
-    B = ZFisher_truncated(B);
-end
-%%% Save Data to .mat file:
-% Create cell array per observation:
-out = cell(size(B,1),1);
-for i = 1:size(B,1)
-    out{i} = B(i,:);
-end
-% Create new dimension names as {'O', 'O'}:
-dim_names = {'O','O'};
-outData = genDataMetaStructure(out, roi_names, dim_names, metaData, 'label',roi_names);
-% Create .MAT files with SPCMaps:
-if exist('SPCMaps', 'var')
-    dim_names = {'Y', 'X','O'};
-    % When the function is called from DataViewer
-    out = genDataMetaStructure(SPCMaps, roi_names, dim_names, metaData);
-    [~,outName,~] = fileparts(opts.SPCMapFileName);
-    save(fullfile(SaveFolder,[outName '.mat']),'-struct','out','-v7.3');
+    SPCMaps{iROI} = reshape(tmpOut, nY, nX);
 end
 end
 
-% Local function
-function out = ZFisher_truncated(data)
-% This function truncates the ZFisher transformed data between -0.998 and
-% 0.998 Pearson's rho values. This avoids the creation of Infinite values
-% at Pearsons' correlation values of -1 and 1.
+function out = iZFisherTruncated(data)
+%IZFISHERTRUNCATED Truncate rho before Fisher Z transform.
 
 lim = 0.998;
 data(data < -lim) = -lim;
 data(data > lim) = lim;
 out = atanh(data);
 end
-
-
