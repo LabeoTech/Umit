@@ -1,137 +1,275 @@
 function outData = calculateResponseFeatures(data, varargin)
-% CALCULATERESPONSEFEATURES calculates the response peak amplitude latencies and the area
-% under the curve (AUC) for a given response signal. A "response" is defined as a
-% signal that crosses a baseline level by a threshold (1 std by default).
+%CALCULATERESPONSEFEATURES Extract response features from ROI event data.
 %
-% The input data for this function should be the output of the function
-% "getDataFromROI", representing temporal response profiles of each ROI to a stimulus.
+%   outData = calculateResponseFeatures(data)
+%   outData = calculateResponseFeatures(data, 'STD_threshold', 1.5, ...)
 %
-% Inputs:
-%   data (struct): ROI data with temporal signals split by event.
-%   Parameters:
-%       - data (struct): ROI data with temporal signal split by event.
-%       - opts (struct):
-%           - ResponsePolarity (str): Polarity of the response ('positive' or 'negative').
-%           - STD_threshold (scalar): Standard deviation factor used to set the threshold for
-%             response onset and offset detection.
-%           - TimeWindow_sec (scalar, [start, end], or 'all'): Post-event time window (in
-%             seconds) to be used to calculate the response features. Use 'all' to consider
-%             the entire response, or provide a range of values separated by a semicolon as "start;end".
+%   This function calculates response features from ROI-organized temporal
+%   data split by event. It is intended to operate on the roi UMT output of
+%   getDataFromROI when the selected entry uses dimensions {'ROI','T','E'}.
 %
-% Output:
-%   outData (struct): Structure containing extracted response features for ROIs.
+%   Inputs:
+%       data - ROI UMT structure.
 %
-% Defaults:
-%   - ResponsePolarity: 'positive'
-%   - STD_threshold: 1
-%   - TimeWindow_sec: 'all'
+%   Name-Value parameters:
+%       STD_threshold    - Positive scalar multiplier used to define the
+%                          response threshold from the baseline standard
+%                          deviation. Default: 1
+%       ResponsePolarity - 'positive' or 'negative'. Default: 'positive'
+%       TimeWindow_sec   - 'all' or [start end] in seconds relative to
+%                          stimulus onset. Default: 'all'
 %
-% Example usage:
-%   data = getDataFromROI(...); % Obtain ROI data
-%   % Using the entire post-event time:
-%   opts = struct('ResponsePolarity', 'positive', 'STD_threshold', 2, 'TimeWindow_sec', 'all');
-%   responseFeatures = calculateResponseFeatures(data, opts);
-%   % Using a specific time window (e.g., 2 seconds starting at 1.5 seconds post-event):
-%   opts = struct('ResponsePolarity', 'negative', 'STD_threshold', 1.5, 'TimeWindow_sec', '1.5;3.5');
-%   responseFeatures = calculateResponseFeatures(data, opts);
+%   Output:
+%       outData - ROI UMT structure with one entry using dimensions
+%                 {'ROI','Measure','E'}.
+%
+%   Notes:
+%       - The input must have kind = 'roi'.
+%       - The selected entry must use dimensions {'ROI','T','E'}.
+%       - Shared top-level eventInfo must exist and use
+%         eventAxisMode = 'instances'.
+%       - baselinePeriod must exist in top-level eventInfo.
+%       - FrameRateHz must exist in the selected entry meta.
+%       - ROI entries that retain the Pixel dimension are not supported by
+%         this function in the current version.
 
-% Defaults:
-dependency = 'getDataFromROI'; %#ok Dependent function that will be automatically added to the pipeline before this one.
-default_Output = 'RespFeatures.mat'; %#ok This line is here just for Pipeline management.
-default_opts = struct('STD_threshold', 1, 'ResponsePolarity', 'positive', 'TimeWindow_sec', 'all');
-opts_values = struct('STD_threshold', [eps Inf], 'ResponsePolarity', {{'positive', 'negative'}}, 'TimeWindow_sec',{{'all',[0 Inf]}}); %#ok This is here only as a reference for PIPELINEMANAGER.m.
 
-%%% Arguments parsing and validation %%%
-p = inputParser;
-addRequired(p,'data',@(x) isstruct(x)); % Validate if the input is a structure:
-% Optional Parameters:
-addOptional(p, 'opts', default_opts,@(x) isstruct(x));
-% Parse inputs:
-parse(p,data, varargin{:});
-% Initialize Variables:
-outData = data;
-opts = p.Results.opts;
-clear p
-%%%%%%%%%%%%%%%%
-% Check if the input data is "time vector split by events":
-fn = fieldnames(data.data);
-assert(data.b_hasEvents & ndims(data.data(1).(fn{1})) == 3 & ismember('eventID',fieldnames(data)),...
-    'Wrong input data type. Data must be a time vector split by event(s).');
-% For each ROI, calculate the average response and use the average time
-% vector to calculate the peak stats:
-ROIdata = struct();
-evntList = unique(outData.eventID);
-% Get frame list of time window:
-evntFr = round(outData.baselinePeriod*outData.FrameRateHz);
-if strcmpi(opts.TimeWindow_sec,'all')
-    frOn = evntFr+1;
-    frOff = size(outData.data(1).(fn{1}),3) - evntFr;
-else       
-    % Get frames values:
-    frOn = round(opts.TimeWindow_sec(1)*outData.FrameRateHz) + evntFr;
-    frOff = round(opts.TimeWindow_sec(2)*outData.FrameRateHz) + evntFr;
-    % Reset to default if input values are out of range
-    if frOn > size(outData.data(1).(fn{1}),3) || frOff > size(outData.data(1).(fn{1}),3) || frOn > frOff
-        warning('TimeWindow onset is out of range! Reset to default ("all")')
-        frOn = evntFr +1;
-        frOff = size(outData.data(1).(fn{1}),3);    
-    end
+dependency = 'getDataFromROI'; %#ok<NASGU>
+default_Output = 'RespFeatures.umt'; %#ok<NASGU>
+
+if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) ...
+        && strcmpi(strtrim(char(string(data))), 'pipelineInfo')
+    outData = localPipelineInfo();
+    return
 end
-for ii = 1:length(outData.data)
-    % Instantiate output arrays:
-    PeakAmp_arr = nan(size(evntList),'single');
-    PeakLat_arr = PeakAmp_arr;
-    onsetAmp_arr = PeakAmp_arr;
-    onsetLat_arr = PeakAmp_arr;
-    AUCamp_arr = PeakAmp_arr;
-    avgAmp_arr = PeakAmp_arr;
-    %
-    data = outData.data(ii).(fn{1});   
-    for jj = 1:length(evntList)
-        idx = ( outData.eventID == evntList(jj) );        
-        % Calculate average response to the current event:
-        avgResp = squeeze(mean(data(:,idx,:),2,'omitnan'));
-        if strcmpi(opts.ResponsePolarity, 'negative')
-            % Flip the data to make the response peak
-            % positive:
-            avgResp = -1.*avgResp;
-        end                
-        % Calculate threshold as a multiple of the standard deviation of the
-        %   baseline period from the average response:
-        avgBsln = mean(avgResp(1:evntFr),'omitnan'); % Average baseline amplitude
-        thr = avgBsln + opts.STD_threshold*std(avgResp(1:evntFr),0,1, 'omitnan');
-        % Calculate response features inside the time window:
-        
-        % Find the maximum ('peak') response value:
-        [PeakValue,indxPeak] = max(avgResp(frOn:frOff),[],1);
-        indxPeak = frOn + indxPeak -1;
-        % Calculate the Average amplitude value:
-        avgAmp_arr(jj) = mean(avgResp(frOn:frOff),'omitnan') - avgBsln;
-        % Calculate the Area Under the Curve amplitude:
-        AUCamp_arr(jj) = trapz(avgResp(frOn:frOff)) - trapz(avgResp(1:evntFr));
-        % Calculate Peak amplitude:
-        PeakAmp_arr(jj) = PeakValue - avgBsln;
-        if PeakValue > thr
-            % Calculate the onset(threshold crossing point) amplitude and latencies in seconds:
-            onsetIndx = frOn + find(avgResp(frOn:frOff) > thr,1,'first') - 1;
-            % Calculate onset amplitude:
-            onsetAmp_arr(jj) = avgResp(onsetIndx) - avgBsln;
-            % Calculate onset latency:
-            onsetLat_arr(jj) = (onsetIndx - evntFr)/outData.FrameRateHz;
-            % Calculate the Peak latency:
-            PeakLat_arr(jj) = (indxPeak - evntFr)/outData.FrameRateHz;
+
+p = inputParser;
+p.FunctionName = mfilename;
+
+addRequired(p, 'data');
+addParameter(p, 'STD_threshold', 1, @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x > 0);
+addParameter(p, 'ResponsePolarity', 'positive', @(x) (ischar(x) || (isstring(x) && isscalar(x))) && ...
+    ismember(lower(char(string(x))), {'positive','negative'}));
+addParameter(p, 'TimeWindow_sec', 'all', @(x) iValidateTimeWindowInput(x));
+
+parse(p, data, varargin{:});
+
+STD_threshold = double(p.Results.STD_threshold);
+responsePolarity = lower(char(string(p.Results.ResponsePolarity)));
+timeWindowSec = p.Results.TimeWindow_sec;
+
+assert(isstruct(data) && isscalar(data), ...
+    'Umitoolbox:calculateResponseFeatures:InvalidInputType', ...
+    'Input data must be a scalar roi UMT struct.');
+
+validateUMTStruct(data, 'requireEventInfo', true);
+
+assert(strcmpi(char(string(data.kind)), 'roi'), ...
+    'Umitoolbox:calculateResponseFeatures:InvalidUMTKind', ...
+    'Input UMT must have kind = "roi".');
+
+assert(isfield(data, 'eventInfo') && isstruct(data.eventInfo), ...
+    'Umitoolbox:calculateResponseFeatures:MissingEventInfo', ...
+    'Input roi UMT must contain shared top-level eventInfo.');
+
+assert(strcmpi(char(string(data.eventInfo.eventAxisMode)), 'instances'), ...
+    'Umitoolbox:calculateResponseFeatures:InvalidEventAxisMode', ...
+    'Input eventInfo.eventAxisMode must be "instances".');
+
+assert(isfield(data.eventInfo, 'baselinePeriod') && ~isempty(data.eventInfo.baselinePeriod), ...
+    'Umitoolbox:calculateResponseFeatures:MissingBaselinePeriod', ...
+    'Input eventInfo must contain baselinePeriod.');
+
+entryNames = fieldnames(data.data);
+assert(~isempty(entryNames), ...
+    'Umitoolbox:calculateResponseFeatures:EmptyInput', ...
+    'Input roi UMT contains no data entries.');
+
+entryName = entryNames{1};
+entry = data.data.(entryName);
+dimNames = cellstr(string(entry.dimNames));
+
+assert(~any(strcmp(dimNames, 'Pixel')), ...
+    'Umitoolbox:calculateResponseFeatures:PixelDimensionNotSupported', ...
+    ['Inputs that retain the Pixel dimension are not supported in the ' ...
+     'current version. Aggregate ROI pixels first in getDataFromROI.']);
+
+assert(isequal(dimNames, {'ROI','T','E'}), ...
+    'Umitoolbox:calculateResponseFeatures:InvalidInputDims', ...
+    'Input ROI entry must use dimensions {''ROI'',''T'',''E''}.');
+
+assert(isfield(entry, 'meta') && isstruct(entry.meta) && isfield(entry.meta, 'FrameRateHz') && ...
+    ~isempty(entry.meta.FrameRateHz), ...
+    'Umitoolbox:calculateResponseFeatures:MissingFrameRate', ...
+    'Input ROI entry meta must contain FrameRateHz.');
+
+frameRateHz = double(entry.meta.FrameRateHz);
+baselinePeriodSec = double(data.eventInfo.baselinePeriod);
+roiData = single(entry.value);
+
+nROI = size(roiData, 1);
+nT = size(roiData, 2);
+nE = size(roiData, 3);
+
+baselineFrames = round(baselinePeriodSec * frameRateHz);
+baselineFrames = max(1, min(baselineFrames, nT));
+
+if ischar(timeWindowSec) || (isstring(timeWindowSec) && isscalar(timeWindowSec))
+    frOn = baselineFrames + 1;
+    frOff = nT;
+else
+    timeWindowSec = double(timeWindowSec(:).');
+    frOn = round(timeWindowSec(1) * frameRateHz) + baselineFrames;
+    frOff = round(timeWindowSec(2) * frameRateHz) + baselineFrames;
+
+    assert(frOn >= baselineFrames + 1 && frOff <= nT && frOn <= frOff, ...
+        'Umitoolbox:calculateResponseFeatures:InvalidTimeWindow', ...
+        ['TimeWindow_sec is out of range for the available response ' ...
+         'duration.']);
+end
+
+featureNames = { ...
+    'PeakAmplitude', ...
+    'PeakLatency', ...
+    'TimeWindowAverageAmplitude', ...
+    'AUCamplitude', ...
+    'OnsetAmplitude', ...
+    'OnsetLatency'};
+
+nMeasure = numel(featureNames);
+outVals = nan(nROI, nMeasure, nE, 'single');
+
+for iEvent = 1:nE
+    avgResp = roiData(:, :, iEvent);
+
+    if strcmp(responsePolarity, 'negative')
+        avgResp = -1 .* avgResp;
+    end
+
+    avgBsln = mean(avgResp(:, 1:baselineFrames), 2, 'omitnan');
+    thr = avgBsln + STD_threshold .* std(avgResp(:, 1:baselineFrames), 0, 2, 'omitnan');
+
+    windowResp = avgResp(:, frOn:frOff);
+    [peakValue, peakIdxLocal] = max(windowResp, [], 2);
+    peakIdx = frOn + peakIdxLocal - 1;
+
+    avgAmp = mean(windowResp, 2, 'omitnan') - avgBsln;
+    aucAmp = trapz(windowResp, 2) - trapz(avgResp(:, 1:baselineFrames), 2);
+    peakAmp = peakValue - avgBsln;
+
+    onsetAmp = nan(nROI, 1, 'single');
+    onsetLat = nan(nROI, 1, 'single');
+    peakLat = nan(nROI, 1, 'single');
+
+    for iROI = 1:nROI
+        if peakValue(iROI) > thr(iROI)
+            onsetLocal = find(avgResp(iROI, frOn:frOff) > thr(iROI), 1, 'first');
+            if ~isempty(onsetLocal)
+                onsetIdx = frOn + onsetLocal - 1;
+                onsetAmp(iROI) = avgResp(iROI, onsetIdx) - avgBsln(iROI);
+                onsetLat(iROI) = (onsetIdx - baselineFrames) / frameRateHz;
+                peakLat(iROI) = (peakIdx(iROI) - baselineFrames) / frameRateHz;
+            end
         end
     end
-    % Put data inside "ROIdata" structure:
-    ROIdata(ii).PeakAmplitude = PeakAmp_arr';
-    ROIdata(ii).PeakLatency = PeakLat_arr';
-    ROIdata(ii).TimeWindowAverageAmplitude = avgAmp_arr';
-    ROIdata(ii).AUCamplitude = AUCamp_arr';
-    ROIdata(ii).OnsetAmplitude = onsetAmp_arr';
-    ROIdata(ii).OnsetLatency = onsetLat_arr';
+
+    outVals(:, 1, iEvent) = peakAmp;
+    outVals(:, 2, iEvent) = peakLat;
+    outVals(:, 3, iEvent) = avgAmp;
+    outVals(:, 4, iEvent) = aucAmp;
+    outVals(:, 5, iEvent) = onsetAmp;
+    outVals(:, 6, iEvent) = onsetLat;
 end
-% Update event list:
-outData.eventID = evntList;
-% Add measurements to output structure:
-outData.data = ROIdata;
+
+labels = struct();
+if isfield(data, 'labels') && isfield(data.labels, 'ROI')
+    labels.ROI = data.labels.ROI;
+else
+    labels.ROI = arrayfun(@num2str, 1:nROI, 'UniformOutput', false);
+end
+labels.Measure = featureNames;
+
+outData = genUMTStruct( ...
+    outVals, ...
+    'kind', 'roi', ...
+    'entryName', entryName, ...
+    'dimNames', {'ROI','Measure','E'}, ...
+    'labels', labels, ...
+    'eventInfo', data.eventInfo);
+
+% =========================================================================
+% Local pipeline info
+% =========================================================================
+    function info = localPipelineInfo()
+        info = PipelineManager.createPipelineInfo(mfilename, ...
+            'Calculate ROI response features from roi UMT event data.');
+
+        info.version = '1.0.0';
+
+        info = PipelineManager.addInput( ...
+            info, ...
+            'data', ...
+            {'ProcessedData'}, ...
+            'ROI UMT input with dimensions {ROI,T,E}.', ...
+            'kind', 'input', ...
+            'position', 1, ...
+            'callType', 'positional', ...
+            'isData', true, ...
+            'supportsFile', false, ...
+            'dataMode', 'either');
+
+        info = PipelineManager.addInput( ...
+            info, ...
+            'STD_threshold', ...
+            'parameter', ...
+            'Baseline standard-deviation multiplier used for thresholding.', ...
+            'kind', 'parameter', ...
+            'default', 1, ...
+            'callType', 'namevalue');
+
+        info = PipelineManager.addInput( ...
+            info, ...
+            'ResponsePolarity', ...
+            'parameter', ...
+            'Response polarity: positive or negative.', ...
+            'kind', 'parameter', ...
+            'default', 'positive', ...
+            'allowed', {'positive','negative'}, ...
+            'callType', 'namevalue');
+
+        info = PipelineManager.addInput( ...
+            info, ...
+            'TimeWindow_sec', ...
+            'parameter', ...
+            'Response time window in seconds or ''all''.', ...
+            'kind', 'parameter', ...
+            'default', 'all', ...
+            'callType', 'namevalue');
+
+        info = PipelineManager.addOutput( ...
+            info, ...
+            'outData', ...
+            {'ProcessedData'}, ...
+            'data', ...
+            'ROI feature UMT output.', ...
+            default_Output, ...
+            1, ...
+            'isData', true);
+    end
+end
+
+function tf = iValidateTimeWindowInput(x)
+%IVALIDATETIMEWINDOWINPUT Validate TimeWindow_sec input.
+
+tf = false;
+
+if ischar(x) || (isstring(x) && isscalar(x))
+    tf = strcmpi(char(string(x)), 'all');
+    return
+end
+
+if isnumeric(x) && isvector(x) && numel(x) == 2
+    x = double(x(:).');
+    tf = all(isfinite(x)) && all(x >= 0) && x(1) <= x(2);
+end
 end

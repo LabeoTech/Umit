@@ -1,73 +1,207 @@
-function run_ConvertToTiff(data, metaData, SaveFolder)
-% RUN_CONVERTTOTIFF calls the function
-% CONVERTTOTIFF from the IOI library (LabeoTech).
-% In brief, this function creates a .TIFF file that can be opened in other
-% softwares such as ImageJ.
-% This function will create a .TIFF file for each imaging time series. In
-% cases where the input data is a time series split by events, a .TIFF
-% file will be created for each trial.
-% Inputs:
-%   data: numerical matrix containing imaging data.
-%   metaData: .mat file with meta data associated with "data".
-%   SaveFolder: folder where the .TIFF file(s) will be saved.
-%%% Arguments parsing and validation %%%
+function outFile = run_ConvertToTiff(data, SaveFolder)
+%RUN_CONVERTTOTIFF Export image-backed data to TIFF file(s).
+%
+%   outFile = run_ConvertToTiff(data, SaveFolder)
+%   info    = run_ConvertToTiff('pipelineInfo')
+%
+%   Supported inputs:
+%       1) Numeric Y x X x T array
+%       2) Raw .dat filename storing continuous Y x X x T data
+%       3) Image UMT struct
+%       4) .umt filename containing one image UMT struct
+%
+%   Behavior:
+%       - Continuous image data produce one TIFF file.
+%       - Event-split image UMT data with dimensions {'Y','X','T','E'}
+%         produce one TIFF file per event instance.
+%       - For event-split data, a companion text file named
+%         <baseName>_info.txt is created using CSV formatting. It lists the
+%         generated TIFF file name, condition name, and repetition index.
+%
+%   Output:
+%       outFile - File manifest cell array containing the generated file
+%                 name(s) saved in SaveFolder.
+
+
+default_Output = {'img_out.tif','img_out_info.txt'}; %#ok<NASGU>
+
+if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) ...
+        && strcmpi(strtrim(char(string(data))), 'pipelineInfo')
+    outFile = localPipelineInfo();
+    return
+end
+
 p = inputParser;
-% Save folder:
-addRequired(p,'data',@(x) isnumeric(x) | ischar(x)); % Validate if the input is numerical matrix:
-addRequired(p,'metaData', @(x) isa(x,'matlab.io.MatFile') | isstruct(x)); % MetaData associated to "data".
+p.FunctionName = mfilename;
+addRequired(p, 'data');
 addRequired(p, 'SaveFolder', @isfolder);
-% Parse inputs:
-parse(p,data, metaData, SaveFolder);
-data = p.Results.data;
-metaData = p.Results.metaData;
+parse(p, data, SaveFolder);
+
 SaveFolder = p.Results.SaveFolder;
-clear p
-% Create .TIF file name:
-[~,outFileName,~] = fileparts(metaData.datFile);
-if isempty(outFileName)
-    outFileName = 'img_out';
-else
-    outFileName = ['img_' outFileName];
+outFile = {};
+
+[payload, dimNames, eventInfo, baseName] = iResolveExportInput(data, SaveFolder);
+
+assert(ismember(numel(dimNames), [3 4]), ...
+    'Umitoolbox:run_ConvertToTiff:InvalidDims', ...
+    'Input data must resolve to YXT or YXTE image data.');
+
+if isequal(dimNames, {'Y','X','T'})
+    tifName = [baseName '.tif'];
+    iWriteTiffStack(fullfile(SaveFolder, tifName), payload);
+    outFile = {tifName};
+    return
 end
 
-if ischar(data)
-    [~,filename,ext] = fileparts(data);
-    filename = [filename,ext];
-    b_fromFile = true;
-    
-else
-    b_fromFile = false;
+assert(isequal(dimNames, {'Y','X','T','E'}), ...
+    'Umitoolbox:run_ConvertToTiff:InvalidDims', ...
+    'Event-split export requires dimensions {''Y'',''X'',''T'',''E''}.');
+assert(~isempty(fieldnames(eventInfo)), ...
+    'Umitoolbox:run_ConvertToTiff:MissingEventInfo', ...
+    'Event-split image export requires top-level eventInfo.');
+assert(isfield(eventInfo, 'eventName') && isfield(eventInfo, 'repetitionIndex') && isfield(eventInfo, 'eventID'), ...
+    'Umitoolbox:run_ConvertToTiff:InvalidEventInfo', ...
+    'eventInfo must contain eventID, eventName, and repetitionIndex.');
+
+nE = size(payload, 4);
+assert(numel(eventInfo.eventID) == nE && numel(eventInfo.repetitionIndex) == nE && numel(eventInfo.eventName) == nE, ...
+    'Umitoolbox:run_ConvertToTiff:InvalidEventInfoLength', ...
+    'eventInfo length must match the E dimension length.');
+
+infoRows = cell(nE, 3);
+for iE = 1:nE
+    tifName = sprintf('%s_C%d_R%d.tif', baseName, eventInfo.eventID(iE), eventInfo.repetitionIndex(iE));
+    iWriteTiffStack(fullfile(SaveFolder, tifName), payload(:,:,:,iE));
+    outFile{end+1} = tifName; %#ok<AGROW>
+    infoRows{iE,1} = tifName;
+    infoRows{iE,2} = char(string(eventInfo.eventName{iE}));
+    infoRows{iE,3} = eventInfo.repetitionIndex(iE);
 end
 
-% If the data is separated by Events, create one TIFF file per trial
-if any(strcmpi(metaData.dim_names, 'E'))
-    %% THIS SECTION IS DEPRECATED AND NEEDS UPDATE USING NEW .UMT STRUCT FORMAT
-    if b_fromFile
-        mapFile = mapDatFile(fullfile(SaveFolder,filename));
+infoName = [baseName '_info.txt'];
+iWriteEventInfoText(fullfile(SaveFolder, infoName), infoRows);
+outFile{end+1} = infoName;
+
+    function info = localPipelineInfo()
+        info = PipelineManager.createPipelineInfo(mfilename, ...
+            'Export image-backed data to TIFF file(s).');
+        info.version = '1.0.0';
+
+        info = PipelineManager.addInput(info, 'data', ...
+            {'ImageTimeSeries','ProcessedData','UnknownDataType'}, ...
+            'Image-backed input to export as TIFF.', ...
+            'kind', 'input', 'position', 1, 'callType', 'positional', ...
+            'isData', true, 'supportsFile', true, 'dataMode', 'either');
+
+        info = PipelineManager.addInput(info, 'SaveFolder', 'SaveFolder', ...
+            'Folder where TIFF file(s) will be saved.', ...
+            'kind', 'input', 'position', 2, 'callType', 'positional', ...
+            'isData', false);
+
+        info = PipelineManager.addOutput(info, 'outFile', 'Unknown', 'file', ...
+            'Generated TIFF file manifest saved in SaveFolder.', ...
+            default_Output, 1, 'isData', true, 'saveFileName', '');
     end
-    % Create list of suffix to identify conditions and trials:
-    IDlist = unique(metaData.eventID);
-    str = cell(size(metaData.eventID));
-    for i = 1:length(IDlist)
-        indx = find(metaData.eventID == IDlist(i));
-        tmp = arrayfun(@(x) [outFileName '_C' num2str(i) '_R' num2str(x) '.tif'], indx,'UniformOutput',false);
-        str(indx) = tmp;
-    end
-    disp('Creating one TIF file per trial...');
-    for i = 1:size(data,1)
-        if b_fromFile
-            tmp = squeeze(mapFile.Data.data(i,:,:,:));
-            ConvertToTiff(SaveFolder, tmp, str{i});
+end
+
+function [payload, dimNames, eventInfo, baseName] = iResolveExportInput(data, SaveFolder)
+%IRESOLVEEXPORTINPUT Resolve supported inputs to export payload.
+
+eventInfo = struct();
+baseName = 'img_out';
+
+if isnumeric(data) || islogical(data)
+    validateattributes(data, {'numeric','logical'}, {'nonempty','3d'}, mfilename, 'data');
+    payload = single(data);
+    dimNames = {'Y','X','T'};
+    return
+end
+
+if ischar(data) || (isstring(data) && isscalar(data))
+    dataFile = char(string(data));
+    if ~isfile(dataFile)
+        altPath = fullfile(SaveFolder, dataFile);
+        if isfile(altPath)
+            dataFile = altPath;
         else
-            ConvertToTiff(SaveFolder, squeeze(data(i,:,:,:)), str{i})
+            error('Umitoolbox:run_ConvertToTiff:InputFileNotFound', ...
+                'Input file "%s" was not found.', data);
         end
     end
-else
-    if b_fromFile
-        ConvertToTiff(SaveFolder, filename);
-    else
-        ConvertToTiff(SaveFolder, data, [outFileName '.tif']);
+
+    [~, stem, ext] = fileparts(dataFile);
+    if ~isempty(stem)
+        baseName = ['img_' stem];
+    end
+
+    switch lower(ext)
+        case '.dat'
+            payload = single(loadData(dataFile));
+            dimNames = {'Y','X','T'};
+            return
+        case '.umt'
+            data = loadData(dataFile);
+        otherwise
+            error('Umitoolbox:run_ConvertToTiff:UnsupportedInputFile', ...
+                'Unsupported input file extension "%s".', ext);
     end
 end
 
+assert(isstruct(data) && isscalar(data), ...
+    'Umitoolbox:run_ConvertToTiff:UnsupportedInputType', ...
+    'Unsupported input type for run_ConvertToTiff.');
+validateUMTStruct(data, 'requireEventInfo', false);
+assert(strcmpi(char(string(data.kind)), 'image'), ...
+    'Umitoolbox:run_ConvertToTiff:InvalidUMTKind', ...
+    'Input UMT must have kind = "image".');
+
+entryNames = fieldnames(data.data);
+assert(~isempty(entryNames), ...
+    'Umitoolbox:run_ConvertToTiff:EmptyUMTData', ...
+    'Input UMT contains no image entries.');
+
+entry = data.data.(entryNames{1});
+payload = single(entry.value);
+dimNames = cellstr(string(entry.dimNames));
+
+if isfield(data, 'eventInfo')
+    eventInfo = data.eventInfo;
+end
+end
+
+function iWriteTiffStack(filePath, data)
+%IWRITETIFFSTACK Write a YXT stack to TIFF.
+
+data = single(data);
+assert(ndims(data) == 3, 'Umitoolbox:run_ConvertToTiff:InvalidTiffPayload', ...
+    'TIFF payload must be a 3D YXT array.');
+
+if exist('ConvertToTiff', 'file') == 2
+    [folderPath, fileName, ext] = fileparts(filePath);
+    ConvertToTiff(folderPath, data, [fileName ext]);
+    return
+end
+
+for iFrame = 1:size(data, 3)
+    frame = data(:,:,iFrame);
+    if iFrame == 1
+        imwrite(frame, filePath, 'tif', 'Compression', 'none');
+    else
+        imwrite(frame, filePath, 'tif', 'WriteMode', 'append', 'Compression', 'none');
+    end
+end
+end
+
+function iWriteEventInfoText(filePath, rows)
+%IWRITEEVENTINFOTEXT Write event export manifest in CSV-formatted text.
+
+fid = fopen(filePath, 'w');
+assert(fid ~= -1, 'Umitoolbox:run_ConvertToTiff:FileOpenFailed', ...
+    'Failed to create "%s".', filePath);
+cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
+
+fprintf(fid, 'tiffFile,conditionName,repetitionIndex\n');
+for iRow = 1:size(rows,1)
+    fprintf(fid, '%s,%s,%d\n', rows{iRow,1}, rows{iRow,2}, rows{iRow,3});
+end
 end

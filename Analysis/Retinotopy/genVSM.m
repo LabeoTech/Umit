@@ -1,164 +1,283 @@
-function [outData, metaData] = genVSM(SaveFolder, varargin) 
-% GENVSM creates a Visual Sign Map (Sereno et al. 1994,1995; Zhuang et al. 2017)
-% from the phase component of the Azimuth and Elevation maps created with
-% the function "genRetinotopyMaps.m".
-% Inputs:
-%   SaveFolder (char): full path of the folder containing the files
-%    "AzimuthMap.dat" and "ElevationMap.dat".
-%   opts (optional): structure containing extra parameters. See "default_opts" variable below for details!
+function outData = genVSM(retinotopyUMT, SaveFolder, varargin)
+%GENVSM Generate a Visual Sign Map from retinotopy-map UMT input.
 %
-% Outputs:
-%   data (2D matrix): matrix containing the Visual Sign Map (VSM).
-%   metaData (struct): structure containing the meta data associated with
-%   "data".
+%   outData = genVSM(retinotopyUMT, SaveFolder)
+%   outData = genVSM(retinotopyUMT, SaveFolder, 'Name', Value, ...)
+%
+%   This function creates a Visual Sign Map (VSM) from the phase
+%   components of the Azimuth and Elevation maps produced by
+%   genRetinotopyMaps.
+%
+%   Inputs:
+%       retinotopyUMT - UMT struct output from genRetinotopyMaps.
+%                       It must contain entries named:
+%                           * AzimuthMap
+%                           * ElevationMap
+%                       and each entry must use dimNames {'Y','X','F'} with
+%                       F = 2, where slice 1 is amplitude and slice 2 is phase.
+%
+%       SaveFolder    - Folder used for optional patch-file generation.
+%
+%   Name-Value parameters:
+%       PhaseMapFilter_Sigma - Gaussian sigma for phase-map smoothing.
+%                              Default: 0
+%       VSMFilter_Sigma      - Gaussian sigma for VSM smoothing.
+%                              Default: 0
+%       b_CreatePatches      - If true, generate and save visual-area
+%                              patches. Default: false
+%       PatchFileName        - Output .mat file for patches.
+%                              Default: 'VisualCtxAreas.mat'
+%       b_UseMask            - If true, use a logical mask file during
+%                              patch generation. Default: false
+%       MaskFile             - Mask filename used when b_UseMask is true.
+%                              Default: 'ImagingReferenceFrame.mat'
+%       object               - Optional Modality object for mask lookup.
+%
+%   Output:
+%       outData - UMT struct containing one image entry named VSM with
+%                 dimNames {'Y','X'}.
+%
+%   Notes:
+%       - The output is derived exclusively from the retinotopy UMT input.
+%       - Patch generation is preserved as an optional side effect.
 
-% Defaults:
-default_Output = 'visualSignMap.dat'; %#ok. This line is here just for Pipeline management.
-default_opts = struct('PhaseMapFilter_Sigma', 0,'VSMFilter_Sigma',0, 'b_CreatePatches', false, 'PatchFileName', 'VisualCtxAreas.mat', 'b_UseMask', false, 'MaskFile','ImagingReferenceFrame.mat');
-opts_values = struct('PhaseMapFilter_Sigma', [0, Inf], 'VSMFilter_Sigma', [0, Inf], 'b_CreatePatches', [true; false], 'PatchFileName', {{'VisualCtxAreas.mat'}},'b_UseMask', [true,false], 'MaskFile',{{'ImagingReferenceFrame.mat'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
-default_object = ''; % This line is here just for Pipeline management to be able to detect this input.
-% Notes on Spatial filter:
-% - A value of zero indicates that no filters will apply!
-%%% Arguments parsing and validation %%%
+% Default output for pipeline management.
+default_Output = 'visualSignMap.umt'; %#ok<NASGU>
+default_object = '';
+
+if nargin == 1 && (ischar(retinotopyUMT) || (isstring(retinotopyUMT) && isscalar(retinotopyUMT))) && ...
+        strcmpi(strtrim(char(string(retinotopyUMT))), 'pipelineInfo')
+    outData = localPipelineInfo();
+    return
+end
+
 p = inputParser;
-addRequired(p, 'SaveFolder', @isfolder);
-addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
-addOptional(p, 'object', default_object, @(x) isempty(x) || isa(x,'Modality'));
-% Parse inputs:
-parse(p,SaveFolder, varargin{:});
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Initialize Variables and remove inputParser object:
-SaveFolder = p.Results.SaveFolder;
-opts = p.Results.opts;
+p.FunctionName = 'genVSM';
+addRequired(p, 'retinotopyUMT', @(x) isstruct(x) && isscalar(x));
+addRequired(p, 'SaveFolder', @(x) (ischar(x) || (isstring(x) && isscalar(x))) && isfolder(x));
+addParameter(p, 'PhaseMapFilter_Sigma', 0, @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0);
+addParameter(p, 'VSMFilter_Sigma', 0, @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0);
+addParameter(p, 'b_CreatePatches', false, @(x) islogical(x) && isscalar(x));
+addParameter(p, 'PatchFileName', 'VisualCtxAreas.mat', @(x) ischar(x) || (isstring(x) && isscalar(x)));
+addParameter(p, 'b_UseMask', false, @(x) islogical(x) && isscalar(x));
+addParameter(p, 'MaskFile', 'ImagingReferenceFrame.mat', @(x) ischar(x) || (isstring(x) && isscalar(x)));
+addParameter(p, 'object', default_object, @(x) isempty(x) || isa(x, 'Modality'));
+parse(p, retinotopyUMT, SaveFolder, varargin{:});
+
+opts = struct();
+opts.PhaseMapFilter_Sigma = double(p.Results.PhaseMapFilter_Sigma);
+opts.VSMFilter_Sigma = double(p.Results.VSMFilter_Sigma);
+opts.b_CreatePatches = p.Results.b_CreatePatches;
+opts.PatchFileName = char(string(p.Results.PatchFileName));
+opts.b_UseMask = p.Results.b_UseMask;
+opts.MaskFile = char(string(p.Results.MaskFile));
 object = p.Results.object;
-clear p
-%%%%
-% Further input validation:
-% Check if the save folder contains the files "Azimuth.dat" and
-% "Elevation.dat"
-AzFile = fullfile(SaveFolder, 'AzimuthMap.dat');
-ElFile = fullfile(SaveFolder, 'ElevationMap.dat');
-errID = 'umIToolbox:genVSM:MissingInput';
-errMsg = 'The files "AzimuthMap.dat" and "ElevationMap.dat" were not found in the Save Folder!';
-assert(isfile(AzFile) & isfile(ElFile),errID, errMsg);
-% Open Maps
-[azMap, metaData]= loadDatFile(AzFile);
-elMap = loadDatFile(ElFile);
-% Calculate Visual Sign Map:
-phaseAz = azMap(:,:,2); 
-phaseEl = elMap(:,:,2); 
-% Remove NaNs from phase maps:
+SaveFolder = char(string(p.Results.SaveFolder));
+
+validateUMTStruct(retinotopyUMT, 'requireEventInfo', false);
+assert(strcmpi(retinotopyUMT.kind, 'image'), ...
+    'umIToolbox:genVSM:InvalidInput', ...
+    'Input UMT must have kind = "image".');
+
+requiredEntries = {'AzimuthMap', 'ElevationMap'};
+for iEntry = 1:numel(requiredEntries)
+    assert(isfield(retinotopyUMT.data, requiredEntries{iEntry}), ...
+        'umIToolbox:genVSM:MissingInput', ...
+        'The retinotopy UMT must contain entry "%s".', requiredEntries{iEntry});
+
+    thisEntry = retinotopyUMT.data.(requiredEntries{iEntry});
+    thisDims = cellstr(string(thisEntry.dimNames));
+    assert(isequal(thisDims, {'Y','X','F'}), ...
+        'umIToolbox:genVSM:InvalidInput', ...
+        'Entry "%s" must use dimNames {''Y'',''X'',''F''}.', requiredEntries{iEntry});
+    assert(size(thisEntry.value, 3) == 2, ...
+        'umIToolbox:genVSM:InvalidInput', ...
+        'Entry "%s" must have F = 2 (Amplitude, Phase).', requiredEntries{iEntry});
+end
+
+azMap = single(retinotopyUMT.data.AzimuthMap.value);
+elMap = single(retinotopyUMT.data.ElevationMap.value);
+
+% Calculate Visual Sign Map from phase components.
+phaseAz = azMap(:,:,2);
+phaseEl = elMap(:,:,2);
+
 phaseAz(isnan(phaseAz)) = 1000;
 phaseEl(isnan(phaseAz)) = 1000;
-% Filter Phase masps
+
 if opts.PhaseMapFilter_Sigma > 0
     disp('Filtering phase maps...')
     phaseAz = imgaussfilt(phaseAz, opts.PhaseMapFilter_Sigma);
     phaseEl = imgaussfilt(phaseEl, opts.PhaseMapFilter_Sigma);
 end
+
 disp('Calculating visual sign map...');
 [gradAzx, gradAzy] = gradient(phaseAz);
 [gradElx, gradEly] = gradient(phaseEl);
 gradDirAz = atan2(gradAzy, gradAzx);
 gradDirEl = atan2(gradEly, gradElx);
 
-outData = sin(angle(exp(1i.*gradDirAz).*exp(-1i.*gradDirEl)));
-outData(isnan(outData)) = 0;
-% Filter Visual Sign Map
+vsm = sin(angle(exp(1i .* gradDirAz) .* exp(-1i .* gradDirEl)));
+vsm(isnan(vsm)) = 0;
+
 if opts.VSMFilter_Sigma > 0
-    disp('Filtering phase maps...')
-    outData = imgaussfilt(outData, opts.VSMFilter_Sigma);    
+    disp('Filtering visual sign map...')
+    vsm = imgaussfilt(vsm, opts.VSMFilter_Sigma);
 end
-% Create meta data:
-metaData = genMetaData(outData,{'Y','X'}, metaData);
+
+outData = genUMTStruct( ...
+    single(vsm), ...
+    'kind', 'image', ...
+    'entryName', 'VSM', ...
+    'dimNames', {'Y','X'});
+
 disp('Finished creating VSM');
-% Segment the Visual Sign Map and create a labeled matrix:
+
 if opts.b_CreatePatches
-    genVAmask(outData, metaData, SaveFolder, opts, object)
-end
+    genVAmask(vsm, size(vsm), SaveFolder, opts, object)
 end
 
-% Local function
+    function info = localPipelineInfo()
+        info = PipelineManager.createPipelineInfo( ...
+            'genVSM', ...
+            'Generate a Visual Sign Map from retinotopy-map UMT input.');
 
-function genVAmask(vsm, metaData, SaveFolder, opts, object)
-% GENVAMASK generates a .mat file with the ROIs from the segmented 
-% Visual Sign Map created using the function "genVSM.m".
-% Inputs:
-%   data: numerical matrix containing the visual sign map (with dimensions "Y", "X").
-%   metaData: .mat file with meta data associated with "data".
-%   SaveFolder (char): full path to the folder containing the "VSM.dat"
-%       file. The ROImasks file will be saved here as well.
-%   opts (optional) : structure containing extra parameters:
-%       - fileName (char): Name of the ".mat" file to save the masks.
-%       - b_UseMask (bool): If TRUE, the function loads a logical mask from
-%           the " MaskFile to create the ROIs.
-%       - MaskFile (char): Name of the ".mat" file containing the
-%          "logical_mask" variable.
-%   object (used by PipelineManager class ONLY): Protocol objecf of type "Modality".
-%       If provided, the function will look for the "MaskFile" in the "Subject" folder.
-% Output: 
-%   No output. The function will save a "ROImasks" file in the SaveFolder.
-%   This file is used by the ROImanager app.
-            
-%%% Arguments parsing and validation %%%
+        info = PipelineManager.addInput(info, ...
+            'retinotopyUMT', ...
+            {'ProcessedData'}, ...
+            'Retinotopy UMT containing AzimuthMap and ElevationMap entries.', ...
+            'position', 1, ...
+            'callType', 'positional', ...
+            'isData', true, ...
+            'supportsFile', false, ...
+            'dataMode', 'ram');
+
+        info = PipelineManager.addInput(info, ...
+            'SaveFolder', ...
+            {'parameter'}, ...
+            'Folder used for optional patch generation.', ...
+            'kind', 'parameter', ...
+            'position', 2, ...
+            'callType', 'positional', ...
+            'default', '', ...
+            'dataType', 'char');
+
+        info = PipelineManager.addInput(info, ...
+            'PhaseMapFilter_Sigma', ...
+            'parameter', ...
+            'Gaussian sigma for phase-map smoothing.', ...
+            'kind', 'parameter', ...
+            'position', 3, ...
+            'callType', 'namevalue', ...
+            'default', 0, ...
+            'dataType', 'numeric');
+
+        info = PipelineManager.addInput(info, ...
+            'VSMFilter_Sigma', ...
+            'parameter', ...
+            'Gaussian sigma for VSM smoothing.', ...
+            'kind', 'parameter', ...
+            'position', 4, ...
+            'callType', 'namevalue', ...
+            'default', 0, ...
+            'dataType', 'numeric');
+
+        info = PipelineManager.addInput(info, ...
+            'b_CreatePatches', ...
+            'parameter', ...
+            'If true, create and save patch labels.', ...
+            'kind', 'parameter', ...
+            'position', 5, ...
+            'callType', 'namevalue', ...
+            'default', false, ...
+            'allowed', {false,true}, ...
+            'dataType', 'logical');
+
+        info = PipelineManager.addInput(info, ...
+            'PatchFileName', ...
+            'parameter', ...
+            'Output filename for patch labels.', ...
+            'kind', 'parameter', ...
+            'position', 6, ...
+            'callType', 'namevalue', ...
+            'default', 'VisualCtxAreas.mat', ...
+            'dataType', 'char');
+
+        info = PipelineManager.addInput(info, ...
+            'b_UseMask', ...
+            'parameter', ...
+            'If true, use a logical mask during patch generation.', ...
+            'kind', 'parameter', ...
+            'position', 7, ...
+            'callType', 'namevalue', ...
+            'default', false, ...
+            'allowed', {false,true}, ...
+            'dataType', 'logical');
+
+        info = PipelineManager.addInput(info, ...
+            'MaskFile', ...
+            'parameter', ...
+            'Mask filename used when b_UseMask is true.', ...
+            'kind', 'parameter', ...
+            'position', 8, ...
+            'callType', 'namevalue', ...
+            'default', 'ImagingReferenceFrame.mat', ...
+            'dataType', 'char');
+
+        info = PipelineManager.addOutput(info, ...
+            'outData', ...
+            {'ProcessedData'}, ...
+            'data', ...
+            'Visual Sign Map output UMT.', ...
+            default_Output, ...
+            1, ...
+            'isData', true);
+    end
+end
+
+function genVAmask(vsm, frameSize, SaveFolder, opts, object)
+%GENVAMASK Generate a .mat file with segmented visual-area patches.
 
 if ~endsWith(opts.PatchFileName, '.mat')
     opts.PatchFileName = [opts.PatchFileName, '.mat'];
 end
-    
-% Validate if "data" is an Image Time Series:
-errID = 'umIToolbox:genVAmask:InvalidInput';
-errMsg = 'Wrong Input Data type. Data must be an Image with dimensions "Y", "X".';
-assert(all(ismember(metaData.dim_names,{'Y', 'X'})), errID, errMsg);
+
 if opts.b_UseMask
     if isempty(fileparts(opts.MaskFile))
-        % Update path for mask file:
         opts.MaskFile = fullfile(SaveFolder, opts.MaskFile);
     end
-    % Retrieve file containing logical mask
-    opts.MaskFile = findMyROIfile(opts.MaskFile,object);
+    opts.MaskFile = findMyROIfile(opts.MaskFile, object);
     a = load(opts.MaskFile, 'logical_mask');
     if isempty(fieldnames(a))
-        msg = 'Variable "logical_mask" not found in mask file!';
-        msgID = 'umIToolbox:genVAmask:MissingInput';
-        error(msgID,msg);
+        error('umIToolbox:genVAmask:MissingInput', ...
+            'Variable "logical_mask" not found in mask file!');
     end
-    disp(['Using logical mask from file: ' opts.MaskFile ]);
+    disp(['Using logical mask from file: ' opts.MaskFile]);
     logical_mask = a.logical_mask;
-    % Check if the logical mask has the same frame size than the data:
-    assert(isequal(size(logical_mask), metaData.datSize), 'umIToolbox:genVAmask:InvalidInput',...
+    assert(isequal(size(logical_mask), frameSize), ...
+        'umIToolbox:genVAmask:InvalidInput', ...
         'The logical mask size is different from the frame size in data');
 else
-    logical_mask = true(metaData.datSize);
-end    
-% Segment the Visual Sign Map:
-% Set threshold as +-1.5 STD of the VSM ( Garret et al. 2014):
-thr = 1.5*std(vsm(:));
-% First, binarize the VSM and intersect with logical mask:
-rawMap = (imbinarize(abs(vsm), thr) & logical_mask);
-% Perform opening of Binary Image
-rawMap = bwmorph(rawMap,'open',inf);
-[L,nPatch] = bwlabel(rawMap);
-% patchSign = zeros(size(nPatch));
-% Close patches:
-patchMap = zeros(size(rawMap),'single');
-for i = 1:nPatch 
-%     if mean(vsm(L == i),'all') > 0
-%         patchSign(i) = 1;
-%     elseif mean(vsm(L ==i),'all') < 0
-%         patchSign(i) = -1;
-%     end
-    patchMap = patchMap + bwmorph(imfill(L == i, 'holes'), 'close', Inf);
+    logical_mask = true(frameSize);
 end
-total_area = bwmorph(imfill(~imerode(~patchMap, strel('diamond',15)),...
-    'holes'), 'majority', Inf);
-% Estimate patch borders:
+
+thr = 1.5 * std(vsm(:));
+rawMap = (imbinarize(abs(vsm), thr) & logical_mask);
+rawMap = bwmorph(rawMap, 'open', inf);
+[L, nPatch] = bwlabel(rawMap);
+
+patchMap = zeros(size(rawMap), 'single');
+for i = 1:nPatch
+    patchMap = patchMap + bwmorph(imfill(L == i, 'holes'), 'close', inf);
+end
+
+total_area = bwmorph(imfill(~imerode(~patchMap, strel('diamond', 15)), 'holes'), 'majority', inf);
 patchBorder = total_area - patchMap;
-patchBorder = bwmorph(patchBorder, 'skel', Inf);
-patchBorder = bwmorph(patchBorder, 'spur',Inf); % Remove small edges from the border.
-patches = imfill(patchBorder,'holes') & ~patchBorder;
-patches = bwlabel(patches,4);
-% Save patches to ".mat" file:
+patchBorder = bwmorph(patchBorder, 'skel', inf);
+patchBorder = bwmorph(patchBorder, 'spur', inf);
+patches = imfill(patchBorder, 'holes') & ~patchBorder;
+patches = bwlabel(patches, 4);
+
 filename = fullfile(SaveFolder, opts.PatchFileName);
 save(filename, 'patches');
 disp(['Patches saved as ' filename]);

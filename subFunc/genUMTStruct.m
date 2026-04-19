@@ -352,7 +352,7 @@ end
 function labels = iNormalizeLabelVector(labelsIn, errID, dimName)
 if isstring(labelsIn) && isvector(labelsIn)
     labels = cellstr(labelsIn(:).');
-elif iscell(labelsIn) && isvector(labelsIn) && ...
+elseif iscell(labelsIn) && isvector(labelsIn) && ...
         all(cellfun(@(c) ischar(c) || (isstring(c) && isscalar(c)), labelsIn))
     labels = cellstr(string(labelsIn(:).'));
 else
@@ -508,7 +508,7 @@ repIdx = repIdx(:);
 
 if isstring(evName) && isvector(evName)
     evName = cellstr(evName(:));
-elif iscell(evName) && isvector(evName) && ...
+elseif iscell(evName) && isvector(evName) && ...
         all(cellfun(@(c) ischar(c) || (isstring(c) && isscalar(c)), evName))
     evName = cellstr(string(evName(:)));
 else
