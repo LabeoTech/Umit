@@ -1,5 +1,5 @@
 function eps_pathlength = ioi_epsilon_pathlength(whichCurve,...
-    baseline_hbt, baseline_hbo, baseline_hbr, Filters)
+    baseline_hbt, baseline_hbo, baseline_hbr, FilterSetName,CameraModel)
 %	This function estimates epsilon * D, it takes into account the camera
 %	response, the leds spectra and uses a pathlength factor either set from Kohl
 %	or Dunn in the literature.
@@ -12,52 +12,41 @@ function eps_pathlength = ioi_epsilon_pathlength(whichCurve,...
 %                    Ecole Polytechnique de Montreal
 %_______________________________________________________________________________
 
-load('SysSpect.mat')
+dictSpectra = load('SysSpect.mat');
+allFilterSets = load('FilterSets.mat');
+cameraInfo = load('CameraSpect.mat');
+% Get FilterSet spectra:
+Filters.Excitation = 1;
+Filters.Emission = 1;
+if ~strcmpi(FilterSetName,'none')
+    fn = fieldnames(allFilterSets);
+    thisFilter = allFilterSets.(fn{strcmpi(fn,FilterSetName)});
+    if ~strcmpi(thisFilter.Excitation,'none')
+        Filters.Excitation = dictSpectra.(thisFilter.Excitation);
+    end
+    if ~strcmpi(thisFilter.Emission, 'none')
+        Filters.Emission = dictSpectra.(thisFilter.Emission);
+    end
+end
+allCameras = fieldnames(cameraInfo);
+idxCam = strcmpi(CameraModel,allCameras);
+if any(idxCam)
+    c_camera = dictSpectra.(cameraInfo.(allCameras{idxCam}));
+else
+    c_camera = ones(1,301);
+end
 
 % Rough baseline concentrations (in uM) : 100 uM (in the brain)
 c_tot = baseline_hbt*1e-6; %100e-6;
-
-switch(Filters.Excitation)
-    case 'GCaMP'
-        c_led(1,:) = Red.*FF01496LP;
-        c_led(2,:) = Green.*FF01496LP;
-        c_led(3,:) = Yellow.*FF01496LP;
-    case 'none'
-        c_led(1,:) = Red;
-        c_led(2,:) = Green;
-        c_led(3,:) = Yellow;
-    otherwise
-        c_led(1,:) = Red;
-        c_led(2,:) = Green;
-        c_led(3,:) = Yellow;
-end
-
-switch(Filters.Emission)
-    case 'GCaMP'
-        c_led(1,:) = c_led(1,:).*FF01496LP;
-        c_led(2,:) = c_led(2,:).*FF01496LP;
-        c_led(3,:) = c_led(3,:).*FF01496LP;
-    case 'jRGECO'
-        c_led(1,:) = c_led(1,:).*FF01512630;
-        c_led(2,:) = c_led(2,:).*FF01512630;
-        c_led(3,:) = c_led(3,:).*FF01512630;
-    otherwise
-        c_led(1,:) = c_led(1,:);
-        c_led(2,:) = c_led(2,:);
-        c_led(3,:) = c_led(3,:);
-end
-
-switch(Filters.Camera)
-    case 'CS2100M'
-        c_camera = ThorQLux;
-    case 'D1024'
-        c_camera = PF1024;
-    case 'D1312'
-        c_camera = PF1312;
-    otherwise
-        c_camera = ones(1,301);
-end
-        
+% Set Excitation:
+c_led(1,:) = dictSpectra.Red.*Filters.Excitation;
+c_led(2,:) = dictSpectra.Green.*Filters.Excitation;
+c_led(3,:) = dictSpectra.Yellow.*Filters.Excitation;
+% Set Emission
+c_led(1,:) = c_led(1,:).*Filters.Emission;
+c_led(2,:) = c_led(2,:).*Filters.Emission;
+c_led(3,:) = c_led(3,:).*Filters.Emission;
+%
 c_pathlength = ioi_path_length_factor(400, 700, 301, c_tot*1000, whichCurve);
 [c_ext_hbo,c_ext_hbr] = ioi_get_extinctions(400, 700, 301);
 
@@ -83,7 +72,7 @@ for iled=1:3
     end
     IHbO = IHbO/median(IHbO);
     IHbR = IHbR/median(IHbR);
-
+    
     % Compute effective eps
     p1 = polyfit(CHbO,-log(IHbO),1);
     p2 = polyfit(CHbR,-log(IHbR),1);
