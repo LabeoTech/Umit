@@ -1,170 +1,233 @@
-function varargout = HemoCorrection(Folder, FileData, fMetaData, varargin)
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% HEMOCORRECTION Remove hemodynamic fluctuations from fluorescence signals.
+function varargout = HemoCorrection(data, SaveFolder, varargin)
+%HEMOCORRECTION Remove hemodynamic fluctuations from fluorescence signals.
 %
-% This function performs pixel-wise hemodynamic regression on fluorescence
-% image time series using one or more intrinsic/hemodynamic channels.
+%   out = HemoCorrection(data, SaveFolder)
+%   out = HemoCorrection(data, SaveFolder, 'ChannelList', {'red'})
+%   out = HemoCorrection(data, SaveFolder, 'LowPassFreq', 2)
 %
-% The function supports two execution modes:
+%   This function performs pixel-wise hemodynamic regression on
+%   fluorescence image time series using one or more intrinsic/hemodynamic
+%   reference channels located in the same SaveFolder.
 %
-%   1) STANDARD MODE (in-memory)
-%      - Triggered when FileData is a numeric array
-%      - All data are loaded into RAM
+%   Supported inputs:
+%       - Numeric fluorescence data with dimensions Y X T
+%       - Raw .dat fluorescence filename
 %
-%   2) LOW-RAM MODE (streaming / hybrid)
-%      - Triggered when FileData is a filename (.dat)
-%      - Data are streamed in spatial chunks and written to disk
+%   Inputs:
+%       data       - 3D numeric YXT array or raw .dat filename.
+%       SaveFolder - Folder containing AcqInfos.mat and the hemodynamic
+%                    reference channel files.
 %
-% Inputs
-% ------
-% Folder :
-%   Path to the folder containing the dataset.
+%   Name-Value parameters:
+%       'ChannelList' - Cell array of channel tags or filenames. Supported
+%                       tags: 'red', 'green', 'yellow', 'amber'.
+%                       If empty, a list dialog is shown.
+%       'LowPassFreq' - Low-pass cutoff frequency in Hz. Set to 0 to
+%                       disable filtering.
 %
-% FileData :
-%   Either:
-%       - 3D numeric array [Y, X, T]
-%       - .dat fluorescence filename
+%   Output:
+%       - Numeric input  -> corrected numeric YXT data
+%       - Raw .dat input -> corrected output filename
 %
-% fMetaData :
-%   Metadata associated with the fluorescence signal.
-%
-% varargin :
-%   Optional inputs:
-%       cList :
-%           Cell array specifying hemodynamic channels to use. Supports:
-%               {'red','green','amber'}
-%           and custom filenames such as:
-%               {'myReference.dat'}
-%
-%       sFreq :
-%           Low-pass cutoff frequency in Hz. Set to 0 to disable filtering.
-%
-% Output
-% ------
-% If an output is requested:
-%   - corrected fluorescence array or output filename
-%
-% If no output is requested:
-%   - standard mode overwrites original fluorescence file
+%   Notes:
+%       - Only numeric arrays and raw .dat files are supported.
+%       - Metadata are resolved directly from AcqInfos.mat.
+%       - Reference channels must be stored in the same SaveFolder.
 
-p = inputParser;
-addRequired(p, 'Folder', @isfolder);
-addRequired(p, 'FileData', @(x) (isnumeric(x) && ndims(x) == 3) || ischar(x));
-addRequired(p, 'fMetaData', @(x) isa(x,'matlab.io.MatFile') || isstruct(x));
-addOptional(p, 'cList', {}, @(x) isempty(x) || (iscell(x) && all(cellfun(@ischar, x))));
-addOptional(p, 'sFreq', 0, @(x) isnumeric(x) && isscalar(x));
-addParameter(p, 'outFilename', 'HEMOCORRECTED_DATA.dat', @ischar);
-parse(p, Folder, FileData, fMetaData, varargin{:});
+% Default output for pipeline management:
+default_Output = 'fluoHemoCorr.dat'; %#ok<NASGU>
 
-cList = p.Results.cList;
-sFreq = p.Results.sFreq;
-outFilename = p.Results.outFilename;
-
-if ~strcmp(Folder(end), filesep)
-    Folder = [Folder filesep];
+if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) && ...
+        strcmpi(strtrim(char(string(data))), 'pipelineInfo')
+    varargout{1} = localPipelineInfo();
+    return
 end
 
-% -------------------------------------------------------------------------
-% Resolve hemodynamic channel files
-% -------------------------------------------------------------------------
-if isempty(cList)
-    cList = dir([Folder '*.dat']);
-    fn = {};
-    for ind = 1:numel(cList)
-        if ~strcmp(cList(ind).name(1), 'f')
-            fn{end+1} = cList(ind).name; %#ok<AGROW>
+p = inputParser;
+p.FunctionName = 'HemoCorrection';
+addRequired(p, 'data', @(x) (isnumeric(x) && ndims(x) == 3) || ischar(x) || (isstring(x) && isscalar(x)));
+addRequired(p, 'SaveFolder', @(x) (ischar(x) || (isstring(x) && isscalar(x))) && isfolder(x));
+addParameter(p, 'ChannelList', {}, @(x) isempty(x) || (iscell(x) && all(cellfun(@(c) ischar(c) || (isstring(c) && isscalar(c)), x))));
+addParameter(p, 'LowPassFreq', 0, @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0);
+parse(p, data, SaveFolder, varargin{:});
+
+channelList = p.Results.ChannelList;
+lowPassFreq = double(p.Results.LowPassFreq);
+
+acqFile = fullfile(SaveFolder, 'AcqInfos.mat');
+assert(isfile(acqFile), ...
+    'Umitoolbox:HemoCorrection:missingAcqInfos', ...
+    'AcqInfos.mat was not found in "%s".', SaveFolder);
+
+md = load(acqFile, 'AcqInfoStream');
+assert(isfield(md, 'AcqInfoStream') && isstruct(md.AcqInfoStream), ...
+    'Umitoolbox:HemoCorrection:invalidAcqInfos', ...
+    'AcqInfos.mat does not contain a valid AcqInfoStream structure.');
+acq = md.AcqInfoStream;
+
+assert(isfield(acq, 'Height') && isfield(acq, 'Width') && isfield(acq, 'Length') && isfield(acq, 'FrameRateHz'), ...
+    'Umitoolbox:HemoCorrection:missingAcqFields', ...
+    'AcqInfoStream must contain Height, Width, Length, and FrameRateHz.');
+
+fMetaData = struct();
+fMetaData.datSize = [double(acq.Height), double(acq.Width)];
+fMetaData.datLength = double(acq.Length);
+fMetaData.Freq = double(acq.FrameRateHz);
+fMetaData.Datatype = 'single';
+
+if ischar(data) || (isstring(data) && isscalar(data))
+    [~,~,ext] = fileparts(char(string(data)));
+    assert(strcmpi(ext, '.dat'), ...
+        'Umitoolbox:HemoCorrection:unsupportedInputFile', ...
+        'Only raw .dat fluorescence files are supported.');
+    fileData = fullfile(SaveFolder, char(string(data)));
+    assert(isfile(fileData), ...
+        'Umitoolbox:HemoCorrection:missingInputFile', ...
+        'Input fluorescence file was not found: %s', fileData);
+else
+    fileData = data;
+end
+
+assert(lowPassFreq < fMetaData.Freq/2 || lowPassFreq == 0, ...
+    'Umitoolbox:HemoCorrection:invalidLowPassFreq', ...
+    'LowPassFreq must be smaller than the Nyquist frequency.');
+
+% Resolve hemodynamic reference channels. Keep the interactive list dialog
+% for standalone use when the caller does not provide ChannelList.
+if isempty(channelList)
+    datFiles = dir(fullfile(SaveFolder, '*.dat'));
+    available = {};
+    for iFile = 1:numel(datFiles)
+        thisName = datFiles(iFile).name;
+        if ~(ischar(data) || (isstring(data) && isscalar(data))) || ~strcmpi(thisName, char(string(data)))
+            available{end+1} = thisName; %#ok<AGROW>
         end
     end
+
+    assert(~isempty(available), ...
+        'Umitoolbox:HemoCorrection:noReferenceChannelsFound', ...
+        'No hemodynamic reference channel files were found in "%s".', SaveFolder);
 
     [idx, tf] = listdlg('PromptString', {'Select channels to be used to', ...
         'compute hemodynamic correction.', ''}, ...
-        'ListString', fn);
+        'ListString', available);
 
     if tf == 0
-        return;
+        error('Umitoolbox:HemoCorrection:selectionCancelled', ...
+            'Hemodynamic channel selection was cancelled by the user.');
     end
 
-    fn = fn(idx);
+    resolvedFiles = available(idx);
 else
-    fn = {};
-    for ind = 1:numel(cList)
-        tag = lower(cList{ind});
-
+    resolvedFiles = cell(1, numel(channelList));
+    for iChan = 1:numel(channelList)
+        tag = lower(char(string(channelList{iChan})));
         switch tag
             case 'red'
-                if exist([Folder 'rChan.dat'], 'file')
-                    fn{end+1} = 'rChan.dat'; %#ok<AGROW>
-                else
-                    fn{end+1} = 'red.dat'; %#ok<AGROW>
-                end
-
-            case {'amber', 'yellow'}
-                if exist([Folder 'yChan.dat'], 'file')
-                    fn{end+1} = 'yChan.dat'; %#ok<AGROW>
-                else
-                    fn{end+1} = 'yellow.dat'; %#ok<AGROW>
-                end
-
+                resolvedFiles{iChan} = 'red.dat';
+            case {'yellow', 'amber'}
+                resolvedFiles{iChan} = 'yellow.dat';
             case 'green'
-                if exist([Folder 'gChan.dat'], 'file')
-                    fn{end+1} = 'gChan.dat'; %#ok<AGROW>
-                else
-                    fn{end+1} = 'green.dat'; %#ok<AGROW>
-                end
-
+                resolvedFiles{iChan} = 'green.dat';
             otherwise
-                [~, name, ext] = fileparts(cList{ind});
+                [~, name, ext] = fileparts(char(string(channelList{iChan})));
                 if isempty(ext)
                     ext = '.dat';
                 end
-                fn{end+1} = [name, ext]; %#ok<AGROW>
+                resolvedFiles{iChan} = [name ext];
         end
     end
 end
 
-% Expand to full paths
-fn = fullfile(Folder, fn);
-
-% -------------------------------------------------------------------------
-% Validate optional temporal filter
-% -------------------------------------------------------------------------
-if sFreq
-    freq = fMetaData.Freq;
-    if sFreq >= freq/2
-        sFreq = 0;
-    end
+resolvedFiles = fullfile(SaveFolder, resolvedFiles);
+for iFile = 1:numel(resolvedFiles)
+    assert(isfile(resolvedFiles{iFile}), ...
+        'Umitoolbox:HemoCorrection:missingReferenceChannel', ...
+        'Hemodynamic reference channel was not found in SaveFolder: %s', resolvedFiles{iFile});
 end
 
-% -------------------------------------------------------------------------
-% Dispatch by input type
-% -------------------------------------------------------------------------
-if ischar(FileData)
-    FileData = fullfile(Folder, FileData);
-    outFilename = fullfile(Folder, outFilename);
+if ischar(data) || (isstring(data) && isscalar(data))
+    outPath = fullfile(SaveFolder, default_Output);
+    if isfile(outPath)
+        [folderPath, baseName, ext] = fileparts(outPath);
+        outPath = fullfile(folderPath, [baseName '_preallocData' ext]);
+    end
 
-    outFileData = HemoCorrection_lowRAMmode(outFilename, FileData, fMetaData, fn, sFreq);
-    [~, outFileData, ext] = fileparts(outFileData);
-    varargout{1} = [outFileData, ext];
+    outFileData = HemoCorrection_lowRAMmode(outPath, fileData, fMetaData, resolvedFiles, lowPassFreq);
+    [~, baseName, ext] = fileparts(outFileData);
+    varargout{1} = [baseName ext];
 else
-    FileData = HemoCorrection_standardMode(FileData, fMetaData, fn, sFreq);
-
-    if nargout
-        varargout{1} = FileData;
+    correctedData = HemoCorrection_standardMode(fileData, fMetaData, resolvedFiles, lowPassFreq);
+    if nargout > 0
+        varargout{1} = correctedData;
     else
-        [~, filename, ext] = fileparts(fMetaData.datFile);
-        fid = fopen([Folder filename ext], 'w');
-        fwrite(fid, FileData, 'single');
-        fclose(fid);
+        error('Umitoolbox:HemoCorrection:noOutputForNumericInput', ...
+            ['Numeric input mode requires an output argument in the refactored version. ' ...
+             'Use a raw .dat input to write corrected data to disk.']);
     end
 end
-end
 
+    function info = localPipelineInfo()
+        info = PipelineManager.createPipelineInfo( ...
+            'HemoCorrection', ...
+            'Remove hemodynamic fluctuations from fluorescence image time series.');
+
+        info = PipelineManager.addInput(info, ...
+            'data', ...
+            {'ImageTimeSeries'}, ...
+            'Fluorescence image time series input.', ...
+            'position', 1, ...
+            'callType', 'positional', ...
+            'isData', true, ...
+            'supportsFile', true, ...
+            'dataMode', 'either');
+
+        info = PipelineManager.addInput(info, ...
+            'SaveFolder', ...
+            {'parameter'}, ...
+            'Folder containing AcqInfos.mat and hemodynamic channels.', ...
+            'kind', 'parameter', ...
+            'position', 2, ...
+            'callType', 'positional', ...
+            'default', '', ...
+            'dataType', 'char');
+
+        info = PipelineManager.addInput(info, ...
+            'ChannelList', ...
+            'parameter', ...
+            'List of hemodynamic channels or filenames.', ...
+            'kind', 'parameter', ...
+            'position', 3, ...
+            'callType', 'namevalue', ...
+            'default', {{}}, ...
+            'dataType', 'cell');
+
+        info = PipelineManager.addInput(info, ...
+            'LowPassFreq', ...
+            'parameter', ...
+            'Low-pass cutoff frequency in Hz.', ...
+            'kind', 'parameter', ...
+            'position', 4, ...
+            'callType', 'namevalue', ...
+            'default', 0, ...
+            'dataType', 'numeric');
+
+        info = PipelineManager.addOutput(info, ...
+            'outData', ...
+            {'ImageTimeSeries'}, ...
+            'data', ...
+            'Corrected fluorescence image time series.', ...
+            default_Output, ...
+            1, ...
+            'isData', true);
+    end
+end
 
 %% ========================================================================
 % Local functions
 % =========================================================================
 function fData = HemoCorrection_standardMode(fData, fMetaData, colorList, LPcutoffFreq)
-% HEMOCORRECTION_STANDARDMODE In-memory hemodynamic correction.
+%HEMOCORRECTION_STANDARDMODE In-memory hemodynamic correction.
 
 Ny = fMetaData.datSize(1);
 Nx = fMetaData.datSize(2);
@@ -227,7 +290,7 @@ for ii = 1:nChunks
         [~, colorName, ext] = fileparts(colorList{kk});
 
         if nChunks == 1
-            tmp = loadDatFile(colorList{kk});
+            tmp = loadData(colorList{kk});
         else
             tmp = spatialSlabIO('read', fid{kk}, Ny, Nx, Nt, idxPixels_with_pad, 'single');
         end
@@ -237,7 +300,7 @@ for ii = 1:nChunks
         if LPcutoffFreq
             tmp = reshape(tmp, [], tmp_sz(3));
             waitbar(.99, h, ['Applying temporal filter [' colorName ext ']']); drawnow()
-            tmp = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(tmp')))';
+            tmp = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(tmp')))' ;
             tmp = reshape(tmp, tmp_sz);
         end
 
@@ -288,7 +351,7 @@ end
 
 
 function outFilename = HemoCorrection_lowRAMmode(outFilename, fluoFile, fMetaData, colorList, LPcutoffFreq)
-% HEMOCORRECTION_LOWRAMMODE Disk-streamed hemodynamic correction.
+%HEMOCORRECTION_LOWRAMMODE Disk-streamed hemodynamic correction.
 
 f_fid = fopen(fluoFile, 'r');
 c_f = onCleanup(@() safeFclose(f_fid)); %#ok<NASGU>
@@ -317,7 +380,7 @@ if LPcutoffFreq
     lpass = design(f, 'butter');
 end
 
-preallocateDatFile(outFilename, fMetaData);
+preallocateDatFile(outFilename, [Ny, Nx, Nt], fMetaData.Datatype);
 fid_out = fopen(outFilename, 'r+');
 c_out = onCleanup(@() safeFclose(fid_out)); %#ok<NASGU>
 
@@ -357,7 +420,7 @@ for ii = 1:nChunks
         if LPcutoffFreq
             waitbar(.99, h, ['Applying temporal filter [' colorName ext ']']); drawnow()
             tmp = reshape(tmp, [], tmp_sz(3));
-            tmp = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(tmp')))';
+            tmp = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(tmp')))' ;
             tmp = reshape(tmp, tmp_sz);
         end
 
