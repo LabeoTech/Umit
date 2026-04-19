@@ -48,7 +48,7 @@ switch version
         schema.version = 1;
 
         schema.allowedKinds = {'image', 'roi'};
-        schema.allowedDims  = {'Y', 'X', 'T', 'E','F', 'ROI', 'Measure'};
+        schema.allowedDims  = {'Y', 'X', 'T', 'E','F', 'ROI','Pixel', 'Measure'};
 
         schema.requiredTopFields = {'version', 'kind', 'data'};
         schema.optionalTopFields = {'labels', 'eventInfo'};
@@ -80,6 +80,7 @@ switch version
             {'ROI','E'}, ...
             {'ROI','Measure'}, ...
             {'ROI','T','E'}, ...
+            {'ROI','Pixel'},...
             {'ROI','ROI'}};
 
     otherwise
