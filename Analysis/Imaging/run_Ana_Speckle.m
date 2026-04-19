@@ -1,39 +1,134 @@
-function [outData, metaData]= run_Ana_Speckle(SaveFolder, data, varargin)
-% RUN_ANA_SPECKLE calls the function ANA_SPECKLE from the IOI library (LabeoTech).
-% In brief, this function calculates blood flow (in arbitrary units) from 
-% a Laser Speckle Contrast Imaging data
+function outData = run_Ana_Speckle(SaveFolder, data, varargin)
+%RUN_ANA_SPECKLE Wrapper around Ana_Speckle.
+%
+%   outData = run_Ana_Speckle(SaveFolder, data)
+%   outData = run_Ana_Speckle(SaveFolder, data, ...
+%       'bNormalize', true, ...
+%       'SpeckleFileName', 'speckle')
+%
+%   This wrapper dispatches Ana_Speckle in standard or RAM-safe mode.
+%
+%   Inputs:
+%       SaveFolder      - Folder containing the speckle file and metadata.
+%       data            - Numeric YXT array placeholder or raw .dat filename.
+%                         The underlying Ana_Speckle implementation remains
+%                         file-based; numeric input is accepted to preserve
+%                         pipeline compatibility and selects standard mode.
+%
+%   Name-Value parameters:
+%       'bNormalize'      - Logical scalar. Normalize by temporal mean.
+%       'SpeckleFileName' - Basename or filename of the speckle input.
+%
+%   Output:
+%       outData         - Standard mode: numeric Y x X x (T-1) array.
+%                         Low-RAM mode : output filename.
+%
+%   Notes:
+%       - The legacy metaData output has been removed. File opening and
+%         metadata resolution are handled through loadMetaData(...).
 
-% Defaults:
-default_Output = 'Flow.dat'; %#ok This line is here just for Pipeline management
-default_opts = struct('bNormalize', false, 'SpeckleFileName','speckle');
-opts_values = struct('bNormalize',[false, true], 'SpeckleFileName',{{'speckle'}});%#ok  % This is here only as a reference for PIPELINEMANAGER.m.
-%%% Arguments parsing and validation %%%
-p = inputParser;
-% Save folder:
-addRequired(p, 'SaveFolder', @isfolder);
-addRequired(p,'data',@(x) ( isnumeric(x) && ndims(x)==3 ) || ischar(x));
-addOptional(p, 'opts', default_opts,@(x) isstruct(x) && ~isempty(x));
-% Parse inputs:
-parse(p,SaveFolder,data, varargin{:});
-SaveFolder = p.Results.SaveFolder;
-opts = p.Results.opts;
-clear p
-% Run Ana_Speckle function from IOI library:
-disp('Calculating  blood flow...')
-if ischar(data)
-    b_RAMsafeMode = true;
-else
-    b_RAMsafeMode = false;
+% Default output for pipeline management.
+default_Output = 'Flow.dat'; %#ok<NASGU>
+
+if nargin == 1 && (ischar(SaveFolder) || (isstring(SaveFolder) && isscalar(SaveFolder))) && ...
+        strcmpi(strtrim(char(string(SaveFolder))), 'pipelineInfo')
+    outData = localPipelineInfo();
+    return
 end
-[outData, metaData] = Ana_Speckle(SaveFolder,opts.bNormalize, opts.SpeckleFileName,'bRAMsafe',b_RAMsafeMode);
-if b_RAMsafeMode
-    % Update meta data with extra params from original file
-    originalMetaData = load(fullfile(SaveFolder,strrep(data,'.dat','.mat')));
-    fnToMerge = setdiff(fieldnames(originalMetaData),fieldnames(metaData));
-    for ii = 1:length(fnToMerge)
-        metaData.(fnToMerge{ii}) = originalMetaData.(fnToMerge{ii});
+
+p = inputParser;
+p.FunctionName = 'run_Ana_Speckle';
+addRequired(p, 'SaveFolder', @(x) (ischar(x) || (isstring(x) && isscalar(x))) && isfolder(x));
+addRequired(p, 'data', @(x) (isnumeric(x) && ndims(x) == 3) || ischar(x) || (isstring(x) && isscalar(x)));
+addParameter(p, 'bNormalize', false, @(x) islogical(x) && isscalar(x));
+addParameter(p, 'SpeckleFileName', 'speckle', @(x) ischar(x) || (isstring(x) && isscalar(x)));
+parse(p, SaveFolder, data, varargin{:});
+
+SaveFolder = char(string(p.Results.SaveFolder));
+bNormalize = p.Results.bNormalize;
+speckleFileName = char(string(p.Results.SpeckleFileName));
+
+fprintf('Calculating blood flow...\n');
+
+% Decide RAM-safe mode from input type.
+bRAMsafeMode = ischar(data) || (isstring(data) && isscalar(data));
+
+% If the caller passed a file-backed input, prefer that filename unless the
+% user explicitly overrode it through SpeckleFileName.
+if bRAMsafeMode
+    [~, inputBase, inputExt] = fileparts(char(string(data)));
+    if ~isempty(inputBase)
+        if strcmpi(speckleFileName, 'speckle')
+            if strcmpi(inputExt, '.dat')
+                speckleFileName = inputBase;
+            else
+                speckleFileName = char(string(data));
+            end
+        end
     end
 end
-    
-disp('Finished Speckle Mapping.')
+
+outData = Ana_Speckle( ...
+    SaveFolder, ...
+    bNormalize, ...
+    'Filename', speckleFileName, ...
+    'RAMSafeMode', bRAMsafeMode);
+
+fprintf('Finished Speckle Mapping.\n');
+
+    function info = localPipelineInfo()
+        info = PipelineManager.createPipelineInfo( ...
+            'run_Ana_Speckle', ...
+            'Wrapper around Ana_Speckle for blood-flow computation from speckle data.');
+
+        info = PipelineManager.addInput(info, ...
+            'SaveFolder', ...
+            {'parameter'}, ...
+            'Folder containing the speckle input and metadata.', ...
+            'kind', 'parameter', ...
+            'position', 1, ...
+            'callType', 'positional', ...
+            'default', '', ...
+            'dataType', 'char');
+
+        info = PipelineManager.addInput(info, ...
+            'data', ...
+            {'ImageTimeSeries'}, ...
+            'Numeric YXT placeholder or raw .dat filename.', ...
+            'position', 2, ...
+            'callType', 'positional', ...
+            'isData', true, ...
+            'supportsFile', true, ...
+            'dataMode', 'either');
+
+        info = PipelineManager.addInput(info, ...
+            'bNormalize', ...
+            'parameter', ...
+            'If true, normalize each frame by the temporal mean.', ...
+            'kind', 'parameter', ...
+            'position', 3, ...
+            'callType', 'namevalue', ...
+            'default', false, ...
+            'allowed', {false,true}, ...
+            'dataType', 'logical');
+
+        info = PipelineManager.addInput(info, ...
+            'SpeckleFileName', ...
+            'parameter', ...
+            'Basename or filename of the speckle input.', ...
+            'kind', 'parameter', ...
+            'position', 4, ...
+            'callType', 'namevalue', ...
+            'default', 'speckle', ...
+            'dataType', 'char');
+
+        info = PipelineManager.addOutput(info, ...
+            'outData', ...
+            {'ImageTimeSeries'}, ...
+            'data', ...
+            'Blood-flow output from Ana_Speckle.', ...
+            default_Output, ...
+            1, ...
+            'isData', true);
+    end
 end

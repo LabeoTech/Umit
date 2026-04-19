@@ -499,26 +499,28 @@ end
 % Helper: Get frame rate from AcqInfos.mat
 % =========================================================================
 function freqHz = iGetFrameRateHz(SaveFolder)
+%IGETFRAMERATEHZ Resolve frame rate using loadMetaData when possible.
+%
+% This avoids relying directly on AcqInfos.mat as the single source of
+% truth now that derived .dat files can legally have a temporal length that
+% differs from the original acquisition length.
 
-acqFile = fullfile(SaveFolder, 'AcqInfos.mat');
-if ~isfile(acqFile)
-    error('normalizeLPF:MissingAcqInfos', ...
-        'AcqInfos.mat was not found in SaveFolder "%s".', SaveFolder);
+candidateFiles = [dir(fullfile(SaveFolder, '*.dat')); dir(fullfile(SaveFolder, '*.umt'))];
+
+if isempty(candidateFiles)
+    error('normalizeLPF:MissingReferenceData', ...
+        ['Could not determine frame rate because no supported data file ' ...
+         '(*.dat or *.umt) was found in SaveFolder "%s".'], ...
+        SaveFolder);
 end
 
-S = load(acqFile);
-if isfield(S, 'AcqInfoStream')
-    acqInfo = S.AcqInfoStream;
-else
-    fn = fieldnames(S);
-    acqInfo = S.(fn{1});
-end
+meta = loadMetaData(fullfile(SaveFolder, candidateFiles(1).name));
 
-if ~isfield(acqInfo, 'FrameRateHz') || isempty(acqInfo.FrameRateHz)
+if ~isfield(meta, 'Freq') || isempty(meta.Freq)
     error('normalizeLPF:MissingFrameRate', ...
-        'AcqInfoStream must contain FrameRateHz.');
+        'loadMetaData did not return Freq for "%s".', candidateFiles(1).name);
 end
 
-freqHz = double(acqInfo.FrameRateHz);
+freqHz = double(meta.Freq);
 
 end

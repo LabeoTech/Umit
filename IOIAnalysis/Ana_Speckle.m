@@ -1,232 +1,326 @@
-function varargout = Ana_Speckle(Folder, bNormalize, varargin)
-% ANa_SPECKLE calculates blood flow from laser speckle data.
+function varargout = Ana_Speckle(SaveFolder, bNormalize, varargin)
+%ANA_SPECKLE Calculate blood-flow maps from speckle data.
 %
-% Usage:
-%   Ana_Speckle(Folder, bNormalize)
-%   data = Ana_Speckle(Folder, bNormalize)
-%   [data, metaData] = Ana_Speckle(Folder, bNormalize, 'filename', bLowRAM)
+%   Ana_Speckle(SaveFolder, bNormalize)
+%   data = Ana_Speckle(SaveFolder, bNormalize)
+%   [data, metaData] = Ana_Speckle(SaveFolder, bNormalize, ...)
 %
-% Inputs:
-%   Folder      : Path to the folder containing the dataset.
-%   bNormalize  : Logical flag to normalize the output by the temporal mean.
-%   filename    : (Optional) Name of the .dat file to process (default: 'speckle').
-%   bLowRAM     : (Optional) Logical flag to enable low RAM hybrid processing (default: false).
+%   This function computes blood-flow maps from laser speckle data using
+%   the existing algorithm:
+%       1) optional normalization by the temporal mean intensity
+%       2) local contrast estimation from each frame
+%       3) conversion from contrast to flow using private_flow_from_contrast
+%       4) temporal median filtering
 %
-% Outputs:
-%   data        : 3D matrix containing blood flow data (Y × X × T-1).
-%   metaData    : Structure containing metadata of the processed dataset.
+%   Inputs:
+%       SaveFolder   - Folder containing the speckle .dat file and
+%                      metadata sources resolvable by loadMetaData(...).
+%       bNormalize   - Logical scalar. If true, normalize each frame by the
+%                      temporal mean before contrast computation.
 %
-% Behavior:
-%   - If no output is requested, the function saves "Flow.dat" and "Flow.mat" in the Folder.
-%   - Low RAM mode uses a two-pass approach to compute temporal mean and flow.
-%   - Standard mode loads the full dataset into memory for faster computation.
-%   - The function applies temporal median filtering and converts contrast to flow.
+%   Name-Value parameters:
+%       'Filename'    - Basename or filename of the speckle .dat input.
+%                       Default: 'speckle'
+%       'RAMSafeMode' - Logical scalar. If true, use low-RAM file-backed
+%                       execution. Default: false
+%
+%   Outputs:
+%       data / outFile - Standard mode returns a numeric array with size
+%                        Y x X x (T-1). Low-RAM mode returns the output
+%                        filename.
+%       metaData       - Flat compatibility metadata describing the output.
+%
+%   Notes:
+%       - The output temporal length is T-1 by design. No interpolation is
+%         applied to force the result back to T.
+%       - Raw and derived .dat lengths are resolved through loadMetaData,
+%         which infers datLength from the actual file size.
+%       - ExposureSpeckleMsec is read from the metadata returned by
+%         loadMetaData(...).
 
+% Default output for pipeline management.
+default_Output = 'Flow.dat'; 
 
-disp('Running Ana speckle...');
-
-%% Parse optional inputs
-p = inputParser;
-addRequired(p,'Folder', @ischar);
-addRequired(p,'bNormalize', @islogical);
-addOptional(p,'filename','speckle', @ischar);
-addParameter(p,'bRAMsafe', false, @islogical);
-
-parse(p, Folder, bNormalize, varargin{:});
-Folder     = p.Results.Folder;
-bNormalize = p.Results.bNormalize;
-filename   = erase(p.Results.filename, '.dat'); % remove extension if given
-bRAMsafe    = p.Results.bRAMsafe;
-
-%% Load metadata
-FileList = dir(fullfile(Folder, [filename '.dat']));
-if isempty(FileList)
-    disp(['No speckle data files found in ' Folder]);
-    disp('Speckle Analysis will not run');
-    return;
+if nargin == 1 && (ischar(SaveFolder) || (isstring(SaveFolder) && isscalar(SaveFolder))) && ...
+        strcmpi(strtrim(char(string(SaveFolder))), 'pipelineInfo')
+    varargout{1} = localPipelineInfo();
+    return
 end
 
-Iptr = load(fullfile(Folder, [filename '.mat']));
-ny = Iptr.datSize(1,1);
-nx = Iptr.datSize(1,2);
-nt = Iptr.datLength;
-tFreq = Iptr.Freq;
-speckle_int_time = Iptr.tExposure/1000;
+p = inputParser;
+p.FunctionName = 'Ana_Speckle';
+addRequired(p, 'SaveFolder', @(x) (ischar(x) || (isstring(x) && isscalar(x))) && isfolder(x));
+addRequired(p, 'bNormalize', @(x) islogical(x) && isscalar(x));
+addParameter(p, 'Filename', 'speckle', @(x) ischar(x) || (isstring(x) && isscalar(x)));
+addParameter(p, 'RAMSafeMode', false, @(x) islogical(x) && isscalar(x));
+parse(p, SaveFolder, bNormalize, varargin{:});
 
-datFile = fullfile(Folder, [filename '.dat']);
-OPTIONS.GPU = 0; OPTIONS.Power2Flag = 0; OPTIONS.Brep = 0;
-%% Low RAM / standard execution
+SaveFolder = char(string(p.Results.SaveFolder));
+bNormalize = p.Results.bNormalize;
+filename = erase(char(string(p.Results.Filename)), '.dat');
+bRAMsafe = p.Results.RAMSafeMode;
+
+fprintf('Running Ana_Speckle...\n');
+
+% -------------------------------------------------------------------------
+% Resolve input file and metadata
+% -------------------------------------------------------------------------
+datFile = fullfile(SaveFolder, [filename '.dat']);
+if ~isfile(datFile)
+    error('Ana_Speckle:InputFileNotFound', ...
+        'No speckle data file was found: "%s".', datFile);
+end
+
+Iptr = loadMetaData(datFile);
+
+requiredFields = {'Height','Width','datLength','Freq','ExposureSpeckleMsec'};
+for iField = 1:numel(requiredFields)
+    assert(isfield(Iptr, requiredFields{iField}) && ~isempty(Iptr.(requiredFields{iField})), ...
+        'Ana_Speckle:MissingMetaData', ...
+        'loadMetaData did not return required field "%s" for "%s".', ...
+        requiredFields{iField}, datFile);
+end
+
+ny = double(Iptr.Height);
+nx = double(Iptr.Width);
+nt = double(Iptr.datLength);
+tFreq = double(Iptr.Freq);
+speckle_int_time = double(Iptr.ExposureSpeckleMsec) / 1000;
+
+OPTIONS.GPU = 0;
+OPTIONS.Power2Flag = 0;
+OPTIONS.Brep = 0;
+
+outMeta = struct();
+outMeta.datFile = fullfile(SaveFolder, default_Output);
+outMeta.datSize = [ny, nx];
+outMeta.datLength = nt - 1;
+outMeta.Freq = tFreq;
+outMeta.Datatype = 'single';
+outMeta.dim_names = {'Y','X','T'};
+outMeta.Height = ny;
+outMeta.Width = nx;
+outMeta.Length = nt - 1;
+outMeta.FrameRateHz = tFreq;
+outMeta.ExposureSpeckleMsec = double(Iptr.ExposureSpeckleMsec);
+
+assert(nt >= 2, 'Ana_Speckle:InvalidInputLength', ...
+    'Speckle input must contain at least 2 frames.');
+
+%% ------------------------------------------------------------------------
+% Low-RAM mode
+% -------------------------------------------------------------------------
 if bRAMsafe
-    % --- Low RAM mode: two-pass processing ---    
-    outFile = fullfile(Folder, 'FLOWDATA.dat');
-    
-    % Determine output size: (T-1) × Y × X   
-    outMeta = struct();
-    outMeta.datFile = 'FLOWDATA.dat';
-    outMeta.datSize = [ny, nx];
-    outMeta.datLength = nt-1;
-    outMeta.Freq = tFreq;
-    outMeta.Datatype = 'single';
-    outMeta.dim_names = {'Y','X','T'};
-    
-    % Preallocate .dat file
-    preallocateDatFile(outFile, outMeta);
-    
-    fidIn  = fopen([Folder filesep filename '.dat'],'r');
-    cIn = onCleanup(@() safeFclose(fidIn));
-    fidOut = fopen(outFile,'r+');
-    cOut = onCleanup(@() safeFclose(fidOut));
-    
-    % Pass 1: Calculate temporal mean
-    fprintf("PASS 1/3: Calculating temporal mean\n")
+    outFile = fullfile(SaveFolder, default_Output);
+    if isfile(outFile)
+        [folderPath, baseName, ext] = fileparts(outFile);
+        outFile = fullfile(folderPath, [baseName '_preallocData' ext]);
+    end
+
+    preallocateDatFile(outFile, [ny, nx, nt-1], 'single');
+    outMeta.datFile = outFile;
+
+    fidIn  = fopen(datFile, 'r');
+    assert(fidIn ~= -1, 'Ana_Speckle:OpenInputFailed', ...
+        'Could not open input file "%s".', datFile);
+    cIn = onCleanup(@() safeFclose(fidIn)); %#ok<NASGU>
+
+    fidOut = fopen(outFile, 'r+');
+    assert(fidOut ~= -1, 'Ana_Speckle:OpenOutputFailed', ...
+        'Could not open output file "%s".', outFile);
+    cOut = onCleanup(@() safeFclose(fidOut)); %#ok<NASGU>
+
+    % Pass 1: temporal mean
+    fprintf('PASS 1/3: Calculating temporal mean\n');
     MeanMap = zeros(ny, nx, 'single');
     lastPct = -1;
+    frameBytes = ny * nx * getByteSize('single');
+
     for t = 1:nt
-        fseek(fidIn, (t-1)*ny*nx*getByteSize('single'),'bof');
-        frame = fread(fidIn, ny*nx, '*single');
+        fseek(fidIn, (t-1) * frameBytes, 'bof');
+        frame = fread(fidIn, ny * nx, '*single');
         frame = reshape(frame, ny, nx);
         MeanMap = MeanMap + frame;
-        % Print progress
+
         pct = floor(100 * t / nt);
-        if pct ~= lastPct && mod(pct,10) == 0
+        if pct ~= lastPct && mod(pct, 10) == 0
             fprintf('%d%% ', pct);
             lastPct = pct;
         end
     end
     MeanMap = MeanMap / nt;
-    fprintf('\nPASS 2/3: Computing flow...\n')
-    % Pass 2: Compute flow and write each frame directly
+
+    % Pass 2: compute flow frame-by-frame
+    fprintf('\nPASS 2/3: Computing flow...\n');
     lastPct = -1;
+    speckle_window = fspecial('disk', 2) > 0;
 
     for t = 1:nt-1
-        fseek(fidIn, (t-1)*ny*nx*getByteSize('single'),'bof'); % frame t+1
-        frameNext = fread(fidIn, ny*nx, '*single');
+        fseek(fidIn, (t-1) * frameBytes, 'bof');
+        frameNext = fread(fidIn, ny * nx, '*single');
         frameNext = reshape(frameNext, ny, nx);
+
         if bNormalize
-            % Normalize by temporal mean
             frameNext = frameNext ./ MeanMap;
         end
-        % Compute std and smoothed mean for contrast
-        speckle_window = fspecial('disk',2) > 0;
-        std_laser  = imgaussfilt(stdfilt(frameNext, speckle_window),1);
-        mean_laser = imgaussfilt(convnfft(frameNext,speckle_window,'same',1:2,OPTIONS)/sum(speckle_window(:)),1);
+
+        std_laser  = imgaussfilt(stdfilt(frameNext, speckle_window), 1);
+        mean_laser = imgaussfilt(convnfft(frameNext, speckle_window, 'same', 1:2, OPTIONS) / sum(speckle_window(:)), 1);
         contrast   = std_laser ./ mean_laser;
         flow       = single(private_flow_from_contrast(contrast, speckle_int_time));
-        
-        % Write frame to output file at correct offset
-        fseek(fidOut, (t-1)*ny*nx*getByteSize('single'),'bof');
+
+        fseek(fidOut, (t-1) * frameBytes, 'bof');
         fwrite(fidOut, flow, 'single');
-        % Print progress
+
         pct = floor(100 * t / (nt-1));
-        if pct ~= lastPct && mod(pct,10) == 0
+        if pct ~= lastPct && mod(pct, 10) == 0
             fprintf('%d%% ', pct);
             lastPct = pct;
         end
     end
-    % Pass 3: Temporal median filter (chunked over X)
+
+    % Pass 3: temporal median filter in X chunks
     fW = ceil(0.5 * tFreq);
-    
-    % Determine chunking along X
     nChunks = calculateMaxChunkSize(ny * nx * (nt-1) * getByteSize('single'), 2);
-    chunkX  = ceil(nx / nChunks);
-    fprintf('\nPASS 3/3: Applying Temporal median filter...')
+    chunkX = ceil(nx / nChunks);
+
+    fprintf('\nPASS 3/3: Applying temporal median filter...\n');
     lastPct = -1;
-    fprintf('0%% ');
+
     for c = 1:nChunks
-        xStart = (c-1)*chunkX + 1;
+        xStart = (c-1) * chunkX + 1;
         xEnd   = min(xStart + chunkX - 1, nx);
         xIdx   = xStart:xEnd;
-        
-        % Read slab: Y × Xchunk × (T-1)
-        slab = spatialSlabIO( ...
-            'read', fidOut, ny, nx, nt-1, xIdx, 'single');
-        
-        % Temporal median filter along T
+
+        slab = spatialSlabIO('read', fidOut, ny, nx, nt-1, xIdx, 'single');
         slab = medfilt1(slab, fW, [], 3, 'truncate');
-        
-        % Write filtered slab back to disk
-        spatialSlabIO( ...
-            'write', fidOut, ny, nx, nt-1, xIdx, 'single',slab);
-        % Print progress
+        spatialSlabIO('write', fidOut, ny, nx, nt-1, xIdx, 'single', slab);
+
         pct = floor(100 * c / nChunks);
         if pct ~= lastPct
             fprintf('%d%% ', pct);
             lastPct = pct;
         end
     end
-       
-    fclose(fidIn);
-    fclose(fidOut);
-    
-    % Save meta data
-    save(fullfile(Folder, 'Flow.mat'), '-struct', 'outMeta');
-    
-    % Return filename if requested
+
     if nargout > 0
         varargout{1} = outFile;
-        varargout{2} = outMeta;
-    end
-    return
-% 
-else
-    % --- Standard: full RAM ---
-    fid = fopen(datFile,'r');
-    dat = fread(fid, inf, '*single');
-    fclose(fid);
-    dat = reshape(dat, ny, nx, nt);
-    MeanMap = mean(dat,3);
-
-    datOut = zeros(nt-1, ny, nx, 'single');
-    speckle_window = fspecial('disk',2)>0;
-
-
-    for t = 1:nt-1
-        tmp_laser = dat(:,:,t);
-        if bNormalize
-            tmp_laser = tmp_laser ./ MeanMap;
+        if nargout > 1
+            varargout{2} = outMeta;
         end
-        std_laser = imgaussfilt(stdfilt(tmp_laser,speckle_window),1);
-        mean_laser = imgaussfilt(convnfft(tmp_laser,speckle_window,'same',1:2,OPTIONS)/sum(speckle_window(:)),1);
-        contrast = std_laser ./ mean_laser;
-        datOut(t,:,:) = single(private_flow_from_contrast(contrast,speckle_int_time));
     end
-
-    % Temporal median filter
-    fW = ceil(0.5*tFreq);
-    datOut = medfilt1(datOut, fW, [], 1, 'truncate');
+    fprintf('\nDone!\n');
+    return
 end
 
-%% Finalize output
-datOut = permute(datOut, [2 3 1]);
+%% ------------------------------------------------------------------------
+% Standard mode
+% -------------------------------------------------------------------------
+fid = fopen(datFile, 'r');
+assert(fid ~= -1, 'Ana_Speckle:OpenInputFailed', ...
+    'Could not open input file "%s".', datFile);
+cStd = onCleanup(@() safeFclose(fid)); %#ok<NASGU>
 
-% Meta data
-metaData = struct();
-metaData.datName = 'data';
-metaData.Stim = Iptr.Stim;
-fn = fieldnames(Iptr);
-fn = fn(startsWith(fn,'stim_','IgnoreCase',true));
-for i = 1:length(fn), metaData.(fn{i}) = Iptr.(fn{i}); end
-metaData.datLength = nt-1;
-metaData.datSize = Iptr.datSize;
-metaData.Freq = Iptr.Freq;
-metaData.Datatype = class(datOut);
-metaData.dim_names = Iptr.dim_names;
-metaData.datFile = fullfile(Folder,'Flow.dat');
+dat = fread(fid, inf, '*single');
+dat = reshape(dat, ny, nx, nt);
+MeanMap = mean(dat, 3);
+
+datOut = zeros(nt-1, ny, nx, 'single');
+speckle_window = fspecial('disk', 2) > 0;
+
+for t = 1:nt-1
+    tmp_laser = dat(:,:,t);
+    if bNormalize
+        tmp_laser = tmp_laser ./ MeanMap;
+    end
+
+    std_laser = imgaussfilt(stdfilt(tmp_laser, speckle_window), 1);
+    mean_laser = imgaussfilt(convnfft(tmp_laser, speckle_window, 'same', 1:2, OPTIONS) / sum(speckle_window(:)), 1);
+    contrast = std_laser ./ mean_laser;
+    datOut(t,:,:) = single(private_flow_from_contrast(contrast, speckle_int_time));
+end
+
+% Temporal median filter
+tic
+fW = ceil(0.5 * tFreq);
+datOut = medfilt1(datOut, fW, [], 1, 'truncate'); %#ok<NASGU>
+
+% Finalize to Y X (T-1)
+datOut = permute(datOut, [2 3 1]);
+outMeta.datFile = fullfile(SaveFolder, default_Output);
 
 if nargout > 0
     varargout{1} = datOut;
     if nargout > 1
-        varargout{2} = metaData;
+        varargout{2} = outMeta;
     end
 else
-    disp('Saving data to file : "Flow.dat"...')
-    fFlow = fopen(metaData.datFile,'w');
+    fprintf('Saving data to file: "%s"...\n', default_Output);
+    fFlow = fopen(outMeta.datFile, 'w');
+    assert(fFlow ~= -1, 'Ana_Speckle:OpenOutputFailed', ...
+        'Could not open output file "%s" for writing.', outMeta.datFile);
+    cFlow = onCleanup(@() safeFclose(fFlow)); %#ok<NASGU>
     fwrite(fFlow, datOut, 'single');
-    fclose(fFlow);
-    save(fullfile(Folder,'Flow.mat'), '-struct', 'metaData');
 end
 
 fprintf('Done!\n');
+
+    function info = localPipelineInfo()
+        info = PipelineManager.createPipelineInfo( ...
+            'Ana_Speckle', ...
+            'Calculate blood-flow maps from speckle data.');
+
+        info = PipelineManager.addInput(info, ...
+            'SaveFolder', ...
+            {'parameter'}, ...
+            'Folder containing the speckle input and metadata.', ...
+            'kind', 'parameter', ...
+            'position', 1, ...
+            'callType', 'positional', ...
+            'default', '', ...
+            'dataType', 'char');
+
+        info = PipelineManager.addInput(info, ...
+            'bNormalize', ...
+            'parameter', ...
+            'If true, normalize each frame by the temporal mean.', ...
+            'kind', 'parameter', ...
+            'position', 2, ...
+            'callType', 'positional', ...
+            'default', false, ...
+            'allowed', {false,true}, ...
+            'dataType', 'logical');
+
+        info = PipelineManager.addInput(info, ...
+            'Filename', ...
+            'parameter', ...
+            'Basename or filename of the speckle input.', ...
+            'kind', 'parameter', ...
+            'position', 3, ...
+            'callType', 'namevalue', ...
+            'default', 'speckle', ...
+            'dataType', 'char');
+
+        info = PipelineManager.addInput(info, ...
+            'RAMSafeMode', ...
+            'parameter', ...
+            'If true, use low-RAM file-backed execution.', ...
+            'kind', 'parameter', ...
+            'position', 4, ...
+            'callType', 'namevalue', ...
+            'default', false, ...
+            'allowed', {false,true}, ...
+            'dataType', 'logical');
+
+        info = PipelineManager.addOutput(info, ...
+            'outData', ...
+            {'ImageTimeSeries'}, ...
+            'data', ...
+            'Blood-flow output with size Y x X x (T-1).', ...
+            default_Output, ...
+            1, ...
+            'isData', true);
+    end
 end
 
 %% Local function

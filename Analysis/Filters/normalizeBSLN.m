@@ -167,7 +167,6 @@ if isnumeric(data) || islogical(data)
             end
 
             labels = struct();
-            labels.E = eventNames;
 
             eventInfo = struct();
             eventInfo.eventID = conditionIDlist(:);
@@ -381,9 +380,6 @@ switch normalizationMode
         if isempty(fieldnames(outLabels))
             outLabels = struct();
         end
-        if ~isfield(outLabels, 'E')
-            outLabels.E = sourceEventInfo.eventName(:).';
-        end
 
         outData = iPackageOutputUMT( ...
             entryNames, outEntryData, outEntryDims, outLabels, sourceEventInfo);
@@ -559,8 +555,6 @@ switch lower(normalizationMode)
             xStart = xEnd + 1;
         end
 
-        labels.E = eventNames;
-
         eventInfo.eventID = conditionIDlist(:);
         eventInfo.repetitionIndex = repetitionList(:);
         eventInfo.eventName = eventNames;
@@ -686,72 +680,52 @@ end
 % Helper: Acquisition info for raw .dat
 % =========================================================================
 function [Ny, Nx, Nt, freqHz] = iGetRawDatInfo(SaveFolder, inFile)
+%IGETRAWDATINFO Resolve raw .dat dimensions via loadMetaData.
+%
+% Prefer loadMetaData(...) so Nt follows the actual file size rather than a
+% potentially stale AcqInfoStream.Length value.
 
-acqFile = fullfile(SaveFolder, 'AcqInfos.mat');
-if ~isfile(acqFile)
-    error('normalizeBSLN:MissingAcqInfos', ...
-        'AcqInfos.mat was not found in SaveFolder "%s".', SaveFolder);
+if ~isfolder(SaveFolder)
+    error('normalizeBSLN:MissingSaveFolder', ...
+        'SaveFolder "%s" does not exist.', SaveFolder);
 end
 
-S = load(acqFile);
-if isfield(S, 'AcqInfoStream')
-    acqInfo = S.AcqInfoStream;
-else
-    fn = fieldnames(S);
-    acqInfo = S.(fn{1});
+meta = loadMetaData(inFile);
+
+if ~isfield(meta, 'Height') || ~isfield(meta, 'Width') || ...
+        ~isfield(meta, 'datLength') || ~isfield(meta, 'Freq')
+    error('normalizeBSLN:InvalidMetaData', ...
+        'loadMetaData did not return Height, Width, datLength, and Freq for "%s".', inFile);
 end
 
-if ~isfield(acqInfo, 'Height') || ~isfield(acqInfo, 'Width') || ~isfield(acqInfo, 'FrameRateHz')
-    error('normalizeBSLN:InvalidAcqInfoStream', ...
-        'AcqInfoStream must contain Height, Width, and FrameRateHz.');
-end
-
-Ny = double(acqInfo.Height);
-Nx = double(acqInfo.Width);
-freqHz = double(acqInfo.FrameRateHz);
-
-if isfield(acqInfo, 'Length') && ~isempty(acqInfo.Length)
-    Nt = double(acqInfo.Length);
-else
-    if isempty(inFile)
-        error('normalizeBSLN:MissingLength', ...
-            'Failed to determine data length from AcqInfos.mat.');
-    end
-    info = dir(inFile);
-    nElem = info.bytes / 4; % single precision
-    if mod(nElem, Ny*Nx) ~= 0
-        error('normalizeBSLN:IncompatibleRawDatSize', ...
-            'Raw .dat file size is incompatible with the inferred image size.');
-    end
-    Nt = nElem / (Ny*Nx);
-end
+Ny = double(meta.Height);
+Nx = double(meta.Width);
+Nt = double(meta.datLength);
+freqHz = double(meta.Freq);
 end
 
 % =========================================================================
 % Helper: Frame rate
 % =========================================================================
 function freqHz = iGetFrameRateHz(SaveFolder)
+%IGETFRAMERATEHZ Resolve frame rate through loadMetaData when possible.
 
-acqFile = fullfile(SaveFolder, 'AcqInfos.mat');
-if ~isfile(acqFile)
-    error('normalizeBSLN:MissingAcqInfos', ...
-        'AcqInfos.mat was not found in SaveFolder "%s".', SaveFolder);
+candidateFiles = [dir(fullfile(SaveFolder, '*.dat')); dir(fullfile(SaveFolder, '*.umt'))];
+if isempty(candidateFiles)
+    error('normalizeBSLN:MissingReferenceData', ...
+        ['Could not determine frame rate because no supported data file ' ...
+         '(*.dat or *.umt) was found in SaveFolder "%s".'], ...
+        SaveFolder);
 end
 
-S = load(acqFile);
-if isfield(S, 'AcqInfoStream')
-    acqInfo = S.AcqInfoStream;
-else
-    fn = fieldnames(S);
-    acqInfo = S.(fn{1});
-end
+meta = loadMetaData(fullfile(SaveFolder, candidateFiles(1).name));
 
-if ~isfield(acqInfo, 'FrameRateHz') || isempty(acqInfo.FrameRateHz)
+if ~isfield(meta, 'Freq') || isempty(meta.Freq)
     error('normalizeBSLN:MissingFrameRate', ...
-        'AcqInfoStream must contain FrameRateHz.');
+        'loadMetaData did not return Freq for "%s".', candidateFiles(1).name);
 end
 
-freqHz = double(acqInfo.FrameRateHz);
+freqHz = double(meta.Freq);
 end
 
 % =========================================================================

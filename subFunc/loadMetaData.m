@@ -27,8 +27,13 @@ function Info = loadMetaData(fileName)
 %   Notes:
 %       - The output is always a flat structure. No nested metadata
 %         structures are returned.
-%       - For raw .dat files, legacy-compatible fields such as dim_names,
-%         datSize, datLength, Freq, and Datatype are always provided.
+%       - For raw and derived .dat files, legacy-compatible fields such as
+%         dim_names, datSize, datLength, Freq, and Datatype are always
+%         provided.
+%       - For .dat files, Height and Width are strict metadata, but the
+%         temporal length is inferred from actual file size.
+%       - Valid legacy event-split .dat metadata are preserved and are not
+%         collapsed to continuous YXT.
 %       - For .umt files, embedded metadata is optional. When missing, core
 %         metadata are derived from the first data entry when possible.
 
@@ -88,20 +93,61 @@ end
 % -------------------------------------------------------------------------
 % Derive/complete legacy-compatible fields
 % -------------------------------------------------------------------------
-if ~isfield(Info, 'Height') && isfield(Info, 'datSize') && numel(Info.datSize) >= 1
-    Info.Height = Info.datSize(1);
-end
-
-if ~isfield(Info, 'Width') && isfield(Info, 'datSize') && numel(Info.datSize) >= 2
-    Info.Width = Info.datSize(2);
-end
-
 if ~isfield(Info, 'FrameRateHz') && isfield(Info, 'Freq')
     Info.FrameRateHz = Info.Freq;
 end
 
 if ~isfield(Info, 'Freq') && isfield(Info, 'FrameRateHz')
     Info.Freq = Info.FrameRateHz;
+end
+
+if ~isfield(Info, 'dim_names') || isempty(Info.dim_names)
+    Info.dim_names = {'Y', 'X', 'T'};
+else
+    Info.dim_names = cellstr(string(Info.dim_names));
+end
+
+if ~isfield(Info, 'Datatype') || isempty(Info.Datatype)
+    Info.Datatype = 'single';
+end
+
+assert(strcmpi(char(string(Info.Datatype)), 'single'), ...
+    'Umitoolbox:loadMetaData:unsupportedDatatype', ...
+    'Only single-precision .dat files are currently supported.');
+
+% Preserve valid legacy datSize dimensionality. Do not collapse event-split
+% metadata to YX. Only synthesize [Height Width] when datSize is absent.
+if isfield(Info, 'datSize') && ~isempty(Info.datSize)
+    Info.datSize = double(Info.datSize(:).');
+end
+
+if (~isfield(Info, 'datSize') || isempty(Info.datSize)) && ...
+        isfield(Info, 'Height') && isfield(Info, 'Width')
+    Info.datSize = [double(Info.Height), double(Info.Width)];
+end
+
+% Resolve Height and Width from dim_names + datSize when possible. This
+% supports both continuous YXT and legacy event-split metadata.
+if isfield(Info, 'datSize') && ~isempty(Info.datSize)
+    idxY = find(strcmp(Info.dim_names, 'Y'), 1, 'first');
+    idxX = find(strcmp(Info.dim_names, 'X'), 1, 'first');
+
+    if numel(Info.datSize) == numel(Info.dim_names)
+        if ~isfield(Info, 'Height') && ~isempty(idxY)
+            Info.Height = Info.datSize(idxY);
+        end
+        if ~isfield(Info, 'Width') && ~isempty(idxX)
+            Info.Width = Info.datSize(idxX);
+        end
+    elseif numel(Info.datSize) == numel(Info.dim_names) - 1
+        % Common case where datSize stores only non-T dimensions.
+        if ~isfield(Info, 'Height') && numel(Info.datSize) >= 1
+            Info.Height = Info.datSize(1);
+        end
+        if ~isfield(Info, 'Width') && numel(Info.datSize) >= 2
+            Info.Width = Info.datSize(2);
+        end
+    end
 end
 
 if ~isfield(Info, 'Height') || ~isfield(Info, 'Width')
@@ -121,36 +167,62 @@ validateattributes(Width, {'numeric'}, ...
     {'scalar', 'real', 'finite', 'positive', 'integer'}, ...
     'loadMetaData', 'Width');
 
+% Always infer datLength from the actual file size. This keeps loading
+% strict on file integrity but flexible on temporal length for derived
+% files such as Y X (T-1) outputs, while preserving legacy event-split
+% dimensionality when valid metadata are present.
+fileInfo = dir(fileName);
+bytesPerElement = getByteSize('single');
+
+idxT = find(strcmp(Info.dim_names, 'T'), 1, 'first');
+if isempty(idxT)
+    error('Umitoolbox:loadMetaData:missingTimeDimension', ...
+        'dim_names must contain a T dimension for .dat files.');
+end
+
 if ~isfield(Info, 'datSize') || isempty(Info.datSize)
-    Info.datSize = [Height, Width];
+    nonTProd = Height * Width;
+elseif numel(Info.datSize) == numel(Info.dim_names)
+    nonTProd = prod(Info.datSize(setdiff(1:numel(Info.datSize), idxT)));
+elseif numel(Info.datSize) == numel(Info.dim_names) - 1
+    nonTProd = prod(Info.datSize);
+else
+    error('Umitoolbox:loadMetaData:invalidDatSize', ...
+        ['datSize for "%s" is incompatible with dim_names. Expected either ' ...
+         'all dimensions or all non-T dimensions.'], ...
+        fileName);
 end
 
-if ~isfield(Info, 'dim_names') || isempty(Info.dim_names)
-    Info.dim_names = {'Y', 'X', 'T'};
+if mod(fileInfo.bytes, nonTProd * bytesPerElement) ~= 0
+    error('Umitoolbox:loadMetaData:invalidFileLength', ...
+        ['File size is incompatible with declared non-T dimensions for ' ...
+         'single-precision data in "%s".'], ...
+        fileName);
 end
 
-if ~isfield(Info, 'Datatype') || isempty(Info.Datatype)
-    Info.Datatype = 'single';
+actualLength = fileInfo.bytes / (nonTProd * bytesPerElement);
+legacyLength = [];
+if isfield(Info, 'datLength') && ~isempty(Info.datLength)
+    legacyLength = double(Info.datLength);
 end
 
-% Always validate/infer datLength from actual file size if missing.
-if ~isfield(Info, 'datLength') || isempty(Info.datLength)
-    fileInfo = dir(fileName);
-    frameSize = Height * Width;
-    bytesPerElement = getByteSize('single');
+Info.datLength = actualLength;
 
-    if mod(fileInfo.bytes, frameSize * bytesPerElement) ~= 0
-        error('Umitoolbox:loadMetaData:invalidFileLength', ...
-            ['File size is incompatible with frame dimensions for single-precision ' ...
-             'data in "%s".'], ...
-            fileName);
-    end
-
-    Info.datLength = fileInfo.bytes / (frameSize * bytesPerElement);
+% Preserve any original declared length when it differs from the actual
+% on-disk temporal length. This is useful for derived files.
+if ~isempty(legacyLength) && isfinite(legacyLength) && legacyLength ~= actualLength
+    Info.OriginalLength = legacyLength;
 end
 
-if ~isfield(Info, 'Length') || isempty(Info.Length)
-    Info.Length = Info.datLength;
+if isfield(Info, 'Length') && ~isempty(Info.Length) && double(Info.Length) ~= actualLength
+    Info.OriginalLength = double(Info.Length);
+end
+Info.Length = actualLength;
+
+% If datSize explicitly includes T, keep the multi-dimensional layout but
+% update the T slot to the actual on-disk length.
+if isfield(Info, 'datSize') && ~isempty(Info.datSize) && numel(Info.datSize) == numel(Info.dim_names)
+    Info.datSize(idxT) = actualLength;
 end
 
 % Flat convenience fields
@@ -190,11 +262,7 @@ if ~isempty(entryNames)
 
     if ~isfield(Info, 'datSize') || isempty(Info.datSize)
         idxKeep = ~strcmp(dimNames, 'T');
-        if any(strcmp(dimNames, 'E'))
-            Info.datSize = dimSizes(idxKeep);
-        else
-            Info.datSize = dimSizes(idxKeep);
-        end
+        Info.datSize = dimSizes(idxKeep);
     end
 
     idxT = find(strcmp(dimNames, 'T'), 1, 'first');

@@ -193,7 +193,6 @@ disp('Finished GSR.');
         DataParams = S.DataParams;
         logical_mask = DataParams.mask.logical;
 
-
         % Check for empty masks
         if isempty(logical_mask)
             warning('umIToolbox:GSR:TrivialMask', ...
@@ -335,7 +334,7 @@ assert(fid_in ~= -1, 'umIToolbox:GSR:FileOpenError', ...
 c_in = onCleanup(@() safeFclose(fid_in)); %#ok<NASGU>
 
 outFileName = fullfile(SaveFolder, 'GSR.dat');
-preallocateDatFile(outFileName, metaData);
+preallocateDatFile(outFileName, [Ny, Nx, Nt], metaData.Datatype);
 
 fid_out = fopen(outFileName, 'r+');
 assert(fid_out ~= -1, 'umIToolbox:GSR:FileOpenError', ...

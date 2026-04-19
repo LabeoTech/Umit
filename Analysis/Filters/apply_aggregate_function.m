@@ -137,7 +137,6 @@ if isnumeric(data) || islogical(data)
             end
 
             labels = struct();
-            labels.E = eventNames;
 
             eventInfo = struct();
             eventInfo.eventID = condIDs(:);
@@ -334,9 +333,6 @@ if ~bAnyAggregated
 end
 
 outLabels = sourceLabels;
-if ~isempty(fieldnames(outLabels)) && strcmpi(dimName, 'E')
-    outLabels.E = eventNames;
-end
 
 outEventInfo = struct();
 bOutputUsesE = false;
@@ -440,39 +436,15 @@ function [aggData, outDimNames, labels, eventInfo] = iExecuteLowRAMDat(dataFile,
 labels = struct();
 eventInfo = struct();
 
-acqFile = fullfile(SaveFolder, 'AcqInfos.mat');
-if ~isfile(acqFile)
-    error('apply_aggregate_function:MissingAcqInfos', ...
-        'AcqInfos.mat was not found in SaveFolder "%s".', SaveFolder);
+meta = loadMetaData(dataFile);
+if ~isfield(meta, 'Height') || ~isfield(meta, 'Width') || ~isfield(meta, 'datLength')
+    error('apply_aggregate_function:InvalidMetaData', ...
+        'loadMetaData did not return Height, Width, and datLength for "%s".', dataFile);
 end
 
-S = load(acqFile);
-if isfield(S, 'AcqInfoStream')
-    acqInfo = S.AcqInfoStream;
-else
-    fn = fieldnames(S);
-    acqInfo = S.(fn{1});
-end
-
-if ~isfield(acqInfo, 'Height') || ~isfield(acqInfo, 'Width')
-    error('apply_aggregate_function:MissingImageSize', ...
-        'AcqInfoStream must contain Height and Width.');
-end
-
-nY = double(acqInfo.Height);
-nX = double(acqInfo.Width);
-
-if isfield(acqInfo, 'Length') && ~isempty(acqInfo.Length)
-    nT = double(acqInfo.Length);
-else
-    info = dir(dataFile);
-    nElem = info.bytes / 4; % single precision
-    if mod(nElem, nY*nX) ~= 0
-        error('apply_aggregate_function:IncompatibleRawDatSize', ...
-            'Raw .dat file size is incompatible with the inferred image size.');
-    end
-    nT = nElem / (nY*nX);
-end
+nY = double(meta.Height);
+nX = double(meta.Width);
+nT = double(meta.datLength);
 
 targetBytes = 128 * 1024 * 1024; % 128 MB
 fid = fopen(dataFile, 'r');
@@ -560,8 +532,6 @@ switch dimName
 
             xStart = xEnd + 1;
         end
-
-        labels.E = eventNames;
 
         eventInfo.eventID = condIDs(:);
         eventInfo.repetitionIndex = zeros(nCond, 1);

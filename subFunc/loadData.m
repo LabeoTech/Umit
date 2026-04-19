@@ -82,5 +82,9 @@ if mod(numel(data), frameSize) ~= 0
         'File size is incompatible with metadata frame dimensions.');
 end
 
-data = reshape(data, Info.Height, Info.Width, Info.datLength);
+nFrames = numel(data) / frameSize;
+
+% Use the actual on-disk temporal length. loadMetaData already derives
+% datLength from file size, but recompute here to keep loading strict.
+data = reshape(data, Info.Height, Info.Width, nFrames);
 end

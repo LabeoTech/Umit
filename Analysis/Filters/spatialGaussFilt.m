@@ -347,40 +347,25 @@ end
 % =========================================================================
 function [Ny, Nx, Nt] = iGetRawDatInfo(SaveFolder, inFile)
 %IGETRAWDATINFO Return YXT dimensions for a raw .dat file.
+%
+% Prefer loadMetaData(...) so Nt follows the actual file size rather than a
+% potentially stale AcqInfoStream.Length value.
 
-acqFile = fullfile(SaveFolder, 'AcqInfos.mat');
-if ~isfile(acqFile)
-    error('spatialGaussFilt:MissingAcqInfos', ...
-        'AcqInfos.mat was not found in SaveFolder "%s".', SaveFolder);
+if ~isfolder(SaveFolder)
+    error('spatialGaussFilt:MissingSaveFolder', ...
+        'SaveFolder "%s" does not exist.', SaveFolder);
 end
 
-S = load(acqFile);
-if isfield(S, 'AcqInfoStream')
-    acqInfo = S.AcqInfoStream;
-else
-    fn = fieldnames(S);
-    acqInfo = S.(fn{1});
+meta = loadMetaData(inFile);
+
+if ~isfield(meta, 'Height') || ~isfield(meta, 'Width') || ~isfield(meta, 'datLength')
+    error('spatialGaussFilt:InvalidMetaData', ...
+        'loadMetaData did not return Height, Width, and datLength for "%s".', inFile);
 end
 
-if ~isfield(acqInfo, 'Height') || ~isfield(acqInfo, 'Width')
-    error('spatialGaussFilt:InvalidAcqInfos', ...
-        'AcqInfoStream must contain Height and Width.');
-end
-
-Ny = double(acqInfo.Height);
-Nx = double(acqInfo.Width);
-
-if isfield(acqInfo, 'Length') && ~isempty(acqInfo.Length)
-    Nt = double(acqInfo.Length);
-else
-    fileInfo = dir(inFile);
-    nElem = fileInfo.bytes / getByteSize('single');
-    if mod(nElem, Ny * Nx) ~= 0
-        error('spatialGaussFilt:InvalidRawDatLength', ...
-            'File size is incompatible with YXT dimensions for "%s".', inFile);
-    end
-    Nt = nElem / (Ny * Nx);
-end
+Ny = double(meta.Height);
+Nx = double(meta.Width);
+Nt = double(meta.datLength);
 end
 
 % =========================================================================

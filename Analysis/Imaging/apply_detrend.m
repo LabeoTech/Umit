@@ -301,24 +301,23 @@ end
 % =========================================================================
 function frames = iGetDetrendFrameCount(SaveFolder, Nt)
 %IGETDETRENDFRAMECOUNT Determine the detrend baseline window in frames.
+%
+% Prefer loadMetaData(...) over direct AcqInfos.mat reading so the reported
+% temporal metadata stays consistent with the actual on-disk .dat size.
 
 frames = 7;
 
 freqHz = [];
 baselineSec = [];
 
-acqFile = fullfile(SaveFolder, 'AcqInfos.mat');
-if isfile(acqFile)
-    S = load(acqFile);
-    if isfield(S, 'AcqInfoStream')
-        acqInfo = S.AcqInfoStream;
-    else
-        fn = fieldnames(S);
-        acqInfo = S.(fn{1});
-    end
-
-    if isfield(acqInfo, 'FrameRateHz') && ~isempty(acqInfo.FrameRateHz)
-        freqHz = double(acqInfo.FrameRateHz);
+candidateFiles = [dir(fullfile(SaveFolder, '*.dat')); dir(fullfile(SaveFolder, '*.umt'))];
+if ~isempty(candidateFiles)
+    try
+        meta = loadMetaData(fullfile(SaveFolder, candidateFiles(1).name));
+        if isfield(meta, 'Freq') && ~isempty(meta.Freq)
+            freqHz = double(meta.Freq);
+        end
+    catch
     end
 end
 
@@ -405,40 +404,25 @@ end
 % =========================================================================
 function [Ny, Nx, Nt] = iGetRawDatInfo(SaveFolder, inFile)
 %IGETRAWDATINFO Return YXT dimensions for a raw .dat file.
+%
+% Prefer loadMetaData(...) so Nt follows the real file size rather than a
+% potentially stale AcqInfoStream.Length value.
 
-acqFile = fullfile(SaveFolder, 'AcqInfos.mat');
-if ~isfile(acqFile)
-    error('apply_detrend:MissingAcqInfos', ...
-        'AcqInfos.mat was not found in SaveFolder "%s".', SaveFolder);
+if ~isfolder(SaveFolder)
+    error('apply_detrend:MissingSaveFolder', ...
+        'SaveFolder "%s" does not exist.', SaveFolder);
 end
 
-S = load(acqFile);
-if isfield(S, 'AcqInfoStream')
-    acqInfo = S.AcqInfoStream;
-else
-    fn = fieldnames(S);
-    acqInfo = S.(fn{1});
+meta = loadMetaData(inFile);
+
+if ~isfield(meta, 'Height') || ~isfield(meta, 'Width') || ~isfield(meta, 'datLength')
+    error('apply_detrend:InvalidMetaData', ...
+        'loadMetaData did not return Height, Width, and datLength for "%s".', inFile);
 end
 
-if ~isfield(acqInfo, 'Height') || ~isfield(acqInfo, 'Width')
-    error('apply_detrend:InvalidAcqInfos', ...
-        'AcqInfoStream must contain Height and Width.');
-end
-
-Ny = double(acqInfo.Height);
-Nx = double(acqInfo.Width);
-
-if isfield(acqInfo, 'Length') && ~isempty(acqInfo.Length)
-    Nt = double(acqInfo.Length);
-else
-    fileInfo = dir(inFile);
-    nElem = fileInfo.bytes / getByteSize('single');
-    if mod(nElem, Ny * Nx) ~= 0
-        error('apply_detrend:InvalidRawDatLength', ...
-            'File size is incompatible with YXT dimensions for "%s".', inFile);
-    end
-    Nt = nElem / (Ny * Nx);
-end
+Ny = double(meta.Height);
+Nx = double(meta.Width);
+Nt = double(meta.datLength);
 end
 
 % =========================================================================

@@ -52,7 +52,7 @@ addRequired(p, 'bExpFit', @(x) isscalar(x) && (isnumeric(x) || islogical(x)))
 addOptional(p, 'Freq', [], @(x) (isscalar(x) && isnumeric(x)) || isempty(x))
 addOptional(p, 'saveFilename', '', @(x) ischar(x) || (isstring(x) && isscalar(x)))
 
-parse(p, FolderData, FileData, lowFreq, highFreq, bDivide, bExpfit, varargin{:});
+parse(p, FolderData, FileData, lowFreq, highFreq, bExpfit, bDivide, varargin{:});
 
 lowFreq   = p.Results.lowFreq;
 highFreq  = p.Results.highFreq;
@@ -293,7 +293,7 @@ end
 % -------------------------------------------------------------------------
 % Preallocate output file
 % -------------------------------------------------------------------------
-preallocateDatFile(outDat, fMetaData);
+preallocateDatFile(outDat, storedSize, dataType);
 
 fidIn  = fopen(inFile, 'r');
 assert(fidIn ~= -1, 'NormalisationFiltering:OpenInputFailed', ...
