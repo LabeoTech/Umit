@@ -57,7 +57,7 @@ function outData = getDataFromROI(data, SaveFolder, varargin)
 
 
 default_Output = 'ROI_data.umt'; %#ok<NASGU>
-
+validAgg = {'none','mean','max','min','median','mode','sum','std'};
 if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) ...
         && strcmpi(strtrim(char(string(data))), 'pipelineInfo')
     outData = localPipelineInfo();
@@ -70,7 +70,7 @@ p.FunctionName = mfilename;
 addRequired(p, 'data');
 addRequired(p, 'SaveFolder', @(x) ischar(x) || (isstring(x) && isscalar(x)));
 
-validAgg = {'none','mean','max','min','median','mode','sum','std'};
+
 addParameter(p, 'ROImasks_filename', 'ROImasks_data.mat', ...
     @(x) ischar(x) || (isstring(x) && isscalar(x)));
 addParameter(p, 'SpatialAggFcn', 'mean', ...
