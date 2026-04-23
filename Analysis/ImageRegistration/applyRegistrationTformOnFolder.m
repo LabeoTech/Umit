@@ -1,9 +1,9 @@
-function outFile = applyRegistrationTformOnFolder(SaveFolder, varargin)
+function varargout = applyRegistrationTformOnFolder(SaveFolder, varargin)
 %APPLYREGISTRATIONTFORMONFOLDER Apply stored registration to all .dat files in a folder.
 %
-%   outFile = applyRegistrationTformOnFolder(SaveFolder)
-%   outFile = applyRegistrationTformOnFolder(SaveFolder, 'Name', Value, ...)
-%   info    = applyRegistrationTformOnFolder('pipelineInfo')
+%   applyRegistrationTformOnFolder(SaveFolder)
+%   applyRegistrationTformOnFolder(SaveFolder, 'Name', Value, ...)
+%   info = applyRegistrationTformOnFolder('pipelineInfo')
 %
 %   This function reads the currently stored registration transform from the
 %   folder DataParams file and destructively applies it to all .dat files
@@ -32,13 +32,20 @@ function outFile = applyRegistrationTformOnFolder(SaveFolder, varargin)
 %                                   errors when the folder is already marked
 %                                   as registered. Default: false
 %
-%   Output:
-%       outFile - File manifest containing the modified .dat file names and
-%                 the updated DataParams MAT-file.
+%   Notes:
+%       - This function has no normal runtime output.
+%       - After completion, it prints the modified .dat files and the
+%         updated DataParams file to the command window.
+%       - A pipelineInfo structure can still be queried with:
+%             info = applyRegistrationTformOnFolder('pipelineInfo')
 
 if nargin == 1 && (ischar(SaveFolder) || (isstring(SaveFolder) && isscalar(SaveFolder))) ...
         && strcmpi(strtrim(char(string(SaveFolder))), 'pipelineInfo')
-    outFile = localPipelineInfo();
+    if nargout > 0
+        varargout{1} = localPipelineInfo();
+    else
+        disp(localPipelineInfo());
+    end
     return
 end
 
@@ -92,12 +99,16 @@ assert(~isempty(datList), ...
     'No .dat files were found in "%s".', SaveFolder);
 
 if requireUserConfirmation
-    figHandle = [];
     if openQCFigure && isfield(DataParams.registration, 'qcFigureFile') && ...
             ~isempty(DataParams.registration.qcFigureFile)
-        qcFigPath = fullfile(SaveFolder, char(string(DataParams.registration.qcFigureFile)));
+
+        qcFigPath = char(string(DataParams.registration.qcFigureFile));
+        if isempty(fileparts(qcFigPath))
+            qcFigPath = fullfile(SaveFolder, qcFigPath);
+        end
+
         if isfile(qcFigPath)
-            figHandle = openfig(qcFigPath, 'new', 'visible'); %#ok<NASGU>
+            openfig(qcFigPath, 'new', 'visible');
         end
     end
 
@@ -105,7 +116,7 @@ if requireUserConfirmation
         'Continue?'], SaveFolder);
     choice = questdlg(msg, 'Apply registration?', 'Continue', 'Cancel', 'Cancel');
     if ~strcmp(choice, 'Continue')
-        outFile = {};
+        fprintf('Registration cancelled by user.\n');
         return
     end
     confirmationMode = 'manual_confirmed';
@@ -116,7 +127,7 @@ else
 end
 
 tform = DataParams.registration.tform;
-outFile = {};
+modifiedFiles = cell(0,1);
 
 for iFile = 1:numel(datList)
     fileName = datList(iFile).name;
@@ -172,7 +183,7 @@ for iFile = 1:numel(datList)
     clear cIn cOut
     delete(datPath);
     movefile(tmpPath, datPath, 'f');
-    outFile{end+1} = fileName; %#ok<AGROW>
+    modifiedFiles{end+1,1} = fileName; %#ok<AGROW>
 end
 
 DataParams.registration.isRegistered = true;
@@ -182,7 +193,16 @@ DataParams.registration.appliedBy = mfilename;
 DataParams.registration.confirmationMode = confirmationMode;
 validateDataParams(DataParams);
 save(dataParamsPath, 'DataParams');
-outFile{end+1} = dataParamsFile;
+
+fprintf('\nRegistration applied to folder:\n%s\n', SaveFolder);
+fprintf('Modified .dat files:\n');
+for iFile = 1:numel(modifiedFiles)
+    fprintf('  - %s\n', modifiedFiles{iFile});
+end
+fprintf('Updated DataParams:\n');
+fprintf('  - %s\n\n', dataParamsPath);
+
+end
 
 function info = localPipelineInfo()
 %LOCALPIPELINEINFO Return PipelineManager metadata for applyRegistrationTformOnFolder.
@@ -236,17 +256,4 @@ info = PipelineManager.addInput( ...
     'kind', 'parameter', ...
     'default', false, ...
     'callType', 'namevalue');
-
-info = PipelineManager.addOutput( ...
-    info, ...
-    'outFile', ...
-    'Unknown', ...
-    'file', ...
-    'File manifest containing the modified .dat files and updated DataParams MAT-file.', ...
-    {'*.dat','DataParams.mat'}, ...
-    1, ...
-    'isData', false, ...
-    'saveFileName', '');
-end
-
 end
