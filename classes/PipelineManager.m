@@ -106,7 +106,7 @@ classdef PipelineManager < handle
     properties (Constant)
         dataSemanticTypes = { ...
             'Image', ...                   % 2-D imaging data (Y×X or YxXxE)
-            'ImageTimeSeries', ...         % 3-D imaging data (Y×X×T or YxXxTxE)            
+            'ImageTimeSeries', ...         % 3-D imaging data (Y×X×T or YxXxTxE)
             'ProcessedData', ...           % Processed data stored in UMT structs
             'UnknownDataType' ...          % Fallback semantic type for unspecified or legacy data
             };
@@ -10056,31 +10056,32 @@ classdef PipelineManager < handle
                     % Fallback to legacy parser for callable functions that do not
                     % support modern pipelineInfo querying.
                     infoStruct = obj.parseFuncFile(list(i));
-                end
+                    % -------------------------------------------------------------
+                    % Add boolean to indicate if each input is semantic data
+                    % -------------------------------------------------------------
+                    for jj = 1:length(infoStruct.inputs)
 
-                % -------------------------------------------------------------
-                % Add boolean to indicate if each input is semantic data
-                % -------------------------------------------------------------
-                for jj = 1:length(infoStruct.inputs)
-
-                    if any(ismember(infoStruct.inputs(jj).type, obj.dataSemanticTypes))
-                        infoStruct.inputs(jj).isData = true;
-                    else
-                        infoStruct.inputs(jj).isData = false;
+                        if any(ismember(infoStruct.inputs(jj).type, obj.dataSemanticTypes))
+                            infoStruct.inputs(jj).isData = true;
+                        else
+                            infoStruct.inputs(jj).isData = false;
+                        end
                     end
-                end
 
-                % -------------------------------------------------------------
-                % Add boolean to indicate if each output is semantic data
-                % -------------------------------------------------------------
-                for jj = 1:length(infoStruct.outputs)
+                    % -------------------------------------------------------------
+                    % Add boolean to indicate if each output is semantic data
+                    % -------------------------------------------------------------
+                    for jj = 1:length(infoStruct.outputs)
 
-                    if any(ismember(infoStruct.outputs(jj).type, obj.dataSemanticTypes))
-                        infoStruct.outputs(jj).isData = true;
-                    else
-                        infoStruct.outputs(jj).isData = false;
+                        if any(ismember(infoStruct.outputs(jj).type, obj.dataSemanticTypes))
+                            infoStruct.outputs(jj).isData = true;
+                        else
+                            infoStruct.outputs(jj).isData = false;
+                        end
                     end
+
                 end
+
 
                 % -------------------------------------------------------------
                 % Create and append function list entry
