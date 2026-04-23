@@ -1,63 +1,106 @@
-function DatOut = SpeckleMapping(folderPath, sType, channel, bSaveMap, bLogScale, bRAMSafeMode)
-% SPECKLEMAPPING computes speckle contrast maps from a 3D acquisition.
+function outData = SpeckleMapping(folderPath, sType, channel, bSaveMap, bLogScale, bRAMSafeMode)
+%SPECKLEMAPPING Compute speckle contrast maps from a 3D acquisition.
 %
-% Supports low-RAM processing with bRAMSafeMode flag.
+%   outData = SpeckleMapping(folderPath, sType, channel, bSaveMap, bLogScale, bRAMSafeMode)
 %
-% INPUTS:
-%   folderPath    : folder containing channel .dat and .mat files
-%   sType         : 'spatial' or 'temporal'
-%   channel       : channel to process ('speckle' by default)
-%   bSaveMap      : boolean, save a .tiff map
-%   bLogScale     : boolean, apply -log10 scaling
-%   bRAMSafeMode  : boolean, enable low-RAM hybrid processing
+%   This function computes speckle contrast maps from a channel .dat file
+%   stored in "folderPath". The computation can be performed in standard
+%   mode or in RAM-safe mode. Regardless of the internal computation mode,
+%   the output is returned as a UMT struct of kind "image".
 %
-% OUTPUT:
-%   DatOut : speckle map (numeric) or filename if bRAMSafeMode is true
+%   Inputs:
+%       folderPath    - Folder containing the channel .dat file.
+%       sType         - Speckle mapping mode:
+%                       'spatial' or 'temporal'
+%       channel       - Channel name to process.
+%                       Default: 'speckle'
+%       bSaveMap      - Logical scalar. If true, save TIFF map.
+%                       Default: true
+%       bLogScale     - Logical scalar. If true, apply -log10 transform.
+%                       Default: true
+%       bRAMSafeMode  - Logical scalar. If true, use low-RAM processing.
+%                       Default: false
+%
+%   Output:
+%       outData       - UMT struct of kind "image" containing one entry
+%                       named "SpeckleMap" with dimNames = {'Y','X'}.
+%
+%   Notes:
+%       - The numerical algorithm is preserved from the legacy version.
+%       - Metadata are resolved through loadMetaData(...), not legacy
+%         per-channel .mat sidecars.
+%       - TIFF export, when requested, is saved as:
+%             std_speckle.tiff
 
-if nargin < 3, channel = 'speckle'; end
-if nargin < 4, bSaveMap = true; end
-if nargin < 5, bLogScale = true; end
-if nargin < 6, bRAMSafeMode = false; end
+if nargin < 3 || isempty(channel)
+    channel = 'speckle';
+end
+if nargin < 4 || isempty(bSaveMap)
+    bSaveMap = true;
+end
+if nargin < 5 || isempty(bLogScale)
+    bLogScale = true;
+end
+if nargin < 6 || isempty(bRAMSafeMode)
+    bRAMSafeMode = false;
+end
+
+validateattributes(folderPath, {'char','string'}, {'nonempty'});
+folderPath = char(string(folderPath));
+assert(isfolder(folderPath), ...
+    'Umitoolbox:SpeckleMapping:InvalidFolder', ...
+    'The folder "%s" does not exist.', folderPath);
 
 if ~strcmp(folderPath(end), filesep)
-    folderPath = [folderPath filesep];
+    folderPath = [folderPath filesep]; %#ok<AGROW>
 end
 
-channel = lower(channel);
+channel = lower(char(string(channel)));
 datFile = [folderPath channel '.dat'];
-matFile = [folderPath channel '.mat'];
 
-if ~exist(datFile, 'file')
-    error('%s file is missing.', datFile);
+assert(isfile(datFile), ...
+    'Umitoolbox:SpeckleMapping:MissingChannelFile', ...
+    'The file "%s" is missing.', datFile);
+
+mdIn = loadMetaData(datFile);
+
+% Resolve modern metadata fields.
+assert(isfield(mdIn, 'Height') && isfield(mdIn, 'Width') && isfield(mdIn, 'Length'), ...
+    'Umitoolbox:SpeckleMapping:InvalidMetadata', ...
+    'Could not resolve Height/Width/Length from "%s".', datFile);
+
+Ny = double(mdIn.Height);
+Nx = double(mdIn.Width);
+Nt = double(mdIn.Length);
+
+if isfield(mdIn, 'Datatype') && ~isempty(mdIn.Datatype)
+    dataType = char(string(mdIn.Datatype));
+else
+    dataType = 'single';
 end
 
-Infos = load(matFile);
-Ny = Infos.datSize(1);
-Nx = Infos.datSize(2);
-Nt = Infos.datLength;
-
-% Metadata template for map output
-md = Infos;
-md.datLength = 1;
-md.Freq = 0;
-md.dim_names = {'Y','X'};
+assert(strcmpi(dataType, 'single'), ...
+    'Umitoolbox:SpeckleMapping:UnsupportedDatatype', ...
+    'SpeckleMapping currently expects single-precision .dat files.');
 
 if bRAMSafeMode
     % ---------------------------------------------------------------------
     % LOW-RAM MODE
     % ---------------------------------------------------------------------
-    outFilename = [folderPath 'SPECKLEMAP.dat'];
-    frameOut = zeros(Ny, Nx, Infos.Datatype);
-    mData = zeros(Ny, Nx, Infos.Datatype);
+    frameOut = zeros(Ny, Nx, 'single');
+    mData = zeros(Ny, Nx, 'single');
 
     fidIn = fopen(datFile, 'r');
+    assert(fidIn ~= -1, ...
+        'Umitoolbox:SpeckleMapping:FileOpenFailed', ...
+        'Could not open "%s" for reading.', datFile);
     cIn = onCleanup(@() safeFclose(fidIn)); %#ok<NASGU>
 
     % Pass 1: temporal mean
     disp('Pass 1/2 - Calculating temporal mean...')
 
-    bytesPerFrame = Ny * Nx * getByteSize(Infos.Datatype);
-    totalBytes = Nx * Ny * Nt * getByteSize(Infos.Datatype);
+    bytesPerFrame = Ny * Nx * getByteSize(dataType);
+    totalBytes = Nx * Ny * Nt * getByteSize(dataType);
 
     nChunks = calculateMaxChunkSize(totalBytes, 1, .1);
     chunkT  = ceil(Nt / nChunks);
@@ -71,10 +114,10 @@ if bRAMSafeMode
         nFrames = tEnd - tStart + 1;
 
         fseek(fidIn, (tStart-1) * bytesPerFrame, 'bof');
-        slab = fread(fidIn, Ny * Nx * nFrames, ['*' Infos.Datatype]);
+        slab = fread(fidIn, Ny * Nx * nFrames, ['*' dataType]);
         slab = reshape(slab, Ny, Nx, nFrames);
 
-        % Use omitnan during accumulation
+        % Use omitnan during accumulation.
         mData = mData + sum(slab, 3, 'omitnan');
 
         pct = floor(100 * c / nChunks);
@@ -106,14 +149,11 @@ if bRAMSafeMode
                 nFrames = tEnd - tStart + 1;
 
                 fseek(fidIn, (tStart-1) * bytesPerFrame, 'bof');
-                frameBlock = fread(fidIn, Ny * Nx * nFrames, ['*' Infos.Datatype]);
+                frameBlock = fread(fidIn, Ny * Nx * nFrames, ['*' dataType]);
                 frameBlock = reshape(frameBlock, Ny, Nx, nFrames);
 
-                % Use omitnan normalization semantics
                 frameBlock = frameBlock ./ mData;
-
                 frameBlock = stdfilt(frameBlock, Kernel);
-                % frameBlock = remOutlier(frameBlock);
                 frameBlock = sum(frameBlock, 3, 'omitnan');
                 frameOut = frameOut + frameBlock;
 
@@ -131,7 +171,7 @@ if bRAMSafeMode
         case 'temporal'
             Kernel = ones(1, 1, 5, 'single');
 
-            nChunks = calculateMaxChunkSize(Nx * Ny * Nt * getByteSize(Infos.Datatype), 12, .15);
+            nChunks = calculateMaxChunkSize(Nx * Ny * Nt * getByteSize(dataType), 12, .15);
             chunkX  = ceil(Nx / nChunks);
 
             lastPct = -1;
@@ -142,10 +182,9 @@ if bRAMSafeMode
                 xEnd   = min(xStart + chunkX - 1, Nx);
                 xIdx   = xStart:xEnd;
 
-                slab = spatialSlabIO('read', fidIn, Ny, Nx, Nt, xIdx, Infos.Datatype);
+                slab = spatialSlabIO('read', fidIn, Ny, Nx, Nt, xIdx, dataType);
                 slab = slab ./ mean(slab, 3, 'omitnan');
                 slab = stdfilt(slab, Kernel);
-                % slab = remOutlier(slab);
                 frameOut(:, xIdx) = mean(slab, 3, 'omitnan');
 
                 pct = floor(100 * c / nChunks);
@@ -158,29 +197,27 @@ if bRAMSafeMode
             end
 
         otherwise
-            error('Invalid sType. Use "spatial" or "temporal".');
+            error('Umitoolbox:SpeckleMapping:InvalidSType', ...
+                'Invalid sType. Use "spatial" or "temporal".');
     end
 
     if bLogScale
         frameOut = -log10(frameOut);
     end
 
-    fclose(fidIn);
-
-    md = genMetaData(frameOut, {'Y','X'}, Infos);
-    md.datFile = outFilename;
-    save2Dat(outFilename, single(frameOut), md);
-
-    DatOut = outFilename;
+    speckleMap = single(frameOut);
 
 else
     % ---------------------------------------------------------------------
     % STANDARD MODE
     % ---------------------------------------------------------------------
     fid = fopen(datFile, 'r');
-    dat = fread(fid, inf, '*single');
-    fclose(fid);
+    assert(fid ~= -1, ...
+        'Umitoolbox:SpeckleMapping:FileOpenFailed', ...
+        'Could not open "%s" for reading.', datFile);
+    c = onCleanup(@() safeFclose(fid)); %#ok<NASGU>
 
+    dat = fread(fid, inf, '*single');
     dat = reshape(dat, Ny, Nx, Nt);
     dat = dat ./ mean(dat, 3, 'omitnan');
 
@@ -192,56 +229,51 @@ else
         case 'temporal'
             Kernel = ones(1, 1, 5, 'single');
         otherwise
-            error('Invalid sType. Use "spatial" or "temporal".');
+            error('Umitoolbox:SpeckleMapping:InvalidSType', ...
+                'Invalid sType. Use "spatial" or "temporal".');
     end
 
-    DatOut = stdfilt(dat, Kernel);
-    % DatOut = remOutlier(DatOut);
-    DatOut = mean(DatOut, 3, 'omitnan');
+    speckleMap = stdfilt(dat, Kernel);
+    speckleMap = mean(speckleMap, 3, 'omitnan');
 
     if bLogScale
-        DatOut = -log10(DatOut);
+        speckleMap = -log10(speckleMap);
     end
 
-    DatOut = single(DatOut);
+    speckleMap = single(speckleMap);
 end
 
 % -------------------------------------------------------------------------
 % Save TIFF map if requested
 % -------------------------------------------------------------------------
 if bSaveMap
-    if bRAMSafeMode
-        mapHeight = Infos.datSize(1);
-        mapWidth  = Infos.datSize(2);
-
-        tmpFid = fopen(DatOut, 'r');
-        cTmp = onCleanup(@() safeFclose(tmpFid)); %#ok<NASGU>
-        mapData = fread(tmpFid, mapHeight * mapWidth, '*single');
-        mapData = reshape(mapData, mapHeight, mapWidth);
-    else
-        mapHeight = size(DatOut, 1);
-        mapWidth  = size(DatOut, 2);
-        mapData   = DatOut;
-    end
-
     obj = Tiff(fullfile(folderPath, 'std_speckle.tiff'), 'w');
-    setTag(obj, 'ImageWidth', mapWidth);
-    setTag(obj, 'ImageLength', mapHeight);
+    setTag(obj, 'ImageWidth', Nx);
+    setTag(obj, 'ImageLength', Ny);
     setTag(obj, 'Photometric', Tiff.Photometric.MinIsBlack);
     setTag(obj, 'SampleFormat', Tiff.SampleFormat.IEEEFP);
     setTag(obj, 'BitsPerSample', 32);
     setTag(obj, 'SamplesPerPixel', 1);
     setTag(obj, 'Compression', Tiff.Compression.None);
     setTag(obj, 'PlanarConfiguration', Tiff.PlanarConfiguration.Chunky);
-    write(obj, mapData);
+    write(obj, speckleMap);
     close(obj);
 end
+
+% -------------------------------------------------------------------------
+% Package output as UMT
+% -------------------------------------------------------------------------
+outData = genUMTStruct( ...
+    speckleMap, ...
+    'kind', 'image', ...
+    'entryName', 'SpeckleMap', ...
+    'dimNames', {'Y','X'});
 
 disp('Done');
 end
 
 function data = remOutlier(data)
-% REMOUTLIER Replace values above the 99th percentile with the 99th percentile.
+%REMOUTLIER Replace values above the 99th percentile with the 99th percentile.
 dataSort = data(~isnan(data));
 dataSort = sort(dataSort(:));
 idx99 = floor(0.99 * length(dataSort));
