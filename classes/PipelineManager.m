@@ -105,9 +105,8 @@ classdef PipelineManager < handle
 
     properties (Constant)
         dataSemanticTypes = { ...
-            'Image', ...                   % 2-D imaging data (Y×X)
-            'ImageTimeSeries', ...         % 3-D imaging data (Y×X×T)
-            'ImageTimeSeriesByEvents', ... % Event-segmented imaging data (typically Y×X×T×E)
+            'Image', ...                   % 2-D imaging data (Y×X or YxXxE)
+            'ImageTimeSeries', ...         % 3-D imaging data (Y×X×T or YxXxTxE)            
             'ProcessedData', ...           % Processed data stored in UMT structs
             'UnknownDataType' ...          % Fallback semantic type for unspecified or legacy data
             };
