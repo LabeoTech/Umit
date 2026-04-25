@@ -36,6 +36,10 @@ function Info = loadMetaData(fileName)
 %         collapsed to continuous YXT.
 %       - For .umt files, embedded metadata is optional. When missing, core
 %         metadata are derived from the first data entry when possible.
+%       - When legacy sidecar metadata are used for .dat files, the fields
+%         FrameRateHz, Width, Height, and Length are refreshed from the
+%         legacy fields Freq, datSize, datLength, and dim_names for forward
+%         compatibility.
 
 p = inputParser;
 p.FunctionName = 'loadMetaData';
@@ -79,12 +83,22 @@ function Info = iLoadDatMetaData(fileName, folderPath, baseName)
 
 acqInfo = iLoadAcqInfo(folderPath);
 legacyInfo = iLoadLegacySidecar(folderPath, baseName);
+hasLegacySidecar = ~isempty(fieldnames(legacyInfo));
 
-if ~isempty(fieldnames(legacyInfo))
+if hasLegacySidecar
     % Legacy metadata takes precedence. Append only missing fields from
     % AcqInfoStream to preserve branch-specific semantics.
     Info = legacyInfo;
     Info = iAppendMissingFields(Info, acqInfo);
+
+    % Refresh forward-compatible core fields from the legacy payload.
+    [Info, updatedFields] = iUpdateLegacyCoreFieldsForForwardCompatibility(Info);
+
+    if ~isempty(updatedFields)
+        fprintf(['loadMetaData: Updated legacy metadata field(s) for ' ...
+            'forward compatibility in "%s": %s\n'], ...
+            fileName, strjoin(updatedFields, ', '));
+    end
 else
     % Newer branch: build from AcqInfoStream and derive legacy-compatible fields.
     Info = acqInfo;
@@ -459,5 +473,87 @@ elseif numel(sz) > nDimsExpected
 end
 
 dimSizes = sz;
+
+end
+
+function [Info, updatedFields] = iUpdateLegacyCoreFieldsForForwardCompatibility(Info)
+%IUPDATELEGACYCOREFIELDSFORFORWARDCOMPATIBILITY
+% Refresh core fields from legacy metadata using:
+%   - FrameRateHz = Freq
+%   - Width, Height, Length from datCat = [datSize datLength] indexed by dim_names
+
+updatedFields = {};
+
+if ~isfield(Info, 'dim_names') || isempty(Info.dim_names)
+    return
+end
+
+if ~isfield(Info, 'datSize') || isempty(Info.datSize) || ...
+        ~isfield(Info, 'datLength') || isempty(Info.datLength)
+    return
+end
+
+dimNames = cellstr(string(Info.dim_names));
+datSize = double(Info.datSize(:).');
+datLength = double(Info.datLength);
+
+datCat = [datSize, datLength];
+
+if numel(datCat) ~= numel(dimNames)
+    error('Umitoolbox:loadMetaData:invalidLegacyMetadata', ...
+        ['Legacy metadata are inconsistent: [datSize datLength] must have ' ...
+         'the same number of elements as dim_names.']);
+end
+
+% -------------------------------------------------------------------------
+% FrameRateHz <- Freq
+% -------------------------------------------------------------------------
+if isfield(Info, 'Freq') && ~isempty(Info.Freq)
+    newFrameRateHz = double(Info.Freq);
+
+    if ~isfield(Info, 'FrameRateHz') || isempty(Info.FrameRateHz) || ...
+            ~isequal(double(Info.FrameRateHz), newFrameRateHz)
+        Info.FrameRateHz = newFrameRateHz;
+        updatedFields{end+1} = 'FrameRateHz'; %#ok<AGROW>
+    end
+end
+
+if isfield(Info, 'FrameRateHz') && ~isempty(Info.FrameRateHz)
+    Info.Freq = double(Info.FrameRateHz);
+end
+
+% -------------------------------------------------------------------------
+% Height <- Y, Width <- X, Length <- T
+% -------------------------------------------------------------------------
+idxY = find(strcmp(dimNames, 'Y'), 1, 'first');
+idxX = find(strcmp(dimNames, 'X'), 1, 'first');
+idxT = find(strcmp(dimNames, 'T'), 1, 'first');
+
+if ~isempty(idxY)
+    newHeight = datCat(idxY);
+    if ~isfield(Info, 'Height') || isempty(Info.Height) || ...
+            ~isequal(double(Info.Height), newHeight)
+        Info.Height = newHeight;
+        updatedFields{end+1} = 'Height'; %#ok<AGROW>
+    end
+end
+
+if ~isempty(idxX)
+    newWidth = datCat(idxX);
+    if ~isfield(Info, 'Width') || isempty(Info.Width) || ...
+            ~isequal(double(Info.Width), newWidth)
+        Info.Width = newWidth;
+        updatedFields{end+1} = 'Width'; %#ok<AGROW>
+    end
+end
+
+if ~isempty(idxT)
+    newLength = datCat(idxT);
+    if ~isfield(Info, 'Length') || isempty(Info.Length) || ...
+            ~isequal(double(Info.Length), newLength)
+        Info.Length = newLength;
+        updatedFields{end+1} = 'Length'; %#ok<AGROW>
+    end
+end
 
 end
