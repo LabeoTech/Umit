@@ -35,6 +35,8 @@ classdef DatImageSource < handle
 %       updateCacheAround    - Rebuild cache centered on one pixel.
 %       isInsideCache        - Test if one pixel is inside the cache.
 %       getCacheRectangle    - Return rectangle position for overlay.
+%       hasPartialTemporalCache - Return true when cache covers only part
+%                              of the image.
 %
 %   Notes:
 %       - loadMetaData must be available on the MATLAB path.
@@ -176,6 +178,11 @@ classdef DatImageSource < handle
 
             obj.validateFrameIndex(tIdx);
 
+            if obj.isFullImageCached()
+                frame = obj.CacheData(:, :, tIdx);
+                return
+            end
+
             fid = fopen(obj.FilePath, 'r');
             if fid < 0
                 error('DatImageSource:FileOpenFailed', ...
@@ -211,6 +218,13 @@ classdef DatImageSource < handle
             obj.validateFrameIndex(tIdx);
             yRange = obj.validateContiguousIndexRange(yRange, obj.Ny, 'Y');
             xRange = obj.validateContiguousIndexRange(xRange, obj.Nx, 'X');
+
+            if obj.isInsideCachedBlock(yRange, xRange)
+                yLocal = yRange - obj.CacheYRange(1) + 1;
+                xLocal = xRange - obj.CacheXRange(1) + 1;
+                block = obj.CacheData(yLocal, xLocal, tIdx);
+                return
+            end
 
             fid = fopen(obj.FilePath, 'r');
             if fid < 0
@@ -365,6 +379,23 @@ classdef DatImageSource < handle
             %ISCACHELOCKED Return true when cache mode is locked.
 
             tf = strcmpi(obj.CacheMode, 'locked');
+        end
+
+        function tf = hasPartialTemporalCache(obj)
+            %HASPARTIALTEMPORALCACHE Return true for partial XYT cache mode.
+            %
+            %   tf = obj.hasPartialTemporalCache()
+            %
+            %   Returns true when the active temporal cache covers only part
+            %   of the image. Returns false when the cache is empty or when
+            %   the whole image is cached in memory.
+
+            if isempty(obj.CacheData)
+                tf = false;
+                return
+            end
+
+            tf = ~obj.isFullImageCached();
         end
 
         function txt = getCacheStatusText(obj)
@@ -638,6 +669,26 @@ classdef DatImageSource < handle
 
                 cache(:, :, tIdx) = slab(yRange, :);
             end
+        end
+
+        function tf = isFullImageCached(obj)
+            %ISFULLIMAGECACHED Return true when cache covers full [Y,X,T].
+
+            tf = ~isempty(obj.CacheData) && ...
+                numel(obj.CacheYRange) == obj.Ny && ...
+                numel(obj.CacheXRange) == obj.Nx && ...
+                obj.CacheYRange(1) == 1 && obj.CacheYRange(end) == obj.Ny && ...
+                obj.CacheXRange(1) == 1 && obj.CacheXRange(end) == obj.Nx;
+        end
+
+        function tf = isInsideCachedBlock(obj, yRange, xRange)
+            %ISINSIDECACHEDBLOCK Return true if a spatial block is cached.
+
+            tf = ~isempty(obj.CacheData) && ...
+                yRange(1) >= obj.CacheYRange(1) && ...
+                yRange(end) <= obj.CacheYRange(end) && ...
+                xRange(1) >= obj.CacheXRange(1) && ...
+                xRange(end) <= obj.CacheXRange(end);
         end
 
         function offset = frameOffsetBytes(obj, tIdx)

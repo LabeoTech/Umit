@@ -1,26 +1,26 @@
 classdef UMTImageSource < handle
-    %UMTIMAGESOURCE In-memory image backend for .umt image structures.
-    %
-    %   src = UMTImageSource(filePath)
-    %   src = UMTImageSource(filePath, entryName)
-    %
-    %   This class provides a DataViewer-oriented access layer for .umt files
-    %   with kind='image'. It loads one image entry into memory and exposes a
-    %   common backend interface compatible with DatImageSource.
-    %
-    %   Supported image layouts are defined by getUMTSchema:
-    %       {'Y','X'}
-    %       {'Y','X','T'}
-    %       {'Y','X','E'}
-    %       {'Y','X','T','E'}
-    %
-    %   Event metadata, when present, is read from top-level umt.eventInfo.
-    %
-    %   Notes:
-    %       - loadMetaData must be available on the MATLAB path.
-    %       - validateUMTStruct must be available on the MATLAB path.
-    %       - This class intentionally treats UMT image entries as fully cached.
-    %         A lazy MAT-file backend can be added later if needed.
+%UMTIMAGESOURCE In-memory image backend for .umt image structures.
+%
+%   src = UMTImageSource(filePath)
+%   src = UMTImageSource(filePath, entryName)
+%
+%   This class provides a DataViewer-oriented access layer for .umt files
+%   with kind='image'. It loads one image entry into memory and exposes a
+%   common backend interface compatible with DatImageSource.
+%
+%   Supported image layouts are defined by getUMTSchema:
+%       {'Y','X'}
+%       {'Y','X','T'}
+%       {'Y','X','E'}
+%       {'Y','X','T','E'}
+%
+%   Event metadata, when present, is read from top-level umt.eventInfo.
+%
+%   Notes:
+%       - loadMetaData must be available on the MATLAB path.
+%       - validateUMTStruct must be available on the MATLAB path.
+%       - This class intentionally treats UMT image entries as fully cached.
+%         A lazy MAT-file backend can be added later if needed.
 
     properties (SetAccess = private)
         FilePath char = ''
@@ -42,7 +42,7 @@ classdef UMTImageSource < handle
         Ne double = 1
         FrameRateHz double = NaN
     end
-
+    p
     methods
         function obj = UMTImageSource(filePath, entryName)
             %UMTIMAGESOURCE Construct a .umt image source.
@@ -131,28 +131,6 @@ classdef UMTImageSource < handle
 
             eventInfo = obj.EventInfo;
         end
-
-        function entryName = getEntryName(obj)
-            %GETENTRYNAME Return the currently loaded UMT entry name.
-
-            entryName = obj.EntryName;
-
-        end
-
-        function entryNames = getEntryNames(obj)
-            %GETENTRYNAMES Return all available UMT entry names.
-
-            entryNames = obj.EntryNames;
-
-        end
-
-        function summaryTable = getEntrySummary(obj)
-            %GETENTRYSUMMARY Return summary table for all entries in the loaded UMT.
-
-            summaryTable = UMTImageSource.buildEntrySummaryTable(obj.UMT);
-
-        end
-
 
         function frame = getFrame(obj, tIdx, eIdx)
             %GETFRAME Return one image frame.
@@ -294,53 +272,6 @@ classdef UMTImageSource < handle
         end
     end
 
-    methods (Static)
-        function summaryTable = inspectEntries(filePath)
-            %INSPECTENTRIES Return a summary table of image entries in a .umt file.
-            %
-            %   summaryTable = UMTImageSource.inspectEntries(filePath)
-            %
-            %   The returned table contains:
-            %       Name
-            %       DimNames
-            %       Size
-            %       Class
-            %       HasT
-            %       HasE
-
-            validateattributes(filePath, {'char', 'string'}, {'scalartext'}, ...
-                'UMTImageSource.inspectEntries', 'filePath');
-
-            filePath = char(string(filePath));
-
-            if isempty(fileparts(filePath))
-                filePath = fullfile(pwd, filePath);
-            end
-
-            if ~isfile(filePath)
-                error('UMTImageSource:FileNotFound', ...
-                    'File not found: "%s".', filePath);
-            end
-
-            [~, ~, ext] = fileparts(filePath);
-            if ~strcmpi(ext, '.umt')
-                error('UMTImageSource:InvalidExtension', ...
-                    'UMTImageSource.inspectEntries can only inspect .umt files.');
-            end
-
-            umt = UMTImageSource.loadUMTStruct(filePath);
-
-            validateUMTStruct(umt, 'requireEventInfo', true);
-
-            if ~strcmpi(umt.kind, 'image')
-                error('UMTImageSource:UnsupportedKind', ...
-                    'Only UMT files with kind="image" can be loaded by UMTImageSource.');
-            end
-
-            summaryTable = UMTImageSource.buildEntrySummaryTable(umt);
-        end
-    end
-
     methods (Access = private)
         function entryName = resolveEntryName(obj, entryName)
             %RESOLVEENTRYNAME Select an entry or raise ambiguity error.
@@ -353,7 +284,7 @@ classdef UMTImageSource < handle
 
                 error('UMTImageSource:AmbiguousEntry', ...
                     ['The UMT file contains multiple image entries: %s. ' ...
-                    'Please select which entry to load.'], ...
+                     'Please select which entry to load.'], ...
                     strjoin(obj.EntryNames(:).', ', '));
             end
 
@@ -495,67 +426,6 @@ classdef UMTImageSource < handle
 
             error('UMTImageSource:InvalidUMTFile', ...
                 'No scalar UMT struct was found in "%s".', fileName);
-        end
-
-        function summaryTable = buildEntrySummaryTable(umt)
-            %BUILDENTRYSUMMARYTABLE Build display summary for UMT entries.
-
-            entryNames = fieldnames(umt.data);
-            nEntries = numel(entryNames);
-
-            Name = strings(nEntries, 1);
-            DimNames = strings(nEntries, 1);
-            SizeText = strings(nEntries, 1);
-            DataClass = strings(nEntries, 1);
-            HasT = strings(nEntries, 1);
-            HasE = strings(nEntries, 1);
-
-            for iEntry = 1:nEntries
-                entryName = entryNames{iEntry};
-                entry = umt.data.(entryName);
-
-                dimNames = cellstr(string(entry.dimNames(:).'));
-                value = entry.value;
-
-                nDimsExpected = numel(dimNames);
-                dataSize = size(value);
-
-                if numel(dataSize) < nDimsExpected
-                    dataSize(end+1:nDimsExpected) = 1;
-                elseif numel(dataSize) > nDimsExpected
-                    dataSize = dataSize(1:nDimsExpected);
-                end
-
-                bHasT = any(strcmp(dimNames, 'T'));
-                bHasE = any(strcmp(dimNames, 'E'));
-
-                Name(iEntry) = string(entryName);
-                DimNames(iEntry) = strjoin(string(dimNames), ' x ');
-                SizeText(iEntry) = "[" + strjoin(string(dataSize), " x ") + "]";
-                DataClass(iEntry) = string(class(value));
-
-                if bHasT
-                    HasT(iEntry) = "Yes";
-                else
-                    HasT(iEntry) = "No";
-                end
-
-                if bHasE
-                    HasE(iEntry) = "Yes";
-                else
-                    HasE(iEntry) = "No";
-                end
-            end
-
-            summaryTable = table( ...
-                Name, ...
-                DimNames, ...
-                SizeText, ...
-                DataClass, ...
-                HasT, ...
-                HasE, ...
-                'VariableNames', {'Name', 'DimNames', 'Size', 'Class', 'HasT', 'HasE'});
-
         end
     end
 end
