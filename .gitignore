@@ -10,3 +10,4 @@ IOIAnalysis/SystemOpticalParams/LEDs.mat
 Analysis/deployFcnList.mat
 Analysis/PMTest/
 _branchComp/
+GUI/DataViewer/newDataViewer_canvas_exported.m
