@@ -1,39 +1,49 @@
 function nChunks = calculateMaxChunkSize(data, sizeFactor, RAMoverhead)
-% CALCULATEMAXCHUNKSIZE Estimate the number of chunks required to safely
-% process data without exceeding system RAM.
+%CALCULATEMAXCHUNKSIZE Estimate the number of chunks required for RAM-safe processing.
 %
-% This function computes a conservative chunk count based on an estimate
-% of peak memory usage, available system RAM, and a user-defined RAM
-% overhead. The input data can be provided either as a numeric array or
-% directly as a scalar specifying the required memory footprint in bytes.
+%   nChunks = calculateMaxChunkSize(data, sizeFactor, RAMoverhead)
 %
-% Inputs:
-%   data :
-%       Either:
-%         - Numeric array to be processed. Its in-memory size is determined
-%           using WHOS and multiplied by sizeFactor to estimate peak usage.
-%         - Scalar specifying the estimated required memory in BYTES
-%           (already including any sizeFactor or algorithm-specific scaling).
+%   This function estimates how many chunks are needed to process data while
+%   staying within a conservative RAM budget. The estimate is based on the
+%   required memory footprint, a user-defined peak-memory scaling factor, and
+%   a reserved RAM overhead.
 %
-%   sizeFactor (scalar > 0):
-%       Multiplicative factor used to estimate peak memory usage relative
-%       to the input data size. This factor is only applied when DATA is
-%       provided as a numeric array. It is ignored when DATA is a scalar.
+%   Inputs:
+%       data :
+%           Either:
+%               - Numeric array:
+%                   The in-memory size is measured with WHOS and multiplied
+%                   by sizeFactor.
 %
-%   RAMoverhead (scalar in [0,1)):
-%       Fraction of total physical RAM to reserve for the operating system,
-%       MATLAB internals, memory fragmentation, and temporary allocations.
+%               - Scalar numeric value:
+%                   Interpreted as the estimated required memory footprint
+%                   in bytes before applying sizeFactor. The final estimated
+%                   requirement is:
 %
-% Output:
-%   nChunks (scalar integer):
-%       Number of chunks required to process the data while staying within
-%       the computed RAM budget. Guaranteed to be at least 1.
+%                       requiredBytes = data * sizeFactor
 %
-% Notes:
-%   - The function uses a conservative RAM budget based on available RAM
-%     clamped to a fixed fraction of total system RAM.
-%   - This approach avoids instability caused by transient memory peaks
-%     and allocator cleanup during execution.
+%       sizeFactor :
+%           Positive scalar multiplier used to estimate peak memory use.
+%           This should account for temporary arrays, type conversion,
+%           intermediate buffers, and output allocation.
+%
+%       RAMoverhead :
+%           Scalar in [0,1). Fraction of total physical RAM reserved for the
+%           operating system, MATLAB internals, memory fragmentation, and
+%           unrelated temporary allocations. Default is 0.2.
+%
+%   Output:
+%       nChunks :
+%           Number of chunks required to keep the estimated memory use within
+%           the computed RAM budget. Guaranteed to be at least 1 when usable
+%           RAM can be estimated. Returns [] if no usable RAM remains after
+%           overhead reservation.
+%
+%   Notes:
+%       - The RAM budget is conservative and clamps usable memory to at most
+%         70% of total physical RAM.
+%       - For scalar byte estimates, pass sizeFactor = 1 if the estimate
+%         already includes all algorithm-specific temporary-memory scaling.
 
 
 if ~exist('RAMoverhead','var')

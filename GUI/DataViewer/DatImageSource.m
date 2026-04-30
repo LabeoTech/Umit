@@ -32,6 +32,7 @@ classdef DatImageSource < handle
 %       getFrame             - Read one full [Y,X] frame.
 %       getFrameBlock        - Read one spatial block from one frame.
 %       getPixelTrace        - Return full-T pixel trace from the cache.
+%       getROIMeanTraceMatrix - Return ROI mean traces for normal/event frames.
 %       updateCacheAround    - Rebuild cache centered on one pixel.
 %       isInsideCache        - Test if one pixel is inside the cache.
 %       getCacheRectangle    - Return rectangle position for overlay.
@@ -346,6 +347,75 @@ classdef DatImageSource < handle
                 numel(obj.CacheYRange)];
         end
 
+
+        function [traceMatrix, readMode] = getROIMeanTraceMatrix(obj, roiMasks, frameIdx)
+            %GETROIMEANTRACEMATRIX Return mean intensity traces for ROI masks.
+            %
+            %   [traceMatrix, readMode] = obj.getROIMeanTraceMatrix(roiMasks, frameIdx)
+            %
+            %   Inputs:
+            %       roiMasks - ROI masks as either:
+            %                  - cell array of logical [Y,X] masks
+            %                  - logical/numeric [Y,X,nROI] stack
+            %                  - logical/numeric [Y,X] single mask
+            %       frameIdx - Source frame indices. The shape controls the output:
+            %                  - vector [1,nFrames] or [nFrames,1]
+            %                    returns traceMatrix [nROI,nFrames]
+            %                  - matrix [nTrials,nFrames]
+            %                    returns traceMatrix [nROI,nTrials,nFrames]
+            %
+            %   Output:
+            %       traceMatrix - ROI spatial means for requested frames.
+            %       readMode    - 'cache', 'direct_full_frame', or 'none'.
+            %
+            %   Notes:
+            %       - If all ROI masks are fully inside the active temporal cache,
+            %         traces are computed from CacheData.
+            %       - If any ROI mask is outside the active temporal cache, traces
+            %         are computed by RAM-bounded full-frame direct reads.
+            %       - Direct reads do not rebuild or move the temporal cache.
+
+            if nargin < 3 || isempty(frameIdx)
+                frameIdx = 1:obj.Nt;
+            end
+
+            [maskStack, emptyROI] = obj.normalizeROIMasks(roiMasks);
+            frameIdx = double(frameIdx);
+
+            if isempty(maskStack)
+                traceMatrix = [];
+                readMode = 'none';
+                return
+            end
+
+            obj.validateROIFrameIndex(frameIdx);
+
+            nROI = size(maskStack, 3);
+            bEventMatrix = ~isvector(frameIdx) && ismatrix(frameIdx);
+
+            if bEventMatrix
+                traceMatrix = nan(nROI, size(frameIdx, 1), size(frameIdx, 2));
+            else
+                traceMatrix = nan(nROI, numel(frameIdx));
+                frameIdx = frameIdx(:).';
+            end
+
+            if ~any(isfinite(frameIdx(:)))
+                readMode = 'none';
+                return
+            end
+
+            if obj.areROIMasksInsideCache(maskStack)
+                traceMatrix = obj.computeROIMeanTraceMatrixFromCache( ...
+                    maskStack, emptyROI, frameIdx, bEventMatrix);
+                readMode = 'cache';
+            else
+                traceMatrix = obj.computeROIMeanTraceMatrixDirect( ...
+                    maskStack, emptyROI, frameIdx, bEventMatrix);
+                readMode = 'direct_full_frame';
+            end
+        end
+
         function setCacheMode(obj, mode)
             %SETCACHEMODE Set temporal cache mode.
             %
@@ -415,6 +485,357 @@ classdef DatImageSource < handle
     end
 
     methods (Access = private)
+
+        function [maskStack, emptyROI] = normalizeROIMasks(obj, roiMasks)
+            %NORMALIZEROIMASKS Validate ROI masks and return [Y,X,nROI] stack.
+
+            if isempty(roiMasks)
+                maskStack = false(obj.Ny, obj.Nx, 0);
+                emptyROI = false(0, 1);
+                return
+            end
+
+            if iscell(roiMasks)
+                nROI = numel(roiMasks);
+                maskStack = false(obj.Ny, obj.Nx, nROI);
+
+                for iROI = 1:nROI
+                    thisMask = roiMasks{iROI};
+                    obj.validateOneROIMask(thisMask, iROI);
+                    maskStack(:, :, iROI) = logical(thisMask);
+                end
+            else
+                if ~isnumeric(roiMasks) && ~islogical(roiMasks)
+                    error('DatImageSource:InvalidROIMasks', ...
+                        'roiMasks must be a cell array or a numeric/logical mask array.');
+                end
+
+                if ismatrix(roiMasks)
+                    obj.validateOneROIMask(roiMasks, 1);
+                    maskStack = logical(roiMasks);
+                    maskStack = reshape(maskStack, obj.Ny, obj.Nx, 1);
+                elseif ndims(roiMasks) == 3
+                    if size(roiMasks, 1) ~= obj.Ny || size(roiMasks, 2) ~= obj.Nx
+                        error('DatImageSource:InvalidROIMaskSize', ...
+                            'ROI mask stack must have size [Y,X,nROI]=[%d,%d,nROI].', ...
+                            obj.Ny, obj.Nx);
+                    end
+                    maskStack = logical(roiMasks);
+                else
+                    error('DatImageSource:InvalidROIMasks', ...
+                        'roiMasks must be [Y,X], [Y,X,nROI], or a cell array of [Y,X] masks.');
+                end
+            end
+
+            nROI = size(maskStack, 3);
+            emptyROI = false(nROI, 1);
+
+            for iROI = 1:nROI
+                emptyROI(iROI) = ~any(maskStack(:, :, iROI), 'all');
+            end
+        end
+
+        function validateOneROIMask(obj, mask, roiIdx)
+            %VALIDATEONEROIMASK Validate one ROI mask.
+
+            if (~isnumeric(mask) && ~islogical(mask)) || ~ismatrix(mask)
+                error('DatImageSource:InvalidROIMask', ...
+                    'ROI mask %d must be a numeric or logical 2D array.', roiIdx);
+            end
+
+            if ~isequal(size(mask), [obj.Ny, obj.Nx])
+                error('DatImageSource:InvalidROIMaskSize', ...
+                    'ROI mask %d must have size [Y,X]=[%d,%d].', ...
+                    roiIdx, obj.Ny, obj.Nx);
+            end
+        end
+
+        function validateROIFrameIndex(obj, frameIdx)
+            %VALIDATEROIFRAMEINDEX Validate ROI trace frame indices.
+
+            if isempty(frameIdx)
+                return
+            end
+
+            if ~isnumeric(frameIdx) || ~ismatrix(frameIdx)
+                error('DatImageSource:InvalidROIFrameIndex', ...
+                    'frameIdx must be a numeric vector or numeric matrix.');
+            end
+
+            finiteFrameIdx = frameIdx(isfinite(frameIdx));
+
+            if isempty(finiteFrameIdx)
+                return
+            end
+
+            if any(mod(finiteFrameIdx, 1) ~= 0) || ...
+                    any(finiteFrameIdx < 1) || any(finiteFrameIdx > obj.Nt)
+                error('DatImageSource:InvalidROIFrameIndex', ...
+                    'frameIdx contains indices outside the valid range [1,%d].', obj.Nt);
+            end
+        end
+
+        function tf = areROIMasksInsideCache(obj, maskStack)
+            %AREROIMASKSINSIDECACHE True if all non-empty ROIs fit in cache.
+
+            tf = false;
+
+            if isempty(obj.CacheData) || isempty(obj.CacheYRange) || isempty(obj.CacheXRange)
+                return
+            end
+
+            nROI = size(maskStack, 3);
+
+            for iROI = 1:nROI
+                thisMask = maskStack(:, :, iROI);
+
+                if ~any(thisMask(:))
+                    continue
+                end
+
+                yRows = find(any(thisMask, 2));
+                xCols = find(any(thisMask, 1));
+
+                if isempty(yRows) || isempty(xCols)
+                    continue
+                end
+
+                if yRows(1) < obj.CacheYRange(1) || yRows(end) > obj.CacheYRange(end) || ...
+                        xCols(1) < obj.CacheXRange(1) || xCols(end) > obj.CacheXRange(end)
+                    return
+                end
+            end
+
+            tf = true;
+        end
+
+        function traceMatrix = computeROIMeanTraceMatrixFromCache(obj, maskStack, emptyROI, frameIdx, bEventMatrix)
+            %COMPUTEROIMEANTRACEMATRIXFROMCACHE Compute ROI traces from CacheData.
+
+            yRange = obj.CacheYRange;
+            xRange = obj.CacheXRange;
+            [roiWeights, emptyLocalROI] = obj.makeROIWeightMatrix(maskStack, yRange, xRange);
+            emptyRows = emptyROI | emptyLocalROI;
+
+            nROI = size(maskStack, 3);
+            nPix = numel(yRange) * numel(xRange);
+
+            if bEventMatrix
+                nTrials = size(frameIdx, 1);
+                nFrames = size(frameIdx, 2);
+                traceMatrix = nan(nROI, nTrials, nFrames);
+
+                for iTrial = 1:nTrials
+                    trialFrames = frameIdx(iTrial, :);
+                    validPos = find(isfinite(trialFrames));
+
+                    if isempty(validPos)
+                        continue
+                    end
+
+                    cacheBlock = obj.CacheData(:, :, trialFrames(validPos));
+                    cacheBlock2D = reshape(cacheBlock, nPix, numel(validPos));
+                    traceChunk = roiWeights * double(cacheBlock2D);
+                    traceChunk(emptyRows, :) = NaN;
+                    traceMatrix(:, iTrial, validPos) = traceChunk;
+                end
+            else
+                frameIdx = frameIdx(:).';
+                nFrames = numel(frameIdx);
+                traceMatrix = nan(nROI, nFrames);
+                validPos = find(isfinite(frameIdx));
+
+                if ~isempty(validPos)
+                    cacheBlock = obj.CacheData(:, :, frameIdx(validPos));
+                    cacheBlock2D = reshape(cacheBlock, nPix, numel(validPos));
+                    traceChunk = roiWeights * double(cacheBlock2D);
+                    traceChunk(emptyRows, :) = NaN;
+                    traceMatrix(:, validPos) = traceChunk;
+                end
+            end
+        end
+
+        function traceMatrix = computeROIMeanTraceMatrixDirect(obj, maskStack, emptyROI, frameIdx, bEventMatrix)
+            %COMPUTEROIMEANTRACEMATRIXDIRECT Compute ROI traces from full-frame chunks.
+
+            [roiWeights, emptyLocalROI] = obj.makeROIWeightMatrix(maskStack, 1:obj.Ny, 1:obj.Nx);
+            emptyRows = emptyROI | emptyLocalROI;
+
+            nROI = size(maskStack, 3);
+            nPix = obj.Ny * obj.Nx;
+
+            fid = fopen(obj.FilePath, 'r');
+            if fid < 0
+                error('DatImageSource:FileOpenFailed', ...
+                    'Could not open file: "%s".', obj.FilePath);
+            end
+            cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
+
+            if bEventMatrix
+                nTrials = size(frameIdx, 1);
+                nFrames = size(frameIdx, 2);
+                traceMatrix = nan(nROI, nTrials, nFrames);
+
+                for iTrial = 1:nTrials
+                    trialFrames = frameIdx(iTrial, :);
+                    validPos = find(isfinite(trialFrames));
+
+                    if isempty(validPos)
+                        continue
+                    end
+
+                    framesPerChunk = obj.estimateROIFramesPerChunk(numel(validPos));
+
+                    for firstPos = 1:framesPerChunk:numel(validPos)
+                        lastPos = min(firstPos + framesPerChunk - 1, numel(validPos));
+                        chunkPos = validPos(firstPos:lastPos);
+                        chunkFrames = trialFrames(chunkPos);
+
+                        frameBlock = obj.readFullFrameListFromOpenFile(fid, chunkFrames);
+                        frameBlock2D = reshape(frameBlock, nPix, numel(chunkFrames));
+                        traceChunk = roiWeights * double(frameBlock2D);
+                        traceChunk(emptyRows, :) = NaN;
+                        traceMatrix(:, iTrial, chunkPos) = traceChunk;
+                    end
+                end
+            else
+                frameIdx = frameIdx(:).';
+                nFrames = numel(frameIdx);
+                traceMatrix = nan(nROI, nFrames);
+                validPos = find(isfinite(frameIdx));
+
+                if isempty(validPos)
+                    return
+                end
+
+                framesPerChunk = obj.estimateROIFramesPerChunk(numel(validPos));
+
+                for firstPos = 1:framesPerChunk:numel(validPos)
+                    lastPos = min(firstPos + framesPerChunk - 1, numel(validPos));
+                    chunkPos = validPos(firstPos:lastPos);
+                    chunkFrames = frameIdx(chunkPos);
+
+                    frameBlock = obj.readFullFrameListFromOpenFile(fid, chunkFrames);
+                    frameBlock2D = reshape(frameBlock, nPix, numel(chunkFrames));
+                    traceChunk = roiWeights * double(frameBlock2D);
+                    traceChunk(emptyRows, :) = NaN;
+                    traceMatrix(:, chunkPos) = traceChunk;
+                end
+            end
+        end
+
+        function [roiWeights, emptyROI] = makeROIWeightMatrix(obj, maskStack, yRange, xRange)
+            %MAKEROIWEIGHTMATRIX Build sparse ROI averaging matrix.
+
+            yRange = double(yRange(:).');
+            xRange = double(xRange(:).');
+
+            nROI = size(maskStack, 3);
+            nPix = numel(yRange) * numel(xRange);
+
+            rowIdx = [];
+            colIdx = [];
+            values = [];
+            emptyROI = false(nROI, 1);
+
+            for iROI = 1:nROI
+                thisMask = maskStack(yRange, xRange, iROI);
+                pixelIdx = find(thisMask(:));
+
+                if isempty(pixelIdx)
+                    emptyROI(iROI) = true;
+                    continue
+                end
+
+                nMaskPixels = numel(pixelIdx);
+                rowIdx = [rowIdx; repmat(iROI, nMaskPixels, 1)]; %#ok<AGROW>
+                colIdx = [colIdx; pixelIdx(:)]; %#ok<AGROW>
+                values = [values; repmat(1 ./ nMaskPixels, nMaskPixels, 1)]; %#ok<AGROW>
+            end
+
+            roiWeights = sparse(rowIdx, colIdx, values, nROI, nPix);
+        end
+
+        function framesPerChunk = estimateROIFramesPerChunk(obj, nFramesRequested)
+            %ESTIMATEROIFRAMESPERCHUNK Estimate RAM-safe full-frame chunk size.
+
+            nFramesRequested = max(0, round(double(nFramesRequested)));
+
+            if nFramesRequested <= 0
+                framesPerChunk = 0;
+                return
+            end
+
+            requiredBytes = double(obj.Ny) * double(obj.Nx) * ...
+                double(nFramesRequested) * double(obj.BytesPerSample);
+
+            sizeFactor = 2.5;
+
+            try
+                nChunks = calculateMaxChunkSize(requiredBytes, sizeFactor, obj.RAMoverhead);
+            catch
+                nChunks = nFramesRequested;
+            end
+
+            if isempty(nChunks) || ~isfinite(nChunks) || nChunks < 1
+                nChunks = nFramesRequested;
+            end
+
+            nChunks = min(nFramesRequested, max(1, ceil(nChunks)));
+            framesPerChunk = max(1, ceil(nFramesRequested ./ nChunks));
+        end
+
+        function frameBlock = readFullFrameListFromOpenFile(obj, fid, frameList)
+            %READFULLFRAMELISTFROMOPENFILE Read full frames from an open file.
+
+            frameList = double(frameList(:).');
+
+            if isempty(frameList)
+                frameBlock = zeros(obj.Ny, obj.Nx, 0, obj.Precision);
+                return
+            end
+
+            if any(~isfinite(frameList)) || any(mod(frameList, 1) ~= 0)
+                error('DatImageSource:InvalidFrameList', ...
+                    'Frame list contains invalid frame indices.');
+            end
+
+            if numel(frameList) == 1 || all(diff(frameList) == 1)
+                frameBlock = obj.readFullFrameChunkFromOpenFile(fid, frameList(1), numel(frameList));
+                return
+            end
+
+            frameBlock = zeros(obj.Ny, obj.Nx, numel(frameList), obj.Precision);
+
+            for iFrame = 1:numel(frameList)
+                frameBlock(:, :, iFrame) = obj.readFullFrameChunkFromOpenFile(fid, frameList(iFrame), 1);
+            end
+        end
+
+        function frameBlock = readFullFrameChunkFromOpenFile(obj, fid, startFrame, nFrames)
+            %READFULLFRAMECHUNKFROMOPENFILE Read consecutive full frames from an open file.
+
+            startFrame = double(startFrame);
+            nFrames = double(nFrames);
+
+            obj.validateFrameIndex(startFrame);
+            obj.validateFrameIndex(startFrame + nFrames - 1);
+
+            offset = obj.frameOffsetBytes(startFrame);
+            obj.safeFseek(fid, offset, ...
+                sprintf('Failed to seek to frame %d.', startFrame));
+
+            nElements = obj.Ny * obj.Nx * nFrames;
+            [raw, count] = fread(fid, nElements, ['*' obj.Precision]);
+
+            if count ~= nElements
+                error('DatImageSource:UnexpectedEOF', ...
+                    'Unexpected end of file while reading full-frame chunk.');
+            end
+
+            frameBlock = reshape(raw, obj.Ny, obj.Nx, nFrames);
+        end
+
         function validateContinuousDatLayout(obj, Info) %#ok<INUSL>
             %VALIDATECONTINUOUSDATLAYOUT Reject non-YXT .dat files.
             %
