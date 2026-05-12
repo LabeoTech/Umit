@@ -10,16 +10,61 @@ function outFile = run_ImagesClassification(RawFolder, SaveFolder, varargin)
 %   For dual-camera acquisitions, it also attempts to apply the saved
 %   camera coregistration transform when available.
 %
+%   Inputs:
+%       RawFolder  - Path to the folder containing the raw binary
+%                    acquisition.
+%       SaveFolder - Path to the folder where processed channel files will
+%                    be saved.
+%
 %   Name-Value parameters:
-%       BinningSpatial - Spatial binning factor. Default: 1
-%       BinningTemp    - Temporal binning factor. Default: 1
+%       BinningSpatial - Spatial binning factor.
+%                        Default: 1
+%
+%       BinningTemp    - Temporal binning factor.
+%                        Default: 1
+%
+%       backupOpts     - Backup handling option passed to
+%                        ImagesClassification before writing outputs into
+%                        SaveFolder.
+%                        Allowed values:
+%                            'ERASE'
+%                            'GENBACKUP'
+%                        Default: ''
+%
+%                        Notes:
+%                        - If left empty, the backup handling is resolved
+%                          interactively by the called function.
+%                        - 'ERASE' deletes managed existing files from
+%                          SaveFolder before import.
+%                        - 'GENBACKUP' creates a timestamped .zip backup of
+%                          managed existing files before import.
 %
 %   Output:
 %       outFile        - File manifest of outputs saved in SaveFolder.
+%
+%   Notes:
+%       - This function does not expose SubROI selection. It always calls
+%         ImagesClassification with b_SubROI = 0.
+%       - The returned file manifest uses full paths.
+%       - Dual-camera coregistration is attempted only when:
+%           1) AcqInfos.mat indicates MultiCam = true
+%           2) a saved coregistration tform file is available
+%
+%   Examples:
+%       outFile = run_ImagesClassification(rawFolder, saveFolder);
+%
+%       outFile = run_ImagesClassification( ...
+%           rawFolder, saveFolder, ...
+%           'BinningSpatial', 2, ...
+%           'BinningTemp', 4);
+%
+%       outFile = run_ImagesClassification( ...
+%           rawFolder, saveFolder, ...
+%           'backupOpts', 'GENBACKUP');
 
-
-default_Output = {'fluo_475.dat', 'fluo_567.dat', 'fluo.dat', 'red.dat', 'green.dat', 'yellow.dat', 'speckle.dat', 'AcqInfos.mat'};
-allowedBinning = 2.^[0:4];
+default_Output = {'fluo_475.dat', 'fluo_567.dat', 'fluo.dat', ...
+    'red.dat', 'green.dat', 'yellow.dat', 'speckle.dat', 'AcqInfos.mat'};
+allowedBinning = [1:8];
 
 if nargin == 1 && (ischar(RawFolder) || (isstring(RawFolder) && isscalar(RawFolder))) ...
         && strcmpi(strtrim(char(string(RawFolder))), 'pipelineInfo')
@@ -30,17 +75,29 @@ end
 p = inputParser;
 p.FunctionName = mfilename;
 addRequired(p, 'RawFolder', @isfolder);
-addRequired(p, 'SaveFolder', @isfolder);
-addParameter(p, 'BinningSpatial', 1, @(x) isnumeric(x) && isscalar(x) && isfinite(x) && any(x == allowedBinning));
-addParameter(p, 'BinningTemp', 1, @(x) isnumeric(x) && isscalar(x) && isfinite(x) && any(x == allowedBinning));
+addRequired(p, 'SaveFolder', @(x) ischar(x) || (isstring(x) && isscalar(x)));
+addParameter(p, 'BinningSpatial', 1, ...
+    @(x) isnumeric(x) && isscalar(x) && isfinite(x) && any(x == allowedBinning));
+addParameter(p, 'BinningTemp', 1, ...
+    @(x) isnumeric(x) && isscalar(x) && isfinite(x) && any(x == allowedBinning));
+addParameter(p, 'backupOpts', '', ...
+    @(x) ischar(x) || (isstring(x) && isscalar(x)));
 parse(p, RawFolder, SaveFolder, varargin{:});
 
-RawFolder = p.Results.RawFolder;
-SaveFolder = p.Results.SaveFolder;
+RawFolder = char(string(p.Results.RawFolder));
+SaveFolder = char(string(p.Results.SaveFolder));
 BinningSpatial = p.Results.BinningSpatial;
 BinningTemp = p.Results.BinningTemp;
+backupOpts = char(string(p.Results.backupOpts));
 
-outFile = ImagesClassification(RawFolder, SaveFolder, BinningSpatial, BinningTemp, 0);
+outFile = ImagesClassification( ...
+    RawFolder, ...
+    SaveFolder, ...
+    BinningSpatial, ...
+    BinningTemp, ...
+    0, ...
+    'backupOpts', backupOpts);
+
 if ~iscell(outFile)
     outFile = {};
 end
@@ -52,6 +109,7 @@ if isfile(acqInfoPath)
     info = load(acqInfoPath);
     if isfield(info, 'AcqInfoStream') && isstruct(info.AcqInfoStream) && ...
             isfield(info.AcqInfoStream, 'MultiCam') && info.AcqInfoStream.MultiCam
+
         disp('Dual Camera data found!')
 
         if ispc
@@ -102,6 +160,11 @@ outFile = unique(cellfun(@(x) fullfile(SaveFolder, x), outFile, 'UniformOutput',
         info = PipelineManager.addInput(info, 'BinningTemp', 'parameter', ...
             'Temporal binning factor.', ...
             'kind', 'parameter', 'default', 1, 'allowed', allowedBinning, 'callType', 'namevalue');
+
+        info = PipelineManager.addInput(info, 'backupOpts', 'parameter', ...
+            ['Backup handling option passed to ImagesClassification. Use '''', ''ERASE'', ' ...
+             '''GENBACKUP'', or a custom zip base name.'], ...
+            'kind', 'parameter', 'default', 'ERASE','allowed',{'ERASE','GENBACKUP'}, 'callType', 'namevalue');
 
         info = PipelineManager.addOutput(info, 'outFile', 'ImageTimeSeries', 'file', ...
             'Generated file manifest saved in SaveFolder.', ...

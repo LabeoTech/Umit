@@ -1,7 +1,9 @@
-function varargout = ImagesClassification(DataFolder, SaveFolder, BinningSpatial, BinningTemp, b_SubROI)
+function varargout = ImagesClassification(DataFolder, SaveFolder, BinningSpatial, BinningTemp, varargin)
 %IMAGESCLASSIFICATION Read interlaced binary acquisitions and split channels.
 %
+%   ImagesClassification(DataFolder, SaveFolder, BinningSpatial, BinningTemp)
 %   ImagesClassification(DataFolder, SaveFolder, BinningSpatial, BinningTemp, b_SubROI)
+%   ImagesClassification(..., 'backupOpts', backupOpts)
 %   outFile = ImagesClassification(...)
 %
 %   This function reads raw interlaced .bin files produced by the LabeoTech
@@ -11,14 +13,36 @@ function varargout = ImagesClassification(DataFolder, SaveFolder, BinningSpatial
 %   Notes:
 %       - The original function signature is intentionally preserved.
 %       - Legacy per-channel metadata .mat files are no longer created.
+%       - Existing files in SaveFolder are handled through genBackupFolder.
 %       - If an output is requested, the function returns a file manifest in
 %         varargout{1}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-if nargin < 5
-    b_SubROI = 0;
-end
+% Argument parsing
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+p = inputParser;
+p.FunctionName = mfilename;
 
+addRequired(p, 'DataFolder', @isfolder);
+addRequired(p, 'SaveFolder', @(x) ischar(x) || (isstring(x) && isscalar(x)));
+addRequired(p, 'BinningSpatial', @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x > 0);
+addRequired(p, 'BinningTemp', @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x > 0);
+addOptional(p, 'b_SubROI', false, @(x) islogical(x) || ismember(x, [0 1]));
+addParameter(p, 'backupOpts', '', @(x) ischar(x) || (isstring(x) && isscalar(x)));
+
+parse(p, DataFolder, SaveFolder, BinningSpatial, BinningTemp, varargin{:});
+
+DataFolder = char(string(p.Results.DataFolder));
+SaveFolder = char(string(p.Results.SaveFolder));
+BinningSpatial = p.Results.BinningSpatial;
+BinningTemp = p.Results.BinningTemp;
+b_SubROI = logical(p.Results.b_SubROI);
+backupOpts = char(string(p.Results.backupOpts));
+
+% Control for existing files and create backup or erase them.
+genBackupFolder(SaveFolder, backupOpts);
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 outFile = {};
 AcqInfoStream = ReadInfoFile(DataFolder);
 
@@ -38,9 +62,11 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Data Format and Header Information:
-
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 hWima = 5;
 imgFilesList = dir([DataFolder 'img*.bin']);
+
+% Check if all files exist:
 imgFileNames = sort({imgFilesList.name})';
 imgFileIndx = str2double(erase(imgFileNames, "img_" | ".bin"));
 if ~strcmpi(imgFileNames{1}, 'img_00000.bin') || any(diff(imgFileIndx) ~= 1)
@@ -57,6 +83,7 @@ SizeImage = nx * ny * 2 + 3 * 8;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % SubROI
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 if b_SubROI
     fprintf('Redefining Region Of Interest post-process:\n');
     ButtonName = questdlg('Would you like to use a pre-defined ROI?', ...
@@ -75,22 +102,23 @@ if b_SubROI
             dat = memmapfile([DataFolder imgFilesList(1).name], ...
                 'Offset', hWima * 4 + 5 * SizeImage, ...
                 'Format', frameFormat, 'repeat', 1);
-            dat = dat.Data.imgj;
-            fig = figure;
+            dat = rot90(fliplr(dat.Data.imgj));
+            fig = figure('Name', 'Draw ROI', 'CloseRequestFcn', @closeFig);
             imagesc(dat);
-            h = drawrectangle();
-            wait(h);
-            Pos = h.Position;
-            close(fig);
+            axis image;
+            drawrectangle('Deletable', false, 'Tag', 'myRectangle');
+            title('Close figure to confirm')
+            waitfor(fig)
         case 'Cancel'
             disp('User pressed cancel')
             Pos = [1 1 ImRes_XY(1) ImRes_XY(2)];
     end
 
-    LimX = [round(Pos(1)) round(Pos(1)+Pos(3))];
-    LimY = [round(Pos(2)) round(Pos(2)+Pos(4))];
+    LimX = [round(Pos(1)) round(Pos(1)+Pos(3)) - 1];
+    LimY = [round(Pos(2)) round(Pos(2)+Pos(4)) - 1];
     save([SaveFolder 'ROI.mat'], 'Pos');
     outFile{end+1} = 'ROI.mat'; %#ok<AGROW>
+    clear Pos
 else
     LimX = [1 ImRes_XY(1)];
     LimY = [1 ImRes_XY(2)];
@@ -101,6 +129,7 @@ Ry = round((LimY(2) - LimY(1) + 1) / BinningSpatial);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % How many colors and in which order?
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 fprintf('Sorting images per channels.\n');
 if AcqInfoStream.MultiCam
     Tags = fieldnames(AcqInfoStream);
@@ -292,6 +321,13 @@ end
         for indC = 1:subNbColors
             fclose(fid(indC));
         end
+    end
+
+    function closeFig(src,~)
+        % CloseRequest function for drawing ROI.
+        rectH = findobj(src, 'Tag', 'myRectangle');
+        Pos = rectH.Position;
+        delete(src)
     end
 end
 
