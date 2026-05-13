@@ -64,14 +64,14 @@ classdef PipelineManager < handle
         dataHistory struct % Local copy of the content from the dataHistory file in the data's SaveFolder.
     end
 
-    properties (GetAccess = {?DataViewer})
+    properties (GetAccess = {?DataViewer, ?newDataViewer_canvas,?newDataViewer_canvas_exported})
         %%%%%%-- DEPRECATED PROPERTIES FOR REVIEW -------------------------
         current_saveFolder char % Current path to save folder during pipeline execution.
         current_data % Data available in the workspace during pipeline.
         current_info struct% Structure with info about the functions ran on "current_data". This will be saved to the dataHistory file.
         current_rawFolder char % Current path to raw folder during pipeline execution.
         b_state logical = false % True if a task of a pipeline was successfully executed.
-    end
+        end
 
     properties (Access = private)
         fcnDir char % Directory of the analysis functions.
@@ -9158,12 +9158,8 @@ classdef PipelineManager < handle
             % -------------------------------------------------------------
             % Determine leaf nodes
             % -------------------------------------------------------------
-            if ismethod(obj, 'getLeafNodeIDs')
-                leafIDs = obj.getLeafNodeIDs();
-            else
-                srcIDs = [obj.connections.sourceNodeID];
-                leafIDs = setdiff([obj.nodes.id], unique(srcIDs), 'stable');
-            end
+
+            leafIDs = obj.getLeafNodeIDs();
 
             if isempty(leafIDs)
                 return
@@ -9466,6 +9462,7 @@ classdef PipelineManager < handle
                 end
             end
         end
+
         function [candidateSteps, candidateNodeIDs, candidateStepIsNode] = getCandidatePath(obj, leafNodeID, saveFolder, rawFolder)
             %GETCANDIDATEPATH Build the ordered candidate step list for a leaf.
             %
@@ -9519,6 +9516,15 @@ classdef PipelineManager < handle
             curID = leafNodeID;
 
             while true
+
+                % Guard against single-node / no-edge pipelines and fieldless empty structs
+                if isempty(obj.connections) || ...
+                        ~isstruct(obj.connections) || ...
+                        ~isfield(obj.connections, 'targetNodeID') || ...
+                        ~isfield(obj.connections, 'sourceNodeID')
+                    break
+                end
+
                 inConns = obj.connections([obj.connections.targetNodeID] == curID);
 
                 if numel(inConns) >= 2
@@ -9713,6 +9719,7 @@ classdef PipelineManager < handle
                 end
             end
         end
+        
         function [tf, nStepsMatched] = isHistoryMatch(~, candidateSteps, candidateStepIsNode, historyEntry, saveFolder, rawFolder)
             %ISHISTORYMATCH Strict prefix match between candidateSteps and historyEntry.info.
             %
