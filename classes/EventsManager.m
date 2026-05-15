@@ -301,6 +301,52 @@ classdef EventsManager < handle
             fprintf('Baseline period set to %0.2f seconds.\n', obj.baselinePeriod)
         end
 
+        function setEventNameList(obj, eventNames)
+            %SETEVENTNAMELIST Set user-facing event/condition names.
+            %
+            %   setEventNameList(obj, eventNames) validates and updates obj.eventNameList.
+            %   The input must contain one name per existing event condition. Numeric
+            %   inputs are converted to strings. Names must be non-empty and unique.
+
+            if isempty(obj.eventNameList)
+                error('EventsManager:setEventNameList:NoExistingNames', ...
+                    'Cannot set event names before eventNameList has been initialized.');
+            end
+
+            if isnumeric(eventNames) || islogical(eventNames)
+                eventNames = string(eventNames);
+            elseif ischar(eventNames)
+                eventNames = string({eventNames});
+            elseif iscell(eventNames)
+                eventNames = string(eventNames);
+            elseif isstring(eventNames)
+                eventNames = eventNames(:);
+            else
+                error('EventsManager:setEventNameList:InvalidType', ...
+                    'eventNames must be string, char, cell array of text, or numeric.');
+            end
+
+            eventNames = strtrim(eventNames(:));
+
+            if numel(eventNames) ~= numel(obj.eventNameList)
+                error('EventsManager:setEventNameList:InvalidLength', ...
+                    'Expected %d event names, but received %d.', ...
+                    numel(obj.eventNameList), numel(eventNames));
+            end
+
+            if any(eventNames == "")
+                error('EventsManager:setEventNameList:EmptyName', ...
+                    'Event names cannot be empty.');
+            end
+
+            if numel(unique(lower(eventNames), 'stable')) ~= numel(eventNames)
+                error('EventsManager:setEventNameList:DuplicateName', ...
+                    'Event names must be unique.');
+            end
+
+            obj.eventNameList = cellstr(eventNames);
+        end
+
         function setAnalogIN(obj)
             %SETANALOGIN Read and validate ai_*.bin files into the "AnalogIN" property.
             %
@@ -885,19 +931,45 @@ classdef EventsManager < handle
             obj.b_isDigital = bIsDigitalOrig;
         end
 
-        function f = plot(obj, chanName, varargin)
+        function ax = plot(obj, chanName, axHandleList)
             %PLOT Plot analog input channels and overlay detected triggers.
             %
-            % Supports a special external-signal mode created by
-            % GETTRIGGERSFROMSIGNAL. In that case, the current AnalogIN is treated as a
-            % single generic signal and channel selection is ignored with a warning.
+            %   ax = plot(obj)
+            %   ax = plot(obj, chanName)
+            %   ax = plot(obj, chanName, axHandleList)
+            %
+            %   Inputs:
+            %       chanName     - Channel name, string array, or cell array of channel
+            %                      names. If omitted or empty, all AI channels are plotted.
+            %       axHandleList - Optional axes handle array. When provided, one axes
+            %                      must exist per channel in chanName.
+            %
+            %   Output:
+            %       ax           - Axes used for plotting.
+            %
+            %   Notes:
+            %       - If axHandleList is omitted, this method creates a new figure and
+            %         one subplot per requested channel.
+            %       - If axHandleList is provided, plots are drawn directly into those
+            %         axes. No figure is created.
+            %       - Detected ON/OFF event windows are shown as translucent patches.
+            %       - The detection threshold is shown when obj.trigThr is numeric.
 
             if isempty(obj.AnalogIN)
                 warning('No signal to plot!')
-                f = [];
+                ax = gobjects(0);
                 return
             end
 
+            if nargin < 2 || isempty(chanName)
+                chanName = obj.AIChanList;
+            end
+
+            if nargin < 3
+                axHandleList = [];
+            end
+
+            % Keep selectedEvents valid before plotting event patches.
             if isempty(obj.eventID)
                 obj.selectedEvents = [];
             elseif isempty(obj.selectedEvents) || ...
@@ -908,31 +980,23 @@ classdef EventsManager < handle
                 obj.selectedEvents = true(size(obj.eventID));
             end
 
-            f = [];
-            bDownsample = true;
-            figTag = 'EventsManager_AnalogINPlot';
-
-            if nargin >= 2 && ~isempty(chanName) && isscalar(chanName) && ishghandle(chanName)
-                f = chanName;
-                chanName = [];
-            elseif nargin < 2
-                chanName = [];
-            end
-
-            if ~isempty(varargin)
-                if isscalar(varargin{1}) && ishghandle(varargin{1})
-                    f = varargin{1};
-                    if numel(varargin) >= 2
-                        bDownsample = varargin{2};
-                    end
-                else
-                    bDownsample = varargin{1};
+            % External-signal workflow: ignore named channels and plot the only signal.
+            if obj.b_hasExternalSignal
+                if nargin >= 2 && ~isempty(chanName)
+                    warning('Channel selection is ignored when plotting an external signal.')
                 end
+
+                chanName = {'extSignal'};
+                chanIndx = 1;
+            else
+                chanName = iNormalizeChannelNames(chanName);
+                [chanName, chanIndx] = iValidateChannelNames(chanName);
             end
 
-            validateattributes(bDownsample, {'logical'}, {'scalar'}, 'plot', 'bDownsample');
+            nChan = numel(chanName);
 
-            if isempty(f)
+            if isempty(axHandleList)
+                figTag = 'EventsManager_AnalogINPlot';
                 oldFig = findall(groot, 'Type', 'figure', 'Tag', figTag);
                 if ~isempty(oldFig)
                     delete(oldFig(ishghandle(oldFig)));
@@ -942,231 +1006,183 @@ classdef EventsManager < handle
                     'Name', 'Analog Inputs', ...
                     'NumberTitle', 'off', ...
                     'Tag', figTag, ...
-                    'CreateFcn', {@movegui,'northwest'});
+                    'WindowState', 'maximized');
+
+                nRows = ceil(sqrt(nChan));
+                nCols = ceil(nChan / nRows);
+
+                ax = gobjects(1, nChan);
+                for iChan = 1:nChan
+                    ax(iChan) = subplot(nRows, nCols, iChan, ...
+                        'Parent', f, ...
+                        'PlotBoxAspectRatio', [1, 0.35, 1]);
+                end
+            else
+                ax = axHandleList(:).';
+
+                if numel(ax) ~= nChan
+                    error('EventsManager:plot:InvalidAxesCount', ...
+                        'axHandleList must contain one valid axes handle per channel. Expected %d, got %d.', ...
+                        nChan, numel(ax));
+                end
+
+                if ~all(isgraphics(ax, 'axes'))
+                    error('EventsManager:plot:InvalidAxesHandle', ...
+                        'axHandleList must contain valid axes handles.');
+                end
             end
 
-            traceColor = [0 0 0];
-            bgColor = [];
-            if ishghandle(f)
-                figH = ancestor(f, 'figure');
-                if isempty(figH) && strcmpi(get(f, 'Type'), 'figure')
-                    figH = f;
+            xVec = (0:size(obj.AnalogIN, 1)-1) ./ double(obj.sr);
+            dsFactor = max(1, ceil(numel(xVec) / 10000));
+
+            yMin = min(obj.AnalogIN(:), [], 'omitnan');
+            yMax = max(obj.AnalogIN(:), [], 'omitnan');
+            axYSize = double([yMin yMax]);
+
+            if ~all(isfinite(axYSize)) || axYSize(1) == axYSize(2)
+                axYSize = [0 1];
+            end
+
+            traceColor = iGetTraceColor(ax(1));
+
+            idxEv = [];
+            evNames = {};
+            if ~isempty(obj.timestamps) && ~isempty(obj.eventID) && ...
+                    ~isempty(obj.selectedEvents) && any(obj.selectedEvents)
+                idxEv = unique(obj.eventID(obj.selectedEvents), 'stable');
+                evNames = obj.eventNameList(idxEv);
+            end
+
+            for iChan = 1:nChan
+                cla(ax(iChan));
+                hold(ax(iChan), 'on');
+
+                ptc = gobjects(0);
+
+                if ~isempty(idxEv)
+                    colorArr = jet(64);
+                    colorArr = colorArr(round(linspace(1, 64, numel(idxEv))), :);
+
+                    for iEv = 1:numel(idxEv)
+                        xOn = obj.timestamps(obj.eventID == idxEv(iEv) & ...
+                            obj.state == 1 & obj.selectedEvents);
+                        xOff = obj.timestamps(obj.eventID == idxEv(iEv) & ...
+                            obj.state == 0 & obj.selectedEvents);
+
+                        nPatch = min(numel(xOn), numel(xOff));
+                        if nPatch == 0
+                            continue
+                        end
+
+                        xOn = double(xOn(1:nPatch));
+                        xOff = double(xOff(1:nPatch));
+
+                        x = [xOn xOff xOff xOn];
+                        y = repmat([axYSize(1) axYSize(1) axYSize(2) axYSize(2)], nPatch, 1);
+
+                        ptc(iEv) = patch( ...
+                            ax(iChan), ...
+                            x', y', colorArr(iEv, :), ...
+                            'FaceAlpha', 0.25, ...
+                            'EdgeColor', 'none', ...
+                            'Tag', 'TrigPatch'); %#ok<AGROW>
+                    end
                 end
+
+                line( ...
+                    ax(iChan), ...
+                    xVec(1:dsFactor:end), ...
+                    obj.AnalogIN(1:dsFactor:end, chanIndx(iChan)), ...
+                    'LineStyle', '-', ...
+                    'Color', traceColor);
+
+                if isnumeric(obj.trigThr) && isscalar(obj.trigThr) && isfinite(obj.trigThr)
+                    ln = line(ax(iChan), ...
+                        [xVec(1) xVec(end)], ...
+                        [obj.trigThr obj.trigThr], ...
+                        'Color', 'r');
+                    ln.Tag = 'thrLn';
+                end
+
+                title(ax(iChan), chanName{iChan}, 'Interpreter', 'none');
+                ylabel(ax(iChan), 'amp. (V)');
+                grid(ax(iChan), 'on');
+                box(ax(iChan), 'on');
+
+                if iChan == 1 && ~isempty(ptc) && ~isempty(evNames)
+                    validPatch = isgraphics(ptc);
+                    if any(validPatch)
+                        legend(ax(iChan), ptc(validPatch), evNames(validPatch), ...
+                            'Location', 'northeast', ...
+                            'Interpreter', 'none');
+                    end
+                end
+
+                hold(ax(iChan), 'off');
+            end
+
+            xlabel(ax(end), 'time (s)');
+
+            function out = iNormalizeChannelNames(in)
+                if ischar(in) || isStringScalar(in)
+                    out = {convertStringsToChars(in)};
+                elseif isstring(in)
+                    out = cellstr(in(:).');
+                elseif iscell(in)
+                    assert(all(cellfun(@(x) ischar(x) || isStringScalar(x), in)), ...
+                        'Channel names must be text.');
+                    out = cellfun(@convertStringsToChars, in(:).', 'UniformOutput', false);
+                else
+                    error('EventsManager:plot:InvalidChannelNames', ...
+                        'chanName must be char, string, or a cell array of text.');
+                end
+
+                out = unique(out, 'stable');
+            end
+
+            function [outNames, outIdx] = iValidateChannelNames(inNames)
+                bExists = false(size(inNames));
+                canonicalNames = cell(size(inNames));
+
+                for ii = 1:numel(inNames)
+                    idx = find(strcmpi(inNames{ii}, obj.AIChanList), 1, 'first');
+                    if ~isempty(idx)
+                        bExists(ii) = true;
+                        canonicalNames{ii} = obj.AIChanList{idx};
+                    end
+                end
+
+                if all(~bExists)
+                    error(['Invalid channel name(s). Valid names are:', ...
+                        sprintf('\n"%s"', obj.AIChanList{:})]);
+                elseif any(~bExists)
+                    warning(['The following channel(s) do not exist and will be ignored:', ...
+                        sprintf('\n"%s"', inNames{~bExists})])
+                end
+
+                outNames = canonicalNames(bExists);
+                [~, outIdx] = ismember(outNames, obj.AIChanList);
+            end
+
+            function color = iGetTraceColor(oneAxes)
+                color = [0 0 0];
+
+                bgColor = [];
+                figH = ancestor(oneAxes, 'figure');
+
                 if ~isempty(figH) && isprop(figH, 'Color')
                     try
                         bgColor = figH.Color;
                     catch
                     end
                 end
-                if isempty(bgColor) && isprop(f, 'Color')
-                    try
-                        bgColor = f.Color;
-                    catch
+
+                if isnumeric(bgColor) && numel(bgColor) == 3 && all(isfinite(bgColor))
+                    luminance = 0.2126 * bgColor(1) + 0.7152 * bgColor(2) + 0.0722 * bgColor(3);
+                    if luminance < 0.5
+                        color = [1 1 1];
                     end
                 end
-            end
-            if isnumeric(bgColor) && numel(bgColor) == 3 && all(isfinite(bgColor))
-                luminance = 0.2126 * bgColor(1) + 0.7152 * bgColor(2) + 0.0722 * bgColor(3);
-                if luminance < 0.5
-                    traceColor = [1 1 1];
-                else
-                    traceColor = [0 0 0];
-                end
-            end
-
-            dsFactor = 1;
-            if bDownsample
-                dsFactor = 10;
-            end
-
-            xVec = (0:size(obj.AnalogIN,1)-1) ./ obj.sr;
-            axYSize = [min(obj.AnalogIN(:)), max(obj.AnalogIN(:))];
-
-            if obj.b_hasExternalSignal
-                if nargin >= 2 && ~isempty(chanName) && ~(isscalar(chanName) && ishghandle(chanName))
-                    warning('Channel selection is ignored when plotting an external signal.')
-                end
-
-                ax = subplot(1,1,1, 'Parent', f, 'PlotBoxAspectRatio', [1, .35, 1]);
-                ax.YLabel.String = 'amp. (V)';
-                ax.XLabel.String = 'time (s)';
-                title(ax, 'extSignal', 'Interpreter', 'none');
-                hold(ax, 'on');
-
-                ptc = gobjects(0);
-                evNames = {};
-
-                if ~isempty(obj.timestamps) && ~isempty(obj.eventID) && any(obj.selectedEvents)
-                    idxEv = unique(obj.eventID(obj.selectedEvents), 'stable');
-                    colorArr = jet(64);
-                    colorArr = colorArr(round(linspace(1, 64, numel(idxEv))), :);
-                    evNames = obj.eventNameList(idxEv);
-
-                    for kk = 1:numel(idxEv)
-                        xOn = obj.timestamps(obj.eventID == idxEv(kk) & obj.state == 1 & obj.selectedEvents);
-                        xOff = obj.timestamps(obj.eventID == idxEv(kk) & obj.state == 0 & obj.selectedEvents);
-
-                        nPatch = min(numel(xOn), numel(xOff));
-                        if nPatch == 0
-                            continue
-                        end
-
-                        xOn = xOn(1:nPatch);
-                        xOff = xOff(1:nPatch);
-
-                        x = [xOn xOff xOff xOn];
-                        y = repmat([axYSize(1) axYSize(1) axYSize(2) axYSize(2)], nPatch, 1);
-
-                        ptc(kk) = patch( ...
-                            ax, ...
-                            x', y', colorArr(kk,:), ...
-                            'FaceAlpha', 0.25, ...
-                            'EdgeColor', 'none', ...
-                            'Tag', 'TrigPatch');
-                    end
-                end
-
-                line( ...
-                    xVec(1:dsFactor:end), ...
-                    obj.AnalogIN(1:dsFactor:end), ...
-                    'LineStyle', '-', ...
-                    'Color', traceColor, ...
-                    'Parent', ax);
-
-                if isnumeric(obj.trigThr) && isscalar(obj.trigThr) && isfinite(obj.trigThr)
-                    ln = line(ax, [xVec(1) xVec(end)], [obj.trigThr obj.trigThr], 'Color', 'r');
-                    ln.Tag = 'thrLn';
-                end
-
-                if ~isempty(ptc) && ~isempty(evNames)
-                    validPatch = isgraphics(ptc);
-                    if any(validPatch)
-                        legend(ax, ptc(validPatch), evNames(validPatch), ...
-                            'Location', 'northeast', ...
-                            'Interpreter', 'none');
-                    end
-                end
-
-                hold(ax, 'off');
-                return
-            end
-
-            if isempty(chanName)
-                chanName = obj.AIChanList;
-            end
-
-            if ischar(chanName) || isStringScalar(chanName)
-                chanName = {convertStringsToChars(chanName)};
-            elseif isstring(chanName)
-                chanName = cellstr(chanName(:)');
-            elseif iscell(chanName)
-                assert(all(cellfun(@(x) ischar(x) || isStringScalar(x), chanName)), ...
-                    'Channel names must be text.');
-                chanName = cellfun(@convertStringsToChars, chanName, 'UniformOutput', false);
-            else
-                error('Invalid chanName input. Use char, string, or cell array of text.');
-            end
-
-            chanName = reshape(chanName, 1, []);
-            chanName = unique(chanName, 'stable');
-
-            b_chanExists = false(size(chanName));
-            chanNameCanonical = cell(size(chanName));
-            for ii = 1:numel(chanName)
-                idx = find(strcmpi(chanName{ii}, obj.AIChanList), 1, 'first');
-                if ~isempty(idx)
-                    b_chanExists(ii) = true;
-                    chanNameCanonical{ii} = obj.AIChanList{idx};
-                end
-            end
-
-            if all(~b_chanExists)
-                error(['Invalid channel name(s). Valid names are:', ...
-                    sprintf('\n"%s"', obj.AIChanList{:})]);
-            elseif any(~b_chanExists)
-                warning(['The following channel(s) do not exist and will be ignored:', ...
-                    sprintf('\n"%s"', chanName{~b_chanExists})])
-            end
-
-            chanName = chanNameCanonical(b_chanExists);
-            [~, chanIndx] = ismember(chanName, obj.AIChanList);
-
-            nRows = ceil(sqrt(numel(chanName)));
-            nCols = ceil(numel(chanName) / nRows);
-
-            evNames = {};
-            if ~isempty(obj.eventID) && any(obj.selectedEvents)
-                evNames = obj.eventNameList(unique(obj.eventID(obj.selectedEvents), 'stable'));
-            end
-
-            s = gobjects(1, numel(chanName));
-
-            for ii = 1:numel(chanName)
-                s(ii) = subplot(nRows, nCols, ii, 'Parent', f, 'PlotBoxAspectRatio', [1, .35, 1]);
-                s(ii).YLabel.String = 'amp. (V)';
-                title(s(ii), chanName{ii}, 'Interpreter', 'none');
-                hold(s(ii), 'on');
-
-                ptc = gobjects(0);
-
-                if ~isempty(obj.timestamps) && ~isempty(obj.eventID) && any(obj.selectedEvents)
-                    idxEv = unique(obj.eventID(obj.selectedEvents), 'stable');
-
-                    colorArr = jet(64);
-                    colorArr = colorArr(round(linspace(1, 64, numel(idxEv))), :);
-
-                    for kk = 1:numel(idxEv)
-                        xOn = obj.timestamps(obj.eventID == idxEv(kk) & obj.state == 1 & obj.selectedEvents);
-                        xOff = obj.timestamps(obj.eventID == idxEv(kk) & obj.state == 0 & obj.selectedEvents);
-
-                        nPatch = min(numel(xOn), numel(xOff));
-                        if nPatch == 0
-                            continue
-                        end
-
-                        xOn = xOn(1:nPatch);
-                        xOff = xOff(1:nPatch);
-
-                        x = [xOn xOff xOff xOn];
-                        y = repmat([axYSize(1) axYSize(1) axYSize(2) axYSize(2)], nPatch, 1);
-
-                        ptc(kk) = patch( ...
-                            s(ii), ...
-                            x', y', colorArr(kk,:), ...
-                            'FaceAlpha', 0.25, ...
-                            'EdgeColor', 'none', ...
-                            'Tag', 'TrigPatch');
-                    end
-                end
-
-                line( ...
-                    xVec(1:dsFactor:end), ...
-                    obj.AnalogIN(1:dsFactor:end, chanIndx(ii)), ...
-                    'LineStyle', '-', ...
-                    'Color', traceColor, ...
-                    'Parent', s(ii));
-
-                if isnumeric(obj.trigThr) && isscalar(obj.trigThr) && isfinite(obj.trigThr)
-                    ln = line(s(ii), [xVec(1) xVec(end)], [obj.trigThr obj.trigThr], 'Color', 'r');
-                    ln.Tag = 'thrLn';
-                end
-
-                if ii == 1 && ~isempty(ptc) && ~isempty(evNames)
-                    validPatch = isgraphics(ptc);
-                    if any(validPatch)
-                        legend(s(ii), ptc(validPatch), evNames(validPatch), ...
-                            'Location', 'northeast', ...
-                            'Interpreter', 'none');
-                    end
-                end
-
-                hold(s(ii), 'off');
-            end
-
-            s(end).XLabel.String = 'time (s)';
-
-            if numel(s) > 1
-                linkaxes(s, 'xy')
             end
         end
 
@@ -1776,6 +1792,7 @@ classdef EventsManager < handle
 
             disp('Finished splitting data by events');
         end
+
         function evInfo = exportEventInfo(obj)
             %EXPORTEVENTINFO Package event-related information into a structure.
             %
