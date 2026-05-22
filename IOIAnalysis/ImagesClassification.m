@@ -1,60 +1,99 @@
 function ImagesClassification(DataFolder, SaveFolder, BinningSpatial, BinningTemp, b_IgnoreStim, b_SubROI, chanName,trigPolarity, b_ApplyLPfilterToAnalogIn)
+%IMAGESCLASSIFICATION Separate interleaved illumination frames into .dat files.
+%
+%   ImagesClassification(DataFolder, SaveFolder, BinningSpatial, ...
+%       BinningTemp, b_IgnoreStim, b_SubROI, chanName, trigPolarity, ...
+%       b_ApplyLPfilterToAnalogIn)
+%
+%   Separates raw Labeotech IOS img_*.bin files into one .dat/.mat pair per
+%   output illumination channel. Raw frames are assumed to be stored in the
+%   illumination sequence defined by info.txt. For example:
+%
+%       Red - Green - Amber - Fluo
+%
+%   is stored as:
+%
+%       R-G-A-F-R-G-A-F-R-G-A-F-...
+%
+%   Repeated illuminations are supported within each camera sequence. For
+%   example:
+%
+%       Red - Green - Red
+%
+%   creates two output files:
+%       red.dat   - contains both Red sequence positions in chronological order
+%       green.dat - contains the Green sequence position
+%
+%   In this case, red.dat contains twice as many frames as green.dat before
+%   temporal binning. The same grouping rule is applied independently to each
+%   camera in dual-camera acquisitions. The channel frequency stored in the .mat metadata is
+%   computed from the number of repetitions of each output channel:
+%
+%       Freq = FrameRateHz * NRepetitions / (NSequencePositions * BinningTemp)
+%
+%   The function uses the illumination sequence as the primary source of
+%   truth. Each unique output channel is represented by one output group, and
+%   each group stores the sequence positions assigned to that channel. Missing
+%   frames are reconstructed in the raw stream, repeated sequence positions
+%   are merged into one chronological output-channel stream, missing frames
+%   are interpolated on that merged stream, and temporal binning is applied to
+%   the final output-channel stream.
+%
+%   A ratio-aware finalization rule is used when writing files:
+%
+%       NFrames_channel / NRepetitions_channel
+%
+%   must be equal across all output channels from the same camera sequence.
+%   Extra frames
+%   belonging to incomplete final acquisition cycles are discarded before they
+%   are written.
+%
+%   Repeated illumination channels are supported inside a single camera
+%   sequence in MultiCam acquisitions. The unsupported case is a repeated
+%   output channel across cameras, because the current .dat/.mat naming scheme
+%   cannot represent the same channel tag independently for two cameras. In
+%   that case, the function raises an error before writing channel files.
+%
+%   Inputs:
+%       DataFolder                - Folder containing the raw Labeotech data.
+%       SaveFolder                - Folder where output .dat/.mat files are saved.
+%       BinningSpatial            - Spatial binning factor. Use 1 for no spatial
+%                                   binning, 2 for 2x2 binning, 4 for 4x4, etc.
+%       BinningTemp               - Temporal binning factor. Use 1 for no temporal
+%                                   binning. Values > 1 merge consecutive frames
+%                                   from each final output-channel stream.
+%       b_IgnoreStim              - If true, stimulation signals are ignored.
+%       b_SubROI                  - If true, the user selects or loads a spatial ROI.
+%       chanName                  - Analog input channel(s) used for trigger/stim
+%                                   extraction. Supported values include:
+%                                       'Internal-main', 'Internal-Aux', 'AI1'...
+%                                       'AI8', and 'StimDig'.
+%       trigPolarity              - Trigger polarity. Use 'positive' or 'negative'.
+%       b_ApplyLPfilterToAnalogIn - If true, low-pass filtering is applied to the
+%                                   analog input during stimulation extraction.
+%
+%   Outputs:
+%       One .dat file and one .mat metadata file per unique output channel.
+%
+%   Notes:
+%       - Repeated channel positions are not averaged together unless temporal
+%         binning explicitly combines them.
+%       - For repeated channels, interpolation is performed after chronological
+%         merging of all sequence positions assigned to the same output channel.
+%       - The RAM usage remains chunk-based: img_*.bin files are memory-mapped
+%         and processed one file at a time. Only small per-channel overflow
+%         buffers are retained across chunks.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Channels classification for Labeotech IOS systems.
-%
-% On IOS systems, acquisitions made with multiple channels (colors) are
-% interlaced. For example, if the following channels were selected before
-% recording: Red (R), Green (G), Yellow (Y) and Fluo (F)
-% The saved images will be organised as follow (from frame #1):
-% R-G-Y-F-R-G-Y-F-R-G-Y-F-R-G-Y-F-...-R-G-Y-F
-% (see manual page 26 for more details)
-%
-% This function is used to separate each channel from an acquisition.
-% At the end, 1 .dat file and 1 .mat file per channel will be generated.
-% The first file (.dat) contains the raw images in chronological order.
-% The second file (.mat) contains all the informations about the
-% acquisition (Freq., Stimulation vector, ROI, etc.)
-%
-%%% Input Parameters:
-% 1- DataFolder Path:
-%  Path contaning dataset from Labeo's system
-% 2- SaveFolder Path:
-%  Path where to save
-% 3- Spatial Binning:
-%  Set to 1 for no binning; 2 for a 2x2 binning; 4 for a 4x4 binning and so on...
-% 4- Temporal Binning:
-%  Set to 1 for no binning; Otherwise, enter de number of frames to be combined
-%  for exemple: 4 will merge the images by group of 4. So, images #1,2,3,4
-%  will become image #1 after avering them together. Images #5, 6, 7, 8 will
-%  become frame #2, etc.
-% 5- Ignore stimulation signal
-%  boolean to tell the function if it should consider the
-%  stimulation signal or not (0 = consider stim; 1= ignore stim)
-% 6- Region of Interest (ROI)
-%  this parameter is a boolean (0 or 1) to tell the software if
-%  we want to keep the whole image or if we want to select a smaller ROI
-% 7- Channel Name:
-%   use this parameter to select a specific analog IN channel that contains
-%   triggers. The available options are:
-%       'Internal-main' (default): Main internal channel.
-%       'Internal-Aux' : Auxiliary internal channel.
-%       'AI1' : External Analog channel #1.
-%       'AI2' : External Analog channel #2.
-%       'AI3' : External Analog channel #3.
-%       'AI4' : External Analog channel #4.
-%       'AI5' : External Analog channel #5.
-%       'AI6' : External Analog channel #6.
-%       'AI7' : External Analog channel #7.
-%       'AI8' : External Analog channel #8.
-%       'StimDig' : Digital stim (Special Case).
-% 8- Trigger polarity (optional | default = positive): Set to "negative" if
-%   the trigger onset and offset is marked by a falling and rising edges,
-%   respectively.
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-if nargin < 6
+if nargin < 6 || isempty(b_SubROI)
      b_SubROI = false;
+end
+if nargin < 7 || isempty(chanName)
      chanName = 'Internal-main';
+end
+if nargin < 8 || isempty(trigPolarity)
      trigPolarity = 'positive';
+end
+if nargin < 9 || isempty(b_ApplyLPfilterToAnalogIn)
      b_ApplyLPfilterToAnalogIn = false;
 end
 p = inputParser;
@@ -139,13 +178,19 @@ end
 % Data Format and Header Information:
 
 hWima = 5;
-imgFilesList = dir([DataFolder 'img*.bin']); 
-% Check if all files exist:
-imgFileNames = sort({imgFilesList.name})';
-imgFileIndx = erase(imgFileNames,'img_');imgFileIndx = erase(imgFileIndx,'.bin');
-imgFileIndx = str2double(imgFileIndx);
-if ~strcmpi(imgFileNames{1}, 'img_00000.bin') || any(diff(imgFileIndx)~=1)
-    error('Image binary files missing! Classification aborted.')
+imgFilesList = dir([DataFolder 'img*.bin']);
+% Check for each camera:
+cam2_idx = contains({imgFilesList.name},'Cam2');
+imgFileSet = {imgFilesList(~cam2_idx), imgFilesList(cam2_idx)};
+imgFileSet(cellfun(@isempty,imgFileSet)) = [];
+for ind = 1:length(imgFileSet)
+    thisImgFilesList = imgFileSet{ind};
+    % Check if all files exist:
+    imgFileNames = sort({thisImgFilesList .name})';
+    imgFileIndx = str2double(erase(imgFileNames, "img_" | "imgCam2_" | ".bin"));
+    if imgFileIndx(1) ~=0  || any(diff(imgFileIndx) ~= 1)
+        error('Image binary files (img_xxxxx.bin) missing! Classification aborted.')
+    end
 end
 
 % Images files header description (see User Manual, page 26 for more
@@ -153,11 +198,11 @@ end
 header = memmapfile([DataFolder imgFilesList(1).name], ...
     'Offset', 0, 'Format', {'int32', hWima, 'header'; 'uint64', 1, 'frame'}, 'repeat', 1);
 
-Version = header.Data.header(1); %Data format version
+% Version = header.Data.header(1); %Data format version
 nx = double(header.Data.header(2)); %Number of pixel along X axis
 ny = double(header.Data.header(3)); %Number of pixel along Y axis
-FrameSz = header.Data.header(4); %Number of int32 saved for each image
-NbImsPefFile = single(header.Data.header(5)); %Number of images contained in each "img_" file.
+% FrameSz = header.Data.header(4); %Number of int32 saved for each image
+% NbImsPefFile = single(header.Data.header(5)); %Number of images contained in each "img_" file.
 
 %Header format for each individual image:
 frameFormat = {'uint64', 3, 'framej';'uint16', [double(nx), double(ny)], 'imgj'};
@@ -179,7 +224,7 @@ if( b_SubROI )
                 disp('User pressed cancel')
                 Pos = [1 1 ImRes_XY(1) ImRes_XY(2)];
             else
-                load([pathname filesep filename]);
+                load([pathname filesep filename]);%#ok
             end
         case 'Draw' %Select ROI directly on a frame:
             dat = memmapfile([DataFolder...
@@ -214,26 +259,55 @@ if( AcqInfoStream.MultiCam )
     Tags = fieldnames(AcqInfoStream);
     idx = contains(Tags, 'Illumination');
     NbColors = sum(idx);
-    Colors = struct('ID', {}, 'Color', {}, 'CamIdx', {}, 'FrameIdx', {}, 'Exposure', {});
+    Colors = struct('ID', {}, 'Color', {}, 'CamIdx', {}, 'FrameIdx', {}, 'Exposure', {}, 'Tag', {});
     for indC = 1:NbColors
         Colors(indC).ID = indC;
         eval(['Colors(' int2str(indC) ').Color = AcqInfoStream.Illumination' int2str(indC) '.Color;']);
         eval(['Colors(' int2str(indC) ').CamIdx = AcqInfoStream.Illumination' int2str(indC) '.CamIdx;']);
         eval(['Colors(' int2str(indC) ').FrameIdx = AcqInfoStream.Illumination' int2str(indC) '.FrameIdx;']);
-        if( contains(Colors(indC).Color,{'red', 'amber', 'green'}, 'IgnoreCase', true) )
+        if( contains(Colors(indC).Color,'red', 'IgnoreCase', true) )
+            Colors(indC).Tag = 'red';
+            Colors(indC).Exposure = AcqInfoStream.ExposureMsec;
+        elseif( contains(Colors(indC).Color,'green', 'IgnoreCase', true) )
+            Colors(indC).Tag = 'green';
+            Colors(indC).Exposure = AcqInfoStream.ExposureMsec;
+        elseif( contains(Colors(indC).Color,'amber', 'IgnoreCase', true) )
+            Colors(indC).Tag = 'yellow';
             Colors(indC).Exposure = AcqInfoStream.ExposureMsec;
         elseif( contains(Colors(indC).Color,{'speckle'}, 'IgnoreCase', true) )
+            Colors(indC).Tag = 'speckle';
             if( ~isfield(AcqInfoStream, 'ExposureSpeckleMsec') )
                 Colors(indC).Exposure = AcqInfoStream.ExposureMsec;
             else
                 Colors(indC).Exposure = AcqInfoStream.ExposureSpeckleMsec;
             end
         else
+            waveTag = regexp(Colors(indC).Color, '[0-9]{3}','match');
+            if( ~isempty(waveTag) )
+                Colors(indC).Tag = ['fluo_' waveTag{:}];
+            else
+                Colors(indC).Tag = 'fluo';
+            end
             if( ~isfield(AcqInfoStream, 'ExposureFluoMsec') )
                 Colors(indC).Exposure = AcqInfoStream.ExposureMsec;
             else
                 Colors(indC).Exposure = AcqInfoStream.ExposureFluoMsec;
             end
+        end
+    end
+
+    % Repeated illuminations are supported within each camera sequence.
+    % The unsupported case is a repeated output channel across cameras,
+    % because both cameras would try to write the same output .dat/.mat tag.
+    CamList = unique([Colors.CamIdx]);
+    TagList = {Colors.Tag};
+    UniqueTags = unique(TagList, 'stable');
+    for indT = 1:length(UniqueTags)
+        idxTag = find(strcmp(TagList, UniqueTags{indT}));
+        if( length(unique([Colors(idxTag).CamIdx])) > 1 )
+            error(['Repeated illumination channel "' UniqueTags{indT} ...
+                '" was detected across cameras. Repeated illuminations ' ...
+                'are supported only within a single camera sequence.']);
         end
     end
     
@@ -253,25 +327,40 @@ if( AcqInfoStream.MultiCam )
     [~, index] = sort([Colors(idx).FrameIdx]);
     idx = idx(index);
     matHcam2 = ChannelsSort(imgFilesList, Colors(idx));
+    matHByCam = {matHcam1, matHcam2};
     matH = [matHcam1, matHcam2]; clear matHc*
     fprintf('Camera #2 Done. \n');
 else
     Tags = fieldnames(AcqInfoStream);
     idx = contains(Tags, 'Illumination');
     NbColors = sum(idx);
-    Colors = struct('ID', {}, 'Color', {}, 'Exposure', {});
+    Colors = struct('ID', {}, 'Color', {}, 'Exposure', {}, 'Tag', {});
     for indC = 1:NbColors
         Colors(indC).ID = indC;
         eval(['Colors(' int2str(indC) ').Color = AcqInfoStream.Illumination' int2str(indC) '.Color;']);
-        if( contains(Colors(indC).Color,{'red', 'amber', 'green'}, 'IgnoreCase', true) )
+        if( contains(Colors(indC).Color,'red', 'IgnoreCase', true) )
+            Colors(indC).Tag = 'red';
+            Colors(indC).Exposure = AcqInfoStream.ExposureMsec;
+        elseif( contains(Colors(indC).Color,'green', 'IgnoreCase', true) )
+            Colors(indC).Tag = 'green';
+            Colors(indC).Exposure = AcqInfoStream.ExposureMsec;
+        elseif( contains(Colors(indC).Color,'amber', 'IgnoreCase', true) )
+            Colors(indC).Tag = 'yellow';
             Colors(indC).Exposure = AcqInfoStream.ExposureMsec;
         elseif( contains(Colors(indC).Color,{'speckle'}, 'IgnoreCase', true) )
+            Colors(indC).Tag = 'speckle';
             if( ~isfield(AcqInfoStream, 'ExposureSpeckleMsec') )
                 Colors(indC).Exposure = AcqInfoStream.ExposureMsec;
             else
                 Colors(indC).Exposure = AcqInfoStream.ExposureSpeckleMsec;
             end
         else
+            waveTag = regexp(Colors(indC).Color, '[0-9]{3}','match');
+            if( ~isempty(waveTag) )
+                Colors(indC).Tag = ['fluo_' waveTag{:}];
+            else
+                Colors(indC).Tag = 'fluo';
+            end
             if( ~isfield(AcqInfoStream, 'ExposureFluoMsec') )
                 Colors(indC).Exposure = AcqInfoStream.ExposureMsec;
             else
@@ -284,28 +373,56 @@ else
     matH = ChannelsSort(imgFilesList, Colors);
     fprintf('Done. \n');
 end
-% Check if all color channels have the same length:
-datLenList = cellfun(@(x) x.datLength,matH);
 
-if ~isscalar(unique(datLenList))
-    disp('Fixing data length...')
-    % Remove extra frames of channels so all have the same length
-    newLen = min(datLenList);
-    matH(datLenList == newLen) = [];% Keep list of channels with extra frames.
-    for ind = 1:length(matH)
-        fid = fopen(strrep(matH{ind}.Properties.Source,'.mat','.dat'),'r');
-        dat = fread(fid,Inf,'*single');fclose(fid);
-        dat = reshape(dat,matH{ind}.datSize(1,1),matH{ind}.datSize(1,2),[]);
-        dat = dat(:,:,1:newLen);
-        fid = fopen(strrep(matH{ind}.Properties.Source,'.mat','.dat'),'w');
-        fwrite(fid,dat,'single');
-        fclose(fid);
-        matH{ind}.datLength = newLen;
+% Final output validation. ChannelsSort writes files using a ratio-aware
+% rule, so this block only verifies the final output contract. In MultiCam
+% mode, the contract is validated independently for each camera sequence.
+if( AcqInfoStream.MultiCam )
+    for indCam = 1:length(matHByCam)
+        datLenList = cellfun(@(x) x.datLength,matHByCam{indCam});
+        repeatCountList = cellfun(@(x) x.RepeatCount,matHByCam{indCam});
+        baseLenList = datLenList ./ repeatCountList;
+        assert(~(any(mod(baseLenList, 1) ~= 0) || ~isscalar(unique(baseLenList))), ...
+            ['Channel classification failed final length validation for camera #' ...
+            int2str(indCam) '. Expected datLength/RepeatCount to be equal ' ...
+            'for all output channels from the same camera.']);
     end
-    
-    disp('Data length fixed.')
+else
+    datLenList = cellfun(@(x) x.datLength,matH);
+    repeatCountList = cellfun(@(x) x.RepeatCount,matH);
+    baseLenList = datLenList ./ repeatCountList;
+    assert(~(any(mod(baseLenList, 1) ~= 0) || ~isscalar(unique(baseLenList))), ...
+        ['Channel classification failed final length validation. ' ...
+        'Expected datLength/RepeatCount to be equal for all output channels.']);
 end
+
+% Remove internal grouping metadata from saved channel .mat files. These
+% fields are only needed during classification and final validation.
+cleanupVars = {'IlluminationSequenceIdx', 'RepeatCount'};
+for ind = 1:length(matH)
+    matFile = matH{ind}.Properties.Source;
+    matVars = whos('-file', matFile);
+    matVarNames = {matVars.name};
+    varsToRemove = intersect(cleanupVars, matVarNames);
+
+    if( ~isempty(varsToRemove) )
+        matData = load(matFile);
+        matData = rmfield(matData, varsToRemove);
+        save(matFile, '-struct', 'matData');
+    end
+end
+
+% --- LOCAL NESTED FUNCTION -----------------------------------------------
+
     function fColor = ChannelsSort(fList, colors)
+        %CHANNELSSORT Split interleaved binary frames into grouped channel .dat files.
+        %
+        %   fColor = ChannelsSort(fList, colors) reads the image binaries in
+        %   fList, separates frames using the illumination sequence in colors,
+        %   merges repeated entries into chronological output-channel streams,
+        %   applies interpolation/binning, and writes one .dat/.mat pair per
+        %   unique output channel.
+        %
         % Load Stim info:
         if( ~b_IgnoreStim )
             Stim = load([SaveFolder 'StimParameters.mat']);
@@ -315,51 +432,80 @@ end
         stim_fn = fieldnames(Stim);
         stim_fn = stim_fn(startsWith(stim_fn, 'stim_', 'IgnoreCase', true));
         
-        % for each color, initialise output files:
+        % Create one output group per unique output channel. Each group may
+        % contain one or more illumination-sequence positions.
         fColor = {};
         fid = [];
         stimPos = 0;
         subNbColors = size(colors,2);
+        OutputGroups = struct('Tag', {}, 'Color', {}, 'SeqIdx', {}, ...
+            'RepeatCount', {}, 'Exposure', {}, 'hTag', {}, 'dTag', {});
         
-        for indC = 1:size(colors,2)
-            if( contains(colors(indC).Color, {'red','green'},'IgnoreCase', true) )
-                hTag = [lower(colors(indC).Color) '.mat'];
-                dTag = [lower(colors(indC).Color) '.dat'];
-            elseif( contains(colors(indC).Color, 'amber', 'IgnoreCase', true) )
-                hTag = ['yellow.mat'];
-                dTag = ['yellow.dat'];
-            elseif( contains(colors(indC).Color, 'fluo', 'IgnoreCase', true) )
-                waveTag = regexp(colors(indC).Color, '[0-9]{3}','match');
-                if( ~isempty(waveTag) )
-                    hTag = ['fluo_' waveTag{:} '.mat'];
-                    dTag = ['fluo_' waveTag{:} '.dat'];
-                else
-                    hTag = ['fluo' waveTag{:} '.mat'];
-                    dTag = ['fluo' waveTag{:} '.dat'];
-                end
-            else
-                hTag = 'speckle.mat';
-                dTag = 'speckle.dat';
+        for indC = 1:subNbColors
+            idxGroup = [];
+            if( ~isempty(OutputGroups) )
+                idxGroup = find(strcmp({OutputGroups.Tag}, colors(indC).Tag), 1, 'first');
             end
+            if( isempty(idxGroup) )
+                idxGroup = length(OutputGroups) + 1;
+                OutputGroups(idxGroup).Tag = colors(indC).Tag;
+                OutputGroups(idxGroup).Color = colors(indC).Color;
+                OutputGroups(idxGroup).SeqIdx = indC;
+                OutputGroups(idxGroup).RepeatCount = 1;
+                OutputGroups(idxGroup).Exposure = colors(indC).Exposure;
+                OutputGroups(idxGroup).hTag = [colors(indC).Tag '.mat'];
+                OutputGroups(idxGroup).dTag = [colors(indC).Tag '.dat'];
+            else
+                if( colors(indC).Exposure ~= OutputGroups(idxGroup).Exposure )
+                    error(['Repeated illumination channel "' colors(indC).Tag ...
+                        '" has inconsistent exposure values.']);
+                end
+                OutputGroups(idxGroup).SeqIdx = [OutputGroups(idxGroup).SeqIdx indC];
+                OutputGroups(idxGroup).RepeatCount = length(OutputGroups(idxGroup).SeqIdx);
+            end
+        end
+        
+        % Initialize output files and metadata.
+        for indG = 1:length(OutputGroups)
+            hTag = OutputGroups(indG).hTag;
+            dTag = OutputGroups(indG).dTag;
             
             if( exist([SaveFolder hTag], 'file') )
                 delete([SaveFolder hTag]);
             end
-            fColor{indC} = matfile([SaveFolder hTag], 'Writable', true);
-            fColor{indC}.datFile = dTag;
-            fColor{indC}.datSize = [Ry, Rx]; % Flipped datSize
-            fColor{indC}.Stim = Stim.Stim;
+            fColor{indG} = matfile([SaveFolder hTag], 'Writable', true);
+            fColor{indG}.datFile = dTag;
+            fColor{indG}.datSize = [Ry, Rx]; % Flipped datSize
+            fColor{indG}.Stim = Stim.Stim;
             for ii = 1:length(stim_fn)
-                fColor{indC}.(stim_fn{ii}) = [];
+                fColor{indG}.(stim_fn{ii}) = [];
             end
-            fColor{indC}.datLength = 0;
-            fColor{indC}.FirstDim = 'y';
-            fColor{indC}.Datatype = 'single';
-            fColor{indC}.datName = 'data';
-            fColor{indC}.dim_names = {'Y', 'X', 'T'};
-            fColor{indC}.Freq = (AcqInfoStream.FrameRateHz)/(size(colors,2)*BinningTemp);
-            fColor{indC}.tExposure = colors(indC).Exposure;
-            fid(indC) = fopen([SaveFolder dTag],'w');
+            fColor{indG}.datLength = 0;
+            fColor{indG}.FirstDim = 'y';
+            fColor{indG}.Datatype = 'single';
+            fColor{indG}.datName = 'data';
+            fColor{indG}.dim_names = {'Y', 'X', 'T'};
+            fColor{indG}.Freq = AcqInfoStream.FrameRateHz * ...
+                OutputGroups(indG).RepeatCount / (subNbColors * BinningTemp);
+            fColor{indG}.tExposure = OutputGroups(indG).Exposure;
+            fColor{indG}.IlluminationSequenceIdx = OutputGroups(indG).SeqIdx;
+            fColor{indG}.RepeatCount = OutputGroups(indG).RepeatCount;
+            fid(indG) = fopen([SaveFolder dTag],'w');
+        end
+        
+        % Per-output buffers. ImBinBuffer stores unbinned temporal-overflow
+        % frames. ImWriteBuffer stores binned frames that are waiting until
+        % all channels can be committed while preserving datLength/RepeatCount.
+        ImBinBuffer = cell(1,length(OutputGroups));
+        StimBinBuffer = cell(1,length(OutputGroups));
+        ImWriteBuffer = cell(1,length(OutputGroups));
+        StimWriteBuffer = cell(1,length(OutputGroups));
+        datLengthList = zeros(1,length(OutputGroups));
+        for indG = 1:length(OutputGroups)
+            ImBinBuffer{indG} = [];
+            StimBinBuffer{indG} = [];
+            ImWriteBuffer{indG} = [];
+            StimWriteBuffer{indG} = [];
         end
         
         %Opening Images Files:
@@ -417,8 +563,12 @@ end
                 iData = Images;
                 clear Images;
             end
+            
+            % Keep only complete illumination cycles before assigning frames
+            % to sequence positions. Partial cycles are carried to the next
+            % binary file and discarded only if they remain after the last file.
             iData = cat(3, oIm, iData);
-            overflow = mod(size(iData,3), size(colors,2)*BinningTemp);
+            overflow = mod(size(iData,3), subNbColors);
             if( overflow > 0 )
                 oIm = iData(:,:, size(iData,3)-(overflow:-1:1)+1);
             else
@@ -428,12 +578,11 @@ end
             clear iData hData overflow;
             
             if isempty(Images)
-                % In cases where the temporal binning causes the overflow
-                % of all frames. This should happen only in the last ".bin"
-                % file.
-                break
+                % No complete illumination cycle is available yet.
+                fprintf('\n');
+                continue
             end
-            if( (~b_IgnoreStim) && (sum(Stim.Stim) ~= 0) )
+            if( (~b_IgnoreStim) && (sum(Stim.Stim) ~= 0) && ~isempty(stim_fn) )
                 SubStim = [];
                 for ii = 1:length(stim_fn)
                     SubStim(ii,:) = Stim.(stim_fn{ii})(stimPos + (1:size(Images,3)));
@@ -444,41 +593,153 @@ end
             end
             
             Images = reshape(Images, ImRes_XY(2), ImRes_XY(1), subNbColors, []);
-            SubStim = reshape(SubStim,size(SubStim,1), subNbColors, BinningTemp, []);
-            SubStim = ceil(mean(SubStim, 3));
-            SubStim = reshape(SubStim, size(SubStim,1), subNbColors,[]);
-            for indC = 1:size(colors,2)
-                Ims = squeeze(Images(:, :, indC, :));
-                if( any(sum(sum(Ims,1),2) == 0) )
-                    idx = find(sum(sum(Ims,1),2) > 1);
-                    Ims = interp1(idx, single(reshape(Ims(:,:,idx),[], length(idx)))', 1:size(Ims,3),'linear','extrap');
-                    Ims = reshape(Ims', ImRes_XY(2), ImRes_XY(1), []);
-                end
+            SubStim = reshape(SubStim,size(SubStim,1), subNbColors, []);
+            
+            for indG = 1:length(OutputGroups)
+                seqIdx = OutputGroups(indG).SeqIdx;
+                
+                % Merge all sequence positions assigned to this output group.
+                % The reshape preserves chronological order within each cycle:
+                % position 1, position 2, ..., then the next cycle.
+                Ims = Images(:, :, seqIdx, :);
+                Ims = reshape(Ims, ImRes_XY(2), ImRes_XY(1), []);
+                SubStimTmp = SubStim(:, seqIdx, :);
+                SubStimTmp = reshape(SubStimTmp, size(SubStim,1), []);
                 
                 %SubROI
                 if( b_SubROI )
                     Ims = Ims(round(LimY(1)):round(LimY(2)),round(LimX(1)):round(LimX(2)),:);
                 end
+                
+                if( ~isempty(ImBinBuffer{indG}) )
+                    Ims = cat(3, ImBinBuffer{indG}, Ims);
+                    SubStimTmp = [StimBinBuffer{indG}, SubStimTmp];
+                end
+                
+                nFramesAll = size(Ims,3);
+                nFullRaw = floor(nFramesAll/BinningTemp) * BinningTemp;
+                
+                if( nFullRaw < nFramesAll )
+                    ImBinBuffer{indG} = Ims(:,:,nFullRaw+1:end);
+                    StimBinBuffer{indG} = SubStimTmp(:,nFullRaw+1:end);
+                else
+                    ImBinBuffer{indG} = [];
+                    StimBinBuffer{indG} = [];
+                end
+                
+                if( nFullRaw == 0 )
+                    continue
+                end
+                
+                % Missing frames are interpolated after repeated positions have
+                % been merged into the final output-channel chronology.
+                imgSum = squeeze(sum(sum(Ims,1),2));
+                imgSum = imgSum(:)';
+                if( any(imgSum == 0) )
+                    idx = find(imgSum > 1);
+                    if( length(idx) > 1 )
+                        nY = size(Ims,1);
+                        nX = size(Ims,2);
+                        Ims = interp1(idx, single(reshape(Ims(:,:,idx),[], length(idx)))', ...
+                            1:size(Ims,3),'linear','extrap');
+                        Ims = reshape(Ims', nY, nX, []);
+                    elseif( isscalar(idx) )
+                        Ims = repmat(single(Ims(:,:,idx)), 1, 1, size(Ims,3));
+                    end
+                end
+                
+                Ims = Ims(:,:,1:nFullRaw);
+                SubStimTmp = SubStimTmp(:,1:nFullRaw);
+                
                 %Temporal Binning
                 if( BinningTemp > 1 )
                     Ims = imresize3(Ims, [size(Ims,1), size(Ims,2),...
                         size(Ims,3)/BinningTemp], 'linear');
+                    nStimRows = size(SubStimTmp,1);
+                    SubStimTmp = reshape(SubStimTmp, nStimRows, BinningTemp, []);
+                    SubStimTmp = reshape(ceil(mean(SubStimTmp, 2)), nStimRows, []);
                 end
+                
                 %Spatial Binning
                 if( BinningSpatial > 1 )
                     Ims = imresize(Ims,1/BinningSpatial);
                 end
-                for ii = 1:length(stim_fn)
-                    fColor{indC}.(stim_fn{ii}) = [fColor{indC}.(stim_fn{ii}); squeeze(SubStim(ii,indC,:))];
-                end
                 
-                fwrite(fid(indC), single(Ims), 'single');
-                fColor{indC}.datLength = fColor{indC}.datLength + size(Ims,3);
+                if( isempty(ImWriteBuffer{indG}) )
+                    ImWriteBuffer{indG} = single(Ims);
+                    StimWriteBuffer{indG} = SubStimTmp;
+                else
+                    ImWriteBuffer{indG} = cat(3, ImWriteBuffer{indG}, single(Ims));
+                    StimWriteBuffer{indG} = [StimWriteBuffer{indG}, SubStimTmp];
+                end
+            end
+            clear Images SubStim;
+            
+            % Commit only frames that preserve the ratio-aware output length
+            % invariant across all output groups.
+            baseLenList = zeros(1,length(OutputGroups));
+            for indG = 1:length(OutputGroups)
+                if( isempty(ImWriteBuffer{indG}) )
+                    nBufferedFrames = 0;
+                else
+                    nBufferedFrames = size(ImWriteBuffer{indG},3);
+                end
+                baseLenList(indG) = floor((datLengthList(indG) + nBufferedFrames) / ...
+                    OutputGroups(indG).RepeatCount);
+            end
+            targetBaseLen = min(baseLenList);
+            currentBaseLenList = datLengthList ./ [OutputGroups.RepeatCount];
+            assert(~(any(mod(currentBaseLenList, 1) ~= 0) || ...
+                    ~isscalar(unique(currentBaseLenList))), ...
+                'Internal length bookkeeping failed during channel sorting.');
+            currentBaseLen = currentBaseLenList(1);
+            
+            if( targetBaseLen > currentBaseLen )
+                for indG = 1:length(OutputGroups)
+                    nFramesToWrite = (targetBaseLen - currentBaseLen) * ...
+                        OutputGroups(indG).RepeatCount;
+                    if( nFramesToWrite > 0 )
+                        fwrite(fid(indG), ImWriteBuffer{indG}(:,:,1:nFramesToWrite), 'single');
+                        for ii = 1:length(stim_fn)
+                            fColor{indG}.(stim_fn{ii}) = [fColor{indG}.(stim_fn{ii}); ...
+                                StimWriteBuffer{indG}(ii,1:nFramesToWrite)'];
+                        end
+                        
+                        if( nFramesToWrite < size(ImWriteBuffer{indG},3) )
+                            ImWriteBuffer{indG} = ImWriteBuffer{indG}(:,:,nFramesToWrite+1:end);
+                            StimWriteBuffer{indG} = StimWriteBuffer{indG}(:,nFramesToWrite+1:end);
+                        else
+                            ImWriteBuffer{indG} = [];
+                            StimWriteBuffer{indG} = [];
+                        end
+                        datLengthList(indG) = datLengthList(indG) + nFramesToWrite;
+                        fColor{indG}.datLength = datLengthList(indG);
+                    end
+                end
             end
             fprintf('\n');
         end
-        for indC = 1:size(colors,2)
-            fclose(fid(indC));
+        
+        % Discard incomplete final temporal-bin and ratio-overflow frames.
+        for indG = 1:length(OutputGroups)
+            if( ~isempty(ImBinBuffer{indG}) )
+                fprintf('Discarding %d unbinned overflow frame(s) from %s.\n', ...
+                    size(ImBinBuffer{indG},3), OutputGroups(indG).Tag);
+            end
+            if( ~isempty(ImWriteBuffer{indG}) )
+                fprintf('Discarding %d ratio-overflow frame(s) from %s.\n', ...
+                    size(ImWriteBuffer{indG},3), OutputGroups(indG).Tag);
+            end
+        end
+        
+        finalBaseLenList = datLengthList ./ [OutputGroups.RepeatCount];
+        assert(~(any(mod(finalBaseLenList, 1) ~= 0) || ...
+                ~isscalar(unique(finalBaseLenList))), ...
+            ['Channel classification failed final length validation. ' ...
+            'Expected datLength/RepeatCount to be equal for all output channels.']);
+        
+        for indG = 1:length(OutputGroups)
+            fclose(fid(indG));
         end
     end
 end
