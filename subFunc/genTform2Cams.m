@@ -40,8 +40,15 @@ if( AcqInfo.MultiCam )
     for ind = 1:NbIllum
         idx = AcqInfo.("Illumination" + int2str(ind)).CamIdx;
         chan = lower(AcqInfo.("Illumination" + int2str(ind)).Color);
-        if( contains(chan, 'fluo') )
-            chan = ['fluo_' chan(9:11)];
+        % Manage Fluo Channel Name
+        if contains(chan, 'fluo')
+            tok= regexp(chan, '(\d+)\s*nm\b*', 'tokens');
+            if ~isempty(tok)
+                wavTag = tok{:}{:};
+                chan = ['fluo_' wavTag];
+            else
+                chan = 'fluo';
+            end
         end
         if( contains(chan, 'amber') )
             chan = 'yellow';
@@ -60,7 +67,7 @@ else
 end
 
 % Get data size from the first channel.
-datInfo = mapDatFile(fullfile(DataFolder, Cam1List{1}));
+datInfo = mapDat(fullfile(DataFolder, Cam1List{1}));
 cam1Img = zeros([length(Cam1List), size(datInfo.Data.data,1), size(datInfo.Data.data,2)], 'single');
 cam2Img = zeros([length(Cam2List), size(datInfo.Data.data,1), size(datInfo.Data.data,2)], 'single');
 clear datInfo
@@ -68,7 +75,7 @@ clear datInfo
 % Create a combined image from each camera to be used in the coregistration:
 % Camera 1:
 for ii = 1:length(Cam1List)
-    dat = loadDatFile(fullfile(DataFolder,Cam1List{ii}));
+    dat = loadData(fullfile(DataFolder,Cam1List{ii}));
     dat = mean(dat,3);
     if mean(dat(:) > 1e3)
         dat = dat./mean(dat(:));
@@ -87,7 +94,7 @@ end
 
 % Camera 2:
 for ii = 1:length(Cam2List)
-    dat = loadDatFile(fullfile(DataFolder,Cam2List{ii}));
+    dat = loadData(fullfile(DataFolder,Cam2List{ii}));
     dat = mean(dat,3);
     if mean(dat(:) > 1e3)
         dat = dat./mean(dat(:));
@@ -147,12 +154,6 @@ fn = fieldnames(AcqInfo);
 indfn = find(ismember(fn,{'Binning','Rotation','X_Offset','Y_Offset'}));
 % Update rotation and offset fields from Info.txt file:
 for ii = 1:length(indfn)
-    tformInfo.(fn{indfn(ii)}) = AcqInfo.(fn{indfn(ii)});
-    if strcmpi(fn{indfn(ii)}, 'Binning')
-        % Update binning value with binning created during
-        % ImageClassification
-        md = load(fullfile(DataFolder,strrep(Cam1List{ii},'.dat','.mat')));
-        tformInfo.Binning = tformInfo.Binning * AcqInfo.Width/md.datSize(2);
-    end
+    tformInfo.(fn{indfn(ii)}) = AcqInfo.(fn{indfn(ii)});   
 end
 end

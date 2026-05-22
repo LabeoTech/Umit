@@ -66,11 +66,18 @@ end
 hWima = 5;
 imgFilesList = dir([DataFolder 'img*.bin']);
 
-% Check if all files exist:
-imgFileNames = sort({imgFilesList.name})';
-imgFileIndx = str2double(erase(imgFileNames, "img_" | ".bin"));
-if ~strcmpi(imgFileNames{1}, 'img_00000.bin') || any(diff(imgFileIndx) ~= 1)
-    error('Image binary files (img_xxxxx.bin) missing! Classification aborted.')
+% Check for each camera:
+cam2_idx = contains({imgFilesList.name},'Cam2');
+imgFileSet = {imgFilesList(~cam2_idx), imgFilesList(cam2_idx)};
+imgFileSet(cellfun(@isempty,imgFileSet)) = [];
+for ii = 1:length(imgFileSet)
+    thisImgFilesList = imgFileSet{ii};
+    % Check if all files exist:
+    imgFileNames = sort({thisImgFilesList .name})';
+    imgFileIndx = str2double(erase(imgFileNames, "img_" | "imgCam2_" | ".bin"));
+    if imgFileIndx(1) ~=0  || any(diff(imgFileIndx) ~= 1)
+        error('Image binary files (img_xxxxx.bin) missing! Classification aborted.')
+    end
 end
 
 header = memmapfile([DataFolder imgFilesList(1).name], ...
@@ -205,7 +212,7 @@ AcqInfoStream.FrameRateHz = AcqInfoStream.FrameRateHz / (numel(Colors) * Binning
 AcqInfoStream.BinningSpatial = BinningSpatial;
 AcqInfoStream.BinningTemp = BinningTemp;
 save([SaveFolder 'AcqInfos.mat'], 'AcqInfoStream');
-outFile = [outFile, {channelInfo.datFile}, {'AcqInfos.mat'}];
+outFile = [outFile, {channelInfo.datFile}];
 
 if nargout ~= 0
     varargout{1} = outFile;
