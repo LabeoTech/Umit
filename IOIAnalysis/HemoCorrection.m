@@ -177,10 +177,22 @@ end
 %--------------------------------------------------------------------------
 
 
-% Create memmap objects for hemodynamic channels
+% Create file handles and load metadata for hemodynamic channels.
 fid = cell(1,length(fn));
+cMetaData = cell(1,length(fn));
+maxNt = fMetaData.datLength;
 for k = 1:length(fn)
     fid{k} = fopen(fullfile(Folder,fn{k}),'r');
+    [~,cName] = fileparts(fn{k});
+    cMatFile = fullfile(Folder, [cName '.mat']);
+    if( ~exist(cMatFile, 'file') )
+        error('Missing metadata file for hemodynamic channel: %s', cMatFile);
+    end
+    cMetaData{k} = load(cMatFile);
+    if( any(cMetaData{k}.datSize ~= fMetaData.datSize) )
+        error('Hemodynamic channel %s has incompatible spatial dimensions.', fn{k});
+    end
+    maxNt = max(maxNt, cMetaData{k}.datLength);
 end
 
 % RAM management
@@ -196,18 +208,12 @@ else
     precision = 'single';
     overheadFactor = 2;
 end
-nChunks = calculateMaxChunkSize(numPixels * numChannels * Nt, overheadFactor, precision);
+nChunks = calculateMaxChunkSize(numPixels * numChannels * maxNt, overheadFactor, precision);
 chunkSizePixels = ceil(Nx / nChunks);
 
 % Spatial filter settings
 spatSigma = 1;
 pad = ceil(3 * spatSigma);   % 3σ Gaussian support
-
-% Design temporal filter 
-if bFilt
-    f = fdesign.lowpass('N,F3dB', 4, sFreq, fMetaData.Freq);
-    lpass = design(f, 'butter');
-end
 
 % Normalize fluorescence
 fData = reshape(fData, prod(fMetaData.datSize(1:2)), []);
@@ -239,21 +245,18 @@ for ii = 1:nChunks
     % ---------------------------------------------------------------
     for kk = 1:numChannels
         waitbar(0.99, h, ['Reading file [' fn{kk} ']']);drawnow()
-        % Read padded spatial slab
-        tmp = readSpatialSlab(fid{kk}, Ny, Nx, Nt, idxPixels_with_pad, 'single');
+        % Read padded spatial slab using this channel's own timebase.
+        tmp = readSpatialSlab(fid{kk}, Ny, Nx, cMetaData{kk}.datLength, ...
+            idxPixels_with_pad, cMetaData{kk}.Datatype);
+
+        waitbar(0.99, h, ['Resampling hemodynamic file [' fn{kk} ']']);drawnow()
+        if bFilt
+            tmp = iResampleHemoToFluoTimeline(tmp, cMetaData{kk}, fMetaData, sFreq);
+        else
+            tmp = iResampleHemoToFluoTimeline(tmp, cMetaData{kk}, fMetaData, 0);
+        end
         tmp_sz = size(tmp);
 
-        % Reshape to [pixels × time] for temporal filtering
-        tmp = reshape(tmp, [], tmp_sz(3));
-
-        % Temporal filtering (optional)
-        if bFilt
-            waitbar(0.99, h, ['Applying temporal filter [' fn{kk} ']']);drawnow()
-            tmp = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(tmp')))';
-        end
-
-        % Restore spatial shape for Gaussian blur
-        tmp = reshape(tmp, tmp_sz);
         tmp = imgaussfilt(tmp, spatSigma, 'Padding', 'symmetric');
 
         % Crop padding
@@ -318,6 +321,54 @@ if ( bSave )
     % Save .MAT file:    
     save([Folder fMetaData.datFile], '-struct','fMetaData')
     fprintf('Corrected fluo data saved in "%s" as "%s"\n',Folder, fMetaData.datFile);
+end
+
+end
+
+function tmp = iResampleHemoToFluoTimeline(tmp, cMetaData, fMetaData, LPcutoffFreq)
+%IRESAMPLEHEMOTOFLUOTIMELINE Match one hemodynamic slab to fluorescence T.
+%
+%   tmp = iResampleHemoToFluoTimeline(tmp, cMetaData, fMetaData,
+%   LPcutoffFreq) applies anti-aliasing/user low-pass filtering when needed
+%   and resamples tmp along the third dimension to fMetaData.datLength. The
+%   fluorescence channel is the reference timeline.
+
+NtHemo = cMetaData.datLength;
+NtFluo = fMetaData.datLength;
+freqHemo = cMetaData.Freq;
+freqFluo = fMetaData.Freq;
+
+if( size(tmp,3) ~= NtHemo )
+    error('Input hemodynamic slab length does not match its metadata.');
+end
+
+% Apply user-requested low-pass when valid. If no user filter is requested
+% and the hemodynamic channel is being downsampled, apply anti-aliasing.
+cutoffFreq = 0;
+if( LPcutoffFreq > 0 )
+    cutoffFreq = LPcutoffFreq;
+elseif( freqHemo > freqFluo && NtHemo > NtFluo )
+    cutoffFreq = 0.45 * freqFluo;
+end
+
+if( cutoffFreq > 0 && cutoffFreq < freqHemo/2 )
+    sz = size(tmp);
+    tmp = reshape(tmp, [], sz(3));
+    f = fdesign.lowpass('N,F3dB', 4, cutoffFreq, freqHemo);
+    lpass = design(f, 'butter');
+    tmp = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(tmp')))';
+    tmp = reshape(tmp, sz);
+end
+
+if( NtHemo ~= NtFluo )
+    sz = size(tmp);
+    xHemo = linspace(0, 1, NtHemo);
+    xFluo = linspace(0, 1, NtFluo);
+    tmp = reshape(tmp, [], NtHemo);
+    tmp = interp1(xHemo, single(tmp)', xFluo, 'linear', 'extrap')';
+    tmp = reshape(single(tmp), sz(1), sz(2), NtFluo);
+else
+    tmp = single(tmp);
 end
 
 end

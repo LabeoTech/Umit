@@ -166,8 +166,8 @@ if( b_SubROI )
             Pos = [1 1 ImRes_XY(1) ImRes_XY(2)];
     end
 
-   LimX = [round(Pos(1)) round(Pos(1)+Pos(3))];
-   LimY = [round(Pos(2)) round(Pos(2)+Pos(4))];
+   LimX = [round(Pos(1)) round(Pos(1)+Pos(3)-1)];
+   LimY = [round(Pos(2)) round(Pos(2)+Pos(4)-1)];
    save([SaveFolder 'ROI.mat'],'Pos'); %Save region of interest in a .mat file
 else
    LimX = [1 ImRes_XY(1)];
@@ -221,8 +221,7 @@ if( AcqInfoStream.MultiCam )
     end
 
     % Repeated illuminations are supported within each camera sequence.
-    % The unsupported case is a repeated output channel across cameras,
-    % because both cameras would try to write the same output .dat/.mat tag.
+    % The repeated output channel across cameras is unsupported.
     TagList = {Colors.Tag};
     UniqueTags = unique(TagList, 'stable');
     for indT = 1:length(UniqueTags)
