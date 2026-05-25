@@ -18,6 +18,12 @@ function varargout = HemoCorrection(Folder, FileData, fMetaData, varargin)
 %      - Intermediate results are written back to disk
 %      - Minimal RAM footprint, suitable for very large datasets
 %
+% Hemodynamic channels are temporally resampled to match the fluorescence
+% channel before regression. The fluorescence channel is always the reference
+% timeline. If a hemodynamic channel has a higher sampling rate than the
+% fluorescence channel, an anti-aliasing low-pass filter is applied before
+% temporal downsampling.
+%
 % -------------------------------------------------------------------------
 % Inputs:
 %
@@ -27,9 +33,9 @@ function varargout = HemoCorrection(Folder, FileData, fMetaData, varargin)
 %   FileData :
 %       Either:
 %         - 3D numeric array [Y, X, T] containing fluorescence data
-%           ? STANDARD MODE
+%           STANDARD MODE
 %         - String or char array pointing to a .dat fluorescence file
-%           ? LOW-RAM MODE
+%           LOW-RAM MODE
 %
 %   fMetaData :
 %       Metadata associated with the fluorescence data. Can be:
@@ -68,10 +74,9 @@ function varargout = HemoCorrection(Folder, FileData, fMetaData, varargin)
 %   fCorr = HemoCorrection(pwd, fData, fMetaData, {'Green'});
 %
 %   % Low-RAM streaming mode (file-based)
-%   HemoCorrection(pwd, 'fluo_475.dat', 'fluo_475.mat', {'Red','Green'});
+%   HemoCorrection(pwd, 'fluo_475.dat', fMetaData, {'Red','Green'});
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
 
 p = inputParser;
 addRequired(p, 'Folder', @isfolder);
@@ -86,8 +91,6 @@ cList = p.Results.cList;
 sFreq = p.Results.sFreq;
 outFilename = p.Results.outFilename;
 
-
-
 if( ~strcmp(Folder(end),filesep) )
     Folder = strcat(Folder, filesep);
 end
@@ -97,7 +100,7 @@ if isempty(cList)
     fn = {};
     for ind = 1:size(cList,1)
         if( ~strcmp(cList(ind).name(1),'f') )
-            fn{end+1} = cList(ind).name;
+            fn{end+1} = cList(ind).name; %#ok<AGROW>
         end
     end
     
@@ -119,30 +122,28 @@ else
         switch tag
             case 'red'
                 if( exist([Folder 'rChan.dat'], 'file') )
-                    fn{end+1} = 'rChan.dat';
+                    fn{end+1} = 'rChan.dat'; %#ok<AGROW>
                 else
-                    fn{end+1} = 'red.dat';
+                    fn{end+1} = 'red.dat'; %#ok<AGROW>
                 end
             case {'amber', 'yellow'}
                 if( exist([Folder 'yChan.dat'], 'file') )
-                    fn{end+1} = 'yChan.dat';
+                    fn{end+1} = 'yChan.dat'; %#ok<AGROW>
                 else
-                    fn{end+1} = 'yellow.dat';
+                    fn{end+1} = 'yellow.dat'; %#ok<AGROW>
                 end
             case 'green'
                 if( exist([Folder 'gChan.dat'], 'file') )
-                    fn{end+1} = 'gChan.dat';
+                    fn{end+1} = 'gChan.dat'; %#ok<AGROW>
                 else
-                    fn{end+1} = 'green.dat';
+                    fn{end+1} = 'green.dat'; %#ok<AGROW>
                 end
         end
     end
 end
 
 if sFreq
-    
     freq = fMetaData.Freq;
-    
     if ( sFreq >= freq/2 )
         sFreq = 0; % No Temporal filter applied
     end
@@ -170,18 +171,13 @@ else
     else
         % Overwrite fluo file
         [~,filename,ext] = fileparts(fMetaData.datFile);
-        eval(['fid = fopen(''' Folder filename ext ''', ''w'');']);
+        fid = fopen([Folder filename ext], 'w');
         fwrite(fid, FileData, 'single');
         fclose(fid);
     end
 end
 
-
 end
-
-
-
-
 
 %% ========================================================================
 % Local functions
@@ -190,73 +186,62 @@ function fData = HemoCorrection_standardMode(fData,fMetaData, colorList,LPcutoff
 % HEMOCORRECTION_STANDARDMODE  In-memory hemodynamic correction.
 %
 % This function performs hemodynamic correction assuming all fluorescence
-% and hemodynamic channels can be loaded into RAM.
-%
-% Features:
-%   - Automatic chunking along X dimension if RAM is limited
-%   - Optional temporal low-pass filtering of hemodynamic channels
-%   - Spatial Gaussian filtering with symmetric padding
-%
-% Inputs:
-%   fData :
-%       Fluorescence data array [Y, X, T]
-%
-%   fMetaData :
-%       Metadata structure associated with fData
-%
-%   colorList :
-%       Cell array of filenames for hemodynamic channels (.dat)
-%
-%   LPcutoffFreq :
-%       Low-pass cutoff frequency in Hz (0 disables filtering)
-%
-% Output:
-%   fData :
-%       Hemodynamically corrected fluorescence data [Y, X, T]
-%
-% Notes:
-%   - This mode is faster than low-RAM mode but requires sufficient memory.
-%   - Data normalization and denormalization are performed internally.
+% and hemodynamic channels can be loaded into RAM. Hemodynamic channels are
+% temporally resampled to match the fluorescence channel when needed.
 
 %--------------------------------------------------------------------------
-Ny = fMetaData.datSize(1);
-Nx = fMetaData.datSize(2);
+Ny = fMetaData.datSize(1,1);
+Nx = fMetaData.datSize(1,2);
 Nt = fMetaData.datLength;
-Np = Nx *Ny;
+Np = Nx * Ny;
+%--------------------------------------------------------------------------
+% Resolve hemodynamic metadata before RAM estimation.
+%--------------------------------------------------------------------------
+numChannels = numel(colorList);
+cMetaData = cell(1,numChannels);
+maxNt = Nt;
+for kk = 1:numChannels
+    [cFolder,cName] = fileparts(colorList{kk});
+    cMatFile = fullfile(cFolder, [cName '.mat']);
+    if( ~exist(cMatFile, 'file') )
+        error('Missing metadata file for hemodynamic channel: %s', cMatFile);
+    end
+    cMetaData{kk} = load(cMatFile);
+    if( any(cMetaData{kk}.datSize ~= fMetaData.datSize) )
+        error('Hemodynamic channel %s has incompatible spatial dimensions.', colorList{kk});
+    end
+    maxNt = max(maxNt, cMetaData{kk}.datLength);
+end
 %--------------------------------------------------------------------------
 % Normalize fluorescence
 %--------------------------------------------------------------------------
-fData = reshape(fData, prod(fMetaData.datSize(1:2)), []);
+fData = reshape(fData, prod(fMetaData.datSize), []);
 m_fData = mean(fData, 2);
-fData = (fData- m_fData) ./ m_fData;
+fData = (fData - m_fData) ./ m_fData;
 %--------------------------------------------------------------------------
 
-% Design temporal filter
-if LPcutoffFreq
-    f = fdesign.lowpass('N,F3dB', 4, LPcutoffFreq, fMetaData.Freq);
-    lpass = design(f, 'butter');
-end
-
-% Calculate available RAM
-numChannels = numel(colorList);
-nChunks = calculateMaxChunkSize(fData, numChannels,0.15);
+% Calculate available RAM. Use the largest temporal length because repeated
+% illuminations can create hemodynamic channels longer than fluorescence.
+dataBytes = max(numel(fData) * getByteSize(class(fData)), ...
+    prod(fMetaData.datSize) * maxNt * getByteSize('single'));
+nChunks = calculateMaxChunkSize(dataBytes, 2 + numChannels, 0.15);
 chunkSizePixels = ceil(Nx / nChunks);
 if nChunks > 1
     fid = {};
     for ii = 1:numChannels
-        fid{ii} = fopen(colorList{ii},'r');%#ok
+        fid{ii} = fopen(colorList{ii},'r'); %#ok<AGROW>
     end
 end
 
 % Spatial filter settings
 spatSigma = 1;
-pad = ceil(3 * spatSigma);  
+pad = ceil(3 * spatSigma);
 h = waitbar(0, 'Fitting Hemodynamics...');
 h_out = onCleanup(@() delete(h));
 for ii = 1:nChunks
     
     if nChunks == 1
-        h.Name = ['Hemodynamic Correction'];drawnow()
+        h.Name = 'Hemodynamic Correction';drawnow()
         % There is enough RAM to load all the channels (No chunking needed)
         HemoData = zeros(numChannels, Np, Nt, 'single');
         padStart = 0;
@@ -284,24 +269,12 @@ for ii = 1:nChunks
         if nChunks == 1
             tmp = loadDatFile(colorList{kk});
         else
-            % slower
-            tmp = spatialSlabIO('read',fid{kk}, Ny, Nx, Nt, idxPixels_with_pad, 'single');
+            tmp = spatialSlabIO('read',fid{kk}, Ny, Nx, cMetaData{kk}.datLength, ...
+                idxPixels_with_pad, cMetaData{kk}.Datatype);
         end
         
+        tmp = iResampleHemoToFluoTimeline(tmp, cMetaData{kk}, fMetaData, LPcutoffFreq);
         tmp_sz = size(tmp);
-        
-       
-        
-        % Temporal filtering (optional)
-        if LPcutoffFreq
-            % Reshape for temporal filtering
-            tmp = reshape(tmp, [], tmp_sz(3));
-            waitbar(.99, h, ['Applying temporal filter [' ,colorName, ext ']']);drawnow()
-            tmp = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(tmp')))';
-            % Restore spatial shape for Gaussian blur
-            tmp = reshape(tmp, tmp_sz);
-        end
-        
         
         tmp = imgaussfilt(tmp, spatSigma, 'Padding', 'symmetric');
         
@@ -317,24 +290,26 @@ for ii = 1:nChunks
         
         % Store
         HemoData(kk, :, :) = tmp;
+        clear tmp m tmp_sz
+        waitbar(.99, h, ['Loaded hemodynamic channel [' ,colorName, ext ']']);drawnow()
     end
-    clear tmp
     %% ---------------------------------------------------------------
     %  Hemodynamic regression
     % ---------------------------------------------------------------
     warning('off', 'MATLAB:rankDeficientMatrix');
     waitbar(0, h, 'Performing Hemodynamic correction...');drawnow()
-    for indP = 1:Np
+    nPixelsThisChunk = numel(indList);
+    for indP = 1:nPixelsThisChunk
         if size(HemoData,1) == 1
-            X = [ ones(1, Nt); linspace(0, 1, Nt);squeeze(HemoData(:, indP, :))' ];
+            X = [ ones(1, Nt); linspace(0, 1, Nt); squeeze(HemoData(:, indP, :))' ];
         else
-            X = [ ones(1, Nt); linspace(0, 1, Nt);squeeze(HemoData(:, indP, :)) ];
+            X = [ ones(1, Nt); linspace(0, 1, Nt); squeeze(HemoData(:, indP, :)) ];
         end
         B = X' \ fData(indList(indP), :)';
         fData(indList(indP), :) = fData(indList(indP), :) - (X' * B)';
         % Update waitbar
         if mod(indP, 500) == 0
-            waitbar(indP / Np, h);
+            waitbar(indP / nPixelsThisChunk, h);
         end
     end
     
@@ -360,61 +335,40 @@ function outFilename = HemoCorrection_lowRAMmode(outFilename, fluoFile, fMetaDat
 % HEMOCORRECTION_LOWRAMMODE  Disk-streamed hemodynamic correction.
 %
 % This function performs hemodynamic correction using a low-RAM streaming
-% strategy. All data are read directly from binary files in spatial chunks,
-% processed, and written back to a preallocated output file.
-%
-% This mode is intended for very large datasets that do not fit in memory.
-%
-% Inputs:
-%   outFilename :
-%       Output .dat file where corrected fluorescence will be written
-%
-%   fluoFile :
-%       Input fluorescence .dat file
-%
-%   fMetaData :
-%       Metadata .mat file associated with the fluorescence data
-%
-%   colorList :
-%       Cell array of hemodynamic channel .dat filenames
-%
-%   LPcutoffFreq :
-%       Low-pass cutoff frequency in Hz (0 disables filtering)
-%
-% Output:
-%   outFilename :
-%       Filename of the corrected fluorescence data (.dat)
-%
-% Implementation details:
-%   - Spatial chunking along X dimension
-%   - Temporal processing performed per chunk
-%   - Uses spatialSlabIO for safe random-access disk I/O
-%   - Output file is preallocated before processing
-%
-% Notes:
-%   - This mode minimizes peak RAM usage at the cost of execution time.
-%   - Suitable for long recordings and high-resolution imaging data.
-
+% strategy. Hemodynamic channels are read with their own metadata and
+% temporally resampled to the fluorescence timebase inside each spatial slab.
 
 % Get Fluo file handle
 f_fid = fopen(fluoFile,'r');
 c_f = onCleanup(@() safeFclose(f_fid));
-% Get file handles of hemodynamic channels
+% Get file handles and metadata of hemodynamic channels
 numChannels = length(colorList);
 h_fid = cell(1,numChannels);
 c_r = cell(1,length(colorList));
+cMetaData = cell(1,numChannels);
+maxNt = fMetaData.datLength;
 for k = 1:length(colorList)
     h_fid{k} = fopen(colorList{k},'r');
     c_r{k} = onCleanup(@() safeFclose(h_fid{k}));
+    [cFolder,cName] = fileparts(colorList{k});
+    cMatFile = fullfile(cFolder, [cName '.mat']);
+    if( ~exist(cMatFile, 'file') )
+        error('Missing metadata file for hemodynamic channel: %s', cMatFile);
+    end
+    cMetaData{k} = load(cMatFile);
+    if( any(cMetaData{k}.datSize ~= fMetaData.datSize) )
+        error('Hemodynamic channel %s has incompatible spatial dimensions.', colorList{k});
+    end
+    maxNt = max(maxNt, cMetaData{k}.datLength);
 end
 
 % RAM management
-Ny = fMetaData.datSize(1);
-Nx = fMetaData.datSize(2);
+Ny = fMetaData.datSize(1,1);
+Nx = fMetaData.datSize(1,2);
 Nt = fMetaData.datLength;
 
-% Estimate data volume in bytes from fluo file
-dataBytes = prod([fMetaData.datSize, fMetaData.datLength, getByteSize(fMetaData.Datatype)]);
+% Estimate data volume in bytes from the largest temporal input.
+dataBytes = prod([fMetaData.datSize, maxNt, getByteSize(fMetaData.Datatype)]);
 % Calculate number of chunks for data processing
 nChunks = calculateMaxChunkSize(dataBytes,2+numel(colorList),.1);
 chunkSizePixels = ceil(Nx / nChunks);
@@ -423,11 +377,6 @@ chunkSizePixels = ceil(Nx / nChunks);
 spatSigma = 1;
 pad = ceil(3 * spatSigma);   % 3σ Gaussian support
 
-% Design temporal filter
-if LPcutoffFreq
-    f = fdesign.lowpass('N,F3dB', 4, LPcutoffFreq, fMetaData.Freq);
-    lpass = design(f, 'butter');
-end
 % ---------------------------------------------------------------------
 % Preallocate output binary file and set to write
 % ---------------------------------------------------------------------
@@ -453,7 +402,7 @@ for ii = 1:nChunks
     idxPixels_with_pad = (pxStart - padStart):(pxEnd + padStop);
             
     % ----- Preallocate hemodynamic block
-    Np = numel(idxPixels)*Ny;
+    Np = numel(idxPixels) * Ny;
     HemoData = zeros(numChannels, Np, Nt, 'single');
     
     % ---------------------------------------------------------------------
@@ -474,21 +423,13 @@ for ii = 1:nChunks
         [~,colorName,ext] = fileparts(colorList{kk});
         waitbar(.99, h, ['Reading file [', colorName, ext, ']']);drawnow()
         
-        % Read padded spatial slab
-        tmp = spatialSlabIO('read',h_fid{kk}, Ny, Nx, Nt, idxPixels_with_pad, fMetaData.Datatype);
+        % Read padded spatial slab using this channel's own length/type.
+        tmp = spatialSlabIO('read',h_fid{kk}, Ny, Nx, cMetaData{kk}.datLength, ...
+            idxPixels_with_pad, cMetaData{kk}.Datatype);
+        
+        waitbar(.99, h, ['Resampling hemodynamic file [', colorName, ext, ']']);drawnow()
+        tmp = iResampleHemoToFluoTimeline(tmp, cMetaData{kk}, fMetaData, LPcutoffFreq);
         tmp_sz = size(tmp);
-                        
-        % Temporal filtering (optional)
-        if LPcutoffFreq
-            
-            waitbar(.99, h, ['Applying temporal filter [', colorName, ext,  ']']);drawnow()
-            % Reshape to pixel by time for temporal filtering
-            tmp = reshape(tmp, [], tmp_sz(3));
-            % Apply temporal filter
-            tmp = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(tmp')))';
-            % Restore spatial shape for Gaussian blur
-            tmp = reshape(tmp, tmp_sz);
-        end
         
         waitbar(.99, h, 'Applying spatial filter to hemodynamic data...');drawnow()
         % Apply spatial filter        
@@ -518,9 +459,9 @@ for ii = 1:nChunks
     warning('off', 'MATLAB:rankDeficientMatrix');
     for indP = 1:Np
         if size(HemoData,1) == 1
-            X = [ ones(1, Nt); linspace(0, 1, Nt);squeeze(HemoData(:, indP, :))' ];
+            X = [ ones(1, Nt); linspace(0, 1, Nt); squeeze(HemoData(:, indP, :))' ];
         else
-            X = [ ones(1, Nt); linspace(0, 1, Nt);squeeze(HemoData(:, indP, :)) ];
+            X = [ ones(1, Nt); linspace(0, 1, Nt); squeeze(HemoData(:, indP, :)) ];
         end
         
         B = X' \ fData(indP, :)';
@@ -559,6 +500,55 @@ fclose(fid_out);
 % Close Hemo Data files
 for kk = 1:length(h_fid)
     fclose(h_fid{kk});
+end
+
+end
+
+
+function tmp = iResampleHemoToFluoTimeline(tmp, cMetaData, fMetaData, LPcutoffFreq)
+%IRESAMPLEHEMOTOFLUOTIMELINE Match one hemodynamic slab to fluorescence T.
+%
+%   tmp = iResampleHemoToFluoTimeline(tmp, cMetaData, fMetaData, LPcutoffFreq)
+%   applies anti-aliasing/user low-pass filtering when needed and resamples
+%   tmp along the third dimension to fMetaData.datLength. The fluorescence
+%   channel is the reference timeline.
+
+NtHemo = cMetaData.datLength;
+NtFluo = fMetaData.datLength;
+freqHemo = cMetaData.Freq;
+freqFluo = fMetaData.Freq;
+
+if( size(tmp,3) ~= NtHemo )
+    error('Input hemodynamic slab length does not match its metadata.');
+end
+
+% Apply user-requested low-pass when valid. If no user filter is requested
+% and the hemodynamic channel is being downsampled, apply anti-aliasing.
+cutoffFreq = 0;
+if( LPcutoffFreq > 0 )
+    cutoffFreq = LPcutoffFreq;
+elseif( freqHemo > freqFluo && NtHemo > NtFluo )
+    cutoffFreq = 0.45 * freqFluo;
+end
+
+if( cutoffFreq > 0 && cutoffFreq < freqHemo/2 )
+    sz = size(tmp);
+    tmp = reshape(tmp, [], sz(3));
+    f = fdesign.lowpass('N,F3dB', 4, cutoffFreq, freqHemo);
+    lpass = design(f, 'butter');
+    tmp = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(tmp')))';
+    tmp = reshape(tmp, sz);
+end
+
+if( NtHemo ~= NtFluo )
+    sz = size(tmp);
+    xHemo = linspace(0, 1, NtHemo);
+    xFluo = linspace(0, 1, NtFluo);
+    tmp = reshape(tmp, [], NtHemo);
+    tmp = interp1(xHemo, single(tmp)', xFluo, 'linear', 'extrap')';
+    tmp = reshape(single(tmp), sz(1), sz(2), NtFluo);
+else
+    tmp = single(tmp);
 end
 
 end
