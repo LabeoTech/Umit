@@ -8,6 +8,12 @@ function [HbO, HbR] = HemoCompute(DataFolder, SaveFolder, FilterSet, Illuminatio
 %   and deoxygenated (HbR) hemoglobin from two or three intrinsic imaging
 %   wavelengths.
 %
+%   If selected channels have different temporal sampling rates or lengths,
+%   higher-frequency channels are anti-aliased and resampled to match the
+%   lowest-frequency selected channel. Same-frequency channels with small
+%   length differences are resampled without anti-aliasing. Lower-frequency
+%   channels are not upsampled.
+%
 %   Inputs:
 %       DataFolder    - Folder containing red.dat, green.dat, and/or yellow.dat.
 %       SaveFolder    - Folder where HbO/HbR outputs are saved. If empty,
@@ -32,8 +38,8 @@ function [HbO, HbR] = HemoCompute(DataFolder, SaveFolder, FilterSet, Illuminatio
 %                       mode, output filename.
 
 % Default output names for pipeline management.
-default_Output_HbO = 'HbO.dat'; %#ok<NASGU>
-default_Output_HbR = 'HbR.dat'; %#ok<NASGU>
+default_Output_HbO = 'HbO.dat';
+default_Output_HbR = 'HbR.dat';
 
 if nargin == 1 && (ischar(DataFolder) || (isstring(DataFolder) && isscalar(DataFolder))) && ...
         strcmpi(strtrim(char(string(DataFolder))), 'pipelineInfo')
@@ -63,14 +69,21 @@ HbT_uM = double(p.Results.HbT_uM);
 O2_sat = double(p.Results.O2_sat);
 b_RAMsafeMode = p.Results.RAMSafeMode;
 
+if ~strcmp(DataFolder(end), filesep)
+    DataFolder = [DataFolder filesep];
+end
+
 bSave = ~isempty(SaveFolder);
 if bSave
     assert(isfolder(SaveFolder), ...
         'Umitoolbox:HemoCompute:InvalidSaveFolder', ...
         'SaveFolder must be an existing folder or empty.');
+    if ~strcmp(SaveFolder(end), filesep)
+        SaveFolder = [SaveFolder filesep];
+    end
 end
 
-assert(ismember(lower(FilterSet), {'gcamp','jrgeco','none'}), ...
+assert(any(strcmpi(FilterSet, {'gcamp','jrgeco','none'})), ...
     'Umitoolbox:HemoCompute:InvalidFilterSet', ...
     'FilterSet must be one of: gCaMP, jrGECO, none.');
 
@@ -100,106 +113,115 @@ assert(isfield(infos, 'AcqInfoStream') && isstruct(infos.AcqInfoStream), ...
     'AcqInfos.mat does not contain a valid AcqInfoStream structure.');
 acq = infos.AcqInfoStream;
 
-assert(isfield(acq, 'Height') && isfield(acq, 'Width') && isfield(acq, 'Length') && ...
-    isfield(acq, 'FrameRateHz') && isfield(acq, 'Camera_Model'), ...
+assert(isfield(acq, 'Camera_Model'), ...
     'Umitoolbox:HemoCompute:InvalidAcqInfos', ...
-    'AcqInfoStream must contain Height, Width, Length, FrameRateHz, and Camera_Model.');
+    'AcqInfoStream must contain Camera_Model.');
 
-Ny = double(acq.Height);
-Nx = double(acq.Width);
-Nt = double(acq.Length);
-Freq = double(acq.FrameRateHz);
-Datatype = 'single'; %#ok<NASGU>
+% Resolve selected channel files and file-specific metadata.
+channelNames = {'red', 'green', 'yellow'};
+channelFiles = { ...
+    fullfile(DataFolder, 'red.dat'), ...
+    fullfile(DataFolder, 'green.dat'), ...
+    fullfile(DataFolder, 'yellow.dat')};
+selectedChannels = ismember(channelNames, cellstr(illuminationLower));
 
-% File opening and availability checks.
-fidR = 0;
-fidG = 0;
-fidY = 0;
+channelInfo = cell(1, 3);
+fidList = zeros(1, 3);
+cleanupList = cell(1, 3);
 
-if any(strcmp(illuminationLower, 'red'))
-    redFile = fullfile(DataFolder, 'red.dat');
-    assert(isfile(redFile), ...
+for ii = find(selectedChannels)
+    assert(isfile(channelFiles{ii}), ...
         'Umitoolbox:HemoCompute:MissingChannelFile', ...
-        'Required channel file was not found: %s', redFile);
-    fidR = fopen(redFile, 'r');
-    assert(fidR ~= -1, ...
+        'Required channel file was not found: %s', channelFiles{ii});
+
+    channelInfo{ii} = loadMetaData(channelFiles{ii});
+
+    assert(isfield(channelInfo{ii}, 'Height') && isfield(channelInfo{ii}, 'Width') && ...
+            isfield(channelInfo{ii}, 'Length') && isfield(channelInfo{ii}, 'FrameRateHz'), ...
+        'Umitoolbox:HemoCompute:InvalidChannelMetadata', ...
+        'Metadata for "%s" must contain Height, Width, Length, and FrameRateHz.', ...
+        channelFiles{ii});
+
+    fidList(ii) = fopen(channelFiles{ii}, 'r');
+    assert(fidList(ii) ~= -1, ...
         'Umitoolbox:HemoCompute:FileOpenError', ...
-        'Could not open channel file "%s".', redFile);
-    c_r = onCleanup(@() safeFclose(fidR)); %#ok<NASGU>
+        'Could not open channel file "%s".', channelFiles{ii});
+    thisFid = fidList(ii);
+    cleanupList{ii} = onCleanup(@() safeFclose(thisFid)); %#ok<NASGU>
 end
 
-if any(strcmp(illuminationLower, 'green'))
-    greenFile = fullfile(DataFolder, 'green.dat');
-    assert(isfile(greenFile), ...
-        'Umitoolbox:HemoCompute:MissingChannelFile', ...
-        'Required channel file was not found: %s', greenFile);
-    fidG = fopen(greenFile, 'r');
-    assert(fidG ~= -1, ...
-        'Umitoolbox:HemoCompute:FileOpenError', ...
-        'Could not open channel file "%s".', greenFile);
-    c_g = onCleanup(@() safeFclose(fidG)); %#ok<NASGU>
+idxSelected = find(selectedChannels);
+nativeFreq = nan(1,3);
+nativeLength = nan(1,3);
+for ii = idxSelected
+    nativeFreq(ii) = double(channelInfo{ii}.FrameRateHz);
+    nativeLength(ii) = double(channelInfo{ii}.Length);
 end
 
-if any(strcmp(illuminationLower, 'yellow'))
-    yellowFile = fullfile(DataFolder, 'yellow.dat');
-    assert(isfile(yellowFile), ...
-        'Umitoolbox:HemoCompute:MissingChannelFile', ...
-        'Required channel file was not found: %s', yellowFile);
-    fidY = fopen(yellowFile, 'r');
-    assert(fidY ~= -1, ...
-        'Umitoolbox:HemoCompute:FileOpenError', ...
-        'Could not open channel file "%s".', yellowFile);
-    c_y = onCleanup(@() safeFclose(fidY)); %#ok<NASGU>
+% Use the lowest-frequency selected channel as the target timeline.
+targetFreq = min(nativeFreq(idxSelected));
+freqTol = max(1e-6, abs(targetFreq) * 1e-6);
+idxTargetCandidates = idxSelected(abs(nativeFreq(idxSelected) - targetFreq) <= freqTol);
+[~, idxMinLength] = min(nativeLength(idxTargetCandidates));
+idxTarget = idxTargetCandidates(idxMinLength);
+
+Ny = double(channelInfo{idxTarget}.Height);
+Nx = double(channelInfo{idxTarget}.Width);
+Nt = double(channelInfo{idxTarget}.Length);
+Freq = double(channelInfo{idxTarget}.FrameRateHz);
+Datatype = char(string(channelInfo{idxTarget}.Datatype)); %#ok<NASGU>
+
+for ii = idxSelected
+    assert(isequal(double(channelInfo{ii}.Height), Ny) && ...
+           isequal(double(channelInfo{ii}.Width), Nx), ...
+        'Umitoolbox:HemoCompute:SpatialMismatch', ...
+        'All selected channels must have matching spatial dimensions.');
 end
 
 % Data size is strictly continuous YXT.
 datsz = [Ny, Nx, Nt];
 NbPix = [Ny, Nx];
 
-% Check whether the data are already normalized.
+% Check whether the selected data are already normalized.
 indxNorm = [-2 -2 -2];
-fTags = {'fidR', 'fidG', 'fidY'};
 
 fprintf('Checking channel data...\n');
-fidList = [fidR, fidG, fidY];
-bytesPerFrame = prod(datsz(1:2)) * 4;
+for ii = idxSelected
+    thisFid = fidList(ii);
+    thisInfo = channelInfo{ii};
+    thisNt = double(thisInfo.Length);
+    bytesPerFrame = double(thisInfo.Height) * double(thisInfo.Width) * getByteSize(thisInfo.Datatype);
 
-fprintf('Checking channel data...\n');
-for i = 1:3
-    thisFid = fidList(i);
-    if thisFid == 0
-        continue
-    end
-
-    % Sample 10 frames to estimate normalization state.
-    frIdx = unique(floor(linspace(1, datsz(3), 10)));
+    % Sample 10 frames from the native channel timeline.
+    frIdx = unique(floor(linspace(1, thisNt, 10)));
     frIdx(frIdx < 1) = [];
-    tmp = zeros(datsz(1), datsz(2), 'single');
+    tmp = zeros(double(thisInfo.Height), double(thisInfo.Width), 'single');
 
     for jj = 1:numel(frIdx)
         fseek(thisFid, (frIdx(jj) - 1) * bytesPerFrame, 'bof');
-        frame = fread(thisFid, datsz([1 2]), '*single');
-        tmp = tmp + frame';
+        frame = fread(thisFid, [double(thisInfo.Height), double(thisInfo.Width)], '*single');
+        tmp = tmp + frame;
     end
 
     tmp = tmp ./ numel(frIdx);
     Mdat = mean(tmp, 'all', 'omitnan');
 
     if Mdat > .75 && Mdat < 1.25
-        indxNorm(i) = 1;
+        indxNorm(ii) = 1;
     elseif Mdat > -.25 && Mdat < .25
-        indxNorm(i) = 0;
+        indxNorm(ii) = 0;
     else
-        indxNorm(i) = -1;
+        indxNorm(ii) = -1;
     end
 end
 
-if ~all(indxNorm)
+selectedNorm = indxNorm(idxSelected);
+if isempty(selectedNorm) || any(selectedNorm ~= selectedNorm(1))
     error('Umitoolbox:HemoCompute:HeterogeneousInput', ...
-        'The input data is heterogeneous. All channels must be preprocessed in the same way.');
+        'The input data is heterogeneous. All selected channels must be preprocessed in the same way.');
 end
 
-indxNorm = indxNorm(find(indxNorm ~= -2, 1, 'first'));
+indxNorm = selectedNorm(1);
 
 if indxNorm == -1 && ~b_normalize
     error('Umitoolbox:HemoCompute:NeedsNormalization', ...
@@ -228,15 +250,18 @@ A = ioi_epsilon_pathlength( ...
     FilterSet, ...
     acq.Camera_Model);
 
-% Temporal filters used for input normalization.
+% Temporal filters used for input normalization after all channels are on
+% the target timeline.
 f = fdesign.lowpass('N,F3dB', 4, 1, Freq);
 lpass_high = design(f, 'butter');
 
 f = fdesign.lowpass('N,F3dB', 4, 1/120, Freq);
 lpass_low = design(f, 'butter');
 
-% Chunking strategy for continuous YXT data only.
-nChunks = calculateMaxChunkSize(prod(datsz) * 4, 12, .1);
+% Chunking strategy for continuous YXT data. Use the largest native length
+% so memory is not underestimated when repeated illuminations are present.
+maxNativeLength = max(nativeLength(idxSelected));
+nChunks = calculateMaxChunkSize(Ny * Nx * maxNativeLength * 4, 12, .1);
 chunkX  = ceil(NbPix(2) / nChunks);
 
 % Output allocation / preallocation.
@@ -281,9 +306,11 @@ for indP = 1:nChunks
         drawnow()
     end
 
-    if fidR
+    if fidList(1)
         waitbar(indP/nChunks, h, 'Red channel [Reading file...]')
-        Red = spatialSlabIO('read', fidR, NbPix(1), NbPix(2), Nt, xIdx, 'single');
+        Red = spatialSlabIO('read', fidList(1), NbPix(1), NbPix(2), ...
+            channelInfo{1}.Length, xIdx, channelInfo{1}.Datatype);
+        Red = iResampleChannelToLowestFrequency(Red, channelInfo{1}, Nt, Freq);
         Red = reshape(Red, [], Nt);
 
         if b_normalize
@@ -300,9 +327,11 @@ for indP = 1:nChunks
         Red = -log(Red);
     end
 
-    if fidG
+    if fidList(2)
         waitbar(indP/nChunks, h, 'Green channel [Reading file...]')
-        Green = spatialSlabIO('read', fidG, NbPix(1), NbPix(2), Nt, xIdx, 'single');
+        Green = spatialSlabIO('read', fidList(2), NbPix(1), NbPix(2), ...
+            channelInfo{2}.Length, xIdx, channelInfo{2}.Datatype);
+        Green = iResampleChannelToLowestFrequency(Green, channelInfo{2}, Nt, Freq);
         Green = reshape(Green, [], Nt);
 
         if b_normalize
@@ -319,9 +348,11 @@ for indP = 1:nChunks
         Green = -log(Green);
     end
 
-    if fidY
+    if fidList(3)
         waitbar(indP/nChunks, h, 'Yellow channel [Reading file...]')
-        Yel = spatialSlabIO('read', fidY, NbPix(1), NbPix(2), Nt, xIdx, 'single');
+        Yel = spatialSlabIO('read', fidList(3), NbPix(1), NbPix(2), ...
+            channelInfo{3}.Length, xIdx, channelInfo{3}.Datatype);
+        Yel = iResampleChannelToLowestFrequency(Yel, channelInfo{3}, Nt, Freq);
         Yel = reshape(Yel, [], Nt);
 
         if b_normalize
@@ -341,15 +372,15 @@ for indP = 1:nChunks
 
     waitbar(indP/nChunks, h, 'Computing [HbO] and [HbR]...')
 
-    if fidR * fidG * fidY > 0
+    if fidList(1) * fidList(2) * fidList(3) > 0
         Ainv = pinv(A);
         Hbs = Ainv * ([Red(:), Green(:), Yel(:)]') .* 1e6;
         clear Red Green Yel
-    elseif fidR * fidG > 0
+    elseif fidList(1) * fidList(2) > 0
         Ainv = pinv(A(1:2,:));
         Hbs = Ainv * ([Red(:), Green(:)]') .* 1e6;
         clear Red Green
-    elseif fidG * fidY > 0
+    elseif fidList(2) * fidList(3) > 0
         Ainv = pinv(A(2:3,:));
         Hbs = Ainv * ([Green(:), Yel(:)]') .* 1e6;
         clear Green Yel
@@ -397,13 +428,8 @@ if bSave
         delete(hbrPath);
     end
 
-    fidHbO = fopen(hboPath, 'W');
-    fwrite(fidHbO, HbO, '*single');
-    fclose(fidHbO);
-
-    fidHbR = fopen(hbrPath, 'W');
-    fwrite(fidHbR, HbR, '*single');
-    fclose(fidHbR);
+    saveData(hboPath, single(HbO));
+    saveData(hbrPath, single(HbR));
 end
 
     function info = localPipelineInfo()
@@ -512,4 +538,54 @@ end
             2, ...
             'isData', true);
     end
+end
+
+function data = iResampleChannelToLowestFrequency(data, sourceMeta, targetNt, targetFreq)
+%IRESAMPLECHANNELTOLOWESTFREQUENCY Match one channel to the target timeline.
+%
+%   data = iResampleChannelToLowestFrequency(data, sourceMeta, targetNt,
+%   targetFreq) resamples data along the last dimension so it has targetNt
+%   samples. If the source frequency is higher than the target frequency, an
+%   anti-aliasing low-pass filter is applied before interpolation. If the
+%   source frequency matches the target but the lengths differ, interpolation
+%   is applied without anti-aliasing. Lower-frequency sources are not
+%   upsampled.
+
+sourceNt = double(sourceMeta.Length);
+sourceFreq = double(sourceMeta.FrameRateHz);
+
+if sourceNt == targetNt
+    data = single(data);
+    return
+end
+
+freqTol = max(1e-6, abs(targetFreq) * 1e-6);
+inputSize = size(data);
+if inputSize(end) ~= sourceNt
+    error(['Temporal resampling failed. The input data length does not match ' ...
+        'the source metadata Length.']);
+end
+
+data = reshape(data, [], sourceNt);
+
+if sourceFreq > targetFreq + freqTol
+    aaCutoff = 0.45 * targetFreq;
+    if aaCutoff > 0 && aaCutoff < sourceFreq/2
+        f = fdesign.lowpass('N,F3dB', 4, aaCutoff, sourceFreq);
+        lpass = design(f,'butter');
+        data = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(data)'))';
+    end
+elseif sourceFreq < targetFreq - freqTol
+    error(['Cannot upsample a lower-frequency channel for Hb computation. ' ...
+        'Select channels with compatible frequencies or downsample all ' ...
+        'channels to the lowest-frequency timeline.']);
+end
+
+xSource = linspace(0, 1, sourceNt);
+xTarget = linspace(0, 1, targetNt);
+data = interp1(xSource, single(data)', xTarget, 'linear', 'extrap')';
+
+inputSize(end) = targetNt;
+data = reshape(single(data), inputSize);
+
 end

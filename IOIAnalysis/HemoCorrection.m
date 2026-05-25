@@ -30,12 +30,14 @@ function varargout = HemoCorrection(data, SaveFolder, varargin)
 %       - Raw .dat input -> corrected output filename
 %
 %   Notes:
-%       - Only numeric arrays and raw .dat files are supported.
-%       - Metadata are resolved directly from AcqInfos.mat.
-%       - Reference channels must be stored in the same SaveFolder.
+%       - Metadata are resolved through loadMetaData for file inputs.
+%       - Numeric inputs are validated against the timelines described by
+%         AcqInfos.mat.
+%       - Hemodynamic reference channels are temporally resampled to match
+%         the fluorescence timeline before regression.
 
 % Default output for pipeline management:
-default_Output = 'fluoHemoCorr.dat'; %#ok<NASGU>
+default_Output = 'fluoHemoCorr.dat'; 
 
 if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) && ...
         strcmpi(strtrim(char(string(data))), 'pipelineInfo')
@@ -51,6 +53,11 @@ addParameter(p, 'ChannelList', {}, @(x) isempty(x) || (iscell(x) && all(cellfun(
 addParameter(p, 'LowPassFreq', 0, @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0);
 parse(p, data, SaveFolder, varargin{:});
 
+SaveFolder = char(string(p.Results.SaveFolder));
+if ~strcmp(SaveFolder(end), filesep)
+    SaveFolder = [SaveFolder filesep];
+end
+
 channelList = p.Results.ChannelList;
 lowPassFreq = double(p.Results.LowPassFreq);
 
@@ -65,32 +72,25 @@ assert(isfield(md, 'AcqInfoStream') && isstruct(md.AcqInfoStream), ...
     'AcqInfos.mat does not contain a valid AcqInfoStream structure.');
 acq = md.AcqInfoStream;
 
-assert(isfield(acq, 'Height') && isfield(acq, 'Width') && isfield(acq, 'Length') && isfield(acq, 'FrameRateHz'), ...
-    'Umitoolbox:HemoCorrection:missingAcqFields', ...
-    'AcqInfoStream must contain Height, Width, Length, and FrameRateHz.');
-
-fMetaData = struct();
-fMetaData.datSize = [double(acq.Height), double(acq.Width)];
-fMetaData.datLength = double(acq.Length);
-fMetaData.Freq = double(acq.FrameRateHz);
-fMetaData.Datatype = 'single';
-
 if ischar(data) || (isstring(data) && isscalar(data))
-    [~,~,ext] = fileparts(char(string(data)));
+    [fileData, inputFileName] = iResolveFileInSaveFolder(SaveFolder, data);
+    [~,~,ext] = fileparts(fileData);
     assert(strcmpi(ext, '.dat'), ...
         'Umitoolbox:HemoCorrection:unsupportedInputFile', ...
         'Only raw .dat fluorescence files are supported.');
-    fileData = fullfile(SaveFolder, char(string(data)));
     assert(isfile(fileData), ...
         'Umitoolbox:HemoCorrection:missingInputFile', ...
         'Input fluorescence file was not found: %s', fileData);
+    fMetaData = iNormalizeDatMeta(loadMetaData(fileData));
 else
     fileData = data;
+    inputFileName = '';
+    fMetaData = iResolveNumericYXTMetadata(data, acq);
 end
 
 assert(lowPassFreq < fMetaData.Freq/2 || lowPassFreq == 0, ...
     'Umitoolbox:HemoCorrection:invalidLowPassFreq', ...
-    'LowPassFreq must be smaller than the Nyquist frequency.');
+    'LowPassFreq must be smaller than the fluorescence Nyquist frequency.');
 
 % Resolve hemodynamic reference channels. Keep the interactive list dialog
 % for standalone use when the caller does not provide ChannelList.
@@ -99,7 +99,7 @@ if isempty(channelList)
     available = {};
     for iFile = 1:numel(datFiles)
         thisName = datFiles(iFile).name;
-        if ~(ischar(data) || (isstring(data) && isscalar(data))) || ~strcmpi(thisName, char(string(data)))
+        if isempty(inputFileName) || ~strcmpi(thisName, inputFileName)
             available{end+1} = thisName; %#ok<AGROW>
         end
     end
@@ -234,26 +234,34 @@ Nx = fMetaData.datSize(2);
 Nt = fMetaData.datLength;
 Np = Nx * Ny;
 
+numChannels = numel(colorList);
+cMetaData = cell(1, numChannels);
+maxNt = Nt;
+for kk = 1:numChannels
+    cMetaData{kk} = iNormalizeDatMeta(loadMetaData(colorList{kk}));
+    iValidateSpatialMatch(cMetaData{kk}, fMetaData, colorList{kk});
+    maxNt = max(maxNt, cMetaData{kk}.datLength);
+end
+
 % Normalize fluorescence
 fData = reshape(fData, prod(fMetaData.datSize(1:2)), []);
 m_fData = mean(fData, 2);
 fData = (fData - m_fData) ./ m_fData;
 
-% Design temporal filter
-if LPcutoffFreq
-    f = fdesign.lowpass('N,F3dB', 4, LPcutoffFreq, fMetaData.Freq);
-    lpass = design(f, 'butter');
-end
-
-% Estimate chunking
-numChannels = numel(colorList);
-nChunks = calculateMaxChunkSize(fData, numChannels, 0.15);
+% Estimate chunking. Use the largest temporal input because reference
+% channels can have a different timeline from the fluorescence channel.
+dataBytes = max(numel(fData) * getByteSize(class(fData)), ...
+    prod(fMetaData.datSize) * maxNt * getByteSize('single'));
+nChunks = calculateMaxChunkSize(dataBytes, 2 + numChannels, 0.15);
 chunkSizePixels = ceil(Nx / nChunks);
 
 if nChunks > 1
     fid = {};
     for ii = 1:numChannels
         fid{ii} = fopen(colorList{ii}, 'r'); %#ok<AGROW>
+        assert(fid{ii} ~= -1, ...
+            'Umitoolbox:HemoCorrection:FileOpenFailed', ...
+            'Could not open hemodynamic reference file "%s".', colorList{ii});
     end
 end
 
@@ -261,7 +269,7 @@ spatSigma = 1;
 pad = ceil(3 * spatSigma);
 
 h = waitbar(0, 'Fitting Hemodynamics...');
-h_out = onCleanup(@() delete(h)); %#ok<NASGU>
+h_out = onCleanup(@() delete(h)); 
 
 for ii = 1:nChunks
     if nChunks == 1
@@ -292,17 +300,12 @@ for ii = 1:nChunks
         if nChunks == 1
             tmp = loadData(colorList{kk});
         else
-            tmp = spatialSlabIO('read', fid{kk}, Ny, Nx, Nt, idxPixels_with_pad, 'single');
+            tmp = spatialSlabIO('read', fid{kk}, Ny, Nx, cMetaData{kk}.datLength, ...
+                idxPixels_with_pad, cMetaData{kk}.Datatype);
         end
 
+        tmp = iResampleHemoToFluoTimeline(tmp, cMetaData{kk}, fMetaData, LPcutoffFreq);
         tmp_sz = size(tmp);
-
-        if LPcutoffFreq
-            tmp = reshape(tmp, [], tmp_sz(3));
-            waitbar(.99, h, ['Applying temporal filter [' colorName ext ']']); drawnow()
-            tmp = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(tmp')))' ;
-            tmp = reshape(tmp, tmp_sz);
-        end
 
         tmp = imgaussfilt(tmp, spatSigma, 'Padding', 'symmetric');
 
@@ -313,8 +316,9 @@ for ii = 1:nChunks
         tmp = (tmp - m) ./ m;
 
         HemoData(kk, :, :) = tmp;
+        clear tmp m tmp_sz
+        waitbar(.99, h, ['Loaded hemodynamic channel [' colorName ext ']']); drawnow()
     end
-    clear tmp
 
     warning('off', 'MATLAB:rankDeficientMatrix');
     waitbar(0, h, 'Performing Hemodynamic correction...'); drawnow()
@@ -354,38 +358,47 @@ function outFilename = HemoCorrection_lowRAMmode(outFilename, fluoFile, fMetaDat
 %HEMOCORRECTION_LOWRAMMODE Disk-streamed hemodynamic correction.
 
 f_fid = fopen(fluoFile, 'r');
-c_f = onCleanup(@() safeFclose(f_fid)); %#ok<NASGU>
+assert(f_fid ~= -1, ...
+    'Umitoolbox:HemoCorrection:FileOpenFailed', ...
+    'Could not open fluorescence file "%s".', fluoFile);
+c_f = onCleanup(@() safeFclose(f_fid)); 
 
 numChannels = numel(colorList);
 h_fid = cell(1, numChannels);
 c_r = cell(1, numChannels);
+cMetaData = cell(1, numChannels);
+maxNt = fMetaData.datLength;
 for k = 1:numChannels
     h_fid{k} = fopen(colorList{k}, 'r');
-    c_r{k} = onCleanup(@() safeFclose(h_fid{k})); %#ok<NASGU>
+    assert(h_fid{k} ~= -1, ...
+        'Umitoolbox:HemoCorrection:FileOpenFailed', ...
+        'Could not open hemodynamic reference file "%s".', colorList{k});
+    c_r{k} = onCleanup(@() safeFclose(h_fid{k})); 
+    cMetaData{k} = iNormalizeDatMeta(loadMetaData(colorList{k}));
+    iValidateSpatialMatch(cMetaData{k}, fMetaData, colorList{k});
+    maxNt = max(maxNt, cMetaData{k}.datLength);
 end
 
 Ny = fMetaData.datSize(1);
 Nx = fMetaData.datSize(2);
 Nt = fMetaData.datLength;
 
-dataBytes = prod([fMetaData.datSize, fMetaData.datLength, getByteSize(fMetaData.Datatype)]);
+dataBytes = prod([fMetaData.datSize, maxNt, getByteSize(fMetaData.Datatype)]);
 nChunks = calculateMaxChunkSize(dataBytes, 2 + numel(colorList), .1);
 chunkSizePixels = ceil(Nx / nChunks);
 
 spatSigma = 1;
 pad = ceil(3 * spatSigma);
 
-if LPcutoffFreq
-    f = fdesign.lowpass('N,F3dB', 4, LPcutoffFreq, fMetaData.Freq);
-    lpass = design(f, 'butter');
-end
-
 preallocateDatFile(outFilename, [Ny, Nx, Nt], fMetaData.Datatype);
 fid_out = fopen(outFilename, 'r+');
-c_out = onCleanup(@() safeFclose(fid_out)); %#ok<NASGU>
+assert(fid_out ~= -1, ...
+    'Umitoolbox:HemoCorrection:FileOpenFailed', ...
+    'Could not create output file "%s".', outFilename);
+c_out = onCleanup(@() safeFclose(fid_out)); 
 
 h = waitbar(0, 'Fitting Hemodynamics...');
-h_out = onCleanup(@() delete(h)); %#ok<NASGU>
+h_out = onCleanup(@() delete(h)); 
 
 for ii = 1:nChunks
     h.Name = ['Hemodynamic Corr. (chunk ' num2str(ii) '/' num2str(nChunks) ')']; drawnow()
@@ -414,15 +427,12 @@ for ii = 1:nChunks
         [~, colorName, ext] = fileparts(colorList{kk});
         waitbar(.99, h, ['Reading file [' colorName ext ']']); drawnow()
 
-        tmp = spatialSlabIO('read', h_fid{kk}, Ny, Nx, Nt, idxPixels_with_pad, fMetaData.Datatype);
-        tmp_sz = size(tmp);
+        tmp = spatialSlabIO('read', h_fid{kk}, Ny, Nx, cMetaData{kk}.datLength, ...
+            idxPixels_with_pad, cMetaData{kk}.Datatype);
 
-        if LPcutoffFreq
-            waitbar(.99, h, ['Applying temporal filter [' colorName ext ']']); drawnow()
-            tmp = reshape(tmp, [], tmp_sz(3));
-            tmp = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(tmp')))' ;
-            tmp = reshape(tmp, tmp_sz);
-        end
+        waitbar(.99, h, ['Resampling hemodynamic file [' colorName ext ']']); drawnow()
+        tmp = iResampleHemoToFluoTimeline(tmp, cMetaData{kk}, fMetaData, LPcutoffFreq);
+        tmp_sz = size(tmp);
 
         waitbar(.99, h, 'Applying spatial filter to hemodynamic data...'); drawnow()
         tmp = imgaussfilt(tmp, spatSigma, 'Padding', 'symmetric');
@@ -473,4 +483,139 @@ fclose(fid_out);
 for kk = 1:numel(h_fid)
     fclose(h_fid{kk});
 end
+end
+
+
+function tmp = iResampleHemoToFluoTimeline(tmp, cMetaData, fMetaData, LPcutoffFreq)
+%IRESAMPLEHEMOTOFLUOTIMELINE Match one hemodynamic slab to fluorescence T.
+
+NtHemo = cMetaData.datLength;
+NtFluo = fMetaData.datLength;
+freqHemo = cMetaData.Freq;
+freqFluo = fMetaData.Freq;
+
+if size(tmp,3) ~= NtHemo
+    error('Umitoolbox:HemoCorrection:InvalidSlabLength', ...
+        'Input hemodynamic slab length does not match its metadata.');
+end
+
+cutoffFreq = 0;
+if LPcutoffFreq > 0
+    cutoffFreq = LPcutoffFreq;
+elseif freqHemo > freqFluo && NtHemo > NtFluo
+    cutoffFreq = 0.45 * freqFluo;
+end
+
+if cutoffFreq > 0 && cutoffFreq < freqHemo/2
+    sz = size(tmp);
+    tmp = reshape(tmp, [], sz(3));
+    f = fdesign.lowpass('N,F3dB', 4, cutoffFreq, freqHemo);
+    lpass = design(f, 'butter');
+    tmp = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(tmp')))' ;
+    tmp = reshape(tmp, sz);
+end
+
+if NtHemo ~= NtFluo
+    sz = size(tmp);
+    xHemo = linspace(0, 1, NtHemo);
+    xFluo = linspace(0, 1, NtFluo);
+    tmp = reshape(tmp, [], NtHemo);
+    tmp = interp1(xHemo, single(tmp)', xFluo, 'linear', 'extrap')';
+    tmp = reshape(single(tmp), sz(1), sz(2), NtFluo);
+else
+    tmp = single(tmp);
+end
+end
+
+
+function fMetaData = iResolveNumericYXTMetadata(data, AcqInfoStream)
+%IRESOLVENUMERICYXTMETADATA Build file-like metadata for numeric YXT input.
+
+assert(isfield(AcqInfoStream, 'Height') && isfield(AcqInfoStream, 'Width'), ...
+    'Umitoolbox:HemoCorrection:InvalidAcqInfos', ...
+    'AcqInfoStream must contain Height and Width.');
+
+height = double(AcqInfoStream.Height);
+width = double(AcqInfoStream.Width);
+assert(isequal([size(data,1), size(data,2)], [height, width]), ...
+    'Umitoolbox:HemoCorrection:InvalidNumericInput', ...
+    'Numeric fluorescence input does not match AcqInfos.mat Height/Width.');
+
+timelineInfo = resolveDatTimeline(size(data,3), AcqInfoStream);
+
+fMetaData = struct();
+fMetaData.datSize = [height, width];
+fMetaData.Height = height;
+fMetaData.Width = width;
+fMetaData.datLength = double(timelineInfo.Length);
+fMetaData.Length = double(timelineInfo.Length);
+fMetaData.Freq = double(timelineInfo.FrameRateHz);
+fMetaData.FrameRateHz = double(timelineInfo.FrameRateHz);
+fMetaData.Datatype = 'single';
+fMetaData.dim_names = {'Y','X','T'};
+end
+
+
+function meta = iNormalizeDatMeta(meta)
+%INORMALIZEDATMETA Ensure loadMetaData output has legacy-compatible fields.
+
+if ~isfield(meta, 'datSize') || isempty(meta.datSize)
+    meta.datSize = [double(meta.Height), double(meta.Width)];
+else
+    meta.datSize = double(meta.datSize(:).');
+end
+
+if ~isfield(meta, 'datLength') || isempty(meta.datLength)
+    meta.datLength = double(meta.Length);
+else
+    meta.datLength = double(meta.datLength);
+end
+
+if ~isfield(meta, 'Freq') || isempty(meta.Freq)
+    meta.Freq = double(meta.FrameRateHz);
+else
+    meta.Freq = double(meta.Freq);
+end
+
+if ~isfield(meta, 'Datatype') || isempty(meta.Datatype)
+    meta.Datatype = 'single';
+else
+    meta.Datatype = char(string(meta.Datatype));
+end
+
+if ~isfield(meta, 'Height') || isempty(meta.Height)
+    meta.Height = meta.datSize(1);
+end
+
+if ~isfield(meta, 'Width') || isempty(meta.Width)
+    meta.Width = meta.datSize(2);
+end
+end
+
+
+function iValidateSpatialMatch(cMetaData, fMetaData, fileName)
+%IVALIDATESPATIALMATCH Validate reference/fluorescence spatial dimensions.
+
+assert(isequal(double(cMetaData.datSize(1:2)), double(fMetaData.datSize(1:2))), ...
+    'Umitoolbox:HemoCorrection:SpatialMismatch', ...
+    'Hemodynamic reference "%s" has incompatible spatial dimensions.', fileName);
+end
+
+
+function [filePath, fileName] = iResolveFileInSaveFolder(SaveFolder, fileInput)
+%IRESOLVEFILEINSAVEFOLDER Resolve a filename or full path to a .dat file.
+
+fileInput = char(string(fileInput));
+if isfile(fileInput)
+    filePath = fileInput;
+else
+    filePath = fullfile(SaveFolder, fileInput);
+end
+
+[~, baseName, ext] = fileparts(filePath);
+if isempty(ext)
+    ext = '.dat';
+    filePath = [filePath ext];
+end
+fileName = [baseName ext];
 end

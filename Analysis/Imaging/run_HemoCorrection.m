@@ -34,7 +34,7 @@ function outData = run_HemoCorrection(data, SaveFolder, varargin)
 %       - low-RAM mode : corrected fluorescence filename
 
 % Default output for pipeline management:
-default_Output = 'hemoCorr_fluo.dat'; %#ok<NASGU>
+default_Output = 'hemoCorr_fluo.dat'; 
 
 if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) && ...
         strcmpi(strtrim(char(string(data))), 'pipelineInfo')
@@ -52,6 +52,11 @@ addParameter(p, 'Green', true, @(x) islogical(x) && isscalar(x));
 addParameter(p, 'Amber', true, @(x) islogical(x) && isscalar(x));
 addParameter(p, 'Other', '', @(x) ischar(x) || (isstring(x) && isscalar(x)));
 parse(p, data, SaveFolder, varargin{:});
+
+SaveFolder = char(string(p.Results.SaveFolder));
+if ~strcmp(SaveFolder(end), filesep)
+    SaveFolder = [SaveFolder filesep];
+end
 
 algorithm = char(string(p.Results.Algorithm));
 useRed = p.Results.Red;
@@ -74,26 +79,16 @@ assert(isfield(md, 'AcqInfoStream') && isstruct(md.AcqInfoStream), ...
     'AcqInfos.mat does not contain a valid AcqInfoStream structure.');
 acq = md.AcqInfoStream;
 
-assert(isfield(acq, 'Height') && isfield(acq, 'Width') && isfield(acq, 'Length') && isfield(acq, 'FrameRateHz'), ...
-    'Umitoolbox:run_HemoCorrection:InvalidAcqInfos', ...
-    'AcqInfoStream must contain Height, Width, Length, and FrameRateHz.');
-
-metaData = struct();
-metaData.datSize = [double(acq.Height), double(acq.Width)];
-metaData.datLength = double(acq.Length);
-metaData.Freq = double(acq.FrameRateHz);
-metaData.Datatype = 'single';
-
 % Build selected channel list.
 channelList = {};
 if useRed
-    channelList{end+1} = 'red'; %#ok<AGROW>
+    channelList{end+1} = 'red'; 
 end
 if useGreen
-    channelList{end+1} = 'green'; %#ok<AGROW>
+    channelList{end+1} = 'green'; 
 end
 if useAmber
-    channelList{end+1} = 'amber'; %#ok<AGROW>
+    channelList{end+1} = 'amber'; 
 end
 if ~isempty(otherChan)
     channelList{end+1} = otherChan; %#ok<AGROW>
@@ -115,9 +110,12 @@ switch lower(algorithm)
         fprintf('Using channel "%s" in hemodynamic correction...\n', refFile);
 
         if ischar(data) || (isstring(data) && isscalar(data))
-            outData = localRatiometricLowRAM(SaveFolder, char(string(data)), metaData, refFile, default_Output);
+            [fluoPath, fluoName] = localResolveFileInSaveFolder(SaveFolder, data);
+            fluoMeta = localNormalizeDatMeta(loadMetaData(fluoPath));
+            outData = localRatiometricLowRAM(SaveFolder, fluoName, fluoMeta, refFile, default_Output);
         else
-            outData = localRatiometricStandard(SaveFolder, data, refFile);
+            fluoMeta = localResolveNumericYXTMetadata(data, acq);
+            outData = localRatiometricStandard(SaveFolder, data, fluoMeta, refFile);
         end
 
     otherwise
@@ -242,14 +240,19 @@ assert(isfile(fullfile(SaveFolder, refFile)), ...
     'Reference channel file "%s" not found.', refFile);
 end
 
-function outData = localRatiometricStandard(SaveFolder, data, refFile)
+function outData = localRatiometricStandard(SaveFolder, data, fluoMeta, refFile)
 %LOCALRATIOMETRICSTANDARD Ratiometric correction in standard mode.
 
-refData = loadData(fullfile(SaveFolder, refFile));
+refPath = fullfile(SaveFolder, refFile);
+refMeta = localNormalizeDatMeta(loadMetaData(refPath));
+refData = loadData(refPath);
 
-assert(all(size(data) == size(refData)), ...
+localValidateSpatialMatch(refMeta, fluoMeta, refFile);
+refData = localResampleReferenceToFluoTimeline(refData, refMeta, fluoMeta);
+
+assert(isequal(size(data), size(refData)), ...
     'Umitoolbox:run_HemoCorrection:InvalidInput', ...
-    'Reference and fluorescence channels must have the same size.');
+    'Reference and fluorescence channels must have the same size after temporal alignment.');
 
 datSize = size(data);
 
@@ -272,7 +275,7 @@ fData = (fData .* mData) + mData;
 outData = reshape(fData, datSize);
 end
 
-function outFile = localRatiometricLowRAM(SaveFolder, fluoFile, metaData, refFile, defaultOutput)
+function outFile = localRatiometricLowRAM(SaveFolder, fluoFile, fluoMeta, refFile, defaultOutput)
 %LOCALRATIOMETRICLOWRAM Ratiometric correction in low-RAM mode.
 
 outFile = fullfile(SaveFolder, defaultOutput);
@@ -281,32 +284,36 @@ if isfile(outFile)
     outFile = fullfile(folderPath, [baseName '_preallocData' ext]);
 end
 
-Ny = metaData.datSize(1);
-Nx = metaData.datSize(2);
-Nt = metaData.datLength;
+refPath = fullfile(SaveFolder, refFile);
+refMeta = localNormalizeDatMeta(loadMetaData(refPath));
+localValidateSpatialMatch(refMeta, fluoMeta, refFile);
+
+Ny = fluoMeta.datSize(1);
+Nx = fluoMeta.datSize(2);
+Nt = fluoMeta.datLength;
 
 fidFluo = fopen(fullfile(SaveFolder, fluoFile), 'r');
 assert(fidFluo ~= -1, ...
     'Umitoolbox:run_HemoCorrection:FileOpenError', ...
     'Could not open fluorescence file "%s".', fluoFile);
-cFluo = onCleanup(@() safeFclose(fidFluo)); %#ok<NASGU>
+cFluo = onCleanup(@() safeFclose(fidFluo)); 
 
-fidRef = fopen(fullfile(SaveFolder, refFile), 'r');
+fidRef = fopen(refPath, 'r');
 assert(fidRef ~= -1, ...
     'Umitoolbox:run_HemoCorrection:FileOpenError', ...
     'Could not open reference file "%s".', refFile);
-cRef = onCleanup(@() safeFclose(fidRef)); %#ok<NASGU>
+cRef = onCleanup(@() safeFclose(fidRef)); 
 
-preallocateDatFile(outFile, [Ny, Nx, Nt], metaData.Datatype);
+preallocateDatFile(outFile, [Ny, Nx, Nt], fluoMeta.Datatype);
 
 fidOut = fopen(outFile, 'r+');
 assert(fidOut ~= -1, ...
     'Umitoolbox:run_HemoCorrection:FileOpenError', ...
     'Could not create output file "%s".', outFile);
-cOut = onCleanup(@() safeFclose(fidOut)); %#ok<NASGU>
+cOut = onCleanup(@() safeFclose(fidOut)); 
 
 % Chunk along X to control RAM.
-dataBytes = prod([metaData.datSize, metaData.datLength, getByteSize(metaData.Datatype)]);
+dataBytes = prod([fluoMeta.datSize, max(fluoMeta.datLength, refMeta.datLength), getByteSize(fluoMeta.Datatype)]);
 nChunks = calculateMaxChunkSize(dataBytes, 3, .1);
 chunkX = ceil(Nx / nChunks);
 
@@ -315,13 +322,14 @@ for ii = 1:nChunks
     xEnd   = min(xStart + chunkX - 1, Nx);
     xIdx   = xStart:xEnd;
 
-    % Read slabs.
-    fSlab = spatialSlabIO('read', fidFluo, Ny, Nx, Nt, xIdx, metaData.Datatype);
-    rSlab = spatialSlabIO('read', fidRef,  Ny, Nx, Nt, xIdx, metaData.Datatype);
+    % Read slabs using each file's own temporal length.
+    fSlab = spatialSlabIO('read', fidFluo, Ny, Nx, fluoMeta.datLength, xIdx, fluoMeta.Datatype);
+    rSlab = spatialSlabIO('read', fidRef,  Ny, Nx, refMeta.datLength, xIdx, refMeta.Datatype);
+    rSlab = localResampleReferenceToFluoTimeline(rSlab, refMeta, fluoMeta);
 
     assert(all(size(fSlab) == size(rSlab)), ...
         'Umitoolbox:run_HemoCorrection:InvalidInput', ...
-        'Reference and fluorescence slabs must have the same size.');
+        'Reference and fluorescence slabs must have the same size after temporal alignment.');
 
     slabSz = size(fSlab);
 
@@ -344,9 +352,135 @@ for ii = 1:nChunks
 
     % Write corrected slab.
     fSlab = reshape(fSlab, slabSz);
-    spatialSlabIO('write', fidOut, Ny, Nx, Nt, xIdx, metaData.Datatype, fSlab);
+    spatialSlabIO('write', fidOut, Ny, Nx, Nt, xIdx, fluoMeta.Datatype, fSlab);
 end
 
 [~, outName, outExt] = fileparts(outFile);
 outFile = [outName outExt];
+end
+
+function refData = localResampleReferenceToFluoTimeline(refData, refMeta, fluoMeta)
+%LOCALRESAMPLEREFERENCETOFLUOTIMELINE Match reference data to fluorescence T.
+
+NtRef = refMeta.datLength;
+NtFluo = fluoMeta.datLength;
+freqRef = refMeta.Freq;
+freqFluo = fluoMeta.Freq;
+
+if size(refData,3) ~= NtRef
+    error('Umitoolbox:run_HemoCorrection:InvalidReferenceLength', ...
+        'Reference data length does not match its metadata.');
+end
+
+if freqRef > freqFluo && NtRef > NtFluo
+    cutoffFreq = 0.45 * freqFluo;
+    if cutoffFreq > 0 && cutoffFreq < freqRef/2
+        sz = size(refData);
+        refData = reshape(refData, [], sz(3));
+        f = fdesign.lowpass('N,F3dB', 4, cutoffFreq, freqRef);
+        lpass = design(f, 'butter');
+        refData = single(filtfilt(lpass.sosMatrix, lpass.ScaleValues, double(refData')))' ;
+        refData = reshape(refData, sz);
+    end
+end
+
+if NtRef ~= NtFluo
+    sz = size(refData);
+    xRef = linspace(0, 1, NtRef);
+    xFluo = linspace(0, 1, NtFluo);
+    refData = reshape(refData, [], NtRef);
+    refData = interp1(xRef, single(refData)', xFluo, 'linear', 'extrap')';
+    refData = reshape(single(refData), sz(1), sz(2), NtFluo);
+else
+    refData = single(refData);
+end
+end
+
+function meta = localResolveNumericYXTMetadata(data, AcqInfoStream)
+%LOCALRESOLVENUMERICYXTMETADATA Build file-like metadata for numeric YXT input.
+
+assert(isfield(AcqInfoStream, 'Height') && isfield(AcqInfoStream, 'Width'), ...
+    'Umitoolbox:run_HemoCorrection:InvalidAcqInfos', ...
+    'AcqInfoStream must contain Height and Width.');
+
+height = double(AcqInfoStream.Height);
+width = double(AcqInfoStream.Width);
+assert(isequal([size(data,1), size(data,2)], [height, width]), ...
+    'Umitoolbox:run_HemoCorrection:InvalidNumericInput', ...
+    'Numeric fluorescence input does not match AcqInfos.mat Height/Width.');
+
+timelineInfo = resolveDatTimeline(size(data,3), AcqInfoStream);
+
+meta = struct();
+meta.datSize = [height, width];
+meta.Height = height;
+meta.Width = width;
+meta.datLength = double(timelineInfo.Length);
+meta.Length = double(timelineInfo.Length);
+meta.Freq = double(timelineInfo.FrameRateHz);
+meta.FrameRateHz = double(timelineInfo.FrameRateHz);
+meta.Datatype = 'single';
+meta.dim_names = {'Y','X','T'};
+end
+
+function meta = localNormalizeDatMeta(meta)
+%LOCALNORMALIZEDATMETA Ensure loadMetaData output has expected fields.
+
+if ~isfield(meta, 'datSize') || isempty(meta.datSize)
+    meta.datSize = [double(meta.Height), double(meta.Width)];
+else
+    meta.datSize = double(meta.datSize(:).');
+end
+
+if ~isfield(meta, 'datLength') || isempty(meta.datLength)
+    meta.datLength = double(meta.Length);
+else
+    meta.datLength = double(meta.datLength);
+end
+
+if ~isfield(meta, 'Freq') || isempty(meta.Freq)
+    meta.Freq = double(meta.FrameRateHz);
+else
+    meta.Freq = double(meta.Freq);
+end
+
+if ~isfield(meta, 'Datatype') || isempty(meta.Datatype)
+    meta.Datatype = 'single';
+else
+    meta.Datatype = char(string(meta.Datatype));
+end
+
+if ~isfield(meta, 'Height') || isempty(meta.Height)
+    meta.Height = meta.datSize(1);
+end
+
+if ~isfield(meta, 'Width') || isempty(meta.Width)
+    meta.Width = meta.datSize(2);
+end
+end
+
+function localValidateSpatialMatch(refMeta, fluoMeta, refFile)
+%LOCALVALIDATESPATIALMATCH Validate reference/fluorescence spatial dimensions.
+
+assert(isequal(double(refMeta.datSize(1:2)), double(fluoMeta.datSize(1:2))), ...
+    'Umitoolbox:run_HemoCorrection:SpatialMismatch', ...
+    'Reference channel "%s" has incompatible spatial dimensions.', refFile);
+end
+
+function [filePath, fileName] = localResolveFileInSaveFolder(SaveFolder, fileInput)
+%LOCALRESOLVEFILEINSAVEFOLDER Resolve a filename or full path to a .dat file.
+
+fileInput = char(string(fileInput));
+if isfile(fileInput)
+    filePath = fileInput;
+else
+    filePath = fullfile(SaveFolder, fileInput);
+end
+
+[~, baseName, ext] = fileparts(filePath);
+if isempty(ext)
+    ext = '.dat';
+    filePath = [filePath ext];
+end
+fileName = [baseName ext];
 end

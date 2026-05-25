@@ -6,7 +6,8 @@ function outFile = run_HemoCompute(SaveFolder, data, varargin)
 %
 %   This wrapper translates user-facing channel selection flags into the
 %   illumination list expected by HemoCompute and dispatches the call in
-%   standard or RAM-safe mode depending on the type of "data".
+%   standard or RAM-safe mode depending on the type of "data". Channel
+%   timebase differences are resolved inside HemoCompute from AcqInfos.mat.
 %
 %   Inputs:
 %       SaveFolder - Folder containing AcqInfos.mat and intrinsic channels.
@@ -27,7 +28,7 @@ function outFile = run_HemoCompute(SaveFolder, data, varargin)
 %                 preallocation fallbacks.
 
 % Default outputs for pipeline management.
-default_Output = {'HbO.dat', 'HbR.dat'}; %#ok<NASGU>
+default_Output = {'HbO.dat', 'HbR.dat'}; 
 
 if nargin == 1 && (ischar(SaveFolder) || (isstring(SaveFolder) && isscalar(SaveFolder))) && ...
         strcmpi(strtrim(char(string(SaveFolder))), 'pipelineInfo')
@@ -60,18 +61,18 @@ O2_sat = double(p.Results.StO2perc);
 % Translate wrapper options to illumination list.
 illumination = {};
 if useRed
-    illumination{end+1} = 'red'; %#ok<AGROW>
+    illumination{end+1} = 'red'; 
 end
 if useGreen
-    illumination{end+1} = 'green'; %#ok<AGROW>
+    illumination{end+1} = 'green'; 
 end
 if useAmber
-    illumination{end+1} = 'amber'; %#ok<AGROW>
+    illumination{end+1} = 'amber'; 
 end
 
-assert(~isempty(illumination), ...
+assert(numel(illumination) >= 2, ...
     'Umitoolbox:run_HemoCompute:InvalidInput', ...
-    'At least one illumination must be selected.');
+    'At least two different illumination wavelengths must be selected.');
 
 % Decide RAM-safe mode from input type.
 b_lowRAMmode = ischar(data) || (isstring(data) && isscalar(data));
