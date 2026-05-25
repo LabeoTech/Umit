@@ -1,15 +1,37 @@
 function referenceTable = listImageReferences(opts)
-%LISTIMAGEREFERENCES List ImageReference files under the UMIT reference tree.
+%LISTIMAGEREFERENCES List active ImageReference files.
 %
 %   referenceTable = listImageReferences()
 %   referenceTable = listImageReferences('projectName', projectName)
 %   referenceTable = listImageReferences(..., 'includeInvalid', true)
+%   referenceTable = listImageReferences(..., 'includeArchived', true)
 %
-%   Scans:
+%   Scans the UMIT ImageReference tree:
+%
 %       getUmitFolder('referenceImages', 'create', false)
 %
-%   recursively for ImageReference_*.mat files and returns a table with
-%   metadata suitable for an Image Reference manager GUI.
+%   and returns metadata from ImageReference_*.mat files.
+%
+%   By default, files inside:
+%
+%       referenceImages/_archive/
+%
+%   are excluded. This means that after the ImageReferenceManager archives a
+%   file and refreshes the table, the archived row disappears from the active
+%   table.
+%
+%   Name-Value options:
+%       projectName      - Optional project-name filter.
+%       groupName        - Optional group-name filter.
+%       mouseID          - Optional mouse-ID filter.
+%       sessionID        - Optional session-ID filter.
+%       includeInvalid   - If true, include invalid files with error text.
+%                          Default: false.
+%       includeArchived  - If true, include archived ImageReference files.
+%                          Default: false.
+%
+%   Output:
+%       referenceTable - Table with ImageReference metadata.
 
 arguments
     opts.projectName (1,1) string = ""
@@ -17,6 +39,7 @@ arguments
     opts.mouseID (1,1) string = ""
     opts.sessionID (1,1) string = ""
     opts.includeInvalid (1,1) logical = false
+    opts.includeArchived (1,1) logical = false
 end
 
 referenceRoot = getUmitFolder('referenceImages', 'create', false);
@@ -33,6 +56,24 @@ if isempty(fileList)
     return
 end
 
+% Archived files live under referenceImages/_archive. They should not appear
+% in the active manager table unless explicitly requested.
+if ~opts.includeArchived
+    keepFile = true(numel(fileList), 1);
+
+    for iFile = 1:numel(fileList)
+        keepFile(iFile) = ~iIsArchivedReferenceFolder( ...
+            fileList(iFile).folder, referenceRoot);
+    end
+
+    fileList = fileList(keepFile);
+end
+
+if isempty(fileList)
+    referenceTable = iEmptyReferenceTable();
+    return
+end
+
 rows = cell(numel(fileList), 1);
 nRows = 0;
 
@@ -42,6 +83,7 @@ for iFile = 1:numel(fileList)
 
     fileAbs = fullfile(fileList(iFile).folder, fileList(iFile).name);
     fileRel = iMakeRelativeToRoot(fileAbs, umitRoot);
+    isArchived = iIsArchivedReferenceFolder(fileList(iFile).folder, referenceRoot);
 
     isValid = true;
     errorMessage = "";
@@ -107,6 +149,7 @@ for iFile = 1:numel(fileList)
         string(fileRel), ...
         string(fileAbs), ...
         isValid, ...
+        isArchived, ...
         errorMessage};
 end
 
@@ -132,6 +175,7 @@ referenceTable = cell2table(vertcat(rows{:}), ...
         'RelativePath', ...
         'AbsolutePath', ...
         'IsValid', ...
+        'IsArchived', ...
         'ErrorMessage'});
 
 end
@@ -153,6 +197,7 @@ T = table( ...
     strings(0,1), ...
     strings(0,1), ...
     false(0,1), ...
+    false(0,1), ...
     strings(0,1), ...
     'VariableNames', { ...
         'CreatedOn', ...
@@ -168,6 +213,7 @@ T = table( ...
         'RelativePath', ...
         'AbsolutePath', ...
         'IsValid', ...
+        'IsArchived', ...
         'ErrorMessage'});
 end
 
@@ -190,9 +236,47 @@ function relPath = iMakeRelativeToRoot(absPath, rootPath)
 absPath = char(string(absPath));
 rootPath = char(string(rootPath));
 
-if startsWith(absPath, rootPath)
-    relPath = erase(absPath, [rootPath filesep]);
+absPathNorm = strrep(absPath, '/', filesep);
+absPathNorm = strrep(absPathNorm, '\', filesep);
+
+rootPathNorm = strrep(rootPath, '/', filesep);
+rootPathNorm = strrep(rootPathNorm, '\', filesep);
+
+if endsWith(rootPathNorm, filesep)
+    rootPrefix = rootPathNorm;
+else
+    rootPrefix = [rootPathNorm filesep];
+end
+
+if startsWith(absPathNorm, rootPrefix)
+    relPath = extractAfter(string(absPathNorm), strlength(rootPrefix));
+    relPath = char(relPath);
 else
     relPath = absPath;
 end
+end
+
+function tf = iIsArchivedReferenceFolder(folderPath, referenceRoot)
+%IISARCHIVEDREFERENCEFOLDER True if folder is inside referenceImages/_archive.
+
+folderPath = char(string(folderPath));
+referenceRoot = char(string(referenceRoot));
+
+folderPath = strrep(folderPath, '/', filesep);
+folderPath = strrep(folderPath, '\', filesep);
+
+referenceRoot = strrep(referenceRoot, '/', filesep);
+referenceRoot = strrep(referenceRoot, '\', filesep);
+
+if startsWith(folderPath, referenceRoot)
+    relFolder = erase(folderPath, referenceRoot);
+else
+    relFolder = folderPath;
+end
+
+relFolder = strip(string(relFolder), filesep);
+pathParts = split(relFolder, filesep);
+pathParts = pathParts(strlength(pathParts) > 0);
+
+tf = any(strcmpi(pathParts, "_archive"));
 end
