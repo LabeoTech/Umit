@@ -27,6 +27,9 @@ function outFile = saveData(filename, data, varargin)
 %         AcqInfoStream must be provided.
 %       - Numeric data must match the frame dimensions stored in
 %         "AcqInfos.mat".
+%       - Numeric data saved as .dat must also match one known
+%         imported/base temporal length described by "AcqInfos.mat".
+%         Outputs with incompatible T should be saved as .umt.
 
 % -------------------------------------------------------------------------
 % Parse inputs
@@ -119,6 +122,33 @@ if ~isequal([size(data, 1), size(data, 2)], [AcqInfoStream.Height, AcqInfoStream
     error('Umitoolbox:saveData:invalidInput', ...
         ['Operation aborted. Data does not have the same frame dimensions ' ...
          'as in "AcqInfos.mat".']);
+end
+
+% Current data-format rule: .dat files must be 3D YXT image time series whose
+% temporal length matches one known imported/base timeline in AcqInfos.mat.
+% Append mode can represent an intermediate partial file, so failed timeline
+% resolution is reported as a warning there and enforced on subsequent load.
+if b_append
+    existingFrames = 0;
+    if isfile(filePath)
+        fileInfo = dir(filePath);
+        frameBytes = double(AcqInfoStream.Height) * double(AcqInfoStream.Width) * 4;
+        if mod(fileInfo.bytes, frameBytes) == 0
+            existingFrames = fileInfo.bytes / frameBytes;
+        end
+    end
+
+    timelineInfo = resolveDatTimeline(existingFrames + size(data,3), ...
+        AcqInfoStream, 'DatFile', filePath, 'ThrowError', false);
+    if ~timelineInfo.IsValid
+        warning('Umitoolbox:saveData:appendTimelineNotFinal', ...
+            ['The appended .dat length does not currently match any imported/base ' ...
+             'timeline in AcqInfos.mat. The file may be an intermediate partial ' ...
+             'append and will be validated when loaded. Details: %s'], ...
+            timelineInfo.ErrorMessage);
+    end
+else
+    resolveDatTimeline(size(data,3), AcqInfoStream, 'DatFile', filePath);
 end
 
 permission = 'w';

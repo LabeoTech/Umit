@@ -1,5 +1,5 @@
 function Info = loadMetaData(fileName)
-%LOADMETADATA Build a flat compatibility metadata structure for .dat or .umt files.
+%LOADMETADATA Build concise file-facing metadata for .dat or .umt files.
 %
 %   Info = loadMetaData(fileName)
 %
@@ -7,7 +7,7 @@ function Info = loadMetaData(fileName)
 %       fileName - Full path or relative path to a .dat or .umt file.
 %
 %   Output:
-%       Info     - Flat metadata structure.
+%       Info     - File-facing metadata structure.
 %
 %   Supported sources:
 %       1) .dat files with legacy sidecar metadata (.mat or _info.mat)
@@ -25,13 +25,16 @@ function Info = loadMetaData(fileName)
 %         legacy metadata file already defines Datatype.
 %
 %   Notes:
-%       - The output is always a flat structure. No nested metadata
-%         structures are returned.
-%       - For raw and derived .dat files, legacy-compatible fields such as
-%         dim_names, datSize, datLength, Freq, and Datatype are always
-%         provided.
-%       - For .dat files, Height and Width are strict metadata, but the
-%         temporal length is inferred from actual file size.
+%       - The output is a compact flat structure with fields that describe
+%         the associated file directly. Acquisition-session fields such as
+%         analog input, stimulation, and illumination definitions are not
+%         copied to Info.
+%       - For .dat files, legacy-compatible fields such as dim_names,
+%         datSize, datLength, Freq, and Datatype are always provided.
+%       - For .dat files, Height and Width are strict metadata. The
+%         temporal length is inferred from actual file size and, for
+%         AcqInfos-driven data without legacy sidecars, must match one
+%         imported/base timeline described by AcqInfos.mat.
 %       - Valid legacy event-split .dat metadata are preserved and are not
 %         collapsed to continuous YXT.
 %       - For .umt files, embedded metadata is optional. When missing, core
@@ -87,7 +90,7 @@ hasLegacySidecar = ~isempty(fieldnames(legacyInfo));
 
 if hasLegacySidecar
     % Legacy metadata takes precedence. Append only missing fields from
-    % AcqInfoStream to preserve branch-specific semantics.
+    % AcqInfoStream to preserve source-specific semantics.
     Info = legacyInfo;
     Info = iAppendMissingFields(Info, acqInfo);
 
@@ -100,7 +103,7 @@ if hasLegacySidecar
             fileName, strjoin(updatedFields, ', '));
     end
 else
-    % Newer branch: build from AcqInfoStream and derive legacy-compatible fields.
+    % Current metadata model: build from AcqInfoStream and derive legacy-compatible fields.
     Info = acqInfo;
 end
 
@@ -182,9 +185,10 @@ validateattributes(Width, {'numeric'}, ...
     'loadMetaData', 'Width');
 
 % Always infer datLength from the actual file size. This keeps loading
-% strict on file integrity but flexible on temporal length for derived
-% files such as Y X (T-1) outputs, while preserving legacy event-split
-% dimensionality when valid metadata are present.
+% strict on file integrity. For AcqInfos-driven .dat files without
+% legacy sidecars, the inferred temporal length must also match one known
+% imported/base timeline. Legacy sidecar metadata are preserved for
+% backwards compatibility, including legacy event-split dimensionality.
 fileInfo = dir(fileName);
 bytesPerElement = getByteSize('single');
 
@@ -215,23 +219,19 @@ if mod(fileInfo.bytes, nonTProd * bytesPerElement) ~= 0
 end
 
 actualLength = fileInfo.bytes / (nonTProd * bytesPerElement);
-legacyLength = [];
-if isfield(Info, 'datLength') && ~isempty(Info.datLength)
-    legacyLength = double(Info.datLength);
-end
-
 Info.datLength = actualLength;
-
-% Preserve any original declared length when it differs from the actual
-% on-disk temporal length. This is useful for derived files.
-if ~isempty(legacyLength) && isfinite(legacyLength) && legacyLength ~= actualLength
-    Info.OriginalLength = legacyLength;
-end
-
-if isfield(Info, 'Length') && ~isempty(Info.Length) && double(Info.Length) ~= actualLength
-    Info.OriginalLength = double(Info.Length);
-end
 Info.Length = actualLength;
+
+% Current data-format rule: AcqInfos-driven .dat files are valid only when their
+% inferred T matches one known imported/base timeline. Legacy sidecar files
+% are kept backwards-compatible and are not constrained by ImportedChannels.
+if ~hasLegacySidecar
+    timelineInfo = resolveDatTimeline(actualLength, acqInfo, 'DatFile', fileName);
+    Info.FrameRateHz = timelineInfo.FrameRateHz;
+    Info.Freq = timelineInfo.Freq;
+    Info.TimelineSource = timelineInfo.SourceType;
+    Info.TimelineSourceIndex = timelineInfo.SourceIndex;
+end
 
 % If datSize explicitly includes T, keep the multi-dimensional layout but
 % update the T slot to the actual on-disk length.
@@ -239,11 +239,10 @@ if isfield(Info, 'datSize') && ~isempty(Info.datSize) && numel(Info.datSize) == 
     Info.datSize(idxT) = actualLength;
 end
 
-% Flat convenience fields
-Info.fileName = fileName;
-Info.folderPath = folderPath;
-Info.FileType = '.dat';
-Info.datFile = fileName;
+% Keep only metadata that directly describes this .dat file.
+importedEntry = iFindImportedChannelForInfo(acqInfo, fileName, actualLength);
+Info = iFinalizeDatInfo(Info, acqInfo, fileName, folderPath, actualLength, ...
+    importedEntry, hasLegacySidecar);
 
 end
 
@@ -309,7 +308,6 @@ if ~isfield(Info, 'Datatype') || isempty(Info.Datatype)
     Info.Datatype = 'single';
 end
 
-Info.fileName = fileName;
 Info.folderPath = folderPath;
 Info.FileType = '.umt';
 
@@ -428,6 +426,138 @@ for iField = 1:numel(candidateFields)
         embedded = umt.(candidateFields{iField});
         return
     end
+end
+
+end
+
+
+function importedEntry = iFindImportedChannelForInfo(acqInfo, fileName, actualLength)
+%IFINDIMPORTEDCHANNELFORINFO Return the imported-channel entry for Info.
+%
+% The exact DatFile match is authoritative. If there is no exact match, a
+% unique length match is used only when it identifies one imported channel.
+
+importedEntry = struct();
+
+if isempty(acqInfo) || ~isstruct(acqInfo) || ~isscalar(acqInfo) || ...
+        ~isfield(acqInfo, 'ImportedChannels') || isempty(acqInfo.ImportedChannels)
+    return
+end
+
+raw = acqInfo.ImportedChannels(:).';
+[~, datBase, datExt] = fileparts(fileName);
+if isempty(datExt)
+    datExt = '.dat';
+end
+datName = [datBase, datExt];
+
+if isfield(raw, 'DatFile')
+    datFiles = cell(1, numel(raw));
+    for iEntry = 1:numel(raw)
+        [~, thisBase, thisExt] = fileparts(char(string(raw(iEntry).DatFile)));
+        if isempty(thisExt)
+            thisExt = '.dat';
+        end
+        datFiles{iEntry} = [thisBase, thisExt];
+    end
+
+    idxFile = find(strcmpi(datFiles, datName));
+    if numel(idxFile) == 1
+        importedEntry = raw(idxFile);
+        return
+    end
+end
+
+if isfield(raw, 'Length')
+    lenList = nan(1, numel(raw));
+    for iEntry = 1:numel(raw)
+        if ~isempty(raw(iEntry).Length)
+            lenList(iEntry) = double(raw(iEntry).Length);
+        end
+    end
+
+    idxLength = find(lenList == double(actualLength));
+    if numel(idxLength) == 1
+        importedEntry = raw(idxLength);
+    end
+end
+
+end
+
+function Info = iFinalizeDatInfo(rawInfo, acqInfo, fileName, folderPath, actualLength, importedEntry, hasLegacySidecar)
+%IFINALIZEDATINFO Keep only file-facing metadata fields for .dat files.
+
+Info = struct();
+
+Info.datFile = fileName;
+Info.folderPath = folderPath;
+Info.FileType = '.dat';
+
+Info.Height = double(rawInfo.Height);
+Info.Width = double(rawInfo.Width);
+Info.Length = double(actualLength);
+
+if isfield(rawInfo, 'FrameRateHz') && ~isempty(rawInfo.FrameRateHz)
+    Info.FrameRateHz = double(rawInfo.FrameRateHz);
+elseif isfield(rawInfo, 'Freq') && ~isempty(rawInfo.Freq)
+    Info.FrameRateHz = double(rawInfo.Freq);
+end
+
+if ~isfield(Info, 'FrameRateHz') || isempty(Info.FrameRateHz)
+    error('Umitoolbox:loadMetaData:missingFrameRate', ...
+        'Failed to resolve FrameRateHz for "%s".', fileName);
+end
+
+Info.Datatype = char(string(rawInfo.Datatype));
+Info.dim_names = cellstr(string(rawInfo.dim_names));
+
+if isfield(rawInfo, 'datSize') && ~isempty(rawInfo.datSize)
+    Info.datSize = double(rawInfo.datSize(:).');
+else
+    Info.datSize = [Info.Height, Info.Width];
+end
+
+Info.datLength = Info.Length;
+Info.Freq = Info.FrameRateHz;
+
+if isfield(rawInfo, 'datName') && ~isempty(rawInfo.datName)
+    Info.datName = rawInfo.datName;
+else
+    Info.datName = 'data';
+end
+
+if isfield(rawInfo, 'FirstDim') && ~isempty(rawInfo.FirstDim)
+    Info.FirstDim = rawInfo.FirstDim;
+else
+    Info.FirstDim = 'y';
+end
+
+if ~isempty(fieldnames(importedEntry)) && isfield(importedEntry, 'ExposureMsec') && ...
+        ~isempty(importedEntry.ExposureMsec)
+    Info.ExposureMsec = importedEntry.ExposureMsec;
+elseif isfield(rawInfo, 'ExposureMsec') && ~isempty(rawInfo.ExposureMsec)
+    Info.ExposureMsec = rawInfo.ExposureMsec;
+end
+
+if ~isempty(fieldnames(importedEntry)) && isfield(importedEntry, 'CamIdx') && ...
+        ~isempty(importedEntry.CamIdx)
+    Info.CamIdx = importedEntry.CamIdx;
+elseif isfield(rawInfo, 'CamIdx') && ~isempty(rawInfo.CamIdx)
+    Info.CamIdx = rawInfo.CamIdx;
+end
+
+if hasLegacySidecar
+    Info.MetadataSource = 'legacy_sidecar';
+else
+    Info.MetadataSource = 'AcqInfos.mat';
+end
+
+if isfield(rawInfo, 'TimelineSource') && ~isempty(rawInfo.TimelineSource)
+    Info.TimelineSource = rawInfo.TimelineSource;
+end
+
+if isfield(rawInfo, 'TimelineSourceIndex') && ~isempty(rawInfo.TimelineSourceIndex)
+    Info.TimelineSourceIndex = rawInfo.TimelineSourceIndex;
 end
 
 end

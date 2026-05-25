@@ -29,6 +29,8 @@ function outFile = importFromTif(RawFolder, SaveFolder, varargin)
 %   - This function creates data outputs as file-backed .dat files, so its
 %     pipelineInfo output is declared with outputMode='file' and isData=true.
 %   - Folder-level metadata are stored in "AcqInfos.mat" using GENACQINFO.
+%   - Per-file imported-channel metadata are stored in
+%     AcqInfoStream.ImportedChannels.
 %   - All imported channels within the same SaveFolder must have identical
 %     dimensions and acquisition timing metadata.
 
@@ -250,6 +252,15 @@ for ii = 1:numel(tif_metadata.Tiffiles)
 
     clear c
 
+    importedInfo = struct();
+    importedInfo.DatFile = datFileName;
+    importedInfo.Tag = localNormalizeImportedTag(tifEntry.IlluminationColor);
+    importedInfo.Color = char(string(tifEntry.IlluminationColor));
+    importedInfo.Length = size(data,3);
+    importedInfo.FrameRateHz = frameRateHz;
+    importedInfo.ExposureMsec = tifEntry.ExposureMsec;
+    AcqInfoStream = appendImportedChannelInfo(AcqInfoStream, importedInfo, 'Overwrite', true);
+
     outFile = [outFile, {datFileName}]; %#ok<AGROW>
 end
 
@@ -384,6 +395,17 @@ elseif numel(tifList) > 1
     tifNames = tifNames(fileOrd);
 else
     tifNames = {};
+end
+
+end
+
+function tag = localNormalizeImportedTag(colorName)
+%LOCALNORMALIZEIMPORTEDTAG Normalize an imported channel color to a short tag.
+
+tag = lower(char(string(colorName)));
+tag = strrep(tag, ' ', '_');
+if strcmpi(tag, 'amber')
+    tag = 'yellow';
 end
 
 end
