@@ -71,7 +71,7 @@ classdef PipelineManager < handle
         current_info struct% Structure with info about the functions ran on "current_data". This will be saved to the dataHistory file.
         current_rawFolder char % Current path to raw folder during pipeline execution.
         b_state logical = false % True if a task of a pipeline was successfully executed.
-        end
+    end
 
     properties (Access = private)
         fcnDir char % Directory of the analysis functions.
@@ -2210,6 +2210,89 @@ classdef PipelineManager < handle
             obj.autoValidate();
             fprintf('Pipeline successfully cleared.\n');
         end
+
+        function info = getPipelineInfo(obj, funcName)
+            %GETPIPELINEINFO Return the pipelineInfo metadata for an analysis function.
+            %
+            %   INFO = GETPIPELINEINFO(OBJ, FUNCNAME) returns the pipelineInfo struct
+            %   associated with the analysis function FUNCNAME.
+            %
+            %   This is the single entry point used by DAG/Step-building code to fetch
+            %   the function schema (inputs/outputs/parameters/notes).
+            %
+            %   BEHAVIOR:
+            %     - Uses OBJ.funcList as the primary cache.
+            %     - If funcList is empty, it will be created (createFcnList).
+            %     - Ensures INFO.parameters(k).value is initialized from .default
+            %       (so runtime option editing can operate on .value consistently).
+            %
+            %   INPUT:
+            %     funcName (char|string) Name of an analysis function (e.g. 'run_GSR').
+            %
+            %   OUTPUT:
+            %     info (struct) pipelineInfo struct with fields:
+            %       .inputs, .outputs, .parameters, .notes, ... (as available)
+            %
+            %   ERRORS:
+            %     - Throws if the function is not found in funcList.
+
+            % -----------------------------
+            % Normalize input
+            % -----------------------------
+            if isstring(funcName); funcName = char(funcName); end
+            funcName = char(string(funcName));
+
+            if isempty(funcName)
+                error('PipelineManager:getPipelineInfo:EmptyName', ...
+                    'Function name cannot be empty.');
+            end
+
+            % -----------------------------
+            % Ensure funcList is populated
+            % -----------------------------
+            if isempty(obj.funcList)
+                obj.createFcnList();
+            end
+
+            % -----------------------------
+            % Lookup in funcList cache
+            % -----------------------------
+            idx = find(strcmpi({obj.funcList.name}, funcName), 1);
+
+            if isempty(idx)
+                error('PipelineManager:getPipelineInfo:NotFound', ...
+                    'Function "%s" was not found in funcList.', funcName);
+            end
+
+            info = obj.funcList(idx).info;
+
+            if ~isstruct(info)
+                error('PipelineManager:getPipelineInfo:InvalidInfo', ...
+                    'funcList entry for "%s" does not contain a valid pipelineInfo struct.', funcName);
+            end
+
+            % -----------------------------
+            % Ensure expected fields exist
+            % -----------------------------
+            if ~isfield(info,'inputs');      info.inputs = struct([]);      end
+            if ~isfield(info,'outputs');     info.outputs = struct([]);     end
+            if ~isfield(info,'parameters');  info.parameters = struct([]);  end
+            if ~isfield(info,'notes');       info.notes = {};               end
+
+            % -----------------------------
+            % Initialize runtime parameter values
+            % -----------------------------
+            if ~isempty(info.parameters)
+                for k = 1:numel(info.parameters)
+                    if ~isfield(info.parameters(k),'default')
+                        info.parameters(k).default = [];
+                    end
+                    % Always (re)initialize runtime value from default when fetching schema
+                    info.parameters(k).value = info.parameters(k).default;
+                end
+            end
+        end
+
         function outFile = exportPipeErrorLog(obj, outputFolder)
             %EXPORTPIPEERRORLOG Export a CSV summary of errors from the latest pipeline execution.
             %
@@ -4584,87 +4667,7 @@ classdef PipelineManager < handle
                 chosen(end+1,1) = cand; %#ok<AGROW>
             end
         end
-        function info = getPipelineInfo(obj, funcName)
-            %GETPIPELINEINFO Return the pipelineInfo metadata for an analysis function.
-            %
-            %   INFO = GETPIPELINEINFO(OBJ, FUNCNAME) returns the pipelineInfo struct
-            %   associated with the analysis function FUNCNAME.
-            %
-            %   This is the single entry point used by DAG/Step-building code to fetch
-            %   the function schema (inputs/outputs/parameters/notes).
-            %
-            %   BEHAVIOR:
-            %     - Uses OBJ.funcList as the primary cache.
-            %     - If funcList is empty, it will be created (createFcnList).
-            %     - Ensures INFO.parameters(k).value is initialized from .default
-            %       (so runtime option editing can operate on .value consistently).
-            %
-            %   INPUT:
-            %     funcName (char|string) Name of an analysis function (e.g. 'run_GSR').
-            %
-            %   OUTPUT:
-            %     info (struct) pipelineInfo struct with fields:
-            %       .inputs, .outputs, .parameters, .notes, ... (as available)
-            %
-            %   ERRORS:
-            %     - Throws if the function is not found in funcList.
 
-            % -----------------------------
-            % Normalize input
-            % -----------------------------
-            if isstring(funcName); funcName = char(funcName); end
-            funcName = char(string(funcName));
-
-            if isempty(funcName)
-                error('PipelineManager:getPipelineInfo:EmptyName', ...
-                    'Function name cannot be empty.');
-            end
-
-            % -----------------------------
-            % Ensure funcList is populated
-            % -----------------------------
-            if isempty(obj.funcList)
-                obj.createFcnList();
-            end
-
-            % -----------------------------
-            % Lookup in funcList cache
-            % -----------------------------
-            idx = find(strcmpi({obj.funcList.name}, funcName), 1);
-
-            if isempty(idx)
-                error('PipelineManager:getPipelineInfo:NotFound', ...
-                    'Function "%s" was not found in funcList.', funcName);
-            end
-
-            info = obj.funcList(idx).info;
-
-            if ~isstruct(info)
-                error('PipelineManager:getPipelineInfo:InvalidInfo', ...
-                    'funcList entry for "%s" does not contain a valid pipelineInfo struct.', funcName);
-            end
-
-            % -----------------------------
-            % Ensure expected fields exist
-            % -----------------------------
-            if ~isfield(info,'inputs');      info.inputs = struct([]);      end
-            if ~isfield(info,'outputs');     info.outputs = struct([]);     end
-            if ~isfield(info,'parameters');  info.parameters = struct([]);  end
-            if ~isfield(info,'notes');       info.notes = {};               end
-
-            % -----------------------------
-            % Initialize runtime parameter values
-            % -----------------------------
-            if ~isempty(info.parameters)
-                for k = 1:numel(info.parameters)
-                    if ~isfield(info.parameters(k),'default')
-                        info.parameters(k).default = [];
-                    end
-                    % Always (re)initialize runtime value from default when fetching schema
-                    info.parameters(k).value = info.parameters(k).default;
-                end
-            end
-        end
         function showBranches(obj)
             %SHOWBRANCHES Display all root-to-leaf branches in the command window.
             %
@@ -5212,6 +5215,7 @@ classdef PipelineManager < handle
                 rethrow(ME);
             end
         end
+        
         function [tf, report] = validateGraph(obj, varargin)
             %VALIDATEGRAPH Validate the current DAG structure.
             %
@@ -5517,6 +5521,7 @@ classdef PipelineManager < handle
                     '%s', strjoin(report.errors, '\n'));
             end
         end
+        
         function autoValidate(obj)
             %AUTOVALIDATE Run validation and auto-print concise report if invalid.
 
@@ -9719,7 +9724,7 @@ classdef PipelineManager < handle
                 end
             end
         end
-        
+
         function [tf, nStepsMatched] = isHistoryMatch(~, candidateSteps, candidateStepIsNode, historyEntry, saveFolder, rawFolder)
             %ISHISTORYMATCH Strict prefix match between candidateSteps and historyEntry.info.
             %
