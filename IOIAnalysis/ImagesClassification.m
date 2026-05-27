@@ -52,7 +52,7 @@ b_SubROI = logical(p.Results.b_SubROI);
 backupOpts = char(string(p.Results.backupOpts));
 
 % Control for existing files and create backup or erase them.
-genBackupFolder(SaveFolder, backupOpts);
+genBackupFolder(SaveFolder, backupOpts,'eraseFolder',true);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 outFile = {};
