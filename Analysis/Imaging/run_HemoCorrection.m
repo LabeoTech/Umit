@@ -372,6 +372,20 @@ if size(refData,3) ~= NtRef
         'Reference data length does not match its metadata.');
 end
 
+% Refuse to resample channels that do not cover the same recording span.
+% Interpolation is valid for different sampling rates, not for cropped or
+% truncated channels.
+refDurationSec = double(NtRef) / double(freqRef);
+fluoDurationSec = double(NtFluo) / double(freqFluo);
+durationTolSec = 1e-3;
+assert(abs(refDurationSec - fluoDurationSec) <= durationTolSec, ...
+    'Umitoolbox:run_HemoCorrection:DurationMismatch', ...
+    ['Reference channel does not span the same recording duration as the ' ...
+     'fluorescence channel. Reference: Length=%d, FrameRateHz=%g, ' ...
+     'Duration=%0.6f s. Fluorescence: Length=%d, FrameRateHz=%g, ' ...
+     'Duration=%0.6f s.'], ...
+    NtRef, freqRef, refDurationSec, NtFluo, freqFluo, fluoDurationSec);
+
 if freqRef > freqFluo && NtRef > NtFluo
     cutoffFreq = 0.45 * freqFluo;
     if cutoffFreq > 0 && cutoffFreq < freqRef/2

@@ -147,7 +147,7 @@ for ii = find(selectedChannels)
         'Umitoolbox:HemoCompute:FileOpenError', ...
         'Could not open channel file "%s".', channelFiles{ii});
     thisFid = fidList(ii);
-    cleanupList{ii} = onCleanup(@() safeFclose(thisFid)); %#ok<NASGU>
+    cleanupList{ii} = onCleanup(@() safeFclose(thisFid)); 
 end
 
 idxSelected = find(selectedChannels);
@@ -156,6 +156,28 @@ nativeLength = nan(1,3);
 for ii = idxSelected
     nativeFreq(ii) = double(channelInfo{ii}.FrameRateHz);
     nativeLength(ii) = double(channelInfo{ii}.Length);
+end
+
+% Assert that all selected channels span the same recording duration before
+% any temporal resampling. Interpolation is only valid for channels covering
+% the same acquisition interval; it should not silently repair cropped or
+% truncated files.
+durationTolSec = 1e-3;
+nativeDurationSec = nativeLength ./ nativeFreq;
+targetDurationForCheck = nativeDurationSec(idxSelected(1));
+for ii = idxSelected
+    assert(isfinite(nativeDurationSec(ii)) && nativeDurationSec(ii) > 0, ...
+        'Umitoolbox:HemoCompute:InvalidChannelDuration', ...
+        'Channel "%s" has invalid duration metadata: Length=%g, FrameRateHz=%g.', ...
+        channelNames{ii}, nativeLength(ii), nativeFreq(ii));
+
+    assert(abs(nativeDurationSec(ii) - targetDurationForCheck) <= durationTolSec, ...
+        'Umitoolbox:HemoCompute:DurationMismatch', ...
+        ['Selected channels do not span the same recording duration. ' ...
+         'Channel "%s": Length=%g, FrameRateHz=%g, Duration=%0.6f s. ' ...
+         'Reference duration=%0.6f s.'], ...
+        channelNames{ii}, nativeLength(ii), nativeFreq(ii), ...
+        nativeDurationSec(ii), targetDurationForCheck);
 end
 
 % Use the lowest-frequency selected channel as the target timeline.
@@ -287,11 +309,11 @@ else
 
     preallocateDatFile(hboPath, [Ny, Nx, Nt], 'single');
     fid_hbo = fopen(hboPath, 'r+');
-    c_hbo = onCleanup(@() safeFclose(fid_hbo)); %#ok<NASGU>
+    c_hbo = onCleanup(@() safeFclose(fid_hbo)); 
 
     preallocateDatFile(hbrPath, [Ny, Nx, Nt], 'single');
     fid_hbr = fopen(hbrPath, 'r+');
-    c_hbr = onCleanup(@() safeFclose(fid_hbr)); %#ok<NASGU>
+    c_hbr = onCleanup(@() safeFclose(fid_hbr)); 
 end
 
 % Computation loop.
