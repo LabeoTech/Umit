@@ -48,7 +48,7 @@ grand_parent: Functions
     <h3 id="description">Description</h3>
     <hr>
     <p>
-      Use this function to remove time from the start and/or the end of all imported image time series files in a SaveFolder. The function reads the imported channel list from AcqInfos.mat, trims the corresponding .dat files in RAM-safe mode, overwrites the original .dat files, and updates the same-name channel metadata .mat files. Trimming values are specified in seconds and converted to frames separately for each imported channel.
+      Use this function to remove time from the start and/or the end of all imported image time series files in a SaveFolder. The function reads the imported channel list from AcqInfos.mat, trims the corresponding .dat files in RAM-safe mode, overwrites the original .dat files, updates the same-name channel metadata .mat files, and automatically updates events.mat when present. Trimming values are specified in seconds and converted to frames separately for each imported channel.
     </p>
     <div class="warnnote">
 									<p><strong>Important</strong><br>
@@ -63,7 +63,7 @@ grand_parent: Functions
     <h3>Output</h3>
     <hr>
     <p>
-      Cell array file manifest containing the full paths to the imported .dat files affected by the function. If no trimming is requested, the function still returns the full imported .dat file list and does not rewrite the files.
+      Cell array file manifest containing the full paths to the imported .dat files discovered from AcqInfos.mat. If no trimming is requested, the function still returns the full imported .dat file list and does not rewrite any files.
     </p>
 
     <h3 id="parameters">Parameters</h3>
@@ -88,24 +88,9 @@ grand_parent: Functions
         Time in seconds to remove from the end of each imported .dat movie. The number of removed frames is computed separately for each channel using ceil(crop_end_sec * Freq). If set to <b>zero</b>, no time is removed from the end.
       </p>
     </div>
-    <button title="click to expand" type="button" class="mycollapsible">
-      <span class="iconplus"></span>
-      <samp><b>update_events</b></samp> - Update events.mat <br>
-      <span class="title-desc"><i> false (default) | true</i></span>
-    </button>
-    <div class="content">
-      <p>
-        If set to <b>true</b>, the function updates events.mat in SaveFolder after trimming. Events outside the retained time interval are removed, retained event timestamps are shifted so the trimmed recording starts at time zero, and eventNameList is compacted when needed. If events.mat is not found, event updating is skipped with a warning.
-      </p>
-    </div>
-    <button title="click to expand" type="button" class="mycollapsible">
-      <span class="iconplus"></span>
-      <samp><b>backup_events</b></samp> - Backup events.mat <br>
-      <span class="title-desc"><i> true (default) | false</i></span>
-    </button>
-    <div class="content">
-      <p>
-        If set to <b>true</b>, the function creates a timestamped backup of events.mat before overwriting it. This parameter is only used when <b>update_events</b> is true.
+    <div class="warnnote">
+      <p><strong>Important</strong><br>
+        If an events.mat file exists in the SaveFolder, it is automatically updated to remain synchronized with the trimmed recordings. Events outside the retained interval are removed and retained event timestamps are shifted so that the trimmed recordings start at time zero.
       </p>
     </div>
     <!-- JavaScript code to collapse sections -->

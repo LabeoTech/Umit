@@ -19,13 +19,6 @@ function outFile = trim_movie(SaveFolder, varargin)
 %                                     Default: 0
 %                    crop_end_sec   - Seconds to remove from the end.
 %                                     Default: 0
-%                    update_events  - If true, update events.mat in
-%                                     SaveFolder. If events.mat is not found,
-%                                     event updating is skipped with a warning.
-%                                     Default: false
-%                    backup_events  - If true, create a timestamped backup
-%                                     before overwriting events.mat.
-%                                     Default: true
 %
 %   Output:
 %       outFile - Cell array containing the full paths of all imported .dat
@@ -44,9 +37,9 @@ function outFile = trim_movie(SaveFolder, varargin)
 %         before replacing any original .dat file.
 %       - If crop_start_sec and crop_end_sec are both zero, the function
 %         performs no file rewrite and returns the full file manifest.
-%       - events.mat is updated once using seconds. If imported channel
-%         durations are not exactly equal, the shortest duration is used as
-%         the event recording duration.
+%       - If events.mat exists, it is updated automatically using seconds.
+%         If imported channel durations are not exactly equal, the shortest
+%         duration is used as the event recording duration.
 %       - Only complete ON/OFF event pairs fully contained inside the kept
 %         interval are retained.
 %       - Retained event timestamps are shifted so the trimmed movie starts
@@ -65,14 +58,10 @@ function outFile = trim_movie(SaveFolder, varargin)
 default_Output = {'fluo_475.dat', 'fluo_567.dat','fluo.dat', 'red.dat', 'green.dat', 'yellow.dat', 'speckle.dat'}; %#ok<NASGU> % Reference for PipelineManager. Actual outputs are stored in outFile.
 default_opts = struct( ...
     'crop_start_sec', 0, ...
-    'crop_end_sec', 0, ...
-    'update_events', false, ...
-    'backup_events', true);
+    'crop_end_sec', 0);
 opts_values = struct( ... %#ok<NASGU>
     'crop_start_sec', [0 Inf], ...
-    'crop_end_sec', [0 Inf], ...
-    'update_events', [true,false], ...
-    'backup_events', [true,false]);
+    'crop_end_sec', [0 Inf]);
 
 %%% Arguments parsing and validation %%%
 p = inputParser;
@@ -102,11 +91,6 @@ assert(isnumeric(opts.crop_start_sec) && isscalar(opts.crop_start_sec) && ...
 assert(isnumeric(opts.crop_end_sec) && isscalar(opts.crop_end_sec) && ...
     isfinite(opts.crop_end_sec) && opts.crop_end_sec >= 0, errID, ...
     'crop_end_sec must be a finite numeric scalar >= 0.');
-assert(islogical(opts.update_events) && isscalar(opts.update_events), errID, ...
-    'update_events must be a logical scalar.');
-assert(islogical(opts.backup_events) && isscalar(opts.backup_events), errID, ...
-    'backup_events must be a logical scalar.');
-
 acqInfoFile = fullfile(SaveFolder, 'AcqInfos.mat');
 assert(isfile(acqInfoFile), errID, ...
     'AcqInfos.mat was not found in SaveFolder: %s', SaveFolder);
@@ -244,21 +228,15 @@ if opts.crop_start_sec == 0 && opts.crop_end_sec == 0
     return
 end
 
-% events.mat has a fixed required filename and must live in SaveFolder.
+% events.mat has a fixed filename and lives in SaveFolder when present.
 eventsFile = fullfile(SaveFolder, 'events.mat');
-
-if opts.update_events && ~isfile(eventsFile)
-    warning('umIToolbox:trim_movie:MissingEventsFile', ...
-        ['Event update will be skipped. The file "events.mat" does not ' ...
-         'exist in SaveFolder: %s'], SaveFolder);
-    opts.update_events = false;
-end
+bUpdateEvents = isfile(eventsFile);
 
 % Use exact equality as requested. If durations differ, use the shortest one
 % when updating events.mat.
 recordingDurations_s = [channelInfo.duration_s];
 recordingDuration_s = min(recordingDurations_s);
-if opts.update_events && numel(unique(recordingDurations_s)) > 1
+if bUpdateEvents && numel(unique(recordingDurations_s)) > 1
     warning('umIToolbox:trim_movie:DifferentChannelDurations', ...
         ['Imported channel durations are not exactly equal. events.mat ' ...
          'will be cropped using the shortest duration: %.9g seconds.'], ...
@@ -344,15 +322,14 @@ for iChan = 1:nChannels
     save(channelInfo(iChan).matFile, '-struct', 'metaData');
 end
 
-% Optional events.mat update. This is done once because events.mat is shared
-% by the session, not by individual channel files.
-if opts.update_events
+% Update events.mat once when present because it is shared by the session,
+% not by individual channel files.
+if bUpdateEvents
     updateEventsFileForTrimmedMovie( ...
         eventsFile, ...
         opts.crop_start_sec, ...
         opts.crop_end_sec, ...
-        recordingDuration_s, ...
-        opts.backup_events);
+        recordingDuration_s);
 end
 
 disp('Done')
@@ -390,11 +367,11 @@ end
 
 end
 
-function updateEventsFileForTrimmedMovie(eventsFile, cropStartSec, cropEndSec, recordingDurationSec, backupEvents)
+function updateEventsFileForTrimmedMovie(eventsFile, cropStartSec, cropEndSec, recordingDurationSec)
 %UPDATEEVENTSFILEFORTRIMMEDMOVIE Update events.mat after session trimming.
 %
 %   updateEventsFileForTrimmedMovie(eventsFile, cropStartSec, cropEndSec,
-%       recordingDurationSec, backupEvents)
+%       recordingDurationSec)
 %
 %   Updates the unique events.mat file after trimming the beginning and/or
 %   end of all imported movies. The events.mat file is expected to contain:
@@ -548,14 +525,6 @@ evntInfo.timestamps = timestamps;
 evntInfo.state = state;
 evntInfo.eventNameList = eventNameList;
 
-if backupEvents
-    [eventFolder, eventName, eventExt] = fileparts(eventsFile);
-    backupFile = fullfile(eventFolder, ...
-        sprintf('%s_before_trim_movie_%s%s', ...
-        eventName, datestr(now, 'yyyymmdd_HHMMSS'), eventExt));
-
-    copyfile(eventsFile, backupFile);
-end
 
 if isempty(evntInfo.eventID)
     delete(eventsFile);
