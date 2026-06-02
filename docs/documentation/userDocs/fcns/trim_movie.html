@@ -43,54 +43,69 @@ grand_parent: Functions
     <h2>trim_movie - Crop movie</h2>
     <hr>
     <p>
-      Crops the beginning and/or the end of an image time series data.
+      Crops the beginning and/or the end of all imported disk-backed .dat image time series in a session folder.
     </p>
     <h3 id="description">Description</h3>
     <hr>
     <p>
-      Use this function to remove frames (trim) from the start and/or the end of an image time series with dimensions (Y,X,T). Set the time (in seconds) to remove from the start/end of the data. The number of frames corresponding to the time will be removed.
+      Use this function to remove time from the start and/or the end of all imported image time series files in a SaveFolder. The function reads the imported channel list from AcqInfos.mat, trims the corresponding .dat files in RAM-safe mode, overwrites the original .dat files, and updates the same-name channel metadata .mat files. Trimming values are specified in seconds and converted to frames separately for each imported channel.
     </p>
+    <div class="warnnote">
+									<p><strong>Important</strong><br>
+										This function changes all .dat files imported by any of the data import functions, such as <a href="run_ImagesClassification.html">run_ImagesClassification</a>, exclusively. Therefore, it is advisable to execute it at the beginning of the pipeline, preferably just after data import.
+									</p>
+								</div>
     <h3>Input</h3>
     <hr>
     <p>
-      This function accepts only image time series (with dimensions Y,X,T) as input.
+      This function accepts a SaveFolder containing AcqInfos.mat, imported .dat files, and same-name channel metadata .mat files. The imported channels are identified from AcqInfoStream.Illumination&lt;N&gt;.Color.
     </p>
     <h3>Output</h3>
     <hr>
     <p>
-      Trimmed data with dimensions Y,X,T.
+      Cell array file manifest containing the full paths to the imported .dat files affected by the function. If no trimming is requested, the function still returns the full imported .dat file list and does not rewrite the files.
     </p>
 
     <h3 id="parameters">Parameters</h3>
     <hr>
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
-      <samp><b>crop_start</b></samp> - Trim from start <br>
+      <samp><b>crop_start_sec</b></samp> - Trim from start <br>
       <span class="title-desc"><i> 0 (default) | positive number</i></span>
     </button>
     <div class="content">
       <p>
-        Number of frames to crop from the start of the image time series. If set to <b>zero</b>, no cropping is performed.
+        Time in seconds to remove from the beginning of each imported .dat movie. The number of removed frames is computed separately for each channel using ceil(crop_start_sec * Freq). If set to <b>zero</b>, no time is removed from the start.
       </p>
     </div>
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
-      <samp><b>crop_end</b></samp> - Trim at end <br>
+      <samp><b>crop_end_sec</b></samp> - Trim at end <br>
       <span class="title-desc"><i> 0 (default) | positive number</i></span>
     </button>
     <div class="content">
       <p>
-        Number of frames to crop at the end of the image time series. If set to <b>zero</b>, no cropping is performed.
+        Time in seconds to remove from the end of each imported .dat movie. The number of removed frames is computed separately for each channel using ceil(crop_end_sec * Freq). If set to <b>zero</b>, no time is removed from the end.
       </p>
     </div>
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
-      <samp><b>TimeUnit</b></samp> - Time unit <br>
-      <span class="title-desc"><i> Frames (default) | Seconds (default)</i></span>
+      <samp><b>update_events</b></samp> - Update events.mat <br>
+      <span class="title-desc"><i> false (default) | true</i></span>
     </button>
     <div class="content">
       <p>
-        Time unit used to crop the movie. If set to <b>Seconds</b>, the function will calculate the number of frames corresponding to the time in seconds.
+        If set to <b>true</b>, the function updates events.mat in SaveFolder after trimming. Events outside the retained time interval are removed, retained event timestamps are shifted so the trimmed recording starts at time zero, and eventNameList is compacted when needed. If events.mat is not found, event updating is skipped with a warning.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>backup_events</b></samp> - Backup events.mat <br>
+      <span class="title-desc"><i> true (default) | false</i></span>
+    </button>
+    <div class="content">
+      <p>
+        If set to <b>true</b>, the function creates a timestamped backup of events.mat before overwriting it. This parameter is only used when <b>update_events</b> is true.
       </p>
     </div>
     <!-- JavaScript code to collapse sections -->
