@@ -114,6 +114,28 @@ end
 
 % Validate dimensions and choose the lowest-frequency timeline.
 idxSelected = find(selectedChannels);
+
+% Assert that all selected channels span the same recording duration before
+% any temporal resampling is attempted. Resampling is valid for different
+% sampling rates, but it must not hide cropped or truncated channels.
+durationTolSec = 1e-3;
+selectedDurationSec = double(nativeLength(idxSelected)) ./ double(nativeFreq(idxSelected));
+if any(~isfinite(selectedDurationSec)) || any(selectedDurationSec <= 0)
+    error('Selected illumination channels contain invalid duration metadata.');
+end
+refDurationSec = selectedDurationSec(1);
+badDuration = abs(selectedDurationSec - refDurationSec) > durationTolSec;
+if any(badDuration)
+    refIdx = idxSelected(1);
+    badIdx = idxSelected(find(badDuration, 1, 'first'));
+    error(['Selected illumination channels do not span the same recording duration. ' ...
+        'Reference "%s": %.6f s (%d frames at %.6f Hz). ' ...
+        'Channel "%s": %.6f s (%d frames at %.6f Hz). ' ...
+        'This usually indicates that one channel was cropped, truncated, or has inconsistent metadata.'], ...
+        channelNames{refIdx}, refDurationSec, nativeLength(refIdx), nativeFreq(refIdx), ...
+        channelNames{badIdx}, selectedDurationSec(find(badDuration, 1, 'first')), nativeLength(badIdx), nativeFreq(badIdx));
+end
+
 targetFreq = min(nativeFreq(idxSelected));
 freqTol = max(1e-6, abs(targetFreq) * 1e-6);
 idxTargetCandidates = idxSelected(abs(nativeFreq(idxSelected) - targetFreq) <= freqTol);

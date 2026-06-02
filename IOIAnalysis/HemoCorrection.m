@@ -195,6 +195,29 @@ for k = 1:length(fn)
     maxNt = max(maxNt, cMetaData{k}.datLength);
 end
 
+% Assert that all hemodynamic channels span the same recording duration as
+% the fluorescence channel before any temporal resampling is attempted.
+% Resampling must not hide cropped or truncated channels.
+durationTolSec = 1e-3;
+fluoDurationSec = double(fMetaData.datLength(1,end)) / double(fMetaData.Freq);
+if ~isfinite(fluoDurationSec) || fluoDurationSec <= 0
+    error('Fluorescence channel contains invalid duration metadata.');
+end
+for k = 1:length(fn)
+    hemoDurationSec = double(cMetaData{k}.datLength(1,end)) / double(cMetaData{k}.Freq);
+    if ~isfinite(hemoDurationSec) || hemoDurationSec <= 0
+        error('Hemodynamic channel %s contains invalid duration metadata.', fn{k});
+    end
+    if abs(hemoDurationSec - fluoDurationSec) > durationTolSec
+        error(['Hemodynamic channel %s does not span the same recording duration as the fluorescence channel. ' ...
+            'Fluorescence: %.6f s (%d frames at %.6f Hz). ' ...
+            'Hemodynamic: %.6f s (%d frames at %.6f Hz). ' ...
+            'This usually indicates that one channel was cropped, truncated, or has inconsistent metadata.'], ...
+            fn{k}, fluoDurationSec, fMetaData.datLength(1,end), fMetaData.Freq, ...
+            hemoDurationSec, cMetaData{k}.datLength(1,end), cMetaData{k}.Freq);
+    end
+end
+
 % RAM management
 Ny = size(fData, 1);
 Nx = size(fData, 2);
