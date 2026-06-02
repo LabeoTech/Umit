@@ -20,13 +20,6 @@ function outFile = remove_movie_segment(SaveFolder, varargin)
 %                                        in seconds. Default: 0
 %                    segment_end_sec   - End time of the removed segment,
 %                                        in seconds. Default: 0
-%                    update_events     - If true, update events.mat in
-%                                        SaveFolder. If events.mat is not
-%                                        found, event updating is skipped
-%                                        with a warning. Default: false
-%                    backup_events     - If true, create a timestamped
-%                                        backup before overwriting events.mat.
-%                                        Default: true
 %
 %   Output:
 %       outFile - Cell array containing the full paths of all imported .dat
@@ -47,8 +40,10 @@ function outFile = remove_movie_segment(SaveFolder, varargin)
 %         ranges before replacing any original .dat file.
 %       - If segment_start_sec and segment_end_sec are both zero, the function
 %         performs no file rewrite and returns the full file manifest.
-%       - events.mat is updated once using seconds because it is shared by
-%         the session, not by individual channel files.
+%       - If events.mat exists, it is updated automatically once using
+%         seconds because it is shared by the session, not by individual
+%         channel files.
+%       - If events.mat does not exist, event handling is skipped silently.
 %       - Events overlapping the removed interval are deleted. Events after
 %         the removed interval are shifted backward by the removed duration.
 %       - eventNameList is compacted when all repetitions for an eventID are
@@ -65,8 +60,8 @@ function outFile = remove_movie_segment(SaveFolder, varargin)
 
 % Defaults
 default_Output = {'fluo_475.dat', 'fluo_567.dat','fluo.dat', 'red.dat', 'green.dat', 'yellow.dat', 'speckle.dat'}; %#ok<NASGU> % Reference for PipelineManager. Actual outputs are stored in outFile.
-default_opts = struct('segment_start_sec', 0, 'segment_end_sec', 0, 'update_events', false, 'backup_events', true);
-opts_values = struct('segment_start_sec', [0 Inf], 'segment_end_sec', [0 Inf],'update_events', [true,false], 'backup_events', [true,false]);%#ok<NASGU>
+default_opts = struct('segment_start_sec', 0, 'segment_end_sec', 0);
+opts_values = struct('segment_start_sec', [0 Inf], 'segment_end_sec', [0 Inf]);%#ok<NASGU>
 
 %%% Arguments parsing and validation %%%
 p = inputParser;
@@ -96,11 +91,6 @@ assert(isnumeric(opts.segment_start_sec) && isscalar(opts.segment_start_sec) && 
 assert(isnumeric(opts.segment_end_sec) && isscalar(opts.segment_end_sec) && ...
     isfinite(opts.segment_end_sec) && opts.segment_end_sec >= 0, errID, ...
     'segment_end_sec must be a finite numeric scalar >= 0.');
-assert(islogical(opts.update_events) && isscalar(opts.update_events), errID, ...
-    'update_events must be a logical scalar.');
-assert(islogical(opts.backup_events) && isscalar(opts.backup_events), errID, ...
-    'backup_events must be a logical scalar.');
-
 isNoOp = opts.segment_start_sec == 0 && opts.segment_end_sec == 0;
 
 assert(isNoOp || opts.segment_end_sec > opts.segment_start_sec, errID, ...
@@ -275,14 +265,10 @@ if isNoOp
 end
 
 % events.mat has a fixed required filename and must live in SaveFolder.
+% When present, it is updated automatically to keep event timestamps aligned
+% with the shortened movies. If it is absent, event handling is skipped.
 eventsFile = fullfile(SaveFolder, 'events.mat');
-
-if opts.update_events && ~isfile(eventsFile)
-    warning('umIToolbox:remove_movie_segment:MissingEventsFile', ...
-        ['Event update will be skipped. The file "events.mat" does not ' ...
-         'exist in SaveFolder: %s'], SaveFolder);
-    opts.update_events = false;
-end
+hasEventsFile = isfile(eventsFile);
 
 %% ==========================================================
 % RAM-SAFE SESSION SEGMENT REMOVAL
@@ -377,14 +363,13 @@ for iChan = 1:nChannels
     save(channelInfo(iChan).matFile, '-struct', 'metaData');
 end
 
-% Optional events.mat update. This is done once because events.mat is shared
-% by the session, not by individual channel files.
-if opts.update_events
+% events.mat is updated once because it is shared by the session, not by
+% individual channel files. If it does not exist, event handling is skipped.
+if hasEventsFile
     updateEventsFileForRemovedSegment( ...
         eventsFile, ...
         opts.segment_start_sec, ...
-        opts.segment_end_sec, ...
-        opts.backup_events);
+        opts.segment_end_sec);
 end
 
 disp('Done')
@@ -422,11 +407,11 @@ end
 
 end
 
-function updateEventsFileForRemovedSegment(eventsFile, segmentStartSec, segmentEndSec, backupEvents)
+function updateEventsFileForRemovedSegment(eventsFile, segmentStartSec, segmentEndSec)
 %UPDATEEVENTSFILEFORREMOVEDSEGMENT Update events.mat after segment removal.
 %
 %   updateEventsFileForRemovedSegment(eventsFile, segmentStartSec,
-%       segmentEndSec, backupEvents)
+%       segmentEndSec)
 %
 %   Updates the unique events.mat file after removing one movie segment from
 %   all imported movies. The events.mat file is expected to contain:
@@ -587,15 +572,6 @@ evntInfo.eventID = eventID;
 evntInfo.timestamps = timestamps;
 evntInfo.state = state;
 evntInfo.eventNameList = eventNameList;
-
-if backupEvents
-    [eventFolder, eventName, eventExt] = fileparts(eventsFile);
-    backupFile = fullfile(eventFolder, ...
-        sprintf('%s_before_remove_movie_segment_%s%s', ...
-        eventName, datestr(now, 'yyyymmdd_HHMMSS'), eventExt));
-
-    copyfile(eventsFile, backupFile);
-end
 
 if isempty(evntInfo.eventID)
     delete(eventsFile);
