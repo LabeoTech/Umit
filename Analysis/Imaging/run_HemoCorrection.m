@@ -153,6 +153,20 @@ if( size(tmp,3) ~= NtRef )
     error('Input reference channel length does not match its metadata.');
 end
 
+% Resampling is valid only when both channels span the same recording
+% duration. A mismatched duration usually indicates that one channel was
+% cropped, truncated, or no longer matches its metadata.
+durationTolSec = 1e-3;
+refDurationSec = double(NtRef) ./ double(freqRef);
+fluoDurationSec = double(NtFluo) ./ double(freqFluo);
+assert(abs(refDurationSec - fluoDurationSec) <= durationTolSec, ...
+    'Umitoolbox:run_HemoCorrection:DurationMismatch', ...
+    ['Reference channel does not span the same recording duration as the ' ...
+     'fluorescence channel. Reference: Length=%d, FrameRateHz=%g, ' ...
+     'Duration=%0.6f s. Fluorescence: Length=%d, FrameRateHz=%g, ' ...
+     'Duration=%0.6f s.'], ...
+    NtRef, freqRef, refDurationSec, NtFluo, freqFluo, fluoDurationSec);
+
 if( NtRef == NtFluo )
     tmp = single(tmp);
     return
