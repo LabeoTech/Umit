@@ -1,4 +1,4 @@
-function outFile = run_ImagesClassification(RawFolder, SaveFolder, varargin)
+function classifiedFiles = run_ImagesClassification(RawFolder, SaveFolder, varargin)
 %RUN_IMAGESCLASSIFICATION Classify raw interlaced IOS binaries into channels.
 %
 %   outFile = run_ImagesClassification(RawFolder, SaveFolder)
@@ -68,7 +68,7 @@ allowedBinning = [1:8];
 
 if nargin == 1 && (ischar(RawFolder) || (isstring(RawFolder) && isscalar(RawFolder))) ...
         && strcmpi(strtrim(char(string(RawFolder))), 'pipelineInfo')
-    outFile = localPipelineInfo();
+    classifiedFiles = localPipelineInfo();
     return
 end
 
@@ -90,7 +90,7 @@ BinningSpatial = p.Results.BinningSpatial;
 BinningTemp = p.Results.BinningTemp;
 backupOpts = char(string(p.Results.backupOpts));
 
-outFile = ImagesClassification( ...
+classifiedFiles = ImagesClassification( ...
     RawFolder, ...
     SaveFolder, ...
     BinningSpatial, ...
@@ -98,8 +98,8 @@ outFile = ImagesClassification( ...
     0, ...
     'backupOpts', backupOpts);
 
-if ~iscell(outFile)
-    outFile = {};
+if ~iscell(classifiedFiles)
+    classifiedFiles = {};
 end
 
 % For Dual-Camera Imaging systems, apply the coregistration using the tform
@@ -138,7 +138,7 @@ if isfile(acqInfoPath)
 end
 
 % Return full saved paths, consistent with wrapper-level file manifest style.
-outFile = unique(cellfun(@(x) fullfile(SaveFolder, x), outFile, 'UniformOutput', false), 'stable');
+classifiedFiles = unique(cellfun(@(x) fullfile(SaveFolder, x), classifiedFiles, 'UniformOutput', false), 'stable');
 
     function info = localPipelineInfo()
         info = PipelineManager.createPipelineInfo(mfilename, ...
@@ -166,7 +166,7 @@ outFile = unique(cellfun(@(x) fullfile(SaveFolder, x), outFile, 'UniformOutput',
              '''GENBACKUP'', or a custom zip base name.'], ...
             'kind', 'parameter', 'default', 'ERASE','allowed',{'ERASE','GENBACKUP'}, 'callType', 'namevalue');
 
-        info = PipelineManager.addOutput(info, 'outFile', 'ImageTimeSeries', 'file', ...
+        info = PipelineManager.addOutput(info, 'classifiedFiles', 'ImageTimeSeries', 'file', ...
             'Generated file manifest saved in SaveFolder.', ...
             default_Output, 1, 'isData', true, 'saveFileName', '');
     end

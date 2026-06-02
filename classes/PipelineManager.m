@@ -71,7 +71,7 @@ classdef PipelineManager < handle
         current_info struct% Structure with info about the functions ran on "current_data". This will be saved to the dataHistory file.
         current_rawFolder char % Current path to raw folder during pipeline execution.
         b_state logical = false % True if a task of a pipeline was successfully executed.
-        end
+    end
 
     properties (Access = private)
         fcnDir char % Directory of the analysis functions.
@@ -289,6 +289,7 @@ classdef PipelineManager < handle
                 end
             end
         end
+
         function state = setParameters(obj, stepName)
             %SETPARAMETERS Edit parameter values of a step in the pipeline.
             %
@@ -364,6 +365,7 @@ classdef PipelineManager < handle
 
             fprintf('Parameters updated for step: %s\n', node.name);
         end
+
         function stepTag = addStep(obj, funcName, varargin)
             %ADDSTEP Add a processing step to the workflow.
             %
@@ -371,25 +373,17 @@ classdef PipelineManager < handle
             %   stepTag = addStep(obj,'GSR','input','SpatialFilter_1')
             %   stepTag = addStep(obj,'Compare','input',{'GSR_1','GSR_2'})
             %
-            % Saving outputs (positional mapping to DATA outputs):
-            %   - Single DATA output:
+            % Saving outputs (positional mapping to SAVEABLE outputs only):
+            %   - Single saveable output:
             %       addStep(obj,'GSR','saveas','GSR.dat')
-            %   - Multiple DATA outputs:
+            %   - Multiple saveable outputs:
             %       addStep(obj,'MyFcn','saveas',{'A.dat','B.dat'})       % cellstr
             %       addStep(obj,'MyFcn','saveas',["A.dat","B.dat"])       % string array
             %
-            % Rules for 'saveas':
-            %   1) Non-empty -> enables saving by PipelineManager.
-            %   2) If scalar -> function must have exactly ONE DATA output.
-            %   3) If list   -> number of filenames must equal number of DATA outputs.
-            %   4) Filenames are normalized:
-            %       - strip whitespace
-            %       - strip any path component (keep base name only)
-            %       - enforce extension using outputs(i).defOutfilename extension
-            %   5) Filename collisions:
-            %       - Warn if a filename already exists on disk (in SaveFolder) OR is already
-            %         reserved by another node in the pipeline.
-            %       - If obj.b_avoidOverwrite is true, auto-rename to a unique filename.
+            % IMPORTANT:
+            %   Outputs with outputMode='file' are NOT manager-saveable because the
+            %   function already produces file(s). They may still have isData=true
+            %   for DAG connectivity, but saveas does not apply to them.
 
             p = inputParser;
             addRequired(p,'funcName',@(x)ischar(x)||isstring(x));
@@ -399,21 +393,7 @@ classdef PipelineManager < handle
 
             funcName = char(string(funcName));
             inputRef = p.Results.input;
-
-            % Normalize saveas input to string array (positional)
-            saveasRaw = p.Results.saveas;
-            if isempty(saveasRaw)
-                saveasList = strings(0,1);
-            elseif ischar(saveasRaw) || (isstring(saveasRaw) && isscalar(saveasRaw))
-                saveasList = string(saveasRaw);
-                saveasList = saveasList(:);
-            elseif isstring(saveasRaw)
-                saveasList = saveasRaw(:);
-            elseif iscell(saveasRaw)
-                saveasList = string(saveasRaw(:));
-            else
-                saveasList = strings(0,1);
-            end
+            saveasList = obj.normalizeSaveAsInput(p.Results.saveas);
 
             % -------------------------------------------------------------
             % Create node (but ensure rollback on any downstream error)
@@ -427,35 +407,10 @@ classdef PipelineManager < handle
             nodeID = node.id;
 
             % -------------------------------------------------------------
-            % Apply saveas mapping -> node.info.outputs(i).saveFileName
+            % Apply saveas mapping and resolve filename collisions
             % -------------------------------------------------------------
-            node = applySaveAsToOutputs(node, saveasList);
-
-            % -------------------------------------------------------------
-            % Resolve save filename collisions
-            % -------------------------------------------------------------
-            sfForCheck = "";
-            if isprop(obj,'SaveFolderList') && ~isempty(obj.SaveFolderList)
-                sfForCheck = string(obj.SaveFolderList{1});
-            end
-
-            if isfield(node.info,'outputs') && ~isempty(node.info.outputs)
-                outIdxToFix = [];
-                reqNames = strings(0,1);
-                for iOut = 1:numel(node.info.outputs)
-                    if isfield(node.info.outputs(iOut),'saveFileName') && ~isempty(node.info.outputs(iOut).saveFileName)
-                        outIdxToFix(end+1) = iOut; %#ok<AGROW>
-                        reqNames(end+1,1) = string(node.info.outputs(iOut).saveFileName); %#ok<AGROW>
-                    end
-                end
-
-                if ~isempty(outIdxToFix)
-                    [fixedNames, ~] = obj.resolveUniqueSaveNames(sfForCheck, reqNames);
-                    for iFix = 1:numel(outIdxToFix)
-                        node.info.outputs(outIdxToFix(iFix)).saveFileName = char(fixedNames(iFix));
-                    end
-                end
-            end
+            node = obj.applySaveAsToNodeOutputs(node, saveasList, funcName);
+            node = obj.resolveNodeSaveNameCollisions(node);
 
             % Snapshot state for rollback
             prevNodes       = obj.nodes;
@@ -757,122 +712,6 @@ classdef PipelineManager < handle
                 rethrow(ME);
             end
 
-            % =========================================================
-            % Local helper: apply saveas mapping to node.info.outputs
-            % =========================================================
-            function nodeOut = applySaveAsToOutputs(nodeIn, saveList)
-                nodeOut = nodeIn;
-
-                if ~isfield(nodeOut.info,'outputs') || isempty(nodeOut.info.outputs)
-                    if ~isempty(saveList)
-                        error('addStep:SaveAsNoOutputs', ...
-                            'saveas was provided but function "%s" has no outputs.', funcName);
-                    end
-                    return
-                end
-
-                for iOut = 1:numel(nodeOut.info.outputs)
-                    if ~isfield(nodeOut.info.outputs(iOut),'saveFileName')
-                        nodeOut.info.outputs(iOut).saveFileName = '';
-                    end
-                end
-
-                if isempty(saveList) || (numel(saveList)==1 && strlength(strtrim(saveList(1)))==0)
-                    return
-                end
-
-                isData = false(1,numel(nodeOut.info.outputs));
-                for iOut = 1:numel(nodeOut.info.outputs)
-                    isData(iOut) = isfield(nodeOut.info.outputs(iOut),'isData') && nodeOut.info.outputs(iOut).isData;
-                end
-                dataIdx = find(isData);
-                nDataOut = numel(dataIdx);
-
-                saveList = string(saveList(:));
-                saveList = strip(saveList);
-
-                if numel(saveList) == 1
-                    if nDataOut ~= 1
-                        error('addStep:SaveAsAmbiguous', ...
-                            'Function "%s" has %d DATA outputs. Provide saveas as a list with %d filenames.', ...
-                            funcName, nDataOut, nDataOut);
-                    end
-                else
-                    if numel(saveList) ~= nDataOut
-                        error('addStep:SaveAsCountMismatch', ...
-                            'Function "%s" has %d DATA outputs but saveas has %d filenames.', ...
-                            funcName, nDataOut, numel(saveList));
-                    end
-                end
-
-                for iMap = 1:numel(saveList)
-
-                    outIdx = dataIdx(iMap);
-                    fName  = saveList(iMap);
-
-                    if strlength(fName) == 0
-                        error('addStep:SaveAsEmpty', ...
-                            'saveas contains an empty filename (position %d).', iMap);
-                    end
-
-                    fName = string(strtrim(fName));
-                    [~, base, ext] = fileparts(char(fName));
-                    fName = string(base) + string(ext);
-
-                    defExt = "";
-                    hasDefaultBaseName = false;
-
-                    if isfield(nodeOut.info.outputs(outIdx),'defOutfilename') && ...
-                            ~isempty(nodeOut.info.outputs(outIdx).defOutfilename)
-
-                        def = nodeOut.info.outputs(outIdx).defOutfilename;
-
-                        if iscell(def) && ~isempty(def)
-                            def = def{1};
-                        end
-
-                        if isstring(def) || ischar(def)
-                            def = strtrim(char(string(def)));
-
-                            if ~isempty(def)
-                                hasDefaultBaseName = true;
-                                [~,~,defExt] = fileparts(def);
-                            end
-                        end
-                    end
-
-                    % ---------------------------------------------------------
-                    % Extension policy:
-                    %   1) If the output declares a default extension, enforce it.
-                    %   2) If the output declares a default filename but no extension,
-                    %      allow extensionless saveas and let saveData infer the real
-                    %      extension later from the payload type.
-                    %   3) If the output declares no default filename at all, require the
-                    %      user to provide an explicit extension.
-                    % ---------------------------------------------------------
-                    if strlength(defExt) > 0
-
-                        [~, base2, ~] = fileparts(char(fName));
-                        fName = string(base2) + string(defExt);
-
-                    else
-                        [~,~,userExt] = fileparts(char(fName));
-
-                        if isempty(userExt) && ~hasDefaultBaseName
-                            error('addStep:SaveAsNoExtension', ...
-                                ['Output "%s" has no default filename/extension; ' ...
-                                'provide an extension in saveas.'], ...
-                                nodeOut.info.outputs(outIdx).name);
-                        end
-                    end
-
-                    nodeOut.info.outputs(outIdx).saveFileName = char(fName);
-                end
-            end
-
-            % =========================================================
-            % Local helper: rollback state only
-            % =========================================================
             function rollbackState()
                 obj.nodes       = prevNodes;
                 obj.connections = prevConnections;
@@ -883,9 +722,6 @@ classdef PipelineManager < handle
                 end
             end
 
-            % =========================================================
-            % Local helper: rollback state, warn, and clear stepTag
-            % =========================================================
             function rollbackAndWarn(warnID, warnMsg, vararginLocal)
                 beep()
                 warning(warnID, warnMsg, vararginLocal{:});
@@ -894,6 +730,65 @@ classdef PipelineManager < handle
                 stepTag = '';
             end
         end
+
+        function state = setSaveTargets(obj, stepName, saveas)
+            %SETSAVETARGETS Configure PipelineManager-managed save targets for one step.
+            %
+            %   state = obj.setSaveTargets(stepName, saveas)
+            %
+            %   Inputs:
+            %       stepName - Step tag of an existing stream node.
+            %       saveas   - Same contract as addStep(...,'saveas',...), but applies
+            %                  only to SAVEABLE outputs:
+            %                      isData == true AND outputMode ~= 'file'
+            %                  * '' or [] clears all save targets
+            %                  * scalar filename applies to a single saveable output only
+            %                  * list of filenames must match the number of saveable outputs
+            %
+            %   Output:
+            %       state    - True if the save targets were applied successfully.
+
+            state = false;
+
+            if isempty(obj.nodes)
+                error('Pipeline is empty.');
+            end
+
+            stepName = char(string(stepName));
+            if isempty(strtrim(stepName))
+                error('setSaveTargets:InvalidStepName', 'stepName cannot be empty.');
+            end
+
+            idx = find(strcmpi(stepName, {obj.nodes.name}), 1, 'first');
+            if isempty(idx)
+                error('setSaveTargets:UnknownStep', 'Step "%s" not found.', stepName);
+            end
+
+            node = obj.nodes(idx);
+
+            if ~strcmpi(node.kind,'stream')
+                error('setSaveTargets:FolderStep', ...
+                    'Folder steps do not support PipelineManager-managed save targets.');
+            end
+
+            saveasList = obj.normalizeSaveAsInput(saveas);
+
+            funcNameForMsg = char(string(node.name));
+            if isfield(node,'info') && isfield(node.info,'name') && ~isempty(node.info.name)
+                funcNameForMsg = char(string(node.info.name));
+            end
+
+            node = obj.applySaveAsToNodeOutputs(node, saveasList, funcNameForMsg);
+            node = obj.resolveNodeSaveNameCollisions(node, 'excludeNodeID', node.id);
+
+            obj.nodes(idx) = node;
+            obj.autoValidate();
+
+            fprintf('Save targets updated for step: %s\n', node.name);
+            state = true;
+        end
+
+
         function rmStep(obj, stepTag)
             %RMSTEP Remove a step by tag.
 
@@ -925,6 +820,7 @@ classdef PipelineManager < handle
 
             disp(msg);
         end
+
         function removed = removeInvalidNodes(obj, varargin)
             %REMOVEINVALIDNODES Remove nodes that participate in validation errors.
             %
@@ -1112,6 +1008,7 @@ classdef PipelineManager < handle
                 ids = ids(~isnan(ids));
             end
         end
+
         function reconnectStep(obj, stepRef, varargin)
             %RECONNECTSTEP Explicitly reconnect a step's DATA inputs to explicit sources.
             %
@@ -1420,6 +1317,7 @@ classdef PipelineManager < handle
                 selectedFile = requestedFile;
             end
         end
+
         function showFuncList(obj)
             % Displays a list of analysis function from "obj.funcList" in
             % the command window.
@@ -1429,6 +1327,7 @@ classdef PipelineManager < handle
                 fprintf('%d : %s (%s)\n', i, obj.funcList(i).name, folderList{i});
             end
         end
+
         function executePipeline(obj)
             %EXECUTEPIPELINE Orchestrate execution across all SaveFolders.
             %
@@ -1716,6 +1615,7 @@ classdef PipelineManager < handle
             disp(obj.globalPipeLog)
             fprintf('%s\n',repmat('=',1,120))
         end
+
         function varargout = diagnosePipeline(obj)
             %DIAGNOSEPIPELINE Print a CLI-friendly diagnostic report of the DAG.
             %
@@ -1760,6 +1660,7 @@ classdef PipelineManager < handle
                 varargout{1} = report;
             end
         end
+
         function savePipe(obj,varargin)
             %SAVEPIPE Save the current pipeline DAG to a .pipe file.
             %
@@ -1900,6 +1801,7 @@ classdef PipelineManager < handle
                 end
             end
         end
+
         function loadPipe(obj,varargin)
             %LOADPIPE Load a pipeline DAG from a .pipe file.
             %
@@ -2174,6 +2076,7 @@ classdef PipelineManager < handle
                 fprintf('\nPlease rebuild this pipeline manually.\n\n');
             end
         end
+
         function clearPipeline(obj)
             %CLEARPIPELINE Reset the entire DAG state.
             %
@@ -2210,6 +2113,89 @@ classdef PipelineManager < handle
             obj.autoValidate();
             fprintf('Pipeline successfully cleared.\n');
         end
+
+        function info = getPipelineInfo(obj, funcName)
+            %GETPIPELINEINFO Return the pipelineInfo metadata for an analysis function.
+            %
+            %   INFO = GETPIPELINEINFO(OBJ, FUNCNAME) returns the pipelineInfo struct
+            %   associated with the analysis function FUNCNAME.
+            %
+            %   This is the single entry point used by DAG/Step-building code to fetch
+            %   the function schema (inputs/outputs/parameters/notes).
+            %
+            %   BEHAVIOR:
+            %     - Uses OBJ.funcList as the primary cache.
+            %     - If funcList is empty, it will be created (createFcnList).
+            %     - Ensures INFO.parameters(k).value is initialized from .default
+            %       (so runtime option editing can operate on .value consistently).
+            %
+            %   INPUT:
+            %     funcName (char|string) Name of an analysis function (e.g. 'run_GSR').
+            %
+            %   OUTPUT:
+            %     info (struct) pipelineInfo struct with fields:
+            %       .inputs, .outputs, .parameters, .notes, ... (as available)
+            %
+            %   ERRORS:
+            %     - Throws if the function is not found in funcList.
+
+            % -----------------------------
+            % Normalize input
+            % -----------------------------
+            if isstring(funcName); funcName = char(funcName); end
+            funcName = char(string(funcName));
+
+            if isempty(funcName)
+                error('PipelineManager:getPipelineInfo:EmptyName', ...
+                    'Function name cannot be empty.');
+            end
+
+            % -----------------------------
+            % Ensure funcList is populated
+            % -----------------------------
+            if isempty(obj.funcList)
+                obj.createFcnList();
+            end
+
+            % -----------------------------
+            % Lookup in funcList cache
+            % -----------------------------
+            idx = find(strcmpi({obj.funcList.name}, funcName), 1);
+
+            if isempty(idx)
+                error('PipelineManager:getPipelineInfo:NotFound', ...
+                    'Function "%s" was not found in funcList.', funcName);
+            end
+
+            info = obj.funcList(idx).info;
+
+            if ~isstruct(info)
+                error('PipelineManager:getPipelineInfo:InvalidInfo', ...
+                    'funcList entry for "%s" does not contain a valid pipelineInfo struct.', funcName);
+            end
+
+            % -----------------------------
+            % Ensure expected fields exist
+            % -----------------------------
+            if ~isfield(info,'inputs');      info.inputs = struct([]);      end
+            if ~isfield(info,'outputs');     info.outputs = struct([]);     end
+            if ~isfield(info,'parameters');  info.parameters = struct([]);  end
+            if ~isfield(info,'notes');       info.notes = {};               end
+
+            % -----------------------------
+            % Initialize runtime parameter values
+            % -----------------------------
+            if ~isempty(info.parameters)
+                for k = 1:numel(info.parameters)
+                    if ~isfield(info.parameters(k),'default')
+                        info.parameters(k).default = [];
+                    end
+                    % Always (re)initialize runtime value from default when fetching schema
+                    info.parameters(k).value = info.parameters(k).default;
+                end
+            end
+        end
+
         function outFile = exportPipeErrorLog(obj, outputFolder)
             %EXPORTPIPEERRORLOG Export a CSV summary of errors from the latest pipeline execution.
             %
@@ -2281,6 +2267,7 @@ classdef PipelineManager < handle
             fprintf('Pipeline error log exported: %s\n', outFile);
             fprintf('Rows exported: %d\n', height(errorLogTable));
         end
+
         function generateScript(obj, filename)
             %GENERATESCRIPT Generate a standalone MATLAB script from the current DAG pipeline.
             %
@@ -3266,6 +3253,7 @@ classdef PipelineManager < handle
                     'Unsupported parameter literal type: %s', class(valueLocal));
             end
         end
+
         %%%%%%--Pipeline Visualization  -----------------------------------
         function viewGraph(obj, varargin)
             %VIEWGRAPH Display the pipeline in branch view or execution view.
@@ -3764,29 +3752,6 @@ classdef PipelineManager < handle
             end
         end
 
-    end
-
-    methods (Access = {?DataViewer})
-
-        %%%%%%-- DEPRECATED FUNCTIONS FOR REVIEW -------------------------
-
-        function loadDataFromDataViewer(obj,data,fileDataHistoryInfo)
-            % LOADDATAFROMDATAVIEWER methods imports the imaging data from
-            % DataViewer to this class.
-
-            % Indicate that the input is from DataViewer:
-            obj.b_inputFromDataViewer = true;
-            obj.b_enforceSaving = false;
-            % Update current data:
-            obj.current_data = data;
-            % Update folders:
-            obj.current_saveFolder = obj.SaveFolderList{1};
-            obj.current_rawFolder = obj.RawFolderList{1};
-            % Load DataHistory
-            obj.loadDataHistory(obj.SaveFolderList{1});
-            % Update current info for data stored in RAM
-            obj.current_info = fileDataHistoryInfo;
-        end
     end
 
     methods (Access = private)
@@ -4451,15 +4416,200 @@ classdef PipelineManager < handle
     methods (Access = private)
 
         %%%%%%--Helpers for "addStep" and "rmStep" methods ----------------
-        function [fixedNames, bChanged] = resolveUniqueSaveNames(obj, saveFolder, requestedNames)
+
+        function saveasList = normalizeSaveAsInput(~, saveasRaw)
+
+            %NORMALIZESAVEASINPUT Normalize saveas input to a string column vector.
+
+            if isempty(saveasRaw)
+                saveasList = strings(0,1);
+            elseif ischar(saveasRaw) || (isstring(saveasRaw) && isscalar(saveasRaw))
+                saveasList = string(saveasRaw);
+                saveasList = saveasList(:);
+            elseif isstring(saveasRaw)
+                saveasList = saveasRaw(:);
+            elseif iscell(saveasRaw)
+                saveasList = string(saveasRaw(:));
+            else
+                saveasList = strings(0,1);
+            end
+        end
+
+        function nodeOut = applySaveAsToNodeOutputs(obj, nodeIn, saveList, funcName)
+            %APPLYSAVEASTONODEOUTPUTS Apply saveas rules to SAVEABLE outputs only.
+            %
+            % Saveable outputs are:
+            %   isData == true AND outputMode ~= 'file'
+            %
+            % For outputMode='file':
+            %   saveFileName is irrelevant and is cleared here for consistency.
+
+            nodeOut = nodeIn;
+
+            if ~isfield(nodeOut.info,'outputs') || isempty(nodeOut.info.outputs)
+                if ~isempty(saveList)
+                    error('addStep:SaveAsNoOutputs', ...
+                        'saveas was provided but function "%s" has no outputs.', funcName);
+                end
+                return
+            end
+
+            % Clear all saveFileName fields first. For file outputs this field is
+            % irrelevant and should stay empty.
+            for iOut = 1:numel(nodeOut.info.outputs)
+                nodeOut.info.outputs(iOut).saveFileName = '';
+            end
+
+            if isempty(saveList) || (numel(saveList)==1 && strlength(strtrim(saveList(1)))==0)
+                return
+            end
+
+            saveableIdx = obj.getSaveableOutputIdx(nodeOut);
+            nSaveable = numel(saveableIdx);
+
+            if nSaveable == 0
+                error('addStep:SaveAsNoSaveableOutputs', ...
+                    ['Function "%s" has no manager-saveable outputs.\n' ...
+                    'Outputs with outputMode="file" are already file-backed and cannot use saveas.'], ...
+                    funcName);
+            end
+
+            saveList = string(saveList(:));
+            saveList = strip(saveList);
+
+            if numel(saveList) == 1
+                if nSaveable ~= 1
+                    error('addStep:SaveAsAmbiguous', ...
+                        ['Function "%s" has %d saveable outputs. ' ...
+                        'Provide saveas as a list with %d filenames.'], ...
+                        funcName, nSaveable, nSaveable);
+                end
+            else
+                if numel(saveList) ~= nSaveable
+                    error('addStep:SaveAsCountMismatch', ...
+                        ['Function "%s" has %d saveable outputs but saveas has %d filenames.'], ...
+                        funcName, nSaveable, numel(saveList));
+                end
+            end
+
+            for iMap = 1:numel(saveList)
+
+                outIdx = saveableIdx(iMap);
+                fName  = saveList(iMap);
+
+                if strlength(fName) == 0
+                    error('addStep:SaveAsEmpty', ...
+                        'saveas contains an empty filename (position %d).', iMap);
+                end
+
+                fName = string(strtrim(fName));
+                [~, base, ext] = fileparts(char(fName));
+                fName = string(base) + string(ext);
+
+                defExt = "";
+                hasDefaultBaseName = false;
+
+                if isfield(nodeOut.info.outputs(outIdx),'defOutfilename') && ...
+                        ~isempty(nodeOut.info.outputs(outIdx).defOutfilename)
+
+                    def = nodeOut.info.outputs(outIdx).defOutfilename;
+
+                    if iscell(def) && ~isempty(def)
+                        def = def{1};
+                    end
+
+                    if isstring(def) || ischar(def)
+                        def = strtrim(char(string(def)));
+
+                        if ~isempty(def)
+                            hasDefaultBaseName = true;
+                            [~,~,defExt] = fileparts(def);
+                        end
+                    end
+                end
+
+                if strlength(defExt) > 0
+
+                    [~, base2, ~] = fileparts(char(fName));
+                    fName = string(base2) + string(defExt);
+
+                else
+                    [~,~,userExt] = fileparts(char(fName));
+
+                    if isempty(userExt) && ~hasDefaultBaseName
+                        error('addStep:SaveAsNoExtension', ...
+                            ['Output "%s" has no default filename/extension; ' ...
+                            'provide an extension in saveas.'], ...
+                            nodeOut.info.outputs(outIdx).name);
+                    end
+                end
+
+                nodeOut.info.outputs(outIdx).saveFileName = char(fName);
+            end
+        end
+
+        function nodeOut = resolveNodeSaveNameCollisions(obj, nodeIn, varargin)
+            %RESOLVENODESAVENAMECOLLISIONS Resolve save-target filename collisions for one node.
+            %
+            % Only SAVEABLE outputs participate in collision resolution.
+            % saveFileName values present on file outputs are ignored.
+
+            p = inputParser;
+            addParameter(p, 'excludeNodeID', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
+            parse(p, varargin{:});
+            excludeNodeID = p.Results.excludeNodeID;
+
+            nodeOut = nodeIn;
+
+            sfForCheck = "";
+            if isprop(obj,'SaveFolderList') && ~isempty(obj.SaveFolderList)
+                sfForCheck = string(obj.SaveFolderList{1});
+            end
+
+            if ~isfield(nodeOut.info,'outputs') || isempty(nodeOut.info.outputs)
+                return
+            end
+
+            saveableIdx = obj.getSaveableOutputIdx(nodeOut);
+
+            if isempty(saveableIdx)
+                return
+            end
+
+            outIdxToFix = [];
+            reqNames = strings(0,1);
+
+            for iK = 1:numel(saveableIdx)
+                iOut = saveableIdx(iK);
+                if isfield(nodeOut.info.outputs(iOut),'saveFileName') && ~isempty(nodeOut.info.outputs(iOut).saveFileName)
+                    outIdxToFix(end+1) = iOut; %#ok<AGROW>
+                    reqNames(end+1,1) = string(nodeOut.info.outputs(iOut).saveFileName); %#ok<AGROW>
+                end
+            end
+
+            if isempty(outIdxToFix)
+                return
+            end
+
+            [fixedNames, ~] = obj.resolveUniqueSaveNames(sfForCheck, reqNames, excludeNodeID);
+
+            for iFix = 1:numel(outIdxToFix)
+                nodeOut.info.outputs(outIdxToFix(iFix)).saveFileName = char(fixedNames(iFix));
+            end
+        end
+
+        function [fixedNames, bChanged] = resolveUniqueSaveNames(obj, saveFolder, requestedNames, excludeNodeID)
             %RESOLVEUNIQUESAVENAMES Ensure save filenames are unique vs disk and pipeline.
             %
-            % Fix: if requested name already ends with _<N>, increment N instead of appending
-            % another suffix (e.g., mySpatFilt_1.dat -> mySpatFilt_2.dat, not _1_1.dat).
+            % Only SAVEABLE outputs participate in the reserved-name set.
+            % saveFileName on outputMode='file' outputs is ignored.
 
             bChanged = false;
 
-            % Normalize requestedNames -> string column
+            if nargin < 4
+                excludeNodeID = [];
+            end
+
             if nargin < 3 || isempty(requestedNames)
                 fixedNames = strings(0,1);
                 return
@@ -4480,27 +4630,35 @@ classdef PipelineManager < handle
                 return
             end
 
-            % Normalize saveFolder once (micro-optimization)
             if nargin < 2 || isempty(saveFolder)
                 sf = '';
             else
                 sf = char(string(saveFolder));
             end
 
-            % Strip any accidental path components (keep base+ext)
             for iN = 1:numel(fixedNames)
                 [~,b,e] = fileparts(char(fixedNames(iN)));
                 fixedNames(iN) = string(b) + string(e);
             end
 
-            % Build reserved set from existing pipeline nodes
             reserved = strings(0,1);
             for iNode = 1:numel(obj.nodes)
+
+                if ~isempty(excludeNodeID)
+                    if isfield(obj.nodes(iNode),'id') && obj.nodes(iNode).id == excludeNodeID
+                        continue
+                    end
+                end
+
                 if ~isfield(obj.nodes(iNode),'info') || ~isfield(obj.nodes(iNode).info,'outputs')
                     continue
                 end
+
                 outs = obj.nodes(iNode).info.outputs;
-                for iOut = 1:numel(outs)
+                saveableIdx = obj.getSaveableOutputIdx(obj.nodes(iNode));
+
+                for iK = 1:numel(saveableIdx)
+                    iOut = saveableIdx(iK);
                     if isfield(outs(iOut),'saveFileName') && ~isempty(outs(iOut).saveFileName)
                         reserved(end+1,1) = string(outs(iOut).saveFileName); %#ok<AGROW>
                     end
@@ -4508,7 +4666,6 @@ classdef PipelineManager < handle
             end
             reserved = unique(strip(reserved), 'stable');
 
-            % Track names chosen within this call to avoid duplicates among outputs
             chosen = strings(0,1);
 
             for iName = 1:numel(fixedNames)
@@ -4516,7 +4673,6 @@ classdef PipelineManager < handle
                 orig = fixedNames(iName);
                 cand = orig;
 
-                % Collision predicates
                 diskHit = false;
                 if ~isempty(sf)
                     diskHit = isfile(fullfile(sf, char(cand)));
@@ -4525,7 +4681,6 @@ classdef PipelineManager < handle
 
                 if diskHit || pipeHit
 
-                    % Always warn on collision attempt
                     if diskHit && pipeHit
                         warning('PipelineManager:SaveAsCollision', ...
                             'Requested save filename "%s" already exists in folder and is already reserved in the pipeline.', char(cand));
@@ -4539,11 +4694,8 @@ classdef PipelineManager < handle
 
                     if isprop(obj,'b_avoidOverwrite') && obj.b_avoidOverwrite
 
-                        % Auto-rename with numeric increment behavior:
-                        %   base[_N].ext -> base_(N+1).ext (starting from existing N if present)
                         [~, base0, ext0] = fileparts(char(cand));
 
-                        % Detect trailing _<digits>
                         tok = regexp(base0, '^(.*)_(\d+)$', 'tokens', 'once');
                         if ~isempty(tok)
                             baseStem = tok{1};
@@ -4584,87 +4736,47 @@ classdef PipelineManager < handle
                 chosen(end+1,1) = cand; %#ok<AGROW>
             end
         end
-        function info = getPipelineInfo(obj, funcName)
-            %GETPIPELINEINFO Return the pipelineInfo metadata for an analysis function.
-            %
-            %   INFO = GETPIPELINEINFO(OBJ, FUNCNAME) returns the pipelineInfo struct
-            %   associated with the analysis function FUNCNAME.
-            %
-            %   This is the single entry point used by DAG/Step-building code to fetch
-            %   the function schema (inputs/outputs/parameters/notes).
-            %
-            %   BEHAVIOR:
-            %     - Uses OBJ.funcList as the primary cache.
-            %     - If funcList is empty, it will be created (createFcnList).
-            %     - Ensures INFO.parameters(k).value is initialized from .default
-            %       (so runtime option editing can operate on .value consistently).
-            %
-            %   INPUT:
-            %     funcName (char|string) Name of an analysis function (e.g. 'run_GSR').
-            %
-            %   OUTPUT:
-            %     info (struct) pipelineInfo struct with fields:
-            %       .inputs, .outputs, .parameters, .notes, ... (as available)
-            %
-            %   ERRORS:
-            %     - Throws if the function is not found in funcList.
 
-            % -----------------------------
-            % Normalize input
-            % -----------------------------
-            if isstring(funcName); funcName = char(funcName); end
-            funcName = char(string(funcName));
+        function saveableIdx = getSaveableOutputIdx(~, nodeOrNodeLike)
+            %GETSAVEABLEOUTPUTIDX Return indices of manager-saveable outputs.
+            %
+            % Saveable outputs are:
+            %   isData == true AND outputMode ~= 'file'
+            %
+            % Accepts either:
+            %   - a full node struct with node.info.outputs
+            %   - a node-like struct with .outputs directly
 
-            if isempty(funcName)
-                error('PipelineManager:getPipelineInfo:EmptyName', ...
-                    'Function name cannot be empty.');
+            saveableIdx = [];
+
+            outs = struct([]);
+
+            if isstruct(nodeOrNodeLike) && isfield(nodeOrNodeLike,'info') && ...
+                    isfield(nodeOrNodeLike.info,'outputs') && ~isempty(nodeOrNodeLike.info.outputs)
+                outs = nodeOrNodeLike.info.outputs;
+            elseif isstruct(nodeOrNodeLike) && isfield(nodeOrNodeLike,'outputs') && ~isempty(nodeOrNodeLike.outputs)
+                outs = nodeOrNodeLike.outputs;
+            else
+                return
             end
 
-            % -----------------------------
-            % Ensure funcList is populated
-            % -----------------------------
-            if isempty(obj.funcList)
-                obj.createFcnList();
-            end
+            mask = false(1, numel(outs));
 
-            % -----------------------------
-            % Lookup in funcList cache
-            % -----------------------------
-            idx = find(strcmpi({obj.funcList.name}, funcName), 1);
+            for iOut = 1:numel(outs)
 
-            if isempty(idx)
-                error('PipelineManager:getPipelineInfo:NotFound', ...
-                    'Function "%s" was not found in funcList.', funcName);
-            end
+                isDataLocal = isfield(outs(iOut),'isData') && outs(iOut).isData;
 
-            info = obj.funcList(idx).info;
-
-            if ~isstruct(info)
-                error('PipelineManager:getPipelineInfo:InvalidInfo', ...
-                    'funcList entry for "%s" does not contain a valid pipelineInfo struct.', funcName);
-            end
-
-            % -----------------------------
-            % Ensure expected fields exist
-            % -----------------------------
-            if ~isfield(info,'inputs');      info.inputs = struct([]);      end
-            if ~isfield(info,'outputs');     info.outputs = struct([]);     end
-            if ~isfield(info,'parameters');  info.parameters = struct([]);  end
-            if ~isfield(info,'notes');       info.notes = {};               end
-
-            % -----------------------------
-            % Initialize runtime parameter values
-            % -----------------------------
-            if ~isempty(info.parameters)
-                for k = 1:numel(info.parameters)
-                    if ~isfield(info.parameters(k),'default')
-                        info.parameters(k).default = [];
-                    end
-                    % Always (re)initialize runtime value from default when fetching schema
-                    info.parameters(k).value = info.parameters(k).default;
+                outModeLocal = 'data';
+                if isfield(outs(iOut),'outputMode') && ~isempty(outs(iOut).outputMode)
+                    outModeLocal = lower(strtrim(char(string(outs(iOut).outputMode))));
                 end
+
+                mask(iOut) = isDataLocal && ~strcmpi(outModeLocal, 'file');
             end
+
+            saveableIdx = find(mask);
         end
+
         function showBranches(obj)
             %SHOWBRANCHES Display all root-to-leaf branches in the command window.
             %
@@ -4683,6 +4795,7 @@ classdef PipelineManager < handle
                 end
             end
         end
+
         function stepTag = generateStepTag(obj, funcName)
             %GENERATESTEPTAG Generate unique step instance tag.
 
@@ -4696,6 +4809,7 @@ classdef PipelineManager < handle
 
             stepTag = sprintf('%s_%d', funcName, count);
         end
+
         function ref = resolveInputReference(obj, inputRef)
             %RESOLVEINPUTREFERENCE Resolve user input reference(s) to upstream sources.
             %
@@ -4851,6 +4965,7 @@ classdef PipelineManager < handle
 
             error('Input "%s" could not be resolved.', inputRef);
         end
+
         function leafIDs = getLeafNodeIDs(obj)
             %GETLEAFNODEIDS Return node IDs with no outgoing connections.
             %
@@ -4869,6 +4984,7 @@ classdef PipelineManager < handle
 
             leafIDs = allIDs(~ismember(allIDs,srcIDs));
         end
+
         function funcNames = getUpstreamFunctionNames(obj,nodeID)
             %GETUPSTREAMFUNCTIONNAMES Return upstream function names for one node.
             %
@@ -4911,6 +5027,7 @@ classdef PipelineManager < handle
                 end
             end
         end
+
         function updateTopoOrder(obj)
             %UPDATETOPOORDER Compute and cache topological order of the DAG.
 
@@ -4988,6 +5105,7 @@ classdef PipelineManager < handle
 
             obj.topoOrder = topo;
         end
+
         function srcNodeID = ensureFileSourceNode(obj, filePath, semanticType)
             %ENSUREFILESOURCENODE Create or reuse a folder source node for a file.
             %
@@ -5084,6 +5202,7 @@ classdef PipelineManager < handle
             obj.nodes = [obj.nodes, node];
             srcNodeID = node.id;
         end
+
         function connectNodes(obj, srcNodeID, dstNodeID, srcOutputName, dstInputName, selectedFile)
             %CONNECTNODES Add a directed connection (edge) between nodes.
             %
@@ -5212,6 +5331,7 @@ classdef PipelineManager < handle
                 rethrow(ME);
             end
         end
+
         function [tf, report] = validateGraph(obj, varargin)
             %VALIDATEGRAPH Validate the current DAG structure.
             %
@@ -5517,6 +5637,7 @@ classdef PipelineManager < handle
                     '%s', strjoin(report.errors, '\n'));
             end
         end
+
         function autoValidate(obj)
             %AUTOVALIDATE Run validation and auto-print concise report if invalid.
 
@@ -5544,6 +5665,7 @@ classdef PipelineManager < handle
                 fprintf('Run obj.diagnosePipeline() for full report.\n\n');
             end
         end
+
         function node = createNodeFromFuncInfo(obj, funcName, info, varargin)
             %CREATENODEFROMFUNCINFO Create a DAG node from pipelineInfo.
             %
@@ -5684,6 +5806,7 @@ classdef PipelineManager < handle
                 end
             end
         end
+
         function selection = promptUserToSelectSource(obj, requiredType, mode, candidates)
             %PROMPTUSERTOSELECTSOURCE  Select data source for an input port.
             %
@@ -5798,6 +5921,7 @@ classdef PipelineManager < handle
                         'Unknown mode "%s".', mode);
             end
         end
+
         function loadPipeLog(obj, SaveFolder)
             %LOADPIPELOG Load per-folder pipeLog table from SaveFolder.
             %
@@ -5820,6 +5944,7 @@ classdef PipelineManager < handle
 
             obj.folderPipeLog = S.pipeLog;
         end
+
         function savePipeLog(obj, SaveFolder)
             %SAVEPIPELOG Save per-folder pipeLog table to SaveFolder.
             %
@@ -5837,6 +5962,7 @@ classdef PipelineManager < handle
             pipeLog = obj.folderPipeLog; %#ok<NASGU>
             save(fullfile(SaveFolder,'pipeLog.mat'),'pipeLog');
         end
+
         function updatePipeLog(obj, SaveFolder, node, status, varargin)
             %UPDATEPIPELOG Append a step-level entry to per-folder pipeLog and PipelineSummary.
             %
@@ -6160,6 +6286,7 @@ classdef PipelineManager < handle
                 key = sprintf('%d:%s', stepID, char(string(outputName)));
             end
         end
+
         function logRAMDecision(obj, nodeID, inputName, modeStr, detailStr)
             %LOGRAMDECISION Record RAM decision for a node input (CLI + pipeLog-friendly).
             %
@@ -6334,6 +6461,7 @@ classdef PipelineManager < handle
                 savedFiles = unique(string(savedFiles(:)), 'stable');
             end
         end
+
         function validateRamSafeCompatibility(obj)
             %VALIDATERAMSAFECOMPATIBILITY Validate RAM-safe compatibility of the DAG.
             %
@@ -6438,6 +6566,7 @@ classdef PipelineManager < handle
                 warning('PipelineManager:RAMSafe:UnsupportedFileInput', '%s', msg);
             end
         end
+
         function runPipelineOnFolder(obj, saveFolder, rawFolder)
             %RUNPIPELINEONFOLDER Execute the current DAG on a single SaveFolder.
             %
@@ -7156,6 +7285,7 @@ classdef PipelineManager < handle
                 end
             end
         end
+
         function execOrder = buildExecutionOrder(obj, requiredNodeIDs)
             %BUILDEXECUTIONORDER Build a RAM-aware execution order for the DAG.
             %
@@ -7337,6 +7467,7 @@ classdef PipelineManager < handle
                     'Failed to compute a complete execution order.');
             end
         end
+
         function tf = lookaheadRequiresRAM(obj, dstNodeID)
             %LOOKAHEADREQUIRESRAM Return true if upcoming nodes (on same branch) require RAM input.
             %
@@ -7431,6 +7562,7 @@ classdef PipelineManager < handle
                 end
             end
         end
+
         function enforceSingleRamValueAfterNode(obj, nodeID, saveFolder)
             %ENFORCESINGLERAMVALUEAFTERNODE Keep only latest-node outputs in RAM.
             %
@@ -7594,6 +7726,7 @@ classdef PipelineManager < handle
                 fName = strtrim(fName);
             end
         end
+
         function buildConsumerCount(obj)
             %BUILDCONSUMERCOUNT Count outgoing edges per (sourceNodeID, sourceOutputName).
             % No 'kind' field exists; all connections are assumed data-flow edges.
@@ -7613,6 +7746,7 @@ classdef PipelineManager < handle
                 end
             end
         end
+
         function req = computeRequiredNodes(obj)
             %COMPUTEREQUIREDNODES Compute nodes required to produce all leaf outputs.
             %
@@ -7731,6 +7865,7 @@ classdef PipelineManager < handle
                 tf = true;
             end
         end
+
         function [posArgs, nvArgs, consumedKeys] = resolveAndBuildArguments(obj, node, saveFolder, rawFolder)
             %RESOLVEANDBUILDARGUMENTS Build positional and name-value args from node.info.arguments.
 
@@ -7794,6 +7929,7 @@ classdef PipelineManager < handle
                 end
             end
         end
+
         function params = buildParamsStruct(obj, nodeLocal) %#ok<INUSL>
             %BUILDPARAMSSTRUCT Build scalar struct of parameters from node.info.parameters.
 
@@ -7809,6 +7945,7 @@ classdef PipelineManager < handle
                 end
             end
         end
+
         function [valOut, keyUsed] = resolveDataInputValue(obj, dstNodeID, dstInputName, saveFolder)
             %RESOLVEDATAINPUTVALUE Resolve a DATA input value according to RAM policy.
             %
@@ -8230,6 +8367,7 @@ classdef PipelineManager < handle
                 tf = availBytes >= requiredBytes;
             end
         end
+
         function createdFiles = registerOutputs(obj, nodeLocal, outCell, folder)
             %REGISTEROUTPUTS Register outputs in obj.dataStore and return created filenames.
             %
@@ -8536,6 +8674,7 @@ classdef PipelineManager < handle
                 folderBoundNameOut = string(fBase) + string(fExt);
             end
         end
+
         function tickCooldown(obj, nodeID)
             %TICKCOOLDOWN Decrement cooldownRemaining for a node (if present).
             %
@@ -8561,6 +8700,7 @@ classdef PipelineManager < handle
                 end
             end
         end
+
         function tmpFile = writeTempData(obj, dataVal, folder, nodeIDLocal, outName)
             %WRITETEMPDATA Write temporary DATA output and return its full saved path.
             %
@@ -8623,6 +8763,7 @@ classdef PipelineManager < handle
             tmpFile = string(savedPath);
             obj.tempFiles(end+1,1) = tmpFile; %#ok<AGROW>
         end
+
         function decrementConsumers(obj, key)
             %DECREMENTCONSUMERS Decrement remainingConsumers; release RAM/delete temp if zero.
             %
@@ -8657,6 +8798,7 @@ classdef PipelineManager < handle
                 end
             end
         end
+
         function cleanupTemps(obj)
             %CLEANUPTEMPS Defensive cleanup for temp files not referenced by any dataStore record.
 
@@ -8681,10 +8823,12 @@ classdef PipelineManager < handle
                 end
             end
         end
+
         function key = makeKey(obj, nid, port) %#ok<INUSL>
             %MAKEKEY Create canonical dataStore/consumerCount key: "<nodeID>:<port>"
             key = sprintf('%d:%s', nid, char(string(port)));
         end
+
         function n = getConsumerCount(obj, key)
             %GETCONSUMERCOUNT Return number of consumers for key.
             if obj.consumerCount.isKey(key)
@@ -8693,6 +8837,7 @@ classdef PipelineManager < handle
                 n = 0;
             end
         end
+
         function funcName = getCallableFuncName(obj, nodeLocal)
             %GETCALLABLEFUNCNAME Determine callable function name for node.
             % Uses:
@@ -8716,6 +8861,7 @@ classdef PipelineManager < handle
                 funcName = char(string(nodeLocal.name));
             end
         end
+
         function savedFiles = saveNodeDataOutputs(obj, node, saveFolder, varargin)
             %SAVENODEDATAOUTPUTS Save requested DATA outputs for a step to disk.
             %
@@ -8998,6 +9144,7 @@ classdef PipelineManager < handle
             end
 
         end
+
         function md = getMetaData(obj, node, saveFolder)
             %GETMETADATA Return metadata for legacy functions without loading the data array.
             %
@@ -9719,7 +9866,7 @@ classdef PipelineManager < handle
                 end
             end
         end
-        
+
         function [tf, nStepsMatched] = isHistoryMatch(~, candidateSteps, candidateStepIsNode, historyEntry, saveFolder, rawFolder)
             %ISHISTORYMATCH Strict prefix match between candidateSteps and historyEntry.info.
             %
@@ -9869,6 +10016,7 @@ classdef PipelineManager < handle
 
             idx = find([obj.nodes.id] == nodeID,1,'first');
         end
+
         function upstreamNodes = getUpstreamNodes(obj, nodeID)
             %GETUPSTREAMNODES Return all upstream nodes that can reach nodeID.
             %
@@ -9928,6 +10076,7 @@ classdef PipelineManager < handle
 
             upstreamNodes = obj.nodes(visitedIdx);
         end
+
         function path = branchPathFromLeaf(obj, leafID)
             %BRANCHPATHFROMLEAF Return ordered path from root to leaf.
 
@@ -10004,6 +10153,7 @@ classdef PipelineManager < handle
                 end
             end
         end
+
         function createFcnList(obj)
             %CREATEFCNLIST Create the list of analysis functions with pipelineInfo metadata.
             %
@@ -10102,6 +10252,7 @@ classdef PipelineManager < handle
 
             disp('Function list created!');
         end
+
         function info = parseFuncFile(~, fcnStruct)
             %PARSEFUNCFILE Parse a legacy analysis function into pipelineInfo metadata.
             %
@@ -10405,6 +10556,7 @@ classdef PipelineManager < handle
             % Add Legacy Flag
             info.legacyOpts = true;
         end
+
         function list_truncated = truncateFolderList(~,list)
             % TRUNCATEFOLDERLIST reduces the size of the path by replacing
             % the common segments with "...".
@@ -11015,78 +11167,66 @@ classdef PipelineManager < handle
             %ADDOUTPUT Add an output definition to pipelineInfo.outputs.
             %
             %   info = PipelineManager.addOutput(info, name, type, outputMode, ...
-            %       description, defOutfilename, position, ...)
+            %       description, defOutfilename, position)
             %
-            %   REQUIRED INPUTS
-            %   name        (text) output variable / output port name
-            %   type        (char|string|cellstr) semantic type(s)
-            %   outputMode  (text) 'data' or 'file'
+            %   info = PipelineManager.addOutput(..., 'isData', tf, ...
+            %       'saveFileName', fileName)
             %
-            %   OPTIONAL INPUTS
-            %   description     (text) optional
-            %   defOutfilename  (text|cell) default filename or list of filenames
-            %   position        (numeric) output position in the MATLAB function call
+            %   Inputs:
+            %       info           - pipelineInfo struct created by createPipelineInfo.
+            %       name           - Logical output port name. Must be unique within
+            %                        info.outputs.
+            %       type           - Semantic type as char/string or cell array of
+            %                        char/string.
+            %       outputMode     - 'data' or 'file'.
+            %       description    - User-facing description.
+            %       defOutfilename - Default output filename metadata. For file-manifest
+            %                        outputs, this can be a cell array of candidate files.
+            %       position       - Positional order of the output.
             %
-            %   NAME-VALUE OPTIONS
-            %   'isData'        : logical (default true)
-            %   'saveFileName'  : char/string (default '')
+            %   Name-Value options:
+            %       isData         - Logical scalar. Default: true.
+            %       saveFileName   - Default PipelineManager-managed save target.
+            %                        Default: ''.
             %
-            %   Behavior:
-            %       - Validates and appends one output definition to info.outputs.
-            %       - If a DATA output does not declare defOutfilename, a default name
-            %         is auto-generated from the function name:
-            %             <functionName>_data
-            %             <functionName>_data_2
-            %             <functionName>_data_3
-            %             ...
-            %       - The auto-generated default name is extensionless on purpose.
-            %         For outputMode='data', saveData may infer .dat / .umt later.
-            %       - For outputMode='file', defOutfilename is the declared default
-            %         filename identity for that file-producing output.
-            %
-            %   Warning:
-            %       - When a default name is auto-generated, a warning is raised to
-            %         encourage explicit naming in the function's pipelineInfo.
+            %   Notes:
+            %       - For file-manifest outputs, this method stores ONE logical
+            %         output port whose defOutfilename field may contain multiple
+            %         candidate files.
+            %       - Output names must be unique within one pipelineInfo.
+            %       - Path components in defOutfilename are stripped automatically.
+            %       - For DATA outputs with empty defOutfilename, a default name is
+            %         auto-generated from the function prefix.
 
-            arguments
-                info struct
-                name {mustBeTextScalar}
-                type
-                outputMode {mustBeTextScalar}
-                description = ''
-                defOutfilename = ''
-                position = []
-            end
-            arguments (Repeating)
-                varargin
-            end
+            p = inputParser;
+            addParameter(p, 'isData', true, @(x) islogical(x) && isscalar(x));
+            addParameter(p, 'saveFileName', '', @(x) ischar(x) || (isstring(x) && isscalar(x)));
+            parse(p, varargin{:});
 
-            % Defaults
-            isData       = true;
-            saveFileName = '';
-
-            for k = 1:2:numel(varargin)
-                key = lower(char(string(varargin{k})));
-                val = varargin{k+1};
-
-                switch key
-                    case 'isdata'
-                        isData = logical(val);
-                    case 'savefilename'
-                        saveFileName = char(string(val));
-                end
-            end
+            isData = p.Results.isData;
+            saveFileName = char(string(p.Results.saveFileName));
 
             % -------------------------------------------------------------
             % Normalize NAME
             % -------------------------------------------------------------
             name = strtrim(char(string(name)));
             if isempty(name)
-                error('addOutput:InvalidName', 'Output name cannot be empty.');
+                error('addOutput:InvalidName', 'Name cannot be empty.');
+            end
+
+            % Enforce unique logical output port names
+            if isfield(info, 'outputs') && ~isempty(info.outputs)
+                existingNames = {info.outputs.name};
+                if any(strcmpi(existingNames, name))
+                    error('addOutput:DuplicateOutputName', ...
+                        ['Duplicate output name "%s". Output names must be unique ' ...
+                        'within one pipelineInfo.'], ...
+                        name);
+                end
             end
 
             % -------------------------------------------------------------
-            % Normalize TYPE -> 1xN cellstr
+            % Normalize TYPE -> 1xN cell array of char
             % -------------------------------------------------------------
             if ischar(type) || isstring(type)
                 typeCell = {strtrim(char(string(type)))};
@@ -11094,9 +11234,15 @@ classdef PipelineManager < handle
                 typeCell = cellfun(@(x) strtrim(char(string(x))), type, 'UniformOutput', false);
             else
                 error('addOutput:InvalidType', ...
-                    'TYPE must be char/string or cell array of char/string.');
+                    'TYPE must be char/string or a cell array of char/string.');
             end
+
+            typeCell = typeCell(~cellfun(@isempty, typeCell));
             typeCell = unique(typeCell, 'stable');
+
+            if isempty(typeCell)
+                error('addOutput:EmptyType', 'TYPE cannot be empty.');
+            end
 
             % -------------------------------------------------------------
             % Validate outputMode
@@ -11109,24 +11255,41 @@ classdef PipelineManager < handle
             end
 
             % -------------------------------------------------------------
-            % Normalize defOutfilename
+            % Normalize description and position
             % -------------------------------------------------------------
-            if ischar(defOutfilename) || isstring(defOutfilename)
+            description = char(string(description));
+
+            if isempty(position)
+                position = [];
+            elseif ~(isnumeric(position) && isscalar(position) && isfinite(position))
+                error('addOutput:InvalidPosition', ...
+                    'position must be a numeric finite scalar or empty.');
+            end
+
+            % -------------------------------------------------------------
+            % Normalize defOutfilename to a clean cell row
+            % -------------------------------------------------------------
+            if isempty(defOutfilename)
+                defOutList = {};
+            elseif ischar(defOutfilename) || isstring(defOutfilename)
                 defOutList = {strtrim(char(string(defOutfilename)))};
             elseif iscell(defOutfilename)
                 defOutList = cellfun(@(x) strtrim(char(string(x))), defOutfilename, 'UniformOutput', false);
             else
                 error('addOutput:InvalidDefaultOutputName', ...
-                    'defOutfilename must be text or a cell array of text.');
+                    'defOutfilename must be empty, text, or a cell array of text.');
             end
 
             defOutList = defOutList(~cellfun(@isempty, defOutList));
 
-            % Strip any path components if user provided them
+            % Strip any path components if provided
             for iDef = 1:numel(defOutList)
                 [~, b, e] = fileparts(defOutList{iDef});
                 defOutList{iDef} = [b e];
             end
+
+            % Keep unique filenames only
+            defOutList = unique(defOutList, 'stable');
 
             % -------------------------------------------------------------
             % Auto-generate default output name for DATA outputs when missing
@@ -11162,27 +11325,39 @@ classdef PipelineManager < handle
 
             % -------------------------------------------------------------
             % Rebuild defOutfilename output shape
+            % Important: keep file manifests as ONE field value, not a struct array
             % -------------------------------------------------------------
             if isempty(defOutList)
-                defOutfilename = '';
+                defOutValue = '';
             elseif numel(defOutList) == 1
-                defOutfilename = defOutList{1};
+                defOutValue = defOutList{1};
             else
-                defOutfilename = defOutList(:)';
+                defOutValue = defOutList(:).';
+            end
+
+            % -------------------------------------------------------------
+            % Normalize saveFileName
+            % -------------------------------------------------------------
+            saveFileName = strtrim(saveFileName);
+            if ~isempty(saveFileName)
+                [~, bSave, eSave] = fileparts(saveFileName);
+                saveFileName = [bSave eSave];
             end
 
             % -------------------------------------------------------------
             % Build output struct
+            % Important: wrap defOutValue in braces so a cell manifest stays as a
+            % single field value instead of expanding into a struct array.
             % -------------------------------------------------------------
             newOutput = struct( ...
                 'name', name, ...
                 'type', {typeCell}, ...
                 'outputMode', outputMode, ...
-                'description', char(string(description)), ...
-                'defOutfilename', defOutfilename, ...
+                'description', description, ...
+                'defOutfilename', {defOutValue}, ...
                 'position', position, ...
                 'isData', logical(isData), ...
-                'saveFileName', char(string(saveFileName)));
+                'saveFileName', saveFileName);
 
             if ~isfield(info, 'outputs') || isempty(info.outputs)
                 info.outputs = newOutput;
@@ -11202,11 +11377,13 @@ classdef PipelineManager < handle
                     funcPrefix = char(string(infoLocal.functionName));
                 end
 
-                funcPrefix = matlab.lang.makeValidName(strtrim(funcPrefix));
+                funcPrefix = matlab.lang.makeValidName(funcPrefix);
+
                 if isempty(funcPrefix)
                     funcPrefix = 'output';
                 end
             end
         end
+
     end
 end

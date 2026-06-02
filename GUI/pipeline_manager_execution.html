@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Execution Order</title>
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: auto; background: #f4f5f7; font-family: Arial, Helvetica, sans-serif; }
+    #root { padding: 10px; box-sizing: border-box; }
+    #note { color: #6b7280; font-size: 12px; margin-bottom: 10px; }
+    .step { background: #ffffff; border: 1px solid #d2d6dd; border-radius: 10px; padding: 10px; margin-bottom: 8px; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+    .step.selected { border: 2px solid #2f78ff; box-shadow: 0 0 0 2px rgba(47,120,255,0.12); }
+    .stepHeader { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .stepTitle { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .stepTag { color: #5f6368; font-size: 12px; margin-top: 2px; }
+    .orderBadge { padding: 2px 6px; border-radius: 999px; background: #eef2f7; font-size: 10px; }
+    #hint { color: #7a7a7a; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div id="root">
+    <div id="note"></div>
+    <div id="list"></div>
+    <div id="hint">No execution data available.</div>
+  </div>
+
+  <script>
+    let htmlComponent = null;
+    let model = { steps: [], selectedNodeID: null, note: "" };
+
+    function setup(component) {
+      htmlComponent = component;
+      htmlComponent.addEventListener("DataChanged", function() { applyData(); });
+      applyData();
+      htmlComponent.sendEventToMATLAB("htmlReady", { component: "execution" });
+    }
+
+    function normalizeToArray(value) {
+      if (Array.isArray(value)) {
+        return value;
+      }
+      if (value === undefined || value === null) {
+        return [];
+      }
+      if (typeof value === "object") {
+        return [value];
+      }
+      return [];
+    }
+
+    function applyData() {
+      const d = (htmlComponent && htmlComponent.Data) ? htmlComponent.Data : {};
+      model.steps = normalizeToArray(d.steps);
+      model.selectedNodeID = Object.prototype.hasOwnProperty.call(d, "selectedNodeID") ? d.selectedNodeID : null;
+      model.note = d.note || "";
+      render();
+    }
+
+    function render() {
+      const note = document.getElementById("note");
+      const list = document.getElementById("list");
+      const hint = document.getElementById("hint");
+      note.textContent = model.note || "";
+      list.innerHTML = "";
+
+      if (!model.steps.length) {
+        hint.style.display = "block";
+        return;
+      }
+
+      hint.style.display = "none";
+
+      model.steps.forEach(function(step) {
+        const card = document.createElement("div");
+        card.className = "step" + ((step.id === model.selectedNodeID) ? " selected" : "");
+        card.innerHTML = `
+          <div class="stepHeader">
+            <div>
+              <div class="stepTitle">${esc(step.funcName || "")}</div>
+              <div class="stepTag">${esc(step.stepTag || "")}</div>
+            </div>
+            <div class="orderBadge">#${step.orderIndex || ""}</div>
+          </div>`;
+
+        card.addEventListener("click", function() {
+          if (htmlComponent) {
+            htmlComponent.sendEventToMATLAB("stepSelected", { nodeID: step.id, stepTag: step.stepTag || "", funcName: step.funcName || "" });
+          }
+        });
+
+        list.appendChild(card);
+      });
+    }
+
+    function esc(value) {
+      return String((value === undefined || value === null) ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+  </script>
+</body>
+</html>

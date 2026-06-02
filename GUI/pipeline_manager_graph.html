@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Pipeline Graph</title>
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: auto; background: #f4f5f7; font-family: Arial, Helvetica, sans-serif; }
+    #root { width: 100%; height: 100%; }
+    #canvas { position: relative; min-width: 1000px; min-height: 700px; }
+    #edges { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; z-index: 0; }
+    #nodeLayer { position: absolute; inset: 0; z-index: 1; }
+    #edgeLabels { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+    #hint { position: absolute; top: 18px; left: 18px; color: #7a7a7a; font-size: 13px; z-index: 3; }
+    #hoverCard { position: fixed; z-index: 1200; max-width: 380px; background: #ffffff; border: 1px solid #cfd5dc; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.18); padding: 10px 12px; display: none; pointer-events: none; white-space: pre-wrap; font-size: 12px; color: #2f3440; line-height: 1.35; }
+    #modeBanner { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1250; display: none; align-items: center; gap: 12px; background: #ffffff; border: 1px solid #cfd5dc; border-radius: 999px; box-shadow: 0 6px 20px rgba(0,0,0,0.16); padding: 8px 12px; font-size: 12px; color: #2f3440; }
+    #modeBanner button { border: 1px solid #cfd5dc; background: #f8f9fb; border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+    #modeBanner button:hover { background: #eef4ff; }
+    #choicePopup { position: fixed; z-index: 1300; min-width: 240px; max-width: 360px; background: #ffffff; border: 1px solid #cfd5dc; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.18); display: none; overflow: hidden; }
+    .choiceHeader { padding: 8px 10px; font-size: 11px; font-weight: 700; color: #5f6368; border-bottom: 1px solid #eef1f4; text-transform: uppercase; letter-spacing: 0.04em; }
+    .choiceItem { padding: 10px 12px; font-size: 12px; cursor: pointer; }
+    .choiceItem:hover { background: #eef4ff; }
+    .node { position: absolute; width: 190px; height: 76px; box-sizing: border-box; border: 1px solid #c8ccd3; border-radius: 12px; background: #ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.08); padding: 10px 12px; cursor: pointer; display: flex; flex-direction: column; justify-content: center; transition: opacity 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease; }
+    .node.folder { background: #f7fbff; }
+    .node.selected { border: 2px solid #2f78ff; box-shadow: 0 0 0 2px rgba(47,120,255,0.15); }
+    .node.error { border-color: #d14343; }
+    .node.warning { border-color: #d48a00; }
+    .node.reconnectTarget { border-color: #7c4dff; box-shadow: 0 0 0 2px rgba(124,77,255,0.16); }
+    .node.reconnectCandidate { border-color: #1f8f4e; box-shadow: 0 0 0 2px rgba(31,143,78,0.16); }
+    .node.reconnectMuted { opacity: 0.35; }
+    .node.ghostSource { border-style: dashed; border-color: #1f8f4e; background: #f5fbf7; }
+    .nodeHeader { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .title { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .subtitle { font-size: 12px; color: #5f6368; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .iconRow { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .icon { font-size: 13px; line-height: 1; }
+    .edgePath { stroke: #8c99a5; stroke-width: 2; fill: none; }
+    .edgeLabelPill { position: absolute; transform: translate(-50%, -50%); padding: 2px 6px; border-radius: 999px; background: rgba(255,255,255,0.97); border: 1px solid #d7dce3; box-shadow: 0 1px 4px rgba(0,0,0,0.10); font-size: 10px; color: #374151; white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+    #menu { position: fixed; z-index: 1000; min-width: 190px; background: #ffffff; border: 1px solid #cfd5dc; border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,0.18); display: none; overflow: hidden; }
+    .menuItem { padding: 10px 12px; font-size: 12px; cursor: pointer; }
+    .menuItem:hover { background: #eef4ff; }
+  </style>
+</head>
+<body>
+  <div id="root">
+    <div id="canvas">
+      <svg id="edges"></svg>
+      <div id="nodeLayer"></div>
+      <div id="edgeLabels"></div>
+      <div id="hint">No pipeline loaded.</div>
+    </div>
+    <div id="menu">
+      <div class="menuItem" onclick="menuAction('removeStep')">Remove step</div>
+      <div class="menuItem" onclick="menuAction('reconnectStep')">Reconnect inputs</div>
+      <div class="menuItem" onclick="menuAction('configureSaveOutputs')">Save Outputs</div>
+      <div class="menuItem" onclick="menuAction('editParameters')">Edit parameters</div>
+    </div>
+    <div id="hoverCard"></div>
+    <div id="modeBanner">
+      <span id="modeBannerText"></span>
+      <button onclick="cancelReconnectMode()">Cancel</button>
+    </div>
+    <div id="choicePopup"></div>
+  </div>
+
+  <script>
+    let htmlComponent = null;
+    let model = { nodes: [], edges: [], selectedNodeID: null, reconnectMode: false, reconnectBanner: "", reconnectGhost: null };
+    let contextNode = null;
+    let hoverTimer = null;
+    const hoverDelayMs = 450;
+
+    function setup(component) {
+      htmlComponent = component;
+      htmlComponent.addEventListener("DataChanged", function() { applyData(); });
+      document.addEventListener("click", function() { hideMenu(); hideChoicePopup(); });
+      document.addEventListener("scroll", function() { hideHover(); hideChoicePopup(); }, true);
+      applyData();
+      htmlComponent.sendEventToMATLAB("htmlReady", { component: "graph" });
+    }
+
+    function normalizeToArray(value) {
+      if (Array.isArray(value)) {
+        return value;
+      }
+      if (value === undefined || value === null) {
+        return [];
+      }
+      if (typeof value === "object") {
+        return [value];
+      }
+      return [];
+    }
+
+    function applyData() {
+      const d = (htmlComponent && htmlComponent.Data) ? htmlComponent.Data : {};
+      model.nodes = normalizeToArray(d.nodes);
+      model.edges = normalizeToArray(d.edges);
+      if (Object.prototype.hasOwnProperty.call(d, "selectedNodeID")) {
+        model.selectedNodeID = d.selectedNodeID;
+      }
+      model.reconnectMode = !!d.reconnectMode;
+      model.reconnectBanner = d.reconnectBanner || "";
+      model.reconnectGhost = d.reconnectGhost || null;
+
+      if (d.command === "resetView") {
+        document.documentElement.scrollTop = 0;
+        document.documentElement.scrollLeft = 0;
+      }
+
+      render();
+
+      if (htmlComponent) {
+        htmlComponent.sendEventToMATLAB("graphRendered", { nodeCount: model.nodes.length, edgeCount: model.edges.length });
+      }
+    }
+
+    function render() {
+      const nodeLayer = document.getElementById("nodeLayer");
+      const edgeLabels = document.getElementById("edgeLabels");
+      const svg = document.getElementById("edges");
+      const hint = document.getElementById("hint");
+      const modeBanner = document.getElementById("modeBanner");
+      const modeBannerText = document.getElementById("modeBannerText");
+
+      nodeLayer.innerHTML = "";
+      edgeLabels.innerHTML = "";
+      svg.innerHTML = "";
+      hideHover();
+      hideChoicePopup();
+
+      if (model.reconnectMode && model.reconnectBanner) {
+        modeBanner.style.display = "flex";
+        modeBannerText.textContent = model.reconnectBanner;
+      } else {
+        modeBanner.style.display = "none";
+        modeBannerText.textContent = "";
+      }
+
+      if (!model.nodes.length) {
+        hint.style.display = "block";
+        return;
+      }
+
+      hint.style.display = "none";
+
+      const nodeMap = {};
+      let maxX = 1000;
+      let maxY = 700;
+
+      if (model.reconnectMode && model.reconnectGhost) {
+        maxX = Math.max(maxX, (model.reconnectGhost.x || 0) + (model.reconnectGhost.width || 170) + 80);
+        maxY = Math.max(maxY, (model.reconnectGhost.y || 0) + (model.reconnectGhost.height || 64) + 80);
+      }
+
+      model.nodes.forEach(function(n) {
+        nodeMap[n.id] = n;
+        maxX = Math.max(maxX, (n.x || 0) + (n.width || 190) + 80);
+        maxY = Math.max(maxY, (n.y || 0) + (n.height || 76) + 80);
+
+        const el = document.createElement("div");
+        let className = "node";
+        if (n.id === model.selectedNodeID) { className += " selected"; }
+        if (n.kind === "folder") { className += " folder"; }
+        if (n.hasError) { className += " error"; }
+        else if (n.hasWarning) { className += " warning"; }
+        if (n.isReconnectTarget) { className += " reconnectTarget"; }
+        if (n.isReconnectCandidate) { className += " reconnectCandidate"; }
+        if (model.reconnectMode && n.isReconnectMuted) { className += " reconnectMuted"; }
+        el.className = className;
+        el.style.left = (n.x || 0) + "px";
+        el.style.top = (n.y || 0) + "px";
+        el.style.width = (n.width || 190) + "px";
+        el.style.height = (n.height || 76) + "px";
+
+        let icons = "";
+        if (n.hasSavedOutputs) { icons += `<span class="icon" title="Saved outputs">💾</span>`; }
+        if (n.hasError) { icons += `<span class="icon" title="Validation error">❌</span>`; }
+        else if (n.hasWarning) { icons += `<span class="icon" title="Validation warning">⚠️</span>`; }
+
+        el.innerHTML = `
+          <div class="nodeHeader">
+            <div class="title">${esc(n.stepTag || "")}</div>
+            <div class="iconRow">${icons}</div>
+          </div>
+          <div class="subtitle">${esc(n.funcName || "")}</div>`;
+
+        el.addEventListener("click", function(ev) {
+          ev.stopPropagation();
+          hideMenu();
+
+          if (model.reconnectMode) {
+            if (n.isReconnectCandidate) {
+              handleReconnectCandidateClick(n, ev.clientX, ev.clientY);
+            } else if (n.isReconnectTarget) {
+              sendSelected(n);
+            }
+            return;
+          }
+
+          sendSelected(n);
+        });
+
+        el.addEventListener("contextmenu", function(ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          if (model.reconnectMode) {
+            return;
+          }
+          contextNode = n;
+          sendSelected(n);
+          showMenu(ev.clientX, ev.clientY);
+        });
+
+        el.addEventListener("mouseenter", function(ev) {
+          scheduleHover(n.hoverText || "", ev.clientX, ev.clientY);
+        });
+
+        el.addEventListener("mousemove", function(ev) {
+          moveHover(ev.clientX, ev.clientY);
+        });
+
+        el.addEventListener("mouseleave", function() {
+          cancelHover();
+          hideHover();
+        });
+
+        nodeLayer.appendChild(el);
+      });
+
+      if (model.reconnectMode && model.reconnectGhost) {
+        const g = model.reconnectGhost;
+        const ghost = document.createElement("div");
+        ghost.className = "node ghostSource reconnectCandidate";
+        ghost.style.left = (g.x || 0) + "px";
+        ghost.style.top = (g.y || 0) + "px";
+        ghost.style.width = (g.width || 170) + "px";
+        ghost.style.height = (g.height || 64) + "px";
+        ghost.innerHTML = `
+          <div class="nodeHeader">
+            <div class="title">${esc(g.stepTag || "Use File...")}</div>
+            <div class="iconRow"><span class="icon" title="Choose file">📁</span></div>
+          </div>
+          <div class="subtitle">${esc(g.funcName || "File Source")}</div>`;
+
+        ghost.addEventListener("click", function(ev) {
+          ev.stopPropagation();
+          hideMenu();
+          hideChoicePopup();
+          if (htmlComponent) {
+            htmlComponent.sendEventToMATLAB("reconnectUseFile", {});
+          }
+        });
+
+        ghost.addEventListener("mouseenter", function(ev) {
+          scheduleHover(g.hoverText || "", ev.clientX, ev.clientY);
+        });
+
+        ghost.addEventListener("mousemove", function(ev) {
+          moveHover(ev.clientX, ev.clientY);
+        });
+
+        ghost.addEventListener("mouseleave", function() {
+          cancelHover();
+          hideHover();
+        });
+
+        nodeLayer.appendChild(ghost);
+      }
+
+      const canvas = document.getElementById("canvas");
+      canvas.style.minWidth = maxX + "px";
+      canvas.style.minHeight = maxY + "px";
+      svg.setAttribute("width", maxX);
+      svg.setAttribute("height", maxY);
+      svg.style.width = maxX + "px";
+      svg.style.height = maxY + "px";
+
+      model.edges.forEach(function(e) {
+        const s = nodeMap[e.sourceNodeID];
+        const t = nodeMap[e.targetNodeID];
+        if (!s || !t) { return; }
+
+        const x1 = (s.x || 0) + (s.width || 190);
+        const y1 = (s.y || 0) + ((s.height || 76) / 2);
+        const x2 = (t.x || 0);
+        const y2 = (t.y || 0) + ((t.height || 76) / 2);
+        const midX = (x1 + x2) / 2;
+
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("class", "edgePath");
+        path.setAttribute("d", `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`);
+        svg.appendChild(path);
+
+        const labelPoint = cubicPoint(
+          { x: x1, y: y1 },
+          { x: midX, y: y1 },
+          { x: midX, y: y2 },
+          { x: x2, y: y2 },
+          0.62
+        );
+
+        const dy = y2 - y1;
+        const offsetY = Math.abs(dy) < 18 ? -12 : 0;
+
+        const pill = document.createElement("div");
+        pill.className = "edgeLabelPill";
+        pill.style.left = labelPoint.x + "px";
+        pill.style.top = (labelPoint.y + offsetY) + "px";
+        pill.textContent = `${e.sourceLabel || ""}`;
+        pill.title = `${e.sourceLabel || ""} → ${e.targetLabel || ""}`;
+        edgeLabels.appendChild(pill);
+      });
+    }
+
+    function cubicPoint(p0, p1, p2, p3, t) {
+      const mt = 1 - t;
+      const x = (mt * mt * mt * p0.x) + (3 * mt * mt * t * p1.x) + (3 * mt * t * t * p2.x) + (t * t * t * p3.x);
+      const y = (mt * mt * mt * p0.y) + (3 * mt * mt * t * p1.y) + (3 * mt * t * t * p2.y) + (t * t * t * p3.y);
+      return { x, y };
+    }
+
+    function handleReconnectCandidateClick(node, x, y) {
+      const refs = normalizeToArray(node.reconnectChoiceRefs);
+      const labels = normalizeToArray(node.reconnectChoiceLabels);
+
+      if (!refs.length) {
+        return;
+      }
+
+      if (refs.length === 1) {
+        sendReconnectSourceChosen(refs[0]);
+        return;
+      }
+
+      showChoicePopup(labels, refs, x, y);
+    }
+
+    function showChoicePopup(labels, refs, x, y) {
+      const popup = document.getElementById("choicePopup");
+      popup.innerHTML = "";
+      popup.style.display = "block";
+
+      const header = document.createElement("div");
+      header.className = "choiceHeader";
+      header.textContent = "Select source";
+      popup.appendChild(header);
+
+      for (let i = 0; i < refs.length; i++) {
+        const item = document.createElement("div");
+        item.className = "choiceItem";
+        item.textContent = (labels[i] !== undefined && labels[i] !== null && String(labels[i]).length > 0) ? labels[i] : refs[i];
+        item.addEventListener("click", function(ev) {
+          ev.stopPropagation();
+          hideChoicePopup();
+          sendReconnectSourceChosen(refs[i]);
+        });
+        popup.appendChild(item);
+      }
+
+      const rect = popup.getBoundingClientRect();
+      const pad = 12;
+      let left = x + pad;
+      let top = y + pad;
+      if (left + rect.width > window.innerWidth - 8) {
+        left = Math.max(8, x - rect.width - pad);
+      }
+      if (top + rect.height > window.innerHeight - 8) {
+        top = Math.max(8, y - rect.height - pad);
+      }
+      popup.style.left = left + "px";
+      popup.style.top = top + "px";
+    }
+
+    function hideChoicePopup() {
+      const popup = document.getElementById("choicePopup");
+      popup.style.display = "none";
+      popup.innerHTML = "";
+    }
+
+    function sendSelected(node) {
+      model.selectedNodeID = node.id;
+      render();
+      if (htmlComponent) {
+        htmlComponent.sendEventToMATLAB("nodeSelected", { nodeID: node.id, stepTag: node.stepTag || "", funcName: node.funcName || "" });
+      }
+    }
+
+    function sendReconnectSourceChosen(ref) {
+      if (!htmlComponent) { return; }
+      htmlComponent.sendEventToMATLAB("reconnectSourceChosen", { ref: ref });
+    }
+
+    function cancelReconnectMode() {
+      if (!htmlComponent) { return; }
+      htmlComponent.sendEventToMATLAB("cancelReconnect", {});
+    }
+
+    function showMenu(x, y) {
+      const menu = document.getElementById("menu");
+      menu.style.left = x + "px";
+      menu.style.top = y + "px";
+      menu.style.display = "block";
+    }
+
+    function hideMenu() {
+      const menu = document.getElementById("menu");
+      menu.style.display = "none";
+    }
+
+    function scheduleHover(text, x, y) {
+      cancelHover();
+      if (!text) {
+        return;
+      }
+      hoverTimer = window.setTimeout(function() {
+        showHover(text, x, y);
+        hoverTimer = null;
+      }, hoverDelayMs);
+    }
+
+    function cancelHover() {
+      if (hoverTimer !== null) {
+        window.clearTimeout(hoverTimer);
+        hoverTimer = null;
+      }
+    }
+
+    function showHover(text, x, y) {
+      if (!text) {
+        hideHover();
+        return;
+      }
+      const card = document.getElementById("hoverCard");
+      card.textContent = text;
+      card.style.display = "block";
+      moveHover(x, y);
+    }
+
+    function moveHover(x, y) {
+      const card = document.getElementById("hoverCard");
+      if (card.style.display === "none") { return; }
+      const pad = 16;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const rect = card.getBoundingClientRect();
+      let left = x + pad;
+      let top = y + pad;
+      if (left + rect.width > vw - 8) {
+        left = Math.max(8, x - rect.width - pad);
+      }
+      if (top + rect.height > vh - 8) {
+        top = Math.max(8, y - rect.height - pad);
+      }
+      card.style.left = left + "px";
+      card.style.top = top + "px";
+    }
+
+    function hideHover() {
+      cancelHover();
+      const card = document.getElementById("hoverCard");
+      card.style.display = "none";
+      card.textContent = "";
+    }
+
+    function menuAction(action) {
+      hideMenu();
+      if (!contextNode || !htmlComponent) { return; }
+      htmlComponent.sendEventToMATLAB("contextAction", { action: action, nodeID: contextNode.id, stepTag: contextNode.stepTag || "" });
+    }
+
+    function esc(value) {
+      return String((value === undefined || value === null) ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+  </script>
+</body>
+</html>
