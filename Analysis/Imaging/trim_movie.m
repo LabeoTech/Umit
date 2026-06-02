@@ -56,12 +56,8 @@ function outFile = trim_movie(SaveFolder, varargin)
 
 % Defaults
 default_Output = {'fluo_475.dat', 'fluo_567.dat','fluo.dat', 'red.dat', 'green.dat', 'yellow.dat', 'speckle.dat'}; %#ok<NASGU> % Reference for PipelineManager. Actual outputs are stored in outFile.
-default_opts = struct( ...
-    'crop_start_sec', 0, ...
-    'crop_end_sec', 0);
-opts_values = struct( ... %#ok<NASGU>
-    'crop_start_sec', [0 Inf], ...
-    'crop_end_sec', [0 Inf]);
+default_opts = struct('crop_start_sec', 0,'crop_end_sec', 0);
+opts_values = struct('crop_start_sec', [0 Inf], 'crop_end_sec', [0 Inf]);
 
 %%% Arguments parsing and validation %%%
 p = inputParser;
