@@ -213,6 +213,66 @@ for kk = 1:numChannels
     maxNt = max(maxNt, cMetaData{kk}.datLength);
 end
 %--------------------------------------------------------------------------
+% Validate that all selected channels span the same recording duration.
+% This prevents interpolation from hiding cropped or truncated channels.
+%--------------------------------------------------------------------------
+durationToleranceSec = 1e-3;
+channelLabelList = [{'fluorescence'}, colorList(:)'];
+lengthList = zeros(1, numChannels + 1);
+freqList = zeros(1, numChannels + 1);
+
+lengthList(1) = size(fData, 3);
+freqList(1) = double(fMetaData.Freq);
+
+assert(lengthList(1) == double(fMetaData.datLength), ...
+    ['Fluorescence data length (%d frames) does not match fluorescence ' ...
+     'metadata (%d frames).'], ...
+    lengthList(1), double(fMetaData.datLength));
+
+for kk = 1:numChannels
+    fileInfo = dir(colorList{kk});
+    assert(~isempty(fileInfo), ...
+        'Hemodynamic channel file was not found: %s', colorList{kk});
+
+    bytesPerFrame = prod(double(cMetaData{kk}.datSize)) * ...
+        getByteSize(cMetaData{kk}.Datatype);
+    actualNt = fileInfo.bytes / bytesPerFrame;
+
+    assert(isfinite(actualNt) && actualNt > 0 && abs(actualNt - round(actualNt)) < 1e-9, ...
+        ['Hemodynamic channel %s has a file size that is incompatible with ' ...
+         'its spatial metadata and datatype.'], ...
+        colorList{kk});
+
+    actualNt = round(actualNt);
+
+    assert(actualNt == double(cMetaData{kk}.datLength), ...
+        ['Hemodynamic channel %s contains %d frames on disk, but its ' ...
+         'metadata declares %d frames.'], ...
+        colorList{kk}, actualNt, double(cMetaData{kk}.datLength));
+
+    lengthList(kk + 1) = actualNt;
+    freqList(kk + 1) = double(cMetaData{kk}.Freq);
+end
+
+durationListSec = lengthList ./ freqList;
+durationDeltaSec = abs(durationListSec - durationListSec(1));
+
+if any(durationDeltaSec > durationToleranceSec)
+    durationMsg = '';
+    for kk = 1:numel(channelLabelList)
+        durationMsg = sprintf('%s%s: %d frames at %.10g Hz = %.10g s\n', ...
+            durationMsg, channelLabelList{kk}, lengthList(kk), freqList(kk), durationListSec(kk));
+    end
+
+    assert(false, ...
+        ['Cannot resample hemodynamic channels because the selected ' ...
+         'channels do not span the same recording duration within %.4g s. ' ...
+         'This usually means that one file was cropped, truncated, or no ' ...
+         'longer matches its metadata.\n%s'], ...
+        durationToleranceSec, durationMsg);
+end
+
+%--------------------------------------------------------------------------
 % Normalize fluorescence
 %--------------------------------------------------------------------------
 fData = reshape(fData, prod(fMetaData.datSize), []);
@@ -360,6 +420,77 @@ for k = 1:length(colorList)
         error('Hemodynamic channel %s has incompatible spatial dimensions.', colorList{k});
     end
     maxNt = max(maxNt, cMetaData{k}.datLength);
+end
+
+% Validate that all selected channels span the same recording duration.
+% This prevents interpolation from hiding cropped or truncated channels.
+durationToleranceSec = 1e-3;
+channelLabelList = [{'fluorescence'}, colorList(:)'];
+lengthList = zeros(1, numChannels + 1);
+freqList = zeros(1, numChannels + 1);
+
+fluoInfo = dir(fluoFile);
+assert(~isempty(fluoInfo), ...
+    'Fluorescence file was not found: %s', fluoFile);
+
+fluoBytesPerFrame = prod(double(fMetaData.datSize)) * getByteSize(fMetaData.Datatype);
+actualFluoNt = fluoInfo.bytes / fluoBytesPerFrame;
+
+assert(isfinite(actualFluoNt) && actualFluoNt > 0 && abs(actualFluoNt - round(actualFluoNt)) < 1e-9, ...
+    ['Fluorescence file size is incompatible with its spatial metadata ' ...
+     'and datatype.']);
+
+actualFluoNt = round(actualFluoNt);
+
+assert(actualFluoNt == double(fMetaData.datLength), ...
+    ['Fluorescence file contains %d frames on disk, but its metadata ' ...
+     'declares %d frames.'], ...
+    actualFluoNt, double(fMetaData.datLength));
+
+lengthList(1) = actualFluoNt;
+freqList(1) = double(fMetaData.Freq);
+
+for kk = 1:numChannels
+    fileInfo = dir(colorList{kk});
+    assert(~isempty(fileInfo), ...
+        'Hemodynamic channel file was not found: %s', colorList{kk});
+
+    bytesPerFrame = prod(double(cMetaData{kk}.datSize)) * ...
+        getByteSize(cMetaData{kk}.Datatype);
+    actualNt = fileInfo.bytes / bytesPerFrame;
+
+    assert(isfinite(actualNt) && actualNt > 0 && abs(actualNt - round(actualNt)) < 1e-9, ...
+        ['Hemodynamic channel %s has a file size that is incompatible with ' ...
+         'its spatial metadata and datatype.'], ...
+        colorList{kk});
+
+    actualNt = round(actualNt);
+
+    assert(actualNt == double(cMetaData{kk}.datLength), ...
+        ['Hemodynamic channel %s contains %d frames on disk, but its ' ...
+         'metadata declares %d frames.'], ...
+        colorList{kk}, actualNt, double(cMetaData{kk}.datLength));
+
+    lengthList(kk + 1) = actualNt;
+    freqList(kk + 1) = double(cMetaData{kk}.Freq);
+end
+
+durationListSec = lengthList ./ freqList;
+durationDeltaSec = abs(durationListSec - durationListSec(1));
+
+if any(durationDeltaSec > durationToleranceSec)
+    durationMsg = '';
+    for kk = 1:numel(channelLabelList)
+        durationMsg = sprintf('%s%s: %d frames at %.10g Hz = %.10g s\n', ...
+            durationMsg, channelLabelList{kk}, lengthList(kk), freqList(kk), durationListSec(kk));
+    end
+
+    assert(false, ...
+        ['Cannot resample hemodynamic channels because the selected ' ...
+         'channels do not span the same recording duration within %.4g s. ' ...
+         'This usually means that one file was cropped, truncated, or no ' ...
+         'longer matches its metadata.\n%s'], ...
+        durationToleranceSec, durationMsg);
 end
 
 % RAM management

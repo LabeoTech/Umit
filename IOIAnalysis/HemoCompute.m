@@ -105,8 +105,56 @@ if ~any(selectedChannels)
     error('No valid illumination channels were selected.');
 end
 
-% Validate spatial/event dimensions and choose the lowest-frequency timeline.
+% Validate that all selected channels span the same recording duration.
+% This prevents interpolation from hiding cropped or truncated channels.
 idxSelected = find(selectedChannels);
+durationToleranceSec = 1e-3;
+actualLength = nan(1, 3);
+
+for i = idxSelected
+    datFile = fullfile(DataFolder, [channelNames{i} '.dat']);
+    fileInfo = dir(datFile);
+    assert(~isempty(fileInfo), ...
+        'Selected illumination file was not found: %s', datFile);
+
+    bytesPerFrame = prod(double(nativeDatSize{i})) * 4;
+    actualNt = fileInfo.bytes / bytesPerFrame;
+
+    assert(isfinite(actualNt) && actualNt > 0 && abs(actualNt - round(actualNt)) < 1e-9, ...
+        ['Selected illumination file %s has a file size that is incompatible ' ...
+         'with its spatial metadata and datatype.'], ...
+        datFile);
+
+    actualNt = round(actualNt);
+
+    assert(actualNt == double(nativeLength(i)), ...
+        ['Selected illumination file %s contains %d frames on disk, but its ' ...
+         'metadata declares %d frames.'], ...
+        datFile, actualNt, double(nativeLength(i)));
+
+    actualLength(i) = actualNt;
+end
+
+durationListSec = actualLength(idxSelected) ./ nativeFreq(idxSelected);
+durationDeltaSec = abs(durationListSec - durationListSec(1));
+
+if any(durationDeltaSec > durationToleranceSec)
+    durationMsg = '';
+    for i = idxSelected
+        durationMsg = sprintf('%s%s.dat: %d frames at %.10g Hz = %.10g s\n', ...
+            durationMsg, channelNames{i}, actualLength(i), nativeFreq(i), ...
+            actualLength(i) / nativeFreq(i));
+    end
+
+    assert(false, ...
+        ['Cannot compute HbO/HbR because the selected illumination ' ...
+         'channels do not span the same recording duration within %.4g s. ' ...
+         'This usually means that one file was cropped, truncated, or no ' ...
+         'longer matches its metadata.\n%s'], ...
+        durationToleranceSec, durationMsg);
+end
+
+% Validate spatial/event dimensions and choose the lowest-frequency timeline.
 targetFreq = min(nativeFreq(idxSelected));
 freqTol = max(1e-6, abs(targetFreq) * 1e-6);
 idxTargetCandidates = idxSelected(abs(nativeFreq(idxSelected) - targetFreq) <= freqTol);

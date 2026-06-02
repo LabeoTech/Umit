@@ -38,6 +38,7 @@ fid = fopen(DatFileName);
 outFile = fread(fid, inf, '*single');
 outFile = reshape(outFile, [metaData.datSize metaData.datLength]);
 fclose(fid);
+fprintf('Loaded data from %s\n',DatFileName);
 end
 
 % Validation function
