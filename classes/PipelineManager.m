@@ -1115,6 +1115,13 @@ classdef PipelineManager < handle
             end
 
             % -------------------------------------------------------------
+            % Enforce the same duplicate-function-per-branch rule used by addStep.
+            % This must run before disconnecting the current inputs so a rejected
+            % reconnect leaves the graph unchanged.
+            % -------------------------------------------------------------
+            obj.validateReconnectDuplicateFunctionRule(nodeID, srcRefs);
+
+            % -------------------------------------------------------------
             % Disconnect ALL incoming edges to this step's DATA inputs
             % -------------------------------------------------------------
             if ~isempty(obj.connections)
@@ -4897,11 +4904,54 @@ classdef PipelineManager < handle
             %   3) StepTag:Token:         'StepTag:Token' -> struct with nodeID + outputName (+ selectedFile if Token is filename)
 
             if iscell(inputRef)
-                ref = [];
+                % Resolve each entry independently, but normalize the result to a
+                % struct array. This supports mixed multi-input syntax such as:
+                %   {'StepA', 'StepB:outB'}
+                % where plain step references return numeric node IDs, while explicit
+                % output/file references return structs.
+                ref = struct( ...
+                    'nodeID', {}, ...
+                    'outputName', {}, ...
+                    'selectedFile', {});
+
                 for iCell = 1:numel(inputRef)
                     r = obj.resolveInputReference(inputRef{iCell});
-                    ref = [ref r]; %#ok<AGROW>
+
+                    if isstruct(r)
+                        for iRef = 1:numel(r)
+                            thisRef = r(iRef);
+
+                            if ~isfield(thisRef, 'nodeID')
+                                error('PipelineManager:resolveInputReference:InvalidReferenceStruct', ...
+                                    'Resolved input reference at position %d is missing nodeID.', iCell);
+                            end
+
+                            if ~isfield(thisRef, 'outputName')
+                                thisRef.outputName = '';
+                            end
+
+                            if ~isfield(thisRef, 'selectedFile')
+                                thisRef.selectedFile = '';
+                            end
+
+                            ref(end+1) = thisRef; %#ok<AGROW>
+                        end
+
+                    elseif isnumeric(r)
+                        for iRef = 1:numel(r)
+                            ref(end+1) = struct( ... %#ok<AGROW>
+                                'nodeID', r(iRef), ...
+                                'outputName', '', ...
+                                'selectedFile', '');
+                        end
+
+                    else
+                        error('PipelineManager:resolveInputReference:UnsupportedResolvedReference', ...
+                            'Resolved input reference at position %d has unsupported class "%s".', ...
+                            iCell, class(r));
+                    end
                 end
+
                 return
             end
 
@@ -5069,7 +5119,6 @@ classdef PipelineManager < handle
             %   funcNames = getUpstreamFunctionNames(obj, nodeID) walks upstream
             %   from NODEID and collects stream-node function names.
 
-
             visited = [];
             stack = nodeID;
             funcNames = {};
@@ -5087,9 +5136,17 @@ classdef PipelineManager < handle
 
                 idx = find([obj.nodes.id]==current,1);
 
-                if strcmp(obj.nodes(idx).kind,'stream')
-                    base = strtok(obj.nodes(idx).name,'_');
-                    funcNames{end+1} = base;
+                if isempty(idx)
+                    continue
+                end
+
+                nodeLocal = obj.nodes(idx);
+
+                if strcmpi(nodeLocal.kind,'stream')
+                    funcNameLocal = obj.getNodeFunctionName(nodeLocal);
+                    if ~isempty(funcNameLocal)
+                        funcNames{end+1} = funcNameLocal; %#ok<AGROW>
+                    end
                 end
 
                 % --- Safe parent lookup ---
@@ -5101,8 +5158,170 @@ classdef PipelineManager < handle
                 end
 
                 if ~isempty(parents)
-                    stack = [stack [parents.sourceNodeID]];
+                    stack = [stack [parents.sourceNodeID]]; %#ok<AGROW>
                 end
+            end
+
+            funcNames = unique(funcNames, 'stable');
+        end
+
+        function funcNames = getDownstreamFunctionNames(obj,nodeID)
+            %GETDOWNSTREAMFUNCTIONNAMES Return downstream stream function names.
+            %
+            %   funcNames = obj.getDownstreamFunctionNames(nodeID) walks downstream
+            %   from NODEID and collects stream-node function names. The starting
+            %   node is not included.
+
+            visited = [];
+            funcNames = {};
+
+            if isempty(obj.connections)
+                return
+            end
+
+            childConns = obj.connections([obj.connections.sourceNodeID] == nodeID);
+            stack = [childConns.targetNodeID];
+
+            while ~isempty(stack)
+
+                current = stack(end);
+                stack(end) = [];
+
+                if ismember(current, visited)
+                    continue
+                end
+
+                visited(end+1) = current; %#ok<AGROW>
+
+                idx = find([obj.nodes.id] == current, 1);
+
+                if isempty(idx)
+                    continue
+                end
+
+                nodeLocal = obj.nodes(idx);
+
+                if strcmpi(nodeLocal.kind, 'stream')
+                    funcNameLocal = obj.getNodeFunctionName(nodeLocal);
+                    if ~isempty(funcNameLocal)
+                        funcNames{end+1} = funcNameLocal; %#ok<AGROW>
+                    end
+                end
+
+                childConns = obj.connections([obj.connections.sourceNodeID] == current);
+                if ~isempty(childConns)
+                    stack = [stack [childConns.targetNodeID]]; %#ok<AGROW>
+                end
+            end
+
+            funcNames = unique(funcNames, 'stable');
+        end
+
+        function funcName = getNodeFunctionName(~, nodeLocal)
+            %GETNODEFUNCTIONNAME Return the base function name for a stream node.
+            %
+            %   FUNCNAME = GETNODEFUNCTIONNAME(~, NODELOCAL) prefers the modern
+            %   pipelineInfo function name. If unavailable, it strips only a final
+            %   numeric step suffix, preserving function names that contain
+            %   underscores such as run_HemoCorrection_1.
+
+            funcName = '';
+
+            if isfield(nodeLocal, 'info') && isfield(nodeLocal.info, 'name') && ...
+                    ~isempty(nodeLocal.info.name)
+                funcName = char(string(nodeLocal.info.name));
+                return
+            end
+
+            if isfield(nodeLocal, 'name') && ~isempty(nodeLocal.name)
+                nodeName = char(string(nodeLocal.name));
+                tok = regexp(nodeName, '^(.*)_\d+$', 'tokens', 'once');
+
+                if ~isempty(tok)
+                    funcName = tok{1};
+                else
+                    funcName = nodeName;
+                end
+            end
+        end
+
+        function validateReconnectDuplicateFunctionRule(obj, targetNodeID, srcRefs)
+            %VALIDATERECONNECTDUPLICATEFUNCTIONRULE Enforce branch duplicate rules.
+            %
+            %   This preflight guard mirrors addStep duplicate-function validation
+            %   and adds a reconnect-specific downstream-overlap check. It runs
+            %   before the graph is modified so rejected reconnect attempts leave
+            %   the current connections unchanged.
+
+            targetIdx = find([obj.nodes.id] == targetNodeID, 1);
+
+            if isempty(targetIdx)
+                error('PipelineManager:reconnectStep:InvalidTargetNode', ...
+                    'Target node %d does not exist.', targetNodeID);
+            end
+
+            targetNode = obj.nodes(targetIdx);
+            targetFunc = obj.getNodeFunctionName(targetNode);
+
+            if isempty(targetFunc)
+                return
+            end
+
+            srcNodeIDs = localSourceNodeIDs(srcRefs);
+            downstreamFuncs = obj.getDownstreamFunctionNames(targetNodeID);
+
+            for iSrc = 1:numel(srcNodeIDs)
+
+                srcNodeID = srcNodeIDs(iSrc);
+
+                if srcNodeID == targetNodeID
+                    error('PipelineManager:reconnectStep:DuplicateFunctionInBranch', ...
+                        'Reconnect would create a self-dependent branch for step "%s".', ...
+                        targetNode.name);
+                end
+
+                upstreamFuncs = obj.getUpstreamFunctionNames(srcNodeID);
+
+                % Same rule as addStep: the target function cannot already exist
+                % upstream of the proposed source branch.
+                if any(strcmpi(upstreamFuncs, targetFunc))
+                    error('PipelineManager:reconnectStep:DuplicateFunctionInBranch', ...
+                        ['Reconnect rejected because function "%s" already exists upstream ' ...
+                        'of the proposed source for step "%s".'], ...
+                        targetFunc, targetNode.name);
+                end
+
+                % Reconnect-specific rule: a proposed upstream branch cannot contain
+                % a function that already exists downstream of the target step,
+                % otherwise the resulting root-to-leaf branch would contain the same
+                % function twice even though the target function itself is unique.
+                overlap = intersect(lower(string(upstreamFuncs)), lower(string(downstreamFuncs)), 'stable');
+
+                if ~isempty(overlap)
+                    overlapStr = strjoin(overlap, ', ');
+                    error('PipelineManager:reconnectStep:DuplicateFunctionInBranch', ...
+                        ['Reconnect rejected because proposed upstream function(s) [%s] ' ...
+                        'already exist downstream of step "%s".'], ...
+                        char(overlapStr), targetNode.name);
+                end
+            end
+
+            % =========================================================
+            % Local helper
+            % =========================================================
+            function ids = localSourceNodeIDs(refs)
+                if isempty(refs)
+                    ids = [];
+                    return
+                end
+
+                if isstruct(refs)
+                    ids = [refs.nodeID];
+                else
+                    ids = refs;
+                end
+
+                ids = ids(:).';
             end
         end
 
@@ -11116,7 +11335,6 @@ classdef PipelineManager < handle
             end
 
         end
-
         function errors = validateParameterStructArray(obj, params, nodeName)
             %VALIDATEPARAMETERSTRUCTARRAY Validate one node's parameter values.
             %
@@ -11199,24 +11417,21 @@ classdef PipelineManager < handle
                         if ~(islogical(value) && isscalar(value)) && ...
                                 ~(isnumeric(value) && isscalar(value) && isfinite(value) && any(value == [0 1]))
                             tf = false;
-                            msg = sprintf('expected a scalar logical value, got %s.', ...
-                                formatParameterValueForMessage(value));
+                            msg = sprintf('expected a scalar logical value, got %s.', formatParameterValueForMessage(value));
                             return
                         end
 
                     case {'numeric', 'double', 'single'}
                         if ~isnumeric(value) || isempty(value) || any(~isfinite(value(:)))
                             tf = false;
-                            msg = sprintf('expected a finite numeric value, got %s.', ...
-                                formatParameterValueForMessage(value));
+                            msg = sprintf('expected a finite numeric value, got %s.', formatParameterValueForMessage(value));
                             return
                         end
 
                     case {'char', 'string'}
                         if ~(ischar(value) || (isstring(value) && isscalar(value)) || isTextCellOrVector(value))
                             tf = false;
-                            msg = sprintf('expected text, got %s.', ...
-                                formatParameterValueForMessage(value));
+                            msg = sprintf('expected text, got %s.', formatParameterValueForMessage(value));
                             return
                         end
 
@@ -11313,8 +11528,8 @@ classdef PipelineManager < handle
                 % -------------------------------------------------------------
                 % Logical parameters
                 % -------------------------------------------------------------
-                % Logical parameters are already type-checked above. Here, allowed
-                % can optionally restrict the accepted logical values. Support both
+                % Logical parameters are already type-checked above. Here,
+                % allowed can optionally restrict accepted values. Support both
                 % logical specs, e.g. [true false], and numeric 0/1 specs.
                 if strcmpi(typeStr, 'logical')
 
@@ -11363,8 +11578,6 @@ classdef PipelineManager < handle
                         end
 
                         valueText = string(mat2str(valueLogical));
-
-                        % Support common text forms only if existing metadata uses them.
                         allowedLower = lower(allowedText);
                         valueIsAllowed = ...
                             any(strcmp(valueText, allowedText)) || ...
@@ -11387,9 +11600,6 @@ classdef PipelineManager < handle
                     return
                 end
 
-                % -------------------------------------------------------------
-                % Numeric parameters
-                % -------------------------------------------------------------
                 if isnumeric(allowed)
                     if ~isnumeric(value)
                         tf = false;
@@ -11413,9 +11623,6 @@ classdef PipelineManager < handle
                     return
                 end
 
-                % -------------------------------------------------------------
-                % Text parameters
-                % -------------------------------------------------------------
                 if iscell(allowed) || isstring(allowed) || ischar(allowed)
                     allowedText = normalizeAllowedText(allowed);
 
