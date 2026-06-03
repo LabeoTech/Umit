@@ -355,12 +355,20 @@ classdef PipelineManager < handle
             end
 
             % ---------------------------------------
-            % Save values
+            % Validate and save values
             % ---------------------------------------
-            for i = 1:numel(node.info.parameters)
-                obj.nodes(idx).info.parameters(i).value = out{i};
+            candidateParams = node.info.parameters;
+            for i = 1:numel(candidateParams)
+                candidateParams(i).value = out{i};
             end
 
+            paramErrors = obj.validateParameterStructArray(candidateParams, node.name);
+            if ~isempty(paramErrors)
+                error('PipelineManager:setParameters:InvalidParameters', ...
+                    '%s', strjoin(paramErrors, newline));
+            end
+
+            obj.nodes(idx).info.parameters = candidateParams;
             obj.nodes(idx).runtime.b_paramsSet = true;
 
             fprintf('Parameters updated for step: %s\n', node.name);
@@ -1360,6 +1368,13 @@ classdef PipelineManager < handle
                 error('PipelineManager:executePipeline:InvalidGraph', ...
                     'Pipeline validation failed. Run obj.diagnosePipeline() for details. Fix graph errors before execution.');
             end
+
+            % Validate the configured parameter values before any folder-level
+            % work starts. This prevents destructive source/import or setup
+            % steps from running when a downstream step has an invalid value,
+            % for example after loading an edited or legacy .pipe file.
+            obj.validateNodeParameters('throwOnError', true);
+
             obj.updateTopoOrder();
 
             if isempty(obj.topoOrder)
@@ -1376,6 +1391,7 @@ classdef PipelineManager < handle
             % 0b) RAM-safe compatibility check (global, not folder-dependent)
             % -------------------------------------------------------------
             obj.validateRamSafeCompatibility();
+            obj.warnEnforcedExecutionRoles(obj.topoOrder);
 
             % -------------------------------------------------------------
             % 0c) Determine whether current DAG requires RawFolder
@@ -1616,6 +1632,62 @@ classdef PipelineManager < handle
             fprintf('%s\n',repmat('=',1,120))
         end
 
+        function [tf, report] = validateNodeParameters(obj, varargin)
+            %VALIDATENODEPARAMETERS Validate configured step parameter values.
+            %
+            %   tf = obj.validateNodeParameters()
+            %   [tf, report] = obj.validateNodeParameters('throwOnError', false)
+            %
+            %   This is a preflight configuration check. It validates the
+            %   current value stored in node.info.parameters(k).value using the
+            %   same metadata used by the parameter dialog: name, type,
+            %   default, and allowed. It is intentionally separate from
+            %   validateGraph because graph structure and user configuration
+            %   are different validity layers.
+            %
+            %   The method should be called before execution so invalid loaded
+            %   or edited .pipe files cannot run source/import/setup steps
+            %   before a bad downstream parameter is discovered.
+
+            p = inputParser;
+            addParameter(p, 'throwOnError', false, @(x)islogical(x)&&isscalar(x));
+            parse(p, varargin{:});
+            throwOnError = p.Results.throwOnError;
+
+            report = struct('errors', {{}}, 'warnings', {{}});
+            tf = true;
+
+            if isempty(obj.nodes)
+                return
+            end
+
+            for iNode = 1:numel(obj.nodes)
+
+                node = obj.nodes(iNode);
+
+                if ~isfield(node, 'kind') || ~strcmpi(node.kind, 'stream')
+                    continue
+                end
+
+                if ~isfield(node, 'info') || ~isfield(node.info, 'parameters') || isempty(node.info.parameters)
+                    continue
+                end
+
+                nodeErrors = obj.validateParameterStructArray(node.info.parameters, node.name);
+
+                if ~isempty(nodeErrors)
+                    report.errors = [report.errors, nodeErrors]; %#ok<AGROW>
+                end
+            end
+
+            tf = isempty(report.errors);
+
+            if ~tf && throwOnError
+                error('PipelineManager:validateNodeParameters:InvalidParameters', ...
+                    '%s', strjoin(report.errors, newline));
+            end
+        end
+
         function varargout = diagnosePipeline(obj)
             %DIAGNOSEPIPELINE Print a CLI-friendly diagnostic report of the DAG.
             %
@@ -1626,7 +1698,13 @@ classdef PipelineManager < handle
             % prints the diagnostics to the command window and does not
             % return any outputs.
 
-            [tf, report] = obj.validateGraph('throwOnError', false);
+            [tfGraph, graphReport] = obj.validateGraph('throwOnError', false);
+            [tfParams, paramReport] = obj.validateNodeParameters('throwOnError', false);
+
+            tf = tfGraph && tfParams;
+            report = struct();
+            report.errors = [graphReport.errors, paramReport.errors];
+            report.warnings = [graphReport.warnings, paramReport.warnings];
 
             fprintf('\n================ Pipeline Diagnostics ================\n');
 
@@ -6628,7 +6706,10 @@ classdef PipelineManager < handle
                 requiredNodeIDs = obj.topoOrder(:)';  % Force full pipeline rerun
             end
 
-            % Build RAM-aware runtime execution order on the required subgraph
+            % Build runtime execution order on the required subgraph.
+            % File-producing setup roots are scheduled before the RAM-aware
+            % DATA-processing order so side-effect artifacts such as events.mat
+            % are created before downstream steps that may read them from disk.
             execOrder = obj.buildExecutionOrder(requiredNodeIDs);
 
             % -------------------------------------------------------------
@@ -6779,6 +6860,14 @@ classdef PipelineManager < handle
                     % The step attempted to consume these inputs, so release them only
                     % after any recovery save has been attempted.
                     releaseConsumedInputs(consumedKeys);
+
+                    % Setup steps create folder-level artifacts that later steps may
+                    % read implicitly. If one fails, continuing the remaining folder
+                    % execution risks using stale or missing artifacts.
+                    if obj.isSetupExecutionNode(obj.nodes(nodeIdx))
+                        rethrow(ME);
+                    end
+
                     continue
                 end
 
@@ -7286,17 +7375,268 @@ classdef PipelineManager < handle
             end
         end
 
+        function tf = isSetupExecutionNode(obj, nodeLocal)
+            %ISSETUPEXECUTIONNODE True for setup/artifact-producing steps.
+            %
+            %   Setup steps are stream nodes that have no DATA input and no DATA
+            %   output, but interact with RawFolder/SaveFolder and either declare a
+            %   non-DATA file output or declare no outputs at all. They are executed
+            %   before the normal RAM-aware DATA-processing schedule because their
+            %   folder-level side effects may be read implicitly by later functions.
+
+            classInfo = obj.classifyFunctionType(nodeLocal);
+            tf = strcmpi(classInfo.role, 'setup');
+        end
+
+        function classInfo = classifyFunctionType(~, nodeLocal)
+            %CLASSIFYFUNCTIONTYPE Classify a node from its pipelineInfo shape.
+            %
+            %   classInfo = CLASSIFYFUNCTIONTYPE(~, nodeLocal) returns a struct used
+            %   for execution scheduling, sanity checks, and documentation building.
+            %
+            %   Roles:
+            %       source              - no DATA input, at least one DATA output
+            %       transform           - at least one DATA input and DATA output
+            %       setup               - no DATA input/output, but folder-level
+            %                             setup side effects are likely
+            %       export_report_sink  - at least one DATA input, no DATA output
+            %       standalone          - no DATA input/output and no folder context
+            %       folder_source       - file-source proxy node
+            %       invalid             - malformed/non-struct node metadata
+            %
+            %   Setup classification intentionally does not require declared outputs.
+            %   This keeps custom function pipelineInfo compact for folder-level
+            %   preparation steps that create files by side effect.
+
+            classInfo = struct( ...
+                'role',                'invalid', ...
+                'phase',               'invalid', ...
+                'hasDataInput',         false, ...
+                'hasDataOutput',        false, ...
+                'hasFolderInput',       false, ...
+                'hasDeclaredOutputs',   false, ...
+                'hasNonDataFileOutput', false, ...
+                'isExecutionEnforced',  false, ...
+                'enforcedOrder',        '', ...
+                'reason',              'Malformed node metadata.');
+
+            if ~isstruct(nodeLocal) || ~isscalar(nodeLocal)
+                return
+            end
+
+            if ~isfield(nodeLocal, 'kind') || isempty(nodeLocal.kind)
+                return
+            end
+
+            nodeKind = lower(strtrim(char(string(nodeLocal.kind))));
+
+            if strcmpi(nodeKind, 'folder')
+                classInfo.role   = 'folder_source';
+                classInfo.phase  = 'source';
+                classInfo.reason = 'File-source proxy node.';
+                return
+            end
+
+            if ~strcmpi(nodeKind, 'stream')
+                classInfo.role   = 'standalone';
+                classInfo.phase  = 'normal';
+                classInfo.reason = sprintf('Unsupported node kind "%s".', nodeKind);
+                return
+            end
+
+            inputs = struct([]);
+            outputs = struct([]);
+
+            if isfield(nodeLocal, 'info') && isstruct(nodeLocal.info)
+                if isfield(nodeLocal.info, 'inputs') && ~isempty(nodeLocal.info.inputs)
+                    inputs = nodeLocal.info.inputs;
+                end
+                if isfield(nodeLocal.info, 'outputs') && ~isempty(nodeLocal.info.outputs)
+                    outputs = nodeLocal.info.outputs;
+                end
+            end
+
+            hasDataInput = false;
+            hasFolderInput = false;
+
+            for iIn = 1:numel(inputs)
+                inDef = inputs(iIn);
+
+                if isfield(inDef, 'isData') && ~isempty(inDef.isData) && logical(inDef.isData)
+                    hasDataInput = true;
+                end
+
+                inName = '';
+                if isfield(inDef, 'name') && ~isempty(inDef.name)
+                    inName = lower(strtrim(char(string(inDef.name))));
+                end
+
+                inTypes = {};
+                if isfield(inDef, 'type') && ~isempty(inDef.type)
+                    if ischar(inDef.type) || (isstring(inDef.type) && isscalar(inDef.type))
+                        inTypes = {char(string(inDef.type))};
+                    elseif iscell(inDef.type)
+                        inTypes = cellfun(@(x) char(string(x)), inDef.type(:).', 'UniformOutput', false);
+                    elseif isstring(inDef.type)
+                        inTypes = cellstr(inDef.type(:).');
+                    end
+                end
+
+                hasFolderInput = hasFolderInput || ...
+                    any(strcmpi(inName, {'savefolder','rawfolder'})) || ...
+                    any(strcmpi(inTypes, 'SaveFolder')) || ...
+                    any(strcmpi(inTypes, 'RawFolder'));
+            end
+
+            hasDataOutput = false;
+            hasDeclaredOutputs = ~isempty(outputs);
+            hasNonDataFileOutput = false;
+
+            for iOut = 1:numel(outputs)
+                outDef = outputs(iOut);
+
+                outIsData = false;
+                if isfield(outDef, 'isData') && ~isempty(outDef.isData)
+                    outIsData = logical(outDef.isData);
+                end
+
+                outMode = '';
+                if isfield(outDef, 'outputMode') && ~isempty(outDef.outputMode)
+                    outMode = lower(strtrim(char(string(outDef.outputMode))));
+                end
+
+                hasDataOutput = hasDataOutput || outIsData;
+                hasNonDataFileOutput = hasNonDataFileOutput || ...
+                    (~outIsData && strcmpi(outMode, 'file'));
+            end
+
+            classInfo.hasDataInput         = hasDataInput;
+            classInfo.hasDataOutput        = hasDataOutput;
+            classInfo.hasFolderInput       = hasFolderInput;
+            classInfo.hasDeclaredOutputs   = hasDeclaredOutputs;
+            classInfo.hasNonDataFileOutput = hasNonDataFileOutput;
+
+            if ~hasDataInput && hasDataOutput
+                classInfo.role   = 'source';
+                classInfo.phase  = 'source_first';
+                classInfo.reason = ['No DATA input and at least one DATA output; ' ...
+                    'treated as a data-import/source step.'];
+                return
+            end
+
+            if hasDataInput && hasDataOutput
+                classInfo.role   = 'transform';
+                classInfo.phase  = 'normal';
+                classInfo.reason = 'Has DATA input and DATA output.';
+                return
+            end
+
+            if ~hasDataInput && ~hasDataOutput
+                if hasFolderInput && (hasNonDataFileOutput || ~hasDeclaredOutputs)
+                    classInfo.role               = 'setup';
+                    classInfo.phase              = 'setup_second';
+                    classInfo.isExecutionEnforced = true;
+                    classInfo.enforcedOrder      = 'Executed before the RAM-aware DATA-processing schedule.';
+
+                    if hasNonDataFileOutput
+                        classInfo.reason = ['No DATA input/output, has folder context, ' ...
+                            'and declares a non-DATA file output.'];
+                    else
+                        classInfo.reason = ['No DATA input/output, has folder context, ' ...
+                            'and declares no outputs; treated as a folder-level setup side-effect step.'];
+                    end
+                    return
+                end
+
+                classInfo.role   = 'standalone';
+                classInfo.phase  = 'normal';
+                classInfo.reason = 'No DATA input/output and no folder-level setup signature.';
+                return
+            end
+
+            % Remaining case: has DATA input but no DATA output.
+            classInfo.role                = 'export_report_sink';
+            classInfo.phase               = 'terminal';
+            classInfo.isExecutionEnforced = true;
+            classInfo.enforcedOrder       = ['Terminal step: it is scheduled only after ' ...
+                'its upstream DATA input dependencies are satisfied and does not feed downstream DATA branches.'];
+            classInfo.reason              = 'Has DATA input but no DATA output.';
+        end
+
+        function warnEnforcedExecutionRoles(obj, nodeIDs)
+            %WARNENFORCEDEXECUTIONROLES Warn about special execution roles.
+            %
+            %   WARNENFORCEDEXECUTIONROLES(obj, nodeIDs) emits one warning per setup
+            %   or export/report/sink stream node. These roles use enforced execution
+            %   semantics rather than only the RAM-aware branch-continuation order.
+
+            if nargin < 2 || isempty(nodeIDs)
+                if isempty(obj.nodes)
+                    return
+                end
+                nodeIDs = [obj.nodes.id];
+            end
+
+            nodeIDs = nodeIDs(:).';
+            nodeIDs = unique(nodeIDs, 'stable');
+
+            for iNode = 1:numel(nodeIDs)
+                nid = nodeIDs(iNode);
+
+                if isempty(obj.nodes) || ~ismember(nid, [obj.nodes.id])
+                    continue
+                end
+
+                nodeIdx = obj.getNodeIndexByID(nid);
+                nodeLocal = obj.nodes(nodeIdx);
+                classInfo = obj.classifyFunctionType(nodeLocal);
+
+                if ~classInfo.isExecutionEnforced
+                    continue
+                end
+
+                switch lower(classInfo.role)
+                    case 'setup'
+                        warning('PipelineManager:ExecutionRole:SetupStep', ...
+                            ['Step "%s" was classified as SETUP. Its execution order is enforced: %s\n' ...
+                            'Reason: %s'], ...
+                            char(string(nodeLocal.name)), ...
+                            classInfo.enforcedOrder, ...
+                            classInfo.reason);
+
+                    case 'export_report_sink'
+                        warning('PipelineManager:ExecutionRole:SinkStep', ...
+                            ['Step "%s" was classified as EXPORT/REPORT/SINK. Its execution order is enforced: %s\n' ...
+                            'Reason: %s'], ...
+                            char(string(nodeLocal.name)), ...
+                            classInfo.enforcedOrder, ...
+                            classInfo.reason);
+                end
+            end
+        end
+
         function execOrder = buildExecutionOrder(obj, requiredNodeIDs)
-            %BUILDEXECUTIONORDER Build a RAM-aware execution order for the DAG.
+            %BUILDEXECUTIONORDER Build the runtime execution order for the DAG.
             %
             %   execOrder = buildExecutionOrder(obj, requiredNodeIDs)
             %
-            %   Returns a valid topological order restricted to REQUIREDNODEIDS,
-            %   while preferring to continue along the currently active branch so
-            %   the most recently produced DATA can be consumed before switching to
-            %   another branch.
+            %   Returns a valid runtime order restricted to REQUIREDNODEIDS.
             %
-            %   Priority among ready nodes:
+            %   Scheduling phases:
+            %       1) DATA source/import stream steps run first in creation/topological
+            %          order. These steps have no DATA input and at least one DATA
+            %          output. Running them before setup avoids deleting setup artifacts
+            %          with import functions that initialize/clear SaveFolder content.
+            %       2) setup steps run next in creation/topological order. Setup steps
+            %          have no DATA input/output, folder context, and either a non-DATA
+            %          file output or no declared outputs. This covers folder-level
+            %          artifact/side-effect creators such as getEvents.
+            %       3) remaining DATA-processing steps use the RAM-aware branch-
+            %          continuation order.
+            %       4) export/report/sink steps run last in topological order after
+            %          upstream DATA dependencies have been satisfied.
+            %
+            %   Priority among ready non-setup nodes:
             %       1) direct child of the last scheduled node
             %       2) deeper node first (larger distance to a leaf)
             %       3) original obj.topoOrder position as stable tie-breaker
@@ -7332,7 +7672,55 @@ classdef PipelineManager < handle
                 return
             end
 
-            nReq = numel(requiredNodeIDs);
+            % -------------------------------------------------------------
+            % Split nodes into execution phases.
+            %
+            % DATA source/import stream steps run before setup. Some import
+            % functions initialize SaveFolder by deleting conflicting output files;
+            % if setup ran first, artifacts such as events.mat could be deleted
+            % before downstream functions read them.
+            %
+            % Setup steps still run before the normal RAM-aware DATA-processing
+            % schedule because their folder-level artifacts may be read implicitly
+            % by later functions.
+            %
+            % Export/report/sink steps run after the normal DATA-processing schedule
+            % because they do not feed downstream DATA branches.
+            % -------------------------------------------------------------
+            sourceNodeIDs = zeros(1,0);
+            setupNodeIDs  = zeros(1,0);
+            sinkNodeIDs   = zeros(1,0);
+
+            for iTopo = 1:numel(obj.topoOrder)
+                nid = obj.topoOrder(iTopo);
+                if ~ismember(nid, requiredNodeIDs)
+                    continue
+                end
+
+                nodeIdx = obj.getNodeIndexByID(nid);
+                classInfo = obj.classifyFunctionType(obj.nodes(nodeIdx));
+
+                switch lower(classInfo.role)
+                    case 'source'
+                        sourceNodeIDs(end+1) = nid; %#ok<AGROW>
+                    case 'setup'
+                        setupNodeIDs(end+1) = nid; %#ok<AGROW>
+                    case 'export_report_sink'
+                        sinkNodeIDs(end+1) = nid; %#ok<AGROW>
+                end
+            end
+
+            earlyNodeIDs = [sourceNodeIDs, setupNodeIDs];
+            mainNodeIDs = requiredNodeIDs(~ismember(requiredNodeIDs, [earlyNodeIDs, sinkNodeIDs]));
+
+            if isempty(mainNodeIDs)
+                execOrder = [earlyNodeIDs, sinkNodeIDs];
+                return
+            end
+
+            nEarly = numel(earlyNodeIDs);
+            nSink  = numel(sinkNodeIDs);
+            nReq   = numel(mainNodeIDs);
 
             % -------------------------------------------------------------
             % Build ID -> position maps
@@ -7341,7 +7729,7 @@ classdef PipelineManager < handle
             topoPos = containers.Map('KeyType','double','ValueType','double');
 
             for i = 1:nReq
-                reqPos(requiredNodeIDs(i)) = i;
+                reqPos(mainNodeIDs(i)) = i;
             end
 
             for i = 1:numel(obj.topoOrder)
@@ -7378,7 +7766,7 @@ classdef PipelineManager < handle
             %   larger depth = more downstream work remains
             % -------------------------------------------------------------
             depth = zeros(1, nReq);
-            reqTopo = obj.topoOrder(ismember(obj.topoOrder, requiredNodeIDs));
+            reqTopo = obj.topoOrder(ismember(obj.topoOrder, mainNodeIDs));
 
             for i = numel(reqTopo):-1:1
 
@@ -7400,8 +7788,8 @@ classdef PipelineManager < handle
             % -------------------------------------------------------------
             % Priority-based Kahn traversal
             % -------------------------------------------------------------
-            ready = requiredNodeIDs(inDegree == 0);
-            execOrder = zeros(1, nReq);
+            ready = mainNodeIDs(inDegree == 0);
+            execOrderMain = zeros(1, nReq);
 
             nOut = 0;
             lastNodeID = [];
@@ -7441,7 +7829,7 @@ classdef PipelineManager < handle
                 ready(bestIdx) = [];
 
                 nOut = nOut + 1;
-                execOrder(nOut) = pickID;
+                execOrderMain(nOut) = pickID;
                 lastNodeID = pickID;
 
                 pickIdx = reqPos(pickID);
@@ -7460,9 +7848,16 @@ classdef PipelineManager < handle
                 end
             end
 
-            execOrder = execOrder(1:nOut);
+            execOrderMain = execOrderMain(1:nOut);
 
             if nOut ~= nReq
+                error('PipelineManager:buildExecutionOrder:InvalidSchedule', ...
+                    'Failed to compute a complete execution order.');
+            end
+
+            execOrder = [earlyNodeIDs, execOrderMain, sinkNodeIDs];
+
+            if numel(execOrder) ~= (nEarly + nReq + nSink)
                 error('PipelineManager:buildExecutionOrder:InvalidSchedule', ...
                     'Failed to compute a complete execution order.');
             end
@@ -8498,18 +8893,24 @@ classdef PipelineManager < handle
                     continue
                 end
 
-                if ~isfield(outDef,'isData') || ~outDef.isData
+                outputModeLocal = 'data';
+                if isfield(outDef,'outputMode') && ~isempty(outDef.outputMode)
+                    outputModeLocal = lower(strtrim(char(string(outDef.outputMode))));
+                end
+
+                isDataOutputLocal = isfield(outDef,'isData') && ~isempty(outDef.isData) && logical(outDef.isData);
+
+                % Non-DATA file outputs are folder-level artifacts. Register them
+                % so setup steps such as getEvents are logged and can contribute
+                % dataHistory entries, but continue to ignore non-DATA non-file
+                % outputs.
+                if ~isDataOutputLocal && ~strcmpi(outputModeLocal, 'file')
                     continue
                 end
 
                 outName = char(string(outDef.name));
                 key     = obj.makeKey(nodeIDLocal, outName);
                 val     = outCell{iOut};
-
-                outputModeLocal = 'data';
-                if isfield(outDef,'outputMode') && ~isempty(outDef.outputMode)
-                    outputModeLocal = lower(strtrim(char(string(outDef.outputMode))));
-                end
 
                 rec = struct( ...
                     'ramValue', [], ...
@@ -10161,20 +10562,27 @@ classdef PipelineManager < handle
             %
             %   Behavior:
             %       - Each function is first queried for modern pipelineInfo metadata.
-            %       - If modern metadata is not available for a callable function,
-            %         legacy parsing is used as a fallback.
-            %       - If the function itself is not callable from the MATLAB path,
-            %         it is skipped and not added to the list.
+            %       - If the function clearly declares a pipelineInfo query but that
+            %         query fails, the error is treated as a broken modern metadata
+            %         definition and is rethrown with context.
+            %       - If modern metadata is not declared, legacy parsing is used as a
+            %         fallback for callable functions.
+            %       - If the function itself is not callable from the MATLAB path, it
+            %         is skipped and not added to the list.
             %
             %   Notes:
-            %       - This avoids incorrectly treating a missing function as a legacy
-            %         function.
-            %       - Inputs and outputs are annotated with the boolean field isData.
+            %       - This avoids silently falling back to legacy parsing when a
+            %         modern local pipelineInfo block contains an error. Silent fallback
+            %         can create incomplete metadata, for example steps with missing
+            %         parameters even though the function declares them.
+            %       - Inputs and outputs are annotated with the boolean field isData
+            %         after legacy parsing only. Modern pipelineInfo functions are
+            %         expected to provide these fields through addInput/addOutput.
 
             disp('Creating Fcn list...');
             obj.funcList = [];  % Reset
 
-            % List all .m files in the Analysis folder
+            % List all .m files in the Analysis folder.
             list = dir(fullfile(obj.fcnDir, '*', '*.m'));
 
             for i = 1:length(list)
@@ -10183,7 +10591,7 @@ classdef PipelineManager < handle
                 [~, fcnName] = fileparts(fcnFullPath);
 
                 % -------------------------------------------------------------
-                % Skip functions that are not callable from the MATLAB path
+                % Skip functions that are not callable from the MATLAB path.
                 % -------------------------------------------------------------
                 if isempty(which(fcnName))
                     warning('PipelineManager:createFcnList:FunctionNotOnPath', ...
@@ -10193,11 +10601,53 @@ classdef PipelineManager < handle
                 end
 
                 % -------------------------------------------------------------
-                % Try to get pipelineInfo via function query
+                % Detect whether the file explicitly declares a modern
+                % pipelineInfo query. This is used only to decide whether a failed
+                % query should fall back to legacy parsing or be reported as a
+                % broken modern metadata block.
+                % -------------------------------------------------------------
+                b_declaresPipelineInfo = false;
+                try
+                    fileText = fileread(fcnFullPath);
+                    fileLines = regexp(fileText, '\r\n|\n|\r', 'split');
+                    keepLine = true(size(fileLines));
+
+                    for iLine = 1:numel(fileLines)
+                        keepLine(iLine) = ~startsWith(strtrim(fileLines{iLine}), '%');
+                    end
+
+                    nonCommentText = strjoin(fileLines(keepLine), newline);
+                    b_declaresPipelineInfo = ~isempty(regexpi(nonCommentText, ...
+                        '[''\"]pipelineInfo[''\"]', 'once'));
+                catch
+                    % If the file cannot be inspected here, keep the old behavior:
+                    % try the query, and use legacy fallback if needed.
+                    b_declaresPipelineInfo = false;
+                end
+
+                % -------------------------------------------------------------
+                % Try to get pipelineInfo via function query.
                 % -------------------------------------------------------------
                 try
                     fcnHandle = str2func(fcnName);
                     infoStruct = fcnHandle('pipelineInfo');  % Modern functions
+
+                    if ~isstruct(infoStruct)
+                        error('PipelineManager:createFcnList:InvalidPipelineInfoReturn', ...
+                            'Function "%s" returned a non-struct pipelineInfo payload.', ...
+                            fcnName);
+                    end
+
+                    % Modern pipelineInfo should at least contain the canonical
+                    % fields created by createPipelineInfo. This catches accidental
+                    % returns of unrelated structs.
+                    requiredFields = {'inputs','outputs','parameters','arguments'};
+                    missingFields = requiredFields(~isfield(infoStruct, requiredFields));
+                    if ~isempty(missingFields)
+                        error('PipelineManager:createFcnList:InvalidPipelineInfoReturn', ...
+                            'Function "%s" returned pipelineInfo missing field(s): %s.', ...
+                            fcnName, strjoin(missingFields, ', '));
+                    end
 
                 catch ME
 
@@ -10210,11 +10660,22 @@ classdef PipelineManager < handle
                         continue
                     end
 
+                    % If the file appears to declare modern pipelineInfo support,
+                    % do not silently legacy-parse it. A failed modern metadata query
+                    % means the function metadata needs to be fixed.
+                    if b_declaresPipelineInfo
+                        error('PipelineManager:createFcnList:BrokenPipelineInfo', ...
+                            ['Function "%s" appears to declare a modern pipelineInfo query, ' ...
+                            'but calling %s(''pipelineInfo'') failed.\n\n%s'], ...
+                            fcnName, fcnName, getReport(ME, 'basic', 'hyperlinks', 'off'));
+                    end
+
                     % Fallback to legacy parser for callable functions that do not
                     % support modern pipelineInfo querying.
                     infoStruct = obj.parseFuncFile(list(i));
+
                     % -------------------------------------------------------------
-                    % Add boolean to indicate if each input is semantic data
+                    % Add boolean to indicate if each input is semantic data.
                     % -------------------------------------------------------------
                     for jj = 1:length(infoStruct.inputs)
 
@@ -10226,7 +10687,7 @@ classdef PipelineManager < handle
                     end
 
                     % -------------------------------------------------------------
-                    % Add boolean to indicate if each output is semantic data
+                    % Add boolean to indicate if each output is semantic data.
                     % -------------------------------------------------------------
                     for jj = 1:length(infoStruct.outputs)
 
@@ -10236,12 +10697,10 @@ classdef PipelineManager < handle
                             infoStruct.outputs(jj).isData = false;
                         end
                     end
-
                 end
 
-
                 % -------------------------------------------------------------
-                % Create and append function list entry
+                % Create and append function list entry.
                 % -------------------------------------------------------------
                 funcEntry = list(i);
                 funcEntry.name = fcnName;
@@ -10593,8 +11052,384 @@ classdef PipelineManager < handle
             end
 
         end
+        function errors = validateParameterStructArray(obj, params, nodeName)
+            %VALIDATEPARAMETERSTRUCTARRAY Validate one node's parameter values.
+            %
+            %   errors = obj.validateParameterStructArray(params, nodeName)
+            %   returns a row cell array of user-facing error messages. It does
+            %   not throw, so callers can aggregate all invalid parameters before
+            %   aborting execution.
+
+            errors = {};
+
+            if isempty(params)
+                return
+            end
+
+            for iParam = 1:numel(params)
+
+                p = params(iParam);
+
+                if ~isfield(p, 'name') || isempty(p.name)
+                    errors{end+1} = sprintf( ... %#ok<AGROW>
+                        'Invalid parameter metadata in step "%s": missing parameter name at index %d.', ...
+                        char(string(nodeName)), iParam);
+                    continue
+                end
+
+                pName = char(string(p.name));
+
+                if ~isfield(p, 'type') || isempty(p.type)
+                    errors{end+1} = sprintf( ... %#ok<AGROW>
+                        'Invalid parameter "%s" in step "%s": missing parameter type.', ...
+                        pName, char(string(nodeName)));
+                    continue
+                end
+
+                if isfield(p, 'value')
+                    value = p.value;
+                elseif isfield(p, 'default')
+                    value = p.default;
+                else
+                    errors{end+1} = sprintf( ... %#ok<AGROW>
+                        'Invalid parameter "%s" in step "%s": missing value and default fields.', ...
+                        pName, char(string(nodeName)));
+                    continue
+                end
+
+                if isfield(p, 'allowed')
+                    allowed = p.allowed;
+                else
+                    allowed = [];
+                end
+
+                [isValid, msg] = validateOneParameterValue(pName, p.type, value, allowed);
+
+                if ~isValid
+                    errors{end+1} = sprintf( ... %#ok<AGROW>
+                        'Invalid parameter "%s" in step "%s": %s', ...
+                        pName, char(string(nodeName)), msg);
+                end
+            end
+
+            % =============================================================
+            % Local validation helpers
+            % =============================================================
+            function [tf, msg] = validateOneParameterValue(paramName, paramType, value, allowed)
+                tf = true;
+                msg = '';
+
+                typeStr = lower(strtrim(char(string(paramType))));
+
+                % Mixed allowed specs are used by some analysis functions to
+                % represent text-or-numeric values, for example {'auto', Inf}.
+                % Handle those before applying strict single-type validation.
+                if isMixedTextNumericAllowedSpec(allowed)
+                    [tf, msg] = validateMixedAllowedValue(value, allowed);
+                    return
+                end
+
+                switch typeStr
+                    case 'logical'
+                        if ~(islogical(value) && isscalar(value)) && ...
+                                ~(isnumeric(value) && isscalar(value) && isfinite(value) && any(value == [0 1]))
+                            tf = false;
+                            msg = sprintf('expected a scalar logical value, got %s.', formatParameterValueForMessage(value));
+                            return
+                        end
+
+                    case {'numeric', 'double', 'single'}
+                        if ~isnumeric(value) || isempty(value) || any(~isfinite(value(:)))
+                            tf = false;
+                            msg = sprintf('expected a finite numeric value, got %s.', formatParameterValueForMessage(value));
+                            return
+                        end
+
+                    case {'char', 'string'}
+                        if ~(ischar(value) || (isstring(value) && isscalar(value)) || isTextCellOrVector(value))
+                            tf = false;
+                            msg = sprintf('expected text, got %s.', formatParameterValueForMessage(value));
+                            return
+                        end
+
+                    otherwise
+                        % Be permissive for custom classes while still checking
+                        % allowed values below when they are explicitly declared.
+                        if isempty(typeStr)
+                            tf = false;
+                            msg = 'parameter type is empty.';
+                            return
+                        end
+                end
+
+                if obj.isUnrestrictedAllowedSpec(allowed)
+                    return
+                end
+
+                [tf, msg] = validateAllowedValue(value, allowed, typeStr, paramName);
+            end
+
+            function tf = isMixedTextNumericAllowedSpec(allowed)
+                tf = false;
+
+                if ~iscell(allowed) || obj.isUnrestrictedAllowedSpec(allowed)
+                    return
+                end
+
+                hasText = false;
+                hasNumeric = false;
+
+                for iAllowed = 1:numel(allowed)
+                    item = allowed{iAllowed};
+                    hasText = hasText || ischar(item) || (isstring(item) && isscalar(item));
+                    hasNumeric = hasNumeric || (isnumeric(item) && ~isempty(item));
+                end
+
+                tf = hasText && hasNumeric;
+            end
+
+            function [tf, msg] = validateMixedAllowedValue(value, allowed)
+                tf = true;
+                msg = '';
+
+                textAllowed = strings(0,1);
+                numericAllowed = [];
+
+                for iAllowed = 1:numel(allowed)
+                    item = allowed{iAllowed};
+                    if ischar(item) || (isstring(item) && isscalar(item))
+                        textAllowed(end+1,1) = string(item); %#ok<AGROW>
+                    elseif isnumeric(item)
+                        numericAllowed = [numericAllowed, item(:).']; %#ok<AGROW>
+                    end
+                end
+
+                if ischar(value) || (isstring(value) && isscalar(value))
+                    if any(strcmpi(string(value), textAllowed))
+                        return
+                    end
+
+                    % Accept numeric text only when the numeric portion of the
+                    % allowed spec permits numeric values.
+                    numericCandidate = str2double(char(string(value)));
+                    if ~isnan(numericCandidate) && validateNumericAgainstAllowed(numericCandidate, numericAllowed)
+                        return
+                    end
+
+                    tf = false;
+                    msg = sprintf('value %s is not allowed. Allowed text values: %s.', ...
+                        formatParameterValueForMessage(value), char(strjoin(textAllowed, ', ')));
+                    return
+                end
+
+                if isnumeric(value)
+                    if validateNumericAgainstAllowed(value, numericAllowed)
+                        return
+                    end
+
+                    tf = false;
+                    msg = sprintf('numeric value %s is outside the allowed numeric specification %s.', ...
+                        formatParameterValueForMessage(value), mat2str(numericAllowed));
+                    return
+                end
+
+                tf = false;
+                msg = sprintf('value %s does not match the mixed text/numeric allowed specification.', ...
+                    formatParameterValueForMessage(value));
+            end
+
+            function [tf, msg] = validateAllowedValue(value, allowed, typeStr, paramName)
+                tf = true;
+                msg = '';
+
+                if isnumeric(allowed)
+                    if ~isnumeric(value)
+                        tf = false;
+                        msg = sprintf('allowed values for "%s" are numeric, but value is %s.', ...
+                            paramName, formatParameterValueForMessage(value));
+                        return
+                    end
+
+                    if validateNumericAgainstAllowed(value, allowed)
+                        return
+                    end
+
+                    tf = false;
+                    if numel(allowed) == 2
+                        msg = sprintf('value %s is outside the allowed range [%g, %g].', ...
+                            formatParameterValueForMessage(value), allowed(1), allowed(2));
+                    else
+                        msg = sprintf('value %s is not one of the allowed numeric values: %s.', ...
+                            formatParameterValueForMessage(value), mat2str(allowed));
+                    end
+                    return
+                end
+
+                if iscell(allowed) || isstring(allowed) || ischar(allowed)
+                    allowedText = normalizeAllowedText(allowed);
+
+                    if isempty(allowedText)
+                        return
+                    end
+
+                    if isTextCellOrVector(value)
+                        valueText = string(value(:));
+                    elseif ischar(value) || (isstring(value) && isscalar(value))
+                        valueText = string(value);
+                    else
+                        tf = false;
+                        msg = sprintf('allowed values for "%s" are text values, but value is %s.', ...
+                            paramName, formatParameterValueForMessage(value));
+                        return
+                    end
+
+                    if all(ismember(lower(valueText), lower(allowedText)))
+                        return
+                    end
+
+                    tf = false;
+                    msg = sprintf('value %s is not one of the allowed values: %s.', ...
+                        formatParameterValueForMessage(value), char(strjoin(allowedText, ', ')));
+                    return
+                end
+
+                % Unknown allowed metadata should be treated as invalid metadata,
+                % not silently ignored.
+                tf = false;
+                msg = sprintf('unsupported allowed specification of class "%s" for type "%s".', ...
+                    class(allowed), typeStr);
+            end
+
+            function tf = validateNumericAgainstAllowed(value, allowed)
+                tf = false;
+
+                if ~isnumeric(value) || isempty(value) || any(~isfinite(value(:)))
+                    return
+                end
+
+                if isempty(allowed)
+                    tf = true;
+                    return
+                end
+
+                allowed = allowed(:).';
+
+                if numel(allowed) == 1 && isinf(allowed(1))
+                    tf = true;
+                    return
+                end
+
+                if numel(allowed) == 2 && any(isinf(allowed))
+                    lo = min(allowed);
+                    hi = max(allowed);
+                    tf = all(value(:) >= lo & value(:) <= hi);
+                    return
+                end
+
+                if numel(allowed) == 2
+                    lo = min(allowed);
+                    hi = max(allowed);
+                    tf = all(value(:) >= lo & value(:) <= hi);
+                    return
+                end
+
+                tf = all(ismember(value(:), allowed(:)));
+            end
+
+            function tf = isTextCellOrVector(x)
+                tf = (iscell(x) && isvector(x) && all(cellfun(@(c) ischar(c) || (isstring(c) && isscalar(c)), x))) || ...
+                    (isstring(x) && isvector(x));
+            end
+
+            function allowedText = normalizeAllowedText(allowed)
+                allowedText = strings(0,1);
+
+                if ischar(allowed) || (isstring(allowed) && isscalar(allowed))
+                    allowedText = string(allowed);
+                    allowedText = allowedText(strlength(strtrim(allowedText)) > 0);
+                    return
+                end
+
+                if isstring(allowed)
+                    allowedText = allowed(:);
+                    allowedText = allowedText(strlength(strtrim(allowedText)) > 0);
+                    return
+                end
+
+                if ~iscell(allowed)
+                    return
+                end
+
+                for iAllowed = 1:numel(allowed)
+                    item = allowed{iAllowed};
+                    if ischar(item) || (isstring(item) && isscalar(item))
+                        txt = strtrim(string(item));
+                        if strlength(txt) > 0
+                            allowedText(end+1,1) = txt; %#ok<AGROW>
+                        end
+                    end
+                end
+            end
+
+            function txt = formatParameterValueForMessage(value)
+                try
+                    if ischar(value) || (isstring(value) && isscalar(value))
+                        txt = sprintf('"%s"', char(string(value)));
+                    elseif isnumeric(value) || islogical(value)
+                        txt = mat2str(value);
+                    elseif iscell(value)
+                        txt = sprintf('[%s cell]', localSizeToString(size(value)));
+                    elseif isstring(value)
+                        txt = sprintf('[%s string]', localSizeToString(size(value)));
+                    else
+                        txt = sprintf('[%s %s]', localSizeToString(size(value)), class(value));
+                    end
+                catch
+                    txt = sprintf('[%s]', class(value));
+                end
+            end
+
+            function s = localSizeToString(sz)
+                s = sprintf('%dx', sz);
+                if ~isempty(s)
+                    s(end) = [];
+                end
+            end
+        end
+
+        function tf = isUnrestrictedAllowedSpec(~, allowed)
+            %ISUNRESTRICTEDALLOWEDSPEC True for empty/no-restriction placeholders.
+            %
+            %   Some existing pipelineInfo definitions use allowed={{}} or
+            %   allowed={[]} to mean unrestricted. Treat those placeholders the
+            %   same as [] so the dialog and validation do not force an empty
+            %   dropdown/list.
+
+            tf = false;
+
+            if nargin < 2 || isempty(allowed)
+                tf = true;
+                return
+            end
+
+            if iscell(allowed)
+                if isempty(allowed)
+                    tf = true;
+                    return
+                end
+
+                if numel(allowed) == 1
+                    item = allowed{1};
+                    if isempty(item) || (iscell(item) && isempty(item))
+                        tf = true;
+                        return
+                    end
+                end
+            end
+        end
+
         %%%%%%--- Helper of "setParameters" -------------------------------
-        function [values,state] = buildParameterDialog(~, node)
+        function [values,state] = buildParameterDialog(obj, node)
             %BUILDPARAMETERDIALOG Build and show the parameter editing dialog.
             %
             %   [values, state] = buildParameterDialog(obj, node) creates the UI
@@ -10648,7 +11483,7 @@ classdef PipelineManager < handle
                         % ---------------- NUMERIC ----------------
                     case 'numeric'
 
-                        if isempty(p.allowed)
+                        if obj.isUnrestrictedAllowedSpec(p.allowed)
 
                             c = uieditfield(gl,'numeric');
                             c.Value = p.value;
@@ -10672,14 +11507,26 @@ classdef PipelineManager < handle
                         % ---------------- CHAR ----------------
                     case 'char'
 
-                        if isempty(p.allowed)
+                        if obj.isUnrestrictedAllowedSpec(p.allowed)
 
                             c = uieditfield(gl,'text');
                             c.Value = p.value;
 
                         elseif iscell(p.allowed)
 
-                            if isrow(p.allowed)
+                            % Mixed text/numeric allowed specs, for example
+                            % {'auto', Inf}, cannot be represented safely as
+                            % a dropdown. Use a text field and let the shared
+                            % parameter validator perform the final check.
+                            allowedIsText = all(cellfun(@(x) ischar(x) || ...
+                                (isstring(x) && isscalar(x)), p.allowed));
+
+                            if ~allowedIsText
+
+                                c = uieditfield(gl,'text');
+                                c.Value = char(string(p.value));
+
+                            elseif isrow(p.allowed)
 
                                 c = uidropdown(gl);
                                 c.Items = p.allowed;
@@ -10822,103 +11669,113 @@ classdef PipelineManager < handle
 
     methods (Static)
 
-        function info = createPipelineInfo(name,description)
+        function info = createPipelineInfo(name, description)
             %CREATEPIPELINEINFO Create a new pipelineInfo struct.
             %
-            %   INFO = PipelineManager.createPipelineInfo()
-            %   INFO = PipelineManager.createPipelineInfo(NAME)
-            %   INFO = PipelineManager.createPipelineInfo(NAME, DESCRIPTION)
+            %   info = PipelineManager.createPipelineInfo()
+            %   info = PipelineManager.createPipelineInfo(name)
+            %   info = PipelineManager.createPipelineInfo(name, description)
             %
-            % PURPOSE
-            %   Create a standardized metadata struct (pipelineInfo) used by
-            %   PipelineManager to:
-            %     - Build and validate DAG nodes and edges
-            %     - Infer function call signature (positional vs name-value)
-            %     - Support parameter editing in the UI
-            %     - Support data-flow execution and RAM-management policies
+            %   Creates a standardized metadata structure used by PipelineManager to
+            %   build, validate, schedule, and execute analysis-function nodes.
             %
-            % OUTPUT STRUCTURE
-            %   info.name        (char)  User-facing function name.
-            %   info.version     (char)  Function version string. Default '1.0.0'.
-            %   info.description (char)  Short function description.
-            %   info.legacyOpts  (logical) True for legacy functions that accept a
-            %                 single positional "opts" struct instead of name-value
-            %                 parameters.
+            %   Inputs:
+            %       name        - Function name. Default: ''.
+            %       description - Short function description. Default: ''.
             %
-            %   info.arguments   (struct array) Execution contract (call signature):
-            %       .name        (char)  Argument name (e.g., 'data', 'MaskFile', 'opts').
-            %       .kind        (char)  'input' or 'parameter'.
-            %       .position    (double) 1-based call position.
-            %       .callType    (char)  'positional' or 'namevalue'.
-            %       .isData      (logical) True only for DATA inputs used in semantic
-            %                    data-flow wiring.
+            %   Output:
+            %       info        - Pipeline metadata struct with fields:
             %
-            %   info.inputs      (struct array) Semantic inputs (pipeline wiring):
-            %       .name        (char)  Input port name.
-            %       .type        (cellstr) Accepted semantic types.
-            %       .description (char)
-            %       .isData      (logical) True when this input is a DATA-flow input.
-            %       .supportsFile (logical) DATA inputs only. True if the input can
-            %                    accept a filename / file-backed source.
-            %       .dataMode    (char) DATA inputs only. One of:
-            %                    'either' : input can be delivered as RAM data or file
-            %                    'ram'    : input requires in-memory data
-            %                    'file'   : input requires a filename / file-backed source
+            %           name
+            %           version
+            %           description
+            %           legacyOpts
+            %           arguments
+            %           inputs
+            %           parameters
+            %           outputs
+            %           notes
             %
-            %   info.parameters  (struct array) User-editable parameters:
-            %       .name        (char)
-            %       .type        (char)  'numeric', 'char', class(default), etc.
-            %       .default     (any)
-            %       .allowed     (cell)  Finite set of allowed values, if applicable.
-            %       .description (char)
+            %   Metadata groups:
+            %       info.arguments
+            %           Function-call contract used during execution.
             %
-            %   info.outputs     (struct array) Semantic outputs:
-            %       .name        (char)  Output port name.
-            %       .type        (cellstr) Semantic output type(s).
-            %       .position    (double) 1-based output position in the MATLAB call.
-            %       .outputMode  (char)  Output contract:
-            %                    'data' : function returns data
-            %                    'file' : function returns filename(s)
-            %       .description (char)
-            %       .defOutfilename (char|cell) Default filename(s) associated with
-            %                    the output. For data outputs, this is the manager-side
-            %                    default name. For file outputs, this is the declared
-            %                    default file identity.
-            %       .isData      (logical) True if this output participates in the
-            %                    DATA-flow graph.
-            %       .saveFileName (char) Optional PipelineManager-assigned save target
-            %                    for manager-saved DATA outputs.
+            %           Fields:
+            %               name
+            %               kind        - 'input' or 'parameter'
+            %               position
+            %               callType    - 'positional' or 'namevalue'
+            %               isData
             %
-            %   info.notes       (cellstr) Arbitrary notes.
+            %       info.inputs
+            %           Pipeline input-port metadata used for DATA-flow wiring and
+            %           RAM/file routing.
             %
-            % NOTES
-            %   - supportsFile and dataMode are meaningful only for DATA inputs.
-            %   - Output behavior is defined by outputMode:
-            %         outputMode='data' -> function returns data
-            %         outputMode='file' -> function returns filename(s)
-            %   - PipelineManager may decide internally whether a DATA output is kept
-            %     in RAM or spilled to a temporary file to satisfy downstream input
-            %     requirements and RAM policy.
-            %   - File outputs are expected to be produced by the function itself and
-            %     returned as filename(s).
+            %           Fields:
+            %               name
+            %               type
+            %               description
+            %               isData
+            %               supportsFile - DATA inputs only. True if the input can
+            %                              receive a filename/file-backed source.
+            %               dataMode     - DATA inputs only. One of:
+            %                              'either', 'ram', or 'file'.
             %
-            % SEE ALSO
-            %   PipelineManager.addInput
-            %   PipelineManager.addOutput
+            %       info.parameters
+            %           User-editable parameter metadata.
+            %
+            %           Fields:
+            %               name
+            %               type
+            %               default
+            %               allowed
+            %               description
+            %
+            %       info.outputs
+            %           Output metadata used for downstream wiring, saving, and
+            %           produced-file tracking.
+            %
+            %           Fields:
+            %               name
+            %               type
+            %               outputMode     - 'data' if the function returns data;
+            %                                'file' if the function returns filename(s)
+            %                                for files it created.
+            %               description
+            %               defOutfilename - Default output filename metadata.
+            %               position
+            %               isData         - True if the output participates in the
+            %                                DATA-flow graph.
+            %               saveFileName   - PipelineManager-managed save target for
+            %                                DATA outputs.
+            %
+            %   Notes:
+            %       - supportsFile and dataMode are input-only concepts.
+            %       - Output RAM/file behavior is defined by outputMode and isData.
+            %       - Function type classification is inferred by PipelineManager from
+            %         the declared inputs and outputs. It is intentionally not stored
+            %         here to keep custom pipelineInfo definitions minimal.
+            %
+            %   See also:
+            %       PipelineManager.addInput
+            %       PipelineManager.addOutput
 
             arguments
                 name = ''
                 description = ''
             end
 
+            info = struct();
+
             info.name        = char(string(name));
             info.version     = '1.0.0';
             info.description = char(string(description));
 
-            % flag older analysis functions (opts struct)
-            info.legacyOpts  = false;
+            % Legacy analysis functions may use a single positional opts struct instead
+            % of regular name-value parameters.
+            info.legacyOpts = false;
 
-            % Execution contract
+            % Execution contract used to build the MATLAB function call.
             info.arguments = struct( ...
                 'name', {}, ...
                 'kind', {}, ...
@@ -10926,7 +11783,8 @@ classdef PipelineManager < handle
                 'callType', {}, ...
                 'isData', {} );
 
-            % Pipeline semantics
+            % Pipeline input semantics.
+            % supportsFile and dataMode are input-only fields used by RAM/file routing.
             info.inputs = struct( ...
                 'name', {}, ...
                 'type', {}, ...
@@ -10935,6 +11793,7 @@ classdef PipelineManager < handle
                 'supportsFile', {}, ...
                 'dataMode', {} );
 
+            % User-editable parameters.
             info.parameters = struct( ...
                 'name', {}, ...
                 'type', {}, ...
@@ -10942,19 +11801,20 @@ classdef PipelineManager < handle
                 'allowed', {}, ...
                 'description', {} );
 
+            % Pipeline output semantics.
+            % Do not include supportsFile/dataMode here; they are not output concepts.
             info.outputs = struct( ...
                 'name', {}, ...
                 'type', {}, ...
-                'position', {}, ...
                 'outputMode', {}, ...
                 'description', {}, ...
                 'defOutfilename', {}, ...
+                'position', {}, ...
                 'isData', {}, ...
-                'supportsFile', {}, ...
-                'dataMode', {}, ...
                 'saveFileName', {} );
 
             info.notes = {};
+
         end
 
         function info = addInput(info, name, type, description, varargin)
@@ -11126,10 +11986,13 @@ classdef PipelineManager < handle
                     end
                 end
 
+                % Wrap default and allowed in scalar cells so parameter
+                % metadata remains a scalar struct even when a parameter
+                % default is itself a cell array, e.g. {'AI1','AI2'}.
                 newParam = struct( ...
                     'name', name, ...
                     'type', paramType, ...
-                    'default', default, ...
+                    'default', {default}, ...
                     'allowed', {allowed}, ...
                     'description', char(string(description)));
 
