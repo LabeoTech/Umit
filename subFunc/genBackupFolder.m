@@ -74,8 +74,12 @@ fixedFiles = [ ...
     dir(fullfile(SaveFolder, 'Snapshot*.png'))];     % snapshots
 
 % Get list of files to manage
-movFiles = dir(SaveFolder);
-movFiles([movFiles.isdir] == 1) = [];
+movFiles = [...
+    dir(fullfile(SaveFolder, '*.dat')); ...          % .dat files
+    dir(fullfile(SaveFolder, '*.mat')); ...          % .mat files
+    dir(fullfile(SaveFolder, '*.roi')); ...          % .roi files
+    dir(fullfile(SaveFolder, '*.umt')); ...          % .umt files    
+    ];
 
 if ~isempty(fixedFiles)
     movFiles(ismember({movFiles.name}, {fixedFiles.name})) = [];
