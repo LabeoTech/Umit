@@ -7620,32 +7620,33 @@ classdef PipelineManager < handle
             %
             %   execOrder = buildExecutionOrder(obj, requiredNodeIDs)
             %
-            %   Returns a valid runtime order restricted to REQUIREDNODEIDS.
+            %   Returns a deterministic runtime order restricted to REQUIREDNODEIDS.
             %
-            %   Scheduling phases:
-            %       1) DATA source/import stream steps run first in creation/topological
-            %          order. These steps have no DATA input and at least one DATA
-            %          output. Running them before setup avoids deleting setup artifacts
-            %          with import functions that initialize/clear SaveFolder content.
-            %       2) setup steps run next in creation/topological order. Setup steps
-            %          have no DATA input/output, folder context, and either a non-DATA
-            %          file output or no declared outputs. This covers folder-level
-            %          artifact/side-effect creators such as getEvents.
-            %       3) remaining DATA-processing steps use the RAM-aware branch-
-            %          continuation order.
-            %       4) export/report/sink steps run last in topological order after
-            %          upstream DATA dependencies have been satisfied.
+            %   Scheduling model:
+            %       1) DATA source/import stream steps and file-source proxy nodes run
+            %          first in creation/topological order. Source/import steps may
+            %          initialize SaveFolder by deleting conflicting output files.
+            %       2) setup steps run second in creation/topological order. This
+            %          prevents setup artifacts such as events.mat from being deleted
+            %          by import functions.
+            %       3) all remaining nodes, including export/report/sink nodes, are
+            %          scheduled by a branch-locality heuristic. Sinks are not delayed
+            %          to a global final phase; a terminal sink/report/export runs as
+            %          soon as its input branch is ready.
             %
-            %   Priority among ready non-setup nodes:
-            %       1) direct child of the last scheduled node
-            %       2) deeper node first (larger distance to a leaf)
-            %       3) original obj.topoOrder position as stable tie-breaker
+            %   Priority among ready post-setup nodes:
+            %       1) continue from the most recently executed node
+            %       2) run ready terminal sinks while their input is still hot
+            %       3) if the active branch is blocked by a downstream merge, pull
+            %          ready sibling prerequisite branches for that merge forward
+            %       4) prefer nodes with longer remaining downstream path
+            %       5) preserve original topological order as a deterministic tie-breaker
             %
             %   Notes:
             %       - This method does not modify obj.topoOrder.
-            %       - Scheduling is computed only on the induced subgraph defined by
+            %       - RAM/file routing is still handled by the RAM policy methods.
+            %       - Scheduling is computed on the induced subgraph defined by
             %         REQUIREDNODEIDS.
-            %       - The result is deterministic for a fixed graph.
 
             if isempty(obj.nodes)
                 execOrder = [];
@@ -7662,7 +7663,7 @@ classdef PipelineManager < handle
                 requiredNodeIDs = requiredNodeIDs(:).';
             end
 
-            % Keep only valid node IDs and preserve first occurrence order
+            % Keep only valid node IDs and preserve first occurrence order.
             allNodeIDs = [obj.nodes.id];
             requiredNodeIDs = requiredNodeIDs(ismember(requiredNodeIDs, allNodeIDs));
             requiredNodeIDs = unique(requiredNodeIDs, 'stable');
@@ -7673,23 +7674,10 @@ classdef PipelineManager < handle
             end
 
             % -------------------------------------------------------------
-            % Split nodes into execution phases.
-            %
-            % DATA source/import stream steps run before setup. Some import
-            % functions initialize SaveFolder by deleting conflicting output files;
-            % if setup ran first, artifacts such as events.mat could be deleted
-            % before downstream functions read them.
-            %
-            % Setup steps still run before the normal RAM-aware DATA-processing
-            % schedule because their folder-level artifacts may be read implicitly
-            % by later functions.
-            %
-            % Export/report/sink steps run after the normal DATA-processing schedule
-            % because they do not feed downstream DATA branches.
+            % Fixed early phases.
             % -------------------------------------------------------------
             sourceNodeIDs = zeros(1,0);
             setupNodeIDs  = zeros(1,0);
-            sinkNodeIDs   = zeros(1,0);
 
             for iTopo = 1:numel(obj.topoOrder)
                 nid = obj.topoOrder(iTopo);
@@ -7701,29 +7689,26 @@ classdef PipelineManager < handle
                 classInfo = obj.classifyFunctionType(obj.nodes(nodeIdx));
 
                 switch lower(classInfo.role)
-                    case 'source'
+                    case {'source','folder_source'}
                         sourceNodeIDs(end+1) = nid; %#ok<AGROW>
                     case 'setup'
                         setupNodeIDs(end+1) = nid; %#ok<AGROW>
-                    case 'export_report_sink'
-                        sinkNodeIDs(end+1) = nid; %#ok<AGROW>
                 end
             end
 
             earlyNodeIDs = [sourceNodeIDs, setupNodeIDs];
-            mainNodeIDs = requiredNodeIDs(~ismember(requiredNodeIDs, [earlyNodeIDs, sinkNodeIDs]));
+            mainNodeIDs = requiredNodeIDs(~ismember(requiredNodeIDs, earlyNodeIDs));
 
             if isempty(mainNodeIDs)
-                execOrder = [earlyNodeIDs, sinkNodeIDs];
+                execOrder = earlyNodeIDs;
                 return
             end
 
             nEarly = numel(earlyNodeIDs);
-            nSink  = numel(sinkNodeIDs);
             nReq   = numel(mainNodeIDs);
 
             % -------------------------------------------------------------
-            % Build ID -> position maps
+            % Build ID -> position maps.
             % -------------------------------------------------------------
             reqPos  = containers.Map('KeyType','double','ValueType','double');
             topoPos = containers.Map('KeyType','double','ValueType','double');
@@ -7737,9 +7722,12 @@ classdef PipelineManager < handle
             end
 
             % -------------------------------------------------------------
-            % Build in-degree and child adjacency for the required subgraph
+            % Build in-degree, parent, and child adjacency for the post-setup
+            % induced subgraph. Edges from early source/setup nodes are ignored
+            % because those nodes have already been scheduled.
             % -------------------------------------------------------------
             inDegree = zeros(1, nReq);
+            parents  = cell(1, nReq);
             children = cell(1, nReq);
 
             if ~isempty(obj.connections)
@@ -7748,7 +7736,13 @@ classdef PipelineManager < handle
                     srcID = obj.connections(iConn).sourceNodeID;
                     dstID = obj.connections(iConn).targetNodeID;
 
-                    if ~isKey(reqPos, srcID) || ~isKey(reqPos, dstID)
+                    if ~isKey(reqPos, dstID)
+                        continue
+                    end
+
+                    % Source/setup/folder-source dependencies are satisfied by the
+                    % fixed early phase and should not block the post-setup queue.
+                    if ~isKey(reqPos, srcID)
                         continue
                     end
 
@@ -7756,16 +7750,33 @@ classdef PipelineManager < handle
                     dstIdx = reqPos(dstID);
 
                     inDegree(dstIdx) = inDegree(dstIdx) + 1;
+                    parents{dstIdx}(end+1) = srcID; %#ok<AGROW>
                     children{srcIdx}(end+1) = dstID; %#ok<AGROW>
                 end
             end
 
             % -------------------------------------------------------------
-            % Precompute depth-to-leaf on the required subgraph
-            %   depth = 0 for a leaf
-            %   larger depth = more downstream work remains
+            % Classify post-setup nodes and identify merge nodes.
+            % -------------------------------------------------------------
+            roleByReqIdx = strings(1, nReq);
+            isSink       = false(1, nReq);
+            isMerge      = false(1, nReq);
+
+            for i = 1:nReq
+                nodeIdx = obj.getNodeIndexByID(mainNodeIDs(i));
+                classInfo = obj.classifyFunctionType(obj.nodes(nodeIdx));
+                roleByReqIdx(i) = string(classInfo.role);
+                isSink(i) = strcmpi(classInfo.role, 'export_report_sink');
+                isMerge(i) = numel(unique(parents{i}, 'stable')) > 1;
+            end
+
+            % -------------------------------------------------------------
+            % Precompute depth-to-leaf and downstream merge sets.
+            %   depth = 0 for a leaf.
+            %   downstreamMerges{i} contains merge node IDs reachable from node i.
             % -------------------------------------------------------------
             depth = zeros(1, nReq);
+            downstreamMerges = cell(1, nReq);
             reqTopo = obj.topoOrder(ismember(obj.topoOrder, mainNodeIDs));
 
             for i = numel(reqTopo):-1:1
@@ -7774,19 +7785,34 @@ classdef PipelineManager < handle
                 nIdx = reqPos(nid);
                 kids = children{nIdx};
 
+                mergeSet = zeros(1,0);
+
                 if isempty(kids)
                     depth(nIdx) = 0;
                 else
                     kidDepth = zeros(1, numel(kids));
+
                     for j = 1:numel(kids)
-                        kidDepth(j) = depth(reqPos(kids(j)));
+                        kidIdx = reqPos(kids(j));
+                        kidDepth(j) = depth(kidIdx);
+
+                        if isMerge(kidIdx)
+                            mergeSet(end+1) = kids(j); %#ok<AGROW>
+                        end
+
+                        if ~isempty(downstreamMerges{kidIdx})
+                            mergeSet = [mergeSet, downstreamMerges{kidIdx}]; %#ok<AGROW>
+                        end
                     end
+
                     depth(nIdx) = 1 + max(kidDepth);
                 end
+
+                downstreamMerges{nIdx} = unique(mergeSet, 'stable');
             end
 
             % -------------------------------------------------------------
-            % Priority-based Kahn traversal
+            % Priority-based Kahn traversal.
             % -------------------------------------------------------------
             ready = mainNodeIDs(inDegree == 0);
             execOrderMain = zeros(1, nReq);
@@ -7799,24 +7825,66 @@ classdef PipelineManager < handle
                 bestIdx   = 1;
                 bestScore = -inf;
 
+                focusMergeIDs = zeros(1,0);
+                if ~isempty(lastNodeID) && isKey(reqPos, lastNodeID)
+                    focusMergeIDs = downstreamMerges{reqPos(lastNodeID)};
+                end
+
                 for i = 1:numel(ready)
 
                     nid   = ready(i);
                     nIdx  = reqPos(nid);
                     score = 0;
 
-                    % Priority 1: continue consuming the most recently produced data
-                    if ~isempty(lastNodeID) && isKey(reqPos, lastNodeID)
-                        lastIdx = reqPos(lastNodeID);
-                        if any(children{lastIdx} == nid)
-                            score = score + 1000;
+                    parentIDs = parents{nIdx};
+                    childIDs  = children{nIdx};
+
+                    % Priority 1: continue consuming the most recently produced data.
+                    if ~isempty(lastNodeID) && any(parentIDs == lastNodeID)
+                        score = score + 1200;
+
+                        % Terminal report/export/sink should run immediately while
+                        % its input is still hot instead of being delayed globally.
+                        if isSink(nIdx)
+                            score = score + 500;
                         end
                     end
 
-                    % Priority 2: prefer nodes with longer remaining downstream path
+                    % Priority 2: if the active branch is waiting for a downstream
+                    % merge, pull sibling prerequisite branches for that same merge
+                    % close to the active branch.
+                    if ~isempty(focusMergeIDs)
+                        candidateMergeIDs = downstreamMerges{nIdx};
+                        if isMerge(nIdx)
+                            candidateMergeIDs = unique([candidateMergeIDs, nid], 'stable');
+                        end
+
+                        if ~isempty(intersect(focusMergeIDs, candidateMergeIDs))
+                            score = score + 700;
+                        end
+                    end
+
+                    % Priority 3: ready merge nodes should run immediately after the
+                    % final prerequisite branch becomes available.
+                    if isMerge(nIdx)
+                        if ~isempty(lastNodeID) && any(parentIDs == lastNodeID)
+                            score = score + 900;
+                        else
+                            score = score + 300;
+                        end
+                    end
+
+                    % Priority 4: prefer nodes with more downstream work remaining.
                     score = score + 10 * depth(nIdx);
 
-                    % Priority 3: stable tie-break using original topo order
+                    % Small preference for nodes that currently have no outgoing DATA
+                    % consumers only when they are sinks. This prevents unrelated leaf
+                    % transforms from beating branch-continuation work.
+                    if isSink(nIdx) && isempty(childIDs)
+                        score = score + 20;
+                    end
+
+                    % Priority 5: stable tie-break using original topo order.
                     score = score - 1e-6 * topoPos(nid);
 
                     if score > bestScore
@@ -7855,9 +7923,9 @@ classdef PipelineManager < handle
                     'Failed to compute a complete execution order.');
             end
 
-            execOrder = [earlyNodeIDs, execOrderMain, sinkNodeIDs];
+            execOrder = [earlyNodeIDs, execOrderMain];
 
-            if numel(execOrder) ~= (nEarly + nReq + nSink)
+            if numel(execOrder) ~= (nEarly + nReq)
                 error('PipelineManager:buildExecutionOrder:InvalidSchedule', ...
                     'Failed to compute a complete execution order.');
             end
@@ -10947,8 +11015,6 @@ classdef PipelineManager < handle
                         '', ...
                         kOut, ...
                         'isData', true, ...
-                        'supportsFile', false, ...
-                        'dataMode', 'either', ...
                         'saveFileName', '');
 
                 elseif strcmpi(arg, 'outFile')
@@ -10977,8 +11043,6 @@ classdef PipelineManager < handle
                         legacyInfo.outFileName, ...
                         kOut, ...
                         'isData', true, ...
-                        'supportsFile', true, ...
-                        'dataMode', 'file', ...
                         'saveFileName', '');
 
                 elseif strcmpi(arg, 'metaData')
@@ -11052,6 +11116,7 @@ classdef PipelineManager < handle
             end
 
         end
+
         function errors = validateParameterStructArray(obj, params, nodeName)
             %VALIDATEPARAMETERSTRUCTARRAY Validate one node's parameter values.
             %
@@ -11134,21 +11199,24 @@ classdef PipelineManager < handle
                         if ~(islogical(value) && isscalar(value)) && ...
                                 ~(isnumeric(value) && isscalar(value) && isfinite(value) && any(value == [0 1]))
                             tf = false;
-                            msg = sprintf('expected a scalar logical value, got %s.', formatParameterValueForMessage(value));
+                            msg = sprintf('expected a scalar logical value, got %s.', ...
+                                formatParameterValueForMessage(value));
                             return
                         end
 
                     case {'numeric', 'double', 'single'}
                         if ~isnumeric(value) || isempty(value) || any(~isfinite(value(:)))
                             tf = false;
-                            msg = sprintf('expected a finite numeric value, got %s.', formatParameterValueForMessage(value));
+                            msg = sprintf('expected a finite numeric value, got %s.', ...
+                                formatParameterValueForMessage(value));
                             return
                         end
 
                     case {'char', 'string'}
                         if ~(ischar(value) || (isstring(value) && isscalar(value)) || isTextCellOrVector(value))
                             tf = false;
-                            msg = sprintf('expected text, got %s.', formatParameterValueForMessage(value));
+                            msg = sprintf('expected text, got %s.', ...
+                                formatParameterValueForMessage(value));
                             return
                         end
 
@@ -11242,6 +11310,86 @@ classdef PipelineManager < handle
                 tf = true;
                 msg = '';
 
+                % -------------------------------------------------------------
+                % Logical parameters
+                % -------------------------------------------------------------
+                % Logical parameters are already type-checked above. Here, allowed
+                % can optionally restrict the accepted logical values. Support both
+                % logical specs, e.g. [true false], and numeric 0/1 specs.
+                if strcmpi(typeStr, 'logical')
+
+                    valueLogical = logical(value);
+
+                    if islogical(allowed)
+                        allowedLogical = allowed(:);
+
+                        if any(valueLogical == allowedLogical)
+                            return
+                        end
+
+                        tf = false;
+                        msg = sprintf('value %s is not one of the allowed logical values: %s.', ...
+                            formatParameterValueForMessage(valueLogical), mat2str(allowedLogical.'));
+                        return
+                    end
+
+                    if isnumeric(allowed)
+                        if isempty(allowed) || any(~isfinite(allowed(:))) || ...
+                                any(~ismember(allowed(:), [0 1]))
+                            tf = false;
+                            msg = sprintf(['allowed values for "%s" must be logical values ' ...
+                                'or numeric 0/1 values, got %s.'], ...
+                                paramName, formatParameterValueForMessage(allowed));
+                            return
+                        end
+
+                        allowedLogical = logical(allowed(:));
+
+                        if any(valueLogical == allowedLogical)
+                            return
+                        end
+
+                        tf = false;
+                        msg = sprintf('value %s is not one of the allowed logical values: %s.', ...
+                            formatParameterValueForMessage(valueLogical), mat2str(allowedLogical.'));
+                        return
+                    end
+
+                    if iscell(allowed) || isstring(allowed) || ischar(allowed)
+                        allowedText = normalizeAllowedText(allowed);
+
+                        if isempty(allowedText)
+                            return
+                        end
+
+                        valueText = string(mat2str(valueLogical));
+
+                        % Support common text forms only if existing metadata uses them.
+                        allowedLower = lower(allowedText);
+                        valueIsAllowed = ...
+                            any(strcmp(valueText, allowedText)) || ...
+                            (valueLogical && any(ismember(allowedLower, ["true", "1"]))) || ...
+                            (~valueLogical && any(ismember(allowedLower, ["false", "0"])));
+
+                        if valueIsAllowed
+                            return
+                        end
+
+                        tf = false;
+                        msg = sprintf('value %s is not one of the allowed logical values: %s.', ...
+                            formatParameterValueForMessage(valueLogical), char(strjoin(allowedText, ', ')));
+                        return
+                    end
+
+                    tf = false;
+                    msg = sprintf('unsupported allowed specification of class "%s" for type "%s".', ...
+                        class(allowed), typeStr);
+                    return
+                end
+
+                % -------------------------------------------------------------
+                % Numeric parameters
+                % -------------------------------------------------------------
                 if isnumeric(allowed)
                     if ~isnumeric(value)
                         tf = false;
@@ -11265,6 +11413,9 @@ classdef PipelineManager < handle
                     return
                 end
 
+                % -------------------------------------------------------------
+                % Text parameters
+                % -------------------------------------------------------------
                 if iscell(allowed) || isstring(allowed) || ischar(allowed)
                     allowedText = normalizeAllowedText(allowed);
 
