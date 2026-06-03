@@ -1696,30 +1696,60 @@ classdef PipelineManager < handle
         end
 
         function varargout = diagnosePipeline(obj)
-            %DIAGNOSEPIPELINE Print a CLI-friendly diagnostic report of the DAG.
+            %DIAGNOSEPIPELINE Print and/or return a full pipeline diagnostic report.
             %
             %   diagnosePipeline(obj)
             %   report = diagnosePipeline(obj)
             %
-            % If requested, returns the report struct as output. Otherwise
-            % prints the diagnostics to the command window and does not
-            % return any outputs.
+            %   The returned report is the single public diagnostic interface for
+            %   the pipeline. It includes both global graph/parameter validity and
+            %   node-level status information that can be consumed by the GUI.
+            %
+            %   Returned report fields:
+            %       isValid        - True only if graph and parameter checks pass.
+            %       graphIsValid   - Result from validateGraph.
+            %       paramsAreValid - Result from validateNodeParameters.
+            %       errors         - Combined graph + parameter errors.
+            %       warnings       - Combined graph + parameter warnings.
+            %       graphReport    - Raw graph-validation report.
+            %       paramReport    - Raw parameter-validation report.
+            %       nodeStatus     - One-row-per-node table with status/severity.
+            %       hasWarnings    - True when at least one node has warning status.
+            %       hasInvalidNonblocking - True when at least one node has
+            %                         invalid_nonblocking status.
+            %       hasInvalidBlocking - True when at least one node has
+            %                         invalid_blocking status.
 
             [tfGraph, graphReport] = obj.validateGraph('throwOnError', false);
             [tfParams, paramReport] = obj.validateNodeParameters('throwOnError', false);
 
-            tf = tfGraph && tfParams;
             report = struct();
-            report.errors = [graphReport.errors, paramReport.errors];
-            report.warnings = [graphReport.warnings, paramReport.warnings];
+            report.isValid        = tfGraph && tfParams;
+            report.graphIsValid   = tfGraph;
+            report.paramsAreValid = tfParams;
+            report.errors         = [graphReport.errors, paramReport.errors];
+            report.warnings       = [graphReport.warnings, paramReport.warnings];
+            report.graphReport    = graphReport;
+            report.paramReport    = paramReport;
+            report.nodeStatus     = obj.buildNodeStatusTable(graphReport, paramReport);
+            report.hasWarnings = istable(report.nodeStatus) && any(report.nodeStatus.status == "warning");
+            report.hasInvalidNonblocking = istable(report.nodeStatus) && ...
+                any(report.nodeStatus.status == "invalid_nonblocking");
+            report.hasInvalidBlocking = istable(report.nodeStatus) && ...
+                any(report.nodeStatus.status == "invalid_blocking");
+
+            obj.updateNodeRuntimeValidation(report.nodeStatus);
 
             fprintf('\n================ Pipeline Diagnostics ================\n');
 
-            if tf
+            if report.isValid
                 fprintf('Status: VALID\n');
             else
                 fprintf('Status: INVALID\n');
             end
+
+            fprintf('Graph valid:      %d\n', logical(report.graphIsValid));
+            fprintf('Parameters valid: %d\n', logical(report.paramsAreValid));
 
             if ~isempty(report.errors)
                 fprintf('\nErrors (%d):\n', numel(report.errors));
@@ -1737,6 +1767,24 @@ classdef PipelineManager < handle
                 end
             else
                 fprintf('\nWarnings (0)\n');
+            end
+
+            if istable(report.nodeStatus) && ~isempty(report.nodeStatus)
+                invalidMask = report.nodeStatus.status ~= "valid";
+                if any(invalidMask)
+                    fprintf('\nNode status (%d non-valid):\n', nnz(invalidMask));
+                    rows = find(invalidMask);
+                    for iRow = 1:numel(rows)
+                        r = rows(iRow);
+                        fprintf('  nodeID %d | %s | %s | %s\n', ...
+                            report.nodeStatus.nodeID(r), ...
+                            char(report.nodeStatus.stepName(r)), ...
+                            char(report.nodeStatus.status(r)), ...
+                            char(report.nodeStatus.severity(r)));
+                    end
+                else
+                    fprintf('\nNode status: all nodes valid.\n');
+                end
             end
 
             fprintf('======================================================\n\n');
@@ -5936,11 +5984,29 @@ classdef PipelineManager < handle
         end
 
         function autoValidate(obj)
-            %AUTOVALIDATE Run validation and auto-print concise report if invalid.
+            %AUTOVALIDATE Run graph/parameter validation and refresh node status.
+            %
+            %   autoValidate(obj) performs the same validation layers used by
+            %   diagnosePipeline, but prints only a concise error summary when the
+            %   pipeline is invalid. It also refreshes nodes(i).runtime.validation
+            %   so GUI code can read the latest cached node-level status.
 
-            [tf, report] = obj.validateGraph('throwOnError', false);
+            [tfGraph, graphReport] = obj.validateGraph('throwOnError', false);
+            [tfParams, paramReport] = obj.validateNodeParameters('throwOnError', false);
 
-            % Optional: if you maintain this property
+            tf = tfGraph && tfParams;
+
+            report = struct();
+            report.errors = [graphReport.errors, paramReport.errors];
+            report.warnings = [graphReport.warnings, paramReport.warnings];
+            report.nodeStatus = obj.buildNodeStatusTable(graphReport, paramReport);
+            report.hasInvalidNonblocking = istable(report.nodeStatus) && ...
+                any(report.nodeStatus.status == "invalid_nonblocking");
+            report.hasInvalidBlocking = istable(report.nodeStatus) && ...
+                any(report.nodeStatus.status == "invalid_blocking");
+
+            obj.updateNodeRuntimeValidation(report.nodeStatus);
+
             if isprop(obj,'b_pipeIsValid')
                 obj.b_pipeIsValid = tf;
             end
@@ -5960,6 +6026,424 @@ classdef PipelineManager < handle
                 end
 
                 fprintf('Run obj.diagnosePipeline() for full report.\n\n');
+            end
+        end
+
+        function nodeStatus = buildNodeStatusTable(obj, graphReport, paramReport)
+            %BUILDNODESTATUSTABLE Build one node-level diagnostic table.
+            %
+            %   nodeStatus = obj.buildNodeStatusTable(graphReport, paramReport)
+            %   derives GUI-friendly node validity from the same graph and
+            %   parameter validation rules used by diagnosePipeline.
+            %
+            %   Status values:
+            %       "valid"               - no node-specific issues detected
+            %       "warning"             - non-critical node warning
+            %       "invalid_nonblocking" - stale/unused node issue that does
+            %                               not block safe execution
+            %       "invalid_blocking"    - node blocks safe execution
+
+            if isempty(obj.nodes)
+                nodeStatus = table( ...
+                    zeros(0,1), strings(0,1), strings(0,1), strings(0,1), ...
+                    strings(0,1), strings(0,1), cell(0,1), ...
+                    'VariableNames', {'nodeID','stepName','functionName','functionType', ...
+                    'status','severity','messages'});
+                return
+            end
+
+            nNodes = numel(obj.nodes);
+
+            nodeID = zeros(nNodes,1);
+            stepName = strings(nNodes,1);
+            functionName = strings(nNodes,1);
+            functionType = strings(nNodes,1);
+            status = repmat("valid", nNodes, 1);
+            severity = repmat("none", nNodes, 1);
+            messages = cell(nNodes,1);
+
+            for iNode = 1:nNodes
+                node = obj.nodes(iNode);
+
+                nodeID(iNode) = node.id;
+                stepName(iNode) = string(node.name);
+                messages{iNode} = strings(0,1);
+
+                if isfield(node, 'info') && isfield(node.info, 'name') && ~isempty(node.info.name)
+                    functionName(iNode) = string(node.info.name);
+                elseif isfield(node, 'kind') && strcmpi(node.kind, 'folder')
+                    functionName(iNode) = "FileSource";
+                else
+                    functionName(iNode) = string(node.name);
+                end
+
+                try
+                    classInfo = obj.classifyFunctionType(node);
+                    functionType(iNode) = string(classInfo.role);
+                catch
+                    functionType(iNode) = "invalid";
+                    addNodeMessage(node.id, "blocking", ...
+                        sprintf('Could not classify node "%s".', char(string(node.name))));
+                end
+            end
+
+            nodeIDs = nodeID(:).';
+
+            % -------------------------------------------------------------
+            % Non-blocking node hygiene checks
+            % -------------------------------------------------------------
+            % A disconnected file-source/folder node is stale graph state. It
+            % does not block execution because no stream step depends on it, but
+            % the GUI should still highlight it so the user can remove it.
+            for iNode = 1:nNodes
+                node = obj.nodes(iNode);
+
+                if ~isfield(node, 'kind') || ~strcmpi(node.kind, 'folder')
+                    continue
+                end
+
+                hasOutgoing = false;
+                if ~isempty(obj.connections)
+                    hasOutgoing = any([obj.connections.sourceNodeID] == node.id);
+                end
+
+                if ~hasOutgoing
+                    addNodeMessage(node.id, "nonblocking", ...
+                        sprintf(['Unused file-source node "%s" has no outgoing DATA connections. ' ...
+                        'It can be removed without blocking pipeline execution.'], ...
+                        char(string(node.name))));
+                end
+            end
+
+            % -------------------------------------------------------------
+            % Node ID uniqueness
+            % -------------------------------------------------------------
+            uniqueNodeIDs = unique(nodeIDs, 'stable');
+            for iUnique = 1:numel(uniqueNodeIDs)
+                if nnz(nodeIDs == uniqueNodeIDs(iUnique)) > 1
+                    addNodeMessage(uniqueNodeIDs(iUnique), "blocking", ...
+                        sprintf('Duplicate nodeID %d detected.', uniqueNodeIDs(iUnique)));
+                end
+            end
+
+            % -------------------------------------------------------------
+            % Connection-level structural checks
+            % -------------------------------------------------------------
+            if ~isempty(obj.connections)
+
+                connSig = strings(1, numel(obj.connections));
+
+                for iConn = 1:numel(obj.connections)
+                    c = obj.connections(iConn);
+
+                    srcOut = '';
+                    dstIn  = '';
+                    selFile = '';
+                    if isfield(c,'sourceOutputName') && ~isempty(c.sourceOutputName)
+                        srcOut = char(string(c.sourceOutputName));
+                    end
+                    if isfield(c,'targetInputName') && ~isempty(c.targetInputName)
+                        dstIn = char(string(c.targetInputName));
+                    end
+                    if isfield(c,'selectedFile') && ~isempty(c.selectedFile)
+                        selFile = char(string(c.selectedFile));
+                    end
+
+                    connSig(iConn) = sprintf('%d|%d|%s|%s|%s', ...
+                        c.sourceNodeID, c.targetNodeID, lower(strtrim(srcOut)), ...
+                        lower(strtrim(dstIn)), lower(strtrim(selFile)));
+
+                    srcExists = ismember(c.sourceNodeID, nodeIDs);
+                    dstExists = ismember(c.targetNodeID, nodeIDs);
+
+                    if ~srcExists && dstExists
+                        addNodeMessage(c.targetNodeID, "blocking", ...
+                            sprintf('Input connection references missing source nodeID %d.', c.sourceNodeID));
+                        continue
+                    elseif srcExists && ~dstExists
+                        addNodeMessage(c.sourceNodeID, "blocking", ...
+                            sprintf('Output connection references missing target nodeID %d.', c.targetNodeID));
+                        continue
+                    elseif ~srcExists && ~dstExists
+                        continue
+                    end
+
+                    if c.sourceNodeID == c.targetNodeID
+                        addNodeMessage(c.sourceNodeID, "blocking", ...
+                            sprintf('Self-edge detected on nodeID %d.', c.sourceNodeID));
+                        continue
+                    end
+
+                    srcIdx = find(nodeIDs == c.sourceNodeID, 1, 'first');
+                    dstIdx = find(nodeIDs == c.targetNodeID, 1, 'first');
+                    srcNode = obj.nodes(srcIdx);
+                    dstNode = obj.nodes(dstIdx);
+
+                    if isfield(dstNode,'kind') && strcmpi(dstNode.kind, 'folder')
+                        addNodeMessage(dstNode.id, "blocking", ...
+                            sprintf('Folder node "%s" has an incoming edge.', char(string(dstNode.name))));
+                        continue
+                    end
+
+                    if ~isfield(srcNode,'info') || ~isfield(srcNode.info,'outputs') || isempty(srcNode.info.outputs)
+                        addNodeMessage(srcNode.id, "blocking", ...
+                            sprintf('Source node "%s" has no output metadata.', char(string(srcNode.name))));
+                        continue
+                    end
+
+                    srcOutIdx = find(strcmpi({srcNode.info.outputs.name}, c.sourceOutputName), 1, 'first');
+                    if isempty(srcOutIdx)
+                        addNodeMessage(srcNode.id, "blocking", ...
+                            sprintf('Missing source output "%s".', char(string(c.sourceOutputName))));
+                        continue
+                    end
+                    srcOutDef = srcNode.info.outputs(srcOutIdx);
+
+                    if ~isfield(dstNode,'info') || ~isfield(dstNode.info,'inputs') || isempty(dstNode.info.inputs)
+                        addNodeMessage(dstNode.id, "blocking", ...
+                            sprintf('Target node "%s" has no input metadata.', char(string(dstNode.name))));
+                        continue
+                    end
+
+                    dstInIdx = find(strcmpi({dstNode.info.inputs.name}, c.targetInputName), 1, 'first');
+                    if isempty(dstInIdx)
+                        addNodeMessage(dstNode.id, "blocking", ...
+                            sprintf('Missing target input "%s".', char(string(c.targetInputName))));
+                        continue
+                    end
+                    dstInDef = dstNode.info.inputs(dstInIdx);
+
+                    srcIsData = isfield(srcOutDef,'isData') && srcOutDef.isData;
+                    dstIsData = isfield(dstInDef,'isData') && dstInDef.isData;
+
+                    if ~srcIsData
+                        addNodeMessage(srcNode.id, "blocking", ...
+                            sprintf('Connection uses non-DATA source output "%s".', char(string(c.sourceOutputName))));
+                        continue
+                    end
+                    if ~dstIsData
+                        addNodeMessage(dstNode.id, "blocking", ...
+                            sprintf('Connection targets non-DATA input "%s".', char(string(c.targetInputName))));
+                        continue
+                    end
+
+                    srcTypes = normalizeTypeList(srcOutDef, c, 'sourceOutputType');
+                    dstTypes = normalizeTypeList(dstInDef, c, 'targetInputType');
+
+                    if isempty(srcTypes) || isempty(dstTypes)
+                        addNodeMessage(srcNode.id, "blocking", ...
+                            sprintf('Missing semantic type for output "%s".', char(string(c.sourceOutputName))));
+                        addNodeMessage(dstNode.id, "blocking", ...
+                            sprintf('Missing semantic type for input "%s".', char(string(c.targetInputName))));
+                        continue
+                    end
+
+                    srcHasWildcard = any(strcmp(srcTypes,'UnknownDataType'));
+                    dstHasWildcard = any(strcmp(dstTypes,'UnknownDataType'));
+
+                    if ~(srcHasWildcard || dstHasWildcard) && isempty(intersect(srcTypes, dstTypes))
+                        addNodeMessage(srcNode.id, "blocking", ...
+                            sprintf('Semantic type mismatch on output "%s".', char(string(c.sourceOutputName))));
+                        addNodeMessage(dstNode.id, "blocking", ...
+                            sprintf('Semantic type mismatch on input "%s".', char(string(c.targetInputName))));
+                    end
+                end
+
+                % Duplicate connection signatures
+                [uniqueSig, ~, sigIdx] = unique(connSig); %#ok<ASGLU>
+                for iSig = 1:numel(uniqueSig)
+                    dupIdx = find(sigIdx == iSig);
+                    if numel(dupIdx) <= 1
+                        continue
+                    end
+                    for iDup = 1:numel(dupIdx)
+                        c = obj.connections(dupIdx(iDup));
+                        if ismember(c.sourceNodeID, nodeIDs)
+                            addNodeMessage(c.sourceNodeID, "blocking", 'Duplicate outgoing connection detected.');
+                        end
+                        if ismember(c.targetNodeID, nodeIDs)
+                            addNodeMessage(c.targetNodeID, "blocking", 'Duplicate incoming connection detected.');
+                        end
+                    end
+                end
+            end
+
+            % -------------------------------------------------------------
+            % Required DATA input checks
+            % -------------------------------------------------------------
+            for iNode = 1:nNodes
+                node = obj.nodes(iNode);
+
+                if ~isfield(node,'kind') || ~strcmpi(node.kind, 'stream')
+                    continue
+                end
+                if ~isfield(node,'info') || ~isfield(node.info,'inputs') || isempty(node.info.inputs)
+                    continue
+                end
+
+                for iIn = 1:numel(node.info.inputs)
+                    inDef = node.info.inputs(iIn);
+                    if ~isfield(inDef,'isData') || ~inDef.isData
+                        continue
+                    end
+
+                    nIncoming = 0;
+                    if ~isempty(obj.connections)
+                        nIncoming = nnz([obj.connections.targetNodeID] == node.id & ...
+                            strcmpi({obj.connections.targetInputName}, char(string(inDef.name))));
+                    end
+
+                    if nIncoming == 0
+                        addNodeMessage(node.id, "blocking", ...
+                            sprintf('Missing required DATA input "%s".', char(string(inDef.name))));
+                    elseif nIncoming > 1
+                        addNodeMessage(node.id, "blocking", ...
+                            sprintf('Multiple connections to DATA input "%s".', char(string(inDef.name))));
+                    end
+                end
+            end
+
+            % -------------------------------------------------------------
+            % Parameter checks
+            % -------------------------------------------------------------
+            for iNode = 1:nNodes
+                node = obj.nodes(iNode);
+
+                if ~isfield(node,'kind') || ~strcmpi(node.kind, 'stream')
+                    continue
+                end
+                if ~isfield(node,'info') || ~isfield(node.info,'parameters') || isempty(node.info.parameters)
+                    continue
+                end
+
+                paramErrors = obj.validateParameterStructArray(node.info.parameters, node.name);
+                for iErr = 1:numel(paramErrors)
+                    addNodeMessage(node.id, "blocking", paramErrors{iErr});
+                end
+            end
+
+            % -------------------------------------------------------------
+            % Cycle/global fallback. If the graph report contains a cycle/topology
+            % error and no specific node was already marked, mark every node.
+            % -------------------------------------------------------------
+            allGlobalErrors = [graphReport.errors, paramReport.errors];
+            for iErr = 1:numel(allGlobalErrors)
+                errText = string(allGlobalErrors{iErr});
+                if contains(lower(errText), 'cycle') || contains(lower(errText), 'topological')
+                    for iNode = 1:nNodes
+                        addNodeMessage(nodeID(iNode), "blocking", char(errText));
+                    end
+                end
+            end
+
+            nodeStatus = table( ...
+                nodeID, stepName, functionName, functionType, status, severity, messages, ...
+                'VariableNames', {'nodeID','stepName','functionName','functionType', ...
+                'status','severity','messages'});
+
+            % =============================================================
+            % Local helpers
+            % =============================================================
+            function addNodeMessage(nodeIDLocal, severityLocal, msgLocal)
+                idxLocal = find(nodeID == nodeIDLocal, 1, 'first');
+                if isempty(idxLocal)
+                    return
+                end
+
+                msgLocal = string(msgLocal);
+                if isempty(messages{idxLocal})
+                    messages{idxLocal} = msgLocal(:);
+                else
+                    messages{idxLocal} = unique([messages{idxLocal}(:); msgLocal(:)], 'stable');
+                end
+
+                severity(idxLocal) = maxSeverity(severity(idxLocal), string(severityLocal));
+                status(idxLocal) = statusFromSeverity(severity(idxLocal));
+            end
+
+            function outSeverity = maxSeverity(a, b)
+                levels = ["none", "warning", "nonblocking", "blocking"];
+                ia = find(levels == string(a), 1, 'first');
+                ib = find(levels == string(b), 1, 'first');
+                if isempty(ia); ia = 1; end
+                if isempty(ib); ib = 1; end
+                outSeverity = levels(max(ia, ib));
+            end
+
+            function outStatus = statusFromSeverity(sev)
+                switch char(string(sev))
+                    case 'none'
+                        outStatus = "valid";
+                    case 'warning'
+                        outStatus = "warning";
+                    case 'nonblocking'
+                        outStatus = "invalid_nonblocking";
+                    otherwise
+                        outStatus = "invalid_blocking";
+                end
+            end
+
+            function typeList = normalizeTypeList(portDef, connDef, fallbackField)
+                typeList = {};
+
+                if isfield(portDef,'type') && ~isempty(portDef.type)
+                    rawType = portDef.type;
+                elseif isfield(connDef, fallbackField) && ~isempty(connDef.(fallbackField))
+                    rawType = connDef.(fallbackField);
+                else
+                    return
+                end
+
+                if ischar(rawType) || (isstring(rawType) && isscalar(rawType))
+                    typeList = {char(string(rawType))};
+                elseif iscell(rawType)
+                    typeList = cellfun(@(x) char(string(x)), rawType(:).', 'UniformOutput', false);
+                elseif isstring(rawType)
+                    typeList = cellstr(rawType(:).');
+                end
+            end
+        end
+
+        function updateNodeRuntimeValidation(obj, nodeStatus)
+            %UPDATENODERUNTIMEVALIDATION Cache node diagnostics in runtime state.
+            %
+            %   The GUI may read nodes(i).runtime.validation, but only
+            %   PipelineManager should write it. This cache is refreshed by
+            %   diagnosePipeline and autoValidate and is not saved as pipeline
+            %   definition metadata.
+
+            if isempty(obj.nodes) || ~istable(nodeStatus) || isempty(nodeStatus)
+                return
+            end
+
+            for iNode = 1:numel(obj.nodes)
+                idxStatus = find(nodeStatus.nodeID == obj.nodes(iNode).id, 1, 'first');
+
+                if isempty(idxStatus)
+                    validation = struct( ...
+                        'status', "valid", ...
+                        'severity', "none", ...
+                        'messages', strings(0,1), ...
+                        'lastCheckedOn', datetime('now'));
+                else
+                    msgLocal = strings(0,1);
+                    if iscell(nodeStatus.messages)
+                        msgLocal = string(nodeStatus.messages{idxStatus});
+                        msgLocal = msgLocal(:);
+                    end
+
+                    validation = struct( ...
+                        'status', string(nodeStatus.status(idxStatus)), ...
+                        'severity', string(nodeStatus.severity(idxStatus)), ...
+                        'messages', msgLocal, ...
+                        'lastCheckedOn', datetime('now'));
+                end
+
+                if ~isfield(obj.nodes(iNode), 'runtime') || ~isstruct(obj.nodes(iNode).runtime)
+                    obj.nodes(iNode).runtime = struct();
+                end
+
+                obj.nodes(iNode).runtime.validation = validation;
             end
         end
 
