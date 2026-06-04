@@ -796,7 +796,6 @@ classdef PipelineManager < handle
             state = true;
         end
 
-
         function rmStep(obj, stepTag)
             %RMSTEP Remove a step by tag.
 
@@ -982,7 +981,7 @@ classdef PipelineManager < handle
                     'Pipeline is still invalid after removing %d node(s). Run obj.diagnosePipeline() for details.', ...
                     numel(removed));
             else
-                obj.diagnosePipeline();
+                obj.diagnosePipeline('verbose',true);
                 disp('Pipeline successfully fixed!')
             end
 
@@ -1695,15 +1694,23 @@ classdef PipelineManager < handle
             end
         end
 
-        function varargout = diagnosePipeline(obj)
-            %DIAGNOSEPIPELINE Print and/or return a full pipeline diagnostic report.
+        function varargout = diagnosePipeline(obj, varargin)
+            %DIAGNOSEPIPELINE Build and optionally print a full pipeline diagnostic report.
             %
             %   diagnosePipeline(obj)
+            %   diagnosePipeline(obj, 'verbose', true)
             %   report = diagnosePipeline(obj)
+            %   report = diagnosePipeline(obj, 'verbose', false)
             %
             %   The returned report is the single public diagnostic interface for
             %   the pipeline. It includes both global graph/parameter validity and
             %   node-level status information that can be consumed by the GUI.
+            %
+            %   Name-Value options:
+            %       verbose - Logical scalar. Default: false.
+            %                 If true, prints the full diagnostic report to the
+            %                 command window. If false, only returns the report and
+            %                 updates cached node runtime validation.
             %
             %   Returned report fields:
             %       isValid        - True only if graph and parameter checks pass.
@@ -1719,6 +1726,11 @@ classdef PipelineManager < handle
             %                         invalid_nonblocking status.
             %       hasInvalidBlocking - True when at least one node has
             %                         invalid_blocking status.
+
+            p = inputParser;
+            addParameter(p, 'verbose', false, @(x) islogical(x) && isscalar(x));
+            parse(p, varargin{:});
+            verbose = p.Results.verbose;
 
             [tfGraph, graphReport] = obj.validateGraph('throwOnError', false);
             [tfParams, paramReport] = obj.validateNodeParameters('throwOnError', false);
@@ -1740,54 +1752,56 @@ classdef PipelineManager < handle
 
             obj.updateNodeRuntimeValidation(report.nodeStatus);
 
-            fprintf('\n================ Pipeline Diagnostics ================\n');
+            if verbose
+                fprintf('\n================ Pipeline Diagnostics ================\n');
 
-            if report.isValid
-                fprintf('Status: VALID\n');
-            else
-                fprintf('Status: INVALID\n');
-            end
-
-            fprintf('Graph valid:      %d\n', logical(report.graphIsValid));
-            fprintf('Parameters valid: %d\n', logical(report.paramsAreValid));
-
-            if ~isempty(report.errors)
-                fprintf('\nErrors (%d):\n', numel(report.errors));
-                for i = 1:numel(report.errors)
-                    fprintf('  %2d) %s\n', i, report.errors{i});
+                if report.isValid
+                    fprintf('Status: VALID\n');
+                else
+                    fprintf('Status: INVALID\n');
                 end
-            else
-                fprintf('\nErrors (0)\n');
-            end
 
-            if ~isempty(report.warnings)
-                fprintf('\nWarnings (%d):\n', numel(report.warnings));
-                for i = 1:numel(report.warnings)
-                    fprintf('  %2d) %s\n', i, report.warnings{i});
-                end
-            else
-                fprintf('\nWarnings (0)\n');
-            end
+                fprintf('Graph valid:      %d\n', logical(report.graphIsValid));
+                fprintf('Parameters valid: %d\n', logical(report.paramsAreValid));
 
-            if istable(report.nodeStatus) && ~isempty(report.nodeStatus)
-                invalidMask = report.nodeStatus.status ~= "valid";
-                if any(invalidMask)
-                    fprintf('\nNode status (%d non-valid):\n', nnz(invalidMask));
-                    rows = find(invalidMask);
-                    for iRow = 1:numel(rows)
-                        r = rows(iRow);
-                        fprintf('  nodeID %d | %s | %s | %s\n', ...
-                            report.nodeStatus.nodeID(r), ...
-                            char(report.nodeStatus.stepName(r)), ...
-                            char(report.nodeStatus.status(r)), ...
-                            char(report.nodeStatus.severity(r)));
+                if ~isempty(report.errors)
+                    fprintf('\nErrors (%d):\n', numel(report.errors));
+                    for i = 1:numel(report.errors)
+                        fprintf('  %2d) %s\n', i, report.errors{i});
                     end
                 else
-                    fprintf('\nNode status: all nodes valid.\n');
+                    fprintf('\nErrors (0)\n');
                 end
-            end
 
-            fprintf('======================================================\n\n');
+                if ~isempty(report.warnings)
+                    fprintf('\nWarnings (%d):\n', numel(report.warnings));
+                    for i = 1:numel(report.warnings)
+                        fprintf('  %2d) %s\n', i, report.warnings{i});
+                    end
+                else
+                    fprintf('\nWarnings (0)\n');
+                end
+
+                if istable(report.nodeStatus) && ~isempty(report.nodeStatus)
+                    invalidMask = report.nodeStatus.status ~= "valid";
+                    if any(invalidMask)
+                        fprintf('\nNode status (%d non-valid):\n', nnz(invalidMask));
+                        rows = find(invalidMask);
+                        for iRow = 1:numel(rows)
+                            r = rows(iRow);
+                            fprintf('  nodeID %d | %s | %s | %s\n', ...
+                                report.nodeStatus.nodeID(r), ...
+                                char(report.nodeStatus.stepName(r)), ...
+                                char(report.nodeStatus.status(r)), ...
+                                char(report.nodeStatus.severity(r)));
+                        end
+                    else
+                        fprintf('\nNode status: all nodes valid.\n');
+                    end
+                end
+
+                fprintf('======================================================\n\n');
+            end
 
             if nargout > 0
                 varargout{1} = report;

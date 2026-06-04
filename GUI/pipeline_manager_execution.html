@@ -4,22 +4,133 @@
   <meta charset="utf-8">
   <title>Execution Order</title>
   <style>
-    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: auto; background: #f4f5f7; font-family: Arial, Helvetica, sans-serif; }
-    #root { padding: 10px; box-sizing: border-box; }
-    #note { color: #6b7280; font-size: 12px; margin-bottom: 10px; }
-    .step { background: #ffffff; border: 1px solid #d2d6dd; border-radius: 10px; padding: 10px; margin-bottom: 8px; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
-    .step.selected { border: 2px solid #2f78ff; box-shadow: 0 0 0 2px rgba(47,120,255,0.12); }
-    .stepHeader { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-    .stepTitle { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .stepTag { color: #5f6368; font-size: 12px; margin-top: 2px; }
-    .orderBadge { padding: 2px 6px; border-radius: 999px; background: #eef2f7; font-size: 10px; }
-    #hint { color: #7a7a7a; font-size: 13px; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      background: #f4f5f7;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    #root {
+      padding: 10px;
+      box-sizing: border-box;
+      min-width: 100%;
+    }
+
+    #note {
+      color: #6b7280;
+      font-size: 11px;
+      margin-bottom: 8px;
+    }
+
+    #track {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 72px;
+      width: max-content;
+      padding-bottom: 4px;
+    }
+
+    .step {
+      display: inline-flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 2px;
+      min-width: 96px;
+      max-width: 150px;
+      padding: 7px 10px;
+      background: #ffffff;
+      border: 1px solid #d2d6dd;
+      border-radius: 10px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      cursor: pointer;
+      box-sizing: border-box;
+    }
+
+    .step.selected {
+      border: 2px solid #2f78ff;
+      box-shadow: 0 0 0 2px rgba(47,120,255,0.12);
+    }
+
+    .stepHeader {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .stepTitle {
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+
+    .stepTag {
+      color: #5f6368;
+      font-size: 10px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+
+    .orderBadge {
+      flex: 0 0 auto;
+      padding: 1px 5px;
+      border-radius: 999px;
+      background: #eef2f7;
+      font-size: 9px;
+      line-height: 1.35;
+    }
+
+    .connector {
+      position: relative;
+      flex: 0 0 18px;
+      width: 18px;
+      height: 12px;
+    }
+
+    .connector::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 5px;
+      top: 50%;
+      transform: translateY(-50%);
+      border-top: 2px solid #8c99a5;
+    }
+
+    .connector::after {
+      content: "";
+      position: absolute;
+      right: 0;
+      top: 50%;
+      width: 0;
+      height: 0;
+      transform: translateY(-50%);
+      border-left: 5px solid #8c99a5;
+      border-top: 4px solid transparent;
+      border-bottom: 4px solid transparent;
+    }
+
+    #hint {
+      color: #7a7a7a;
+      font-size: 12px;
+    }
   </style>
 </head>
 <body>
   <div id="root">
     <div id="note"></div>
-    <div id="list"></div>
+    <div id="track"></div>
     <div id="hint">No execution data available.</div>
   </div>
 
@@ -57,10 +168,11 @@
 
     function render() {
       const note = document.getElementById("note");
-      const list = document.getElementById("list");
+      const track = document.getElementById("track");
       const hint = document.getElementById("hint");
+
       note.textContent = model.note || "";
-      list.innerHTML = "";
+      track.innerHTML = "";
 
       if (!model.steps.length) {
         hint.style.display = "block";
@@ -69,25 +181,39 @@
 
       hint.style.display = "none";
 
-      model.steps.forEach(function(step) {
+      model.steps.forEach(function(step, idx) {
         const card = document.createElement("div");
         card.className = "step" + ((step.id === model.selectedNodeID) ? " selected" : "");
+
+        const titleText = step.funcName || "";
+        const tagText = step.stepTag || "";
+        const fullText = `${titleText} | ${tagText} | #${step.orderIndex || ""}`;
+
+        card.title = fullText;
         card.innerHTML = `
           <div class="stepHeader">
-            <div>
-              <div class="stepTitle">${esc(step.funcName || "")}</div>
-              <div class="stepTag">${esc(step.stepTag || "")}</div>
-            </div>
+            <div class="stepTitle" title="${esc(titleText)}">${esc(titleText)}</div>
             <div class="orderBadge">#${step.orderIndex || ""}</div>
-          </div>`;
+          </div>
+          <div class="stepTag" title="${esc(tagText)}">${esc(tagText)}</div>`;
 
         card.addEventListener("click", function() {
           if (htmlComponent) {
-            htmlComponent.sendEventToMATLAB("stepSelected", { nodeID: step.id, stepTag: step.stepTag || "", funcName: step.funcName || "" });
+            htmlComponent.sendEventToMATLAB("stepSelected", {
+              nodeID: step.id,
+              stepTag: step.stepTag || "",
+              funcName: step.funcName || ""
+            });
           }
         });
 
-        list.appendChild(card);
+        track.appendChild(card);
+
+        if (idx < model.steps.length - 1) {
+          const connector = document.createElement("div");
+          connector.className = "connector";
+          track.appendChild(connector);
+        }
       });
     }
 

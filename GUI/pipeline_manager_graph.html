@@ -11,7 +11,7 @@
     #nodeLayer { position: absolute; inset: 0; z-index: 1; }
     #edgeLabels { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
     #hint { position: absolute; top: 18px; left: 18px; color: #7a7a7a; font-size: 13px; z-index: 3; }
-    #hoverCard { position: fixed; z-index: 1200; max-width: 380px; background: #ffffff; border: 1px solid #cfd5dc; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.18); padding: 10px 12px; display: none; pointer-events: none; white-space: pre-wrap; font-size: 12px; color: #2f3440; line-height: 1.35; }
+    #hoverCard { position: fixed; z-index: 1200; max-width: 420px; background: #ffffff; border: 1px solid #cfd5dc; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.18); padding: 10px 12px; display: none; pointer-events: none; white-space: pre-wrap; font-size: 12px; color: #2f3440; line-height: 1.35; }
     #modeBanner { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1250; display: none; align-items: center; gap: 12px; background: #ffffff; border: 1px solid #cfd5dc; border-radius: 999px; box-shadow: 0 6px 20px rgba(0,0,0,0.16); padding: 8px 12px; font-size: 12px; color: #2f3440; }
     #modeBanner button { border: 1px solid #cfd5dc; background: #f8f9fb; border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
     #modeBanner button:hover { background: #eef4ff; }
@@ -22,8 +22,9 @@
     .node { position: absolute; width: 190px; height: 76px; box-sizing: border-box; border: 1px solid #c8ccd3; border-radius: 12px; background: #ffffff; box-shadow: 0 2px 8px rgba(0,0,0,0.08); padding: 10px 12px; cursor: pointer; display: flex; flex-direction: column; justify-content: center; transition: opacity 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease; }
     .node.folder { background: #f7fbff; }
     .node.selected { border: 2px solid #2f78ff; box-shadow: 0 0 0 2px rgba(47,120,255,0.15); }
-    .node.error { border-color: #d14343; }
-    .node.warning { border-color: #d48a00; }
+    .node.error { border-color: #d14343; box-shadow: 0 0 0 2px rgba(209,67,67,0.12); }
+    .node.warning { border-color: #d48a00; box-shadow: 0 0 0 2px rgba(212,138,0,0.12); }
+    .node.nonblocking { border-color: #c97300; border-style: dashed; box-shadow: 0 0 0 2px rgba(201,115,0,0.14); }
     .node.reconnectTarget { border-color: #7c4dff; box-shadow: 0 0 0 2px rgba(124,77,255,0.16); }
     .node.reconnectCandidate { border-color: #1f8f4e; box-shadow: 0 0 0 2px rgba(31,143,78,0.16); }
     .node.reconnectMuted { opacity: 0.35; }
@@ -162,6 +163,7 @@
         if (n.id === model.selectedNodeID) { className += " selected"; }
         if (n.kind === "folder") { className += " folder"; }
         if (n.hasError) { className += " error"; }
+        else if (n.hasInvalidNonblocking) { className += " nonblocking"; }
         else if (n.hasWarning) { className += " warning"; }
         if (n.isReconnectTarget) { className += " reconnectTarget"; }
         if (n.isReconnectCandidate) { className += " reconnectCandidate"; }
@@ -174,8 +176,9 @@
 
         let icons = "";
         if (n.hasSavedOutputs) { icons += `<span class="icon" title="Saved outputs">💾</span>`; }
-        if (n.hasError) { icons += `<span class="icon" title="Validation error">❌</span>`; }
-        else if (n.hasWarning) { icons += `<span class="icon" title="Validation warning">⚠️</span>`; }
+        if (n.hasError) { icons += `<span class="icon" title="Blocking invalid node">❌</span>`; }
+        else if (n.hasInvalidNonblocking) { icons += `<span class="icon" title="Non-blocking invalid node">⊘</span>`; }
+        else if (n.hasWarning) { icons += `<span class="icon" title="Validation warning">⚠</span>`; }
 
         el.innerHTML = `
           <div class="nodeHeader">
