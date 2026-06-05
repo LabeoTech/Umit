@@ -1354,6 +1354,7 @@ classdef PipelineManager < handle
                 fprintf('%d : %s (%s)\n', i, obj.funcList(i).name, folderList{i});
             end
         end
+
         function result = executePipeline(obj, varargin)
             %EXECUTEPIPELINE Orchestrate execution across all SaveFolders.
             %
@@ -1382,7 +1383,8 @@ classdef PipelineManager < handle
 
             previousRunPolicy = obj.currentLeafOutputPolicy;
             previousSessionTag = obj.currentTempSessionTag;
-            cleanupRunState = onCleanup(@() restoreRunState()); %#ok<NASGU>
+            cleanupRunState = onCleanup(@() obj.restoreExecutionRunState( ...
+                previousRunPolicy, previousSessionTag)); %#ok<NASGU>
 
             obj.currentLeafOutputPolicy = runLeafPolicy;
             obj.currentTempSessionTag = obj.makeTempSessionTag();
@@ -1669,10 +1671,6 @@ classdef PipelineManager < handle
                 fprintf('%s\n',repmat('=',1,120))
             end
 
-            function restoreRunState()
-                obj.currentLeafOutputPolicy = previousRunPolicy;
-                obj.currentTempSessionTag = previousSessionTag;
-            end
         end
 
         function [tf, report] = validateNodeParameters(obj, varargin)
@@ -1845,7 +1843,6 @@ classdef PipelineManager < handle
             end
         end
 
-
         function setLeafOutputPolicy(obj, policy)
             %SETLEAFOUTPUTPOLICY Set the default leaf-output persistence policy.
             %
@@ -1949,49 +1946,6 @@ classdef PipelineManager < handle
             orderReport.topoOrder = topoOrderLocal;
             orderReport.execOrder = execOrderLocal;
             orderReport.nodeTable = nodeTable;
-        end
-
-        function plan = getExecutionPlan(obj, varargin)
-            %GETEXECUTIONPLAN Return structured execution and output-persistence plan.
-            %
-            %   plan = getExecutionPlan(obj)
-            %   plan = getExecutionPlan(obj, 'LeafOutputPolicy', policy)
-            %
-            %   This method does not execute functions. It summarizes graph order,
-            %   data flow, validation state, and planned output persistence so CLI
-            %   callers and GUI frontends consume the same backend-owned data.
-
-            p = inputParser;
-            addParameter(p, 'LeafOutputPolicy', obj.leafOutputPolicy, @(x)ischar(x)||isstring(x));
-            addParameter(p, 'SaveFolder', '', @(x)ischar(x)||isstring(x));
-            parse(p, varargin{:});
-
-            policy = obj.resolveLeafOutputPolicy(p.Results.LeafOutputPolicy);
-            saveFolder = char(string(p.Results.SaveFolder));
-            if isempty(saveFolder) && ~isempty(obj.SaveFolderList)
-                saveFolder = obj.SaveFolderList{1};
-            end
-
-            if isempty(obj.currentTempSessionTag)
-                obj.currentTempSessionTag = obj.makeTempSessionTag();
-            end
-
-            validationReport = obj.diagnosePipeline('verbose', false);
-            nodeOrders = obj.getNodeOrders();
-            edgeTable = obj.buildEdgeTable();
-            outputPlan = obj.buildOutputPlan(policy, saveFolder);
-
-            plan = struct();
-            plan.createdOn = datetime('now');
-            plan.leafOutputPolicy = string(policy);
-            plan.tempOutputPrefix = string(obj.tempOutputPrefix);
-            plan.tempSessionTag = string(obj.currentTempSessionTag);
-            plan.saveFolder = string(saveFolder);
-            plan.nodeOrders = nodeOrders;
-            plan.nodeTable = nodeOrders.nodeTable;
-            plan.edgeTable = edgeTable;
-            plan.outputPlan = outputPlan;
-            plan.validationReport = validationReport;
         end
 
         function savePipe(obj,varargin)
@@ -3595,16 +3549,13 @@ classdef PipelineManager < handle
         end
 
         %%%%%%--Pipeline Visualization  -----------------------------------
-        function varargout = viewGraph(obj, varargin)
-            %VIEWGRAPH Print the structured execution plan tables.
+        function varargout = viewExecutionPlan(obj, varargin)
+            %VIEWEXECUTIONPLAN Print the structured execution plan tables.
             %
-            %   viewGraph(obj)
-            %   plan = viewGraph(obj)
-            %
-            %   Pipeline visualization is now handled by the PipelineManager GUI.
-            %   This CLI method prints backend-owned tables from getExecutionPlan so
-            %   callers can inspect the same order and output-persistence metadata
-            %   without parsing presentation text.
+            % Pipeline visualization is handled by the PipelineManager GUI. This
+            % CLI method prints backend-owned tables from getExecutionPlan so callers
+            % can inspect order and output-persistence metadata without parsing
+            % presentation text.
 
             p = inputParser;
             addParameter(p, 'LeafOutputPolicy', obj.leafOutputPolicy, @(x)ischar(x)||isstring(x));
@@ -3616,10 +3567,10 @@ classdef PipelineManager < handle
                 'SaveFolder', p.Results.SaveFolder);
 
             fprintf('\n================ PIPELINE EXECUTION PLAN ================\n');
-            fprintf('LeafOutputPolicy: %s\n', char(plan.leafOutputPolicy));
-            fprintf('TempSessionTag:   %s\n\n', char(plan.tempSessionTag));
+            fprintf('Output policy:   %s\n', char(plan.leafOutputPolicy));
+            fprintf('TempSessionTag:  %s\n\n', char(plan.tempSessionTag));
 
-            fprintf('--- Node order ---\n');
+            fprintf('--- Step order ---\n');
             disp(plan.nodeTable)
 
             fprintf('--- Data flow ---\n');
@@ -3633,6 +3584,49 @@ classdef PipelineManager < handle
             if nargout > 0
                 varargout{1} = plan;
             end
+        end
+        
+        function plan = getExecutionPlan(obj, varargin)
+            %GETEXECUTIONPLAN Return structured execution and output-persistence plan.
+            %
+            %   plan = getExecutionPlan(obj)
+            %   plan = getExecutionPlan(obj, 'LeafOutputPolicy', policy)
+            %
+            %   This method does not execute functions. It summarizes graph order,
+            %   data flow, validation state, and planned output persistence so CLI
+            %   callers and GUI frontends consume the same backend-owned data.
+
+            p = inputParser;
+            addParameter(p, 'LeafOutputPolicy', obj.leafOutputPolicy, @(x)ischar(x)||isstring(x));
+            addParameter(p, 'SaveFolder', '', @(x)ischar(x)||isstring(x));
+            parse(p, varargin{:});
+
+            policy = obj.resolveLeafOutputPolicy(p.Results.LeafOutputPolicy);
+            saveFolder = char(string(p.Results.SaveFolder));
+            if isempty(saveFolder) && ~isempty(obj.SaveFolderList)
+                saveFolder = obj.SaveFolderList{1};
+            end
+
+            if isempty(obj.currentTempSessionTag)
+                obj.currentTempSessionTag = obj.makeTempSessionTag();
+            end
+
+            validationReport = obj.diagnosePipeline('verbose', false);
+            nodeOrders = obj.getNodeOrders();
+            edgeTable = obj.buildEdgeTable();
+            outputPlan = obj.buildOutputPlan(policy, saveFolder);
+
+            plan = struct();
+            plan.createdOn = datetime('now');
+            plan.leafOutputPolicy = string(policy);
+            plan.tempOutputPrefix = string(obj.tempOutputPrefix);
+            plan.tempSessionTag = string(obj.currentTempSessionTag);
+            plan.saveFolder = string(saveFolder);
+            plan.nodeOrders = nodeOrders;
+            plan.nodeTable = nodeOrders.nodeTable;
+            plan.edgeTable = edgeTable;
+            plan.outputPlan = outputPlan;
+            plan.validationReport = validationReport;
         end
 
     end
@@ -3886,7 +3880,7 @@ classdef PipelineManager < handle
                 end
 
                 if isfield(c,'sourceOutputType') && ~isempty(c.sourceOutputType)
-                    sourceTypes{i} = cellstr(string(c.sourceOutputType(:))); 
+                    sourceTypes{i} = cellstr(string(c.sourceOutputType(:)));
                 else
                     sourceTypes{i} = {};
                 end
@@ -3913,13 +3907,15 @@ classdef PipelineManager < handle
             outputMode = strings(0,1);
             outputTypes = cell(0,1);
             isData = false(0,1);
-            isLeafOutput = false(0,1);
+            isFinalOutput = false(0,1);
             isSaveable = false(0,1);
             isViewerCompatibleCandidate = false(0,1);
             plannedPersistence = strings(0,1);
             plannedFileName = strings(0,1);
             plannedFilePath = strings(0,1);
             reason = strings(0,1);
+
+            reservedAutoNames = strings(0,1);
 
             obj.updateTopoOrder();
             nodeIDsToVisit = obj.topoOrder(:)';
@@ -3945,7 +3941,7 @@ classdef PipelineManager < handle
 
                     outIsData = isfield(outDef,'isData') && logical(outDef.isData);
                     saveable = obj.isManagerSaveableOutput(outDef);
-                    leafOut = outIsData && ~obj.outputHasDownstreamConsumer(nodeLocal.id, outNameLocal);
+                    finalOut = outIsData && ~obj.outputHasDownstreamConsumer(nodeLocal.id, outNameLocal);
                     viewerCandidate = obj.isViewerCompatibleOutputCandidate(outDef);
 
                     typeList = {};
@@ -3973,38 +3969,44 @@ classdef PipelineManager < handle
                             persistenceLocal = "saved_explicit";
                             reasonLocal = "Explicit save target configured.";
 
-                        elseif leafOut
-                        switch lower(policy)
-                            case 'saveleaves'
-                                fileRows = string(obj.inferLeafOutputFileName(nodeLocal, outDef, false));
-                                persistenceLocal = "saved_leaf";
-                                reasonLocal = "LeafOutputPolicy=saveLeaves.";
+                        elseif finalOut
+                            switch lower(policy)
+                                case 'saveleaves'
+                                    [resolvedName, reservedAutoNames] = obj.resolveAutoFinalOutputFileName( ...
+                                        nodeLocal, outDef, saveFolder, reservedAutoNames, ...
+                                        'asTemp', false);
+                                    fileRows = string(resolvedName);
+                                    persistenceLocal = "saved_final";
+                                    reasonLocal = "Output policy=saveLeaves.";
 
-                            case 'viewertemp'
-                                if viewerCandidate
-                                    fileRows = string(obj.makeTempOutputBaseName(nodeLocal, outDef));
-                                    persistenceLocal = "saved_temp";
-                                    reasonLocal = "LeafOutputPolicy=viewerTemp and output is a viewer-compatible candidate.";
-                                else
+                                case 'viewertemp'
+                                    if viewerCandidate
+                                        [resolvedName, reservedAutoNames] = obj.resolveAutoFinalOutputFileName( ...
+                                            nodeLocal, outDef, saveFolder, reservedAutoNames, ...
+                                            'asTemp', true);
+                                        fileRows = string(resolvedName);
+                                        persistenceLocal = "saved_temp";
+                                        reasonLocal = "Output policy=viewerTemp and output can be opened by DataViewer.";
+                                    else
+                                        fileRows = "";
+                                        persistenceLocal = "unsaved_reported";
+                                        reasonLocal = "Output policy=viewerTemp, but output is not a DataViewer-compatible candidate.";
+                                    end
+
+                                case 'transient'
+                                    fileRows = "";
+                                    persistenceLocal = "transient_explicit";
+                                    reasonLocal = "Output policy=transient.";
+
+                                otherwise
                                     fileRows = "";
                                     persistenceLocal = "unsaved_reported";
-                                    reasonLocal = "LeafOutputPolicy=viewerTemp but output is not a DataViewer-compatible candidate.";
-                                end
-
-                            case 'transient'
-                                fileRows = "";
-                                persistenceLocal = "transient_explicit";
-                                reasonLocal = "LeafOutputPolicy=transient.";
-
-                            otherwise
-                                fileRows = "";
-                                persistenceLocal = "unsaved_reported";
-                                reasonLocal = "No explicit save target and LeafOutputPolicy=explicit.";
-                        end
+                                    reasonLocal = "No explicit save target and output policy=explicit.";
+                            end
                         else
                             fileRows = "";
-                            persistenceLocal = "not_leaf_intermediate";
-                            reasonLocal = "Output feeds downstream node(s) or is not a DATA leaf.";
+                            persistenceLocal = "not_final_intermediate";
+                            reasonLocal = "Output feeds another step or is not DATA.";
                         end
                     end
 
@@ -4022,7 +4024,7 @@ classdef PipelineManager < handle
                         outputMode(end+1,1) = string(outModeLocal); %#ok<AGROW>
                         outputTypes{end+1,1} = typeList; %#ok<AGROW>
                         isData(end+1,1) = outIsData; %#ok<AGROW>
-                        isLeafOutput(end+1,1) = leafOut; %#ok<AGROW>
+                        isFinalOutput(end+1,1) = finalOut; %#ok<AGROW>
                         isSaveable(end+1,1) = saveable; %#ok<AGROW>
                         isViewerCompatibleCandidate(end+1,1) = viewerCandidate; %#ok<AGROW>
                         plannedPersistence(end+1,1) = persistenceLocal; %#ok<AGROW>
@@ -4034,7 +4036,7 @@ classdef PipelineManager < handle
             end
 
             outputPlan = table(nodeID, stepTag, functionName, outputName, outputMode, ...
-                outputTypes, isData, isLeafOutput, isSaveable, ...
+                outputTypes, isData, isFinalOutput, isSaveable, ...
                 isViewerCompatibleCandidate, plannedPersistence, plannedFileName, ...
                 plannedFilePath, reason);
         end
@@ -4044,11 +4046,11 @@ classdef PipelineManager < handle
 
             outputManifest = obj.buildOutputManifestFromPlan(executionPlan.outputPlan);
 
-            isLeafViewer = false(0,1);
-            isUnsavedLeaf = false(0,1);
+            isFinalViewer = false(0,1);
+            isUnsavedFinal = false(0,1);
             if ~isempty(outputManifest)
-                isLeafViewer = outputManifest.IsLeafOutput & outputManifest.IsViewerCompatible & outputManifest.FileExists;
-                isUnsavedLeaf = outputManifest.IsLeafOutput & ...
+                isFinalViewer = outputManifest.IsFinalOutput & outputManifest.IsViewerCompatible & outputManifest.FileExists;
+                isUnsavedFinal = outputManifest.IsFinalOutput & ...
                     ismember(outputManifest.ActualPersistence, ["unsaved_reported", "transient_explicit", "unsupported_save"]);
             end
 
@@ -4064,8 +4066,8 @@ classdef PipelineManager < handle
             result.globalPipeLog = obj.globalPipeLog;
             result.outputManifest = outputManifest;
             result.createdFiles = obj.buildCreatedFilesTableFromGlobalLog();
-            result.viewerCompatibleLeafOutputs = outputManifest(isLeafViewer, :);
-            result.unsavedLeafOutputs = outputManifest(isUnsavedLeaf, :);
+            result.viewerCompatibleFinalOutputs = outputManifest(isFinalViewer, :);
+            result.unsavedFinalOutputs = outputManifest(isUnsavedFinal, :);
         end
 
         function createdFiles = buildCreatedFilesTableFromGlobalLog(obj)
@@ -4137,9 +4139,9 @@ classdef PipelineManager < handle
         end
 
         function manifest = buildOutputManifestFromPlan(obj, outputPlan)
-            %BUILDOUTPUTMANIFESTFROMPLAN Resolve planned output rows against disk.
+            %BUILDOUTPUTMANIFESTFROMPLAN Resolve planned outputs against disk.
 
-            if isempty(outputPlan)
+            if isempty(outputPlan) || ~istable(outputPlan)
                 manifest = table();
                 return
             end
@@ -4152,7 +4154,7 @@ classdef PipelineManager < handle
             outputName = strings(0,1);
             outputMode = strings(0,1);
             outputTypes = cell(0,1);
-            isLeafOutput = false(0,1);
+            isFinalOutput = false(0,1);
             plannedPersistence = strings(0,1);
             actualPersistence = strings(0,1);
             plannedFileName = strings(0,1);
@@ -4173,18 +4175,22 @@ classdef PipelineManager < handle
 
                     actualPersist = string(outputPlan.plannedPersistence(iRow));
                     if ~existsFlag && actualPersist == "already_file"
-                        % outputMode='file' entries often represent potential files in
-                        % a manifest. Absence after execution means that this recording
-                        % did not produce that particular file, not necessarily a failed
-                        % manager save. The actual created-file report is stored in
-                        % result.createdFiles.
                         actualPersist = "not_produced";
-                    elseif ~existsFlag && any(actualPersist == ["saved_explicit","saved_leaf","saved_temp"])
+                    elseif ~existsFlag && any(actualPersist == ["saved_explicit","saved_final","saved_temp"])
                         actualPersist = "missing_expected_file";
                     end
 
+                    if ismember('isFinalOutput', outputPlan.Properties.VariableNames)
+                        finalFlag = logical(outputPlan.isFinalOutput(iRow));
+                    elseif ismember('isLeafOutput', outputPlan.Properties.VariableNames)
+                        % Backward-compatible fallback for old execution-plan structs.
+                        finalFlag = logical(outputPlan.isLeafOutput(iRow));
+                    else
+                        finalFlag = false;
+                    end
+
                     [viewerOK, viewerReason] = obj.classifyViewerCompatibleFile( ...
-                        actualPath, outputPlan.outputTypes{iRow}, outputPlan.isLeafOutput(iRow));
+                        actualPath, outputPlan.outputTypes{iRow}, finalFlag);
 
                     saveFolderCol(end+1,1) = saveFolder; %#ok<AGROW>
                     rawFolderCol(end+1,1) = rawFolder; %#ok<AGROW>
@@ -4194,7 +4200,7 @@ classdef PipelineManager < handle
                     outputName(end+1,1) = outputPlan.outputName(iRow); %#ok<AGROW>
                     outputMode(end+1,1) = outputPlan.outputMode(iRow); %#ok<AGROW>
                     outputTypes{end+1,1} = outputPlan.outputTypes{iRow}; %#ok<AGROW>
-                    isLeafOutput(end+1,1) = outputPlan.isLeafOutput(iRow); %#ok<AGROW>
+                    isFinalOutput(end+1,1) = finalFlag; %#ok<AGROW>
                     plannedPersistence(end+1,1) = outputPlan.plannedPersistence(iRow); %#ok<AGROW>
                     actualPersistence(end+1,1) = actualPersist; %#ok<AGROW>
                     plannedFileName(end+1,1) = plannedFile; %#ok<AGROW>
@@ -4208,11 +4214,11 @@ classdef PipelineManager < handle
             end
 
             manifest = table(saveFolderCol, rawFolderCol, nodeID, stepTag, functionName, ...
-                outputName, outputMode, outputTypes, isLeafOutput, plannedPersistence, ...
+                outputName, outputMode, outputTypes, isFinalOutput, plannedPersistence, ...
                 actualPersistence, plannedFileName, actualFileName, filePath, fileExists, ...
                 isTemporary, isViewerCompatible, compatibilityReason, ...
                 'VariableNames', {'SaveFolder','RawFolder','NodeID','StepTag','FunctionName', ...
-                'OutputName','OutputMode','OutputTypes','IsLeafOutput','PlannedPersistence', ...
+                'OutputName','OutputMode','OutputTypes','IsFinalOutput','PlannedPersistence', ...
                 'ActualPersistence','PlannedFileName','ActualFileName','FilePath','FileExists', ...
                 'IsTemporary','IsViewerCompatible','CompatibilityReason'});
         end
@@ -4259,14 +4265,249 @@ classdef PipelineManager < handle
             existsFlag = true;
         end
 
-        function [tf, reason] = classifyViewerCompatibleFile(~, filePath, outputTypes, isLeafOutput)
+        function [fileName, reservedNames] = resolveAutoFinalOutputFileName(obj, nodeLocal, outDef, saveFolder, reservedNames, varargin)
+            %RESOLVEAUTOFINALOUTPUTFILENAME Resolve automatic final-output filename.
+            %
+            % This is the single backend resolver for filenames created by automatic
+            % output policies. It keeps repeated processing steps from reusing the
+            % same default output filename by including the step tag when needed.
+
+            p = inputParser;
+            addParameter(p, 'asTemp', false, @(x)islogical(x)&&isscalar(x));
+            parse(p, varargin{:});
+            asTemp = p.Results.asTemp;
+
+            if nargin < 5 || isempty(reservedNames)
+                reservedNames = strings(0,1);
+            else
+                reservedNames = string(reservedNames(:));
+            end
+
+            if nargin < 4 || isempty(saveFolder)
+                saveFolder = '';
+            end
+
+            if asTemp
+                candidateName = string(obj.makeTempOutputBaseName(nodeLocal, outDef));
+                [fileName, reservedNames] = obj.makeAutoFinalFileNameUnique( ...
+                    candidateName, saveFolder, reservedNames);
+                return
+            end
+
+            defaultNames = obj.normalizeDefaultOutputFileList(outDef);
+
+            if ~isempty(defaultNames)
+                candidateName = defaultNames(1);
+            else
+                stepTag = matlab.lang.makeValidName(char(string(nodeLocal.name)));
+                outTag = matlab.lang.makeValidName(char(string(outDef.name)));
+                candidateName = string(sprintf('%s_%s', stepTag, outTag));
+            end
+
+            if obj.isRepeatedProcessingStep(nodeLocal.id)
+                candidateName = obj.prependStepTagToFileName(candidateName, nodeLocal.name);
+            end
+
+            [fileName, reservedNames] = obj.makeAutoFinalFileNameUnique( ...
+                candidateName, saveFolder, reservedNames);
+        end
+
+        function fileName = getPlannedFinalOutputFileName(obj, nodeID, outputName, persistenceState)
+            %GETPLANNEDFINALOUTPUTFILENAME Return the planned filename for one output.
+
+            fileName = '';
+
+            if isempty(obj.lastExecutionPlan) || ~isstruct(obj.lastExecutionPlan) || ...
+                    ~isfield(obj.lastExecutionPlan, 'outputPlan') || ...
+                    ~istable(obj.lastExecutionPlan.outputPlan) || ...
+                    isempty(obj.lastExecutionPlan.outputPlan)
+                return
+            end
+
+            outputPlan = obj.lastExecutionPlan.outputPlan;
+
+            requiredVars = {'nodeID','outputName','plannedPersistence','plannedFileName'};
+            if ~all(ismember(requiredVars, outputPlan.Properties.VariableNames))
+                return
+            end
+
+            rows = outputPlan(outputPlan.nodeID == nodeID & ...
+                strcmpi(string(outputPlan.outputName), string(outputName)) & ...
+                string(outputPlan.plannedPersistence) == string(persistenceState), :);
+
+            rows = rows(strlength(strtrim(string(rows.plannedFileName))) > 0, :);
+
+            if isempty(rows)
+                return
+            end
+
+            fileName = char(string(rows.plannedFileName(1)));
+        end
+
+        function tf = isRepeatedProcessingStep(obj, nodeID)
+            %ISREPEATEDPROCESSINGSTEP True when the same function appears multiple times.
+
+            tf = false;
+
+            if isempty(obj.nodes)
+                return
+            end
+
+            try
+                nodeLocal = obj.nodes(obj.getNodeIndexByID(nodeID));
+            catch
+                return
+            end
+
+            if ~isfield(nodeLocal, 'kind') || ~strcmpi(nodeLocal.kind, 'stream')
+                return
+            end
+
+            thisFunction = string(obj.getCallableFuncName(nodeLocal));
+            if strlength(thisFunction) == 0
+                return
+            end
+
+            nMatch = 0;
+
+            for iNode = 1:numel(obj.nodes)
+                otherNode = obj.nodes(iNode);
+
+                if ~isfield(otherNode, 'kind') || ~strcmpi(otherNode.kind, 'stream')
+                    continue
+                end
+
+                otherFunction = string(obj.getCallableFuncName(otherNode));
+
+                if strcmpi(otherFunction, thisFunction)
+                    nMatch = nMatch + 1;
+                end
+            end
+
+            tf = nMatch > 1;
+        end
+
+        function fileName = prependStepTagToFileName(~, fileNameIn, stepTag)
+            %PREPENDSTEPTAGTOFILENAME Prefix a filename with the step tag.
+
+            fileNameIn = string(fileNameIn);
+            stepTag = string(matlab.lang.makeValidName(char(string(stepTag))));
+
+            [folderPart, basePart, extPart] = fileparts(char(fileNameIn));
+
+            if isempty(basePart)
+                basePart = matlab.lang.makeValidName(char(fileNameIn));
+            end
+
+            prefix = stepTag + "_";
+            if startsWith(string(basePart), prefix, 'IgnoreCase', true)
+                newBase = string(basePart);
+            else
+                newBase = prefix + string(basePart);
+            end
+
+            if isempty(folderPart)
+                fileName = char(newBase + string(extPart));
+            else
+                fileName = char(fullfile(folderPart, char(newBase + string(extPart))));
+            end
+        end
+
+        function [uniqueName, reservedNames] = makeAutoFinalFileNameUnique(obj, candidateName, saveFolder, reservedNames)
+            %MAKEAUTOFINALFILENAMEUNIQUE Avoid duplicate automatic output names.
+
+            candidateName = string(strtrim(string(candidateName)));
+
+            if strlength(candidateName) == 0
+                uniqueName = '';
+                return
+            end
+
+            if nargin < 4 || isempty(reservedNames)
+                reservedNames = strings(0,1);
+            else
+                reservedNames = string(reservedNames(:));
+            end
+
+            [folderPart, basePart, extPart] = fileparts(char(candidateName));
+
+            if isempty(basePart)
+                basePart = matlab.lang.makeValidName(char(candidateName));
+            end
+
+            suffixIdx = 0;
+            uniqueCandidate = candidateName;
+
+            while obj.autoFinalFileNameIsReserved(uniqueCandidate, saveFolder, reservedNames)
+                suffixIdx = suffixIdx + 1;
+
+                if isempty(folderPart)
+                    uniqueCandidate = string(sprintf('%s_%d%s', basePart, suffixIdx, extPart));
+                else
+                    uniqueCandidate = string(fullfile(folderPart, sprintf('%s_%d%s', basePart, suffixIdx, extPart)));
+                end
+            end
+
+            uniqueName = char(uniqueCandidate);
+            reservedNames(end+1,1) = uniqueCandidate;
+            reservedNames = unique(reservedNames, 'stable');
+        end
+
+        function tf = autoFinalFileNameIsReserved(obj, candidateName, saveFolder, reservedNames)
+            %AUTOFINALFILENAMEISRESERVED True when an automatic filename is taken.
+
+            candidateName = string(candidateName);
+            reservedNames = string(reservedNames(:));
+
+            tf = any(strcmpi(reservedNames, candidateName));
+
+            if tf
+                return
+            end
+
+            if isempty(saveFolder) || strlength(string(saveFolder)) == 0
+                return
+            end
+
+            if ~(isprop(obj, 'b_avoidOverwrite') && obj.b_avoidOverwrite)
+                return
+            end
+
+            candidatePath = fullfile(char(string(saveFolder)), char(candidateName));
+
+            if isfile(candidatePath)
+                tf = true;
+                return
+            end
+
+            [folderPart, basePart, extPart] = fileparts(char(candidateName));
+
+            if ~isempty(extPart)
+                return
+            end
+
+            searchFolder = char(string(saveFolder));
+            if ~isempty(folderPart)
+                searchFolder = fullfile(searchFolder, folderPart);
+            end
+
+            if ~isfolder(searchFolder)
+                return
+            end
+
+            hits = dir(fullfile(searchFolder, [basePart '.*']));
+            hits = hits(~[hits.isdir]);
+            tf = ~isempty(hits);
+        end
+
+        function [tf, reason] = classifyViewerCompatibleFile(~, filePath, outputTypes, isFinalOutput)
             %CLASSIFYVIEWERCOMPATIBLEFILE Runtime DataViewer compatibility check.
 
             tf = false;
             reason = "";
 
-            if ~isLeafOutput
-                reason = "Not a leaf output.";
+            if ~isFinalOutput
+                reason = "Not a final output.";
                 return
             end
 
@@ -4405,6 +4646,7 @@ classdef PipelineManager < handle
             % Save local copy
             obj.dataHistory = dataHist;
         end
+
         function saveDataHistory(obj, SaveFolder)
             %SAVEDATAHISTORY Save obj.dataHistory to folder-bound dataHistory.mat.
             %
@@ -4476,6 +4718,7 @@ classdef PipelineManager < handle
             historyStructToSave = struct('dataHistory', historyEntries); %#ok<NASGU>
             save(historyFile, '-struct', 'historyStructToSave');
         end
+
         function entry = generateDataHistoryEntry(obj, nodePath, outputFileName, saveFolder, rawFolder)
             %GENERATEDATAHISTORYENTRY Create a properly formatted dataHistory entry.
             %
@@ -4648,6 +4891,7 @@ classdef PipelineManager < handle
                 tf = ~isempty(obj.getHistoryInfoForFile(fileNameLocal));
             end
         end
+
         function infoOut = getHistoryInfoForFile(obj,fileNameLocal)
             %GETHISTORYINFOFORFILE Return prior provenance info for a folder-bound file.
             %
@@ -4684,6 +4928,7 @@ classdef PipelineManager < handle
                 infoOut = obj.dataHistory(matchIdx).info;
             end
         end
+
         function fileNameOut = resolveProxyNodeFile(obj,nodeLocal)
             %RESOLVEPROXYNODEFILE Resolve the concrete file represented by a proxy node.
             %
@@ -4724,6 +4969,7 @@ classdef PipelineManager < handle
                 end
             end
         end
+
         function tf = isHistoryProxyNode(~, nodeLocal)
             %ISHISTORYPROXYNODE True for file-source proxy nodes.
             %
@@ -4744,6 +4990,7 @@ classdef PipelineManager < handle
                 tf = strcmpi(char(string(nodeLocal.kind)), 'folder');
             end
         end
+
         function infoAcc = appendInfoWithBoundaryDedup(obj,infoAcc, infoToAppend)
             %APPENDINFOWITHBOUNDARYDEDUP Append provenance steps with edge dedup.
             %
@@ -4772,6 +5019,7 @@ classdef PipelineManager < handle
                 infoAcc = [infoAcc; infoToAppend];
             end
         end
+
         function tf = isSameStep(~,A, B)
             %ISSAMESTEP Compare two provenance step structs.
             %
@@ -4786,6 +5034,7 @@ classdef PipelineManager < handle
                 strcmpi(char(string(A.version)), char(string(B.version))) && ...
                 isequal(A.parameters, B.parameters);
         end
+
         function [sourceToken, resolvedFile, isProxyBacked] = resolveDataInputSource(obj, nodeLocal, inputNameLocal)
             %RESOLVEDATAINPUTSOURCE Resolve source token and concrete file for a DATA input.
             %
@@ -7558,11 +7807,11 @@ classdef PipelineManager < handle
         end
 
         function savedFiles = applyLeafOutputPolicyAfterNode(obj, nodeID, saveFolder)
-            %APPLYLEAFOUTPUTPOLICYAFTERNODE Persist leaf outputs according to policy.
+            %APPLYLEAFOUTPUTPOLICYAFTERNODE Persist final outputs according to policy.
             %
-            %   The method only acts on DATA outputs that are outputMode='data', have
-            %   no explicit save target, and have no downstream DATA consumer. Every
-            %   auto-saved file remains folder-bound in SaveFolder.
+            % This method acts on DATA outputs that are outputMode='data', have no
+            % explicit save target, and do not feed another step. Every auto-saved
+            % file remains folder-bound in SaveFolder.
 
             savedFiles = strings(0,1);
 
@@ -7608,7 +7857,11 @@ classdef PipelineManager < handle
 
                 switch lower(policy)
                     case 'saveleaves'
-                        fName = obj.inferLeafOutputFileName(node, outDef, false);
+                        fName = obj.getPlannedFinalOutputFileName(node.id, outDef.name, "saved_final");
+                        if isempty(fName)
+                            [fName, ~] = obj.resolveAutoFinalOutputFileName( ...
+                                node, outDef, saveFolder, strings(0,1), 'asTemp', false);
+                        end
                         reasonOK = ~isempty(fName);
 
                     case 'viewertemp'
@@ -7616,7 +7869,11 @@ classdef PipelineManager < handle
                             reasonOK = false;
                             fName = '';
                         else
-                            fName = obj.makeTempOutputBaseName(node, outDef);
+                            fName = obj.getPlannedFinalOutputFileName(node.id, outDef.name, "saved_temp");
+                            if isempty(fName)
+                                [fName, ~] = obj.resolveAutoFinalOutputFileName( ...
+                                    node, outDef, saveFolder, strings(0,1), 'asTemp', true);
+                            end
                             reasonOK = true;
                         end
 
@@ -7637,6 +7894,9 @@ classdef PipelineManager < handle
                 return
             end
 
+            % Names should already be resolved by getExecutionPlan. This guard is
+            % kept as a last line of defense when this method is called outside a
+            % normal executePipeline run.
             if isprop(obj,'b_avoidOverwrite') && obj.b_avoidOverwrite
                 [fixedNames, ~] = obj.resolveUniqueSaveNames(saveFolder, requested);
             else
@@ -7661,6 +7921,8 @@ classdef PipelineManager < handle
                 savedFiles = unique(string(savedFiles(:)), 'stable');
             end
         end
+
+
 
         function validateRamSafeCompatibility(obj)
             %VALIDATERAMSAFECOMPATIBILITY Validate RAM-safe compatibility of the DAG.
@@ -10855,6 +11117,13 @@ classdef PipelineManager < handle
             end
 
             obj.metaData = md;
+        end
+
+        function restoreExecutionRunState(obj, previousRunPolicy, previousSessionTag)
+            %RESTOREEXECUTIONRUNSTATE Restore transient per-run execution state.
+
+            obj.currentLeafOutputPolicy = previousRunPolicy;
+            obj.currentTempSessionTag = previousSessionTag;
         end
 
         %%%%%%--Data History-related --------------------------------------
