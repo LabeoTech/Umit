@@ -39,6 +39,93 @@
     #menu { position: fixed; z-index: 1000; min-width: 190px; background: #ffffff; border: 1px solid #cfd5dc; border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,0.18); display: none; overflow: hidden; }
     .menuItem { padding: 10px 12px; font-size: 12px; cursor: pointer; }
     .menuItem:hover { background: #eef4ff; }
+
+    /* Runtime execution state ------------------------------------------------ */
+    body.interaction-disabled {
+      cursor: progress;
+    }
+    body.interaction-disabled .node,
+    body.interaction-disabled .choiceItem,
+    body.interaction-disabled .menuItem,
+    body.interaction-disabled button {
+      pointer-events: none !important;
+    }
+    .runtime-pending {
+      opacity: 0.38;
+      filter: grayscale(0.65);
+    }
+    .runtime-running {
+      border-color: #2f80ed !important;
+      box-shadow: 0 0 0 3px rgba(47,128,237,0.20), 0 8px 22px rgba(47,128,237,0.18) !important;
+    }
+    .runtime-stopping {
+      border-color: #cc7a00 !important;
+      box-shadow: 0 0 0 3px rgba(204,122,0,0.22), 0 8px 22px rgba(204,122,0,0.18) !important;
+    }
+    .runtime-passed {
+      border-color: #2f9e44 !important;
+    }
+    .runtime-failed {
+      border-color: #c92a2a !important;
+      box-shadow: 0 0 0 3px rgba(201,42,42,0.18) !important;
+    }
+    .runtime-skipped {
+      border-color: #868e96 !important;
+      opacity: 0.70;
+    }
+    .runtime-icon {
+      position: absolute;
+      right: 6px;
+      bottom: 5px;
+      min-width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      font-size: 11px;
+      line-height: 16px;
+      text-align: center;
+      font-weight: 700;
+      background: #ffffff;
+      color: #495057;
+      border: 1px solid #cfd5dc;
+      z-index: 10;
+      box-sizing: border-box;
+    }
+    .runtime-passed .runtime-icon {
+      background: #2f9e44;
+      border-color: #2f9e44;
+      color: #ffffff;
+    }
+    .runtime-failed .runtime-icon {
+      background: #c92a2a;
+      border-color: #c92a2a;
+      color: #ffffff;
+    }
+    .runtime-running .runtime-icon {
+      background: #2f80ed;
+      border-color: #2f80ed;
+      color: #ffffff;
+    }
+    .runtime-stopping .runtime-icon {
+      background: #cc7a00;
+      border-color: #cc7a00;
+      color: #ffffff;
+    }
+    .runtime-skipped .runtime-icon {
+      background: #868e96;
+      border-color: #868e96;
+      color: #ffffff;
+    }
+    #interactionLock {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      display: none;
+      background: rgba(255,255,255,0.01);
+      pointer-events: auto;
+    }
+    body.interaction-disabled #interactionLock {
+      display: block;
+    }
   </style>
 </head>
 <body>
@@ -61,11 +148,12 @@
       <button onclick="cancelReconnectMode()">Cancel</button>
     </div>
     <div id="choicePopup"></div>
+    <div id="interactionLock" title="Interactions are disabled while the pipeline is running."></div>
   </div>
 
   <script>
     let htmlComponent = null;
-    let model = { nodes: [], edges: [], selectedNodeID: null, reconnectMode: false, reconnectBanner: "", reconnectGhost: null };
+    let model = { nodes: [], edges: [], selectedNodeID: null, reconnectMode: false, reconnectBanner: "", reconnectGhost: null, runtime: {} };
     let contextNode = null;
     let hoverTimer = null;
     const hoverDelayMs = 450;
@@ -73,7 +161,7 @@
     function setup(component) {
       htmlComponent = component;
       htmlComponent.addEventListener("DataChanged", function() { applyData(); });
-      document.addEventListener("click", function() { hideMenu(); hideChoicePopup(); });
+      document.addEventListener("click", function() { if (interactionIsLocked()) { return; } hideMenu(); hideChoicePopup(); });
       document.addEventListener("scroll", function() { hideHover(); hideChoicePopup(); }, true);
       applyData();
       htmlComponent.sendEventToMATLAB("htmlReady", { component: "graph" });
@@ -102,6 +190,7 @@
       model.reconnectMode = !!d.reconnectMode;
       model.reconnectBanner = d.reconnectBanner || "";
       model.reconnectGhost = d.reconnectGhost || null;
+      model.runtime = d.runtime || {};
 
       if (d.command === "resetView") {
         document.documentElement.scrollTop = 0;
@@ -115,7 +204,114 @@
       }
     }
 
+
+    function getRuntime() {
+      return model && model.runtime ? model.runtime : {};
+    }
+
+    function normalizeID(value) {
+      if (value === undefined || value === null || value === "") {
+        return null;
+      }
+      const n = Number(value);
+      if (Number.isFinite(n)) {
+        return n;
+      }
+      return String(value);
+    }
+
+    function idEquals(a, b) {
+      const aa = normalizeID(a);
+      const bb = normalizeID(b);
+      return aa !== null && bb !== null && aa === bb;
+    }
+
+    function idInList(id, list) {
+      const target = normalizeID(id);
+      if (target === null) {
+        return false;
+      }
+      const values = normalizeToArray(list);
+      return values.some(function(v) { return normalizeID(v) === target; });
+    }
+
+    function getNodeRuntimeState(node) {
+      if (node && node.runtimeState && String(node.runtimeState).toLowerCase() !== "idle") {
+        return String(node.runtimeState).toLowerCase();
+      }
+
+      const runtime = getRuntime();
+      const nodeID = node ? node.id : null;
+
+      if (idInList(nodeID, runtime.failedStepIDs)) {
+        return "failed";
+      }
+      if (idInList(nodeID, runtime.skippedStepIDs)) {
+        return "skipped";
+      }
+      if (idInList(nodeID, runtime.completedStepIDs)) {
+        return "passed";
+      }
+      if (idEquals(nodeID, runtime.currentStepID)) {
+        return runtime.isStopping ? "stopping" : "running";
+      }
+      if (runtime.isRunning) {
+        return "pending";
+      }
+      return "idle";
+    }
+
+    function runtimeClass(state) {
+      const s = String(state || "idle").toLowerCase();
+      if (["running", "stopping", "passed", "failed", "skipped", "pending"].includes(s)) {
+        return "runtime-" + s;
+      }
+      return "";
+    }
+
+    function runtimeIconText(node, state) {
+      if (node && node.runtimeIcon) {
+        return String(node.runtimeIcon);
+      }
+
+      const s = String(state || "").toLowerCase();
+      if (s === "passed") return "✓";
+      if (s === "failed") return "✕";
+      if (s === "skipped") return "↷";
+      if (s === "running") return "●";
+      if (s === "stopping") return "■";
+      return "";
+    }
+
+    function makeRuntimeIcon(node, state) {
+      const iconText = runtimeIconText(node, state);
+      if (!iconText) {
+        return null;
+      }
+
+      const icon = document.createElement("div");
+      icon.className = "runtime-icon";
+      icon.textContent = iconText;
+      return icon;
+    }
+
+    function interactionIsLocked() {
+      const runtime = getRuntime();
+      return !!runtime.interactionDisabled || !!runtime.isRunning;
+    }
+
+    function applyInteractionLock() {
+      document.body.classList.toggle("interaction-disabled", interactionIsLocked());
+      if (interactionIsLocked()) {
+        hideMenu();
+        hideChoicePopup();
+        hideHover();
+      }
+    }
+
     function render() {
+      applyInteractionLock();
+
       const nodeLayer = document.getElementById("nodeLayer");
       const edgeLabels = document.getElementById("edgeLabels");
       const svg = document.getElementById("edges");
@@ -159,7 +355,10 @@
         maxY = Math.max(maxY, (n.y || 0) + (n.height || 76) + 80);
 
         const el = document.createElement("div");
+        const runtimeState = getNodeRuntimeState(n);
         let className = "node";
+        const runtimeClassName = runtimeClass(runtimeState);
+        if (runtimeClassName) { className += " " + runtimeClassName; }
         if (n.id === model.selectedNodeID) { className += " selected"; }
         if (n.kind === "folder") { className += " folder"; }
         if (n.hasError) { className += " error"; }
@@ -187,7 +386,13 @@
           </div>
           <div class="subtitle">${esc(n.funcName || "")}</div>`;
 
+        const runtimeIcon = makeRuntimeIcon(n, runtimeState);
+        if (runtimeIcon) {
+          el.appendChild(runtimeIcon);
+        }
+
         el.addEventListener("click", function(ev) {
+          if (interactionIsLocked()) { return; }
           ev.stopPropagation();
           hideMenu();
 
@@ -204,6 +409,7 @@
         });
 
         el.addEventListener("contextmenu", function(ev) {
+          if (interactionIsLocked()) { return; }
           ev.preventDefault();
           ev.stopPropagation();
           if (model.reconnectMode) {
@@ -246,6 +452,7 @@
           <div class="subtitle">${esc(g.funcName || "File Source")}</div>`;
 
         ghost.addEventListener("click", function(ev) {
+          if (interactionIsLocked()) { return; }
           ev.stopPropagation();
           hideMenu();
           hideChoicePopup();
@@ -323,6 +530,7 @@
     }
 
     function handleReconnectCandidateClick(node, x, y) {
+      if (interactionIsLocked()) { return; }
       const refs = normalizeToArray(node.reconnectChoiceRefs);
       const labels = normalizeToArray(node.reconnectChoiceLabels);
 
@@ -339,6 +547,7 @@
     }
 
     function showChoicePopup(labels, refs, x, y) {
+      if (interactionIsLocked()) { return; }
       const popup = document.getElementById("choicePopup");
       popup.innerHTML = "";
       popup.style.display = "block";
@@ -381,6 +590,7 @@
     }
 
     function sendSelected(node) {
+      if (interactionIsLocked()) { return; }
       model.selectedNodeID = node.id;
       render();
       if (htmlComponent) {
@@ -389,16 +599,19 @@
     }
 
     function sendReconnectSourceChosen(ref) {
+      if (interactionIsLocked()) { return; }
       if (!htmlComponent) { return; }
       htmlComponent.sendEventToMATLAB("reconnectSourceChosen", { ref: ref });
     }
 
     function cancelReconnectMode() {
+      if (interactionIsLocked()) { return; }
       if (!htmlComponent) { return; }
       htmlComponent.sendEventToMATLAB("cancelReconnect", {});
     }
 
     function showMenu(x, y) {
+      if (interactionIsLocked()) { return; }
       const menu = document.getElementById("menu");
       menu.style.left = x + "px";
       menu.style.top = y + "px";
@@ -411,6 +624,7 @@
     }
 
     function scheduleHover(text, x, y) {
+      if (interactionIsLocked()) { return; }
       cancelHover();
       if (!text) {
         return;
@@ -466,6 +680,7 @@
     }
 
     function menuAction(action) {
+      if (interactionIsLocked()) { return; }
       hideMenu();
       if (!contextNode || !htmlComponent) { return; }
       htmlComponent.sendEventToMATLAB("contextAction", { action: action, nodeID: contextNode.id, stepTag: contextNode.stepTag || "" });

@@ -101,6 +101,8 @@ classdef PipelineManager < handle
         currentLeafOutputPolicy char = '' % per-run leaf output policy override
         currentTempSessionTag char = '' % per-run tag used for PMTMP_* outputs
         executionTrace
+        executionProgressLog struct = struct([]) % Progress events emitted during the latest execution.
+        currentExecutionWasCancelled logical = false % TRUE when the latest executePipeline run was cancelled by request.
         metaData
     end
 
@@ -1360,6 +1362,7 @@ classdef PipelineManager < handle
             %
             %   result = executePipeline(obj)
             %   result = executePipeline(obj, 'LeafOutputPolicy', policy)
+            %   result = executePipeline(obj, 'ProgressFcn', fcn, 'CancelFcn', fcn)
             %
             %   EXECUTEPIPELINE validates the current DAG, builds a structured
             %   execution plan, executes the pipeline over each SaveFolder/RawFolder
@@ -1372,14 +1375,26 @@ classdef PipelineManager < handle
             %                          Accepted values match obj.setLeafOutputPolicy.
             %       PrintSummary      - Logical scalar. If true, prints obj.globalPipeLog.
             %                          Default: true.
+            %       ProgressFcn       - Optional function handle called with a scalar
+            %                          progress-event struct at folder/step boundaries.
+            %       CancelFcn         - Optional function handle returning a logical
+            %                          scalar. Cancellation is cooperative and is
+            %                          checked before folders, before steps, before
+            %                          history/preload work, and before loading files
+            %                          into RAM. A running analysis function must
+            %                          finish before cancellation can be completed.
 
             p = inputParser;
             addParameter(p, 'LeafOutputPolicy', obj.leafOutputPolicy, @(x)ischar(x)||isstring(x));
             addParameter(p, 'PrintSummary', true, @(x)islogical(x)&&isscalar(x));
+            addParameter(p, 'ProgressFcn', [], @(x) isempty(x) || isa(x, 'function_handle'));
+            addParameter(p, 'CancelFcn', [], @(x) isempty(x) || isa(x, 'function_handle'));
             parse(p, varargin{:});
 
             runLeafPolicy = obj.resolveLeafOutputPolicy(p.Results.LeafOutputPolicy);
             printSummary = logical(p.Results.PrintSummary);
+            progressFcn = p.Results.ProgressFcn;
+            cancelFcn = p.Results.CancelFcn;
 
             previousRunPolicy = obj.currentLeafOutputPolicy;
             previousSessionTag = obj.currentTempSessionTag;
@@ -1388,12 +1403,25 @@ classdef PipelineManager < handle
 
             obj.currentLeafOutputPolicy = runLeafPolicy;
             obj.currentTempSessionTag = obj.makeTempSessionTag();
+            obj.executionProgressLog = struct([]);
+            obj.currentExecutionWasCancelled = false;
 
             executionStartedOn = datetime('now');
+            nFolders = numel(obj.SaveFolderList);
+
+            obj.emitExecutionProgress(progressFcn, 'runStarted', ...
+                'numFolders', nFolders, ...
+                'status', 'running', ...
+                'message', 'Pipeline execution started.');
 
             % -------------------------------------------------------------
             % 0) Validate workflow before execution
             % -------------------------------------------------------------
+            obj.emitExecutionProgress(progressFcn, 'validationStarted', ...
+                'numFolders', nFolders, ...
+                'status', 'running', ...
+                'message', 'Validating pipeline before execution.');
+
             b_isValid = obj.validateGraph();
             if ~b_isValid
                 error('PipelineManager:executePipeline:InvalidGraph', ...
@@ -1415,22 +1443,52 @@ classdef PipelineManager < handle
                     'No SaveFolder specified.');
             end
 
+            obj.emitExecutionProgress(progressFcn, 'validationFinished', ...
+                'numFolders', nFolders, ...
+                'status', 'completed', ...
+                'message', 'Pipeline validation completed.');
+
+            if obj.checkExecutionCancelRequested(cancelFcn, progressFcn, 'before execution planning', ...
+                    'numFolders', nFolders)
+                obj.currentExecutionWasCancelled = true;
+            end
+
             % -------------------------------------------------------------
             % 0b) RAM-safe compatibility and execution-role checks
             % -------------------------------------------------------------
-            obj.validateRamSafeCompatibility();
-            obj.warnEnforcedExecutionRoles(obj.topoOrder);
+            if ~obj.currentExecutionWasCancelled
+                obj.validateRamSafeCompatibility();
+                obj.warnEnforcedExecutionRoles(obj.topoOrder);
+            end
 
             % Build the primary execution summary before any step runs.
-            executionPlan = obj.getExecutionPlan( ...
-                'LeafOutputPolicy', runLeafPolicy, ...
-                'SaveFolder', obj.SaveFolderList{1});
+            if ~obj.currentExecutionWasCancelled
+                executionPlan = obj.getExecutionPlan( ...
+                    'LeafOutputPolicy', runLeafPolicy, ...
+                    'SaveFolder', obj.SaveFolderList{1});
+            else
+                executionPlan = struct( ...
+                    'createdOn', datetime('now'), ...
+                    'leafOutputPolicy', string(runLeafPolicy), ...
+                    'tempOutputPrefix', string(obj.tempOutputPrefix), ...
+                    'tempSessionTag', string(obj.currentTempSessionTag), ...
+                    'saveFolder', "", ...
+                    'nodeOrders', struct(), ...
+                    'nodeTable', table(), ...
+                    'edgeTable', table(), ...
+                    'outputPlan', table(), ...
+                    'validationReport', obj.diagnosePipeline('verbose', false));
+            end
             obj.lastExecutionPlan = executionPlan;
 
             % -------------------------------------------------------------
             % 0c) Determine whether current DAG requires RawFolder
             % -------------------------------------------------------------
-            b_pipelineRequiresRawFolder = obj.pipelineRequiresRawFolder();
+            if ~obj.currentExecutionWasCancelled
+                b_pipelineRequiresRawFolder = obj.pipelineRequiresRawFolder();
+            else
+                b_pipelineRequiresRawFolder = false;
+            end
 
             % -------------------------------------------------------------
             % 0d) Reset current-run global summary log
@@ -1448,81 +1506,152 @@ classdef PipelineManager < handle
                 folderStartedOn = datetime('now');
                 folderFatalME   = [];
                 folderWasSkipped = false;
+                folderWasCancelled = false;
                 folderSkipMsg    = "";
 
                 obj.current_outFile = {};
 
-                % ---------------------------------------------------------
-                % 2) Initialize pipeLog table
-                % ---------------------------------------------------------
-                obj.loadPipeLog(saveFolder);
+                folderNameForMsg = obj.getFolderDisplayName(saveFolder);
+                obj.emitExecutionProgress(progressFcn, 'folderStarted', ...
+                    'folderIndex', f, ...
+                    'numFolders', nFolders, ...
+                    'saveFolder', saveFolder, ...
+                    'rawFolder', rawFolder, ...
+                    'status', 'running', ...
+                    'message', sprintf('Running folder %d/%d: %s', f, nFolders, folderNameForMsg));
 
-                if istable(obj.folderPipeLog)
-                    nRowsBefore = height(obj.folderPipeLog);
-                else
+                if obj.checkExecutionCancelRequested(cancelFcn, progressFcn, 'before folder', ...
+                        'folderIndex', f, ...
+                        'numFolders', nFolders, ...
+                        'saveFolder', saveFolder, ...
+                        'rawFolder', rawFolder)
+
+                    folderWasCancelled = true;
+                    obj.currentExecutionWasCancelled = true;
+                    folderSkipMsg = "Cancelled by user before folder execution.";
                     obj.folderPipeLog = table();
                     nRowsBefore = 0;
-                end
-
-                % ---------------------------------------------------------
-                % 3) Skip this item if RawFolder is missing and DAG requires it
-                % ---------------------------------------------------------
-                if b_pipelineRequiresRawFolder && strcmpi(strtrim(char(string(rawFolder))), 'Missing')
-
-                    folderWasSkipped = true;
-                    folderSkipMsg = "Skipped: RawFolder is missing and the current pipeline requires RawFolder input.";
-
-                    warning('PipelineManager:executePipeline:MissingRawFolder', ...
-                        ['Skipping SaveFolder item because RawFolder is "Missing" and ' ...
-                        'the current pipeline requires RawFolder input.\nSaveFolder: %s'], ...
-                        saveFolder);
 
                 else
                     % ---------------------------------------------------------
-                    % 4) Reset runtime state
+                    % 2) Initialize pipeLog table
                     % ---------------------------------------------------------
-                    obj.executionTrace = [];
+                    obj.loadPipeLog(saveFolder);
 
-                    for k = 1:numel(obj.nodes)
-                        obj.nodes(k).runtime.preloadedData     = struct();
-                        obj.nodes(k).runtime.startedOn         = [];
-                        obj.nodes(k).runtime.finishedOn        = [];
-                        obj.nodes(k).runtime.b_executed        = false;
-                        obj.nodes(k).runtime.lastError         = [];
-                        obj.nodes(k).runtime.cooldownRemaining = 0;
-                        obj.nodes(k).runtime.filePreferred     = false;
-
-                        % Reset history/cache-derived runtime flags so they cannot leak
-                        % from a previous folder or previous run.
-                        obj.nodes(k).runtime.leafCachedFile    = [];
-                        obj.nodes(k).runtime.leafCachedNodeIDs = [];
-                    end
-
-                    % ---------------------------------------------------------
-                    % 5) Load data history
-                    % ---------------------------------------------------------
-                    obj.loadDataHistory(saveFolder);
-
-                    % ---------------------------------------------------------
-                    % 6) Apply history-based matching only if enabled
-                    % ---------------------------------------------------------
-                    if obj.b_skipSteps
-                        obj.matchHistoryAndSetPreload(saveFolder);
+                    if istable(obj.folderPipeLog)
+                        nRowsBefore = height(obj.folderPipeLog);
                     else
-                        fprintf('[CACHE] Step skipping disabled. Existing files will be ignored for execution planning.\n');
+                        obj.folderPipeLog = table();
+                        nRowsBefore = 0;
                     end
 
                     % ---------------------------------------------------------
-                    % 7) Delegate execution
+                    % 3) Skip this item if RawFolder is missing and DAG requires it
                     % ---------------------------------------------------------
-                    try
-                        obj.runPipelineOnFolder(saveFolder, rawFolder);
-                    catch ME
-                        folderFatalME = ME;
+                    if b_pipelineRequiresRawFolder && strcmpi(strtrim(char(string(rawFolder))), 'Missing')
 
-                        warning('PipelineManager:executePipeline:FolderFailed', ...
-                            'Execution failed for folder: %s\n%s', ...
-                            saveFolder, ME.message);
+                        folderWasSkipped = true;
+                        folderSkipMsg = "Skipped: RawFolder is missing and the current pipeline requires RawFolder input.";
+
+                        warning('PipelineManager:executePipeline:MissingRawFolder', ...
+                            ['Skipping SaveFolder item because RawFolder is "Missing" and ' ...
+                            'the current pipeline requires RawFolder input.\nSaveFolder: %s'], ...
+                            saveFolder);
+
+                        obj.emitExecutionProgress(progressFcn, 'folderSkipped', ...
+                            'folderIndex', f, ...
+                            'numFolders', nFolders, ...
+                            'saveFolder', saveFolder, ...
+                            'rawFolder', rawFolder, ...
+                            'status', 'skipped', ...
+                            'message', char(folderSkipMsg));
+
+                    else
+                        % ---------------------------------------------------------
+                        % 4) Reset runtime state
+                        % ---------------------------------------------------------
+                        obj.executionTrace = [];
+
+                        for k = 1:numel(obj.nodes)
+                            obj.nodes(k).runtime.preloadedData     = struct();
+                            obj.nodes(k).runtime.startedOn         = [];
+                            obj.nodes(k).runtime.finishedOn        = [];
+                            obj.nodes(k).runtime.b_executed        = false;
+                            obj.nodes(k).runtime.lastError         = [];
+                            obj.nodes(k).runtime.cooldownRemaining = 0;
+                            obj.nodes(k).runtime.filePreferred     = false;
+
+                            % Reset history/cache-derived runtime flags so they cannot leak
+                            % from a previous folder or previous run.
+                            obj.nodes(k).runtime.leafCachedFile    = [];
+                            obj.nodes(k).runtime.leafCachedNodeIDs = [];
+                        end
+
+                        % ---------------------------------------------------------
+                        % 5) Load data history
+                        % ---------------------------------------------------------
+                        if obj.checkExecutionCancelRequested(cancelFcn, progressFcn, 'before loading data history', ...
+                                'folderIndex', f, ...
+                                'numFolders', nFolders, ...
+                                'saveFolder', saveFolder, ...
+                                'rawFolder', rawFolder)
+
+                            folderWasCancelled = true;
+                            obj.currentExecutionWasCancelled = true;
+                            folderSkipMsg = "Cancelled by user before loading data history.";
+
+                        else
+                            obj.loadDataHistory(saveFolder);
+                        end
+
+                        % ---------------------------------------------------------
+                        % 6) Apply history-based matching only if enabled
+                        % ---------------------------------------------------------
+                        if ~folderWasCancelled
+                            if obj.checkExecutionCancelRequested(cancelFcn, progressFcn, 'before history preload matching', ...
+                                    'folderIndex', f, ...
+                                    'numFolders', nFolders, ...
+                                    'saveFolder', saveFolder, ...
+                                    'rawFolder', rawFolder)
+
+                                folderWasCancelled = true;
+                                obj.currentExecutionWasCancelled = true;
+                                folderSkipMsg = "Cancelled by user before history preload matching.";
+
+                            elseif obj.b_skipSteps
+                                obj.matchHistoryAndSetPreload(saveFolder);
+                            else
+                                fprintf('[CACHE] Step skipping disabled. Existing files will be ignored for execution planning.\n');
+                            end
+                        end
+
+                        % ---------------------------------------------------------
+                        % 7) Delegate execution
+                        % ---------------------------------------------------------
+                        if ~folderWasCancelled
+                            try
+                                folderWasCancelled = obj.runPipelineOnFolder( ...
+                                    saveFolder, rawFolder, progressFcn, cancelFcn, f, nFolders);
+
+                                if folderWasCancelled
+                                    obj.currentExecutionWasCancelled = true;
+                                    folderSkipMsg = "Cancelled by user. The current function finished before PipelineManager stopped.";
+                                end
+
+                            catch ME
+                                if strcmp(ME.identifier, 'PipelineManager:ExecutionCancelled')
+                                    folderWasCancelled = true;
+                                    obj.currentExecutionWasCancelled = true;
+                                    folderSkipMsg = "Cancelled by user. The current function finished before PipelineManager stopped.";
+                                else
+                                    folderFatalME = ME;
+
+                                    warning('PipelineManager:executePipeline:FolderFailed', ...
+                                        'Execution failed for folder: %s\n%s', ...
+                                        saveFolder, ME.message);
+                                end
+                            end
+                        end
                     end
                 end
 
@@ -1538,7 +1667,13 @@ classdef PipelineManager < handle
                     folderRunLog = table();
                 end
 
-                if folderWasSkipped
+                if folderWasCancelled
+
+                    globalStatus = "Cancelled";
+                    shortErrMsg  = folderSkipMsg;
+                    outputFilesStr = "";
+
+                elseif folderWasSkipped
 
                     globalStatus = "Skipped";
                     shortErrMsg  = folderSkipMsg;
@@ -1653,16 +1788,52 @@ classdef PipelineManager < handle
 
                 obj.globalPipeLog = [obj.globalPipeLog; newRow];
 
+                if folderWasCancelled
+                    obj.emitExecutionProgress(progressFcn, 'runCancelled', ...
+                        'folderIndex', f, ...
+                        'numFolders', nFolders, ...
+                        'saveFolder', saveFolder, ...
+                        'rawFolder', rawFolder, ...
+                        'status', 'cancelled', ...
+                        'message', char(folderSkipMsg));
+                else
+                    obj.emitExecutionProgress(progressFcn, 'folderFinished', ...
+                        'folderIndex', f, ...
+                        'numFolders', nFolders, ...
+                        'saveFolder', saveFolder, ...
+                        'rawFolder', rawFolder, ...
+                        'status', lower(char(string(globalStatus))), ...
+                        'message', sprintf('Folder %d/%d finished with status: %s', f, nFolders, char(globalStatus)));
+                end
+
                 % ---------------------------------------------------------
                 % 9) Post-execution cleanup (folder-level)
                 % ---------------------------------------------------------
                 obj.executionTrace = [];
                 obj.dataHistory = struct.empty(0,1);
                 obj.current_outFile = {};
+
+                if folderWasCancelled
+                    break
+                end
             end
 
             executionFinishedOn = datetime('now');
             result = obj.buildExecutionResult(executionPlan, runLeafPolicy, executionStartedOn, executionFinishedOn);
+
+            if ~obj.currentExecutionWasCancelled
+                obj.emitExecutionProgress(progressFcn, 'runFinished', ...
+                    'numFolders', nFolders, ...
+                    'status', char(result.status), ...
+                    'message', sprintf('Pipeline execution finished with status: %s', char(result.status)));
+
+                % The final runFinished event is emitted after the first result
+                % assembly because it needs the resolved status. Mirror the final
+                % progress log back into the returned result so GUI callbacks and
+                % result.progressLog expose the same event sequence.
+                result.progressLog = obj.executionProgressLog;
+            end
+
             obj.lastExecutionResult = result;
 
             if printSummary
@@ -4041,10 +4212,128 @@ classdef PipelineManager < handle
                 plannedFilePath, reason);
         end
 
+        function evt = emitExecutionProgress(obj, progressFcn, eventType, varargin)
+            %EMITEXECUTIONPROGRESS Emit and record one execution-progress event.
+            %
+            %   The event struct intentionally uses a fixed field set so GUI and
+            %   test callbacks can consume it without checking many optional fields.
+
+            evt = struct( ...
+                'type', string(eventType), ...
+                'timestamp', datetime('now'), ...
+                'folderIndex', NaN, ...
+                'numFolders', NaN, ...
+                'saveFolder', "", ...
+                'rawFolder', "", ...
+                'stepIndex', NaN, ...
+                'numSteps', NaN, ...
+                'stepID', NaN, ...
+                'stepTag', "", ...
+                'functionName', "", ...
+                'status', "", ...
+                'message', "", ...
+                'location', "");
+
+            for iArg = 1:2:numel(varargin)
+                key = char(string(varargin{iArg}));
+                val = varargin{iArg+1};
+
+                if isfield(evt, key)
+                    switch key
+                        case {'type','saveFolder','rawFolder','stepTag','functionName','status','message','location'}
+                            evt.(key) = string(val);
+                        case {'folderIndex','numFolders','stepIndex','numSteps','stepID'}
+                            if isempty(val)
+                                evt.(key) = NaN;
+                            else
+                                evt.(key) = double(val);
+                            end
+                        otherwise
+                            evt.(key) = val;
+                    end
+                end
+            end
+
+            if isempty(obj.executionProgressLog)
+                obj.executionProgressLog = evt;
+            else
+                obj.executionProgressLog(end+1) = evt; %#ok<AGROW>
+            end
+
+            if ~isempty(progressFcn)
+                progressFcn(evt);
+            end
+        end
+
+        function tf = checkExecutionCancelRequested(obj, cancelFcn, progressFcn, location, varargin)
+            %CHECKEXECUTIONCANCELREQUESTED Query cooperative execution-cancel state.
+            %
+            %   Cancellation is checked at PipelineManager-owned boundaries only.
+            %   Analysis functions are not interrupted while they are running.
+
+            tf = false;
+
+            if isempty(cancelFcn)
+                return
+            end
+
+            try
+                tf = logical(cancelFcn());
+            catch ME
+                error('PipelineManager:executePipeline:CancelFcnFailed', ...
+                    'CancelFcn failed while checking cancellation at "%s". %s', ...
+                    char(string(location)), ME.message);
+            end
+
+            if isempty(tf) || ~isscalar(tf)
+                error('PipelineManager:executePipeline:InvalidCancelFcnReturn', ...
+                    'CancelFcn must return a logical scalar while checking cancellation at "%s".', ...
+                    char(string(location)));
+            end
+
+            if ~tf
+                return
+            end
+
+            obj.currentExecutionWasCancelled = true;
+
+            obj.emitExecutionProgress(progressFcn, 'cancelRequested', ...
+                'location', location, ...
+                'status', 'stopping', ...
+                'message', 'Stop requested. The current function will finish before PipelineManager stops.', ...
+                varargin{:});
+        end
+
+        function throwIfExecutionCancelled(obj, cancelFcn, progressFcn, location, varargin)
+            %THROWIFEXECUTIONCANCELLED Abort manager-owned work when cancel is requested.
+            %
+            %   This is used before file-to-RAM loading and other manager-owned
+            %   expensive operations. The caller catches the specific identifier and
+            %   converts it to a normal cancelled execution result.
+
+            if obj.checkExecutionCancelRequested(cancelFcn, progressFcn, location, varargin{:})
+                error('PipelineManager:ExecutionCancelled', ...
+                    'Pipeline execution was cancelled by user request.');
+            end
+        end
+
+        function name = getFolderDisplayName(~, folderPath)
+            %GETFOLDERDISPLAYNAME Return a compact folder name for progress messages.
+
+            [~, name] = fileparts(char(string(folderPath)));
+            if isempty(name)
+                name = char(string(folderPath));
+            end
+        end
+
         function result = buildExecutionResult(obj, executionPlan, policy, startedOn, finishedOn)
             %BUILDEXECUTIONRESULT Build the public result struct for executePipeline.
 
-            outputManifest = obj.buildOutputManifestFromPlan(executionPlan.outputPlan);
+            if isfield(executionPlan, 'outputPlan') && istable(executionPlan.outputPlan)
+                outputManifest = obj.buildOutputManifestFromPlan(executionPlan.outputPlan);
+            else
+                outputManifest = table();
+            end
 
             isFinalViewer = false(0,1);
             isUnsavedFinal = false(0,1);
@@ -4055,15 +4344,24 @@ classdef PipelineManager < handle
             end
 
             result = struct();
-            result.status = obj.summarizeGlobalExecutionStatus();
+            if obj.currentExecutionWasCancelled
+                result.status = "cancelled";
+            else
+                result.status = obj.summarizeGlobalExecutionStatus();
+            end
             result.startedOn = startedOn;
             result.finishedOn = finishedOn;
             result.duration_s = seconds(finishedOn - startedOn);
             result.leafOutputPolicy = string(policy);
             result.tempOutputPrefix = string(obj.tempOutputPrefix);
-            result.tempSessionTag = string(executionPlan.tempSessionTag);
+            if isfield(executionPlan, 'tempSessionTag')
+                result.tempSessionTag = string(executionPlan.tempSessionTag);
+            else
+                result.tempSessionTag = string(obj.currentTempSessionTag);
+            end
             result.executionPlan = executionPlan;
             result.globalPipeLog = obj.globalPipeLog;
+            result.progressLog = obj.executionProgressLog;
             result.outputManifest = outputManifest;
             result.createdFiles = obj.buildCreatedFilesTableFromGlobalLog();
             result.viewerCompatibleFinalOutputs = outputManifest(isFinalViewer, :);
@@ -4558,7 +4856,9 @@ classdef PipelineManager < handle
             end
 
             vals = string(obj.globalPipeLog.Status);
-            if all(vals == "Completed")
+            if obj.currentExecutionWasCancelled || any(strcmpi(vals, "Cancelled"))
+                status = "cancelled";
+            elseif all(vals == "Completed")
                 status = "completed";
             elseif all(vals == "Skipped")
                 status = "skipped";
@@ -8029,7 +8329,7 @@ classdef PipelineManager < handle
             end
         end
 
-        function runPipelineOnFolder(obj, saveFolder, rawFolder)
+        function wasCancelled = runPipelineOnFolder(obj, saveFolder, rawFolder, progressFcn, cancelFcn, folderIndex, numFolders)
             %RUNPIPELINEONFOLDER Execute the current DAG on a single SaveFolder.
             %
             %   RUNPIPELINEONFOLDER(OBJ, SAVEFOLDER, RAWFOLDER) executes the current
@@ -8063,12 +8363,36 @@ classdef PipelineManager < handle
             %       - The skipped-step report intentionally uses obj.topoOrder so the
             %         CLI output remains stable and structurally readable.
 
+            wasCancelled = false;
+
+            if nargin < 4
+                progressFcn = [];
+            end
+            if nargin < 5
+                cancelFcn = [];
+            end
+            if nargin < 6 || isempty(folderIndex)
+                folderIndex = NaN;
+            end
+            if nargin < 7 || isempty(numFolders)
+                numFolders = numel(obj.SaveFolderList);
+            end
+
             % -------------------------------------------------------------
             % Basic checks
             % -------------------------------------------------------------
             if isempty(obj.topoOrder)
                 error('PipelineManager:runPipelineOnFolder:MissingTopoOrder', ...
                     'topoOrder is empty. Call updateTopoOrder() first.');
+            end
+
+            if obj.checkExecutionCancelRequested(cancelFcn, progressFcn, 'before folder runtime initialization', ...
+                    'folderIndex', folderIndex, ...
+                    'numFolders', numFolders, ...
+                    'saveFolder', saveFolder, ...
+                    'rawFolder', rawFolder)
+                wasCancelled = true;
+                return
             end
 
             % -------------------------------------------------------------
@@ -8115,6 +8439,15 @@ classdef PipelineManager < handle
             failedNodeIDs  = zeros(1,0);
             blockedNodeIDs = zeros(1,0);
 
+            nExecutableSteps = 0;
+            for iExecCount = 1:numel(execOrder)
+                idxCount = obj.getNodeIndexByID(execOrder(iExecCount));
+                if strcmpi(obj.nodes(idxCount).kind, 'stream')
+                    nExecutableSteps = nExecutableSteps + 1;
+                end
+            end
+            stepCounter = 0;
+
             % -------------------------------------------------------------
             % Main execution loop
             % -------------------------------------------------------------
@@ -8132,6 +8465,35 @@ classdef PipelineManager < handle
                     continue
                 end
 
+                stepCounter = stepCounter + 1;
+
+                if obj.checkExecutionCancelRequested(cancelFcn, progressFcn, 'before step', ...
+                        'folderIndex', folderIndex, ...
+                        'numFolders', numFolders, ...
+                        'saveFolder', saveFolder, ...
+                        'rawFolder', rawFolder, ...
+                        'stepIndex', stepCounter, ...
+                        'numSteps', nExecutableSteps, ...
+                        'stepID', nodeID, ...
+                        'stepTag', node.name, ...
+                        'functionName', obj.getCallableFuncName(node))
+                    wasCancelled = true;
+                    break
+                end
+
+                obj.emitExecutionProgress(progressFcn, 'stepStarted', ...
+                    'folderIndex', folderIndex, ...
+                    'numFolders', numFolders, ...
+                    'saveFolder', saveFolder, ...
+                    'rawFolder', rawFolder, ...
+                    'stepIndex', stepCounter, ...
+                    'numSteps', nExecutableSteps, ...
+                    'stepID', nodeID, ...
+                    'stepTag', node.name, ...
+                    'functionName', obj.getCallableFuncName(node), ...
+                    'status', 'running', ...
+                    'message', sprintf('Running step %d/%d: %s', stepCounter, nExecutableSteps, char(string(node.name))));
+
                 % Runtime bookkeeping
                 obj.nodes(nodeIdx).runtime.startedOn = datetime('now');
 
@@ -8139,6 +8501,32 @@ classdef PipelineManager < handle
                 % 1) Preloaded step (history reuse)
                 % ---------------------------------------------------------
                 if tryHandlePreloadedStep(nodeID, nodeIdx, node, saveFolder)
+                    obj.emitExecutionProgress(progressFcn, 'stepSkipped', ...
+                        'folderIndex', folderIndex, ...
+                        'numFolders', numFolders, ...
+                        'saveFolder', saveFolder, ...
+                        'rawFolder', rawFolder, ...
+                        'stepIndex', stepCounter, ...
+                        'numSteps', nExecutableSteps, ...
+                        'stepID', nodeID, ...
+                        'stepTag', node.name, ...
+                        'functionName', obj.getCallableFuncName(node), ...
+                        'status', 'skipped_preloaded', ...
+                        'message', sprintf('Step satisfied by existing output: %s', char(string(node.name))));
+
+                    if obj.checkExecutionCancelRequested(cancelFcn, progressFcn, 'after preloaded step', ...
+                            'folderIndex', folderIndex, ...
+                            'numFolders', numFolders, ...
+                            'saveFolder', saveFolder, ...
+                            'rawFolder', rawFolder, ...
+                            'stepIndex', stepCounter, ...
+                            'numSteps', nExecutableSteps, ...
+                            'stepID', nodeID, ...
+                            'stepTag', node.name, ...
+                            'functionName', obj.getCallableFuncName(node))
+                        wasCancelled = true;
+                        break
+                    end
                     continue
                 end
 
@@ -8180,6 +8568,19 @@ classdef PipelineManager < handle
                         'outputFiles', 'N/A', ...
                         'errMsg',      blockMsg);
 
+                    obj.emitExecutionProgress(progressFcn, 'stepSkipped', ...
+                        'folderIndex', folderIndex, ...
+                        'numFolders', numFolders, ...
+                        'saveFolder', saveFolder, ...
+                        'rawFolder', rawFolder, ...
+                        'stepIndex', stepCounter, ...
+                        'numSteps', nExecutableSteps, ...
+                        'stepID', nodeID, ...
+                        'stepTag', node.name, ...
+                        'functionName', obj.getCallableFuncName(node), ...
+                        'status', 'skipped_upstream_failed', ...
+                        'message', blockMsg);
+
                     continue
                 end
 
@@ -8195,6 +8596,14 @@ classdef PipelineManager < handle
                     [consumedKeys, createdFiles] = executeAndRegisterStep(node, saveFolder, rawFolder);
 
                 catch ME
+
+                    if strcmp(ME.identifier, 'PipelineManager:ExecutionCancelled')
+                        wasCancelled = true;
+                        obj.nodes(nodeIdx).runtime.b_executed = false;
+                        obj.nodes(nodeIdx).runtime.lastError  = [];
+                        obj.nodes(nodeIdx).runtime.finishedOn = datetime('now');
+                        break
+                    end
 
                     if ~ismember(nodeID, failedNodeIDs)
                         failedNodeIDs(end+1) = nodeID; %#ok<AGROW>
@@ -8217,6 +8626,19 @@ classdef PipelineManager < handle
                         'Step "%s" failed and will be marked as failed. Downstream dependent steps will be skipped. Error: %s', ...
                         char(string(obj.nodes(nodeIdx).name)), ...
                         shortErrMsg);
+
+                    obj.emitExecutionProgress(progressFcn, 'stepFailed', ...
+                        'folderIndex', folderIndex, ...
+                        'numFolders', numFolders, ...
+                        'saveFolder', saveFolder, ...
+                        'rawFolder', rawFolder, ...
+                        'stepIndex', stepCounter, ...
+                        'numSteps', nExecutableSteps, ...
+                        'stepID', nodeID, ...
+                        'stepTag', node.name, ...
+                        'functionName', obj.getCallableFuncName(node), ...
+                        'status', 'failed', ...
+                        'message', shortErrMsg);
 
                     % Recovery must happen before consumed inputs are released.
                     [recoveryFiles, recoveryStep, bRecoveryFromTemp] = ...
@@ -8250,6 +8672,20 @@ classdef PipelineManager < handle
                     % execution risks using stale or missing artifacts.
                     if obj.isSetupExecutionNode(obj.nodes(nodeIdx))
                         rethrow(ME);
+                    end
+
+                    if obj.checkExecutionCancelRequested(cancelFcn, progressFcn, 'after failed step', ...
+                            'folderIndex', folderIndex, ...
+                            'numFolders', numFolders, ...
+                            'saveFolder', saveFolder, ...
+                            'rawFolder', rawFolder, ...
+                            'stepIndex', stepCounter, ...
+                            'numSteps', nExecutableSteps, ...
+                            'stepID', nodeID, ...
+                            'stepTag', node.name, ...
+                            'functionName', obj.getCallableFuncName(node))
+                        wasCancelled = true;
+                        break
                     end
 
                     continue
@@ -8301,6 +8737,33 @@ classdef PipelineManager < handle
                 end
 
                 obj.tickCooldown(nodeID);
+
+                obj.emitExecutionProgress(progressFcn, 'stepFinished', ...
+                    'folderIndex', folderIndex, ...
+                    'numFolders', numFolders, ...
+                    'saveFolder', saveFolder, ...
+                    'rawFolder', rawFolder, ...
+                    'stepIndex', stepCounter, ...
+                    'numSteps', nExecutableSteps, ...
+                    'stepID', nodeID, ...
+                    'stepTag', node.name, ...
+                    'functionName', obj.getCallableFuncName(node), ...
+                    'status', 'completed', ...
+                    'message', sprintf('Completed step %d/%d: %s', stepCounter, nExecutableSteps, char(string(node.name))));
+
+                if obj.checkExecutionCancelRequested(cancelFcn, progressFcn, 'after step', ...
+                        'folderIndex', folderIndex, ...
+                        'numFolders', numFolders, ...
+                        'saveFolder', saveFolder, ...
+                        'rawFolder', rawFolder, ...
+                        'stepIndex', stepCounter, ...
+                        'numSteps', nExecutableSteps, ...
+                        'stepID', nodeID, ...
+                        'stepTag', node.name, ...
+                        'functionName', obj.getCallableFuncName(node))
+                    wasCancelled = true;
+                    break
+                end
             end
 
             % -------------------------------------------------------------
@@ -8505,7 +8968,7 @@ classdef PipelineManager < handle
                 %EXECUTEANDREGISTERSTEP Resolve inputs, run the function, and register outputs.
 
                 [posArgs, nvArgs, consumedKeysLocal] = obj.resolveAndBuildArguments( ...
-                    stepNode, saveFolderLocal, rawFolderLocal);
+                    stepNode, saveFolderLocal, rawFolderLocal, cancelFcn, progressFcn);
 
                 funcName = obj.getCallableFuncName(stepNode);
 
@@ -8517,6 +8980,12 @@ classdef PipelineManager < handle
 
                 outCell = cell(1, nOut);
                 f = str2func(funcName);
+
+                obj.throwIfExecutionCancelled(cancelFcn, progressFcn, 'before function execution', ...
+                    'stepID', stepNode.id, ...
+                    'stepTag', stepNode.name, ...
+                    'functionName', funcName, ...
+                    'message', sprintf('Stop requested before running function "%s".', funcName));
 
                 if nOut == 0
                     f(posArgs{:}, nvArgs{:});
@@ -9722,12 +10191,19 @@ classdef PipelineManager < handle
             end
         end
 
-        function [posArgs, nvArgs, consumedKeys] = resolveAndBuildArguments(obj, node, saveFolder, rawFolder)
+        function [posArgs, nvArgs, consumedKeys] = resolveAndBuildArguments(obj, node, saveFolder, rawFolder, cancelFcn, progressFcn)
             %RESOLVEANDBUILDARGUMENTS Build positional and name-value args from node.info.arguments.
 
             posArgs = {};
             nvArgs  = {};
             consumedKeys = {};
+
+            if nargin < 5
+                cancelFcn = [];
+            end
+            if nargin < 6
+                progressFcn = [];
+            end
 
             nodeIDLocal = node.id;
             params = obj.buildParamsStruct(node);
@@ -9744,7 +10220,7 @@ classdef PipelineManager < handle
                 if strcmpi(arg.kind,'input')
 
                     if isfield(arg,'isData') && arg.isData
-                        [val, keyUsed] = obj.resolveDataInputValue(nodeIDLocal, argName, saveFolder);
+                        [val, keyUsed] = obj.resolveDataInputValue(nodeIDLocal, argName, saveFolder, cancelFcn, progressFcn);
                         posArgs{end+1} = val; %#ok<AGROW>
                         if ~isempty(keyUsed)
                             consumedKeys{end+1} = keyUsed; %#ok<AGROW>
@@ -9802,7 +10278,7 @@ classdef PipelineManager < handle
             end
         end
 
-        function [valOut, keyUsed] = resolveDataInputValue(obj, dstNodeID, dstInputName, saveFolder)
+        function [valOut, keyUsed] = resolveDataInputValue(obj, dstNodeID, dstInputName, saveFolder, cancelFcn, progressFcn)
             %RESOLVEDATAINPUTVALUE Resolve a DATA input value according to RAM policy.
             %
             %   [VALOUT, KEYUSED] = RESOLVEDATAINPUTVALUE(OBJ, DSTNODEID, DSTINPUTNAME, SAVEFOLDER)
@@ -9842,6 +10318,13 @@ classdef PipelineManager < handle
 
             valOut = [];
             keyUsed = '';
+
+            if nargin < 5
+                cancelFcn = [];
+            end
+            if nargin < 6
+                progressFcn = [];
+            end
 
             % -------------------------------------------------------------
             % Locate incoming connection for this input
@@ -9945,8 +10428,16 @@ classdef PipelineManager < handle
                 end
 
                 try
+                    obj.throwIfExecutionCancelled(cancelFcn, progressFcn, 'before loading input file into RAM', ...
+                        'stepID', dstNodeID, ...
+                        'stepTag', dstNode.name, ...
+                        'functionName', obj.getCallableFuncName(dstNode), ...
+                        'message', sprintf('Stop requested before loading input "%s" into RAM.', char(string(dstInputName))));
                     valOut = loadData(fpath);
                 catch ME
+                    if strcmp(ME.identifier, 'PipelineManager:ExecutionCancelled')
+                        rethrow(ME);
+                    end
                     error('PipelineManager:runPipelineOnFolder:LoadFailed', ...
                         'Failed to load bestEffort RAM-safe input "%s" for node %d. %s', ...
                         char(string(dstInputName)), dstNodeID, ME.message);
@@ -9988,8 +10479,16 @@ classdef PipelineManager < handle
                 end
 
                 try
+                    obj.throwIfExecutionCancelled(cancelFcn, progressFcn, 'before loading input file into RAM', ...
+                        'stepID', dstNodeID, ...
+                        'stepTag', dstNode.name, ...
+                        'functionName', obj.getCallableFuncName(dstNode), ...
+                        'message', sprintf('Stop requested before loading input "%s" into RAM.', char(string(dstInputName))));
                     valOut = loadData(fpath);
                 catch ME
+                    if strcmp(ME.identifier, 'PipelineManager:ExecutionCancelled')
+                        rethrow(ME);
+                    end
                     error('PipelineManager:runPipelineOnFolder:LoadFailed', ...
                         'Failed to load explicit RAM input "%s" for node %d. %s', ...
                         char(string(dstInputName)), dstNodeID, ME.message);
@@ -10022,8 +10521,16 @@ classdef PipelineManager < handle
                 end
 
                 try
+                    obj.throwIfExecutionCancelled(cancelFcn, progressFcn, 'before loading input file into RAM', ...
+                        'stepID', dstNodeID, ...
+                        'stepTag', dstNode.name, ...
+                        'functionName', obj.getCallableFuncName(dstNode), ...
+                        'message', sprintf('Stop requested before loading input "%s" into RAM.', char(string(dstInputName))));
                     valOut = loadData(fpath);
                 catch ME
+                    if strcmp(ME.identifier, 'PipelineManager:ExecutionCancelled')
+                        rethrow(ME);
+                    end
                     error('PipelineManager:runPipelineOnFolder:LoadFailed', ...
                         'Failed to load required RAM input "%s" for node %d. %s', ...
                         char(string(dstInputName)), dstNodeID, ME.message);
@@ -10086,8 +10593,16 @@ classdef PipelineManager < handle
                 end
 
                 try
+                    obj.throwIfExecutionCancelled(cancelFcn, progressFcn, 'before loading input file into RAM', ...
+                        'stepID', dstNodeID, ...
+                        'stepTag', dstNode.name, ...
+                        'functionName', obj.getCallableFuncName(dstNode), ...
+                        'message', sprintf('Stop requested before loading input "%s" into RAM.', char(string(dstInputName))));
                     valOut = loadData(fpath);
                 catch ME
+                    if strcmp(ME.identifier, 'PipelineManager:ExecutionCancelled')
+                        rethrow(ME);
+                    end
                     error('PipelineManager:runPipelineOnFolder:LoadFailed', ...
                         'Failed to load lookahead-required RAM input "%s" for node %d. %s', ...
                         char(string(dstInputName)), dstNodeID, ME.message);
@@ -10111,8 +10626,16 @@ classdef PipelineManager < handle
                 obj.logRAMDecision(dstNodeID, dstInputName, 'RAM', fpath);
 
                 try
+                    obj.throwIfExecutionCancelled(cancelFcn, progressFcn, 'before loading input file into RAM', ...
+                        'stepID', dstNodeID, ...
+                        'stepTag', dstNode.name, ...
+                        'functionName', obj.getCallableFuncName(dstNode), ...
+                        'message', sprintf('Stop requested before loading input "%s" into RAM.', char(string(dstInputName))));
                     valOut = loadData(fpath);
                 catch ME
+                    if strcmp(ME.identifier, 'PipelineManager:ExecutionCancelled')
+                        rethrow(ME);
+                    end
                     error('PipelineManager:runPipelineOnFolder:LoadFailed', ...
                         'Failed to load auto-selected RAM input "%s" for node %d. %s', ...
                         char(string(dstInputName)), dstNodeID, ME.message);
@@ -10188,6 +10711,11 @@ classdef PipelineManager < handle
 
                 % Spill RAM value to temp so we can return a filename
                 if isfield(rec,'ramValue') && ~isempty(rec.ramValue)
+                    obj.throwIfExecutionCancelled(cancelFcn, progressFcn, 'before spilling RAM value to temporary file', ...
+                        'stepID', dstNodeID, ...
+                        'stepTag', dstNode.name, ...
+                        'functionName', obj.getCallableFuncName(dstNode), ...
+                        'message', sprintf('Stop requested before preparing file input "%s".', char(string(dstInputName))));
                     tmp = obj.writeTempData(rec.ramValue, saveFolder, connLocal.sourceNodeID, char(string(connLocal.sourceOutputName)));
                     rec.fileName = string(tmp);
                     rec.isTemp   = true;

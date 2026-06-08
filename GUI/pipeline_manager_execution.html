@@ -125,6 +125,110 @@
       color: #7a7a7a;
       font-size: 12px;
     }
+
+    /* Runtime execution state ------------------------------------------------ */
+    body.interaction-disabled {
+      cursor: progress;
+    }
+
+    body.interaction-disabled .step,
+    body.interaction-disabled button {
+      pointer-events: none !important;
+    }
+
+    .step {
+      position: relative;
+    }
+
+    .runtime-pending {
+      opacity: 0.38;
+      filter: grayscale(0.65);
+    }
+
+    .runtime-running {
+      border-color: #2f80ed !important;
+      box-shadow: 0 0 0 3px rgba(47,128,237,0.20), 0 8px 22px rgba(47,128,237,0.18) !important;
+    }
+
+    .runtime-stopping {
+      border-color: #cc7a00 !important;
+      box-shadow: 0 0 0 3px rgba(204,122,0,0.22), 0 8px 22px rgba(204,122,0,0.18) !important;
+    }
+
+    .runtime-passed {
+      border-color: #2f9e44 !important;
+    }
+
+    .runtime-failed {
+      border-color: #c92a2a !important;
+      box-shadow: 0 0 0 3px rgba(201,42,42,0.18) !important;
+    }
+
+    .runtime-skipped {
+      border-color: #868e96 !important;
+      opacity: 0.70;
+    }
+
+    .runtime-icon {
+      position: absolute;
+      right: 6px;
+      bottom: 5px;
+      min-width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      font-size: 11px;
+      line-height: 16px;
+      text-align: center;
+      font-weight: 700;
+      background: #ffffff;
+      color: #495057;
+      border: 1px solid #cfd5dc;
+      z-index: 10;
+      box-sizing: border-box;
+    }
+
+    .runtime-passed .runtime-icon {
+      background: #2f9e44;
+      border-color: #2f9e44;
+      color: #ffffff;
+    }
+
+    .runtime-failed .runtime-icon {
+      background: #c92a2a;
+      border-color: #c92a2a;
+      color: #ffffff;
+    }
+
+    .runtime-running .runtime-icon {
+      background: #2f80ed;
+      border-color: #2f80ed;
+      color: #ffffff;
+    }
+
+    .runtime-stopping .runtime-icon {
+      background: #cc7a00;
+      border-color: #cc7a00;
+      color: #ffffff;
+    }
+
+    .runtime-skipped .runtime-icon {
+      background: #868e96;
+      border-color: #868e96;
+      color: #ffffff;
+    }
+
+    #interactionLock {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      display: none;
+      background: rgba(255,255,255,0.01);
+      pointer-events: auto;
+    }
+
+    body.interaction-disabled #interactionLock {
+      display: block;
+    }
   </style>
 </head>
 <body>
@@ -133,10 +237,11 @@
     <div id="track"></div>
     <div id="hint">No execution data available.</div>
   </div>
+  <div id="interactionLock" title="Interactions are disabled while the pipeline is running."></div>
 
   <script>
     let htmlComponent = null;
-    let model = { steps: [], selectedNodeID: null, note: "" };
+    let model = { steps: [], selectedNodeID: null, note: "", runtime: {} };
 
     function setup(component) {
       htmlComponent = component;
@@ -163,10 +268,113 @@
       model.steps = normalizeToArray(d.steps);
       model.selectedNodeID = Object.prototype.hasOwnProperty.call(d, "selectedNodeID") ? d.selectedNodeID : null;
       model.note = d.note || "";
+      model.runtime = d.runtime || {};
       render();
     }
 
+
+    function getRuntime() {
+      return model && model.runtime ? model.runtime : {};
+    }
+
+    function normalizeID(value) {
+      if (value === undefined || value === null || value === "") {
+        return null;
+      }
+      const n = Number(value);
+      if (Number.isFinite(n)) {
+        return n;
+      }
+      return String(value);
+    }
+
+    function idEquals(a, b) {
+      const aa = normalizeID(a);
+      const bb = normalizeID(b);
+      return aa !== null && bb !== null && aa === bb;
+    }
+
+    function idInList(id, list) {
+      const target = normalizeID(id);
+      if (target === null) {
+        return false;
+      }
+      const values = normalizeToArray(list);
+      return values.some(function(v) { return normalizeID(v) === target; });
+    }
+
+    function getStepRuntimeState(step) {
+      if (step && step.runtimeState && String(step.runtimeState).toLowerCase() !== "idle") {
+        return String(step.runtimeState).toLowerCase();
+      }
+
+      const runtime = getRuntime();
+      const stepID = step ? step.id : null;
+
+      if (idInList(stepID, runtime.failedStepIDs)) {
+        return "failed";
+      }
+      if (idInList(stepID, runtime.skippedStepIDs)) {
+        return "skipped";
+      }
+      if (idInList(stepID, runtime.completedStepIDs)) {
+        return "passed";
+      }
+      if (idEquals(stepID, runtime.currentStepID)) {
+        return runtime.isStopping ? "stopping" : "running";
+      }
+      if (runtime.isRunning) {
+        return "pending";
+      }
+      return "idle";
+    }
+
+    function runtimeClass(state) {
+      const s = String(state || "idle").toLowerCase();
+      if (["running", "stopping", "passed", "failed", "skipped", "pending"].includes(s)) {
+        return "runtime-" + s;
+      }
+      return "";
+    }
+
+    function runtimeIconText(step, state) {
+      if (step && step.runtimeIcon) {
+        return String(step.runtimeIcon);
+      }
+
+      const s = String(state || "").toLowerCase();
+      if (s === "passed") return "✓";
+      if (s === "failed") return "✕";
+      if (s === "skipped") return "↷";
+      if (s === "running") return "●";
+      if (s === "stopping") return "■";
+      return "";
+    }
+
+    function makeRuntimeIcon(step, state) {
+      const iconText = runtimeIconText(step, state);
+      if (!iconText) {
+        return null;
+      }
+
+      const icon = document.createElement("div");
+      icon.className = "runtime-icon";
+      icon.textContent = iconText;
+      return icon;
+    }
+
+    function interactionIsLocked() {
+      const runtime = getRuntime();
+      return !!runtime.interactionDisabled || !!runtime.isRunning;
+    }
+
+    function applyInteractionLock() {
+      document.body.classList.toggle("interaction-disabled", interactionIsLocked());
+    }
+
     function render() {
+      applyInteractionLock();
+
       const note = document.getElementById("note");
       const track = document.getElementById("track");
       const hint = document.getElementById("hint");
@@ -183,7 +391,8 @@
 
       model.steps.forEach(function(step, idx) {
         const card = document.createElement("div");
-        card.className = "step" + ((step.id === model.selectedNodeID) ? " selected" : "");
+        const runtimeState = getStepRuntimeState(step);
+        card.className = ["step", runtimeClass(runtimeState), (step.id === model.selectedNodeID) ? "selected" : ""].filter(Boolean).join(" ");
 
         const titleText = step.funcName || "";
         const tagText = step.stepTag || "";
@@ -197,7 +406,13 @@
           </div>
           <div class="stepTag" title="${esc(tagText)}">${esc(tagText)}</div>`;
 
+        const runtimeIcon = makeRuntimeIcon(step, runtimeState);
+        if (runtimeIcon) {
+          card.appendChild(runtimeIcon);
+        }
+
         card.addEventListener("click", function() {
+          if (interactionIsLocked()) { return; }
           if (htmlComponent) {
             htmlComponent.sendEventToMATLAB("stepSelected", {
               nodeID: step.id,
