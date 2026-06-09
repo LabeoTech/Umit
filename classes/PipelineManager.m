@@ -73,7 +73,7 @@ classdef PipelineManager < handle
         dataHistory struct % Local copy of the content from the dataHistory file in the data's SaveFolder.
     end
 
-    properties (GetAccess = {?DataViewer, ?newDataViewer_canvas,?newDataViewer_canvas_exported})
+    properties (GetAccess = {?DataViewer})
         %%%%%%-- DEPRECATED PROPERTIES FOR REVIEW -------------------------
         current_saveFolder char % Current path to save folder during pipeline execution.
         current_data % Data available in the workspace during pipeline.
@@ -3719,6 +3719,57 @@ classdef PipelineManager < handle
             end
         end
 
+        function [stepTag, srcNodeID] = ensureFileSourceStep(obj, filePath, varargin)
+            %ENSUREFILESOURCESTEP Create or reuse a FileSource step for one file.
+            %
+            %   [stepTag, srcNodeID] = ensureFileSourceStep(obj, filePath)
+            %   [stepTag, srcNodeID] = ensureFileSourceStep(..., 'SemanticTypes', types)
+            %
+            % This public wrapper is used by DataViewer-managed PipelineManagerTool
+            % launch. It keeps the existing private FileSource-node creation logic as
+            % the single implementation point.
+
+            p = inputParser;
+            addRequired(p, 'filePath', @(x)ischar(x)||isstring(x));
+            addParameter(p, 'SemanticTypes', {'UnknownDataType'}, ...
+                @(x)ischar(x)||isstring(x)||iscell(x));
+            parse(p, filePath, varargin{:});
+
+            semanticTypes = p.Results.SemanticTypes;
+            if ischar(semanticTypes) || (isstring(semanticTypes) && isscalar(semanticTypes))
+                semanticTypes = {char(string(semanticTypes))};
+            else
+                semanticTypes = cellstr(string(semanticTypes(:)));
+            end
+
+            semanticTypes = semanticTypes(~cellfun(@isempty, semanticTypes));
+            if isempty(semanticTypes)
+                semanticTypes = {'UnknownDataType'};
+            end
+
+            srcNodeID = obj.ensureFileSourceNode(p.Results.filePath, semanticTypes);
+
+            idx = find([obj.nodes.id] == srcNodeID, 1, 'first');
+            if isempty(idx)
+                error('PipelineManager:ensureFileSourceStep:InternalError', ...
+                    'FileSource node was not found after creation.');
+            end
+
+            stepTag = char(string(obj.nodes(idx).name));
+
+            try
+                obj.updateTopoOrder();
+                obj.autoValidate();
+            catch
+                % Keep source creation usable even before the graph has downstream
+                % steps. Later validation will report actionable graph issues.
+            end
+
+            if isprop(obj, 'activeLeafNodeID')
+                obj.activeLeafNodeID = srcNodeID;
+            end
+        end
+
         %%%%%%--Pipeline Visualization  -----------------------------------
         function varargout = viewExecutionPlan(obj, varargin)
             %VIEWEXECUTIONPLAN Print the structured execution plan tables.
@@ -3756,7 +3807,7 @@ classdef PipelineManager < handle
                 varargout{1} = plan;
             end
         end
-        
+
         function plan = getExecutionPlan(obj, varargin)
             %GETEXECUTIONPLAN Return structured execution and output-persistence plan.
             %
@@ -5937,16 +5988,29 @@ classdef PipelineManager < handle
             %RESOLVEINPUTREFERENCE Resolve user input reference(s) to upstream sources.
             %
             % Supported inputRef formats:
-            %   1) Step tag:              'GSR_1' -> nodeID
-            %   2) File name/path:        'green.dat' -> struct with nodeID + selectedFile
-            %   3) StepTag:Token:         'StepTag:Token' -> struct with nodeID + outputName (+ selectedFile if Token is filename)
+            %   1) File name/path:
+            %          'green.dat'
+            %          'D:\...\green.dat'
+            %          'D:/.../green.dat'
+            %      -> struct with nodeID + outputName='data' + selectedFile
+            %
+            %   2) Step tag:
+            %          'GSR_1'
+            %      -> nodeID
+            %
+            %   3) StepTag:Token:
+            %          'StepTag:OutputPortName'
+            %          'StepTag:filename.ext'
+            %      -> struct with nodeID + outputName (+ selectedFile if token is filename)
+            %
+            % Important:
+            %   File/path resolution is attempted before StepTag:Token parsing because
+            %   Windows full paths contain a colon after the drive letter, e.g. D:\data\a.dat.
 
             if iscell(inputRef)
                 % Resolve each entry independently, but normalize the result to a
                 % struct array. This supports mixed multi-input syntax such as:
-                %   {'StepA', 'StepB:outB'}
-                % where plain step references return numeric node IDs, while explicit
-                % output/file references return structs.
+                %   {'StepA', 'D:\folder\red.dat', 'StepB:outB'}
                 ref = struct( ...
                     'nodeID', {}, ...
                     'outputName', {}, ...
@@ -5996,32 +6060,71 @@ classdef PipelineManager < handle
             inputRef = char(string(inputRef));
             inputRef = strtrim(inputRef);
 
+            if isempty(inputRef)
+                error('PipelineManager:resolveInputReference:EmptyInput', ...
+                    'Input reference cannot be empty.');
+            end
+
             % -------------------------------------------------------------
-            % 0) StepTag:Token form (output port or filename selection)
+            % 0) Existing file name/path
+            %
+            % This must run before StepTag:Token parsing because Windows paths use
+            % a drive-letter colon, e.g. D:\folder\red.dat.
+            % -------------------------------------------------------------
+            [bFileRef, fileBase, filePathForNode] = iResolveAsExistingFileReference(inputRef);
+
+            if bFileRef
+                srcID = obj.ensureFileSourceNode(filePathForNode, {'UnknownDataType'});
+
+                ref = struct( ...
+                    'nodeID',       srcID, ...
+                    'outputName',   'data', ...
+                    'selectedFile', fileBase);
+                return
+            end
+
+            % If it looks like a file path but did not resolve, stop here with a
+            % file-specific error instead of parsing the drive-letter colon as a
+            % StepTag:Token separator.
+            if iLooksLikePathReference(inputRef)
+                error('PipelineManager:resolveInputReference:FileNotFound', ...
+                    'Input file path could not be resolved in the execution SaveFolder: "%s".', ...
+                    inputRef);
+            end
+
+            % -------------------------------------------------------------
+            % 1) StepTag:Token form
             % -------------------------------------------------------------
             colonPos = strfind(inputRef, ':');
+
             if ~isempty(colonPos)
 
                 if numel(colonPos) ~= 1
-                    error('Input "%s" is invalid. Use at most one ":" separator.', inputRef);
+                    error('PipelineManager:resolveInputReference:InvalidColonSyntax', ...
+                        'Input "%s" is invalid. Use at most one ":" separator for StepTag:Token syntax.', ...
+                        inputRef);
                 end
 
                 stepTag = strtrim(inputRef(1:colonPos-1));
                 token   = strtrim(inputRef(colonPos+1:end));
 
                 if isempty(stepTag) || isempty(token)
-                    error('Input "%s" is invalid. Use "StepTag:Token".', inputRef);
+                    error('PipelineManager:resolveInputReference:InvalidStepTokenSyntax', ...
+                        'Input "%s" is invalid. Use "StepTag:Token".', inputRef);
                 end
 
                 idxStep = find(strcmpi({obj.nodes.name}, stepTag), 1);
+
                 if isempty(idxStep)
-                    error('Step "%s" not found.', stepTag);
+                    error('PipelineManager:resolveInputReference:StepNotFound', ...
+                        'Step "%s" not found.', stepTag);
                 end
 
                 n = obj.nodes(idxStep);
 
-                if ~isfield(n,'info') || ~isfield(n.info,'outputs') || isempty(n.info.outputs)
-                    error('Step "%s" has no outputs.', stepTag);
+                if ~isfield(n, 'info') || ~isfield(n.info, 'outputs') || isempty(n.info.outputs)
+                    error('PipelineManager:resolveInputReference:StepHasNoOutputs', ...
+                        'Step "%s" has no outputs.', stepTag);
                 end
 
                 outs = n.info.outputs;
@@ -6034,15 +6137,18 @@ classdef PipelineManager < handle
                     ref = struct( ...
                         'nodeID',       n.id, ...
                         'outputName',   outs(outIdx).name, ...
-                        'selectedFile', '' );
+                        'selectedFile', '');
                     return
                 end
 
                 % B) Token treated as filename; must be listed in a file output
-                fileOutIdx = find(arrayfun(@(o) isfield(o,'outputMode') && strcmpi(o.outputMode,'file'), outs));
+                fileOutIdx = find(arrayfun(@(o) isfield(o, 'outputMode') && ...
+                    strcmpi(o.outputMode, 'file'), outs));
 
                 if isempty(fileOutIdx)
-                    error('Step "%s" has no file outputs. Cannot select file "%s".', stepTag, token);
+                    error('PipelineManager:resolveInputReference:NoFileOutputs', ...
+                        'Step "%s" has no file outputs. Cannot select file "%s".', ...
+                        stepTag, token);
                 end
 
                 matchIdx = [];
@@ -6051,52 +6157,55 @@ classdef PipelineManager < handle
 
                     o = outs(fileOutIdx(ii));
 
-                    if ~isfield(o,'defOutfilename') || isempty(o.defOutfilename)
+                    if ~isfield(o, 'defOutfilename') || isempty(o.defOutfilename)
                         continue
                     end
 
-                    if iscell(o.defOutfilename)
-                        if any(strcmpi(o.defOutfilename, token))
-                            matchIdx(end+1) = fileOutIdx(ii); %#ok<AGROW>
-                        end
-                    else
-                        if strcmpi(char(string(o.defOutfilename)), token)
-                            matchIdx(end+1) = fileOutIdx(ii); %#ok<AGROW>
-                        end
+                    defFiles = iNormalizeFileList(o.defOutfilename);
+
+                    if any(strcmpi(defFiles, token))
+                        matchIdx(end+1) = fileOutIdx(ii); %#ok<AGROW>
                     end
                 end
 
                 if isempty(matchIdx)
-                    error('File "%s" is not listed as an available output for step "%s".', token, stepTag);
+                    error('PipelineManager:resolveInputReference:FileNotDeclaredByStep', ...
+                        'File "%s" is not listed as an available output for step "%s".', ...
+                        token, stepTag);
                 end
 
                 if numel(matchIdx) > 1
-                    error(['File "%s" matches multiple file outputs on step "%s". ' ...
-                        'Use "StepTag:OutputName" to disambiguate.'], token, stepTag);
+                    error('PipelineManager:resolveInputReference:AmbiguousStepFile', ...
+                        ['File "%s" matches multiple file outputs on step "%s". ' ...
+                        'Use "StepTag:OutputName" to disambiguate.'], ...
+                        token, stepTag);
                 end
 
                 ref = struct( ...
                     'nodeID',       n.id, ...
                     'outputName',   outs(matchIdx).name, ...
-                    'selectedFile', token );
+                    'selectedFile', token);
                 return
             end
 
             % -------------------------------------------------------------
-            % 1) Step tag
+            % 2) Step tag
             % -------------------------------------------------------------
             idx = find(strcmpi({obj.nodes.name}, inputRef), 1);
+
             if ~isempty(idx)
                 ref = obj.nodes(idx).id;
                 return
             end
 
             % -------------------------------------------------------------
-            % 2) Produced file name (legacy: saveFileName) (unchanged)
+            % 3) Produced file name, legacy saveFileName lookup
             % -------------------------------------------------------------
             producers = [];
+
             for iNode = 1:numel(obj.nodes)
-                if isfield(obj.nodes(iNode),'saveFileName') && strcmp(obj.nodes(iNode).saveFileName, inputRef)
+                if isfield(obj.nodes(iNode), 'saveFileName') && ...
+                        strcmpi(char(string(obj.nodes(iNode).saveFileName)), inputRef)
                     producers(end+1) = obj.nodes(iNode).id; %#ok<AGROW>
                 end
             end
@@ -6104,32 +6213,126 @@ classdef PipelineManager < handle
             if numel(producers) == 1
                 ref = producers;
                 return
+
             elseif numel(producers) > 1
-                error('Multiple steps produce "%s".', inputRef);
+                error('PipelineManager:resolveInputReference:AmbiguousProducedFile', ...
+                    'Multiple steps produce "%s".', inputRef);
             end
 
-            % -------------------------------------------------------------
-            % 3) File in folder (assumed to exist in SaveFolderList{1})
-            %     FIX: return struct that includes selectedFile so execution can load
-            % -------------------------------------------------------------
-            [~,filename,ext] = fileparts(inputRef);
-            fileBase = [filename ext];
-            filePath = fullfile(obj.SaveFolderList{1}, fileBase);
+            error('PipelineManager:resolveInputReference:UnresolvedInput', ...
+                'Input "%s" could not be resolved.', inputRef);
 
-            if isfile(filePath)
-                % Ensure a file-source node exists (type remains UnknownDataType for now)
-                srcID = obj.ensureFileSourceNode(filePath, {'UnknownDataType'});
+            % =====================================================================
+            % Local helpers
+            % =====================================================================
 
-                % Return a struct so addStep/connectNodes can propagate selectedFile into the edge.
-                % Use outputName 'data' (standard source output port used for data flow).
-                ref = struct( ...
-                    'nodeID',       srcID, ...
-                    'outputName',   'data', ...
-                    'selectedFile', fileBase );
-                return
+            function [tf, fileBaseLocal, filePathLocal] = iResolveAsExistingFileReference(refIn)
+                %IRESOLVEASEXISTINGFILEREFERENCE Resolve filename/full path first.
+
+                tf = false;
+                fileBaseLocal = '';
+                filePathLocal = '';
+
+                refIn = char(string(refIn));
+                refIn = strtrim(refIn);
+
+                if isempty(refIn) || isempty(obj.SaveFolderList)
+                    return
+                end
+
+                [folderPart, basePart, extPart] = fileparts(refIn);
+                fileBaseCandidate = [basePart extPart];
+
+                if isempty(fileBaseCandidate)
+                    return
+                end
+
+                candidates = strings(0,1);
+
+                % Full/relative path candidate as typed.
+                if iLooksLikePathReference(refIn)
+                    candidates(end+1,1) = string(refIn); %#ok<AGROW>
+                end
+
+                % Folder-bound candidate. This is the canonical PipelineManager
+                % interpretation of a file input: file lives in SaveFolder.
+                candidates(end+1,1) = string(fullfile(obj.SaveFolderList{1}, fileBaseCandidate)); %#ok<AGROW>
+
+                % Plain ref may itself be a file in current folder when caller passes
+                % relative paths from cwd. Keep it as a final candidate.
+                candidates(end+1,1) = string(refIn); %#ok<AGROW>
+
+                candidates = unique(candidates, 'stable');
+
+                for iCand = 1:numel(candidates)
+                    candidatePath = char(candidates(iCand));
+
+                    if isfile(candidatePath)
+                        [~, fBase, fExt] = fileparts(candidatePath);
+                        fileBaseLocal = [fBase fExt];
+
+                        % Always bind the graph source to the SaveFolder version when it
+                        % exists. This keeps batch execution folder-relative.
+                        folderBoundPath = fullfile(obj.SaveFolderList{1}, fileBaseLocal);
+
+                        if isfile(folderBoundPath)
+                            filePathLocal = folderBoundPath;
+                        else
+                            filePathLocal = candidatePath;
+                        end
+
+                        tf = true;
+                        return
+                    end
+                end
             end
 
-            error('Input "%s" could not be resolved.', inputRef);
+            function tf = iLooksLikePathReference(refIn)
+                %ILOOKSLIKEPATHREFERENCE True for full/relative filesystem paths.
+
+                refIn = char(string(refIn));
+
+                tf = contains(refIn, filesep) || ...
+                    contains(refIn, '/') || ...
+                    contains(refIn, '\') || ...
+                    ~isempty(regexp(refIn, '^[A-Za-z]:[\\/]', 'once')) || ...
+                    startsWith(refIn, '\\') || ...
+                    startsWith(refIn, '//');
+            end
+
+            function fileList = iNormalizeFileList(fileSpec)
+                %INORMALIZEFILELIST Normalize defOutfilename-like metadata.
+
+                fileList = {};
+
+                if isempty(fileSpec)
+                    return
+                end
+
+                try
+                    if ischar(fileSpec) || (isstring(fileSpec) && isscalar(fileSpec))
+                        fileList = {char(string(fileSpec))};
+
+                    elseif isstring(fileSpec)
+                        fileList = cellstr(fileSpec(:));
+
+                    elseif iscell(fileSpec)
+                        fileList = cellfun(@(x) char(string(x)), ...
+                            fileSpec(:), 'UniformOutput', false);
+                    end
+                catch
+                    fileList = {};
+                end
+
+                fileList = fileList(~cellfun(@isempty, fileList));
+
+                for iFile = 1:numel(fileList)
+                    [~, b, e] = fileparts(fileList{iFile});
+                    fileList{iFile} = [b e];
+                end
+
+                fileList = unique(fileList, 'stable');
+            end
         end
 
         function leafIDs = getLeafNodeIDs(obj)
@@ -6453,27 +6656,59 @@ classdef PipelineManager < handle
             %       - compatible semantic type
             %
             %   File existence is checked using the first SaveFolder.
+            %
+            %   FileSource nodes are graph proxies for existing files. They are not
+            %   executed as pipeline steps. Runtime file access should be carried by
+            %   connections with selectedFile populated, which happens when callers pass
+            %   filename/full-path inputs through resolveInputReference.
 
             filePath = char(string(filePath));
 
-            if isempty(filePath)
-                error('Invalid file.');
+            if isempty(strtrim(filePath))
+                error('PipelineManager:ensureFileSourceNode:InvalidFile', ...
+                    'Invalid file.');
+            end
+
+            if nargin < 3 || isempty(semanticType)
+                semanticType = {'UnknownDataType'};
+            elseif ischar(semanticType) || (isstring(semanticType) && isscalar(semanticType))
+                semanticType = {char(string(semanticType))};
+            elseif isstring(semanticType)
+                semanticType = cellstr(semanticType(:));
+            elseif iscell(semanticType)
+                semanticType = cellfun(@(x) char(string(x)), semanticType(:), 'UniformOutput', false);
+            else
+                semanticType = {'UnknownDataType'};
+            end
+
+            semanticType = semanticType(:).';
+            semanticType = semanticType(~cellfun(@isempty, semanticType));
+
+            if isempty(semanticType)
+                semanticType = {'UnknownDataType'};
             end
 
             [~, filename, ext] = fileparts(filePath);
             filename = [filename ext];
 
+            if isempty(filename)
+                error('PipelineManager:ensureFileSourceNode:InvalidFile', ...
+                    'Invalid file name.');
+            end
+
             % -------------------------------------------------------------
             % Validate file existence using first SaveFolder
             % -------------------------------------------------------------
             if isempty(obj.SaveFolderList)
-                error('SaveFolderList is empty.');
+                error('PipelineManager:ensureFileSourceNode:EmptySaveFolderList', ...
+                    'SaveFolderList is empty.');
             end
 
             testPath = fullfile(obj.SaveFolderList{1}, filename);
 
             if ~isfile(testPath)
-                error('File "%s" not found in execution folder "%s".', ...
+                error('PipelineManager:ensureFileSourceNode:FileNotFound', ...
+                    'File "%s" not found in execution folder "%s".', ...
                     filename, obj.SaveFolderList{1});
             end
 
@@ -6484,34 +6719,55 @@ classdef PipelineManager < handle
 
                 n = obj.nodes(i);
 
-                if ~strcmpi(n.kind,'folder')
+                if ~isfield(n, 'kind') || ~strcmpi(char(string(n.kind)), 'folder')
                     continue
                 end
 
-                if ~strcmp(n.name, filename)
+                if ~isfield(n, 'name') || ~strcmpi(char(string(n.name)), filename)
                     continue
                 end
 
-                if ~isfield(n.info,'outputs') || isempty(n.info.outputs)
+                if ~isfield(n, 'info') || ~isfield(n.info, 'outputs') || isempty(n.info.outputs)
                     continue
                 end
 
                 out = n.info.outputs(1);
 
-                if ~out.isData
+                if ~isfield(out, 'isData') || ~logical(out.isData)
                     continue
                 end
 
-                existingTypes = out.type;
+                existingTypes = {};
+                if isfield(out, 'type') && ~isempty(out.type)
+                    existingTypes = cellstr(string(out.type(:)));
+                end
+
                 requiredTypes = semanticType;
 
-                srcHasWildcard = any(strcmp(existingTypes,'UnknownDataType'));
-                dstHasWildcard = any(strcmp(requiredTypes,'UnknownDataType'));
+                srcHasWildcard = any(strcmp(existingTypes, 'UnknownDataType'));
+                dstHasWildcard = any(strcmp(requiredTypes, 'UnknownDataType'));
 
                 isCompatible = srcHasWildcard || dstHasWildcard || ...
                     ~isempty(intersect(existingTypes, requiredTypes));
 
                 if isCompatible
+                    % Upgrade/normalize older FileSource nodes so the GUI sees this as a
+                    % concrete file-backed data source.
+                    obj.nodes(i).info.name = 'FileSource';
+
+                    obj.nodes(i).info.outputs(1).name = 'data';
+                    obj.nodes(i).info.outputs(1).type = existingTypes;
+                    obj.nodes(i).info.outputs(1).isData = true;
+                    obj.nodes(i).info.outputs(1).outputMode = 'file';
+                    obj.nodes(i).info.outputs(1).defOutfilename = filename;
+                    obj.nodes(i).info.outputs(1).saveFileName = '';
+                    obj.nodes(i).info.outputs(1).position = 1;
+                    obj.nodes(i).info.outputs(1).description = sprintf('Data from %s', filename);
+
+                    if isempty(obj.nodes(i).info.outputs(1).type)
+                        obj.nodes(i).info.outputs(1).type = semanticType;
+                    end
+
                     srcNodeID = n.id;
                     return
                 end
@@ -6526,13 +6782,16 @@ classdef PipelineManager < handle
             info.outputs(1).name = 'data';
             info.outputs(1).type = semanticType;
             info.outputs(1).isData = true;
-            info.outputs(1).description = ...
-                sprintf('Data from %s', filename);
+            info.outputs(1).outputMode = 'file';
+            info.outputs(1).defOutfilename = filename;
+            info.outputs(1).saveFileName = '';
+            info.outputs(1).position = 1;
+            info.outputs(1).description = sprintf('Data from %s', filename);
 
             node = obj.createNodeFromFuncInfo( ...
                 filename, ...
                 info, ...
-                'kind','folder');
+                'kind', 'folder');
 
             obj.nodes = [obj.nodes, node];
             srcNodeID = node.id;

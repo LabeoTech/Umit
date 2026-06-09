@@ -39,6 +39,8 @@
     #menu { position: fixed; z-index: 1000; min-width: 190px; background: #ffffff; border: 1px solid #cfd5dc; border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,0.18); display: none; overflow: hidden; }
     .menuItem { padding: 10px 12px; font-size: 12px; cursor: pointer; }
     .menuItem:hover { background: #eef4ff; }
+    .menuItem.disabled { color: #9aa0a6; cursor: default; background: #ffffff; }
+    .menuItem.disabled:hover { background: #ffffff; }
 
     /* Runtime execution state ------------------------------------------------ */
     body.interaction-disabled {
@@ -137,10 +139,10 @@
       <div id="hint">No pipeline loaded.</div>
     </div>
     <div id="menu">
-      <div class="menuItem" onclick="menuAction('removeStep')">Remove step</div>
-      <div class="menuItem" onclick="menuAction('reconnectStep')">Reconnect inputs</div>
-      <div class="menuItem" onclick="menuAction('configureSaveOutputs')">Save Outputs</div>
-      <div class="menuItem" onclick="menuAction('editParameters')">Edit parameters</div>
+      <div id="menuRemoveStep" class="menuItem" onclick="menuAction('removeStep')">Remove step</div>
+      <div id="menuReconnectStep" class="menuItem" onclick="menuAction('reconnectStep')">Reconnect inputs</div>
+      <div id="menuConfigureSaveOutputs" class="menuItem" onclick="menuAction('configureSaveOutputs')">Save Outputs</div>
+      <div id="menuEditParameters" class="menuItem" onclick="menuAction('editParameters')">Edit parameters</div>
     </div>
     <div id="hoverCard"></div>
     <div id="modeBanner">
@@ -233,6 +235,37 @@
       }
       const values = normalizeToArray(list);
       return values.some(function(v) { return normalizeID(v) === target; });
+    }
+
+    function normalizeBoolean(value) {
+      if (value === true) { return true; }
+      if (value === false || value === undefined || value === null) { return false; }
+
+      const s = String(value).trim().toLowerCase();
+      return s === "true" || s === "1" || s === "yes" || s === "on";
+    }
+
+    function nodeIsProtected(node) {
+      if (!node) {
+        return false;
+      }
+
+      return normalizeBoolean(node.isProtected) ||
+             normalizeBoolean(node.protected) ||
+             normalizeBoolean(node.isReadOnly);
+    }
+
+    function getProtectedReason(node) {
+      if (!node) {
+        return "This step is protected.";
+      }
+
+      const reason = node.protectedReason || node.readOnlyReason || "";
+      if (reason) {
+        return String(reason);
+      }
+
+      return "This step is protected.";
     }
 
     function getNodeRuntimeState(node) {
@@ -374,6 +407,7 @@
         el.style.height = (n.height || 76) + "px";
 
         let icons = "";
+        if (nodeIsProtected(n)) { icons += `<span class="icon" title="${esc(getProtectedReason(n))}">🔒</span>`; }
         if (n.hasSavedOutputs) { icons += `<span class="icon" title="Saved outputs">💾</span>`; }
         if (n.hasError) { icons += `<span class="icon" title="Blocking invalid node">❌</span>`; }
         else if (n.hasInvalidNonblocking) { icons += `<span class="icon" title="Non-blocking invalid node">⊘</span>`; }
@@ -612,10 +646,34 @@
 
     function showMenu(x, y) {
       if (interactionIsLocked()) { return; }
+      updateContextMenuForNode(contextNode);
+
       const menu = document.getElementById("menu");
       menu.style.left = x + "px";
       menu.style.top = y + "px";
       menu.style.display = "block";
+    }
+
+    function setMenuItemDisabled(itemID, disabled, titleText) {
+      const item = document.getElementById(itemID);
+      if (!item) {
+        return;
+      }
+
+      item.classList.toggle("disabled", !!disabled);
+      item.setAttribute("aria-disabled", disabled ? "true" : "false");
+      item.title = disabled ? (titleText || "") : "";
+    }
+
+    function updateContextMenuForNode(node) {
+      const protectedNode = nodeIsProtected(node);
+      const protectedReason = getProtectedReason(node);
+
+      setMenuItemDisabled(
+        "menuRemoveStep",
+        protectedNode,
+        protectedReason || "This protected step cannot be removed."
+      );
     }
 
     function hideMenu() {
@@ -681,6 +739,12 @@
 
     function menuAction(action) {
       if (interactionIsLocked()) { return; }
+
+      if (action === "removeStep" && nodeIsProtected(contextNode)) {
+        hideMenu();
+        return;
+      }
+
       hideMenu();
       if (!contextNode || !htmlComponent) { return; }
       htmlComponent.sendEventToMATLAB("contextAction", { action: action, nodeID: contextNode.id, stepTag: contextNode.stepTag || "" });
