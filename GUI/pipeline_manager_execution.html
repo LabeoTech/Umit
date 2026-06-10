@@ -12,10 +12,11 @@
       overflow: auto;
       background: #f4f5f7;
       font-family: Arial, Helvetica, sans-serif;
+      color: #202124;
     }
 
     #root {
-      padding: 10px;
+      padding: 8px 10px;
       box-sizing: border-box;
       min-width: 100%;
     }
@@ -23,16 +24,21 @@
     #note {
       color: #6b7280;
       font-size: 11px;
-      margin-bottom: 8px;
+      line-height: 1.25;
+      margin-bottom: 7px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     #track {
       display: flex;
       align-items: center;
-      gap: 8px;
-      min-height: 72px;
+      gap: 7px;
+      min-height: 66px;
       width: max-content;
-      padding-bottom: 4px;
+      padding: 2px 0 5px 0;
+      box-sizing: border-box;
     }
 
     .step {
@@ -40,15 +46,21 @@
       flex-direction: column;
       justify-content: center;
       gap: 2px;
-      min-width: 96px;
-      max-width: 150px;
-      padding: 7px 10px;
+      min-width: 94px;
+      max-width: 142px;
+      height: 54px;
+      padding: 6px 9px;
       background: #ffffff;
       border: 1px solid #d2d6dd;
       border-radius: 10px;
       box-shadow: 0 1px 4px rgba(0,0,0,0.06);
       cursor: pointer;
       box-sizing: border-box;
+    }
+
+    .step:hover {
+      border-color: #aeb7c2;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
     }
 
     .step.selected {
@@ -60,7 +72,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
+      gap: 6px;
       min-width: 0;
     }
 
@@ -84,11 +96,21 @@
 
     .orderBadge {
       flex: 0 0 auto;
+      min-width: 18px;
+      text-align: center;
       padding: 1px 5px;
       border-radius: 999px;
       background: #eef2f7;
       font-size: 9px;
+      font-weight: 700;
       line-height: 1.35;
+    }
+
+    .runtimeIcon {
+      margin-left: 3px;
+      font-weight: 700;
+      font-size: 10px;
+      line-height: 1;
     }
 
     .connector {
@@ -124,110 +146,7 @@
     #hint {
       color: #7a7a7a;
       font-size: 12px;
-    }
-
-    /* Runtime execution state ------------------------------------------------ */
-    body.interaction-disabled {
-      cursor: progress;
-    }
-
-    body.interaction-disabled .step,
-    body.interaction-disabled button {
-      pointer-events: none !important;
-    }
-
-    .step {
-      position: relative;
-    }
-
-    .runtime-pending {
-      opacity: 0.38;
-      filter: grayscale(0.65);
-    }
-
-    .runtime-running {
-      border-color: #2f80ed !important;
-      box-shadow: 0 0 0 3px rgba(47,128,237,0.20), 0 8px 22px rgba(47,128,237,0.18) !important;
-    }
-
-    .runtime-stopping {
-      border-color: #cc7a00 !important;
-      box-shadow: 0 0 0 3px rgba(204,122,0,0.22), 0 8px 22px rgba(204,122,0,0.18) !important;
-    }
-
-    .runtime-passed {
-      border-color: #2f9e44 !important;
-    }
-
-    .runtime-failed {
-      border-color: #c92a2a !important;
-      box-shadow: 0 0 0 3px rgba(201,42,42,0.18) !important;
-    }
-
-    .runtime-skipped {
-      border-color: #868e96 !important;
-      opacity: 0.70;
-    }
-
-    .runtime-icon {
-      position: absolute;
-      right: 6px;
-      bottom: 5px;
-      min-width: 16px;
-      height: 16px;
-      border-radius: 50%;
-      font-size: 11px;
-      line-height: 16px;
-      text-align: center;
-      font-weight: 700;
-      background: #ffffff;
-      color: #495057;
-      border: 1px solid #cfd5dc;
-      z-index: 10;
-      box-sizing: border-box;
-    }
-
-    .runtime-passed .runtime-icon {
-      background: #2f9e44;
-      border-color: #2f9e44;
-      color: #ffffff;
-    }
-
-    .runtime-failed .runtime-icon {
-      background: #c92a2a;
-      border-color: #c92a2a;
-      color: #ffffff;
-    }
-
-    .runtime-running .runtime-icon {
-      background: #2f80ed;
-      border-color: #2f80ed;
-      color: #ffffff;
-    }
-
-    .runtime-stopping .runtime-icon {
-      background: #cc7a00;
-      border-color: #cc7a00;
-      color: #ffffff;
-    }
-
-    .runtime-skipped .runtime-icon {
-      background: #868e96;
-      border-color: #868e96;
-      color: #ffffff;
-    }
-
-    #interactionLock {
-      position: fixed;
-      inset: 0;
-      z-index: 2000;
-      display: none;
-      background: rgba(255,255,255,0.01);
-      pointer-events: auto;
-    }
-
-    body.interaction-disabled #interactionLock {
-      display: block;
+      margin-top: 4px;
     }
   </style>
 </head>
@@ -235,13 +154,12 @@
   <div id="root">
     <div id="note"></div>
     <div id="track"></div>
-    <div id="hint">No execution data available.</div>
+    <div id="hint">No executable steps available.</div>
   </div>
-  <div id="interactionLock" title="Interactions are disabled while the pipeline is running."></div>
 
   <script>
     let htmlComponent = null;
-    let model = { steps: [], selectedNodeID: null, note: "", runtime: {} };
+    let model = { steps: [], selectedNodeID: null, note: "" };
 
     function setup(component) {
       htmlComponent = component;
@@ -263,118 +181,62 @@
       return [];
     }
 
+    function numericValue(value) {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : NaN;
+    }
+
+    function firstNonEmpty() {
+      for (let i = 0; i < arguments.length; i++) {
+        const value = arguments[i];
+        if (value !== undefined && value !== null && String(value).trim() !== "") {
+          return value;
+        }
+      }
+      return "";
+    }
+
+    function getRunIndex(step, fallbackIndex) {
+      const runIndex = numericValue(step.runIndex);
+      if (Number.isFinite(runIndex)) {
+        return runIndex;
+      }
+
+      const orderIndex = numericValue(step.orderIndex);
+      if (Number.isFinite(orderIndex)) {
+        return orderIndex;
+      }
+
+      return fallbackIndex + 1;
+    }
+
     function applyData() {
       const d = (htmlComponent && htmlComponent.Data) ? htmlComponent.Data : {};
+
       model.steps = normalizeToArray(d.steps);
+      model.steps = model.steps.filter(function(step) {
+        const role = String(step.executionRole || "").toLowerCase();
+        const kind = String(step.kind || "").toLowerCase();
+
+        if (role === "virtual_source" || kind === "folder") {
+          return false;
+        }
+        if (Object.prototype.hasOwnProperty.call(step, "isExecutable")) {
+          return Boolean(step.isExecutable);
+        }
+        return true;
+      });
+
+      model.steps.sort(function(a, b) {
+        return getRunIndex(a, 0) - getRunIndex(b, 0);
+      });
+
       model.selectedNodeID = Object.prototype.hasOwnProperty.call(d, "selectedNodeID") ? d.selectedNodeID : null;
-      model.note = d.note || "";
-      model.runtime = d.runtime || {};
+      model.note = d.note || "Executable run order. File sources are virtual inputs and are loaded only when consumed.";
       render();
     }
 
-
-    function getRuntime() {
-      return model && model.runtime ? model.runtime : {};
-    }
-
-    function normalizeID(value) {
-      if (value === undefined || value === null || value === "") {
-        return null;
-      }
-      const n = Number(value);
-      if (Number.isFinite(n)) {
-        return n;
-      }
-      return String(value);
-    }
-
-    function idEquals(a, b) {
-      const aa = normalizeID(a);
-      const bb = normalizeID(b);
-      return aa !== null && bb !== null && aa === bb;
-    }
-
-    function idInList(id, list) {
-      const target = normalizeID(id);
-      if (target === null) {
-        return false;
-      }
-      const values = normalizeToArray(list);
-      return values.some(function(v) { return normalizeID(v) === target; });
-    }
-
-    function getStepRuntimeState(step) {
-      if (step && step.runtimeState && String(step.runtimeState).toLowerCase() !== "idle") {
-        return String(step.runtimeState).toLowerCase();
-      }
-
-      const runtime = getRuntime();
-      const stepID = step ? step.id : null;
-
-      if (idInList(stepID, runtime.failedStepIDs)) {
-        return "failed";
-      }
-      if (idInList(stepID, runtime.skippedStepIDs)) {
-        return "skipped";
-      }
-      if (idInList(stepID, runtime.completedStepIDs)) {
-        return "passed";
-      }
-      if (idEquals(stepID, runtime.currentStepID)) {
-        return runtime.isStopping ? "stopping" : "running";
-      }
-      if (runtime.isRunning) {
-        return "pending";
-      }
-      return "idle";
-    }
-
-    function runtimeClass(state) {
-      const s = String(state || "idle").toLowerCase();
-      if (["running", "stopping", "passed", "failed", "skipped", "pending"].includes(s)) {
-        return "runtime-" + s;
-      }
-      return "";
-    }
-
-    function runtimeIconText(step, state) {
-      if (step && step.runtimeIcon) {
-        return String(step.runtimeIcon);
-      }
-
-      const s = String(state || "").toLowerCase();
-      if (s === "passed") return "✓";
-      if (s === "failed") return "✕";
-      if (s === "skipped") return "↷";
-      if (s === "running") return "●";
-      if (s === "stopping") return "■";
-      return "";
-    }
-
-    function makeRuntimeIcon(step, state) {
-      const iconText = runtimeIconText(step, state);
-      if (!iconText) {
-        return null;
-      }
-
-      const icon = document.createElement("div");
-      icon.className = "runtime-icon";
-      icon.textContent = iconText;
-      return icon;
-    }
-
-    function interactionIsLocked() {
-      const runtime = getRuntime();
-      return !!runtime.interactionDisabled || !!runtime.isRunning;
-    }
-
-    function applyInteractionLock() {
-      document.body.classList.toggle("interaction-disabled", interactionIsLocked());
-    }
-
     function render() {
-      applyInteractionLock();
-
       const note = document.getElementById("note");
       const track = document.getElementById("track");
       const hint = document.getElementById("hint");
@@ -391,33 +253,45 @@
 
       model.steps.forEach(function(step, idx) {
         const card = document.createElement("div");
-        const runtimeState = getStepRuntimeState(step);
-        card.className = ["step", runtimeClass(runtimeState), (step.id === model.selectedNodeID) ? "selected" : ""].filter(Boolean).join(" ");
+        card.className = "step" + ((step.id === model.selectedNodeID) ? " selected" : "");
 
-        const titleText = step.funcName || "";
-        const tagText = step.stepTag || "";
-        const fullText = `${titleText} | ${tagText} | #${step.orderIndex || ""}`;
+        const runIndex = getRunIndex(step, idx);
+        const titleText = firstNonEmpty(step.funcName, step.functionName, "Analysis step");
+        const tagText = firstNonEmpty(step.stepTag, step.stepName, "");
+        const runtimeIcon = firstNonEmpty(step.runtimeIcon, "");
+        const runtimeState = firstNonEmpty(step.runtimeState, "");
+        const scheduleIndex = firstNonEmpty(step.scheduleIndex, "");
+        const topoIndex = firstNonEmpty(step.topoIndex, "");
+        const inputSummary = firstNonEmpty(step.inputSummary, "");
+        const outputSummary = firstNonEmpty(step.outputSummary, "");
 
-        card.title = fullText;
+        const titleWithIcon = `${esc(titleText)}${runtimeIcon ? `<span class="runtimeIcon">${esc(runtimeIcon)}</span>` : ""}`;
+        const tooltipParts = [
+          `Run order: ${runIndex}`,
+          `Step: ${tagText}`,
+          `Function: ${titleText}`
+        ];
+
+        if (scheduleIndex !== "") { tooltipParts.push(`Schedule index: ${scheduleIndex}`); }
+        if (topoIndex !== "") { tooltipParts.push(`Topological order: ${topoIndex}`); }
+        if (runtimeState !== "") { tooltipParts.push(`Runtime: ${runtimeState}`); }
+        if (inputSummary !== "") { tooltipParts.push(`Inputs: ${inputSummary}`); }
+        if (outputSummary !== "") { tooltipParts.push(`Outputs: ${outputSummary}`); }
+
+        card.title = tooltipParts.join("\n");
         card.innerHTML = `
           <div class="stepHeader">
-            <div class="stepTitle" title="${esc(titleText)}">${esc(titleText)}</div>
-            <div class="orderBadge">#${step.orderIndex || ""}</div>
+            <div class="stepTitle" title="${esc(titleText)}">${titleWithIcon}</div>
+            <div class="orderBadge">#${esc(runIndex)}</div>
           </div>
           <div class="stepTag" title="${esc(tagText)}">${esc(tagText)}</div>`;
 
-        const runtimeIcon = makeRuntimeIcon(step, runtimeState);
-        if (runtimeIcon) {
-          card.appendChild(runtimeIcon);
-        }
-
         card.addEventListener("click", function() {
-          if (interactionIsLocked()) { return; }
           if (htmlComponent) {
             htmlComponent.sendEventToMATLAB("stepSelected", {
               nodeID: step.id,
-              stepTag: step.stepTag || "",
-              funcName: step.funcName || ""
+              stepTag: step.stepTag || step.stepName || "",
+              funcName: step.funcName || step.functionName || ""
             });
           }
         });
@@ -437,7 +311,7 @@
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
+        .replace(/\"/g, "&quot;")
         .replace(/'/g, "&#39;");
     }
   </script>

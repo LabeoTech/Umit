@@ -2029,13 +2029,28 @@ classdef PipelineManager < handle
         end
 
         function orderReport = getNodeOrders(obj, varargin)
-            %GETNODEORDERS Return topological and runtime execution order metadata.
+            %GETNODEORDERS Return structural, scheduler, and executable order metadata.
             %
             %   orderReport = getNodeOrders(obj)
             %
             %   The returned struct contains raw node-ID vectors and a nodeTable with
-            %   one row per existing node. This is the backend-owned data API used by
-            %   the GUI instead of recomputing graph order in the app.
+            %   one row per existing node. FileSource/folder nodes are virtual input
+            %   sources: they may appear in the backend schedule, but they are not
+            %   executable analysis steps and do not receive a runIndex.
+            %
+            %   Returned order vectors:
+            %       topoOrder      - structural DAG order.
+            %       scheduleOrder  - backend visit/scheduler order, including
+            %                        virtual FileSource nodes.
+            %       runOrder       - executable stream-node order only.
+            %
+            %   Returned nodeTable order columns:
+            %       topoIndex      - position in topoOrder.
+            %       scheduleIndex  - position in scheduleOrder.
+            %       runIndex       - user-facing executable order; NaN for
+            %                        virtual FileSource nodes.
+            %       isExecutable   - true for stream nodes only.
+            %       executionRole  - "analysis_step" or "virtual_source".
 
             p = inputParser;
             addParameter(p, 'RequiredNodeIDs', [], @(x)isnumeric(x)||isempty(x));
@@ -2045,7 +2060,8 @@ classdef PipelineManager < handle
             if isempty(obj.nodes)
                 orderReport = struct();
                 orderReport.topoOrder = [];
-                orderReport.execOrder = [];
+                orderReport.scheduleOrder = [];
+                orderReport.runOrder = [];
                 orderReport.nodeTable = table();
                 return
             end
@@ -2059,43 +2075,69 @@ classdef PipelineManager < handle
                 requiredNodeIDs = requiredNodeIDs(:)';
             end
 
-            execOrderLocal = obj.buildExecutionOrder(requiredNodeIDs);
+            scheduleOrderLocal = obj.buildExecutionOrder(requiredNodeIDs);
+            runOrderLocal = zeros(1,0);
+
+            for iSched = 1:numel(scheduleOrderLocal)
+                nodeIDLocal = scheduleOrderLocal(iSched);
+                nodeIdxLocal = obj.getNodeIndexByID(nodeIDLocal);
+
+                if strcmpi(obj.nodes(nodeIdxLocal).kind, 'stream')
+                    runOrderLocal(end+1) = nodeIDLocal; %#ok<AGROW>
+                end
+            end
 
             topoIndexByID = containers.Map('KeyType','double','ValueType','double');
-            execIndexByID = containers.Map('KeyType','double','ValueType','double');
+            scheduleIndexByID = containers.Map('KeyType','double','ValueType','double');
+            runIndexByID = containers.Map('KeyType','double','ValueType','double');
 
             for iTopo = 1:numel(topoOrderLocal)
                 topoIndexByID(topoOrderLocal(iTopo)) = iTopo;
             end
-            for iExec = 1:numel(execOrderLocal)
-                execIndexByID(execOrderLocal(iExec)) = iExec;
+            for iSched = 1:numel(scheduleOrderLocal)
+                scheduleIndexByID(scheduleOrderLocal(iSched)) = iSched;
+            end
+            for iRun = 1:numel(runOrderLocal)
+                runIndexByID(runOrderLocal(iRun)) = iRun;
             end
 
-            nodeID = zeros(numel(obj.nodes),1);
-            stepName = strings(numel(obj.nodes),1);
-            functionName = strings(numel(obj.nodes),1);
-            kind = strings(numel(obj.nodes),1);
-            topoIndex = nan(numel(obj.nodes),1);
-            execIndex = nan(numel(obj.nodes),1);
-            isRoot = false(numel(obj.nodes),1);
-            isLeaf = false(numel(obj.nodes),1);
+            nNodes = numel(obj.nodes);
+            nodeID = zeros(nNodes,1);
+            stepName = strings(nNodes,1);
+            functionName = strings(nNodes,1);
+            kind = strings(nNodes,1);
+            topoIndex = nan(nNodes,1);
+            scheduleIndex = nan(nNodes,1);
+            runIndex = nan(nNodes,1);
+            isExecutable = false(nNodes,1);
+            executionRole = strings(nNodes,1);
+            isRoot = false(nNodes,1);
+            isLeaf = false(nNodes,1);
 
-            for iNode = 1:numel(obj.nodes)
+            for iNode = 1:nNodes
                 nodeLocal = obj.nodes(iNode);
                 nodeID(iNode) = nodeLocal.id;
                 stepName(iNode) = string(nodeLocal.name);
-                if isfield(nodeLocal,'kind') && strcmpi(nodeLocal.kind, 'folder')
-                    functionName(iNode) = "FileSource";
-                else
-                    functionName(iNode) = string(obj.getCallableFuncName(nodeLocal));
-                end
                 kind(iNode) = string(nodeLocal.kind);
+
+                isExecutable(iNode) = strcmpi(char(kind(iNode)), 'stream');
+
+                if isExecutable(iNode)
+                    functionName(iNode) = string(obj.getCallableFuncName(nodeLocal));
+                    executionRole(iNode) = "analysis_step";
+                else
+                    functionName(iNode) = "FileSource";
+                    executionRole(iNode) = "virtual_source";
+                end
 
                 if isKey(topoIndexByID, nodeLocal.id)
                     topoIndex(iNode) = topoIndexByID(nodeLocal.id);
                 end
-                if isKey(execIndexByID, nodeLocal.id)
-                    execIndex(iNode) = execIndexByID(nodeLocal.id);
+                if isKey(scheduleIndexByID, nodeLocal.id)
+                    scheduleIndex(iNode) = scheduleIndexByID(nodeLocal.id);
+                end
+                if isKey(runIndexByID, nodeLocal.id)
+                    runIndex(iNode) = runIndexByID(nodeLocal.id);
                 end
 
                 if isempty(obj.connections)
@@ -2107,7 +2149,9 @@ classdef PipelineManager < handle
                 end
             end
 
-            nodeTable = table(nodeID, stepName, functionName, kind, topoIndex, execIndex, isRoot, isLeaf);
+            nodeTable = table(nodeID, stepName, functionName, kind, topoIndex, ...
+                scheduleIndex, runIndex, isExecutable, executionRole, isRoot, isLeaf);
+
             if ~isempty(nodeTable)
                 [~, ord] = sort(nodeTable.topoIndex, 'ascend');
                 nodeTable = nodeTable(ord,:);
@@ -2115,7 +2159,8 @@ classdef PipelineManager < handle
 
             orderReport = struct();
             orderReport.topoOrder = topoOrderLocal;
-            orderReport.execOrder = execOrderLocal;
+            orderReport.scheduleOrder = scheduleOrderLocal;
+            orderReport.runOrder = runOrderLocal;
             orderReport.nodeTable = nodeTable;
         end
 
@@ -3772,12 +3817,19 @@ classdef PipelineManager < handle
 
         %%%%%%--Pipeline Visualization  -----------------------------------
         function varargout = viewExecutionPlan(obj, varargin)
-            %VIEWEXECUTIONPLAN Print the structured execution plan tables.
+            %VIEWEXECUTIONPLAN Print a user-facing execution plan.
             %
             % Pipeline visualization is handled by the PipelineManager GUI. This
             % CLI method prints backend-owned tables from getExecutionPlan so callers
             % can inspect order and output-persistence metadata without parsing
             % presentation text.
+            %
+            % Display convention:
+            %   - Virtual input sources are FileSource/folder nodes. They are graph
+            %     roots and may appear in the scheduler visit order, but they do not
+            %     execute functions and do not load data into RAM by themselves.
+            %   - Executable analysis steps are stream nodes. Their runIndex is the
+            %     user-facing execution order.
 
             p = inputParser;
             addParameter(p, 'LeafOutputPolicy', obj.leafOutputPolicy, @(x)ischar(x)||isstring(x));
@@ -3790,21 +3842,148 @@ classdef PipelineManager < handle
 
             fprintf('\n================ PIPELINE EXECUTION PLAN ================\n');
             fprintf('Output policy:   %s\n', char(plan.leafOutputPolicy));
-            fprintf('TempSessionTag:  %s\n\n', char(plan.tempSessionTag));
+            fprintf('TempSessionTag:  %s\n', char(plan.tempSessionTag));
+            if isfield(plan, 'saveFolder') && strlength(string(plan.saveFolder)) > 0
+                fprintf('SaveFolder:      %s\n', char(string(plan.saveFolder)));
+            end
+            fprintf('\n');
 
-            fprintf('--- Step order ---\n');
-            disp(plan.nodeTable)
+            nodeTable = table();
+            if isfield(plan, 'nodeTable') && istable(plan.nodeTable)
+                nodeTable = plan.nodeTable;
+            end
+
+            edgeTable = table();
+            if isfield(plan, 'edgeTable') && istable(plan.edgeTable)
+                edgeTable = plan.edgeTable;
+            end
+
+            % -------------------------------------------------------------
+            % Virtual sources
+            % -------------------------------------------------------------
+            sourceTable = buildVirtualSourceDisplayTable(nodeTable, edgeTable);
+            fprintf('--- Virtual input sources (not executable steps) ---\n');
+            if isempty(sourceTable)
+                fprintf('  <none>\n\n');
+            else
+                disp(sourceTable)
+            end
+
+            % -------------------------------------------------------------
+            % Executable steps
+            % -------------------------------------------------------------
+            runTable = buildRunDisplayTable(nodeTable);
+            fprintf('--- Executable analysis steps ---\n');
+            if isempty(runTable)
+                fprintf('  <none>\n\n');
+            else
+                disp(runTable)
+            end
 
             fprintf('--- Data flow ---\n');
-            disp(plan.edgeTable)
+            if isempty(edgeTable)
+                fprintf('  <none>\n\n');
+            else
+                disp(edgeTable)
+            end
 
             fprintf('--- Output persistence plan ---\n');
-            disp(plan.outputPlan)
+            if isfield(plan, 'outputPlan') && istable(plan.outputPlan) && ~isempty(plan.outputPlan)
+                disp(plan.outputPlan)
+            else
+                fprintf('  <none>\n\n');
+            end
 
             fprintf('=========================================================\n\n');
 
             if nargout > 0
                 varargout{1} = plan;
+            end
+
+            % =============================================================
+            % Local helpers
+            % =============================================================
+            function T = buildVirtualSourceDisplayTable(nodeTableLocal, edgeTableLocal)
+                T = table();
+
+                if ~istable(nodeTableLocal) || isempty(nodeTableLocal)
+                    return
+                end
+
+                if ismember('executionRole', nodeTableLocal.Properties.VariableNames)
+                    sourceRows = nodeTableLocal(strcmpi(string(nodeTableLocal.executionRole), "virtual_source"), :);
+                elseif ismember('isExecutable', nodeTableLocal.Properties.VariableNames)
+                    sourceRows = nodeTableLocal(~logical(nodeTableLocal.isExecutable), :);
+                else
+                    sourceRows = nodeTableLocal(strcmpi(string(nodeTableLocal.kind), "folder"), :);
+                end
+
+                if isempty(sourceRows)
+                    return
+                end
+
+                [~, ord] = sort(sourceRows.scheduleIndex, 'ascend', 'MissingPlacement', 'last');
+                sourceRows = sourceRows(ord, :);
+
+                sourceIndex = (1:height(sourceRows)).';
+                nodeID = sourceRows.nodeID;
+                sourceFile = sourceRows.stepName;
+                scheduleIndex = sourceRows.scheduleIndex;
+                feedsStep = strings(height(sourceRows), 1);
+                sourceType = strings(height(sourceRows), 1);
+
+                for iRow = 1:height(sourceRows)
+                    if istable(edgeTableLocal) && ~isempty(edgeTableLocal) && ...
+                            all(ismember({'sourceNodeID','targetStep'}, edgeTableLocal.Properties.VariableNames))
+
+                        eRows = edgeTableLocal(edgeTableLocal.sourceNodeID == sourceRows.nodeID(iRow), :);
+
+                        if ~isempty(eRows)
+                            feedsStep(iRow) = strjoin(unique(string(eRows.targetStep), 'stable'), ', ');
+
+                            if ismember('sourceTypes', eRows.Properties.VariableNames)
+                                typeVals = strings(0,1);
+                                for iEdge = 1:height(eRows)
+                                    try
+                                        typeVals = [typeVals; string(eRows.sourceTypes{iEdge}(:))]; %#ok<AGROW>
+                                    catch
+                                    end
+                                end
+                                typeVals = unique(typeVals(strlength(strtrim(typeVals)) > 0), 'stable');
+                                if ~isempty(typeVals)
+                                    sourceType(iRow) = strjoin(typeVals, ' / ');
+                                end
+                            end
+                        end
+                    end
+                end
+
+                T = table(sourceIndex, nodeID, sourceFile, scheduleIndex, feedsStep, sourceType);
+            end
+
+            function T = buildRunDisplayTable(nodeTableLocal)
+                T = table();
+
+                if ~istable(nodeTableLocal) || isempty(nodeTableLocal)
+                    return
+                end
+
+                if ismember('isExecutable', nodeTableLocal.Properties.VariableNames)
+                    runRows = nodeTableLocal(logical(nodeTableLocal.isExecutable), :);
+                else
+                    runRows = nodeTableLocal(strcmpi(string(nodeTableLocal.kind), "stream"), :);
+                end
+
+                if isempty(runRows)
+                    return
+                end
+
+                [~, ord] = sort(runRows.runIndex, 'ascend', 'MissingPlacement', 'last');
+                runRows = runRows(ord, :);
+
+                keepVars = {'runIndex','nodeID','stepName','functionName','scheduleIndex','topoIndex','isLeaf'};
+                keepVars = keepVars(ismember(keepVars, runRows.Properties.VariableNames));
+                T = runRows(:, keepVars);
             end
         end
 
