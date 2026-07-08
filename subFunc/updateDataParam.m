@@ -4,6 +4,7 @@ function DataParams = updateDataParam(folderPath, fieldPath, fieldValue, varargi
 %   DataParams = updateDataParam(folderPath, fieldPath, fieldValue)
 %   DataParams = updateDataParam(folderPath, 'view.origin_xy_px', [120 85])
 %   DataParams = updateDataParam(folderPath, 'mask.logical', BW)
+%   DataParams = updateDataParam(folderPath, 'folders.RawFolder', rawFolder)
 %
 %   Loads DataParams.mat from the specified folder, updates the requested
 %   nested field, validates the result, and saves the updated structure
@@ -22,9 +23,11 @@ function DataParams = updateDataParam(folderPath, fieldPath, fieldValue, varargi
 %       DataParams - Updated DataParams structure.
 %
 %   Notes:
-%       - Intermediate fields must already exist.
+%       - Intermediate fields must already exist after schema normalization.
 %       - This function enforces folder-centric updates for the unique
 %         DataParams.mat file in the folder.
+%       - Updating folders.RawFolder also refreshes RawFolderStatus and
+%         RawFolderSetOn if those fields are present.
 
 p = inputParser;
 p.FunctionName = 'updateDataParam';
@@ -65,6 +68,17 @@ if strcmp(fieldPath, 'registration.tform')
     end
 end
 
+if strcmp(fieldPath, 'folders.RawFolder')
+    DataParams.folders.RawFolder = char(string(DataParams.folders.RawFolder));
+    DataParams.folders.RawFolderStatus = iInferRawFolderStatus(DataParams.folders.RawFolder);
+    DataParams.folders.RawFolderSetOn = datetime('now');
+
+    if ~isfield(DataParams.folders, 'RawFolderSetBy') || ...
+            isempty(DataParams.folders.RawFolderSetBy)
+        DataParams.folders.RawFolderSetBy = 'updateDataParam';
+    end
+end
+
 DataParams.lastModified = datetime('now');
 
 if R.validateAfterSet
@@ -96,4 +110,19 @@ if ~isstruct(S.(thisField)) || ~isscalar(S.(thisField))
 end
 
 S.(thisField) = iSetNestedField(S.(thisField), parts(2:end), value);
+end
+
+function statusText = iInferRawFolderStatus(rawFolder)
+%IINFERRAWFOLDERSTATUS Infer status from a RawFolder value.
+
+rawFolder = char(string(rawFolder));
+
+if isempty(rawFolder) || strcmpi(rawFolder, 'Missing')
+    statusText = 'missing';
+elseif isfolder(rawFolder)
+    statusText = 'valid';
+else
+    statusText = 'invalid';
+end
+
 end

@@ -3,7 +3,9 @@ function DataParams = loadDataParams(folderPath)
 %
 %   DataParams = loadDataParams(folderPath)
 %
-%   Loads the folder-global DataParams structure from DataParams.mat.
+%   Loads the folder-global DataParams structure from DataParams.mat,
+%   normalizes missing schema fields for backward compatibility, and
+%   validates the result.
 %
 %   Input:
 %       folderPath - Path to the save folder.
@@ -41,6 +43,70 @@ if ~isfield(S, 'DataParams')
         'File "%s" does not contain variable "DataParams".', filePath);
 end
 
-DataParams = S.DataParams;
+DataParams = iNormalizeDataParams(S.DataParams);
 validateDataParams(DataParams);
+end
+
+function DataParams = iNormalizeDataParams(DataParams)
+%INORMALIZEDATAPARAMS Add backward-compatible fields before validation.
+
+if ~isstruct(DataParams) || ~isscalar(DataParams)
+    return
+end
+
+if ~isfield(DataParams, 'folders') || ~isstruct(DataParams.folders) || ...
+        ~isscalar(DataParams.folders)
+    DataParams.folders = struct();
+end
+
+if ~isfield(DataParams.folders, 'RawFolder') || isempty(DataParams.folders.RawFolder)
+    legacyRawFolder = '';
+
+    if isfield(DataParams, 'RawFolder') && ~isempty(DataParams.RawFolder)
+        legacyRawFolder = DataParams.RawFolder;
+    elseif isfield(DataParams, 'rawFolder') && ~isempty(DataParams.rawFolder)
+        legacyRawFolder = DataParams.rawFolder;
+    end
+
+    if isempty(legacyRawFolder)
+        DataParams.folders.RawFolder = 'Missing';
+    else
+        DataParams.folders.RawFolder = char(string(legacyRawFolder));
+    end
+end
+
+DataParams.folders.RawFolder = char(string(DataParams.folders.RawFolder));
+
+if ~isfield(DataParams.folders, 'RawFolderStatus') || ...
+        isempty(DataParams.folders.RawFolderStatus)
+    DataParams.folders.RawFolderStatus = iInferRawFolderStatus(DataParams.folders.RawFolder);
+else
+    DataParams.folders.RawFolderStatus = char(string(DataParams.folders.RawFolderStatus));
+end
+
+if ~isfield(DataParams.folders, 'RawFolderSetOn')
+    DataParams.folders.RawFolderSetOn = [];
+end
+
+if ~isfield(DataParams.folders, 'RawFolderSetBy') || isempty(DataParams.folders.RawFolderSetBy)
+    DataParams.folders.RawFolderSetBy = '';
+else
+    DataParams.folders.RawFolderSetBy = char(string(DataParams.folders.RawFolderSetBy));
+end
+
+end
+
+function statusText = iInferRawFolderStatus(rawFolder)
+%IINFERRAWFOLDERSTATUS Infer status from a RawFolder value.
+
+rawFolder = char(string(rawFolder));
+
+if isempty(rawFolder) || strcmpi(rawFolder, 'Missing')
+    statusText = 'missing';
+elseif isfolder(rawFolder)
+    statusText = 'valid';
+else
+    statusText = 'invalid';
+end
+
 end

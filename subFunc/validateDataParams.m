@@ -14,6 +14,7 @@ function validateDataParams(DataParams)
 %       notes
 %       view
 %       mask
+%       folders
 %       registration
 %       custom
 %
@@ -35,6 +36,7 @@ reqTopFields = { ...
     'notes', ...
     'view', ...
     'mask', ...
+    'folders', ...
     'registration', ...
     'custom'};
 
@@ -135,6 +137,75 @@ if ~isempty(DataParams.mask.logical)
                 'DataParams.mask.logical size must match DataParams.view.imageSizeYX.');
         end
     end
+end
+
+% =========================================================================
+% Folders
+% =========================================================================
+if ~isstruct(DataParams.folders) || ~isscalar(DataParams.folders)
+    error('validateDataParams:InvalidFolders', ...
+        'DataParams.folders must be a scalar struct.');
+end
+
+reqFolderFields = { ...
+    'RawFolder', ...
+    'RawFolderStatus', ...
+    'RawFolderSetOn', ...
+    'RawFolderSetBy'};
+
+for k = 1:numel(reqFolderFields)
+    if ~isfield(DataParams.folders, reqFolderFields{k})
+        error('validateDataParams:MissingFoldersField', ...
+            'Missing field: DataParams.folders.%s', reqFolderFields{k});
+    end
+end
+
+if ~(ischar(DataParams.folders.RawFolder) || ...
+        (isstring(DataParams.folders.RawFolder) && isscalar(DataParams.folders.RawFolder)))
+    error('validateDataParams:InvalidRawFolder', ...
+        'DataParams.folders.RawFolder must be a char vector or string scalar.');
+end
+
+rawFolderText = char(string(DataParams.folders.RawFolder));
+if isempty(rawFolderText)
+    error('validateDataParams:InvalidRawFolder', ...
+        'DataParams.folders.RawFolder cannot be empty. Use ''Missing'' instead.');
+end
+
+if ~(ischar(DataParams.folders.RawFolderStatus) || ...
+        (isstring(DataParams.folders.RawFolderStatus) && isscalar(DataParams.folders.RawFolderStatus)))
+    error('validateDataParams:InvalidRawFolderStatus', ...
+        'DataParams.folders.RawFolderStatus must be a char vector or string scalar.');
+end
+
+statusText = lower(strtrim(char(string(DataParams.folders.RawFolderStatus))));
+validStatus = {'valid', 'missing', 'invalid'};
+if ~ismember(statusText, validStatus)
+    error('validateDataParams:InvalidRawFolderStatus', ...
+        'DataParams.folders.RawFolderStatus must be ''valid'', ''missing'', or ''invalid''.');
+end
+
+if strcmpi(rawFolderText, 'Missing') && ~strcmp(statusText, 'missing')
+    error('validateDataParams:RawFolderStatusMismatch', ...
+        'DataParams.folders.RawFolderStatus must be ''missing'' when RawFolder is ''Missing''.');
+end
+
+if strcmp(statusText, 'missing') && ~strcmpi(rawFolderText, 'Missing')
+    error('validateDataParams:RawFolderStatusMismatch', ...
+        'DataParams.folders.RawFolder must be ''Missing'' when RawFolderStatus is ''missing''.');
+end
+
+if ~(isempty(DataParams.folders.RawFolderSetOn) || ...
+        (isdatetime(DataParams.folders.RawFolderSetOn) && isscalar(DataParams.folders.RawFolderSetOn)))
+    error('validateDataParams:InvalidRawFolderSetOn', ...
+        'DataParams.folders.RawFolderSetOn must be empty or a scalar datetime.');
+end
+
+if ~(isempty(DataParams.folders.RawFolderSetBy) || ...
+        ischar(DataParams.folders.RawFolderSetBy) || ...
+        (isstring(DataParams.folders.RawFolderSetBy) && isscalar(DataParams.folders.RawFolderSetBy)))
+    error('validateDataParams:InvalidRawFolderSetBy', ...
+        'DataParams.folders.RawFolderSetBy must be empty, a char vector, or a string scalar.');
 end
 
 % =========================================================================

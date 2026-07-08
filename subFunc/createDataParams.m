@@ -19,8 +19,8 @@ function DataParams = createDataParams(folderPath, varargin)
 %   empty.
 %
 %   If DataParams.mat already exists:
-%       - By default, a warning is issued and the existing file is loaded
-%         and returned unchanged.
+%       - By default, a warning is issued and the existing file is loaded,
+%         schema-normalized in memory, validated, and returned.
 %       - If overwrite is true, the existing file is replaced.
 %
 %   Inputs:
@@ -37,8 +37,11 @@ function DataParams = createDataParams(folderPath, varargin)
 %
 %   Notes:
 %       - DataParams stores folder-global spatial/view parameters, masks,
-%         registration metadata, and user-defined custom metadata.
+%         registration metadata, folder context, and user-defined custom
+%         metadata.
 %       - Binary reconstruction metadata should remain in AcqInfos.mat.
+%       - RawFolder is SaveFolder-level context and is stored under
+%         DataParams.folders, not in AcqInfos.mat.
 
 p = inputParser;
 p.FunctionName = 'createDataParams';
@@ -68,6 +71,7 @@ if exist(dataParamsPath, 'file') && ~R.overwrite
         'DataParams.mat already exists in folder. Existing file was kept.');
 
     DataParams = iLoadExistingDataParams(dataParamsPath);
+    DataParams = iEnsureDataParamsFolderFields(DataParams);
     validateDataParams(DataParams);
     return
 end
@@ -132,7 +136,7 @@ end
 % -------------------------------------------------------------------------
 DataParams = struct();
 
-DataParams.schemaVersion = '1.0';
+DataParams.schemaVersion = '1.1';
 DataParams.createdOn = tNow;
 DataParams.lastModified = tNow;
 DataParams.notes = "";
@@ -163,6 +167,15 @@ if ~isempty(defaultMask)
     DataParams.mask.createdOn = tNow;
     DataParams.mask.source = 'createDataParams';
 end
+
+% -------------------------------------------------------------------------
+% Folder-context metadata
+% -------------------------------------------------------------------------
+DataParams.folders = struct();
+DataParams.folders.RawFolder = 'Missing';
+DataParams.folders.RawFolderStatus = 'missing';
+DataParams.folders.RawFolderSetOn = [];
+DataParams.folders.RawFolderSetBy = '';
 
 % -------------------------------------------------------------------------
 % Registration metadata
@@ -230,5 +243,63 @@ if ~isfield(S, 'DataParams')
 end
 
 DataParams = S.DataParams;
+
+end
+
+function DataParams = iEnsureDataParamsFolderFields(DataParams)
+%IENSUREDATAPARAMSFOLDERFIELDS Add folder-context fields for older files.
+
+if ~isfield(DataParams, 'folders') || ~isstruct(DataParams.folders) || ...
+        ~isscalar(DataParams.folders)
+    DataParams.folders = struct();
+end
+
+if ~isfield(DataParams.folders, 'RawFolder') || isempty(DataParams.folders.RawFolder)
+    legacyRawFolder = '';
+
+    if isfield(DataParams, 'RawFolder') && ~isempty(DataParams.RawFolder)
+        legacyRawFolder = DataParams.RawFolder;
+    elseif isfield(DataParams, 'rawFolder') && ~isempty(DataParams.rawFolder)
+        legacyRawFolder = DataParams.rawFolder;
+    end
+
+    if isempty(legacyRawFolder)
+        DataParams.folders.RawFolder = 'Missing';
+    else
+        DataParams.folders.RawFolder = char(string(legacyRawFolder));
+    end
+end
+
+if ~isfield(DataParams.folders, 'RawFolderStatus') || ...
+        isempty(DataParams.folders.RawFolderStatus)
+    DataParams.folders.RawFolderStatus = iInferRawFolderStatus(DataParams.folders.RawFolder);
+end
+
+if ~isfield(DataParams.folders, 'RawFolderSetOn')
+    DataParams.folders.RawFolderSetOn = [];
+end
+
+if ~isfield(DataParams.folders, 'RawFolderSetBy') || isempty(DataParams.folders.RawFolderSetBy)
+    DataParams.folders.RawFolderSetBy = '';
+end
+
+DataParams.folders.RawFolder = char(string(DataParams.folders.RawFolder));
+DataParams.folders.RawFolderStatus = char(string(DataParams.folders.RawFolderStatus));
+DataParams.folders.RawFolderSetBy = char(string(DataParams.folders.RawFolderSetBy));
+
+end
+
+function statusText = iInferRawFolderStatus(rawFolder)
+%IINFERRAWFOLDERSTATUS Infer status from a RawFolder value.
+
+rawFolder = char(string(rawFolder));
+
+if isempty(rawFolder) || strcmpi(rawFolder, 'Missing')
+    statusText = 'missing';
+elseif isfolder(rawFolder)
+    statusText = 'valid';
+else
+    statusText = 'invalid';
+end
 
 end
