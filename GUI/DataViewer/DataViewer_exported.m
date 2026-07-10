@@ -2,7 +2,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
 
     % Properties that correspond to app components
     properties (Access = public)
-        DataViewerUIFigure        matlab.ui.Figure
+        UIFigure                  matlab.ui.Figure
         FileMenu                  matlab.ui.container.Menu
         OpenMenu                  matlab.ui.container.Menu
         PreviewRawMenu            matlab.ui.container.Menu
@@ -118,6 +118,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
         CurrentEntry char = ''
         DataRawFolder char = ''
         DataRawFolderSaveFolder char = ''
+        RawFolderInvalidWarningSaveFolder char = ''
 
         % =====================================================================
         % PipelineManagerTool integration
@@ -266,7 +267,10 @@ classdef DataViewer_exported < matlab.apps.AppBase
         % Logical mask button context menu
         % =====================================================================
         LogicalMaskButtonContextMenu matlab.ui.container.ContextMenu
+        CreateManualLogicalMaskMenu matlab.ui.container.Menu
+        CreateAutomaticLogicalMaskMenu matlab.ui.container.Menu
         ResetLogicalMaskMenu matlab.ui.container.Menu
+
         % =====================================================================
         % Image reference button context menu
         % =====================================================================
@@ -427,7 +431,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             %   attached to the image axis when the active backend exposes a
             %   partial temporal cache.
 
-            app.ImageContextMenu = uicontextmenu(app.DataViewerUIFigure);
+            app.ImageContextMenu = uicontextmenu(app.UIFigure);
 
             app.UpdateCacheMenu = uimenu(app.ImageContextMenu);
             app.UpdateCacheMenu.Text = 'Update cache around crosshair';
@@ -662,7 +666,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             end
 
             % Focus back on the app.
-            figure(app.DataViewerUIFigure);
+            figure(app.UIFigure);
         end
 
         function bLoaded = loadDataSource(app, filePath)
@@ -765,6 +769,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             app.DataParams = struct();
 
             if isempty(app.CurrentFile)
+                app.ensureDataParamsFolderFields();
                 app.updateImageStatusLabel();
                 return
             end
@@ -776,30 +781,23 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.setStatusMessage('DataParams.mat not found. Using pixel coordinates and full logical mask.');
                 app.ensureDataParamsViewFields();
                 app.ensureDataParamsMaskFields();
+                app.ensureDataParamsFolderFields();
                 app.updateImageStatusLabel();
                 return
             end
 
             try
-                S = load(dataParamsPath, 'DataParams');
-
-                if ~isfield(S, 'DataParams')
-                    app.setStatusMessage('DataParams.mat does not contain DataParams. Using pixel coordinates and full logical mask.');
-                    app.ensureDataParamsViewFields();
-                    app.ensureDataParamsMaskFields();
-                    app.updateImageStatusLabel();
-                    return
-                end
-
-                validateDataParams(S.DataParams);
-                app.DataParams = S.DataParams;
+                % loadDataParams normalizes older DataParams schemas before validation.
+                app.DataParams = loadDataParams(folderPath);
                 app.ensureDataParamsViewFields();
                 app.ensureDataParamsMaskFields();
+                app.ensureDataParamsFolderFields();
 
             catch ME
                 app.DataParams = struct();
                 app.ensureDataParamsViewFields();
                 app.ensureDataParamsMaskFields();
+                app.ensureDataParamsFolderFields();
 
                 warnStatus = warning();
                 warning('off','backtrace');
@@ -1152,7 +1150,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.bWarnedMissingUMTBaseline = true;
 
                 try
-                    uialert(app.DataViewerUIFigure, ...
+                    uialert(app.UIFigure, ...
                         ['baselinePeriod was not found in the UMT metadata. ' ...
                         'Time will be shown from frame 1 instead of event-aligned.'], ...
                         'Missing baselinePeriod', ...
@@ -1422,7 +1420,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                     app.setStatusMessage('All events are ignored. Click Restore to show events again.');
 
                     try
-                        uialert(app.DataViewerUIFigure, ...
+                        uialert(app.UIFigure, ...
                             ['All events are currently ignored, so the viewer was switched ' ...
                             'back to normal mode. Click Restore in the Events panel to ' ...
                             'show the events again.'], ...
@@ -1480,6 +1478,11 @@ classdef DataViewer_exported < matlab.apps.AppBase
             app.refreshEventPatches();
             app.updateImageStatusLabel();
 
+            % Synchronize SaveFolder-level RawFolder context from DataParams.mat after
+            % the viewer is ready. This may show a one-time warning if the stored path
+            % is invalid, for example after an external-drive letter changed.
+            app.synchronizeRawFolderFromDataParams();
+
             % ROIs intentionally persist across opened data. If existing ROI masks match
             % the new image size, their traces and current-frame spatial statistics are
             % recomputed for the new source.
@@ -1490,6 +1493,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             app.updatePipelineTabState();
             app.updateGUIEnabledState();
         end
+
 
         function setAxes(app)
             %SETAXES Configure data-dependent axes properties after loading a dataset.
@@ -2985,7 +2989,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
 
             app.deleteGroupEditRuntimeGraphics();
 
-            previousKeyFcn = app.DataViewerUIFigure.WindowKeyPressFcn;
+            previousKeyFcn = app.UIFigure.WindowKeyPressFcn;
             state.previousKeyFcn = previousKeyFcn;
             state.previousMode = app.InteractionMode;
 
@@ -3038,7 +3042,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             app.GroupEditBoxHandle = hBox;
             % Attach the full dynamic group-edit menu: Delete/Cancel, separator, Boolean Ops.
             app.createGroupROIEditContextMenu();
-            app.DataViewerUIFigure.WindowKeyPressFcn = @(src, evt) app.onActiveGroupROIEditKeyPress(src, evt);
+            app.UIFigure.WindowKeyPressFcn = @(src, evt) app.onActiveGroupROIEditKeyPress(src, evt);
 
             app.createGroupEditPreviewGraphics();
             app.updateGroupEditPreview();
@@ -3634,8 +3638,8 @@ classdef DataViewer_exported < matlab.apps.AppBase
             end
 
             try
-                if isfield(app.GroupROIEditState, 'previousKeyFcn') && isvalid(app.DataViewerUIFigure)
-                    app.DataViewerUIFigure.WindowKeyPressFcn = app.GroupROIEditState.previousKeyFcn;
+                if isfield(app.GroupROIEditState, 'previousKeyFcn') && isvalid(app.UIFigure)
+                    app.UIFigure.WindowKeyPressFcn = app.GroupROIEditState.previousKeyFcn;
                 end
             catch
             end
@@ -4756,9 +4760,21 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.setComponentEnabled(app.DataHistoryButton, caps.hasData && isIdle);
             end
 
+            % Events Manager should remain reachable for manual event loading/editing.
+            % RawFolder-dependent controls should be handled inside DataViewer_EventsManager.
             if ~isempty(app.EventsManagerButton) && isvalid(app.EventsManagerButton)
                 app.setComponentEnabled(app.EventsManagerButton, ...
                     caps.hasData && isIdle && strcmpi(app.getSourceType(), 'dat'));
+            end
+
+            % Dual-camera coregistration genuinely requires valid raw-folder context
+            % and MultiCam metadata.
+            if ~isempty(app.OiSDUalCamCoregButton) && isvalid(app.OiSDUalCamCoregButton)
+                canOpenDualCamCoreg = false;
+                if isIdle
+                    [canOpenDualCamCoreg, ~, ~] = app.canOpenOiSDualCamCoreg();
+                end
+                app.setComponentEnabled(app.OiSDUalCamCoregButton, canOpenDualCamCoreg);
             end
 
             app.refreshLogicalMaskButtonContextMenuState();
@@ -5600,13 +5616,17 @@ classdef DataViewer_exported < matlab.apps.AppBase
             end
 
             app.ensureDataParamsViewFields();
+            app.ensureDataParamsMaskFields();
+            app.ensureDataParamsFolderFields();
 
             DataParams = app.DataParams;
             saveDataParams(folderPath, DataParams);
 
             % Reload saved version so app.DataParams includes lastModified update.
-            S = load(fullfile(folderPath, 'DataParams.mat'), 'DataParams');
-            app.DataParams = S.DataParams;
+            app.DataParams = loadDataParams(folderPath);
+            app.ensureDataParamsViewFields();
+            app.ensureDataParamsMaskFields();
+            app.ensureDataParamsFolderFields();
 
         end
 
@@ -5661,7 +5681,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             originXY(2) = min(max(round(originXY(2)), 1), Ny);
 
             previousMode = app.InteractionMode;
-            previousKeyFcn = app.DataViewerUIFigure.WindowKeyPressFcn;
+            previousKeyFcn = app.UIFigure.WindowKeyPressFcn;
 
             hPoint = [];
             movingListener = [];
@@ -5675,7 +5695,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.setStatusMessage('Move origin point. Double-click or press Enter to confirm; press Escape to cancel.');
 
                 drawnow limitrate
-                figure(app.DataViewerUIFigure);
+                figure(app.UIFigure);
 
                 hold(app.ImageAxes, 'on');
 
@@ -5689,9 +5709,9 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 movedListener = addlistener(hPoint, 'ROIMoved', @onMovedPoint);
                 clickedListener = addlistener(hPoint, 'ROIClicked', @onClickedPoint);
 
-                app.DataViewerUIFigure.WindowKeyPressFcn = @onKeyPress;
+                app.UIFigure.WindowKeyPressFcn = @onKeyPress;
 
-                while ~bDone && isvalid(app.DataViewerUIFigure) && ~isempty(hPoint) && isvalid(hPoint)
+                while ~bDone && isvalid(app.UIFigure) && ~isempty(hPoint) && isvalid(hPoint)
                     drawnow
                     pause(0.02)
                 end
@@ -5786,8 +5806,8 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 end
 
                 try
-                    if isvalid(app.DataViewerUIFigure)
-                        app.DataViewerUIFigure.WindowKeyPressFcn = previousKeyFcn;
+                    if isvalid(app.UIFigure)
+                        app.UIFigure.WindowKeyPressFcn = previousKeyFcn;
 
                     end
                 catch
@@ -5828,17 +5848,18 @@ classdef DataViewer_exported < matlab.apps.AppBase
             if ~isfile(dataParamsPath)
                 DataParams = createDataParams(folderPath);
             else
-                S = load(dataParamsPath, 'DataParams');
-
-                if ~isfield(S, 'DataParams')
-                    error('DataViewer:MissingDataParamsVariable', ...
-                        'DataParams.mat does not contain variable "DataParams".');
-                end
-
-                DataParams = S.DataParams;
+                DataParams = loadDataParams(folderPath);
             end
 
+            app.DataParams = DataParams;
+            app.ensureDataParamsViewFields();
+            app.ensureDataParamsMaskFields();
+            app.ensureDataParamsFolderFields();
+            DataParams = app.DataParams;
+
         end
+
+
 
         % =========================================================================
         % ROI table setup and callbacks
@@ -6802,7 +6823,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             drawingArea = 'unlimited';
 
             previousMode = app.InteractionMode;
-            previousKeyFcn = app.DataViewerUIFigure.WindowKeyPressFcn;
+            previousKeyFcn = app.UIFigure.WindowKeyPressFcn;
 
 
             hROI = [];
@@ -6824,7 +6845,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
 
             try
                 app.setInteractionMode('drawingROI');
-                app.DataViewerUIFigure.WindowKeyPressFcn = @onKeyPress;
+                app.UIFigure.WindowKeyPressFcn = @onKeyPress;
 
                 app.setStatusMessage(sprintf( ...
                     ['Draw %s ROI. Double-click ROI or press Enter to confirm. ' ...
@@ -6881,12 +6902,12 @@ classdef DataViewer_exported < matlab.apps.AppBase
                     deletingListener = [];
                 end
 
-                while ~bDone && isvalid(app.DataViewerUIFigure) && ~isempty(hROI) && isvalid(hROI)
+                while ~bDone && isvalid(app.UIFigure) && ~isempty(hROI) && isvalid(hROI)
                     drawnow
                     pause(0.02)
                 end
 
-                if ~isvalid(app.DataViewerUIFigure)
+                if ~isvalid(app.UIFigure)
                     cleanupTemporaryROI();
                     return
                 end
@@ -7642,8 +7663,8 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 end
 
                 try
-                    if isvalid(app.DataViewerUIFigure)
-                        app.DataViewerUIFigure.WindowKeyPressFcn = previousKeyFcn;
+                    if isvalid(app.UIFigure)
+                        app.UIFigure.WindowKeyPressFcn = previousKeyFcn;
                     end
                 catch
                 end
@@ -7788,7 +7809,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             end
 
             previousMode = app.InteractionMode;
-            previousKeyFcn = app.DataViewerUIFigure.WindowKeyPressFcn;
+            previousKeyFcn = app.UIFigure.WindowKeyPressFcn;
 
             % Delete the passive polyshape/patch overlay. It will be recreated on
             % confirm or cancel.
@@ -7839,7 +7860,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             end
 
             app.ROIList(roiIdx).runtime.editListeners = listeners;
-            app.DataViewerUIFigure.WindowKeyPressFcn = @(src, evt) app.onActiveROIEditKeyPress(src, evt, roiID);
+            app.UIFigure.WindowKeyPressFcn = @(src, evt) app.onActiveROIEditKeyPress(src, evt, roiID);
 
             app.setInteractionMode('editingROI');
             app.refreshROITable();
@@ -8270,8 +8291,8 @@ classdef DataViewer_exported < matlab.apps.AppBase
             end
 
             try
-                if isfield(runtime, 'editPreviousKeyFcn') && isvalid(app.DataViewerUIFigure)
-                    app.DataViewerUIFigure.WindowKeyPressFcn = runtime.editPreviousKeyFcn;
+                if isfield(runtime, 'editPreviousKeyFcn') && isvalid(app.UIFigure)
+                    app.UIFigure.WindowKeyPressFcn = runtime.editPreviousKeyFcn;
                 end
             catch
             end
@@ -9569,7 +9590,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             bConfirmed = false;
 
             try
-                choice = uiconfirm(app.DataViewerUIFigure, ...
+                choice = uiconfirm(app.UIFigure, ...
                     promptText, ...
                     'Delete ROI', ...
                     'Options', {'Delete', 'Cancel'}, ...
@@ -9707,7 +9728,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             end
 
         end
-        
+
         function createDeleteROIButtonContextMenu(app)
             %CREATEDELETEROIBUTTONCONTEXTMENU Create Delete ROI button context menu.
             %
@@ -9729,7 +9750,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 return
             end
 
-            app.DeleteROIContextMenu = uicontextmenu(app.DataViewerUIFigure);
+            app.DeleteROIContextMenu = uicontextmenu(app.UIFigure);
 
             app.DeleteSelectedROIsMenu = uimenu(app.DeleteROIContextMenu);
             app.DeleteSelectedROIsMenu.Text = 'Delete selected ROI(s)';
@@ -10256,7 +10277,17 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 return
             end
 
-            if ~isempty(app.LogicalMaskButtonContextMenu) && isvalid(app.LogicalMaskButtonContextMenu)
+            bReuseMenu = ...
+                ~isempty(app.LogicalMaskButtonContextMenu) && ...
+                isvalid(app.LogicalMaskButtonContextMenu) && ...
+                ~isempty(app.CreateManualLogicalMaskMenu) && ...
+                isvalid(app.CreateManualLogicalMaskMenu) && ...
+                ~isempty(app.CreateAutomaticLogicalMaskMenu) && ...
+                isvalid(app.CreateAutomaticLogicalMaskMenu) && ...
+                ~isempty(app.ResetLogicalMaskMenu) && ...
+                isvalid(app.ResetLogicalMaskMenu);
+
+            if bReuseMenu
                 try
                     app.LogicalMaskButton.ContextMenu = app.LogicalMaskButtonContextMenu;
                 catch
@@ -10265,10 +10296,26 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 return
             end
 
-            app.LogicalMaskButtonContextMenu = uicontextmenu(app.DataViewerUIFigure);
+            try
+                if ~isempty(app.LogicalMaskButtonContextMenu) && isvalid(app.LogicalMaskButtonContextMenu)
+                    delete(app.LogicalMaskButtonContextMenu);
+                end
+            catch
+            end
+
+            app.LogicalMaskButtonContextMenu = uicontextmenu(app.UIFigure);
+
+            app.CreateManualLogicalMaskMenu = uimenu(app.LogicalMaskButtonContextMenu);
+            app.CreateManualLogicalMaskMenu.Text = 'Create Manual Mask';
+            app.CreateManualLogicalMaskMenu.MenuSelectedFcn = @(src, evt) app.startLogicalMaskDrawing();
+
+            app.CreateAutomaticLogicalMaskMenu = uimenu(app.LogicalMaskButtonContextMenu);
+            app.CreateAutomaticLogicalMaskMenu.Text = 'Create Automatic Mask';
+            app.CreateAutomaticLogicalMaskMenu.MenuSelectedFcn = @(src, evt) app.startAutomaticLogicalMaskDrawing();
 
             app.ResetLogicalMaskMenu = uimenu(app.LogicalMaskButtonContextMenu);
             app.ResetLogicalMaskMenu.Text = 'Clear Existing Mask';
+            app.ResetLogicalMaskMenu.Separator = 'on';
             app.ResetLogicalMaskMenu.MenuSelectedFcn = @(src, evt) app.resetLogicalMask();
 
             try
@@ -10281,16 +10328,32 @@ classdef DataViewer_exported < matlab.apps.AppBase
         end
 
         function refreshLogicalMaskButtonContextMenuState(app)
-            %REFRESHLOGICALMASKBUTTONCONTEXTMENUSTATE Enable Reset Mask menu item.
+            %REFRESHLOGICALMASKBUTTONCONTEXTMENUSTATE Enable Logical Mask menu items.
 
-            if isempty(app.ResetLogicalMaskMenu) || ~isvalid(app.ResetLogicalMaskMenu)
-                return
+            hasDataIdle = app.hasData() && strcmp(app.InteractionMode, 'idle');
+
+            if ~isempty(app.CreateManualLogicalMaskMenu) && isvalid(app.CreateManualLogicalMaskMenu)
+                if hasDataIdle
+                    app.CreateManualLogicalMaskMenu.Enable = 'on';
+                else
+                    app.CreateManualLogicalMaskMenu.Enable = 'off';
+                end
             end
 
-            if app.hasData() && app.hasUserLogicalMask()
-                app.ResetLogicalMaskMenu.Enable = 'on';
-            else
-                app.ResetLogicalMaskMenu.Enable = 'off';
+            if ~isempty(app.CreateAutomaticLogicalMaskMenu) && isvalid(app.CreateAutomaticLogicalMaskMenu)
+                if hasDataIdle
+                    app.CreateAutomaticLogicalMaskMenu.Enable = 'on';
+                else
+                    app.CreateAutomaticLogicalMaskMenu.Enable = 'off';
+                end
+            end
+
+            if ~isempty(app.ResetLogicalMaskMenu) && isvalid(app.ResetLogicalMaskMenu)
+                if hasDataIdle && app.hasUserLogicalMask()
+                    app.ResetLogicalMaskMenu.Enable = 'on';
+                else
+                    app.ResetLogicalMaskMenu.Enable = 'off';
+                end
             end
 
         end
@@ -10309,7 +10372,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             end
 
             try
-                choice = uiconfirm(app.DataViewerUIFigure, ...
+                choice = uiconfirm(app.UIFigure, ...
                     'Reset the logical mask to full image inclusion?', ...
                     'Reset logical mask', ...
                     'Options', {'Reset Mask', 'Cancel'}, ...
@@ -10334,6 +10397,102 @@ classdef DataViewer_exported < matlab.apps.AppBase
         function startLogicalMaskDrawing(app)
             %STARTLOGICALMASKDRAWING Draw one or more polygons to define logical mask.
 
+            app.startLogicalMaskDrawingFromPolygons( ...
+                {}, ...
+                'user logical mask', ...
+                'User-drawn inclusion mask from DataViewer.');
+
+        end
+
+        function startAutomaticLogicalMaskDrawing(app)
+            %STARTAUTOMATICLOGICALMASKDRAWING Initialize editable mask polygons automatically.
+
+            if ~app.hasData()
+                app.setStatusMessage('Load image data before creating a logical mask.');
+                return
+            end
+
+            if app.hasUserLogicalMask()
+                try
+                    choice = uiconfirm(app.UIFigure, ...
+                        ['An existing logical mask is already saved. Automatic mask creation ' ...
+                        'will replace it if you confirm the edited draft. Continue?'], ...
+                        'Existing logical mask', ...
+                        'Options', {'Continue', 'Cancel'}, ...
+                        'DefaultOption', 'Cancel', ...
+                        'CancelOption', 'Cancel', ...
+                        'Icon', 'warning');
+
+                    if ~strcmp(choice, 'Continue')
+                        app.setStatusMessage('Automatic logical mask creation cancelled.');
+                        return
+                    end
+                catch
+                    % Continue without modal confirmation when uiconfirm is unavailable.
+                end
+            end
+
+            try
+                app.setStatusMessage('Computing temporal average for automatic logical mask...');
+                drawnow limitrate
+
+                avgImg = app.computeDisplayedTemporalAverage();
+                autoMask = app.createAutomaticLogicalMaskFromAverage(avgImg);
+
+                if isempty(autoMask) || ~any(autoMask(:))
+                    app.alertAutomaticLogicalMaskFailed();
+                    return
+                end
+
+                maxRegions = 6;
+                polygonList = app.logicalMaskToDraftPolygons(autoMask, maxRegions);
+
+                if isempty(polygonList)
+                    app.alertAutomaticLogicalMaskFailed();
+                    return
+                end
+
+                app.startLogicalMaskDrawingFromPolygons( ...
+                    polygonList, ...
+                    'automatic logical mask', ...
+                    'Automatic threshold-based inclusion mask from DataViewer.');
+
+            catch ME
+                app.setStatusMessage(sprintf('Automatic logical mask creation failed: %s', ME.message));
+
+                try
+                    uialert(app.UIFigure, ...
+                        ['Automatic logical mask creation failed. Create the logical mask manually.' newline newline ME.message], ...
+                        'Automatic logical mask failed', ...
+                        'Icon', 'warning');
+                catch
+                end
+            end
+
+        end
+
+        function startLogicalMaskDrawingFromPolygons(app, initialPolygons, maskName, descriptionText)
+            %STARTLOGICALMASKDRAWINGFROMPOLYGONS Draw/refine logical-mask polygons.
+            %
+            %   initialPolygons is a cell array of [x y] vertex arrays. When empty, the
+            %   method starts the standard manual drawpolygon flow.
+
+            if nargin < 2 || isempty(initialPolygons)
+                initialPolygons = {};
+            end
+
+            if nargin < 3 || isempty(maskName)
+                maskName = 'user logical mask';
+            end
+
+            if nargin < 4 || isempty(descriptionText)
+                descriptionText = 'User-drawn inclusion mask from DataViewer.';
+            end
+
+            if ~iscell(initialPolygons)
+                initialPolygons = {initialPolygons};
+            end
+
             if ~app.hasData()
                 app.setStatusMessage('Load image data before creating a logical mask.');
                 return
@@ -10353,7 +10512,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             drawingArea = [0.5, 0.5, Nx, Ny];
 
             previousMode = app.InteractionMode;
-            app.LogicalMaskPreviousKeyFcn = app.DataViewerUIFigure.WindowKeyPressFcn;
+            app.LogicalMaskPreviousKeyFcn = app.UIFigure.WindowKeyPressFcn;
             app.LogicalMaskPreviousImageAxesContextMenu = app.ImageAxes.ContextMenu;
             app.LogicalMaskPreviousImageHandleContextMenu = app.ImageHandle.ContextMenu;
 
@@ -10364,24 +10523,34 @@ classdef DataViewer_exported < matlab.apps.AppBase
             app.createLogicalMaskDrawingContextMenu();
 
             % Bind this drawing session's nested callbacks to the context menu.
-            app.LogicalMaskAddPolygonMenu.MenuSelectedFcn = @(src, evt) addDraftPolygon();
+            app.LogicalMaskAddPolygonMenu.MenuSelectedFcn = @(src, evt) addDraftPolygon([]);
             app.LogicalMaskConfirmMenu.MenuSelectedFcn = @(src, evt) confirmFromContextMenu();
             app.LogicalMaskCancelMenu.MenuSelectedFcn = @(src, evt) cancelFromContextMenu();
 
             try
                 app.setInteractionMode('drawingLogicalMask');
-                app.DataViewerUIFigure.WindowKeyPressFcn = @onKeyPress;
+                app.UIFigure.WindowKeyPressFcn = @onKeyPress;
+
                 % Attach drawing context menu only when it belongs to the same figure as the
                 % graphics object. This avoids stale-menu parent mismatch after reset/reuse.
                 app.safeSetGraphicsContextMenu(app.ImageAxes, app.LogicalMaskContextMenu);
                 app.safeSetGraphicsContextMenu(app.ImageHandle, app.LogicalMaskContextMenu);
 
-                app.setStatusMessage(['Draw logical mask polygon. Right-click to add another polygon. ' ...
-                    'Double-click a polygon or press Enter to confirm. Press Escape to cancel.']);
+                if isempty(initialPolygons)
+                    app.setStatusMessage(['Draw logical mask polygon. Right-click to add another polygon. ' ...
+                        'Double-click a polygon or press Enter to confirm. Press Escape to cancel.']);
 
-                addDraftPolygon();
+                    addDraftPolygon([]);
+                else
+                    app.setStatusMessage(['Automatic logical mask draft created. Refine polygon(s), right-click to add another polygon, ' ...
+                        'double-click a polygon or press Enter to confirm. Press Escape to cancel.']);
 
-                while ~bDone && isvalid(app.DataViewerUIFigure)
+                    for iPoly = 1:numel(initialPolygons)
+                        addDraftPolygon(initialPolygons{iPoly});
+                    end
+                end
+
+                while ~bDone && isvalid(app.UIFigure)
                     drawnow
                     pause(0.02)
                 end
@@ -10404,19 +10573,36 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.setInteractionMode('idle');
             end
 
-            function addDraftPolygon()
-                if ~isvalid(app.DataViewerUIFigure)
+            function addDraftPolygon(positionXY)
+                if ~isvalid(app.UIFigure)
                     return
                 end
 
                 hold(app.ImageAxes, 'on');
 
-                hPoly = drawpolygon(app.ImageAxes, ...
-                    'Color', [1 1 0], ...
-                    'FaceAlpha', 0.12, ...
-                    'LineWidth', 1.5, ...
-                    'DrawingArea', drawingArea, ...
-                    'InteractionsAllowed', 'all');
+                if nargin < 1 || isempty(positionXY)
+                    hPoly = drawpolygon(app.ImageAxes, ...
+                        'Color', [1 1 0], ...
+                        'FaceAlpha', 0.12, ...
+                        'LineWidth', 1.5, ...
+                        'DrawingArea', drawingArea, ...
+                        'InteractionsAllowed', 'all');
+                else
+                    positionXY = double(positionXY);
+
+                    if size(positionXY, 2) ~= 2 || size(positionXY, 1) < 3 || ...
+                            any(~isfinite(positionXY(:)))
+                        return
+                    end
+
+                    hPoly = drawpolygon(app.ImageAxes, ...
+                        'Position', positionXY, ...
+                        'Color', [1 1 0], ...
+                        'FaceAlpha', 0.12, ...
+                        'LineWidth', 1.5, ...
+                        'DrawingArea', drawingArea, ...
+                        'InteractionsAllowed', 'all');
+                end
 
                 if isempty(hPoly) || ~isvalid(hPoly)
                     return
@@ -10499,7 +10685,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                     end
 
                     try
-                        choice = uiconfirm(app.DataViewerUIFigure, promptText, ...
+                        choice = uiconfirm(app.UIFigure, promptText, ...
                             'Logical mask clips ROIs', ...
                             'Options', {'Continue', 'Cancel'}, ...
                             'DefaultOption', 'Cancel', ...
@@ -10513,8 +10699,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                     end
                 end
 
-                app.saveLogicalMaskToDataParams(newMask, 'user logical mask', ...
-                    'User-drawn inclusion mask from DataViewer.');
+                app.saveLogicalMaskToDataParams(newMask, maskName, descriptionText);
                 app.refreshLogicalMaskOverlay();
                 [nUpdated, nDeleted] = app.clipExistingROIsToActiveLogicalMask(false);
 
@@ -10533,7 +10718,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
 
             function cleanupMaskDrawingRuntime()
                 try
-                    app.DataViewerUIFigure.WindowKeyPressFcn = app.LogicalMaskPreviousKeyFcn;
+                    app.UIFigure.WindowKeyPressFcn = app.LogicalMaskPreviousKeyFcn;
                 catch
                 end
                 app.restoreGraphicsContextMenu(app.ImageAxes, app.LogicalMaskPreviousImageAxesContextMenu);
@@ -10558,6 +10743,266 @@ classdef DataViewer_exported < matlab.apps.AppBase
 
         end
 
+        function avgImg = computeDisplayedTemporalAverage(app)
+            %COMPUTEDISPLAYEDTEMPORALAVERAGE Average the currently displayed frame stack.
+            %
+            %   This method uses getCurrentFrame so it respects the active viewer mode,
+            %   including event-mode display, selected condition/repetition, and UMT entry.
+
+            if ~app.hasData()
+                error('DataViewer:NoDataLoaded', ...
+                    'Load image data before computing an automatic logical mask.');
+            end
+
+            sz = app.getDataSize();
+            Ny = sz(1);
+            Nx = sz(2);
+            nFrames = max(1, round(sz(3)));
+
+            sumImg = zeros(Ny, Nx, 'double');
+            countImg = zeros(Ny, Nx, 'double');
+
+            originalFrame = app.CurrentFrame;
+            cleanupFrame = onCleanup(@() restoreOriginalFrame());
+
+            for iFrame = 1:nFrames
+                app.CurrentFrame = iFrame;
+                frame = double(app.getCurrentFrame());
+
+                if ~isequal(size(frame), [Ny Nx])
+                    frame = squeeze(frame);
+                end
+
+                if ~isequal(size(frame), [Ny Nx])
+                    error('DataViewer:InvalidDisplayedFrameSize', ...
+                        'Displayed frame size does not match the active image size.');
+                end
+
+                valid = isfinite(frame);
+                sumImg(valid) = sumImg(valid) + frame(valid);
+                countImg(valid) = countImg(valid) + 1;
+
+                if mod(iFrame, 50) == 0 || iFrame == nFrames
+                    app.setStatusMessage(sprintf( ...
+                        'Computing temporal average for automatic logical mask... %d/%d frames', ...
+                        iFrame, nFrames));
+                    drawnow limitrate
+                end
+            end
+
+            avgImg = nan(Ny, Nx);
+            validCount = countImg > 0;
+            avgImg(validCount) = sumImg(validCount) ./ countImg(validCount);
+
+            function restoreOriginalFrame()
+                try
+                    app.CurrentFrame = min(max(round(originalFrame), 1), nFrames);
+                    app.refreshImageFrame();
+                    title(app.ImageAxes, app.getImageTitle());
+                    app.refreshTimeBar();
+                    app.refreshFrameControls();
+                catch
+                end
+            end
+
+        end
+
+        function mask = createAutomaticLogicalMaskFromAverage(app, avgImg)
+            %CREATEAUTOMATICLOGICALMASKFROMAVERAGE Threshold and clean temporal average.
+            %
+            %   The initial threshold keeps the highest 10 percent of finite average
+            %   intensities. Morphology uses image-size-relative parameters.
+
+            mask = [];
+
+            if isempty(avgImg) || ~ismatrix(avgImg)
+                return
+            end
+
+            avgImg = double(avgImg);
+            finiteMask = isfinite(avgImg);
+
+            finiteValues = avgImg(finiteMask);
+            if isempty(finiteValues)
+                return
+            end
+
+            finiteValues = sort(finiteValues(:), 'ascend');
+            nFinite = numel(finiteValues);
+
+            if nFinite < 2 || finiteValues(1) == finiteValues(end)
+                return
+            end
+
+            topFraction = 0.10;
+            thresholdIdx = max(1, min(nFinite, ceil((1 - topFraction) * nFinite)));
+            thresholdValue = finiteValues(thresholdIdx);
+
+            mask = finiteMask & avgImg >= thresholdValue;
+
+            if ~any(mask(:))
+                mask = [];
+                return
+            end
+
+            [Ny, Nx] = size(mask);
+            imageArea = Ny * Nx;
+            minDim = max(1, min(Ny, Nx));
+
+            minRegionArea = max(1, round(0.001 * imageArea));
+            closeRadius = max(1, round(0.010 * minDim));
+            openRadius = max(1, round(0.003 * minDim));
+
+            try
+                closeSE = strel('disk', closeRadius, 0);
+            catch
+                closeSE = strel('disk', closeRadius);
+            end
+
+            try
+                openSE = strel('disk', openRadius, 0);
+            catch
+                openSE = strel('disk', openRadius);
+            end
+
+            % Merge nearby high-intensity fragments into broader regions.
+            mask = imclose(mask, closeSE);
+
+            % Remove small holes inside candidate regions.
+            mask = imfill(mask, 'holes');
+
+            % Remove small isolated regions without imposing an upper size limit.
+            mask = bwareaopen(mask, minRegionArea);
+
+            if ~any(mask(:))
+                mask = [];
+                return
+            end
+
+            % Light opening removes very thin accidental bridges/spurs. Fall back to
+            % the pre-open mask if this is too aggressive for the current image.
+            maskBeforeOpen = mask;
+            maskAfterOpen = imopen(mask, openSE);
+            maskAfterOpen = imfill(maskAfterOpen, 'holes');
+            maskAfterOpen = bwareaopen(maskAfterOpen, minRegionArea);
+
+            if any(maskAfterOpen(:))
+                mask = maskAfterOpen;
+            else
+                mask = maskBeforeOpen;
+            end
+
+            mask = logical(mask);
+
+        end
+
+        function polygonList = logicalMaskToDraftPolygons(app, mask, maxRegions)
+            %LOGICALMASKTODRAFTPOLYGONS Convert mask components to editable polygons.
+            %
+            %   Keeps up to maxRegions largest regions.
+
+            if nargin < 3 || isempty(maxRegions)
+                maxRegions = 6;
+            end
+
+            polygonList = {};
+
+            if isempty(mask) || ~islogical(mask) || ~any(mask(:))
+                return
+            end
+
+            maxRegions = max(1, round(maxRegions));
+
+            CC = bwconncomp(mask);
+            if CC.NumObjects == 0
+                return
+            end
+
+            regionAreas = cellfun(@numel, CC.PixelIdxList);
+            [~, order] = sort(regionAreas, 'descend');
+            order = order(1:min(maxRegions, numel(order)));
+
+            [Ny, Nx] = size(mask);
+
+
+            for iRegion = 1:numel(order)
+                compMask = false(Ny, Nx);
+                compMask(CC.PixelIdxList{order(iRegion)}) = true;
+
+                boundaries = bwboundaries(compMask, 'noholes');
+                if isempty(boundaries)
+                    continue
+                end
+
+                boundaryLengths = cellfun(@(b) size(b, 1), boundaries);
+                [~, iLongest] = max(boundaryLengths);
+
+                boundaryYX = boundaries{iLongest};
+
+                if size(boundaryYX, 1) < 3
+                    continue
+                end
+
+                verticesXY = [boundaryYX(:, 2), boundaryYX(:, 1)];
+                verticesXY = double(verticesXY);
+
+                if size(verticesXY, 1) > 2 && isequal(verticesXY(1, :), verticesXY(end, :))
+                    verticesXY(end, :) = [];
+                end
+
+                verticesXY(:, 1) = min(max(verticesXY(:, 1), 1), Nx);
+                verticesXY(:, 2) = min(max(verticesXY(:, 2), 1), Ny);
+
+                % Simplify only if available. This keeps the draft interactive on large
+                % masks while preserving the overall periphery.
+                % reducepoly uses a normalized tolerance. Keep it conservative so the
+                % automatic mask follows the detected boundary instead of collapsing into a
+                % coarse polygon.
+                maxDraftVertices = 1200;
+
+                if size(verticesXY, 1) > maxDraftVertices
+                    simplifyTol = max(0.001, max(0.00005, 1 / (4 * size(verticesXY, 1))));
+
+                    try
+                        verticesReduced = reducepoly(verticesXY, simplifyTol);
+
+                        % Accept simplification only if it remains a meaningful polygon.
+                        if size(verticesReduced, 1) >= 12
+                            verticesXY = verticesReduced;
+                        end
+                    catch
+                    end
+                end
+
+                verticesXY = app.cleanROIVertices(verticesXY);
+
+                if size(verticesXY, 1) < 3
+                    continue
+                end
+
+                polygonList{end+1} = verticesXY; %#ok<AGROW>
+            end
+
+        end
+
+        function alertAutomaticLogicalMaskFailed(app)
+            %ALERTAUTOMATICLOGICALMASKFAILED Tell user to create mask manually.
+
+            msg = ['Automatic thresholding did not identify a usable logical mask. ' ...
+                'Create the logical mask manually.'];
+
+            app.setStatusMessage(msg);
+
+            try
+                uialert(app.UIFigure, ...
+                    msg, ...
+                    'Automatic logical mask failed', ...
+                    'Icon', 'warning');
+            catch
+            end
+
+        end
+
         function createLogicalMaskDrawingContextMenu(app)
             %CREATELOGICALMASKDRAWINGCONTEXTMENU Create right-click menu while drawing mask.
             %
@@ -10574,7 +11019,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             end
 
             if isempty(parentFig) || ~isvalid(parentFig)
-                parentFig = app.DataViewerUIFigure;
+                parentFig = app.UIFigure;
             end
 
             bReuseMenu = ...
@@ -10712,7 +11157,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 end
 
                 try
-                    choice = uiconfirm(app.DataViewerUIFigure, promptText, ...
+                    choice = uiconfirm(app.UIFigure, promptText, ...
                         'Logical mask clips ROIs', ...
                         'Options', {'Continue', 'Cancel'}, ...
                         'DefaultOption', 'Cancel', ...
@@ -11516,7 +11961,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 'Operation cancelled.'];
 
             try
-                uialert(app.DataViewerUIFigure, msg, ...
+                uialert(app.UIFigure, msg, ...
                     'Hole-containing ROI not supported', ...
                     'Icon', 'warning');
             catch
@@ -11696,7 +12141,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 return
             end
 
-            previousKeyFcn = app.DataViewerUIFigure.WindowKeyPressFcn;
+            previousKeyFcn = app.UIFigure.WindowKeyPressFcn;
             state.previousKeyFcn = previousKeyFcn;
             state.previousMode = app.InteractionMode;
             state.editMode = 'singleConstrained';
@@ -11745,7 +12190,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             state.listeners = listeners;
             app.GroupROIEditState = state;
             app.GroupEditBoxHandle = hBox;
-            app.DataViewerUIFigure.WindowKeyPressFcn = @(src, evt) app.onActiveGroupROIEditKeyPress(src, evt);
+            app.UIFigure.WindowKeyPressFcn = @(src, evt) app.onActiveGroupROIEditKeyPress(src, evt);
 
             app.createGroupROIEditContextMenu();
             app.createGroupEditPreviewGraphics();
@@ -11778,7 +12223,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
 
             parentFig = ancestor(app.GroupEditBoxHandle, 'figure');
             if isempty(parentFig) || ~isvalid(parentFig)
-                parentFig = app.DataViewerUIFigure;
+                parentFig = app.UIFigure;
             end
 
             app.deleteGroupROIEditContextMenu();
@@ -11922,7 +12367,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             try
                 parentFig = ancestor(hROI, 'figure');
                 if isempty(parentFig) || ~isvalid(parentFig)
-                    parentFig = app.DataViewerUIFigure;
+                    parentFig = app.UIFigure;
                 end
 
                 ctx = uicontextmenu(parentFig);
@@ -12117,7 +12562,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 numel(app.ROIList), nIncoming);
 
             try
-                choice = uiconfirm(app.DataViewerUIFigure, promptText, ...
+                choice = uiconfirm(app.UIFigure, promptText, ...
                     'Load ROIs', ...
                     'Options', {'Replace current ROIs', 'Append to current ROIs', 'Cancel'}, ...
                     'DefaultOption', 'Append to current ROIs', ...
@@ -12642,7 +13087,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                     savedY, savedX, currentY, currentX, scaleFactor);
 
                 try
-                    choice = uiconfirm(app.DataViewerUIFigure, promptText, ...
+                    choice = uiconfirm(app.UIFigure, promptText, ...
                         'ROI image-size mismatch', ...
                         'Options', {'Load without scaling', 'Scale ROIs', 'Cancel'}, ...
                         'DefaultOption', 'Scale ROIs', ...
@@ -12682,7 +13127,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 savedY, savedX, currentY, currentX, scaleX, scaleY);
 
             try
-                choice = uiconfirm(app.DataViewerUIFigure, promptText, ...
+                choice = uiconfirm(app.UIFigure, promptText, ...
                     'ROI image-size mismatch', ...
                     'Options', {'Load without scaling', 'Cancel'}, ...
                     'DefaultOption', 'Load without scaling', ...
@@ -13292,7 +13737,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 '  - 2D positive-integer label matrix'];
 
             try
-                choice = uiconfirm(app.DataViewerUIFigure, promptText, ...
+                choice = uiconfirm(app.UIFigure, promptText, ...
                     'Import ROIs', ...
                     'Options', {'MAT-file', 'Base workspace', 'Cancel'}, ...
                     'DefaultOption', 'MAT-file', ...
@@ -13942,7 +14387,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                         scaleFactor);
 
                     try
-                        choice = uiconfirm(app.DataViewerUIFigure, promptText, ...
+                        choice = uiconfirm(app.UIFigure, promptText, ...
                             'Import ROI size mismatch', ...
                             'Options', {'Scale ROIs', 'Cancel'}, ...
                             'DefaultOption', 'Scale ROIs', ...
@@ -13970,7 +14415,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
 
                 otherwise
                     try
-                        uialert(app.DataViewerUIFigure, msg, ...
+                        uialert(app.UIFigure, msg, ...
                             'Import ROI size mismatch', ...
                             'Icon', 'warning');
                     catch
@@ -14982,7 +15427,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             if ~ok
                 app.setStatusMessage(msg);
                 try
-                    uialert(app.DataViewerUIFigure, msg, 'Threshold ROI creation failed', 'Icon', 'warning');
+                    uialert(app.UIFigure, msg, 'Threshold ROI creation failed', 'Icon', 'warning');
                 catch
                     warning('DataViewer:ThresholdROICreationFailed', '%s', msg);
                 end
@@ -16274,7 +16719,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             catch
             end
 
-            app.AtlasROIPlacementContextMenu = uicontextmenu(app.DataViewerUIFigure);
+            app.AtlasROIPlacementContextMenu = uicontextmenu(app.UIFigure);
 
             app.AtlasROIPlacementConfirmMenu = uimenu(app.AtlasROIPlacementContextMenu);
             app.AtlasROIPlacementConfirmMenu.Text = 'Create atlas ROIs';
@@ -16534,7 +16979,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             app.AtlasROIPlacementCancelMenu = matlab.ui.container.Menu.empty;
 
             try
-                app.DataViewerUIFigure.WindowKeyPressFcn = previousKeyFcn;
+                app.UIFigure.WindowKeyPressFcn = previousKeyFcn;
             catch
             end
 
@@ -16559,12 +17004,14 @@ classdef DataViewer_exported < matlab.apps.AppBase
             end
             rawFolder = uigetdir(initialPath, ['Select the raw folder containing the ' fileExt ' file(s)']);
             if ~rawFolder
+                rawFolder = [];
                 return
             end
 
             % SaveFolder
             saveFolder = uigetdir(rawFolder, 'Select the folder to save the .dat file(s)');
             if ~saveFolder
+                saveFolder = [];
                 rawFolder = [];
                 return
             end
@@ -16626,7 +17073,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             originalSizeXY = originalBoxPosition(3:4);
 
             previousMode = app.InteractionMode;
-            previousKeyFcn = app.DataViewerUIFigure.WindowKeyPressFcn;
+            previousKeyFcn = app.UIFigure.WindowKeyPressFcn;
 
             hBox = [];
             listeners = {};
@@ -16640,7 +17087,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.setStatusMessage(['Move/rotate the reference box. ' ...
                     'Double-click or press Enter to preview/save; press Escape to cancel.']);
 
-                figure(app.DataViewerUIFigure);
+                figure(app.UIFigure);
                 hold(app.ImageAxes, 'on');
 
                 hBox = drawrectangle(app.ImageAxes, ...
@@ -16669,9 +17116,9 @@ classdef DataViewer_exported < matlab.apps.AppBase
                     % Some MATLAB releases do not expose DeletingROI for all ROI objects.
                 end
 
-                app.DataViewerUIFigure.WindowKeyPressFcn = @(src, evt) onKeyPress(src, evt);
+                app.UIFigure.WindowKeyPressFcn = @(src, evt) onKeyPress(src, evt);
 
-                while ~bDone && isvalid(app.DataViewerUIFigure) && app.isUsableGraphicsHandle(hBox)
+                while ~bDone && isvalid(app.UIFigure) && app.isUsableGraphicsHandle(hBox)
                     drawnow
                     pause(0.02)
                 end
@@ -16999,8 +17446,8 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 end
 
                 try
-                    if isvalid(app.DataViewerUIFigure)
-                        app.DataViewerUIFigure.WindowKeyPressFcn = previousKeyFcn;
+                    if isvalid(app.UIFigure)
+                        app.UIFigure.WindowKeyPressFcn = previousKeyFcn;
                     end
                 catch
                 end
@@ -17158,7 +17605,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 'Do you want to overwrite it?'];
 
             try
-                selection = uiconfirm(app.DataViewerUIFigure, ...
+                selection = uiconfirm(app.UIFigure, ...
                     msg, ...
                     'Overwrite image reference?', ...
                     'Options', {'Overwrite', 'Cancel'}, ...
@@ -17204,7 +17651,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 return
             end
 
-            app.SetReferenceButtonContextMenu = uicontextmenu(app.DataViewerUIFigure);
+            app.SetReferenceButtonContextMenu = uicontextmenu(app.UIFigure);
 
             app.PreviewImageReferenceMenu = uimenu(app.SetReferenceButtonContextMenu);
             app.PreviewImageReferenceMenu.Text = 'Preview Existing Reference';
@@ -17309,7 +17756,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.setStatusMessage('No image reference found in DataParams.mat.');
 
                 try
-                    uialert(app.DataViewerUIFigure, ...
+                    uialert(app.UIFigure, ...
                         'No image reference was found in DataParams.mat.', ...
                         'No image reference', ...
                         'Icon', 'info');
@@ -17646,7 +18093,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             if ~isfile(dataHistoryPath)
                 app.setStatusMessage('dataHistory.mat not found for current data folder.');
 
-                uialert(app.DataViewerUIFigure, ...
+                uialert(app.UIFigure, ...
                     sprintf('dataHistory.mat was not found in:\n\n%s', folderPath), ...
                     'Data History Not Found', ...
                     'Icon', 'warning');
@@ -17658,7 +18105,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             if ~isfield(S, 'dataHistory') || ~isstruct(S.dataHistory) || isempty(S.dataHistory)
                 app.setStatusMessage('dataHistory.mat does not contain a valid dataHistory struct.');
 
-                uialert(app.DataViewerUIFigure, ...
+                uialert(app.UIFigure, ...
                     'dataHistory.mat does not contain a valid non-empty dataHistory struct.', ...
                     'Invalid Data History', ...
                     'Icon', 'warning');
@@ -17693,7 +18140,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             if isempty(matchIdx)
                 app.setStatusMessage('No dataHistory entry found for the current file.');
 
-                uialert(app.DataViewerUIFigure, ...
+                uialert(app.UIFigure, ...
                     sprintf('No dataHistory entry matched the currently opened file:\n\n%s', ...
                     app.CurrentFile), ...
                     'Data History Entry Not Found', ...
@@ -17706,7 +18153,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             if ~isfield(entry, 'info') || ~isstruct(entry.info) || isempty(entry.info)
                 app.setStatusMessage('Matched dataHistory entry has no valid info struct.');
 
-                uialert(app.DataViewerUIFigure, ...
+                uialert(app.UIFigure, ...
                     'The matched dataHistory entry does not contain a valid info struct.', ...
                     'Invalid Data History Entry', ...
                     'Icon', 'warning');
@@ -18070,17 +18517,15 @@ classdef DataViewer_exported < matlab.apps.AppBase
             rawFolder = app.resolveDataRawFolderForCurrentData(saveFolder);
             didResolve = true;
         end
-        
+
         function rawFolder = resolveDataRawFolderForCurrentData(app, saveFolder)
             %RESOLVEDATARAWFOLDERFORCURRENTDATA Return RawFolder for current data context.
             %
-            % DataViewer owns RawFolder as a shared data-context value. PipelineManagerTool
-            % and future EventsManager launches should receive this value read-only.
+            % DataViewer owns RawFolder as a shared SaveFolder-level data-context value.
+            % The persistent source of truth is DataParams.folders.RawFolder. Runtime
+            % app.DataRawFolder is only a cache bound to one SaveFolder.
             %
-            % No modal prompt is shown here. The user-facing edit point will be:
-            %   File > Set Raw Folder...
-            %
-            % Until the user sets a RawFolder, the safe value is "Missing".
+            % No modal prompt is shown here. Invalid stored paths resolve to "Missing".
 
             if nargin < 2 || isempty(saveFolder)
                 saveFolder = app.getCurrentSaveFolderForData();
@@ -18098,29 +18543,61 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 if ~isempty(app.DataRawFolder) && ...
                         strcmpi(char(string(app.DataRawFolderSaveFolder)), saveFolder)
 
-                    if strcmpi(char(string(app.DataRawFolder)), 'Missing')
+                    rawCandidate = char(string(app.DataRawFolder));
+
+                    if strcmpi(rawCandidate, 'Missing')
                         rawFolder = 'Missing';
                         return
                     end
 
-                    if isfolder(app.DataRawFolder)
-                        rawFolder = app.DataRawFolder;
+                    if isfolder(rawCandidate)
+                        rawFolder = app.normalizeFolderPath(rawCandidate);
                         return
                     end
                 end
             catch
             end
 
-            % Transitional fallback: if existing DataParams already stores a RawFolder,
-            % adopt it as the app-level data context.
+            % Preferred persistent source: DataParams.folders.RawFolder.
             try
-                if isfield(app.DataParams, 'RawFolder') && isfolder(app.DataParams.RawFolder)
-                    rawFolder = app.DataParams.RawFolder;
+                app.ensureDataParamsFolderFields();
+                [storedRawFolder, storedStatus] = app.getStoredRawFolderFromDataParams();
+
+                if strcmpi(storedRawFolder, 'Missing') || strcmpi(storedStatus, 'missing')
+                    rawFolder = 'Missing';
+                    app.DataRawFolder = 'Missing';
+                    app.DataRawFolderSaveFolder = saveFolder;
+                    return
+                end
+
+                if isfolder(storedRawFolder)
+                    rawFolder = app.normalizeFolderPath(storedRawFolder);
                     app.DataRawFolder = rawFolder;
                     app.DataRawFolderSaveFolder = saveFolder;
                     return
-                elseif isfield(app.DataParams, 'rawFolder') && isfolder(app.DataParams.rawFolder)
-                    rawFolder = app.DataParams.rawFolder;
+                end
+            catch
+            end
+
+            % Legacy fallback for older in-memory DataParams structs.
+            try
+                if isfield(app.DataParams, 'RawFolder') && ~isempty(app.DataParams.RawFolder)
+                    legacyRawFolder = char(string(app.DataParams.RawFolder));
+                elseif isfield(app.DataParams, 'rawFolder') && ~isempty(app.DataParams.rawFolder)
+                    legacyRawFolder = char(string(app.DataParams.rawFolder));
+                else
+                    legacyRawFolder = '';
+                end
+
+                if strcmpi(legacyRawFolder, 'Missing')
+                    rawFolder = 'Missing';
+                    app.DataRawFolder = 'Missing';
+                    app.DataRawFolderSaveFolder = saveFolder;
+                    return
+                end
+
+                if isfolder(legacyRawFolder)
+                    rawFolder = app.normalizeFolderPath(legacyRawFolder);
                     app.DataRawFolder = rawFolder;
                     app.DataRawFolderSaveFolder = saveFolder;
                     return
@@ -18129,6 +18606,660 @@ classdef DataViewer_exported < matlab.apps.AppBase
             end
 
             rawFolder = 'Missing';
+        end
+
+        function [tf, rawFolder, reasonText] = canOpenEventsManager(app)
+            %CANOPENEVENTSMANAGER True when Events Manager can be launched.
+
+            tf = false;
+            rawFolder = 'Missing';
+            reasonText = '';
+
+            if ~app.hasData()
+                reasonText = 'Load .dat data before opening Events Manager.';
+                return
+            end
+
+            if ~strcmpi(app.getSourceType(), 'dat')
+                reasonText = 'Events Manager is only available for .dat data.';
+                return
+            end
+
+            saveFolder = app.getCurrentSaveFolderForData();
+            if isempty(saveFolder)
+                reasonText = 'The current data file does not have a valid SaveFolder.';
+                return
+            end
+
+            [rawFolder, bRawFolderSet] = app.getExplicitRawFolderForCurrentData(saveFolder);
+
+            if ~bRawFolderSet
+                reasonText = 'Set RawFolder before opening Events Manager.';
+                return
+            end
+
+            if strcmpi(rawFolder, 'Missing')
+                tf = true;
+                return
+            end
+
+            if isempty(rawFolder) || ~isfolder(rawFolder)
+                reasonText = 'The configured RawFolder is not a valid folder.';
+                return
+            end
+
+            if ~app.rawFolderContainsAnalogInputBins(rawFolder)
+                reasonText = 'Events Manager requires ai_(number).bin files in RawFolder, or RawFolder set to Missing.';
+                return
+            end
+
+            tf = true;
+
+        end
+
+        function [tf, rawFolder, reasonText] = canOpenOiSDualCamCoreg(app)
+            %CANOPENOISDUALCAMCOREG True when dual-camera coregistration can launch.
+
+            tf = false;
+            rawFolder = 'Missing';
+            reasonText = '';
+
+            if ~app.hasData()
+                reasonText = 'Load dual-camera .dat data before opening coregistration.';
+                return
+            end
+
+            if ~strcmpi(app.getSourceType(), 'dat')
+                reasonText = 'Dual-camera coregistration is only available for .dat data.';
+                return
+            end
+
+            saveFolder = app.getCurrentSaveFolderForData();
+            if isempty(saveFolder) || ~isfolder(saveFolder)
+                reasonText = 'The current data file does not have a valid SaveFolder.';
+                return
+            end
+
+            rawFolder = app.resolveDataRawFolderForCurrentData(saveFolder);
+
+            if isempty(rawFolder) || strcmpi(rawFolder, 'Missing') || ~isfolder(rawFolder)
+                reasonText = 'Dual-camera coregistration requires a valid RawFolder.';
+                return
+            end
+
+            if ~app.currentDatSourceIsMultiCam()
+                reasonText = 'The current .dat metadata do not report MultiCam = true.';
+                return
+            end
+
+            tf = true;
+
+        end
+
+        function [rawFolder, bIsExplicit] = getExplicitRawFolderForCurrentData(app, saveFolder)
+            %GETEXPLICITRAWFOLDERFORCURRENTDATA Return explicitly configured RawFolder.
+            %
+            %   Unlike resolveDataRawFolderForCurrentData, this method distinguishes
+            %   between an explicit "Missing" RawFolder and the default unresolved state.
+
+            if nargin < 2 || isempty(saveFolder)
+                saveFolder = app.getCurrentSaveFolderForData();
+            end
+
+            saveFolder = char(string(saveFolder));
+            rawFolder = 'Missing';
+            bIsExplicit = false;
+
+            if isempty(saveFolder)
+                return
+            end
+
+            % Preferred app-level SaveFolder-bound RawFolder.
+            try
+                if ~isempty(app.DataRawFolder) && ...
+                        strcmpi(char(string(app.DataRawFolderSaveFolder)), saveFolder)
+
+                    rawCandidate = char(string(app.DataRawFolder));
+
+                    if strcmpi(rawCandidate, 'Missing')
+                        rawFolder = 'Missing';
+                        bIsExplicit = true;
+                        return
+                    end
+
+                    if isfolder(rawCandidate)
+                        rawFolder = rawCandidate;
+                        bIsExplicit = true;
+                        return
+                    end
+
+                    rawFolder = rawCandidate;
+                    bIsExplicit = true;
+                    return
+                end
+            catch
+            end
+
+            % Transitional fallback: DataParams may carry a persisted RawFolder value.
+            try
+                if isstruct(app.DataParams)
+                    if isfield(app.DataParams, 'RawFolder') && ~isempty(app.DataParams.RawFolder)
+                        rawCandidate = char(string(app.DataParams.RawFolder));
+                        bIsExplicit = true;
+                    elseif isfield(app.DataParams, 'rawFolder') && ~isempty(app.DataParams.rawFolder)
+                        rawCandidate = char(string(app.DataParams.rawFolder));
+                        bIsExplicit = true;
+                    else
+                        rawCandidate = '';
+                    end
+
+                    if bIsExplicit
+                        if strcmpi(rawCandidate, 'Missing')
+                            rawFolder = 'Missing';
+                            app.DataRawFolder = 'Missing';
+                            app.DataRawFolderSaveFolder = saveFolder;
+                            return
+                        end
+
+                        if isfolder(rawCandidate)
+                            rawFolder = rawCandidate;
+                            app.DataRawFolder = rawFolder;
+                            app.DataRawFolderSaveFolder = saveFolder;
+                            return
+                        end
+
+                        rawFolder = rawCandidate;
+                        return
+                    end
+                end
+            catch
+            end
+
+        end
+
+        function ensureDataParamsFolderFields(app)
+            %ENSUREDATAPARAMSFOLDERFIELDS Ensure DataParams.folders RawFolder schema.
+
+            if isempty(app.DataParams) || ~isstruct(app.DataParams)
+                app.DataParams = struct();
+            end
+
+            if ~isfield(app.DataParams, 'folders') || ...
+                    ~isstruct(app.DataParams.folders) || ...
+                    ~isscalar(app.DataParams.folders)
+                app.DataParams.folders = struct();
+            end
+
+            if ~isfield(app.DataParams.folders, 'RawFolder') || ...
+                    isempty(app.DataParams.folders.RawFolder)
+
+                legacyRawFolder = '';
+                try
+                    if isfield(app.DataParams, 'RawFolder') && ~isempty(app.DataParams.RawFolder)
+                        legacyRawFolder = app.DataParams.RawFolder;
+                    elseif isfield(app.DataParams, 'rawFolder') && ~isempty(app.DataParams.rawFolder)
+                        legacyRawFolder = app.DataParams.rawFolder;
+                    end
+                catch
+                    legacyRawFolder = '';
+                end
+
+                if isempty(legacyRawFolder)
+                    app.DataParams.folders.RawFolder = 'Missing';
+                else
+                    app.DataParams.folders.RawFolder = char(string(legacyRawFolder));
+                end
+            end
+
+            app.DataParams.folders.RawFolder = char(string(app.DataParams.folders.RawFolder));
+
+            if ~isfield(app.DataParams.folders, 'RawFolderStatus') || ...
+                    isempty(app.DataParams.folders.RawFolderStatus)
+                [~, statusText] = app.normalizeRawFolderValue(app.DataParams.folders.RawFolder);
+                app.DataParams.folders.RawFolderStatus = statusText;
+            else
+                app.DataParams.folders.RawFolderStatus = lower(strtrim(char(string(app.DataParams.folders.RawFolderStatus))));
+            end
+
+            if strcmpi(app.DataParams.folders.RawFolder, 'Missing')
+                app.DataParams.folders.RawFolder = 'Missing';
+                app.DataParams.folders.RawFolderStatus = 'missing';
+            elseif strcmpi(app.DataParams.folders.RawFolderStatus, 'missing')
+                [~, statusText] = app.normalizeRawFolderValue(app.DataParams.folders.RawFolder);
+                app.DataParams.folders.RawFolderStatus = statusText;
+            end
+
+            if ~isfield(app.DataParams.folders, 'RawFolderSetOn')
+                app.DataParams.folders.RawFolderSetOn = [];
+            end
+
+            if ~isfield(app.DataParams.folders, 'RawFolderSetBy') || ...
+                    isempty(app.DataParams.folders.RawFolderSetBy)
+                app.DataParams.folders.RawFolderSetBy = '';
+            else
+                app.DataParams.folders.RawFolderSetBy = char(string(app.DataParams.folders.RawFolderSetBy));
+            end
+
+        end
+
+        function [rawFolder, statusText] = getStoredRawFolderFromDataParams(app)
+            %GETSTOREDRAWFOLDERFROMDATAPARAMS Return DataParams.folders RawFolder.
+
+            app.ensureDataParamsFolderFields();
+
+            rawFolder = char(string(app.DataParams.folders.RawFolder));
+            statusText = lower(strtrim(char(string(app.DataParams.folders.RawFolderStatus))));
+
+            if isempty(rawFolder)
+                rawFolder = 'Missing';
+                statusText = 'missing';
+            end
+
+            if isempty(statusText)
+                [~, statusText] = app.normalizeRawFolderValue(rawFolder);
+            end
+
+        end
+
+        function [rawFolder, statusText] = normalizeRawFolderValue(app, rawFolder) %#ok<INUSL>
+            %NORMALIZERAWFOLDERVALUE Normalize RawFolder text and infer status.
+
+            if nargin < 2 || isempty(rawFolder)
+                rawFolder = 'Missing';
+            end
+
+            rawFolder = char(string(rawFolder));
+            rawFolder = strtrim(rawFolder);
+
+            if isempty(rawFolder) || strcmpi(rawFolder, 'Missing')
+                rawFolder = 'Missing';
+                statusText = 'missing';
+                return
+            end
+
+            if isfolder(rawFolder)
+                try
+                    [ok, folderInfo] = fileattrib(rawFolder);
+                    if ok && isfield(folderInfo, 'Name') && ~isempty(folderInfo.Name)
+                        rawFolder = folderInfo.Name;
+                    end
+                catch
+                end
+
+                statusText = 'valid';
+                return
+            end
+
+            statusText = 'invalid';
+
+        end
+
+        function folderPath = normalizeFolderPath(app, folderPath) %#ok<INUSL>
+            %NORMALIZEFOLDERPATH Return canonical folder path when possible.
+
+            folderPath = char(string(folderPath));
+
+            if isempty(folderPath) || ~isfolder(folderPath)
+                return
+            end
+
+            try
+                [ok, folderInfo] = fileattrib(folderPath);
+                if ok && isfield(folderInfo, 'Name') && ~isempty(folderInfo.Name)
+                    folderPath = folderInfo.Name;
+                end
+            catch
+            end
+        end
+
+        function setRawFolderForCurrentSaveFolder(app, rawFolder, setBy, bShowStatus, statusOverride)
+            %SETRAWFOLDERFORCURRENTSAVEFOLDER Persist and apply current RawFolder.
+
+            if nargin < 3 || isempty(setBy)
+                setBy = 'DataViewer';
+            end
+
+            if nargin < 4 || isempty(bShowStatus)
+                bShowStatus = true;
+            end
+
+            if nargin < 5
+                statusOverride = '';
+            end
+
+            saveFolder = app.getCurrentSaveFolderForData();
+
+            if isempty(saveFolder) || ~isfolder(saveFolder)
+                app.setStatusMessage('RawFolder was not updated: current SaveFolder is invalid.');
+                return
+            end
+
+            if isempty(statusOverride)
+                [rawFolderStored, statusText] = app.normalizeRawFolderValue(rawFolder);
+            else
+                [rawFolderStored, statusText] = app.normalizeRawFolderValue(rawFolder);
+                statusText = lower(strtrim(char(string(statusOverride))));
+                if strcmp(statusText, 'missing')
+                    rawFolderStored = 'Missing';
+                end
+            end
+
+            app.persistRawFolderToDataParams(saveFolder, rawFolderStored, setBy, statusText);
+
+            if strcmp(statusText, 'valid')
+                app.DataRawFolder = rawFolderStored;
+            else
+                app.DataRawFolder = 'Missing';
+            end
+
+            app.DataRawFolderSaveFolder = saveFolder;
+            app.updatePipelineRawFolderContext(saveFolder, app.DataRawFolder);
+
+            app.updateDataFolderContextLabel();
+            app.updatePipelineTabState();
+            app.updateGUIEnabledState();
+
+            if bShowStatus
+                switch statusText
+                    case 'valid'
+                        if strcmpi(rawFolderStored, saveFolder)
+                            app.setStatusMessage('RawFolder set to current SaveFolder.');
+                        else
+                            app.setStatusMessage(sprintf('RawFolder set: %s', rawFolderStored));
+                        end
+                    case 'missing'
+                        app.setStatusMessage('RawFolder set to Missing.');
+                    otherwise
+                        app.setStatusMessage('Stored RawFolder is invalid. Runtime RawFolder set to Missing.');
+                end
+            end
+
+        end
+
+        function persistRawFolderToDataParams(app, saveFolder, rawFolder, setBy, statusText)
+            %PERSISTRAWFOLDERTODATAPARAMS Save RawFolder context to DataParams.mat.
+
+            if nargin < 4 || isempty(setBy)
+                setBy = 'DataViewer';
+            end
+
+            saveFolder = char(string(saveFolder));
+
+            if isempty(saveFolder) || ~isfolder(saveFolder)
+                error('DataViewer:InvalidSaveFolder', ...
+                    'Cannot persist RawFolder because SaveFolder is invalid.');
+            end
+
+            if nargin < 5 || isempty(statusText)
+                [rawFolder, statusText] = app.normalizeRawFolderValue(rawFolder);
+            else
+                [rawFolder, inferredStatus] = app.normalizeRawFolderValue(rawFolder);
+                statusText = lower(strtrim(char(string(statusText))));
+
+                if isempty(statusText)
+                    statusText = inferredStatus;
+                end
+            end
+
+            if ~ismember(statusText, {'valid', 'missing', 'invalid'})
+                error('DataViewer:InvalidRawFolderStatus', ...
+                    'RawFolderStatus must be valid, missing, or invalid.');
+            end
+
+            if strcmp(statusText, 'missing')
+                rawFolder = 'Missing';
+            end
+
+            if ~isfile(fullfile(saveFolder, 'DataParams.mat'))
+                DataParams = createDataParams(saveFolder);
+            else
+                DataParams = loadDataParams(saveFolder);
+            end
+
+            app.DataParams = DataParams;
+            app.ensureDataParamsViewFields();
+            app.ensureDataParamsMaskFields();
+            app.ensureDataParamsFolderFields();
+
+            app.DataParams.folders.RawFolder = char(string(rawFolder));
+            app.DataParams.folders.RawFolderStatus = statusText;
+            app.DataParams.folders.RawFolderSetOn = datetime('now');
+            app.DataParams.folders.RawFolderSetBy = char(string(setBy));
+
+            saveDataParams(saveFolder, app.DataParams);
+
+            % Keep runtime state aligned with the saved, normalized file.
+            currentSaveFolder = app.getCurrentSaveFolderForData();
+            if ~isempty(currentSaveFolder) && strcmpi(currentSaveFolder, saveFolder)
+                app.DataParams = loadDataParams(saveFolder);
+                app.ensureDataParamsViewFields();
+                app.ensureDataParamsMaskFields();
+                app.ensureDataParamsFolderFields();
+            end
+
+        end
+
+        function synchronizeRawFolderFromDataParams(app)
+            %SYNCHRONIZERAWFOLDERFROMDATAPARAMS Adopt persisted RawFolder at runtime.
+
+            if ~app.hasData() || isempty(app.CurrentFile)
+                return
+            end
+
+            saveFolder = app.getCurrentSaveFolderForData();
+            if isempty(saveFolder) || ~isfolder(saveFolder)
+                return
+            end
+
+            app.ensureDataParamsFolderFields();
+            [storedRawFolder, storedStatus] = app.getStoredRawFolderFromDataParams();
+
+            if strcmpi(storedRawFolder, 'Missing') || strcmpi(storedStatus, 'missing')
+                app.DataRawFolder = 'Missing';
+                app.DataRawFolderSaveFolder = saveFolder;
+                app.updatePipelineRawFolderContext(saveFolder, 'Missing');
+                return
+            end
+
+            if isfolder(storedRawFolder)
+                normalizedRawFolder = app.normalizeFolderPath(storedRawFolder);
+                app.DataRawFolder = normalizedRawFolder;
+                app.DataRawFolderSaveFolder = saveFolder;
+                app.updatePipelineRawFolderContext(saveFolder, normalizedRawFolder);
+
+                if ~strcmp(storedRawFolder, normalizedRawFolder) || ~strcmpi(storedStatus, 'valid')
+                    app.persistRawFolderToDataParams(saveFolder, normalizedRawFolder, 'DataViewer', 'valid');
+                end
+                return
+            end
+
+            % Stored path is no longer reachable. Do not use it at runtime, but retain
+            % it in DataParams with invalid status so the old location remains visible.
+            app.DataRawFolder = 'Missing';
+            app.DataRawFolderSaveFolder = saveFolder;
+            app.updatePipelineRawFolderContext(saveFolder, 'Missing');
+
+            try
+                app.persistRawFolderToDataParams(saveFolder, storedRawFolder, 'DataViewer', 'invalid');
+            catch
+            end
+
+            if ~strcmpi(app.RawFolderInvalidWarningSaveFolder, saveFolder)
+                app.RawFolderInvalidWarningSaveFolder = saveFolder;
+                app.promptForInvalidStoredRawFolder(storedRawFolder, saveFolder);
+            end
+
+        end
+
+        function promptForInvalidStoredRawFolder(app, storedRawFolder, saveFolder)
+            %PROMPTFORINVALIDSTOREDRAWFOLDER Warn and optionally repair invalid RawFolder.
+
+            storedRawFolder = char(string(storedRawFolder));
+            saveFolder = char(string(saveFolder));
+
+            msg = sprintf(['The stored RawFolder path no longer exists:\n\n%s\n\n' ...
+                'This can happen when raw data are on an external drive and the drive letter changes.\n\n' ...
+                'Select the current RawFolder, set it to Missing, or ignore for now.'], ...
+                storedRawFolder);
+
+            try
+                choice = uiconfirm(app.UIFigure, ...
+                    msg, ...
+                    'RawFolder not found', ...
+                    'Options', {'Select Folder', 'Set Missing', 'Ignore'}, ...
+                    'DefaultOption', 1, ...
+                    'CancelOption', 3, ...
+                    'Icon', 'warning');
+            catch
+                app.setStatusMessage('Stored RawFolder is invalid. Runtime RawFolder set to Missing.');
+                return
+            end
+
+            switch choice
+                case 'Select Folder'
+                    startFolder = saveFolder;
+
+                    selectedFolder = uigetdir(startFolder, 'Select current RawFolder');
+                    if isequal(selectedFolder, 0)
+                        app.setStatusMessage('RawFolder repair cancelled. Runtime RawFolder set to Missing.');
+                        return
+                    end
+
+                    if isempty(selectedFolder) || ~isfolder(selectedFolder)
+                        app.setStatusMessage('Selected RawFolder is invalid. Runtime RawFolder set to Missing.');
+                        return
+                    end
+
+                    app.setRawFolderForCurrentSaveFolder(selectedFolder, 'DataViewer', true);
+
+                case 'Set Missing'
+                    app.setRawFolderForCurrentSaveFolder('Missing', 'DataViewer', true);
+
+                otherwise
+                    app.setStatusMessage('Stored RawFolder is invalid. Runtime RawFolder set to Missing.');
+            end
+
+        end
+
+        function updatePipelineRawFolderContext(app, saveFolder, rawFolder)
+            %UPDATEPIPELINERAWFOLDERCONTEXT Synchronize PipelineManager RawFolder context.
+
+            if isempty(app.PipelineManagerObj) || ~isa(app.PipelineManagerObj, 'PipelineManager')
+                return
+            end
+
+            saveFolder = char(string(saveFolder));
+            rawFolder = char(string(rawFolder));
+
+            try
+                if isprop(app.PipelineManagerObj, 'SaveFolderList') && ...
+                        isprop(app.PipelineManagerObj, 'RawFolderList') && ...
+                        ~isempty(app.PipelineManagerObj.SaveFolderList) && ...
+                        ~isempty(app.PipelineManagerObj.RawFolderList)
+
+                    for iSF = 1:numel(app.PipelineManagerObj.SaveFolderList)
+                        try
+                            if strcmpi(char(string(app.PipelineManagerObj.SaveFolderList{iSF})), saveFolder)
+                                app.PipelineManagerObj.RawFolderList{iSF} = rawFolder;
+                            end
+                        catch
+                        end
+                    end
+                end
+            catch
+            end
+
+        end
+
+        function tf = rawFolderContainsAnalogInputBins(app, rawFolder) %#ok<INUSL>
+            %RAWFOLDERCONTAINSANALOGINPUTBINS True for ai_(number).bin files.
+
+            tf = false;
+
+            if isempty(rawFolder) || ~isfolder(rawFolder)
+                return
+            end
+
+            fileList = dir(fullfile(rawFolder, 'ai_*.bin'));
+
+            if isempty(fileList)
+                return
+            end
+
+            for iFile = 1:numel(fileList)
+                if fileList(iFile).isdir
+                    continue
+                end
+
+                fileName = char(string(fileList(iFile).name));
+
+                if ~isempty(regexpi(fileName, '^ai_(\d+)\.bin$', 'once'))
+                    tf = true;
+                    return
+                end
+            end
+
+        end
+
+        function tf = currentDatSourceIsMultiCam(app)
+            %CURRENTDATSOURCEISMULTICAM True when active DatImageSource reports MultiCam.
+
+            tf = false;
+
+            if ~app.hasData() || ~strcmpi(app.getSourceType(), 'dat')
+                return
+            end
+
+            Info = app.getSourceInfo();
+
+            if isempty(Info) || ~isstruct(Info)
+                return
+            end
+
+            if iHasTrueMultiCamField(Info)
+                tf = true;
+                return
+            end
+
+            if isfield(Info, 'AcqInfoStream') && iHasTrueMultiCamField(Info.AcqInfoStream)
+                tf = true;
+                return
+            end
+
+            if isfield(Info, 'AcqInfos') && iHasTrueMultiCamField(Info.AcqInfos)
+                tf = true;
+                return
+            end
+
+            if isfield(Info, 'img_info') && iHasTrueMultiCamField(Info.img_info)
+                tf = true;
+                return
+            end
+
+            function tfLocal = iHasTrueMultiCamField(S)
+                tfLocal = false;
+
+                if ~isstruct(S) || ~isfield(S, 'MultiCam') || isempty(S.MultiCam)
+                    return
+                end
+
+                val = S.MultiCam;
+
+                try
+                    if islogical(val) || isnumeric(val)
+                        tfLocal = isscalar(val) && logical(val);
+                        return
+                    end
+
+                    if ischar(val) || isstring(val)
+                        txt = lower(strtrim(char(string(val))));
+                        tfLocal = any(strcmp(txt, {'true', '1', 'yes', 'on'}));
+                    end
+                catch
+                    tfLocal = false;
+                end
+            end
+
         end
 
         function tf = ensurePipelineManagerForCurrentData(app)
@@ -18269,8 +19400,9 @@ classdef DataViewer_exported < matlab.apps.AppBase
                     'VariableNames', {'FilePath','CreatedOn','Source'});
             end
 
-            % RawFolder is SaveFolder-bound. Clear it unless it explicitly belongs to the
-            % newly opened folder.
+            % RawFolder is SaveFolder-bound. Clear runtime cache unless it explicitly
+            % belongs to the newly opened folder. It will be restored from DataParams.mat
+            % during refreshViewerAfterLoad.
             try
                 if ~strcmpi(char(string(app.DataRawFolderSaveFolder)), newFolder)
                     app.DataRawFolder = '';
@@ -18280,6 +19412,8 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.DataRawFolder = '';
                 app.DataRawFolderSaveFolder = '';
             end
+
+            app.RawFolderInvalidWarningSaveFolder = '';
         end
 
         function updateDataFolderContextLabel(app)
@@ -18517,7 +19651,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 tf = false;
             end
         end
-        
+
         function txt = getLatestPipelineSummaryLabelText(app)
             %GETLATESTPIPELINESUMMARYLABELTEXT Build compact latest-run text.
 
@@ -18603,7 +19737,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             end
 
             if isempty(compatibleFiles)
-                uialert(app.DataViewerUIFigure, ...
+                uialert(app.UIFigure, ...
                     'The pipeline finished, but no viewer-compatible output was found.', ...
                     'Pipeline Finished', ...
                     'Icon', 'warning');
@@ -18658,8 +19792,8 @@ classdef DataViewer_exported < matlab.apps.AppBase
             end
 
             try
-                app.DataViewerUIFigure.Visible = 'on';
-                figure(app.DataViewerUIFigure);
+                app.UIFigure.Visible = 'on';
+                figure(app.UIFigure);
             catch
             end
 
@@ -19151,7 +20285,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                     tempDisplay, nOtherTmp);
             end
 
-            choice = uiconfirm(app.DataViewerUIFigure, ...
+            choice = uiconfirm(app.UIFigure, ...
                 msg, ...
                 'Temporary Pipeline Output', ...
                 'Options', {'Save As...', 'Delete Temporary', 'Cancel'}, ...
@@ -19195,7 +20329,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             targetFile = fullfile(folderName, fileName);
 
             if strcmpi(sourceFile, targetFile)
-                uialert(app.DataViewerUIFigure, ...
+                uialert(app.UIFigure, ...
                     'Choose a different filename or folder for the permanent copy.', ...
                     'Invalid Save As Target', ...
                     'Icon', 'warning');
@@ -19233,7 +20367,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
 
             app.cancelAllenAtlasROIPlacement(false);
 
-            previousKeyFcn = app.DataViewerUIFigure.WindowKeyPressFcn;
+            previousKeyFcn = app.UIFigure.WindowKeyPressFcn;
 
             [state, ok, msg] = app.buildAllenAtlasROIPlacementState(atlasResult, previousKeyFcn);
 
@@ -19343,7 +20477,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
 
             app.createAllenAtlasROIPlacementContextMenu();
 
-            app.DataViewerUIFigure.WindowKeyPressFcn = @(src, evt) app.onAllenAtlasROIPlacementKeyPress(src, evt);
+            app.UIFigure.WindowKeyPressFcn = @(src, evt) app.onAllenAtlasROIPlacementKeyPress(src, evt);
             app.setInteractionMode('editingROI');
 
             app.stackAllenAtlasROIPlacementGraphics();
@@ -19550,6 +20684,38 @@ classdef DataViewer_exported < matlab.apps.AppBase
             app.updateGUIEnabledState();
         end
 
+        function setRawFolderFromChildTool(app, rawFolder, saveFolder, setBy)
+            %SETRAWFOLDERFROMCHILDTOOL Update RawFolder from a child utility app.
+            %
+            %   Child tools such as DataViewer_EventsManager should call this when the
+            %   user sets or changes RawFolder inside the child tool.
+
+            if nargin < 3 || isempty(saveFolder)
+                saveFolder = app.getCurrentSaveFolderForData();
+            end
+
+            if nargin < 4 || isempty(setBy)
+                setBy = 'DataViewer_childTool';
+            end
+
+            saveFolder = char(string(saveFolder));
+
+            if isempty(saveFolder) || ~isfolder(saveFolder)
+                return
+            end
+
+            currentSaveFolder = app.getCurrentSaveFolderForData();
+
+            if ~isempty(currentSaveFolder) && strcmpi(currentSaveFolder, saveFolder)
+                app.setRawFolderForCurrentSaveFolder(rawFolder, setBy, true);
+                return
+            end
+
+            % Fallback for non-current SaveFolder updates. This persists the value but
+            % does not alter the current viewer runtime context.
+            app.persistRawFolderToDataParams(saveFolder, rawFolder, setBy);
+        end
+
     end
 
 
@@ -19672,8 +20838,8 @@ classdef DataViewer_exported < matlab.apps.AppBase
             end
         end
 
-        % Close request function: DataViewerUIFigure
-        function DataViewerUIFigureCloseRequest(app, event)
+        % Close request function: UIFigure
+        function UIFigureCloseRequest(app, event)
             %UIFIGURECLOSEREQUEST Safely close DataViewer.
 
             canClose = true;
@@ -20047,7 +21213,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.refreshDatEventsAfterEdit();
 
             catch ME
-                uialert(app.DataViewerUIFigure, ME.message, 'Delete condition failed');
+                uialert(app.UIFigure, ME.message, 'Delete condition failed');
             end
 
 
@@ -20097,7 +21263,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.refreshDatEventsAfterEdit();
 
             catch ME
-                uialert(app.DataViewerUIFigure, ME.message, 'Delete repetition failed');
+                uialert(app.UIFigure, ME.message, 'Delete repetition failed');
             end
 
 
@@ -20125,7 +21291,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.refreshDatEventsAfterEdit();
 
             catch ME
-                uialert(app.DataViewerUIFigure, ME.message, 'Restore events failed');
+                uialert(app.UIFigure, ME.message, 'Restore events failed');
             end
 
 
@@ -20261,7 +21427,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 % -----------------------------------------------------------------
                 % Optional event import.
                 % -----------------------------------------------------------------
-                answer = uiconfirm(app.DataViewerUIFigure, ...
+                answer = uiconfirm(app.UIFigure, ...
                     'Import events from analog inputs (ai_0000x.bin)?', ...
                     'Import events', ...
                     'Options', {'Yes','No','Cancel'}, ...
@@ -20305,7 +21471,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
 
                     app.setStatusMessage(['Data import failed: ' errMsg]);
 
-                    uialert(app.DataViewerUIFigure, ...
+                    uialert(app.UIFigure, ...
                         errMsg, ...
                         'Data import failed', ...
                         'Icon', 'error');
@@ -20338,7 +21504,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
 
                     app.setStatusMessage('Data import failed.');
 
-                    uialert(app.DataViewerUIFigure, ...
+                    uialert(app.UIFigure, ...
                         errMsg, ...
                         'Data import failed', ...
                         'Icon', 'error');
@@ -20352,7 +21518,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.setStatusMessage(sprintf('Data import failed: %s', ME.message));
 
                 try
-                    uialert(app.DataViewerUIFigure, ...
+                    uialert(app.UIFigure, ...
                         getReport(ME, 'basic', 'hyperlinks', 'off'), ...
                         'Data import failed', ...
                         'Icon', 'error');
@@ -20425,7 +21591,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
 
                     app.setStatusMessage(['TIFF import failed: ' errMsg]);
 
-                    uialert(app.DataViewerUIFigure, ...
+                    uialert(app.UIFigure, ...
                         errMsg, ...
                         'TIFF import failed', ...
                         'Icon', 'error');
@@ -20458,7 +21624,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
 
                     app.setStatusMessage('TIFF import failed.');
 
-                    uialert(app.DataViewerUIFigure, ...
+                    uialert(app.UIFigure, ...
                         errMsg, ...
                         'TIFF import failed', ...
                         'Icon', 'error');
@@ -20472,7 +21638,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.setStatusMessage(sprintf('TIFF import failed: %s', ME.message));
 
                 try
-                    uialert(app.DataViewerUIFigure, ...
+                    uialert(app.UIFigure, ...
                         getReport(ME, 'basic', 'hyperlinks', 'off'), ...
                         'TIFF import failed', ...
                         'Icon', 'error');
@@ -20500,7 +21666,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.setStatusMessage('Load image data before exporting to TIFF.');
 
                 try
-                    uialert(app.DataViewerUIFigure, ...
+                    uialert(app.UIFigure, ...
                         'Load image data before exporting to TIFF.', ...
                         'Export to TIFF', ...
                         'Icon', 'warning');
@@ -20516,7 +21682,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.setStatusMessage('TIFF export failed: current data file was not found.');
 
                 try
-                    uialert(app.DataViewerUIFigure, ...
+                    uialert(app.UIFigure, ...
                         sprintf('Current data file was not found:\n%s', app.CurrentFile), ...
                         'TIFF export failed', ...
                         'Icon', 'error');
@@ -20535,7 +21701,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.setStatusMessage('TIFF export failed: unsupported current file type.');
 
                 try
-                    uialert(app.DataViewerUIFigure, ...
+                    uialert(app.UIFigure, ...
                         sprintf('Only .dat and .umt files can be exported to TIFF.\nCurrent file:\n%s', app.CurrentFile), ...
                         'TIFF export failed', ...
                         'Icon', 'error');
@@ -20551,7 +21717,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 % run_ConvertToTiff currently resolves .umt files by exporting the
                 % first image entry. Warn because this may differ from the selected
                 % displayed entry.
-                answer = uiconfirm(app.DataViewerUIFigure, ...
+                answer = uiconfirm(app.UIFigure, ...
                     sprintf(['The loaded UMT entry is "%s".\n\n' ...
                     'run_ConvertToTiff currently exports the first image entry ' ...
                     'stored in the UMT file, which may not be the displayed entry.\n\n' ...
@@ -20595,7 +21761,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.setStatusMessage(sprintf('TIFF export completed: %s', char(outText)));
 
                 try
-                    uialert(app.DataViewerUIFigure, ...
+                    uialert(app.UIFigure, ...
                         sprintf('TIFF export completed.\n\nOutput folder:\n%s\n\nFiles:\n%s', ...
                         exportFolder, char(outText)), ...
                         'TIFF export completed', ...
@@ -20610,7 +21776,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.setStatusMessage(sprintf('TIFF export failed: %s', ME.message));
 
                 try
-                    uialert(app.DataViewerUIFigure, ...
+                    uialert(app.UIFigure, ...
                         getReport(ME, 'basic', 'hyperlinks', 'off'), ...
                         'TIFF export failed', ...
                         'Icon', 'error');
@@ -20647,7 +21813,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.setStatusMessage(sprintf( ...
                     'Failed to open Image Reference Manager: %s', ME.message));
 
-                uialert(app.DataViewerUIFigure, ...
+                uialert(app.UIFigure, ...
                     getReport(ME, 'basic', 'hyperlinks', 'off'), ...
                     'Image Reference Manager failed', ...
                     'Icon', 'error');
@@ -20666,7 +21832,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.setStatusMessage(sprintf('View Data History failed: %s', ME.message));
 
                 try
-                    uialert(app.DataViewerUIFigure, ...
+                    uialert(app.UIFigure, ...
                         getReport(ME, 'basic', 'hyperlinks', 'off'), ...
                         'View Data History failed', ...
                         'Icon', 'error');
@@ -20681,12 +21847,11 @@ classdef DataViewer_exported < matlab.apps.AppBase
 
         % Button pushed function: EventsManagerButton
         function EventsManagerButtonPushed(app, event)
-            %MANAGEEVENTSBUTTONPUSHED Open event-detection manager for .dat data.
+            %EVENTSMANAGERBUTTONPUSHED Open event manager for .dat data.
             %
-            %   After the Events Manager closes, reload events.mat, refresh all
-            %   event-dependent GUI state, and force .dat display back to normal
-            %   mode. This prevents stale Event-Mode frame mappings after event
-            %   metadata is edited or recreated.
+            %   RawFolder is passed when available, but DataViewer-level launch is
+            %   intentionally permissive because the Events Manager also supports manual
+            %   event loading/editing workflows.
 
             if ~app.hasData()
                 app.setStatusMessage('Load .dat data before opening Events Manager.');
@@ -20694,7 +21859,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             end
 
             if ~strcmpi(app.getSourceType(), 'dat')
-                uialert(app.DataViewerUIFigure, ...
+                uialert(app.UIFigure, ...
                     'Events Manager is only available for .dat data.', ...
                     'Unsupported data type', ...
                     'Icon', 'warning');
@@ -20702,12 +21867,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             end
 
             saveFolder = fileparts(app.CurrentFile);
-            rawFolder = '';
-
-            if ~isempty(app.EventSource) && isvalid(app.EventSource) && ...
-                    isprop(app.EventSource, 'RawFolder') && isfolder(app.EventSource.RawFolder)
-                rawFolder = app.EventSource.RawFolder;
-            end
+            rawFolder = app.resolveDataRawFolderForCurrentData(saveFolder);
 
             previousMode = app.ViewMode;
 
@@ -20727,13 +21887,9 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 end
 
                 % Reload events.mat and rebuild all event metadata/control state.
-                % initializeEventsForLoadedData('.dat') also switches .dat display
-                % back to normal mode before rebuilding event frame mappings.
                 app.initializeEventsForLoadedData('.dat');
 
-                % Keep the main display on normal source frames after editing event
-                % metadata. This avoids stale event-mode frame indices when the user
-                % opened Events Manager while already in Event Mode.
+                % Recover to normal source-frame mode after event metadata edits.
                 app.ViewMode = 'normal';
                 app.syncSwitchToViewMode();
 
@@ -20763,7 +21919,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.setStatusMessage(sprintf('Events Manager failed: %s', ME.message));
 
                 try
-                    uialert(app.DataViewerUIFigure, ...
+                    uialert(app.UIFigure, ...
                         getReport(ME, 'basic', 'hyperlinks', 'off'), ...
                         'Events Manager failed', ...
                         'Icon', 'error');
@@ -20772,8 +21928,6 @@ classdef DataViewer_exported < matlab.apps.AppBase
                         getReport(ME, 'extended', 'hyperlinks', 'off'));
                 end
 
-                % If anything fails after launching from Event Mode, recover to
-                % Normal Mode rather than leaving stale EventFrameMatrix state.
                 if strcmpi(previousMode, 'event') && app.hasData()
                     try
                         app.ViewMode = 'normal';
@@ -20790,49 +21944,47 @@ classdef DataViewer_exported < matlab.apps.AppBase
 
         % Button pushed function: OiSDUalCamCoregButton
         function OiSDUalCamCoregButtonPushed(app, event)
-            %OISDUALCOREGISTRATIONBUTTONPUSHED Open dual-camera calibration utility.
+            %OISDUALCAMCOREGBUTTONPUSHED Open dual-camera calibration utility.
 
-            if ~app.hasData()
-                app.setStatusMessage('Load dual-camera .dat data before opening coregistration.');
-                return
-            end
+            [canOpen, ~, reasonText] = app.canOpenOiSDualCamCoreg();
 
-            if ~strcmpi(app.getSourceType(), 'dat')
-                uialert(app.DataViewerUIFigure, ...
-                    'Dual-camera coregistration is only available for .dat data.', ...
-                    'Unsupported data type', ...
-                    'Icon', 'warning');
+            if ~canOpen
+                app.setStatusMessage(reasonText);
+
+                try
+                    uialert(app.UIFigure, ...
+                        reasonText, ...
+                        'Dual-camera coregistration unavailable', ...
+                        'Icon', 'warning');
+                catch
+                end
                 return
             end
 
             dataFolder = fileparts(app.CurrentFile);
-            acqPath = fullfile(dataFolder, 'AcqInfos.mat');
 
-            if ~isfile(acqPath)
-                uialert(app.DataViewerUIFigure, ...
-                    'AcqInfos.mat was not found in the current data folder.', ...
-                    'Missing acquisition metadata', ...
-                    'Icon', 'warning');
-                return
+            try
+                regApp = DataViewer_Coreg2Cams(app, dataFolder, 'CalibrationUtility');
+
+                if ~isempty(regApp) && isvalid(regApp) && isvalid(regApp.UIFigure)
+                    waitfor(regApp.UIFigure);
+                end
+
+                app.setStatusMessage('Dual-camera calibration utility closed.');
+
+            catch ME
+                app.setStatusMessage(sprintf('Dual-camera coregistration failed: %s', ME.message));
+
+                try
+                    uialert(app.UIFigure, ...
+                        getReport(ME, 'basic', 'hyperlinks', 'off'), ...
+                        'Dual-camera coregistration failed', ...
+                        'Icon', 'error');
+                catch
+                    warning('DataViewer:DualCamCoregFailed', '%s', ...
+                        getReport(ME, 'extended', 'hyperlinks', 'off'));
+                end
             end
-
-            S = load(acqPath, 'AcqInfoStream');
-            if ~isfield(S, 'AcqInfoStream') || ~isfield(S.AcqInfoStream, 'MultiCam') || ...
-                    ~logical(S.AcqInfoStream.MultiCam)
-                uialert(app.DataViewerUIFigure, ...
-                    'The current dataset was not marked as dual-camera data.', ...
-                    'Not dual-camera data', ...
-                    'Icon', 'warning');
-                return
-            end
-
-            regApp = DataViewer_Coreg2Cams(app, dataFolder, 'CalibrationUtility');
-
-            if ~isempty(regApp) && isvalid(regApp) && isvalid(regApp.UIFigure)
-                waitfor(regApp.UIFigure);
-            end
-
-            app.setStatusMessage('Dual-camera calibration utility closed.');
 
         end
 
@@ -20851,7 +22003,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             sourceType = lower(string(app.getSourceType()));
 
             if ~ismember(sourceType, ["dat", "umt"])
-                uialert(app.DataViewerUIFigure, ...
+                uialert(app.UIFigure, ...
                     'Image Alignment Tool requires image data loaded from .dat or image-kind .umt.', ...
                     'Unsupported source type', ...
                     'Icon', 'warning');
@@ -20876,7 +22028,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.setStatusMessage(sprintf( ...
                     'Failed to open Image Alignment Tool: %s', ME.message));
 
-                uialert(app.DataViewerUIFigure, ...
+                uialert(app.UIFigure, ...
                     getReport(ME, 'basic', 'hyperlinks', 'off'), ...
                     'Image Alignment Tool failed', ...
                     'Icon', 'error');
@@ -20889,7 +22041,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             %PIPELINEMANAGERTOOLBUTTONPUSHED Launch PM Tool using persistent PM object.
 
             if ~app.hasData() || isempty(app.CurrentFile) || ~isfile(app.CurrentFile)
-                uialert(app.DataViewerUIFigure, ...
+                uialert(app.UIFigure, ...
                     'Open a .dat or .umt file before launching Pipeline Manager.', ...
                     'No Data Loaded', ...
                     'Icon', 'warning');
@@ -20899,7 +22051,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             saveFolder = app.getCurrentSaveFolderForData();
 
             if isempty(saveFolder) || ~isfolder(saveFolder)
-                uialert(app.DataViewerUIFigure, ...
+                uialert(app.UIFigure, ...
                     'The current data file does not have a valid SaveFolder.', ...
                     'Invalid Data Context', ...
                     'Icon', 'error');
@@ -20907,7 +22059,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             end
 
             if ~app.ensurePipelineManagerForCurrentData()
-                uialert(app.DataViewerUIFigure, ...
+                uialert(app.UIFigure, ...
                     'Could not create or reuse the PipelineManager object for the current data.', ...
                     'Pipeline Manager Error', ...
                     'Icon', 'error');
@@ -20932,7 +22084,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.setInteractionMode('runningPipeline');
 
                 try
-                    app.DataViewerUIFigure.Visible = 'off';
+                    app.UIFigure.Visible = 'off';
                 catch
                 end
 
@@ -20955,15 +22107,15 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 app.PipelineManagerToolApp = [];
 
                 try
-                    app.DataViewerUIFigure.Visible = 'on';
-                    figure(app.DataViewerUIFigure);
+                    app.UIFigure.Visible = 'on';
+                    figure(app.UIFigure);
                 catch
                 end
 
                 app.setInteractionMode('idle');
                 app.updatePipelineTabState();
                 app.setStatusMessage(sprintf('Failed to open Pipeline Manager Tool: %s', ME.message));
-                uialert(app.DataViewerUIFigure, ME.message, 'Pipeline Manager Tool Error', 'Icon', 'error');
+                uialert(app.UIFigure, ME.message, 'Pipeline Manager Tool Error', 'Icon', 'error');
             end
 
 
@@ -20973,13 +22125,12 @@ classdef DataViewer_exported < matlab.apps.AppBase
         function SetRawFolderMenuSelected(app, event)
             %SETRAWFOLDERMENUSELECTED Set the RawFolder for the current data context.
             %
-            % RawFolder is owned by DataViewer and is bound to the current SaveFolder.
-            % PipelineManagerTool receives this value read-only on launch. Updating it here
-            % does not reset the persistent PipelineManager graph; it only synchronizes the
-            % folder context used for future execution.
+            % RawFolder is owned by DataViewer and persisted to DataParams.folders for
+            % the current SaveFolder. PipelineManagerTool receives this value read-only
+            % on launch.
 
             if ~app.hasData() || isempty(app.CurrentFile)
-                uialert(app.DataViewerUIFigure, ...
+                uialert(app.UIFigure, ...
                     'Open a data file before setting the RawFolder.', ...
                     'No Data Loaded', ...
                     'Icon', 'warning');
@@ -20989,7 +22140,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             saveFolder = app.getCurrentSaveFolderForData();
 
             if isempty(saveFolder) || ~isfolder(saveFolder)
-                uialert(app.DataViewerUIFigure, ...
+                uialert(app.UIFigure, ...
                     'The current data file does not have a valid SaveFolder.', ...
                     'Invalid Data Context', ...
                     'Icon', 'error');
@@ -21004,7 +22155,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 'Choose "Select Folder" to assign a RawFolder, "Use SaveFolder" when raw files are stored with the processed data, or "Set Missing" for datasets/pipelines that do not require raw data.'], ...
                 saveFolder, currentRawFolder);
 
-            choice = uiconfirm(app.DataViewerUIFigure, ...
+            choice = uiconfirm(app.UIFigure, ...
                 msg, ...
                 'Set RawFolder', ...
                 'Options', {'Select Folder', 'Use SaveFolder', 'Set Missing', 'Cancel'}, ...
@@ -21042,7 +22193,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 end
 
                 if isempty(selectedFolder) || ~isfolder(selectedFolder)
-                    uialert(app.DataViewerUIFigure, ...
+                    uialert(app.UIFigure, ...
                         'The selected RawFolder is not a valid folder.', ...
                         'Invalid RawFolder', ...
                         'Icon', 'error');
@@ -21050,55 +22201,9 @@ classdef DataViewer_exported < matlab.apps.AppBase
                 end
 
                 rawFolder = char(string(selectedFolder));
-
-                try
-                    [ok, folderInfo] = fileattrib(rawFolder);
-                    if ok && isfield(folderInfo, 'Name') && ~isempty(folderInfo.Name)
-                        rawFolder = folderInfo.Name;
-                    end
-                catch
-                    % Keep the uigetdir path if fileattrib normalization fails.
-                end
             end
 
-            % Store RawFolder as SaveFolder-bound DataViewer state.
-            app.DataRawFolder = rawFolder;
-            app.DataRawFolderSaveFolder = saveFolder;
-
-            % Transitional compatibility: keep DataParams synchronized when present.
-            try
-                if isstruct(app.DataParams)
-                    app.DataParams.RawFolder = rawFolder;
-                end
-            catch
-            end
-
-            % Synchronize the persistent PipelineManager context without touching graph nodes.
-            try
-                if ~isempty(app.PipelineManagerObj) && isa(app.PipelineManagerObj, 'PipelineManager') && ...
-                        isprop(app.PipelineManagerObj, 'SaveFolderList') && ...
-                        ~isempty(app.PipelineManagerObj.SaveFolderList) && ...
-                        strcmpi(app.PipelineManagerObj.SaveFolderList{1}, saveFolder) && ...
-                        isprop(app.PipelineManagerObj, 'RawFolderList') && ...
-                        ~isempty(app.PipelineManagerObj.RawFolderList)
-
-                    app.PipelineManagerObj.RawFolderList{1} = rawFolder;
-                end
-            catch ME
-                app.setStatusMessage(sprintf('RawFolder set, but PipelineManager context was not synchronized: %s', ME.message));
-            end
-
-            app.updateDataFolderContextLabel();
-            app.updatePipelineTabState();
-
-            if strcmpi(rawFolder, 'Missing')
-                app.setStatusMessage('RawFolder set to Missing.');
-            elseif strcmpi(rawFolder, saveFolder)
-                app.setStatusMessage('RawFolder set to current SaveFolder.');
-            else
-                app.setStatusMessage(sprintf('RawFolder set: %s', rawFolder));
-            end
-
+            app.setRawFolderForCurrentSaveFolder(rawFolder, 'DataViewer', true);
 
         end
     end
@@ -21109,14 +22214,14 @@ classdef DataViewer_exported < matlab.apps.AppBase
         % Create UIFigure and components
         function createComponents(app)
 
-            % Create DataViewerUIFigure and hide until all components are created
-            app.DataViewerUIFigure = uifigure('Visible', 'off');
-            app.DataViewerUIFigure.Position = [92 92 1400 900];
-            app.DataViewerUIFigure.Name = 'DataViewer';
-            app.DataViewerUIFigure.CloseRequestFcn = createCallbackFcn(app, @DataViewerUIFigureCloseRequest, true);
+            % Create UIFigure and hide until all components are created
+            app.UIFigure = uifigure('Visible', 'off');
+            app.UIFigure.Position = [92 92 1400 900];
+            app.UIFigure.Name = 'DataViewer';
+            app.UIFigure.CloseRequestFcn = createCallbackFcn(app, @UIFigureCloseRequest, true);
 
             % Create FileMenu
-            app.FileMenu = uimenu(app.DataViewerUIFigure);
+            app.FileMenu = uimenu(app.UIFigure);
             app.FileMenu.Text = 'File';
 
             % Create OpenMenu
@@ -21170,7 +22275,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             app.SetRawFolderMenu.Text = 'Set Raw Folder...';
 
             % Create HelpMenu_2
-            app.HelpMenu_2 = uimenu(app.DataViewerUIFigure);
+            app.HelpMenu_2 = uimenu(app.UIFigure);
             app.HelpMenu_2.Text = 'Help';
 
             % Create PreferencesMenu
@@ -21184,7 +22289,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             app.OnlinedocumentationMenu.Text = 'Online documentation';
 
             % Create GridLayoutMain
-            app.GridLayoutMain = uigridlayout(app.DataViewerUIFigure);
+            app.GridLayoutMain = uigridlayout(app.UIFigure);
             app.GridLayoutMain.ColumnWidth = {'1x'};
             app.GridLayoutMain.RowHeight = {140, '1x'};
 
@@ -21849,7 +22954,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             app.Switch.Value = 'Normal mode';
 
             % Show the figure after all components are created
-            app.DataViewerUIFigure.Visible = 'on';
+            app.UIFigure.Visible = 'on';
         end
     end
 
@@ -21863,7 +22968,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
             createComponents(app)
 
             % Register the app with App Designer
-            registerApp(app, app.DataViewerUIFigure)
+            registerApp(app, app.UIFigure)
 
             % Execute the startup function
             runStartupFcn(app, @(app)startupFcn(app, varargin{:}))
@@ -21877,7 +22982,7 @@ classdef DataViewer_exported < matlab.apps.AppBase
         function delete(app)
 
             % Delete UIFigure when app is deleted
-            delete(app.DataViewerUIFigure)
+            delete(app.UIFigure)
         end
     end
 end
