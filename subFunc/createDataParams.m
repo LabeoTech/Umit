@@ -185,6 +185,7 @@ DataParams.registration = struct();
 DataParams.registration.isRegistered = false;
 DataParams.registration.isReviewed = false;
 DataParams.registration.tform = [];
+DataParams.registration.resourceUUID = '';
 
 DataParams.registration.transformType = '';
 DataParams.registration.method = '';
