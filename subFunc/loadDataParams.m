@@ -94,6 +94,17 @@ else
     DataParams.folders.RawFolderSetBy = char(string(DataParams.folders.RawFolderSetBy));
 end
 
+if ~isfield(DataParams, 'registration') || ~isstruct(DataParams.registration) || ...
+        ~isscalar(DataParams.registration)
+    DataParams.registration = struct();
+end
+
+if ~isfield(DataParams.registration, 'resourceUUID')
+    DataParams.registration.resourceUUID = '';
+else
+    DataParams.registration.resourceUUID = char(string(DataParams.registration.resourceUUID));
+end
+
 end
 
 function statusText = iInferRawFolderStatus(rawFolder)

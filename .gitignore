@@ -10,7 +10,11 @@ IOIAnalysis/SystemOpticalParams/LEDs.mat
 Analysis/deployFcnList.mat
 Analysis/PMTest/
 _branchComp/
+_apps_exported/
+PASTE_INTO_MLAPP.txt
 GUI/DataViewer/newDataViewer_canvas_exported.m
 GUI/DataViewer/newDataViewer_canvas_exported_28-04-2026_23-32.txt
 Analysis/Custom_Functions/
 *_exported.m
+CLAUDE.md
+PLANNING_LOG.md
