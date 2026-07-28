@@ -9,7 +9,7 @@ classdef UMITRigStore < handle
     %
     %   UMITRigStore is the only supported write interface for centralized
     %   rig metadata. A rig describes one physical imaging setup (cameras,
-    %   filters, dual-camera coregistration calibration) and is completely
+    %   filters, dual-camera coregistration) and is completely
     %   independent of any project -- projects/sessions reference a rig by
     %   rigUUID/rigID, they never own its folder or metadata. All rigs are
     %   stored below getUmitFolder('rigs'). It creates canonical folders,
@@ -30,6 +30,7 @@ classdef UMITRigStore < handle
     %       addCalibrationFile
     %       archiveResource
     %       restoreResource
+    %       purgeResource
     %       setActiveCameraCoregistration
     %       setActiveCalibrationFile
     %       getActiveCameraCoregistration
@@ -50,6 +51,8 @@ classdef UMITRigStore < handle
     %       - Display names are editable without renaming physical folders.
     %       - Resource filenames are immutable after import.
     %       - Archived resources remain registered and restorable.
+    %       - Resource files are never deleted directly by callers; purgeResource is the only
+    %         sanctioned deletion path, and only for already-archived resources.
     %       - Every mutation uses a rig lock and atomic metadata writes.
     %       - Invalid rigs open read-only.
 
@@ -653,6 +656,58 @@ classdef UMITRigStore < handle
             end
 
             obj.iAppendLog('restoreResource', resourceUUID, 'completed');
+        end
+
+        function purgeResource(obj, resourceUUID)
+            %PURGERESOURCE Permanently delete an archived resource's file and registry entry.
+            %
+            %   store.purgeResource(resourceUUID)
+            %
+            %   This is the only sanctioned way to delete a managed resource file -- callers
+            %   must never delete resource files directly. Only resources with status
+            %   'archived' can be purged (archive first); this keeps deletion a deliberate
+            %   two-step action rather than something that can happen to an active or
+            %   available resource by accident.
+
+            errID = 'Umitoolbox:UMITRigStore:purgeFailed';
+            resourceUUID = char(string(resourceUUID));
+
+            obj.iAssertWritable();
+            lockCleanup = obj.iAcquireWriteLock('purgeResource'); %#ok<NASGU>
+            obj.iAssertHealthyForMutation();
+
+            RigInfo = obj.iLoadRigInfo();
+            originalRigInfo = RigInfo;
+            recordIndex = obj.iFindResourceIndex(RigInfo.resourceRegistry, resourceUUID);
+            if isempty(recordIndex)
+                error(errID, 'Resource is not owned by this rig: %s', resourceUUID);
+            end
+            record = RigInfo.resourceRegistry(recordIndex);
+
+            if ~strcmp(record.status, 'archived')
+                error(errID, ...
+                    'Only archived resources can be purged (status is "%s"): %s', ...
+                    record.status, resourceUUID);
+            end
+
+            resourcePath = obj.iResolveRelativePath(record.relativePath);
+
+            RigInfo.resourceRegistry(recordIndex) = [];
+            RigInfo.modifiedOn = datetime('now');
+
+            try
+                obj.iSaveRigInfo(RigInfo);
+                obj.iAssertValidAfterMutation();
+            catch ME
+                obj.iSaveRigInfo(originalRigInfo);
+                rethrow(ME)
+            end
+
+            if isfile(resourcePath)
+                delete(resourcePath);
+            end
+
+            obj.iAppendLog('purgeResource', resourceUUID, 'completed');
         end
 
         function setActiveCameraCoregistration(obj, resourceUUID)
