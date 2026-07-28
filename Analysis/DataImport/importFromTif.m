@@ -269,6 +269,20 @@ end
 % -------------------------------------------------------------------------
 save(acqInfoPath, 'AcqInfoStream');
 
+% Import has fully succeeded by this point (any failure above asserts/errors,
+% aborting the function before reaching here). Ensure DataParams.mat exists
+% and records the RawFolder actually used for this import. Best-effort: a
+% failure here must not undo an otherwise-successful import.
+try
+    if ~isfile(fullfile(SaveFolder, 'DataParams.mat'))
+        createDataParams(SaveFolder);
+    end
+    updateDataParam(SaveFolder, 'folders.RawFolder', RawFolder);
+catch ME
+    warning('Umitoolbox:importFromTif:dataParamsRawFolderFailed', ...
+        'Import succeeded, but DataParams.mat RawFolder could not be recorded: %s', ME.message);
+end
+
 disp('Finished importFromTif.')
 
 % -------------------------------------------------------------------------

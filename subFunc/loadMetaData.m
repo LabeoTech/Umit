@@ -546,6 +546,14 @@ elseif isfield(rawInfo, 'CamIdx') && ~isempty(rawInfo.CamIdx)
     Info.CamIdx = rawInfo.CamIdx;
 end
 
+% Acquisition-wide dual-camera flag. Session-level fields are otherwise
+% deliberately excluded from this flat, file-facing Info, but MultiCam is
+% needed by callers that decide whether dual-camera coregistration applies
+% to the current file (e.g. DataViewer's currentDatSourceIsMultiCam).
+if isfield(rawInfo, 'MultiCam') && ~isempty(rawInfo.MultiCam)
+    Info.MultiCam = rawInfo.MultiCam;
+end
+
 if hasLegacySidecar
     Info.MetadataSource = 'legacy_sidecar';
 else

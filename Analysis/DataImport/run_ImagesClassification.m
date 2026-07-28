@@ -112,13 +112,24 @@ if isfile(acqInfoPath)
 
         disp('Dual Camera data found!')
 
-        if ispc
-            root = getenv('USERPROFILE');
-        else
-            root = getenv('HOME');
+        % Ensure a rig exists for this machine. Import is the entry point of
+        % data into the toolbox, so a rigless project/DataViewer instance
+        % should never arise from normal use -- a default rig is silently
+        % auto-created here if none exists yet (see UMITRigStore.
+        % getOrCreateDefaultRig). This never blocks import: which rig ends
+        % up owning centralized resources is resolved later, independently
+        % of this call.
+        defaultRigID = '';
+        try
+            defaultRigStore = UMITRigStore.getOrCreateDefaultRig();
+            defaultRigID = defaultRigStore.getRigInfo().rigID;
+        catch ME
+            warning('Umitoolbox:run_ImagesClassification:defaultRigFailed', ...
+                ['Could not resolve/create a default rig for this machine. ' ...
+                'Import will continue without one. %s'], ME.message);
         end
 
-        LabeoFolder = fullfile(root, 'Documents', 'LabeoTech', 'Config', 'umIT', 'tformFiles');
+        LabeoFolder = getUmitFolder('tformFiles');
         tformFile = fullfile(LabeoFolder, 'coreg2cam_tform.mat');
 
         if isfile(tformFile)
@@ -129,12 +140,82 @@ if isfile(acqInfoPath)
                 warning(['Coregistration failed! Data import will resume without coregistration. ', warnmsg]);
             else
                 disp('Done!')
+
+                % Record this application in the imported SaveFolder's
+                % DataParams.mat. Only DataViewer_Coreg2Cams's own "Save
+                % Calibration" action recorded DataParams.cameraCoregistration
+                % before now -- not the many downstream SaveFolders that
+                % actually receive the transform via import, which is the
+                % common case. Best-effort: a failure here must not undo an
+                % otherwise-successful coregistration.
+                try
+                    if ~isfile(fullfile(SaveFolder, 'DataParams.mat'))
+                        createDataParams(SaveFolder);
+                    end
+
+                    DataParams = loadDataParams(SaveFolder);
+                    cc = DataParams.cameraCoregistration;
+
+                    cc.isCoregistered = true;
+                    cc.isReviewed = false;
+                    cc.tform = tf.tform;
+                    cc.resourceUUID = '';
+                    cc.rigID = defaultRigID;
+                    cc.transformType = 'similarity';
+                    cc.method = 'run_ImagesClassification';
+                    cc.sourceFile = tformFile;
+                    if isfield(tf.tformInfo, 'SavedOn')
+                        cc.sourceFileTimestamp = char(tf.tformInfo.SavedOn);
+                    else
+                        cc.sourceFileTimestamp = '';
+                    end
+                    cc.createdOn = char(datetime('now'));
+                    cc.source = SaveFolder;
+                    cc.appliedOn = char(datetime('now'));
+                    cc.appliedBy = 'run_ImagesClassification';
+                    cc.confirmationMode = 'automatic-import-application';
+                    cc.notes = ['Dual-camera coregistration automatically applied during ' ...
+                        'raw data import using the active calibration.'];
+
+                    T = localGetTransformMatrix(tf.tform);
+                    A = T(1:2, 1:2);
+                    cc.qcMetrics.translationXY_px = [T(3,1), T(3,2)];
+                    cc.qcMetrics.rotationDeg = atan2d(A(1,2), A(1,1));
+                    cc.qcMetrics.scaleXY = [hypot(A(1,1), A(1,2)), hypot(A(2,1), A(2,2))];
+                    cc.qcMetrics.determinant = det(A);
+
+                    DataParams.cameraCoregistration = cc;
+                    DataParams.lastModified = datetime('now');
+
+                    validateDataParams(DataParams);
+                    save(fullfile(SaveFolder, 'DataParams.mat'), 'DataParams', '-mat');
+                catch ME
+                    warning('Umitoolbox:run_ImagesClassification:cameraCoregistrationDataParamsFailed', ...
+                        ['Coregistration succeeded, but DataParams.cameraCoregistration could not ' ...
+                        'be recorded: %s'], ME.message);
+                end
             end
         else
             warning(['Coregistration TFORM file not found! Data from camera #2 will not be ' ...
                 'coregistered with camera #1. Data import will resume without coregistration.'])
         end
     end
+end
+
+% Classification has fully succeeded by this point (any failure above throws
+% or asserts, aborting the function before reaching here). Ensure DataParams.mat
+% exists and records the RawFolder actually used for this import, so dual-camera
+% coregistration and other RawFolder-dependent features are available without a
+% separate manual "Set Raw Folder" step. Best-effort: a failure here must not
+% undo an otherwise-successful import.
+try
+    if ~isfile(fullfile(SaveFolder, 'DataParams.mat'))
+        createDataParams(SaveFolder);
+    end
+    updateDataParam(SaveFolder, 'folders.RawFolder', RawFolder);
+catch ME
+    warning('Umitoolbox:run_ImagesClassification:dataParamsRawFolderFailed', ...
+        'Import succeeded, but DataParams.mat RawFolder could not be recorded: %s', ME.message);
 end
 
 % Return full saved paths, consistent with wrapper-level file manifest style.
@@ -169,5 +250,17 @@ classifiedFiles = unique(cellfun(@(x) fullfile(SaveFolder, x), classifiedFiles, 
         info = PipelineManager.addOutput(info, 'classifiedFiles', 'ImageTimeSeries', 'file', ...
             'Generated file manifest saved in SaveFolder.', ...
             default_Output, 1, 'isData', true, 'saveFileName', '');
+    end
+
+    function T = localGetTransformMatrix(tform)
+        %LOCALGETTRANSFORMMATRIX Return 3 x 3 transform matrix from a tform object.
+
+        if isprop(tform, 'T')
+            T = tform.T;
+        elseif isprop(tform, 'A')
+            T = tform.A;
+        else
+            T = tform;
+        end
     end
 end
