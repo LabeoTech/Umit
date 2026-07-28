@@ -8,7 +8,7 @@ function schema = getUMITRigSchema(version)
 %   archive, rename, and validate centralized rig folders.
 %
 %   A rig describes one physical imaging setup (cameras, filters, dual-camera
-%   coregistration calibration). Rigs are independent of any project: a
+%   coregistration). Rigs are independent of any project: a
 %   project/session references a rig by rigUUID/rigID, but never owns its
 %   folder or metadata. This mirrors the split between UMITProjectStore's own
 %   project metadata and the external imaging SaveFolders it references.

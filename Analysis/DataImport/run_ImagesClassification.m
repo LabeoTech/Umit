@@ -120,6 +120,7 @@ if isfile(acqInfoPath)
         % up owning centralized resources is resolved later, independently
         % of this call.
         defaultRigID = '';
+        defaultRigStore = [];
         try
             defaultRigStore = UMITRigStore.getOrCreateDefaultRig();
             defaultRigID = defaultRigStore.getRigInfo().rigID;
@@ -129,8 +130,34 @@ if isfile(acqInfoPath)
                 'Import will continue without one. %s'], ME.message);
         end
 
-        LabeoFolder = getUmitFolder('tformFiles');
-        tformFile = fullfile(LabeoFolder, 'coreg2cam_tform.mat');
+        % Resolve the active camera coregistration transform. Prefer the
+        % rig's managed resource (kept current by DataViewer_Coreg2Cams's
+        % "Save Calibration" action) so imported data carries a real
+        % resourceUUID; fall back to the legacy flat tform file for rigs
+        % that have never saved a camera coregistration through the
+        % managed-resource path yet.
+        tformFile = '';
+        resourceUUID = '';
+        if ~isempty(defaultRigStore)
+            try
+                activeResource = defaultRigStore.getActiveCameraCoregistration();
+                if ~isempty(activeResource)
+                    tformFile = defaultRigStore.resolveResourcePath(activeResource.uuid);
+                    resourceUUID = activeResource.uuid;
+                end
+            catch ME
+                warning('Umitoolbox:run_ImagesClassification:activeCoregistrationLookupFailed', ...
+                    ['Could not resolve the rig''s active camera coregistration resource. ' ...
+                    'Falling back to the legacy tform file. %s'], ME.message);
+                tformFile = '';
+                resourceUUID = '';
+            end
+        end
+
+        if isempty(tformFile)
+            LabeoFolder = getUmitFolder('tformFiles');
+            tformFile = fullfile(LabeoFolder, 'coreg2cam_tform.mat');
+        end
 
         if isfile(tformFile)
             tf = load(tformFile);
@@ -159,7 +186,7 @@ if isfile(acqInfoPath)
                     cc.isCoregistered = true;
                     cc.isReviewed = false;
                     cc.tform = tf.tform;
-                    cc.resourceUUID = '';
+                    cc.resourceUUID = resourceUUID;
                     cc.rigID = defaultRigID;
                     cc.transformType = 'similarity';
                     cc.method = 'run_ImagesClassification';
@@ -175,7 +202,7 @@ if isfile(acqInfoPath)
                     cc.appliedBy = 'run_ImagesClassification';
                     cc.confirmationMode = 'automatic-import-application';
                     cc.notes = ['Dual-camera coregistration automatically applied during ' ...
-                        'raw data import using the active calibration.'];
+                        'raw data import using the rig''s active camera coregistration.'];
 
                     T = localGetTransformMatrix(tf.tform);
                     A = T(1:2, 1:2);
