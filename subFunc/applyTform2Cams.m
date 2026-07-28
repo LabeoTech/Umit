@@ -180,22 +180,46 @@ for ii = 1:length(Cam2List)
         fprintf('\t- Applying geometric transformation...\n')
         dat = imwarp(dat, RA, tform, 'nearest', 'OutputView', RA, 'FillValues', 0);
 
-        fprintf('\t- Overwriting data in .DAT file...\n')
-        fid = fopen(datPath, 'w');
-        cleanupFid = onCleanup(@() safeFclose(fid));
+        % Write to a temporary file and replace the original only after a
+        % fully successful write. Opening datPath directly with 'w' would
+        % truncate it immediately, destroying the only copy of the data if
+        % the write subsequently failed for any reason.
+        fprintf('\t- Writing transformed data to a temporary file...\n')
+        tmpPath = [datPath '.tmp'];
+        if isfile(tmpPath)
+            delete(tmpPath);
+        end
+
+        fid = fopen(tmpPath, 'w');
         if fid == -1
-            warnmsg = sprintf('Could not open "%s" for writing.', datPath);
+            warnmsg = sprintf('Could not open temporary file "%s" for writing.', tmpPath);
             return
         end
-        fwrite(fid, dat, 'single');
-        fclose(fid);
+        cleanupFid = onCleanup(@() safeFclose(fid));
+
+        nWritten = fwrite(fid, dat, 'single');
+        clear cleanupFid % triggers fclose(fid) now, before movefile
+
+        if nWritten ~= numel(dat)
+            if isfile(tmpPath)
+                delete(tmpPath);
+            end
+            warnmsg = sprintf(['Failed to write all data to temporary file for "%s" ' ...
+                '(%d/%d elements written). Original file was not modified.'], ...
+                datPath, nWritten, numel(dat));
+            return
+        end
+
+        fprintf('\t- Replacing original .DAT file...\n')
+        delete(datPath);
+        movefile(tmpPath, datPath, 'f');
     else
         % RAM-safe mode
         fprintf('\t- Applying geometric transformation in RAM-safe mode...\n')
         tmpPath = [datPath '.tmp'];
 
         fidIn = fopen(datPath, 'r');
-        
+
         if fidIn == -1
             warnmsg = sprintf('Could not open "%s" for reading.', datPath);
             return
@@ -225,7 +249,17 @@ for ii = 1:length(Cam2List)
             end
             frame = reshape(frame, ny, nx);
             frame = imwarp(frame, RA, tform, 'nearest', 'OutputView', RA, 'FillValues', 0);
-            fwrite(fidOut, frame, 'single');
+            nWritten = fwrite(fidOut, frame, 'single');
+            if nWritten ~= numel(frame)
+                warnmsg = sprintf(['Failed to write frame %d to temporary file for "%s" ' ...
+                    '(%d/%d elements written). Original file was not modified.'], ...
+                    t, datPath, nWritten, numel(frame));
+                clear cleanupIn cleanupOut
+                if isfile(tmpPath)
+                    delete(tmpPath);
+                end
+                return
+            end
         end
 
         clear cleanupIn cleanupOut
