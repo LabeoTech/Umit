@@ -22,10 +22,12 @@ classdef UMITRigStore < handle
     %       open
     %       openByRigID
     %       listRigs
+    %       rigExists
     %       getOrCreateDefaultRig
     %       getRigInfo
     %       updateRigMetadata
     %       renameRigID
+    %       archiveRig
     %       addCameraCoregistration
     %       addCalibrationFile
     %       archiveResource
@@ -53,6 +55,17 @@ classdef UMITRigStore < handle
     %       - Archived resources remain registered and restorable.
     %       - Resource files are never deleted directly by callers; purgeResource is the only
     %         sanctioned deletion path, and only for already-archived resources.
+    %       - A rig itself is soft-deleted via archiveRig (status ->
+    %         'archived'), never removed -- sessions that reference a
+    %         rigID/rigUUID by value keep resolving via open/openByRigID/
+    %         rigExists. Archived rigs are excluded from
+    %         getOrCreateDefaultRig's candidate pool. The default rig
+    %         cannot be archived directly.
+    %       - RigInfo.metadata is an open struct reserved for future
+    %         rig-scoped fields not yet designed (camera names, per-camera
+    %         info, filter spectral profiles, ...). updateRigMetadata
+    %         shallow-merges new keys into it, so adding a field later
+    %         never requires migrating existing rig records.
     %       - Every mutation uses a rig lock and atomic metadata writes.
     %       - Invalid rigs open read-only.
 
@@ -168,6 +181,9 @@ classdef UMITRigStore < handle
             RigInfo.createdOn = nowTime;
             RigInfo.modifiedOn = nowTime;
             RigInfo.isDefault = isDefault;
+            RigInfo.status = 'active';
+            RigInfo.archivedOn = NaT;
+            RigInfo.metadata = struct();
             RigInfo.activeCoregistrationUUID = '';
             RigInfo.activeCalibrationFileUUID = '';
             RigInfo.resourceRegistry = UMITRigStore.iEmptyResourceRegistry();
@@ -220,8 +236,7 @@ classdef UMITRigStore < handle
                 RigInfo = loaded.(schema.metadataVariables.rig);
                 if isstruct(RigInfo) && isscalar(RigInfo) && ...
                         isfield(RigInfo, 'uuid') && strcmpi(RigInfo.uuid, rigUUID)
-                    obj = UMITRigStore(candidateRoot, ...
-                        getUMITRigSchema(RigInfo.schemaVersion), false);
+                    obj = UMITRigStore(candidateRoot, getUMITRigSchema(), false);
                     report = obj.validate('Mode', 'quick');
                     obj.LastValidationReport = report;
                     obj.IsReadOnly = ~report.isValid;
@@ -264,8 +279,7 @@ classdef UMITRigStore < handle
                 error(errID, 'Rig metadata variable is missing.');
             end
 
-            RigInfo = loaded.(schema.metadataVariables.rig);
-            obj = UMITRigStore(rigPath, getUMITRigSchema(RigInfo.schemaVersion), false);
+            obj = UMITRigStore(rigPath, getUMITRigSchema(), false);
             report = obj.validate('Mode', 'quick');
             obj.LastValidationReport = report;
             obj.IsReadOnly = ~report.isValid;
@@ -277,7 +291,8 @@ classdef UMITRigStore < handle
             %   rigs = UMITRigStore.listRigs()
             %
             %   Returns a table with columns: RigUUID, RigID, DisplayName,
-            %   IsDefault, IsReadable, RigRoot.
+            %   IsDefault, Status, IsReadable, RigRoot. Status is
+            %   'active'/'archived' for readable rigs, "" otherwise.
 
             schema = getUMITRigSchema();
             rigsRoot = UMITRigStore.getRigsRoot();
@@ -291,6 +306,7 @@ classdef UMITRigStore < handle
             RigID = strings(0, 1);
             DisplayName = strings(0, 1);
             IsDefault = false(0, 1);
+            Status = strings(0, 1);
             IsReadable = false(0, 1);
             RigRoot = strings(0, 1);
 
@@ -305,22 +321,66 @@ classdef UMITRigStore < handle
                 try
                     loaded = load(rigFile, schema.metadataVariables.rig, '-mat');
                     RigInfo = loaded.(schema.metadataVariables.rig);
+                    RigInfo = UMITRigStore.iUpgradeRigInfo(RigInfo);
                     RigUUID(end+1, 1) = string(RigInfo.uuid); %#ok<AGROW>
                     RigID(end+1, 1) = string(RigInfo.rigID); %#ok<AGROW>
                     DisplayName(end+1, 1) = string(RigInfo.displayName); %#ok<AGROW>
                     IsDefault(end+1, 1) = logical(RigInfo.isDefault); %#ok<AGROW>
+                    Status(end+1, 1) = string(RigInfo.status); %#ok<AGROW>
                     IsReadable(end+1, 1) = true; %#ok<AGROW>
                 catch
                     RigUUID(end+1, 1) = ""; %#ok<AGROW>
                     RigID(end+1, 1) = string(entryNames{iEntry}); %#ok<AGROW>
                     DisplayName(end+1, 1) = ""; %#ok<AGROW>
                     IsDefault(end+1, 1) = false; %#ok<AGROW>
+                    Status(end+1, 1) = ""; %#ok<AGROW>
                     IsReadable(end+1, 1) = false; %#ok<AGROW>
                 end
                 RigRoot(end+1, 1) = string(candidateRoot); %#ok<AGROW>
             end
 
-            rigs = table(RigUUID, RigID, DisplayName, IsDefault, IsReadable, RigRoot);
+            rigs = table(RigUUID, RigID, DisplayName, IsDefault, Status, IsReadable, RigRoot);
+        end
+
+        function tf = rigExists(rigID)
+            %RIGEXISTS Return true if rigID resolves to a readable rig record.
+            %
+            %   tf = UMITRigStore.rigExists(rigID)
+            %
+            %   Accepts either a human-readable rigID (what DataParams
+            %   stores at the session level, e.g.
+            %   DataParams.cameraCoregistration.rigID) or a rig UUID.
+            %   Resolves both active and archived rigs -- intended for
+            %   validation callers (e.g. a GUI checking whether a
+            %   session's stored rigID is still valid) that want a plain
+            %   boolean instead of a try/catch around open/openByRigID.
+            %   Never throws: any resolution failure (not found,
+            %   unreadable metadata, bad input) returns false.
+
+            tf = false;
+
+            if nargin < 1 || ~(ischar(rigID) || (isstring(rigID) && isscalar(rigID)))
+                return
+            end
+
+            rigID = strtrim(char(string(rigID)));
+            if isempty(rigID)
+                return
+            end
+
+            schema = getUMITRigSchema();
+            isUUID = ~isempty(regexp(rigID, schema.namingRules.uuidPattern, 'once'));
+
+            try
+                if isUUID
+                    UMITRigStore.open(rigID);
+                else
+                    UMITRigStore.openByRigID(rigID);
+                end
+                tf = true;
+            catch
+                tf = false;
+            end
         end
 
         function obj = getOrCreateDefaultRig()
@@ -341,9 +401,14 @@ classdef UMITRigStore < handle
             %          this is genuinely ambiguous and throws -- mark one as
             %          default via updateRigMetadata, or open a specific rig
             %          by rigID/rigUUID instead.
+            %
+            %   Archived rigs are excluded from every resolution branch --
+            %   an archived rig can still be opened explicitly (openByRigID/
+            %   open/rigExists), but is never auto-selected for new work.
 
             errID = 'Umitoolbox:UMITRigStore:noDefaultRig';
             rigs = UMITRigStore.listRigs();
+            rigs = rigs(rigs.Status ~= "archived", :);
 
             defaultIdx = find(rigs.IsDefault & rigs.IsReadable, 1, 'first');
             if ~isempty(defaultIdx)
@@ -488,6 +553,52 @@ classdef UMITRigStore < handle
 
             obj.RigRoot = UMITRigStore.iAbsolutePath(newRigPath);
             obj.iAppendLog('renameRigID', RigInfo.uuid, 'completed');
+        end
+
+        function archiveRig(obj)
+            %ARCHIVERIG Soft-delete this rig: mark it archived, keep its data.
+            %
+            %   store.archiveRig()
+            %
+            %   Nothing is deleted or moved. Sessions that reference this
+            %   rig's rigID/rigUUID (e.g. DataParams.cameraCoregistration.
+            %   rigID) keep resolving via openByRigID/open/rigExists.
+            %   Archived rigs are excluded from getOrCreateDefaultRig's
+            %   candidate pool, so they stop being selected for new work.
+            %   The default rig cannot be archived directly -- mark a
+            %   different rig as default first (updateRigMetadata).
+
+            errID = 'Umitoolbox:UMITRigStore:archiveRigFailed';
+            obj.iAssertWritable();
+            lockCleanup = obj.iAcquireWriteLock('archiveRig'); %#ok<NASGU>
+            obj.iAssertHealthyForMutation();
+
+            RigInfo = obj.iLoadRigInfo();
+            originalRigInfo = RigInfo;
+
+            if strcmp(RigInfo.status, 'archived')
+                error(errID, 'Rig is already archived: %s', RigInfo.rigID);
+            end
+
+            if RigInfo.isDefault
+                error(errID, ...
+                    ['Cannot archive the default rig "%s". Mark a different ' ...
+                    'rig as default first (updateRigMetadata).'], RigInfo.rigID);
+            end
+
+            RigInfo.status = 'archived';
+            RigInfo.archivedOn = datetime('now');
+            RigInfo.modifiedOn = datetime('now');
+
+            try
+                obj.iSaveRigInfo(RigInfo);
+                obj.iAssertValidAfterMutation();
+            catch ME
+                obj.iSaveRigInfo(originalRigInfo);
+                rethrow(ME)
+            end
+
+            obj.iAppendLog('archiveRig', RigInfo.uuid, 'completed');
         end
 
         function resourceUUID = addCameraCoregistration(obj, sourceFile, resourceInfo)
@@ -909,6 +1020,18 @@ classdef UMITRigStore < handle
                     sprintf('Missing rig field(s): %s', strjoin(missingFields, ', ')));
             end
 
+            if isfield(RigInfo, 'status') && isfield(obj.Schema, 'rigStatuses') && ...
+                    ~ismember(RigInfo.status, obj.Schema.rigStatuses)
+                report = obj.iAddIssue(report, 'error', 'invalidRigStatus', ...
+                    sprintf('Rig status "%s" is not one of the allowed values.', RigInfo.status));
+            end
+
+            if isfield(RigInfo, 'status') && isfield(RigInfo, 'isDefault') && ...
+                    strcmp(RigInfo.status, 'archived') && RigInfo.isDefault
+                report = obj.iAddIssue(report, 'error', 'archivedDefaultRig', ...
+                    'Rig is archived but still flagged as the default rig.');
+            end
+
             if strcmp(mode, 'full') && isfield(RigInfo, 'resourceRegistry')
                 for iRecord = 1:numel(RigInfo.resourceRegistry)
                     record = RigInfo.resourceRegistry(iRecord);
@@ -964,6 +1087,7 @@ classdef UMITRigStore < handle
                     'Rig metadata variable "%s" is missing.', obj.Schema.metadataVariables.rig);
             end
             RigInfo = loaded.(obj.Schema.metadataVariables.rig);
+            RigInfo = UMITRigStore.iUpgradeRigInfo(RigInfo);
         end
 
         function iSaveRigInfo(obj, RigInfo)
@@ -1299,8 +1423,14 @@ classdef UMITRigStore < handle
             end
         end
 
-        function metadata = iApplyEditableUpdates(~, metadata, updates, allowedFields, errID)
+        function target = iApplyEditableUpdates(~, target, updates, allowedFields, errID)
             %IAPPLYEDITABLEUPDATES Apply only explicitly allowed metadata fields.
+            %
+            %   The 'metadata' field (rig records only) is shallow-merged
+            %   into the existing struct rather than replaced, so a caller
+            %   adding one new key (e.g. cameraNames) never has to
+            %   read-modify-write the whole bucket or clobber keys set by
+            %   other callers.
 
             updateFields = fieldnames(updates);
             invalidFields = setdiff(updateFields, allowedFields);
@@ -1321,9 +1451,22 @@ classdef UMITRigStore < handle
                     if ~islogical(value) || ~isscalar(value)
                         error(errID, 'Field "isDefault" must be a scalar logical.');
                     end
+                elseif strcmp(fieldName, 'metadata')
+                    if ~isstruct(value) || ~isscalar(value)
+                        error(errID, 'Field "metadata" must be a scalar struct.');
+                    end
+                    existingMetadata = target.metadata;
+                    if ~isstruct(existingMetadata) || ~isscalar(existingMetadata)
+                        existingMetadata = struct();
+                    end
+                    newKeys = fieldnames(value);
+                    for iKey = 1:numel(newKeys)
+                        existingMetadata.(newKeys{iKey}) = value.(newKeys{iKey});
+                    end
+                    value = existingMetadata;
                 end
 
-                metadata.(fieldName) = value;
+                target.(fieldName) = value;
             end
         end
 
@@ -1380,6 +1523,30 @@ classdef UMITRigStore < handle
     end
 
     methods (Static, Access = private)
+        function RigInfo = iUpgradeRigInfo(RigInfo)
+            %IUPGRADERIGINFO Backfill fields added by later schema versions.
+            %
+            %   Rig records written under an earlier schema version are
+            %   missing fields added since (schema v2 added metadata/
+            %   status/archivedOn). Rather than requiring a bulk migration
+            %   pass, every load backfills defaults in memory here; the
+            %   upgraded shape persists on disk automatically the next
+            %   time anything writes this rig's metadata.
+
+            if ~isfield(RigInfo, 'metadata') || ~isstruct(RigInfo.metadata) || ~isscalar(RigInfo.metadata)
+                RigInfo.metadata = struct();
+            end
+            if ~isfield(RigInfo, 'status') || isempty(RigInfo.status)
+                RigInfo.status = 'active';
+            end
+            if ~isfield(RigInfo, 'archivedOn')
+                RigInfo.archivedOn = NaT;
+            end
+            if ~isfield(RigInfo, 'schemaVersion') || RigInfo.schemaVersion < 2
+                RigInfo.schemaVersion = 2;
+            end
+        end
+
         function id = iNormalizeManagedID(schema, idIn, idLabel)
             %INORMALIZEMANAGEDID Validate one filesystem-backed managed ID.
 

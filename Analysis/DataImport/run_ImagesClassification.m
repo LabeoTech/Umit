@@ -130,12 +130,11 @@ if isfile(acqInfoPath)
                 'Import will continue without one. %s'], ME.message);
         end
 
-        % Resolve the active camera coregistration transform. Prefer the
-        % rig's managed resource (kept current by DataViewer_Coreg2Cams's
-        % "Save Calibration" action) so imported data carries a real
-        % resourceUUID; fall back to the legacy flat tform file for rigs
-        % that have never saved a camera coregistration through the
-        % managed-resource path yet.
+        % Resolve the active camera coregistration transform from the rig's
+        % managed resource (kept current by DataViewer_Coreg2Cams's "Save
+        % Calibration" action). The legacy flat tform file
+        % (getUmitFolder('tformFiles')/coreg2cam_tform.mat) is no longer
+        % consulted -- UMITRigStore is the sole persistence layer.
         tformFile = '';
         resourceUUID = '';
         if ~isempty(defaultRigStore)
@@ -147,16 +146,11 @@ if isfile(acqInfoPath)
                 end
             catch ME
                 warning('Umitoolbox:run_ImagesClassification:activeCoregistrationLookupFailed', ...
-                    ['Could not resolve the rig''s active camera coregistration resource. ' ...
-                    'Falling back to the legacy tform file. %s'], ME.message);
+                    'Could not resolve the rig''s active camera coregistration resource. %s', ...
+                    ME.message);
                 tformFile = '';
                 resourceUUID = '';
             end
-        end
-
-        if isempty(tformFile)
-            LabeoFolder = getUmitFolder('tformFiles');
-            tformFile = fullfile(LabeoFolder, 'coreg2cam_tform.mat');
         end
 
         if isfile(tformFile)
