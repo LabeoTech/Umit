@@ -1798,6 +1798,569 @@ classdef UMITProjectStore < handle
             clear lockCleanup
         end
 
+        function renameEntity(obj, entityType, entityUUID, newName)
+            %RENAMEENTITY Rename a subject or session identified by UUID.
+            %
+            %   store.renameEntity('subject', subjectUUID, newSubjectID)
+            %   store.renameEntity('session', sessionUUID, newSessionID)
+            %
+            %   A thin UUID-based dispatcher over renameSubjectID/
+            %   renameSessionID. Those methods are keyed by the current
+            %   (mutable) ID string and, for sessions, require the caller to
+            %   already know the owning subjectID. This method exists for
+            %   callers that only hold an entity's immutable UUID (e.g. a
+            %   GUI list selection) and resolves the current ID(s) first.
+            %
+            %   Preconditions:
+            %     - entityType is 'subject' or 'session'.
+            %     - entityUUID resolves to exactly one such entity in this
+            %       project.
+            %     - All preconditions of the delegated rename method also
+            %       apply (project writable/healthy, newName is a valid
+            %       managed ID, no ID collision at the destination).
+            %
+            %   Postconditions / failure modes:
+            %     - Identical to renameSubjectID/renameSessionID. This
+            %       method performs no mutation of its own; it only
+            %       resolves entityUUID to the arguments those methods
+            %       expect, so any failure there is reported unchanged.
+
+            errID = 'Umitoolbox:UMITProjectStore:renameEntityFailed';
+            entityType = lower(char(string(entityType)));
+
+            switch entityType
+                case 'subject'
+                    SubjectInfo = obj.getSubjectInfoByUUID(entityUUID);
+                    obj.renameSubjectID(SubjectInfo.subjectID, newName);
+                case 'session'
+                    [SessionInfo, SubjectInfo] = ...
+                        obj.getSessionInfoByUUID(entityUUID);
+                    obj.renameSessionID(SubjectInfo.subjectID, ...
+                        SessionInfo.sessionID, newName);
+                otherwise
+                    error(errID, ...
+                        ['Unsupported entityType: %s. Use ''subject'' ' ...
+                         'or ''session''.'], entityType);
+            end
+        end
+
+        function moveSessionToSubject(obj, sessionUUID, targetSubjectUUID)
+            %MOVESESSIONTOSUBJECT Re-parent a session to another subject.
+            %
+            %   store.moveSessionToSubject(sessionUUID, targetSubjectUUID)
+            %
+            %   Transactionally relocates a session folder from its current
+            %   subject to a different subject WITHIN THE SAME project. This
+            %   is distinct from renameSessionID, which only changes the
+            %   sessionID string in place; here the session's parent subject
+            %   changes while sessionUUID, sessionID, and every resource
+            %   UUID under the session are preserved.
+            %
+            %   Preconditions:
+            %     - Project is writable and passes full validation.
+            %     - sessionUUID resolves to exactly one session in this
+            %       project.
+            %     - targetSubjectUUID resolves to exactly one subject in
+            %       this project.
+            %     - The target subject does not already have a session
+            %       whose sessionID collides (case-insensitively) with the
+            %       session being moved (sessionIDs are only unique within
+            %       one subject, so a same-ID session can already exist
+            %       under the destination).
+            %
+            %   Postconditions:
+            %     - The session folder is moved under the target subject's
+            %       "sessions" folder; SessionInfo.subjectUUID/subjectID are
+            %       updated to the new owner; the session's resourceRegistry
+            %       relative paths are rewritten to the new location.
+            %     - The source and target subjects' sessionRegistry entries
+            %       are updated together under one project write lock.
+            %     - If the session has a bound rawDataFolder and/or
+            %       processedDataFolder, each bound folder's .umitlink file
+            %       is rewritten so its subjectUUID matches the new owner
+            %       (projectUUID and sessionUUID are unchanged, since the
+            %       project itself does not change).
+            %     - Moving a session to the subject it already belongs to is
+            %       a no-op (returns without error or mutation).
+            %
+            %   Failure modes (all leave the project byte-for-byte
+            %   unchanged; a recovery snapshot is restored automatically):
+            %     - sessionUUID or targetSubjectUUID not found in this
+            %       project.
+            %     - The target subject already has a session with the same
+            %       sessionID.
+            %     - A destination folder collision, a filesystem move
+            %       failure, or a post-mutation validation failure at any
+            %       step triggers a full rollback of the folder move, both
+            %       subject metadata files, and any rewritten bindings.
+
+            errID = 'Umitoolbox:UMITProjectStore:moveSessionFailed';
+            obj.iAssertWritable();
+            lockCleanup = obj.iAcquireWriteLock('moveSessionToSubject');
+            obj.iAssertHealthyForMutation();
+
+            targetSubjectUUID = ...
+                UMITProjectStore.iNormalizeUUIDInput(targetSubjectUUID);
+
+            [~, OldSubjectInfo, oldSubjectPath, SessionInfo, ...
+                oldSessionPath, oldSessionIndex, oldSessionRecord] = ...
+                obj.iResolveSessionByUUID(sessionUUID);
+
+            if strcmpi(OldSubjectInfo.uuid, targetSubjectUUID)
+                clear lockCleanup
+                return
+            end
+
+            ProjectInfo = obj.getProjectInfo();
+            targetIndex = find(strcmpi( ...
+                {ProjectInfo.subjectRegistry.uuid}, targetSubjectUUID));
+            if isempty(targetIndex)
+                error(errID, 'Target subject UUID was not found: %s', ...
+                    targetSubjectUUID);
+            end
+
+            targetSubjectRecord = ProjectInfo.subjectRegistry(targetIndex);
+            targetSubjectPath = obj.iResolveRelativePath( ...
+                targetSubjectRecord.relativePath);
+            TargetSubjectInfo = obj.iLoadMetadata( ...
+                fullfile(targetSubjectPath, obj.Schema.files.subjectMetadata), ...
+                obj.Schema.metadataVariables.subject);
+
+            obj.iAssertUniqueRegistryID( ...
+                TargetSubjectInfo.sessionRegistry, SessionInfo.sessionID, ...
+                'session');
+
+            oldRel = oldSessionRecord.relativePath;
+            newRel = UMITProjectStore.iJoinRelative( ...
+                targetSubjectRecord.relativePath, obj.Schema.folders.sessions, ...
+                SessionInfo.sessionID);
+            newSessionPath = obj.iResolveRelativePath(newRel);
+
+            if isfolder(newSessionPath) || isfile(newSessionPath)
+                error(errID, 'Destination session folder already exists: %s', ...
+                    newSessionPath);
+            end
+
+            recoveryPath = obj.iCreateRecoveryFolder('moveSessionToSubject');
+            backupSession = fullfile(recoveryPath, 'session');
+            backupOldSubject = fullfile(recoveryPath, 'old_subject.mat');
+            backupTargetSubject = fullfile(recoveryPath, 'target_subject.mat');
+            copyfile(oldSessionPath, backupSession, 'f');
+            copyfile(fullfile(oldSubjectPath, obj.Schema.files.subjectMetadata), ...
+                backupOldSubject, 'f');
+            copyfile(fullfile(targetSubjectPath, obj.Schema.files.subjectMetadata), ...
+                backupTargetSubject, 'f');
+
+            boundRoles = {'rawDataFolder', 'processedDataFolder'};
+            boundRoles = boundRoles(~cellfun(@(role) ...
+                isempty(SessionInfo.(role)), boundRoles));
+            bindingBackups = struct('role', {}, 'path', {}, 'backup', {});
+            for iRole = 1:numel(boundRoles)
+                role = boundRoles{iRole};
+                bindingPath = fullfile(SessionInfo.(role), ...
+                    obj.Schema.files.projectBinding);
+                backupPath = fullfile(recoveryPath, ...
+                    sprintf('%s.umitlink', role));
+                copyfile(bindingPath, backupPath, 'f');
+                bindingBackups(end+1) = struct( ...
+                    'role', {role}, 'path', {bindingPath}, ...
+                    'backup', {backupPath}); %#ok<AGROW>
+            end
+
+            try
+                [ok, message] = movefile(oldSessionPath, newSessionPath, 'f');
+                if ~ok
+                    error(errID, 'Could not relocate session folder: %s', ...
+                        message);
+                end
+
+                SessionInfo.subjectUUID = TargetSubjectInfo.uuid;
+                SessionInfo.subjectID = TargetSubjectInfo.subjectID;
+                SessionInfo.resourceRegistry = obj.iReplaceResourcePrefix( ...
+                    SessionInfo.resourceRegistry, oldRel, newRel);
+                SessionInfo.modifiedOn = datetime('now');
+                obj.iSaveSessionInfo(newSessionPath, SessionInfo);
+
+                for iRole = 1:numel(bindingBackups)
+                    role = bindingBackups(iRole).role;
+                    ProjectBinding = UMITProjectStore.readProjectBinding( ...
+                        SessionInfo.(role));
+                    ProjectBinding.subjectUUID = TargetSubjectInfo.uuid;
+                    ProjectBinding.modifiedOn = datetime('now');
+                    tempBindingPath = obj.iWriteProjectBindingTemp( ...
+                        SessionInfo.(role), ProjectBinding);
+                    [ok, message] = movefile( ...
+                        tempBindingPath, bindingBackups(iRole).path, 'f');
+                    if ~ok
+                        error(errID, ...
+                            'Could not update data-folder binding: %s', ...
+                            message);
+                    end
+                end
+
+                OldSubjectInfo.sessionRegistry(oldSessionIndex) = [];
+                OldSubjectInfo.modifiedOn = datetime('now');
+                obj.iSaveSubjectInfo(oldSubjectPath, OldSubjectInfo);
+
+                newSessionRecord = oldSessionRecord;
+                newSessionRecord.relativePath = newRel;
+                TargetSubjectInfo.sessionRegistry(end+1) = newSessionRecord;
+                TargetSubjectInfo.modifiedOn = datetime('now');
+                obj.iSaveSubjectInfo(targetSubjectPath, TargetSubjectInfo);
+
+                obj.iAssertValidAfterMutation();
+
+            catch ME
+                UMITProjectStore.iRemoveFolderIfPresent(newSessionPath);
+                if ~isfolder(oldSessionPath)
+                    copyfile(backupSession, oldSessionPath, 'f');
+                end
+                copyfile(backupOldSubject, ...
+                    fullfile(oldSubjectPath, obj.Schema.files.subjectMetadata), 'f');
+                copyfile(backupTargetSubject, ...
+                    fullfile(targetSubjectPath, obj.Schema.files.subjectMetadata), 'f');
+                for iRole = 1:numel(bindingBackups)
+                    copyfile(bindingBackups(iRole).backup, ...
+                        bindingBackups(iRole).path, 'f');
+                end
+                warning(errID, ...
+                    'Session move rolled back. Recovery snapshot: %s', ...
+                    recoveryPath);
+                rethrow(ME)
+            end
+
+            UMITProjectStore.iRemoveFolderIfPresent(recoveryPath);
+            obj.iAppendLog('moveSessionToSubject', SessionInfo.uuid, ...
+                sprintf('%s -> %s', OldSubjectInfo.subjectID, ...
+                TargetSubjectInfo.subjectID));
+            clear lockCleanup
+        end
+
+        function rebindSessionToProject(obj, sessionUUID, targetProjectUUID)
+            %REBINDSESSIONTOPROJECT Move a session to a different project.
+            %
+            %   store.rebindSessionToProject(sessionUUID, targetProjectUUID)
+            %
+            %   Moves a session, and its bound data-folder links, from this
+            %   project to a different UMITProjectStore project. A subject
+            %   with the same subjectID is created in the target project if
+            %   one does not already exist there (a fresh subjectUUID is
+            %   assigned in that case: subject identity is NOT preserved
+            %   across projects, only sessionUUID is).
+            %
+            %   *** WEAKER GUARANTEE THAN moveSessionToSubject ***
+            %   Each UMITProjectStore instance owns its own write lock and
+            %   its own atomic, rollback-safe transaction (see
+            %   iAcquireWriteLock); there is no cross-store lock and no
+            %   two-phase commit spanning both projects. This method is
+            %   composed of two independently-atomic phases:
+            %     1) DETACH the session from the source project (fully
+            %        rolled back on failure; the target project is never
+            %        touched during this phase).
+            %     2) Only once (1) has committed, ATTACH the session under
+            %        the target project.
+            %   This ordering is required, not just a preference: a bound
+            %   rawDataFolder/processedDataFolder's .umitlink file can only
+            %   ever satisfy ONE project's full validation at a time (its
+            %   projectUUID/subjectUUID must match whichever project's
+            %   SessionInfo currently references that folder). Attaching to
+            %   the target before detaching from the source would make both
+            %   projects' SessionInfo reference the same external folder at
+            %   once, and neither project's own iAssertHealthyForMutation
+            %   full-validate would then pass. Detach-first avoids that.
+            %   The cost is the opposite failure mode: if phase 1 (detach)
+            %   fails, nothing has changed anywhere. If phase 2 (attach)
+            %   fails AFTER phase 1 already committed, this method attempts
+            %   to compensate by restoring the session back into the source
+            %   project from an on-disk recovery snapshot. If that
+            %   compensating restore ALSO fails, the session ends up
+            %   referenced by NEITHER project's registry -- its folder and
+            %   metadata still exist under the recovery snapshot reported
+            %   in the error, but reattaching it requires manual action.
+            %   There is no protection against another writer mutating
+            %   either project during the gap between phase 1 and phase 2.
+            %
+            %   Preconditions:
+            %     - targetProjectUUID resolves to an existing, writable
+            %       project that passes full validation and is different
+            %       from this project (rebinding to the same project is a
+            %       no-op).
+            %     - sessionUUID resolves to exactly one session in this
+            %       project.
+            %     - The (possibly newly-created) same-subjectID subject in
+            %       the target project does not already have a session
+            %       whose sessionID collides with the session being moved.
+            %
+            %   Postconditions (full success):
+            %     - The session folder, sessionUUID, sessionID, and every
+            %       resource UUID under it are preserved, now under a
+            %       subject with the source's subjectID in the target
+            %       project. SessionInfo.subjectUUID is updated to that
+            %       target-project subject's UUID.
+            %     - Any bound rawDataFolder/processedDataFolder .umitlink
+            %       file is rewritten with the target project's projectUUID
+            %       and the target subject's UUID; sessionUUID and
+            %       bindingUUID are unchanged.
+            %     - The source project no longer references the session.
+            %
+            %   Failure modes:
+            %     - targetProjectUUID not found, read-only, or invalid:
+            %       rejected before the source project is touched at all.
+            %     - Phase-1 (detach) failure: fully rolled back; neither
+            %       project is changed.
+            %     - Phase-2 (attach) failure: target project is rolled back
+            %       to not referencing the session; this method then
+            %       attempts to restore the session into the source
+            %       project. See the "referenced by neither project" risk
+            %       above if that compensating restore also fails.
+
+            errID = 'Umitoolbox:UMITProjectStore:rebindSessionFailed';
+            sessionUUID = UMITProjectStore.iNormalizeUUIDInput(sessionUUID);
+            targetProjectUUID = ...
+                UMITProjectStore.iNormalizeUUIDInput(targetProjectUUID);
+
+            ProjectInfo = obj.getProjectInfo();
+            if strcmpi(ProjectInfo.projectUUID, targetProjectUUID)
+                return
+            end
+
+            targetStore = UMITProjectStore.open(targetProjectUUID);
+            targetStore.iAssertWritable();
+            obj.iAssertWritable();
+
+            % --- Ensure a same-subjectID subject exists in the target,
+            %     before touching the source project at all ---
+            [SessionInfo, SubjectInfo] = obj.getSessionInfoByUUID(sessionUUID); %#ok<ASGLU>
+
+
+            TargetProjectInfo = targetStore.getProjectInfo();
+            targetSubjectIdx = targetStore.iFindRegistryIndex( ...
+                TargetProjectInfo.subjectRegistry, SubjectInfo.subjectID);
+            if isempty(targetSubjectIdx)
+                targetStore.addSubject(struct( ...
+                    'subjectID', SubjectInfo.subjectID, ...
+                    'displayName', SubjectInfo.displayName, ...
+                    'description', SubjectInfo.description));
+            end
+
+            % --- Phase 1: detach from the source project (its own atomic
+            %     transaction; target is not touched here) ---
+            sourceLock = obj.iAcquireWriteLock( ...
+                'rebindSessionToProject_detach');
+            try
+                obj.iAssertHealthyForMutation();
+                [~, SubjectInfo, subjectPath, SessionInfo, sessionPath, ...
+                    sessionIndex, sessionRecord] = ...
+                    obj.iResolveSessionByUUID(sessionUUID);
+
+                recoveryPath = obj.iCreateRecoveryFolder( ...
+                    'rebindSessionToProject');
+                stagingSessionPath = fullfile(recoveryPath, 'session');
+                copyfile(sessionPath, stagingSessionPath, 'f');
+                backupSubject = fullfile(recoveryPath, 'source_subject.mat');
+                copyfile(fullfile(subjectPath, obj.Schema.files.subjectMetadata), ...
+                    backupSubject, 'f');
+
+                UMITProjectStore.iRemoveFolderIfPresent(sessionPath);
+                SubjectInfo.sessionRegistry(sessionIndex) = [];
+                SubjectInfo.modifiedOn = datetime('now');
+                obj.iSaveSubjectInfo(subjectPath, SubjectInfo);
+                obj.iAssertValidAfterMutation();
+
+            catch ME
+                if exist('sessionPath', 'var') && exist('stagingSessionPath', 'var') ...
+                        && isfile(fullfile(stagingSessionPath, ...
+                        obj.Schema.files.sessionMetadata)) && ~isfolder(sessionPath)
+                    copyfile(stagingSessionPath, sessionPath, 'f');
+                end
+                if exist('subjectPath', 'var') && exist('backupSubject', 'var') ...
+                        && isfile(backupSubject)
+                    copyfile(backupSubject, ...
+                        fullfile(subjectPath, obj.Schema.files.subjectMetadata), 'f');
+                end
+                if exist('recoveryPath', 'var')
+                    UMITProjectStore.iRemoveFolderIfPresent(recoveryPath);
+                end
+                clear sourceLock
+                error(errID, ...
+                    ['Could not detach session from the source project; ' ...
+                     'no changes were made anywhere. Cause: %s'], ME.message);
+            end
+            clear sourceLock
+
+            % --- Phase 2: attach under the target project, now that the
+            %     source project no longer references the session ---
+            newSessionPath = '';
+            targetLock = targetStore.iAcquireWriteLock( ...
+                'rebindSessionToProject_attach');
+            try
+                targetStore.iAssertHealthyForMutation();
+                TargetProjectInfo = targetStore.getProjectInfo();
+                targetSubjectIdx = targetStore.iFindRegistryIndex( ...
+                    TargetProjectInfo.subjectRegistry, SubjectInfo.subjectID);
+                targetSubjectRecord = ...
+                    TargetProjectInfo.subjectRegistry(targetSubjectIdx);
+                targetSubjectPath = targetStore.iResolveRelativePath( ...
+                    targetSubjectRecord.relativePath);
+                TargetSubjectInfo = targetStore.iLoadMetadata( ...
+                    fullfile(targetSubjectPath, ...
+                    targetStore.Schema.files.subjectMetadata), ...
+                    targetStore.Schema.metadataVariables.subject);
+
+                targetStore.iAssertUniqueRegistryID( ...
+                    TargetSubjectInfo.sessionRegistry, ...
+                    SessionInfo.sessionID, 'session');
+
+                newRel = UMITProjectStore.iJoinRelative( ...
+                    targetSubjectRecord.relativePath, ...
+                    targetStore.Schema.folders.sessions, ...
+                    SessionInfo.sessionID);
+                newSessionPath = targetStore.iResolveRelativePath(newRel);
+
+                if isfolder(newSessionPath) || isfile(newSessionPath)
+                    error(errID, ...
+                        'Destination session folder already exists: %s', ...
+                        newSessionPath);
+                end
+
+                [ok, message] = movefile( ...
+                    stagingSessionPath, newSessionPath, 'f');
+                if ~ok
+                    error(errID, ...
+                        'Could not install session folder in target project: %s', ...
+                        message);
+                end
+
+                AttachedSessionInfo = SessionInfo;
+                AttachedSessionInfo.subjectUUID = TargetSubjectInfo.uuid;
+                AttachedSessionInfo.subjectID = TargetSubjectInfo.subjectID;
+                AttachedSessionInfo.resourceRegistry = ...
+                    targetStore.iReplaceResourcePrefix( ...
+                    AttachedSessionInfo.resourceRegistry, ...
+                    sessionRecord.relativePath, newRel);
+                AttachedSessionInfo.modifiedOn = datetime('now');
+                targetStore.iSaveSessionInfo(newSessionPath, AttachedSessionInfo);
+
+                boundRoles = {'rawDataFolder', 'processedDataFolder'};
+                for iRole = 1:numel(boundRoles)
+                    role = boundRoles{iRole};
+                    if isempty(AttachedSessionInfo.(role))
+                        continue
+                    end
+                    ProjectBinding = UMITProjectStore.readProjectBinding( ...
+                        AttachedSessionInfo.(role));
+                    ProjectBinding.projectUUID = TargetProjectInfo.projectUUID;
+                    ProjectBinding.subjectUUID = TargetSubjectInfo.uuid;
+                    ProjectBinding.modifiedOn = datetime('now');
+                    tempBindingPath = targetStore.iWriteProjectBindingTemp( ...
+                        AttachedSessionInfo.(role), ProjectBinding);
+                    bindingPath = fullfile(AttachedSessionInfo.(role), ...
+                        targetStore.Schema.files.projectBinding);
+                    [ok, message] = movefile( ...
+                        tempBindingPath, bindingPath, 'f');
+                    if ~ok
+                        error(errID, ...
+                            'Could not update data-folder binding: %s', ...
+                            message);
+                    end
+                end
+
+                newSessionRecord = sessionRecord;
+                newSessionRecord.relativePath = newRel;
+                TargetSubjectInfo.sessionRegistry(end+1) = newSessionRecord;
+                TargetSubjectInfo.modifiedOn = datetime('now');
+                targetStore.iSaveSubjectInfo( ...
+                    targetSubjectPath, TargetSubjectInfo);
+
+                targetStore.iAssertValidAfterMutation();
+
+            catch ME
+                if ~isempty(newSessionPath) && isfolder(newSessionPath)
+                    % The staged copy was already moved here; move it back
+                    % so the compensation step below has something to
+                    % restore into the source project.
+                    UMITProjectStore.iRemoveFolderIfPresent(stagingSessionPath);
+                    movefile(newSessionPath, stagingSessionPath, 'f');
+                end
+                clear targetLock
+                obj.iCompensateFailedRebindDetach( ...
+                    sessionUUID, SubjectInfo.subjectID, SessionInfo, ...
+                    stagingSessionPath, backupSubject, recoveryPath, ...
+                    targetProjectUUID, ME);
+                return
+            end
+            clear targetLock
+
+            UMITProjectStore.iRemoveFolderIfPresent(recoveryPath);
+            obj.iAppendLog('rebindSessionToProject', SessionInfo.uuid, ...
+                sprintf('moved to project %s', targetProjectUUID));
+            targetStore.iAppendLog('rebindSessionToProject', SessionInfo.uuid, ...
+                sprintf('received from project %s', ProjectInfo.projectUUID));
+        end
+
+        function iCompensateFailedRebindDetach(obj, sessionUUID, ...
+                subjectID, SessionInfo, stagingSessionPath, backupSubject, ...
+                recoveryPath, targetProjectUUID, attachError)
+            %ICOMPENSATEFAILEDREBINDDETACH Best-effort restore into source.
+            %
+            % Called only when rebindSessionToProject's phase 2 (attach to
+            % the target project) fails after phase 1 (detach from this,
+            % the source, project) already committed. Restores the session
+            % folder and this project's subject registry entry from the
+            % phase-1 recovery snapshot. SessionInfo is the pristine,
+            % pre-attach struct (NOT the copy phase 2 mutated with the
+            % target subject's UUID/ID) and is re-saved on top of the
+            % restored folder so the session's own metadata cannot end up
+            % claiming the target subject as its owner. Always errors: with
+            % the original attach failure if the restore succeeds, or with
+            % both errors combined (and the recovery path highlighted for
+            % manual recovery) if the restore itself fails.
+
+            restoreErrID = 'Umitoolbox:UMITProjectStore:rebindSessionFailed';
+            sourceLock = obj.iAcquireWriteLock('rebindSessionToProject_undo');
+            try
+                % Phase 1 already removed the session from this subject, so
+                % only the subject (not the session) can still be resolved
+                % normally; the session's folder location is rebuilt from
+                % the subject's own relativePath plus the known sessionID.
+                [subjectRecord, ~, subjectPath] = ...
+                    obj.iResolveSubject(subjectID);
+                sessionRel = UMITProjectStore.iJoinRelative( ...
+                    subjectRecord.relativePath, obj.Schema.folders.sessions, ...
+                    SessionInfo.sessionID);
+                sessionPath = obj.iResolveRelativePath(sessionRel);
+
+                UMITProjectStore.iRemoveFolderIfPresent(sessionPath);
+                copyfile(stagingSessionPath, sessionPath, 'f');
+                obj.iSaveSessionInfo(sessionPath, SessionInfo);
+                copyfile(backupSubject, ...
+                    fullfile(subjectPath, obj.Schema.files.subjectMetadata), 'f');
+                obj.iAssertValidAfterMutation();
+
+                clear sourceLock
+                UMITProjectStore.iRemoveFolderIfPresent(recoveryPath);
+                error(restoreErrID, ...
+                    ['Could not attach session to target project %s. The ' ...
+                     'session was restored to this (source) project. ' ...
+                     'Cause: %s'], targetProjectUUID, attachError.message);
+
+            catch ME
+                clear sourceLock
+                warning(restoreErrID, ...
+                    ['Could not attach session (UUID: %s) to target ' ...
+                     'project %s, AND the automatic restore into this ' ...
+                     'source project also failed. The session is not ' ...
+                     'referenced by either project''s registry. Its files ' ...
+                     'are preserved for manual recovery at: %s'], ...
+                    sessionUUID, targetProjectUUID, recoveryPath);
+                error(restoreErrID, ...
+                    ['Rebind failed and automatic restore also failed. ' ...
+                     'Attach cause: %s | Restore cause: %s | Recovery ' ...
+                     'snapshot: %s'], attachError.message, ME.message, ...
+                    recoveryPath);
+            end
+        end
+
         function LockInfo = getLockInfo(obj)
             %GETLOCKINFO Return the current project-lock metadata.
             %
