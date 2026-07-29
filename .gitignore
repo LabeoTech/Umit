@@ -17,9 +17,7 @@ Analysis/Custom_Functions/
 CLAUDE.md
 PLANNING_LOG.md
 
-# Ignore all folders (and their contents) named with a leading "." or "_",
-# except real source folders that happen to use that naming convention.
-.*/
-_*/
-!ProjectManagement/_projectInternal/
-!docs/_sass/
+.claude/
+_mlapp_tools/
+_branchComp/
+_apps_exported/
