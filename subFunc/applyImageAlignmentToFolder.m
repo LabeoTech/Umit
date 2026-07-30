@@ -35,6 +35,11 @@ function report = applyImageAlignmentToFolder(targetFolder, finalTform, opts)
 %       movingSourceFile     - File or context used to estimate the transform.
 %       preFlipHorizontally  - Whether the GUI pre-flipped the moving source.
 %       createdBy            - Tool/app name.
+%       resourceUUID         - UUID of the UMITProjectStore registrationTransform
+%                              resource this transform was imported as, when the
+%                              target folder is bound to a project. Stored in
+%                              DataParams.registration.resourceUUID as a pointer
+%                              back to the central resource. Empty by default.
 %       backupChoice         - Backup name or 'GENBACKUP'.
 %       transformDat         - Transform .dat files. Default: true.
 %       transformUmt         - Transform eligible image .umt files. Default: true.
@@ -64,6 +69,7 @@ arguments
     opts.movingSourceFile (1,1) string = ""
     opts.preFlipHorizontally (1,1) logical = false
     opts.createdBy (1,1) string = "ImageAlignmentTool"
+    opts.resourceUUID (1,1) string = ""
     opts.backupChoice (1,1) string = "GENBACKUP"
     opts.transformDat (1,1) logical = true
     opts.transformUmt (1,1) logical = true
@@ -207,6 +213,7 @@ try
         opts.movingSourceFile, ...
         opts.manualAdjustment, ...
         opts.createdBy, ...
+        opts.resourceUUID, ...
         precomputedMask, ...
         scaleInfo);
 
@@ -980,7 +987,8 @@ end
 
 
 function DataParams = iUpdateDataParams(DataParams, finalTform, referenceImage, ...
-    ImageReference, referenceFile, movingSourceFile, manualAdjustment, createdBy, precomputedMask, scaleInfo)
+    ImageReference, referenceFile, movingSourceFile, manualAdjustment, createdBy, ...
+    resourceUUID, precomputedMask, scaleInfo)
 %IUPDATEDATAPARAMS Update folder-level DataParams after registration.
 
 newSizeYX = size(referenceImage);
@@ -1006,13 +1014,15 @@ DataParams.registration = iUpdateRegistrationStruct( ...
     movingSourceFile, ...
     manualAdjustment, ...
     createdBy, ...
+    resourceUUID, ...
     scaleInfo);
 
 DataParams.lastModified = datetime('now');
 end
 
 function registration = iUpdateRegistrationStruct(DataParams, finalTform, referenceImage, ...
-    ImageReference, referenceFile, movingSourceFile, manualAdjustment, createdBy, scaleInfo)
+    ImageReference, referenceFile, movingSourceFile, manualAdjustment, createdBy, ...
+    resourceUUID, scaleInfo)
 %IUPDATEREGISTRATIONSTRUCT Preserve and update DataParams.registration.
 
 if isfield(DataParams, 'registration') && isstruct(DataParams.registration)
@@ -1043,6 +1053,17 @@ registration.confirmationMode = 'user-confirmed-folder-transform';
 registration.notes = 'Folder-level registration applied by ImageAlignmentTool.';
 registration.manualAdjustment = manualAdjustment;
 registration.qcMetrics = iBuildTransformQcMetrics(finalTform, scaleInfo);
+
+% Pointer to the central UMITProjectStore registrationTransform resource, when
+% the folder is bound to a project. Left as-is (not cleared) if this call was
+% made without a resourceUUID, so a later out-of-band store import can still
+% attach one via updateDataParam without re-running the whole transform.
+resourceUUID = char(resourceUUID);
+if ~isempty(resourceUUID)
+    registration.resourceUUID = resourceUUID;
+elseif ~isfield(registration, 'resourceUUID')
+    registration.resourceUUID = '';
+end
 end
 
 function qc = iBuildTransformQcMetrics(tform, scaleInfo)

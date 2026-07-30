@@ -185,6 +185,7 @@ DataParams.registration = struct();
 DataParams.registration.isRegistered = false;
 DataParams.registration.isReviewed = false;
 DataParams.registration.tform = [];
+DataParams.registration.resourceUUID = '';
 
 DataParams.registration.transformType = '';
 DataParams.registration.method = '';
@@ -212,6 +213,47 @@ DataParams.registration.qcMetrics.translationXY_px = [];
 DataParams.registration.qcMetrics.rotationDeg = [];
 DataParams.registration.qcMetrics.scaleXY = [];
 DataParams.registration.qcMetrics.determinant = [];
+
+% -------------------------------------------------------------------------
+% Dual-camera coregistration metadata
+% -------------------------------------------------------------------------
+% Local history record of which cameraCoregistration transform was applied
+% to this SaveFolder's data. Unlike registration (session-owned), this
+% resource type is rig-owned in UMITProjectStore, so resourceUUID/rigID may
+% legitimately be empty when no rig is assigned yet.
+DataParams.cameraCoregistration = struct();
+
+DataParams.cameraCoregistration.isCoregistered = false;
+DataParams.cameraCoregistration.isReviewed = false;
+DataParams.cameraCoregistration.tform = [];
+DataParams.cameraCoregistration.resourceUUID = '';
+DataParams.cameraCoregistration.rigID = '';
+
+DataParams.cameraCoregistration.transformType = '';
+DataParams.cameraCoregistration.method = '';
+DataParams.cameraCoregistration.sourceFile = '';
+DataParams.cameraCoregistration.sourceFileTimestamp = '';
+DataParams.cameraCoregistration.createdOn = '';
+DataParams.cameraCoregistration.source = '';
+
+DataParams.cameraCoregistration.qcStatus = '';
+DataParams.cameraCoregistration.qcWarning = '';
+DataParams.cameraCoregistration.qcFigureFile = '';
+DataParams.cameraCoregistration.qcPreviewImageFile = '';
+
+DataParams.cameraCoregistration.appliedOn = '';
+DataParams.cameraCoregistration.appliedBy = '';
+DataParams.cameraCoregistration.confirmationMode = '';
+DataParams.cameraCoregistration.notes = '';
+
+DataParams.cameraCoregistration.qcMetrics = struct();
+DataParams.cameraCoregistration.qcMetrics.MIBefore = [];
+DataParams.cameraCoregistration.qcMetrics.MIAfter = [];
+DataParams.cameraCoregistration.qcMetrics.MIDelta = [];
+DataParams.cameraCoregistration.qcMetrics.translationXY_px = [];
+DataParams.cameraCoregistration.qcMetrics.rotationDeg = [];
+DataParams.cameraCoregistration.qcMetrics.scaleXY = [];
+DataParams.cameraCoregistration.qcMetrics.determinant = [];
 
 % -------------------------------------------------------------------------
 % Custom metadata
