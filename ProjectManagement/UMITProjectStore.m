@@ -11,9 +11,12 @@ classdef UMITProjectStore < handle
     %   metadata atomically, imports managed resources, archives/restores
     %   resources, performs transactional ID renames, and validates the project.
     %
-    %   The centralized folder stores metadata and calibration/reference files
-    %   only. Imaging data remains external and may be referenced by session
-    %   metadata.
+    %   The centralized folder stores metadata and image-reference/transform
+    %   files only. Imaging data remains external and may be referenced by
+    %   session metadata. Rigs are independent of any project -- see
+    %   RigManagement/UMITRigStore for rig metadata and rig-owned resources
+    %   (camera coregistration, calibration files). A session only keeps a
+    %   rigUUID/rigID pointer to an external rig.
     %
     %   Main operations:
     %       getProjectsRoot
@@ -28,35 +31,25 @@ classdef UMITProjectStore < handle
     %       resolveProjectBinding
     %       addSubject
     %       addSession
-    %       addRig
     %       addImageReference
     %       addRegistrationTransform
-    %       addCameraCoregistration
-    %       addCalibrationFile
     %       archiveResource
     %       restoreResource
     %       setActiveImageReference
     %       setActiveRegistrationTransform
-    %       setActiveCameraCoregistration
-    %       setActiveCalibrationFile
     %       updateSubjectMetadata
     %       updateSessionMetadata
-    %       updateRigMetadata
     %       updateResourceMetadata
     %       renameSubjectID
     %       renameSessionID
-    %       renameRigID
     %       getLockInfo
     %       clearStaleLock
     %       listSubjectResources
     %       listSessionResources
-    %       listRigResources
     %       getResource
     %       resolveResourcePath
     %       getActiveImageReference
     %       getActiveRegistrationTransform
-    %       getActiveCameraCoregistration
-    %       getActiveCalibrationFile
     %       getSubjectInfoByUUID
     %       getSessionInfoByUUID
     %       getSessionContextByUUID
@@ -71,7 +64,7 @@ classdef UMITProjectStore < handle
     %
     %   Design rules:
     %       - UUIDs are immutable identities.
-    %       - Subject, session, and rig IDs are validated filesystem names.
+    %       - Subject and session IDs are validated filesystem names.
     %       - Display names are editable without renaming physical folders.
     %       - Resource filenames are immutable after import.
     %       - Archived resources remain registered and restorable.
@@ -201,7 +194,6 @@ classdef UMITProjectStore < handle
             mkdir(fullfile(stagingRoot, schema.folders.internal, ...
                 schema.folders.logs));
             mkdir(fullfile(stagingRoot, schema.folders.subjects));
-            mkdir(fullfile(stagingRoot, schema.folders.calibrations));
 
             nowTime = datetime('now');
             ProjectInfo = struct();
@@ -212,8 +204,6 @@ classdef UMITProjectStore < handle
             ProjectInfo.createdOn = nowTime;
             ProjectInfo.modifiedOn = nowTime;
             ProjectInfo.subjectRegistry = ...
-                UMITProjectStore.iEmptyRegistry();
-            ProjectInfo.rigRegistry = ...
                 UMITProjectStore.iEmptyRegistry();
 
             projectFile = fullfile( ...
@@ -823,13 +813,6 @@ classdef UMITProjectStore < handle
                 SessionInfo.processedDataFolder;
         end
 
-        function CalibrationInfo = getRigInfo(obj, rigID)
-            %GETRIGINFO Return metadata for one rig ID.
-
-            [~, CalibrationInfo] = obj.iResolveRig(rigID);
-        end
-
-
         function resources = listSubjectResources(obj, subjectID, varargin)
             %LISTSUBJECTRESOURCES List resources owned by one subject.
             %
@@ -861,20 +844,6 @@ classdef UMITProjectStore < handle
                 obj.iResolveSession(subjectID, sessionID);
             resources = obj.iListResources( ...
                 SessionInfo, 'session', SessionInfo.uuid, varargin{:});
-        end
-
-        function resources = listRigResources(obj, rigID, varargin)
-            %LISTRIGRESOURCES List calibration resources owned by one rig.
-            %
-            %   resources = store.listRigResources(rigID)
-            %   resources = store.listRigResources(rigID, ...
-            %       'Type', resourceType, ...
-            %       'Status', statusFilter, ...
-            %       'VerifyFiles', true)
-
-            [~, CalibrationInfo] = obj.iResolveRig(rigID);
-            resources = obj.iListResources( ...
-                CalibrationInfo, 'rig', CalibrationInfo.uuid, varargin{:});
         end
 
         function resource = getResource(obj, resourceUUID)
@@ -947,25 +916,6 @@ classdef UMITProjectStore < handle
             owner = obj.iResolveOwner('session', {subjectID, sessionID});
             resource = obj.iGetActiveResource( ...
                 owner, 'registrationTransform');
-        end
-
-        function resource = getActiveCameraCoregistration(obj, rigID)
-            %GETACTIVECAMERACOREGISTRATION Return an active camera transform.
-            %
-            %   Returns [] when the rig has no active camera transform.
-
-            owner = obj.iResolveOwner('rig', {rigID});
-            resource = obj.iGetActiveResource( ...
-                owner, 'cameraCoregistration');
-        end
-
-        function resource = getActiveCalibrationFile(obj, rigID)
-            %GETACTIVECALIBRATIONFILE Return an active general calibration file.
-            %
-            %   Returns [] when the rig has no active calibration file.
-
-            owner = obj.iResolveOwner('rig', {rigID});
-            resource = obj.iGetActiveResource(owner, 'calibrationFile');
         end
 
         function context = findSessionByDataFolder(obj, dataFolder)
@@ -1316,95 +1266,6 @@ classdef UMITProjectStore < handle
                 subjectID, sessionID, 'processedDataFolder');
         end
 
-        function rigUUID = addRig(obj, rigInfo)
-            %ADDRIG Add a rig calibration node.
-            %
-            %   rigUUID = store.addRig(rigInfo)
-            %
-            %   Required rigInfo field:
-            %       rigID
-            %
-            %   Optional fields:
-            %       displayName
-            %       description
-
-            errID = 'Umitoolbox:UMITProjectStore:addRigFailed';
-            obj.iAssertWritable();
-            lockCleanup = obj.iAcquireWriteLock('addRig');
-            obj.iAssertHealthyForMutation();
-
-            if ~isstruct(rigInfo) || ~isscalar(rigInfo)
-                error(errID, '"rigInfo" must be a scalar struct.');
-            end
-
-            rigID = obj.iNormalizeManagedID( ...
-                UMITProjectStore.iGetTextField(rigInfo, 'rigID', '', false, errID), ...
-                'rigID');
-            displayName = UMITProjectStore.iGetTextField( ...
-                rigInfo, 'displayName', rigID, true, errID);
-            description = UMITProjectStore.iGetTextField( ...
-                rigInfo, 'description', '', true, errID);
-
-            ProjectInfo = obj.getProjectInfo();
-            originalProjectInfo = ProjectInfo;
-            obj.iAssertUniqueRegistryID(ProjectInfo.rigRegistry, rigID, 'rig');
-
-            rigUUID = UMITProjectStore.iGenerateUUID();
-            rigRel = UMITProjectStore.iJoinRelative( ...
-                obj.Schema.folders.calibrations, rigID);
-            rigPath = obj.iResolveRelativePath(rigRel);
-
-            if isfolder(rigPath) || isfile(rigPath)
-                error(errID, 'Rig destination already exists: %s', rigPath);
-            end
-
-            transactionPath = obj.iCreateTransactionFolder('addRig');
-            stagedRigPath = fullfile(transactionPath, rigID);
-            cleanupStage = onCleanup(@() ...
-                UMITProjectStore.iRemoveFolderIfPresent(transactionPath));
-
-            obj.iCreateRigFolders(stagedRigPath);
-
-            nowTime = datetime('now');
-            CalibrationInfo = struct();
-            CalibrationInfo.schemaVersion = obj.Schema.version;
-            CalibrationInfo.uuid = rigUUID;
-            CalibrationInfo.rigID = rigID;
-            CalibrationInfo.displayName = displayName;
-            CalibrationInfo.description = description;
-            CalibrationInfo.createdOn = nowTime;
-            CalibrationInfo.modifiedOn = nowTime;
-            CalibrationInfo.activeCoregistrationUUID = '';
-            CalibrationInfo.activeCalibrationFileUUID = '';
-            CalibrationInfo.resourceRegistry = UMITProjectStore.iEmptyResourceRegistry();
-
-            saveMatAtomic( ...
-                fullfile(stagedRigPath, obj.Schema.files.rigMetadata), ...
-                obj.Schema.metadataVariables.rig, CalibrationInfo);
-
-            [ok, message] = movefile(stagedRigPath, rigPath, 'f');
-            if ~ok
-                error(errID, 'Could not install rig folder: %s', message);
-            end
-
-            record = UMITProjectStore.iNewRegistryRecord( ...
-                rigUUID, rigID, displayName, rigRel);
-            ProjectInfo.rigRegistry(end+1) = record;
-            ProjectInfo.modifiedOn = datetime('now');
-
-            try
-                obj.iSaveProjectInfo(ProjectInfo);
-                obj.iAssertValidAfterMutation();
-            catch ME
-                UMITProjectStore.iRemoveFolderIfPresent(rigPath);
-                obj.iSaveProjectInfo(originalProjectInfo);
-                rethrow(ME)
-            end
-
-            obj.iAppendLog('addRig', rigUUID, 'completed');
-            clear cleanupStage lockCleanup
-        end
-
         function resourceUUID = addImageReference(obj, subjectID, sourceFile, resourceInfo)
             %ADDIMAGEREFERENCE Import a managed subject image-reference file.
 
@@ -1425,28 +1286,6 @@ classdef UMITProjectStore < handle
             resourceUUID = obj.iAddManagedResource( ...
                 'session', {subjectID, sessionID}, ...
                 'registrationTransform', sourceFile, resourceInfo);
-        end
-
-        function resourceUUID = addCameraCoregistration(obj, rigID, sourceFile, resourceInfo)
-            %ADDCAMERACOREGISTRATION Import a camera-coregistration transform.
-
-            if nargin < 4
-                resourceInfo = struct();
-            end
-            resourceUUID = obj.iAddManagedResource( ...
-                'rig', {rigID}, 'cameraCoregistration', ...
-                sourceFile, resourceInfo);
-        end
-
-        function resourceUUID = addCalibrationFile(obj, rigID, sourceFile, resourceInfo)
-            %ADDCALIBRATIONFILE Import a general managed rig calibration file.
-
-            if nargin < 4
-                resourceInfo = struct();
-            end
-            resourceUUID = obj.iAddManagedResource( ...
-                'rig', {rigID}, 'calibrationFile', ...
-                sourceFile, resourceInfo);
         end
 
         function archiveResource(obj, resourceUUID, varargin)
@@ -1619,20 +1458,6 @@ classdef UMITProjectStore < handle
                 'registrationTransform', resourceUUID);
         end
 
-        function setActiveCameraCoregistration(obj, rigID, resourceUUID)
-            %SETACTIVECAMERACOREGISTRATION Select an active camera transform.
-
-            obj.iSetActiveResource('rig', {rigID}, ...
-                'cameraCoregistration', resourceUUID);
-        end
-
-        function setActiveCalibrationFile(obj, rigID, resourceUUID)
-            %SETACTIVECALIBRATIONFILE Select an active general calibration file.
-
-            obj.iSetActiveResource('rig', {rigID}, ...
-                'calibrationFile', resourceUUID);
-        end
-
         function updateSubjectMetadata(obj, subjectID, updates)
             %UPDATESUBJECTMETADATA Update editable subject metadata fields.
 
@@ -1756,48 +1581,6 @@ classdef UMITProjectStore < handle
 
             obj.iAppendLog('updateSessionMetadata', ...
                 SessionInfo.uuid, 'completed');
-            clear cleanupBackup lockCleanup
-        end
-
-        function updateRigMetadata(obj, rigID, updates)
-            %UPDATERIGMETADATA Update editable rig metadata fields.
-
-            errID = 'Umitoolbox:UMITProjectStore:updateRigFailed';
-            obj.iAssertUpdateStruct(updates, errID);
-            obj.iAssertWritable();
-            lockCleanup = obj.iAcquireWriteLock('updateRigMetadata');
-            obj.iAssertHealthyForMutation();
-
-            [rigRecord, CalibrationInfo, rigPath, rigIndex, ProjectInfo] = ...
-                obj.iResolveRig(rigID);
-            CalibrationInfo = obj.iApplyEditableUpdates( ...
-                CalibrationInfo, updates, obj.Schema.editableFields.rig, errID);
-            CalibrationInfo.modifiedOn = datetime('now');
-
-            ProjectInfo.rigRegistry(rigIndex).displayName = ...
-                CalibrationInfo.displayName;
-            ProjectInfo.modifiedOn = datetime('now');
-
-            backupPath = obj.iCreateRecoveryFolder('updateRigMetadata');
-            cleanupBackup = onCleanup(@() UMITProjectStore.iRemoveFolderIfPresent(backupPath));
-            copyfile(fullfile(rigPath, obj.Schema.files.rigMetadata), ...
-                fullfile(backupPath, obj.Schema.files.rigMetadata), 'f');
-            copyfile(fullfile(obj.ProjectRoot, obj.Schema.files.projectMetadata), ...
-                fullfile(backupPath, obj.Schema.files.projectMetadata), 'f');
-
-            try
-                obj.iSaveRigInfo(rigPath, CalibrationInfo);
-                obj.iSaveProjectInfo(ProjectInfo);
-                obj.iAssertValidAfterMutation();
-            catch ME
-                copyfile(fullfile(backupPath, obj.Schema.files.rigMetadata), ...
-                    fullfile(rigPath, obj.Schema.files.rigMetadata), 'f');
-                copyfile(fullfile(backupPath, obj.Schema.files.projectMetadata), ...
-                    fullfile(obj.ProjectRoot, obj.Schema.files.projectMetadata), 'f');
-                rethrow(ME)
-            end
-
-            obj.iAppendLog('updateRigMetadata', rigRecord.uuid, 'completed');
             clear cleanupBackup lockCleanup
         end
 
@@ -2015,112 +1798,567 @@ classdef UMITProjectStore < handle
             clear lockCleanup
         end
 
-        function renameRigID(obj, oldRigID, newRigID)
-            %RENAMERIGID Transactionally rename a rig ID and folder.
+        function renameEntity(obj, entityType, entityUUID, newName)
+            %RENAMEENTITY Rename a subject or session identified by UUID.
+            %
+            %   store.renameEntity('subject', subjectUUID, newSubjectID)
+            %   store.renameEntity('session', sessionUUID, newSessionID)
+            %
+            %   A thin UUID-based dispatcher over renameSubjectID/
+            %   renameSessionID. Those methods are keyed by the current
+            %   (mutable) ID string and, for sessions, require the caller to
+            %   already know the owning subjectID. This method exists for
+            %   callers that only hold an entity's immutable UUID (e.g. a
+            %   GUI list selection) and resolves the current ID(s) first.
+            %
+            %   Preconditions:
+            %     - entityType is 'subject' or 'session'.
+            %     - entityUUID resolves to exactly one such entity in this
+            %       project.
+            %     - All preconditions of the delegated rename method also
+            %       apply (project writable/healthy, newName is a valid
+            %       managed ID, no ID collision at the destination).
+            %
+            %   Postconditions / failure modes:
+            %     - Identical to renameSubjectID/renameSessionID. This
+            %       method performs no mutation of its own; it only
+            %       resolves entityUUID to the arguments those methods
+            %       expect, so any failure there is reported unchanged.
 
-            errID = 'Umitoolbox:UMITProjectStore:renameRigFailed';
+            errID = 'Umitoolbox:UMITProjectStore:renameEntityFailed';
+            entityType = lower(char(string(entityType)));
+
+            switch entityType
+                case 'subject'
+                    SubjectInfo = obj.getSubjectInfoByUUID(entityUUID);
+                    obj.renameSubjectID(SubjectInfo.subjectID, newName);
+                case 'session'
+                    [SessionInfo, SubjectInfo] = ...
+                        obj.getSessionInfoByUUID(entityUUID);
+                    obj.renameSessionID(SubjectInfo.subjectID, ...
+                        SessionInfo.sessionID, newName);
+                otherwise
+                    error(errID, ...
+                        ['Unsupported entityType: %s. Use ''subject'' ' ...
+                         'or ''session''.'], entityType);
+            end
+        end
+
+        function moveSessionToSubject(obj, sessionUUID, targetSubjectUUID)
+            %MOVESESSIONTOSUBJECT Re-parent a session to another subject.
+            %
+            %   store.moveSessionToSubject(sessionUUID, targetSubjectUUID)
+            %
+            %   Transactionally relocates a session folder from its current
+            %   subject to a different subject WITHIN THE SAME project. This
+            %   is distinct from renameSessionID, which only changes the
+            %   sessionID string in place; here the session's parent subject
+            %   changes while sessionUUID, sessionID, and every resource
+            %   UUID under the session are preserved.
+            %
+            %   Preconditions:
+            %     - Project is writable and passes full validation.
+            %     - sessionUUID resolves to exactly one session in this
+            %       project.
+            %     - targetSubjectUUID resolves to exactly one subject in
+            %       this project.
+            %     - The target subject does not already have a session
+            %       whose sessionID collides (case-insensitively) with the
+            %       session being moved (sessionIDs are only unique within
+            %       one subject, so a same-ID session can already exist
+            %       under the destination).
+            %
+            %   Postconditions:
+            %     - The session folder is moved under the target subject's
+            %       "sessions" folder; SessionInfo.subjectUUID/subjectID are
+            %       updated to the new owner; the session's resourceRegistry
+            %       relative paths are rewritten to the new location.
+            %     - The source and target subjects' sessionRegistry entries
+            %       are updated together under one project write lock.
+            %     - If the session has a bound rawDataFolder and/or
+            %       processedDataFolder, each bound folder's .umitlink file
+            %       is rewritten so its subjectUUID matches the new owner
+            %       (projectUUID and sessionUUID are unchanged, since the
+            %       project itself does not change).
+            %     - Moving a session to the subject it already belongs to is
+            %       a no-op (returns without error or mutation).
+            %
+            %   Failure modes (all leave the project byte-for-byte
+            %   unchanged; a recovery snapshot is restored automatically):
+            %     - sessionUUID or targetSubjectUUID not found in this
+            %       project.
+            %     - The target subject already has a session with the same
+            %       sessionID.
+            %     - A destination folder collision, a filesystem move
+            %       failure, or a post-mutation validation failure at any
+            %       step triggers a full rollback of the folder move, both
+            %       subject metadata files, and any rewritten bindings.
+
+            errID = 'Umitoolbox:UMITProjectStore:moveSessionFailed';
             obj.iAssertWritable();
-            lockCleanup = obj.iAcquireWriteLock('renameRigID');
+            lockCleanup = obj.iAcquireWriteLock('moveSessionToSubject');
             obj.iAssertHealthyForMutation();
 
-            [~, CalibrationInfo, oldPath, rigIndex, ProjectInfo] = ...
-                obj.iResolveRig(oldRigID);
-            oldRigID = CalibrationInfo.rigID;
-            newRigID = obj.iNormalizeManagedID(newRigID, 'rigID');
-            if strcmp(oldRigID, newRigID)
+            targetSubjectUUID = ...
+                UMITProjectStore.iNormalizeUUIDInput(targetSubjectUUID);
+
+            [~, OldSubjectInfo, oldSubjectPath, SessionInfo, ...
+                oldSessionPath, oldSessionIndex, oldSessionRecord] = ...
+                obj.iResolveSessionByUUID(sessionUUID);
+
+            if strcmpi(OldSubjectInfo.uuid, targetSubjectUUID)
                 clear lockCleanup
                 return
             end
-            isCaseOnlyRename = strcmpi(oldRigID, newRigID);
+
+            ProjectInfo = obj.getProjectInfo();
+            targetIndex = find(strcmpi( ...
+                {ProjectInfo.subjectRegistry.uuid}, targetSubjectUUID));
+            if isempty(targetIndex)
+                error(errID, 'Target subject UUID was not found: %s', ...
+                    targetSubjectUUID);
+            end
+
+            targetSubjectRecord = ProjectInfo.subjectRegistry(targetIndex);
+            targetSubjectPath = obj.iResolveRelativePath( ...
+                targetSubjectRecord.relativePath);
+            TargetSubjectInfo = obj.iLoadMetadata( ...
+                fullfile(targetSubjectPath, obj.Schema.files.subjectMetadata), ...
+                obj.Schema.metadataVariables.subject);
 
             obj.iAssertUniqueRegistryID( ...
-                ProjectInfo.rigRegistry, newRigID, 'rig', CalibrationInfo.uuid);
+                TargetSubjectInfo.sessionRegistry, SessionInfo.sessionID, ...
+                'session');
 
-            oldRel = ProjectInfo.rigRegistry(rigIndex).relativePath;
+            oldRel = oldSessionRecord.relativePath;
             newRel = UMITProjectStore.iJoinRelative( ...
-                obj.Schema.folders.calibrations, newRigID);
-            newPath = obj.iResolveRelativePath(newRel);
+                targetSubjectRecord.relativePath, obj.Schema.folders.sessions, ...
+                SessionInfo.sessionID);
+            newSessionPath = obj.iResolveRelativePath(newRel);
 
-            if (isfolder(newPath) || isfile(newPath)) && ...
-                    ~isCaseOnlyRename
-                error(errID, ...
-                    'Destination rig folder already exists: %s', newPath);
+            if isfolder(newSessionPath) || isfile(newSessionPath)
+                error(errID, 'Destination session folder already exists: %s', ...
+                    newSessionPath);
             end
 
-            recoveryPath = obj.iCreateRecoveryFolder('renameRigID');
-            backupRig = fullfile(recoveryPath, 'rig');
-            backupProject = fullfile(recoveryPath, obj.Schema.files.projectMetadata);
-            backupSessions = fullfile(recoveryPath, 'sessions');
-            mkdir(backupSessions);
-            copyfile(oldPath, backupRig, 'f');
-            copyfile(fullfile(obj.ProjectRoot, obj.Schema.files.projectMetadata), ...
-                backupProject, 'f');
+            recoveryPath = obj.iCreateRecoveryFolder('moveSessionToSubject');
+            backupSession = fullfile(recoveryPath, 'session');
+            backupOldSubject = fullfile(recoveryPath, 'old_subject.mat');
+            backupTargetSubject = fullfile(recoveryPath, 'target_subject.mat');
+            copyfile(oldSessionPath, backupSession, 'f');
+            copyfile(fullfile(oldSubjectPath, obj.Schema.files.subjectMetadata), ...
+                backupOldSubject, 'f');
+            copyfile(fullfile(targetSubjectPath, obj.Schema.files.subjectMetadata), ...
+                backupTargetSubject, 'f');
 
-            affectedSessions = obj.iFindSessionsByRigUUID(CalibrationInfo.uuid);
-            for iSession = 1:numel(affectedSessions)
-                backupName = sprintf('session_%04d.mat', iSession);
-                copyfile(affectedSessions(iSession).metadataPath, ...
-                    fullfile(backupSessions, backupName), 'f');
-                affectedSessions(iSession).backupName = backupName;
+            boundRoles = {'rawDataFolder', 'processedDataFolder'};
+            boundRoles = boundRoles(~cellfun(@(role) ...
+                isempty(SessionInfo.(role)), boundRoles));
+            bindingBackups = struct('role', {}, 'path', {}, 'backup', {});
+            for iRole = 1:numel(boundRoles)
+                role = boundRoles{iRole};
+                bindingPath = fullfile(SessionInfo.(role), ...
+                    obj.Schema.files.projectBinding);
+                backupPath = fullfile(recoveryPath, ...
+                    sprintf('%s.umitlink', role));
+                copyfile(bindingPath, backupPath, 'f');
+                bindingBackups(end+1) = struct( ...
+                    'role', {role}, 'path', {bindingPath}, ...
+                    'backup', {backupPath}); %#ok<AGROW>
             end
-
-            temporaryPath = fullfile(fileparts(oldPath), ...
-                ['.__rename_', CalibrationInfo.uuid(1:8)]);
 
             try
-                [ok, message] = movefile(oldPath, temporaryPath, 'f');
+                [ok, message] = movefile(oldSessionPath, newSessionPath, 'f');
                 if ~ok
-                    error(errID, 'Could not stage rig rename: %s', message);
+                    error(errID, 'Could not relocate session folder: %s', ...
+                        message);
                 end
 
-                CalibrationInfo.rigID = newRigID;
-                CalibrationInfo.resourceRegistry = obj.iReplaceResourcePrefix( ...
-                    CalibrationInfo.resourceRegistry, oldRel, newRel);
-                CalibrationInfo.modifiedOn = datetime('now');
-                obj.iSaveRigInfo(temporaryPath, CalibrationInfo);
+                SessionInfo.subjectUUID = TargetSubjectInfo.uuid;
+                SessionInfo.subjectID = TargetSubjectInfo.subjectID;
+                SessionInfo.resourceRegistry = obj.iReplaceResourcePrefix( ...
+                    SessionInfo.resourceRegistry, oldRel, newRel);
+                SessionInfo.modifiedOn = datetime('now');
+                obj.iSaveSessionInfo(newSessionPath, SessionInfo);
 
-                [ok, message] = movefile(temporaryPath, newPath, 'f');
-                if ~ok
-                    error(errID, 'Could not finalize rig rename: %s', message);
+                for iRole = 1:numel(bindingBackups)
+                    role = bindingBackups(iRole).role;
+                    ProjectBinding = UMITProjectStore.readProjectBinding( ...
+                        SessionInfo.(role));
+                    ProjectBinding.subjectUUID = TargetSubjectInfo.uuid;
+                    ProjectBinding.modifiedOn = datetime('now');
+                    tempBindingPath = obj.iWriteProjectBindingTemp( ...
+                        SessionInfo.(role), ProjectBinding);
+                    [ok, message] = movefile( ...
+                        tempBindingPath, bindingBackups(iRole).path, 'f');
+                    if ~ok
+                        error(errID, ...
+                            'Could not update data-folder binding: %s', ...
+                            message);
+                    end
                 end
 
-                ProjectInfo.rigRegistry(rigIndex).id = newRigID;
-                ProjectInfo.rigRegistry(rigIndex).relativePath = newRel;
-                ProjectInfo.modifiedOn = datetime('now');
-                obj.iSaveProjectInfo(ProjectInfo);
+                OldSubjectInfo.sessionRegistry(oldSessionIndex) = [];
+                OldSubjectInfo.modifiedOn = datetime('now');
+                obj.iSaveSubjectInfo(oldSubjectPath, OldSubjectInfo);
 
-                for iSession = 1:numel(affectedSessions)
-                    SessionInfo = obj.iLoadMetadata( ...
-                        affectedSessions(iSession).metadataPath, ...
-                        obj.Schema.metadataVariables.session);
-                    SessionInfo.rigID = newRigID;
-                    SessionInfo.modifiedOn = datetime('now');
-                    saveMatAtomic(affectedSessions(iSession).metadataPath, ...
-                        obj.Schema.metadataVariables.session, SessionInfo);
-                end
+                newSessionRecord = oldSessionRecord;
+                newSessionRecord.relativePath = newRel;
+                TargetSubjectInfo.sessionRegistry(end+1) = newSessionRecord;
+                TargetSubjectInfo.modifiedOn = datetime('now');
+                obj.iSaveSubjectInfo(targetSubjectPath, TargetSubjectInfo);
 
                 obj.iAssertValidAfterMutation();
 
             catch ME
-                UMITProjectStore.iRemoveFolderIfPresent(temporaryPath);
-                UMITProjectStore.iRemoveFolderIfPresent(newPath);
-                copyfile(backupRig, oldPath, 'f');
-                copyfile(backupProject, ...
-                    fullfile(obj.ProjectRoot, obj.Schema.files.projectMetadata), 'f');
-                for iSession = 1:numel(affectedSessions)
-                    copyfile(fullfile(backupSessions, ...
-                        affectedSessions(iSession).backupName), ...
-                        affectedSessions(iSession).metadataPath, 'f');
+                UMITProjectStore.iRemoveFolderIfPresent(newSessionPath);
+                if ~isfolder(oldSessionPath)
+                    copyfile(backupSession, oldSessionPath, 'f');
+                end
+                copyfile(backupOldSubject, ...
+                    fullfile(oldSubjectPath, obj.Schema.files.subjectMetadata), 'f');
+                copyfile(backupTargetSubject, ...
+                    fullfile(targetSubjectPath, obj.Schema.files.subjectMetadata), 'f');
+                for iRole = 1:numel(bindingBackups)
+                    copyfile(bindingBackups(iRole).backup, ...
+                        bindingBackups(iRole).path, 'f');
                 end
                 warning(errID, ...
-                    'Rig rename rolled back. Recovery snapshot: %s', recoveryPath);
+                    'Session move rolled back. Recovery snapshot: %s', ...
+                    recoveryPath);
                 rethrow(ME)
             end
 
             UMITProjectStore.iRemoveFolderIfPresent(recoveryPath);
-            obj.iAppendLog('renameRigID', CalibrationInfo.uuid, ...
-                sprintf('%s -> %s', oldRigID, newRigID));
+            obj.iAppendLog('moveSessionToSubject', SessionInfo.uuid, ...
+                sprintf('%s -> %s', OldSubjectInfo.subjectID, ...
+                TargetSubjectInfo.subjectID));
             clear lockCleanup
+        end
+
+        function rebindSessionToProject(obj, sessionUUID, targetProjectUUID)
+            %REBINDSESSIONTOPROJECT Move a session to a different project.
+            %
+            %   store.rebindSessionToProject(sessionUUID, targetProjectUUID)
+            %
+            %   Moves a session, and its bound data-folder links, from this
+            %   project to a different UMITProjectStore project. A subject
+            %   with the same subjectID is created in the target project if
+            %   one does not already exist there (a fresh subjectUUID is
+            %   assigned in that case: subject identity is NOT preserved
+            %   across projects, only sessionUUID is).
+            %
+            %   *** WEAKER GUARANTEE THAN moveSessionToSubject ***
+            %   Each UMITProjectStore instance owns its own write lock and
+            %   its own atomic, rollback-safe transaction (see
+            %   iAcquireWriteLock); there is no cross-store lock and no
+            %   two-phase commit spanning both projects. This method is
+            %   composed of two independently-atomic phases:
+            %     1) DETACH the session from the source project (fully
+            %        rolled back on failure; the target project is never
+            %        touched during this phase).
+            %     2) Only once (1) has committed, ATTACH the session under
+            %        the target project.
+            %   This ordering is required, not just a preference: a bound
+            %   rawDataFolder/processedDataFolder's .umitlink file can only
+            %   ever satisfy ONE project's full validation at a time (its
+            %   projectUUID/subjectUUID must match whichever project's
+            %   SessionInfo currently references that folder). Attaching to
+            %   the target before detaching from the source would make both
+            %   projects' SessionInfo reference the same external folder at
+            %   once, and neither project's own iAssertHealthyForMutation
+            %   full-validate would then pass. Detach-first avoids that.
+            %   The cost is the opposite failure mode: if phase 1 (detach)
+            %   fails, nothing has changed anywhere. If phase 2 (attach)
+            %   fails AFTER phase 1 already committed, this method attempts
+            %   to compensate by restoring the session back into the source
+            %   project from an on-disk recovery snapshot. If that
+            %   compensating restore ALSO fails, the session ends up
+            %   referenced by NEITHER project's registry -- its folder and
+            %   metadata still exist under the recovery snapshot reported
+            %   in the error, but reattaching it requires manual action.
+            %   There is no protection against another writer mutating
+            %   either project during the gap between phase 1 and phase 2.
+            %
+            %   Preconditions:
+            %     - targetProjectUUID resolves to an existing, writable
+            %       project that passes full validation and is different
+            %       from this project (rebinding to the same project is a
+            %       no-op).
+            %     - sessionUUID resolves to exactly one session in this
+            %       project.
+            %     - The (possibly newly-created) same-subjectID subject in
+            %       the target project does not already have a session
+            %       whose sessionID collides with the session being moved.
+            %
+            %   Postconditions (full success):
+            %     - The session folder, sessionUUID, sessionID, and every
+            %       resource UUID under it are preserved, now under a
+            %       subject with the source's subjectID in the target
+            %       project. SessionInfo.subjectUUID is updated to that
+            %       target-project subject's UUID.
+            %     - Any bound rawDataFolder/processedDataFolder .umitlink
+            %       file is rewritten with the target project's projectUUID
+            %       and the target subject's UUID; sessionUUID and
+            %       bindingUUID are unchanged.
+            %     - The source project no longer references the session.
+            %
+            %   Failure modes:
+            %     - targetProjectUUID not found, read-only, or invalid:
+            %       rejected before the source project is touched at all.
+            %     - Phase-1 (detach) failure: fully rolled back; neither
+            %       project is changed.
+            %     - Phase-2 (attach) failure: target project is rolled back
+            %       to not referencing the session; this method then
+            %       attempts to restore the session into the source
+            %       project. See the "referenced by neither project" risk
+            %       above if that compensating restore also fails.
+
+            errID = 'Umitoolbox:UMITProjectStore:rebindSessionFailed';
+            sessionUUID = UMITProjectStore.iNormalizeUUIDInput(sessionUUID);
+            targetProjectUUID = ...
+                UMITProjectStore.iNormalizeUUIDInput(targetProjectUUID);
+
+            ProjectInfo = obj.getProjectInfo();
+            if strcmpi(ProjectInfo.projectUUID, targetProjectUUID)
+                return
+            end
+
+            targetStore = UMITProjectStore.open(targetProjectUUID);
+            targetStore.iAssertWritable();
+            obj.iAssertWritable();
+
+            % --- Ensure a same-subjectID subject exists in the target,
+            %     before touching the source project at all ---
+            [SessionInfo, SubjectInfo] = obj.getSessionInfoByUUID(sessionUUID); %#ok<ASGLU>
+
+
+            TargetProjectInfo = targetStore.getProjectInfo();
+            targetSubjectIdx = targetStore.iFindRegistryIndex( ...
+                TargetProjectInfo.subjectRegistry, SubjectInfo.subjectID);
+            if isempty(targetSubjectIdx)
+                targetStore.addSubject(struct( ...
+                    'subjectID', SubjectInfo.subjectID, ...
+                    'displayName', SubjectInfo.displayName, ...
+                    'description', SubjectInfo.description));
+            end
+
+            % --- Phase 1: detach from the source project (its own atomic
+            %     transaction; target is not touched here) ---
+            sourceLock = obj.iAcquireWriteLock( ...
+                'rebindSessionToProject_detach');
+            try
+                obj.iAssertHealthyForMutation();
+                [~, SubjectInfo, subjectPath, SessionInfo, sessionPath, ...
+                    sessionIndex, sessionRecord] = ...
+                    obj.iResolveSessionByUUID(sessionUUID);
+
+                recoveryPath = obj.iCreateRecoveryFolder( ...
+                    'rebindSessionToProject');
+                stagingSessionPath = fullfile(recoveryPath, 'session');
+                copyfile(sessionPath, stagingSessionPath, 'f');
+                backupSubject = fullfile(recoveryPath, 'source_subject.mat');
+                copyfile(fullfile(subjectPath, obj.Schema.files.subjectMetadata), ...
+                    backupSubject, 'f');
+
+                UMITProjectStore.iRemoveFolderIfPresent(sessionPath);
+                SubjectInfo.sessionRegistry(sessionIndex) = [];
+                SubjectInfo.modifiedOn = datetime('now');
+                obj.iSaveSubjectInfo(subjectPath, SubjectInfo);
+                obj.iAssertValidAfterMutation();
+
+            catch ME
+                if exist('sessionPath', 'var') && exist('stagingSessionPath', 'var') ...
+                        && isfile(fullfile(stagingSessionPath, ...
+                        obj.Schema.files.sessionMetadata)) && ~isfolder(sessionPath)
+                    copyfile(stagingSessionPath, sessionPath, 'f');
+                end
+                if exist('subjectPath', 'var') && exist('backupSubject', 'var') ...
+                        && isfile(backupSubject)
+                    copyfile(backupSubject, ...
+                        fullfile(subjectPath, obj.Schema.files.subjectMetadata), 'f');
+                end
+                if exist('recoveryPath', 'var')
+                    UMITProjectStore.iRemoveFolderIfPresent(recoveryPath);
+                end
+                clear sourceLock
+                error(errID, ...
+                    ['Could not detach session from the source project; ' ...
+                     'no changes were made anywhere. Cause: %s'], ME.message);
+            end
+            clear sourceLock
+
+            % --- Phase 2: attach under the target project, now that the
+            %     source project no longer references the session ---
+            newSessionPath = '';
+            targetLock = targetStore.iAcquireWriteLock( ...
+                'rebindSessionToProject_attach');
+            try
+                targetStore.iAssertHealthyForMutation();
+                TargetProjectInfo = targetStore.getProjectInfo();
+                targetSubjectIdx = targetStore.iFindRegistryIndex( ...
+                    TargetProjectInfo.subjectRegistry, SubjectInfo.subjectID);
+                targetSubjectRecord = ...
+                    TargetProjectInfo.subjectRegistry(targetSubjectIdx);
+                targetSubjectPath = targetStore.iResolveRelativePath( ...
+                    targetSubjectRecord.relativePath);
+                TargetSubjectInfo = targetStore.iLoadMetadata( ...
+                    fullfile(targetSubjectPath, ...
+                    targetStore.Schema.files.subjectMetadata), ...
+                    targetStore.Schema.metadataVariables.subject);
+
+                targetStore.iAssertUniqueRegistryID( ...
+                    TargetSubjectInfo.sessionRegistry, ...
+                    SessionInfo.sessionID, 'session');
+
+                newRel = UMITProjectStore.iJoinRelative( ...
+                    targetSubjectRecord.relativePath, ...
+                    targetStore.Schema.folders.sessions, ...
+                    SessionInfo.sessionID);
+                newSessionPath = targetStore.iResolveRelativePath(newRel);
+
+                if isfolder(newSessionPath) || isfile(newSessionPath)
+                    error(errID, ...
+                        'Destination session folder already exists: %s', ...
+                        newSessionPath);
+                end
+
+                [ok, message] = movefile( ...
+                    stagingSessionPath, newSessionPath, 'f');
+                if ~ok
+                    error(errID, ...
+                        'Could not install session folder in target project: %s', ...
+                        message);
+                end
+
+                AttachedSessionInfo = SessionInfo;
+                AttachedSessionInfo.subjectUUID = TargetSubjectInfo.uuid;
+                AttachedSessionInfo.subjectID = TargetSubjectInfo.subjectID;
+                AttachedSessionInfo.resourceRegistry = ...
+                    targetStore.iReplaceResourcePrefix( ...
+                    AttachedSessionInfo.resourceRegistry, ...
+                    sessionRecord.relativePath, newRel);
+                AttachedSessionInfo.modifiedOn = datetime('now');
+                targetStore.iSaveSessionInfo(newSessionPath, AttachedSessionInfo);
+
+                boundRoles = {'rawDataFolder', 'processedDataFolder'};
+                for iRole = 1:numel(boundRoles)
+                    role = boundRoles{iRole};
+                    if isempty(AttachedSessionInfo.(role))
+                        continue
+                    end
+                    ProjectBinding = UMITProjectStore.readProjectBinding( ...
+                        AttachedSessionInfo.(role));
+                    ProjectBinding.projectUUID = TargetProjectInfo.projectUUID;
+                    ProjectBinding.subjectUUID = TargetSubjectInfo.uuid;
+                    ProjectBinding.modifiedOn = datetime('now');
+                    tempBindingPath = targetStore.iWriteProjectBindingTemp( ...
+                        AttachedSessionInfo.(role), ProjectBinding);
+                    bindingPath = fullfile(AttachedSessionInfo.(role), ...
+                        targetStore.Schema.files.projectBinding);
+                    [ok, message] = movefile( ...
+                        tempBindingPath, bindingPath, 'f');
+                    if ~ok
+                        error(errID, ...
+                            'Could not update data-folder binding: %s', ...
+                            message);
+                    end
+                end
+
+                newSessionRecord = sessionRecord;
+                newSessionRecord.relativePath = newRel;
+                TargetSubjectInfo.sessionRegistry(end+1) = newSessionRecord;
+                TargetSubjectInfo.modifiedOn = datetime('now');
+                targetStore.iSaveSubjectInfo( ...
+                    targetSubjectPath, TargetSubjectInfo);
+
+                targetStore.iAssertValidAfterMutation();
+
+            catch ME
+                if ~isempty(newSessionPath) && isfolder(newSessionPath)
+                    % The staged copy was already moved here; move it back
+                    % so the compensation step below has something to
+                    % restore into the source project.
+                    UMITProjectStore.iRemoveFolderIfPresent(stagingSessionPath);
+                    movefile(newSessionPath, stagingSessionPath, 'f');
+                end
+                clear targetLock
+                obj.iCompensateFailedRebindDetach( ...
+                    sessionUUID, SubjectInfo.subjectID, SessionInfo, ...
+                    stagingSessionPath, backupSubject, recoveryPath, ...
+                    targetProjectUUID, ME);
+                return
+            end
+            clear targetLock
+
+            UMITProjectStore.iRemoveFolderIfPresent(recoveryPath);
+            obj.iAppendLog('rebindSessionToProject', SessionInfo.uuid, ...
+                sprintf('moved to project %s', targetProjectUUID));
+            targetStore.iAppendLog('rebindSessionToProject', SessionInfo.uuid, ...
+                sprintf('received from project %s', ProjectInfo.projectUUID));
+        end
+
+        function iCompensateFailedRebindDetach(obj, sessionUUID, ...
+                subjectID, SessionInfo, stagingSessionPath, backupSubject, ...
+                recoveryPath, targetProjectUUID, attachError)
+            %ICOMPENSATEFAILEDREBINDDETACH Best-effort restore into source.
+            %
+            % Called only when rebindSessionToProject's phase 2 (attach to
+            % the target project) fails after phase 1 (detach from this,
+            % the source, project) already committed. Restores the session
+            % folder and this project's subject registry entry from the
+            % phase-1 recovery snapshot. SessionInfo is the pristine,
+            % pre-attach struct (NOT the copy phase 2 mutated with the
+            % target subject's UUID/ID) and is re-saved on top of the
+            % restored folder so the session's own metadata cannot end up
+            % claiming the target subject as its owner. Always errors: with
+            % the original attach failure if the restore succeeds, or with
+            % both errors combined (and the recovery path highlighted for
+            % manual recovery) if the restore itself fails.
+
+            restoreErrID = 'Umitoolbox:UMITProjectStore:rebindSessionFailed';
+            sourceLock = obj.iAcquireWriteLock('rebindSessionToProject_undo');
+            try
+                % Phase 1 already removed the session from this subject, so
+                % only the subject (not the session) can still be resolved
+                % normally; the session's folder location is rebuilt from
+                % the subject's own relativePath plus the known sessionID.
+                [subjectRecord, ~, subjectPath] = ...
+                    obj.iResolveSubject(subjectID);
+                sessionRel = UMITProjectStore.iJoinRelative( ...
+                    subjectRecord.relativePath, obj.Schema.folders.sessions, ...
+                    SessionInfo.sessionID);
+                sessionPath = obj.iResolveRelativePath(sessionRel);
+
+                UMITProjectStore.iRemoveFolderIfPresent(sessionPath);
+                copyfile(stagingSessionPath, sessionPath, 'f');
+                obj.iSaveSessionInfo(sessionPath, SessionInfo);
+                copyfile(backupSubject, ...
+                    fullfile(subjectPath, obj.Schema.files.subjectMetadata), 'f');
+                obj.iAssertValidAfterMutation();
+
+                clear sourceLock
+                UMITProjectStore.iRemoveFolderIfPresent(recoveryPath);
+                error(restoreErrID, ...
+                    ['Could not attach session to target project %s. The ' ...
+                     'session was restored to this (source) project. ' ...
+                     'Cause: %s'], targetProjectUUID, attachError.message);
+
+            catch ME
+                clear sourceLock
+                warning(restoreErrID, ...
+                    ['Could not attach session (UUID: %s) to target ' ...
+                     'project %s, AND the automatic restore into this ' ...
+                     'source project also failed. The session is not ' ...
+                     'referenced by either project''s registry. Its files ' ...
+                     'are preserved for manual recovery at: %s'], ...
+                    sessionUUID, targetProjectUUID, recoveryPath);
+                error(restoreErrID, ...
+                    ['Rebind failed and automatic restore also failed. ' ...
+                     'Attach cause: %s | Restore cause: %s | Recovery ' ...
+                     'snapshot: %s'], attachError.message, ME.message, ...
+                    recoveryPath);
+            end
         end
 
         function LockInfo = getLockInfo(obj)
@@ -2300,19 +2538,12 @@ classdef UMITProjectStore < handle
                 obj.ProjectRoot, '', 'project', { ...
                 obj.Schema.files.projectMetadata, ...
                 obj.Schema.folders.internal, ...
-                obj.Schema.folders.subjects, ...
-                obj.Schema.folders.calibrations});
+                obj.Schema.folders.subjects});
 
             if isfield(ProjectInfo, 'subjectRegistry')
                 report = obj.iValidateRegistry(report, ...
                     ProjectInfo.subjectRegistry, 'subject', ...
                     obj.Schema.folders.subjects);
-            end
-
-            if isfield(ProjectInfo, 'rigRegistry')
-                report = obj.iValidateRegistry(report, ...
-                    ProjectInfo.rigRegistry, 'rig', ...
-                    obj.Schema.folders.calibrations);
             end
 
             if isfield(ProjectInfo, 'subjectRegistry') && ...
@@ -2329,22 +2560,7 @@ classdef UMITProjectStore < handle
                 end
             end
 
-            if isfield(ProjectInfo, 'rigRegistry') && ...
-                    obj.iIsRegistryStruct(ProjectInfo.rigRegistry)
-                for iRig = 1:numel(ProjectInfo.rigRegistry)
-                    try
-                        report = obj.iValidateRigNode(report, ...
-                            ProjectInfo.rigRegistry(iRig), mode);
-                    catch ME
-                        report = obj.iAddIssue(report, 'error', ...
-                            'rig_validation_failed', 'rig', '', ...
-                            ME.message, false);
-                    end
-                end
-            end
-
-            if isfield(ProjectInfo, 'subjectRegistry') && ...
-                    isfield(ProjectInfo, 'rigRegistry')
+            if isfield(ProjectInfo, 'subjectRegistry')
                 report = obj.iValidateUnregisteredTopNodes(report, ProjectInfo);
             end
 
@@ -2848,24 +3064,6 @@ classdef UMITProjectStore < handle
                 end
             end
 
-            for iRig = 1:numel(ProjectInfo.rigRegistry)
-                rigRecord = ProjectInfo.rigRegistry(iRig);
-                rigPath = obj.iResolveRelativePath(rigRecord.relativePath);
-                CalibrationInfo = obj.iLoadMetadata( ...
-                    fullfile(rigPath, obj.Schema.files.rigMetadata), ...
-                    obj.Schema.metadataVariables.rig);
-
-                indices = find(strcmp( ...
-                    {CalibrationInfo.resourceRegistry.uuid}, resourceUUID));
-                for iIndex = 1:numel(indices)
-                    locations(end+1, 1) = ...
-                        UMITProjectStore.iNewResourceLocation( ...
-                        'rig', CalibrationInfo, indices(iIndex), ...
-                        rigPath, rigRecord.relativePath, ...
-                        fullfile(rigPath, obj.Schema.files.rigMetadata), ...
-                        obj.Schema.metadataVariables.rig); %#ok<AGROW>
-                end
-            end
         end
 
         function owner = iResolveOwner(obj, ownerType, ownerIDs)
@@ -2892,15 +3090,6 @@ classdef UMITProjectStore < handle
                     owner.path = path;
                     owner.metadataPath = fullfile(path, obj.Schema.files.sessionMetadata);
                     owner.variableName = obj.Schema.metadataVariables.session;
-                    owner.baseRelativePath = record.relativePath;
-
-                case 'rig'
-                    [record, metadata, path] = obj.iResolveRig(ownerIDs{1});
-                    owner.record = record;
-                    owner.metadata = metadata;
-                    owner.path = path;
-                    owner.metadataPath = fullfile(path, obj.Schema.files.rigMetadata);
-                    owner.variableName = obj.Schema.metadataVariables.rig;
                     owner.baseRelativePath = record.relativePath;
 
                 otherwise
@@ -3443,24 +3632,6 @@ classdef UMITProjectStore < handle
             end
         end
 
-        function [record, CalibrationInfo, rigPath, index, ProjectInfo] = iResolveRig(obj, rigID)
-            %IRESOLVERIG Resolve a rig registry entry and metadata.
-
-            rigID = char(string(rigID));
-            ProjectInfo = obj.getProjectInfo();
-            index = obj.iFindRegistryIndex(ProjectInfo.rigRegistry, rigID);
-            if isempty(index)
-                error('Umitoolbox:UMITProjectStore:rigNotFound', ...
-                    'Rig ID was not found: %s', rigID);
-            end
-
-            record = ProjectInfo.rigRegistry(index);
-            rigPath = obj.iResolveRelativePath(record.relativePath);
-            CalibrationInfo = obj.iLoadMetadata( ...
-                fullfile(rigPath, obj.Schema.files.rigMetadata), ...
-                obj.Schema.metadataVariables.rig);
-        end
-
         function location = iLocateResource(obj, resourceUUID)
             %ILOCATERESOURCE Find one uniquely registered resource UUID.
 
@@ -3516,14 +3687,6 @@ classdef UMITProjectStore < handle
             saveMatAtomic( ...
                 fullfile(sessionPath, obj.Schema.files.sessionMetadata), ...
                 obj.Schema.metadataVariables.session, SessionInfo);
-        end
-
-        function iSaveRigInfo(obj, rigPath, CalibrationInfo)
-            %ISAVERIGINFO Save rig metadata atomically.
-
-            saveMatAtomic( ...
-                fullfile(rigPath, obj.Schema.files.rigMetadata), ...
-                obj.Schema.metadataVariables.rig, CalibrationInfo);
         end
 
         function value = iLoadMetadata(~, filePath, variableName)
@@ -3712,8 +3875,12 @@ classdef UMITProjectStore < handle
             end
         end
 
-        function [rigUUID, rigID] = iResolveOptionalRigFromInfo(obj, info, errID)
+        function [rigUUID, rigID] = iResolveOptionalRigFromInfo(~, info, errID)
             %IRESOLVEOPTIONALRIGFROMINFO Resolve optional rigID from input metadata.
+            %
+            %   Rigs are independent of this project (see UMITRigStore).
+            %   This resolves against the external rig store, never a
+            %   project-embedded registry.
 
             rigUUID = '';
             rigID = '';
@@ -3728,13 +3895,23 @@ classdef UMITProjectStore < handle
                 return
             end
 
-            [record, CalibrationInfo] = obj.iResolveRig(requestedRigID);
-            rigUUID = CalibrationInfo.uuid;
-            rigID = record.id;
+            try
+                rigStore = UMITRigStore.openByRigID(requestedRigID);
+            catch ME
+                error(errID, 'Rig ID was not found: %s (%s)', requestedRigID, ME.message);
+            end
+
+            RigInfo = rigStore.getRigInfo();
+            rigUUID = RigInfo.uuid;
+            rigID = RigInfo.rigID;
         end
 
-        function [rigUUID, rigID] = iResolveRigUpdate(obj, updates, errID)
+        function [rigUUID, rigID] = iResolveRigUpdate(~, updates, errID)
             %IRESOLVERIGUPDATE Resolve and cross-check a session rig update.
+            %
+            %   Rigs are independent of this project (see UMITRigStore).
+            %   This resolves against the external rig store, never a
+            %   project-embedded registry.
 
             rigUUID = '';
             rigID = '';
@@ -3757,38 +3934,38 @@ classdef UMITProjectStore < handle
                 return
             end
 
-            ProjectInfo = obj.getProjectInfo();
-            indexByID = [];
-            indexByUUID = [];
+            rigStoreByID = [];
+            rigStoreByUUID = [];
 
             if ~isempty(requestedID)
-                indexByID = obj.iFindRegistryIndex( ...
-                    ProjectInfo.rigRegistry, requestedID);
-                if isempty(indexByID)
-                    error(errID, 'Rig ID was not found: %s', requestedID);
+                try
+                    rigStoreByID = UMITRigStore.openByRigID(requestedID);
+                catch ME
+                    error(errID, 'Rig ID was not found: %s (%s)', requestedID, ME.message);
                 end
             end
 
             if ~isempty(requestedUUID)
-                indexByUUID = find(strcmp( ...
-                    {ProjectInfo.rigRegistry.uuid}, requestedUUID), 1, 'first');
-                if isempty(indexByUUID)
-                    error(errID, 'Rig UUID was not found: %s', requestedUUID);
+                try
+                    rigStoreByUUID = UMITRigStore.open(requestedUUID);
+                catch ME
+                    error(errID, 'Rig UUID was not found: %s (%s)', requestedUUID, ME.message);
                 end
             end
 
-            if ~isempty(indexByID) && ~isempty(indexByUUID) && ...
-                    indexByID ~= indexByUUID
+            if ~isempty(rigStoreByID) && ~isempty(rigStoreByUUID) && ...
+                    ~strcmp(rigStoreByID.getRigInfo().uuid, rigStoreByUUID.getRigInfo().uuid)
                 error(errID, 'rigID and rigUUID identify different rigs.');
             end
 
-            index = indexByID;
-            if isempty(index)
-                index = indexByUUID;
+            resolvedStore = rigStoreByID;
+            if isempty(resolvedStore)
+                resolvedStore = rigStoreByUUID;
             end
 
-            rigUUID = ProjectInfo.rigRegistry(index).uuid;
-            rigID = ProjectInfo.rigRegistry(index).id;
+            RigInfo = resolvedStore.getRigInfo();
+            rigUUID = RigInfo.uuid;
+            rigID = RigInfo.rigID;
         end
 
         function metadata = iApplyEditableUpdates(~, metadata, updates, allowedFields, errID)
@@ -3896,21 +4073,6 @@ classdef UMITProjectStore < handle
             mkdir(fullfile(base, obj.Schema.folders.archive));
         end
 
-        function iCreateRigFolders(obj, rigPath)
-            %ICREATERIGFOLDERS Create canonical rig calibration folders.
-
-            mkdir(rigPath);
-            coregBase = fullfile(rigPath, ...
-                obj.Schema.folders.transforms, ...
-                obj.Schema.folders.cameraCoregistration);
-            mkdir(fullfile(coregBase, obj.Schema.folders.active));
-            mkdir(fullfile(coregBase, obj.Schema.folders.archive));
-
-            fileBase = fullfile(rigPath, obj.Schema.folders.calibrationFiles);
-            mkdir(fullfile(fileBase, obj.Schema.folders.active));
-            mkdir(fullfile(fileBase, obj.Schema.folders.archive));
-        end
-
         function rel = iBuildResourceRelativePath(obj, ownerBaseRel, resourceType, stateFolder, fileName)
             %IBUILDRESOURCERELATIVEPATH Build a canonical resource path.
 
@@ -4002,36 +4164,6 @@ classdef UMITProjectStore < handle
                     'Path "%s" does not start with "%s".', input, oldPrefix);
             end
             output = [newPrefix, input(numel(oldPrefix)+1:end)];
-        end
-
-        function sessions = iFindSessionsByRigUUID(obj, rigUUID)
-            %IFINDSESSIONSBYRIGUUID Find session metadata referencing one rig.
-
-            template = struct('metadataPath', '', 'backupName', '');
-            sessions = repmat(template, 0, 1);
-            ProjectInfo = obj.getProjectInfo();
-
-            for iSubject = 1:numel(ProjectInfo.subjectRegistry)
-                subjectPath = obj.iResolveRelativePath( ...
-                    ProjectInfo.subjectRegistry(iSubject).relativePath);
-                SubjectInfo = obj.iLoadMetadata( ...
-                    fullfile(subjectPath, obj.Schema.files.subjectMetadata), ...
-                    obj.Schema.metadataVariables.subject);
-
-                for iSession = 1:numel(SubjectInfo.sessionRegistry)
-                    sessionPath = obj.iResolveRelativePath( ...
-                        SubjectInfo.sessionRegistry(iSession).relativePath);
-                    metadataPath = fullfile(sessionPath, ...
-                        obj.Schema.files.sessionMetadata);
-                    SessionInfo = obj.iLoadMetadata(metadataPath, ...
-                        obj.Schema.metadataVariables.session);
-                    if strcmp(SessionInfo.rigUUID, rigUUID)
-                        item = template;
-                        item.metadataPath = metadataPath;
-                        sessions(end+1) = item; %#ok<AGROW>
-                    end
-                end
-            end
         end
 
         function report = iValidateSubjectNode(obj, report, subjectRecord, ProjectInfo, mode)
@@ -4238,27 +4370,18 @@ classdef UMITProjectStore < handle
                     SessionInfo, sessionRel, 'session', mode);
             end
 
-            if isfield(SessionInfo, 'rigUUID') && ~isempty(SessionInfo.rigUUID)
-                if ~isfield(ProjectInfo, 'rigRegistry') || ...
-                        ~obj.iIsRegistryStruct(ProjectInfo.rigRegistry)
-                    report = obj.iAddIssue(report, 'error', ...
-                        'session_rig_registry_invalid', 'session', sessionRel, ...
-                        'Project rig registry is invalid.', false);
-                    return
-                end
-                rigIndex = find(strcmp( ...
-                    {ProjectInfo.rigRegistry.uuid}, SessionInfo.rigUUID), ...
-                    1, 'first');
-                if isempty(rigIndex)
-                    report = obj.iAddIssue(report, 'error', ...
-                        'session_rig_missing', 'session', sessionRel, ...
-                        'Session references an unregistered rig UUID.', false);
-                elseif ~strcmp(ProjectInfo.rigRegistry(rigIndex).id, SessionInfo.rigID)
-                    report = obj.iAddIssue(report, 'error', ...
-                        'session_rig_id_mismatch', 'session', sessionRel, ...
-                        'Session rigID does not match the registered rig UUID.', false);
-                end
-            elseif isfield(SessionInfo, 'rigID') && ~isempty(SessionInfo.rigID)
+            % Rigs are independent of this project (see UMITRigStore), so
+            % project validation only checks that the local rigUUID/rigID
+            % pointer is internally well-formed -- it deliberately does not
+            % resolve the external rig store here, to avoid coupling a
+            % project's own validation to another store's availability.
+            hasRigUUID = isfield(SessionInfo, 'rigUUID') && ~isempty(SessionInfo.rigUUID);
+            hasRigID = isfield(SessionInfo, 'rigID') && ~isempty(SessionInfo.rigID);
+            if hasRigUUID && ~hasRigID
+                report = obj.iAddIssue(report, 'error', ...
+                    'session_rig_incomplete', 'session', sessionRel, ...
+                    'Session has rigUUID but no rigID.', false);
+            elseif hasRigID && ~hasRigUUID
                 report = obj.iAddIssue(report, 'error', ...
                     'session_rig_incomplete', 'session', sessionRel, ...
                     'Session has rigID but no rigUUID.', false);
@@ -4342,99 +4465,6 @@ classdef UMITProjectStore < handle
                         'invalid_project_binding', 'session', ...
                         sessionRel, ME.message, true);
                 end
-            end
-        end
-
-        function report = iValidateRigNode(obj, report, rigRecord, mode)
-            %IVALIDATERIGNODE Validate one rig calibration node.
-
-            rigRel = rigRecord.relativePath;
-            rigPath = obj.iResolveRelativePath(rigRel);
-
-            if ~isfolder(rigPath)
-                report = obj.iAddIssue(report, 'error', ...
-                    'missing_rig_folder', 'rig', rigRel, ...
-                    sprintf('Registered rig folder is missing: %s', rigRel), ...
-                    false);
-                return
-            end
-
-            metadataRel = UMITProjectStore.iJoinRelative( ...
-                rigRel, obj.Schema.files.rigMetadata);
-            try
-                CalibrationInfo = obj.iLoadMetadata( ...
-                    fullfile(rigPath, obj.Schema.files.rigMetadata), ...
-                    obj.Schema.metadataVariables.rig);
-            catch ME
-                report = obj.iAddIssue(report, 'error', ...
-                    'invalid_rig_metadata', 'rig', metadataRel, ...
-                    ME.message, false);
-                return
-            end
-
-            report = obj.iValidateMetadataFields(report, CalibrationInfo, ...
-                obj.Schema.requiredRigFields, 'rig', metadataRel);
-
-            if isfield(CalibrationInfo, 'uuid') && ...
-                    ~strcmp(CalibrationInfo.uuid, rigRecord.uuid)
-                report = obj.iAddIssue(report, 'error', ...
-                    'rig_uuid_mismatch', 'rig', rigRel, ...
-                    'Rig UUID does not match the project registry.', false);
-            end
-
-            if isfield(CalibrationInfo, 'rigID') && ...
-                    ~strcmp(CalibrationInfo.rigID, rigRecord.id)
-                report = obj.iAddIssue(report, 'error', ...
-                    'rig_id_mismatch', 'rig', rigRel, ...
-                    'Rig ID does not match its registry record.', false);
-            end
-
-            try
-                obj.iNormalizeManagedID(rigRecord.id, 'rigID');
-            catch ME
-                report = obj.iAddIssue(report, 'error', ...
-                    'invalid_rig_id', 'rig', rigRel, ME.message, false);
-            end
-
-            requiredFolders = { ...
-                UMITProjectStore.iJoinRelative(obj.Schema.folders.transforms, ...
-                obj.Schema.folders.cameraCoregistration, ...
-                obj.Schema.folders.active), ...
-                UMITProjectStore.iJoinRelative(obj.Schema.folders.transforms, ...
-                obj.Schema.folders.cameraCoregistration, ...
-                obj.Schema.folders.archive), ...
-                UMITProjectStore.iJoinRelative(obj.Schema.folders.calibrationFiles, ...
-                obj.Schema.folders.active), ...
-                UMITProjectStore.iJoinRelative(obj.Schema.folders.calibrationFiles, ...
-                obj.Schema.folders.archive)};
-            report = obj.iValidateRequiredNodeFolders( ...
-                report, rigPath, rigRel, 'rig', requiredFolders);
-            report = obj.iValidateAllowedChildren(report, ...
-                rigPath, rigRel, 'rig', { ...
-                obj.Schema.files.rigMetadata, ...
-                obj.Schema.folders.transforms, ...
-                obj.Schema.folders.calibrationFiles});
-            report = obj.iValidateAllowedChildren(report, ...
-                fullfile(rigPath, obj.Schema.folders.transforms), ...
-                UMITProjectStore.iJoinRelative(rigRel, ...
-                obj.Schema.folders.transforms), 'rig', ...
-                {obj.Schema.folders.cameraCoregistration});
-            report = obj.iValidateAllowedChildren(report, ...
-                fullfile(rigPath, obj.Schema.folders.transforms, ...
-                obj.Schema.folders.cameraCoregistration), ...
-                UMITProjectStore.iJoinRelative(rigRel, ...
-                obj.Schema.folders.transforms, ...
-                obj.Schema.folders.cameraCoregistration), 'rig', ...
-                {obj.Schema.folders.active, obj.Schema.folders.archive});
-            report = obj.iValidateAllowedChildren(report, ...
-                fullfile(rigPath, obj.Schema.folders.calibrationFiles), ...
-                UMITProjectStore.iJoinRelative(rigRel, ...
-                obj.Schema.folders.calibrationFiles), 'rig', ...
-                {obj.Schema.folders.active, obj.Schema.folders.archive});
-
-            if isfield(CalibrationInfo, 'resourceRegistry')
-                report = obj.iValidateResourceRegistry(report, ...
-                    CalibrationInfo, rigRel, 'rig', mode);
             end
         end
 
@@ -4783,14 +4813,11 @@ classdef UMITProjectStore < handle
         end
 
         function report = iValidateUnregisteredTopNodes(obj, report, ProjectInfo)
-            %IVALIDATEUNREGISTEREDTOPNODES Detect unregistered subject/rig folders.
+            %IVALIDATEUNREGISTEREDTOPNODES Detect unregistered subject folders.
 
             report = obj.iCompareFolderNamesToRegistry(report, ...
                 obj.Schema.folders.subjects, ProjectInfo.subjectRegistry, ...
                 'subject');
-            report = obj.iCompareFolderNamesToRegistry(report, ...
-                obj.Schema.folders.calibrations, ProjectInfo.rigRegistry, ...
-                'rig');
         end
 
         function report = iValidateUnregisteredSessionFolders(obj, report, SubjectInfo, subjectRel)
@@ -5021,35 +5048,6 @@ classdef UMITProjectStore < handle
                                         SessionInfo.resourceRegistry(iResource).relativePath; %#ok<AGROW>
                                 end
                             end
-                        end
-                    end
-                end
-            end
-
-            if isfield(ProjectInfo, 'rigRegistry') && ...
-                    obj.iIsRegistryStruct(ProjectInfo.rigRegistry)
-                for iRig = 1:numel(ProjectInfo.rigRegistry)
-                    rigRecord = ProjectInfo.rigRegistry(iRig);
-                    uuids{end+1} = rigRecord.uuid; %#ok<AGROW>
-                    labels{end+1} = rigRecord.relativePath; %#ok<AGROW>
-
-                    try
-                        rigPath = obj.iResolveRelativePath(rigRecord.relativePath);
-                        CalibrationInfo = obj.iLoadMetadata( ...
-                            fullfile(rigPath, obj.Schema.files.rigMetadata), ...
-                            obj.Schema.metadataVariables.rig);
-                    catch
-                        continue
-                    end
-
-                    if isfield(CalibrationInfo, 'resourceRegistry') && ...
-                            obj.iIsResourceRegistryStruct( ...
-                            CalibrationInfo.resourceRegistry)
-                        for iResource = 1:numel(CalibrationInfo.resourceRegistry)
-                            uuids{end+1} = ...
-                                CalibrationInfo.resourceRegistry(iResource).uuid; %#ok<AGROW>
-                            labels{end+1} = ...
-                                CalibrationInfo.resourceRegistry(iResource).relativePath; %#ok<AGROW>
                         end
                     end
                 end
