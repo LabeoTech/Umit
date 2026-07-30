@@ -33,9 +33,11 @@ function severity = setStatusMessage(statusLabel, message, varargin)
 %       Background      - App background polarity used to choose readable
 %                         status colors.
 %                         Options:
+%                             'auto'  Use the initialized figure theme,
+%                                     otherwise light.
 %                             'light'
 %                             'dark'
-%                         Default: 'light'
+%                         Default: 'auto'
 %
 %       MaxLength       - Maximum displayed text length. If 0, the full text
 %                         is shown.
@@ -97,7 +99,7 @@ addParameter(p, 'Severity', 'auto', ...
 addParameter(p, 'DefaultSeverity', 'info', ...
     @(x) ischar(x) || (isstring(x) && isscalar(x)));
 
-addParameter(p, 'Background', 'light', ...
+addParameter(p, 'Background', 'auto', ...
     @(x) ischar(x) || (isstring(x) && isscalar(x)));
 
 addParameter(p, 'MaxLength', 0, ...
@@ -129,10 +131,15 @@ if ~ismember(defaultSeverity, validDefaultSeverities)
         'Invalid default severity "%s".', defaultSeverity);
 end
 
-validBackgrounds = {'light', 'dark'};
+validBackgrounds = {'auto', 'light', 'dark'};
 if ~ismember(background, validBackgrounds)
     error('Umitoolbox:setStatusMessage:invalidBackground', ...
-        'Invalid background "%s". Expected "light" or "dark".', background);
+        'Invalid background "%s". Expected "auto", "light", or "dark".', ...
+        background);
+end
+
+if strcmp(background, 'auto')
+    background = iResolveFigureBackground(statusLabel);
 end
 
 [statusText, tooltipText, forcedSeverity] = iNormalizeStatusMessage(message);
@@ -285,6 +292,26 @@ switch background
 
     otherwise
         color = iGetLightBackgroundColor(severity);
+end
+
+end
+
+function background = iResolveFigureBackground(statusLabel)
+%IRESOLVEFIGUREBACKGROUND Read the theme applied to the owning figure.
+
+background = 'light';
+figureHandle = ancestor(statusLabel, 'figure');
+
+if isempty(figureHandle) || ~isappdata(figureHandle, 'UmitTheme')
+    return
+end
+
+savedTheme = getappdata(figureHandle, 'UmitTheme');
+if ischar(savedTheme) || (isstring(savedTheme) && isscalar(savedTheme))
+    savedTheme = lower(strtrim(char(savedTheme)));
+    if ismember(savedTheme, {'light', 'dark'})
+        background = savedTheme;
+    end
 end
 
 end
