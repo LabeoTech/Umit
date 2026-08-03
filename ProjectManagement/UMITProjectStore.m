@@ -63,6 +63,8 @@ classdef UMITProjectStore < handle
     %       relocateRawDataFolder
     %       repairSaveFolderBinding
     %       removeSessionFromProject
+    %       removeSubjectFromProject
+    %       deleteProject
     %       unbindRawDataFolder
     %       findSessionByDataFolder
     %       validate
@@ -1435,6 +1437,135 @@ classdef UMITProjectStore < handle
 
             removedSession = obj.iRemoveSessionFromProject( ...
                 subjectID, sessionID);
+        end
+
+        function result = removeSubjectFromProject(obj, subjectUUID)
+            %REMOVESUBJECTFROMPROJECT Remove one subject and its sessions safely.
+            %
+            %   result = store.removeSubjectFromProject(subjectUUID)
+            %
+            %   Subject identity is resolved from its immutable UUID.  All
+            %   registered sessions are removed from the project ledger and
+            %   their accessible raw/processed-folder bindings are removed in
+            %   one rollback-safe operation.  External scientific data is
+            %   never deleted.  The operation rejects unavailable or invalid
+            %   bindings before changing project metadata, rather than leaving
+            %   an orphaned binding that could later reappear with its folder.
+
+            errID = 'Umitoolbox:UMITProjectStore:removeSubjectFailed';
+            subjectUUID = UMITProjectStore.iNormalizeUUIDInput(subjectUUID);
+            obj.iAssertWritable();
+            lockCleanup = obj.iAcquireWriteLock('removeSubjectFromProject'); %#ok<NASGU>
+            obj.iAssertHealthyForMutation();
+
+            [SubjectInfo, subjectRecord] = obj.getSubjectInfoByUUID(subjectUUID);
+            ProjectInfo = obj.getProjectInfo();
+            subjectIndex = find(strcmpi( ...
+                {ProjectInfo.subjectRegistry.uuid}, subjectUUID), 1, 'first');
+            if isempty(subjectIndex)
+                error(errID, 'Subject UUID was not found: %s', subjectUUID);
+            end
+            subjectPath = obj.iResolveRelativePath(subjectRecord.relativePath);
+
+            recoveryPath = obj.iCreateRecoveryFolder('removeSubjectFromProject');
+            cleanupRecovery = onCleanup(@() ...
+                UMITProjectStore.iRemoveFolderIfPresent(recoveryPath));
+            linkChanges = obj.iPreflightSubjectRemoval( ...
+                SubjectInfo, subjectPath, recoveryPath);
+            backupProjectPath = fullfile(recoveryPath, ...
+                obj.Schema.files.projectMetadata);
+            copyfile(fullfile(obj.ProjectRoot, ...
+                obj.Schema.files.projectMetadata), backupProjectPath, 'f');
+            stagedSubjectPath = fullfile(recoveryPath, 'subject');
+
+            try
+                [ok, message] = movefile(subjectPath, stagedSubjectPath, 'f');
+                if ~ok
+                    error(errID, ...
+                        'Could not stage subject metadata removal: %s', message);
+                end
+
+                ProjectInfo.subjectRegistry(subjectIndex) = [];
+                ProjectInfo.modifiedOn = datetime('now');
+                obj.iSaveProjectInfo(ProjectInfo);
+                obj.iDeletePreflightedBindings(linkChanges);
+                obj.iAssertValidAfterMutation();
+                obj.IsReadOnly = false;
+            catch ME
+                obj.iRestorePreflightedBindings(linkChanges);
+                if ~isfolder(subjectPath) && isfolder(stagedSubjectPath)
+                    movefile(stagedSubjectPath, subjectPath, 'f');
+                end
+                copyfile(backupProjectPath, fullfile(obj.ProjectRoot, ...
+                    obj.Schema.files.projectMetadata), 'f');
+                rethrow(ME)
+            end
+
+            result = struct('subjectUUID', SubjectInfo.uuid, ...
+                'subjectID', SubjectInfo.subjectID, ...
+                'sessionsRemoved', numel(SubjectInfo.sessionRegistry));
+            obj.iAppendLog('removeSubjectFromProject', SubjectInfo.uuid, ...
+                sprintf('%d session(s) removed', result.sessionsRemoved));
+            clear cleanupRecovery lockCleanup
+        end
+
+        function result = deleteProject(obj, projectUUID)
+            %DELETEPROJECT Remove a centralized project after unbinding sessions.
+            %
+            %   result = store.deleteProject(projectUUID)
+            %
+            %   The project UUID prevents a stale GUI selection from deleting
+            %   a different open store.  All affected data-folder bindings are
+            %   preflighted, then removed with rollback support before the
+            %   project-owned metadata and managed resources are deleted.
+            %   Deletion is deliberately available for a project opened
+            %   read-only after validation failure, so corrupted managed
+            %   metadata does not become undeletable.
+            %   External raw and processed imaging folders are never deleted.
+
+            errID = 'Umitoolbox:UMITProjectStore:deleteProjectFailed';
+            projectUUID = UMITProjectStore.iNormalizeUUIDInput(projectUUID);
+            lockCleanup = obj.iAcquireWriteLock('deleteProject'); %#ok<NASGU>
+
+            ProjectInfo = obj.getProjectInfo();
+            if ~strcmpi(ProjectInfo.projectUUID, projectUUID)
+                error(errID, ['The requested project UUID does not match ' ...
+                    'this open project store.']);
+            end
+            sessionCount = obj.iCountProjectSessions(ProjectInfo);
+
+            projectsRoot = UMITProjectStore.getProjectsRoot();
+            recoveryPath = fullfile(projectsRoot, ...
+                ['.deleteProjectRecovery_' UMITProjectStore.iGenerateUUID()]);
+            stagedProjectPath = fullfile(projectsRoot, ...
+                ['.deleteProjectStage_' UMITProjectStore.iGenerateUUID()]);
+            mkdir(recoveryPath);
+            cleanupRecovery = onCleanup(@() ...
+                UMITProjectStore.iRemoveFolderIfPresent(recoveryPath));
+            linkChanges = obj.iPreflightProjectRemoval( ...
+                ProjectInfo, recoveryPath);
+
+            try
+                [ok, message] = movefile( ...
+                    obj.ProjectRoot, stagedProjectPath, 'f');
+                if ~ok
+                    error(errID, 'Could not stage project deletion: %s', message);
+                end
+
+                obj.iDeletePreflightedBindings(linkChanges);
+                UMITProjectStore.iRemoveFolderIfPresent(stagedProjectPath);
+            catch ME
+                obj.iRestorePreflightedBindings(linkChanges);
+                if ~isfolder(obj.ProjectRoot) && isfolder(stagedProjectPath)
+                    movefile(stagedProjectPath, obj.ProjectRoot, 'f');
+                end
+                rethrow(ME)
+            end
+
+            result = struct('projectUUID', ProjectInfo.projectUUID, ...
+                'subjectsRemoved', numel(ProjectInfo.subjectRegistry), ...
+                'sessionsRemoved', sessionCount);
+            clear cleanupRecovery lockCleanup
         end
 
         function resourceUUID = addImageReference(obj, subjectID, sourceFile, resourceInfo)
@@ -3304,6 +3435,11 @@ classdef UMITProjectStore < handle
             ProjectInfo = obj.getProjectInfo();
             index = obj.iFindRegistryIndex(ProjectInfo.subjectRegistry, subjectID);
             if isempty(index)
+                subjectID = obj.iNormalizeManagedID(subjectID, 'subjectID');
+                index = obj.iFindRegistryIndex( ...
+                    ProjectInfo.subjectRegistry, subjectID);
+            end
+            if isempty(index)
                 error('Umitoolbox:UMITProjectStore:subjectNotFound', ...
                     'Subject ID was not found: %s', subjectID);
             end
@@ -3323,6 +3459,11 @@ classdef UMITProjectStore < handle
             sessionID = char(string(sessionID));
             sessionIndex = obj.iFindRegistryIndex( ...
                 SubjectInfo.sessionRegistry, sessionID);
+            if isempty(sessionIndex)
+                sessionID = obj.iNormalizeManagedID(sessionID, 'sessionID');
+                sessionIndex = obj.iFindRegistryIndex( ...
+                    SubjectInfo.sessionRegistry, sessionID);
+            end
             if isempty(sessionIndex)
                 error('Umitoolbox:UMITProjectStore:sessionNotFound', ...
                     'Session ID was not found: %s', sessionID);
@@ -4068,6 +4209,148 @@ classdef UMITProjectStore < handle
             clear cleanupRecovery lockCleanup
         end
 
+        function linkChanges = iPreflightSubjectRemoval( ...
+                obj, SubjectInfo, subjectPath, recoveryPath)
+            %IPREFLIGHTSUBJECTREMOVAL Verify every external link before mutation.
+
+            linkChanges = struct('path', {}, 'backupPath', {});
+            for iSession = 1:numel(SubjectInfo.sessionRegistry)
+                sessionRecord = SubjectInfo.sessionRegistry(iSession);
+                sessionPath = obj.iResolveRelativePath(sessionRecord.relativePath);
+                SessionInfo = obj.iLoadMetadata( ...
+                    fullfile(sessionPath, obj.Schema.files.sessionMetadata), ...
+                    obj.Schema.metadataVariables.session);
+                linkChanges = obj.iPreflightSessionBindings( ...
+                    SessionInfo, SubjectInfo, recoveryPath, linkChanges);
+            end
+
+            if ~isfolder(subjectPath)
+                error('Umitoolbox:UMITProjectStore:removeSubjectFailed', ...
+                    'Subject folder is unavailable: %s', subjectPath);
+            end
+        end
+
+        function linkChanges = iPreflightProjectRemoval( ...
+                obj, ProjectInfo, recoveryPath)
+            %IPREFLIGHTPROJECTREMOVAL Verify all external links before delete.
+
+            linkChanges = struct('path', {}, 'backupPath', {});
+            for iSubject = 1:numel(ProjectInfo.subjectRegistry)
+                subjectRecord = ProjectInfo.subjectRegistry(iSubject);
+                subjectPath = obj.iResolveRelativePath(subjectRecord.relativePath);
+                SubjectInfo = obj.iLoadMetadata( ...
+                    fullfile(subjectPath, obj.Schema.files.subjectMetadata), ...
+                    obj.Schema.metadataVariables.subject);
+                if ~isfolder(subjectPath)
+                    error('Umitoolbox:UMITProjectStore:deleteProjectFailed', ...
+                        'Subject folder is unavailable: %s', subjectPath);
+                end
+                for iSession = 1:numel(SubjectInfo.sessionRegistry)
+                    sessionRecord = SubjectInfo.sessionRegistry(iSession);
+                    sessionPath = obj.iResolveRelativePath( ...
+                        sessionRecord.relativePath);
+                    SessionInfo = obj.iLoadMetadata( ...
+                        fullfile(sessionPath, obj.Schema.files.sessionMetadata), ...
+                        obj.Schema.metadataVariables.session);
+                    linkChanges = obj.iPreflightSessionBindings( ...
+                        SessionInfo, SubjectInfo, recoveryPath, linkChanges);
+                end
+            end
+        end
+
+        function linkChanges = iPreflightSessionBindings( ...
+                obj, SessionInfo, SubjectInfo, recoveryPath, linkChanges)
+            %IPREFLIGHTSESSIONBINDINGS Validate and snapshot managed links.
+
+            roles = {'rawDataFolder', 'processedDataFolder'};
+            for iRole = 1:numel(roles)
+                [pathField, bindingField] = ...
+                    obj.iGetBindingRoleFields(roles{iRole});
+                dataFolder = SessionInfo.(pathField);
+                if isempty(dataFolder)
+                    continue
+                end
+                if ~isfolder(dataFolder)
+                    error('Umitoolbox:UMITProjectStore:bindingFolderUnavailable', ...
+                        ['Bound folder must be available before project ' ...
+                         'removal: %s'], dataFolder);
+                end
+
+                ProjectBinding = UMITProjectStore.readProjectBinding(dataFolder);
+                obj.iAssertBindingMatchesSession( ...
+                    ProjectBinding, SessionInfo, SubjectInfo, ...
+                    pathField, bindingField, dataFolder);
+                bindingPath = fullfile(dataFolder, ...
+                    obj.Schema.files.projectBinding);
+                if any(strcmpi({linkChanges.path}, bindingPath))
+                    continue
+                end
+                backupPath = fullfile(recoveryPath, sprintf( ...
+                    'link_%d.umitlink', numel(linkChanges) + 1));
+                [ok, message] = copyfile(bindingPath, backupPath, 'f');
+                if ~ok
+                    error('Umitoolbox:UMITProjectStore:bindingBackupFailed', ...
+                        'Could not snapshot project binding: %s', message);
+                end
+                linkChanges = obj.iAddPreflightedBinding( ...
+                    bindingPath, backupPath, linkChanges);
+            end
+        end
+
+        function linkChanges = iAddPreflightedBinding(~, ...
+                bindingPath, backupPath, linkChanges)
+            %IADDPREFLIGHTEDBINDING Add one unique external binding snapshot.
+
+            if any(strcmpi({linkChanges.path}, bindingPath))
+                return
+            end
+            linkChanges(end+1) = struct( ...
+                'path', bindingPath, 'backupPath', backupPath);
+        end
+
+        function iDeletePreflightedBindings(~, linkChanges)
+            %IDELETEPREFLIGHTEDBINDINGS Remove only links validated in preflight.
+
+            for iChange = 1:numel(linkChanges)
+                if ~isfile(linkChanges(iChange).path)
+                    error('Umitoolbox:UMITProjectStore:bindingChanged', ...
+                        ['A project binding changed after deletion preflight: ' ...
+                         '%s'], linkChanges(iChange).path);
+                end
+                delete(linkChanges(iChange).path);
+            end
+        end
+
+        function iRestorePreflightedBindings(~, linkChanges)
+            %IRESTOREPREFLIGHTEDBINDINGS Restore binding snapshots on failure.
+
+            for iChange = 1:numel(linkChanges)
+                if isfile(linkChanges(iChange).backupPath)
+                    try
+                        copyfile(linkChanges(iChange).backupPath, ...
+                            linkChanges(iChange).path, 'f');
+                    catch
+                        % Preserve the original mutation exception. Recovery
+                        % artifacts remain available for a manual repair.
+                    end
+                end
+            end
+        end
+
+        function count = iCountProjectSessions(obj, ProjectInfo)
+            %ICOUNTPROJECTSESSIONS Return the number of registered sessions.
+
+            count = 0;
+            for iSubject = 1:numel(ProjectInfo.subjectRegistry)
+                subjectPath = obj.iResolveRelativePath( ...
+                    ProjectInfo.subjectRegistry(iSubject).relativePath);
+                SubjectInfo = obj.iLoadMetadata( ...
+                    fullfile(subjectPath, obj.Schema.files.subjectMetadata), ...
+                    obj.Schema.metadataVariables.subject);
+                count = count + numel(SubjectInfo.sessionRegistry);
+            end
+        end
+
         function ProjectBinding = iUnbindSessionDataFolder( ...
                 obj, subjectID, sessionID, folderRole)
             %IUNBINDSESSIONDATAFOLDER Remove reciprocal binding transactionally.
@@ -4678,26 +4961,41 @@ classdef UMITProjectStore < handle
         end
 
         function id = iNormalizeManagedID(obj, idIn, idLabel)
-            %INORMALIZEMANAGEDID Validate one filesystem-backed managed ID.
+            %INORMALIZEMANAGEDID Normalize one filesystem-backed MATLAB ID.
+            %
+            % IDs that fail the managed-ID grammar are converted with
+            % matlab.lang.makeValidName before the managed-ID checks. Existing
+            % valid IDs are preserved for compatibility; the store's
+            % reserved-name and case-insensitive uniqueness protections remain
+            % in force.
 
             if ~(ischar(idIn) || (isstring(idIn) && isscalar(idIn)))
                 error('Umitoolbox:UMITProjectStore:invalidID', ...
                     '"%s" must be a character vector or string scalar.', idLabel);
             end
 
-            id = char(string(idIn));
+            id = strtrim(char(string(idIn)));
             rules = obj.Schema.namingRules;
 
-            if isempty(id) || strlength(string(id)) > rules.maxIDLength
+            if isempty(id)
                 error('Umitoolbox:UMITProjectStore:invalidID', ...
                     '"%s" must contain 1 to %d characters.', ...
                     idLabel, rules.maxIDLength);
             end
 
             if isempty(regexp(id, rules.idPattern, 'once'))
+                id = matlab.lang.makeValidName(id, ...
+                    'ReplacementStyle', 'underscore');
+            end
+            if strlength(string(id)) > rules.maxIDLength
                 error('Umitoolbox:UMITProjectStore:invalidID', ...
-                    ['"%s" must start with a letter or digit and contain ' ...
-                    'only letters, digits, underscores, and hyphens.'], ...
+                    '"%s" must normalize to at most %d characters.', ...
+                    idLabel, rules.maxIDLength);
+            end
+
+            if isempty(regexp(id, rules.idPattern, 'once'))
+                error('Umitoolbox:UMITProjectStore:invalidID', ...
+                    '"%s" could not be converted to a valid managed name.', ...
                     idLabel);
             end
 
