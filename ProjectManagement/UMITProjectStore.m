@@ -39,6 +39,8 @@ classdef UMITProjectStore < handle
     %       setActiveRegistrationTransform
     %       updateSubjectMetadata
     %       updateSessionMetadata
+    %       updateProjectMetadata
+    %       getMetadataFieldDescriptions
     %       updateResourceMetadata
     %       renameSubjectID
     %       renameSessionID
@@ -210,6 +212,10 @@ classdef UMITProjectStore < handle
             ProjectInfo.projectUUID = projectUUID;
             ProjectInfo.projectName = projectName;
             ProjectInfo.description = description;
+            ProjectInfo = UMITProjectStore.iAddMetadataDefaults( ...
+                ProjectInfo, 'project');
+            ProjectInfo = UMITProjectStore.iApplyMetadataInput( ...
+                ProjectInfo, projectInfo, schema.editableFields.project, errID);
             ProjectInfo.createdOn = nowTime;
             ProjectInfo.modifiedOn = nowTime;
             ProjectInfo.subjectRegistry = ...
@@ -746,6 +752,22 @@ classdef UMITProjectStore < handle
                 obj.Schema.metadataVariables.project);
         end
 
+        function descriptions = getMetadataFieldDescriptions(obj, entityType)
+            %GETMETADATAFIELDDESCRIPTIONS Return UI-agnostic field descriptions.
+            %
+            %   descriptions = store.getMetadataFieldDescriptions(entityType)
+            %   returns a scalar structure whose field names are metadata
+            %   fields and whose values are concise descriptions. entityType is
+            %   'project', 'subject', or 'session'. Unknown entity types return
+            %   an empty structure so callers can safely omit a tooltip.
+
+            entityType = lower(strtrim(char(string(entityType))));
+            descriptions = struct();
+            if isfield(obj.Schema.metadataFieldDescriptions, entityType)
+                descriptions = obj.Schema.metadataFieldDescriptions.(entityType);
+            end
+        end
+
         function SubjectInfo = getSubjectInfo(obj, subjectID)
             %GETSUBJECTINFO Return metadata for one subject ID.
 
@@ -1057,6 +1079,14 @@ classdef UMITProjectStore < handle
             SubjectInfo.subjectID = subjectID;
             SubjectInfo.displayName = displayName;
             SubjectInfo.description = description;
+            SubjectInfo = UMITProjectStore.iAddMetadataDefaults( ...
+                SubjectInfo, 'subject');
+            SubjectInfo = UMITProjectStore.iApplyMetadataInput( ...
+                SubjectInfo, subjectInfo, obj.Schema.editableFields.subject, errID);
+            if isempty(strtrim(SubjectInfo.displayName))
+                SubjectInfo.displayName = subjectID;
+            end
+            displayName = SubjectInfo.displayName;
             SubjectInfo.createdOn = nowTime;
             SubjectInfo.modifiedOn = nowTime;
             SubjectInfo.activeImageReferenceUUID = '';
@@ -1217,6 +1247,14 @@ classdef UMITProjectStore < handle
             SessionInfo.displayName = displayName;
             SessionInfo.description = description;
             SessionInfo.acquisitionDate = acquisitionDate;
+            SessionInfo = UMITProjectStore.iAddMetadataDefaults( ...
+                SessionInfo, 'session');
+            SessionInfo = UMITProjectStore.iApplyMetadataInput( ...
+                SessionInfo, sessionInfo, obj.Schema.editableFields.session, errID);
+            if isempty(strtrim(SessionInfo.displayName))
+                SessionInfo.displayName = sessionID;
+            end
+            displayName = SessionInfo.displayName;
             SessionInfo.rawDataFolder = '';
             SessionInfo.rawDataBindingUUID = '';
             SessionInfo.processedDataFolder = saveFolder;
@@ -1758,6 +1796,38 @@ classdef UMITProjectStore < handle
 
             obj.iSetActiveResource('session', {subjectID, sessionID}, ...
                 'registrationTransform', resourceUUID);
+        end
+
+        function updateProjectMetadata(obj, updates)
+            %UPDATEPROJECTMETADATA Update editable project metadata fields.
+
+            errID = 'Umitoolbox:UMITProjectStore:updateProjectFailed';
+            obj.iAssertUpdateStruct(updates, errID);
+            obj.iAssertWritable();
+            lockCleanup = obj.iAcquireWriteLock('updateProjectMetadata');
+            obj.iAssertHealthyForMutation();
+
+            ProjectInfo = obj.getProjectInfo();
+            originalProjectInfo = ProjectInfo;
+            ProjectInfo = obj.iApplyEditableUpdates( ...
+                ProjectInfo, updates, obj.Schema.editableFields.project, errID);
+            ProjectInfo.modifiedOn = datetime('now');
+
+            backupPath = obj.iCreateRecoveryFolder('updateProjectMetadata');
+            cleanupBackup = onCleanup(@() UMITProjectStore.iRemoveFolderIfPresent(backupPath));
+            copyfile(fullfile(obj.ProjectRoot, obj.Schema.files.projectMetadata), ...
+                fullfile(backupPath, obj.Schema.files.projectMetadata), 'f');
+
+            try
+                obj.iSaveProjectInfo(ProjectInfo);
+                obj.iAssertValidAfterMutation();
+            catch ME
+                obj.iSaveProjectInfo(originalProjectInfo);
+                rethrow(ME)
+            end
+
+            obj.iAppendLog('updateProjectMetadata', ProjectInfo.projectUUID, 'completed');
+            clear cleanupBackup lockCleanup
         end
 
         function updateSubjectMetadata(obj, subjectID, updates)
@@ -4700,6 +4770,23 @@ classdef UMITProjectStore < handle
                     'Metadata variable "%s" must be a scalar struct.', ...
                     variableName);
             end
+
+            switch variableName
+                case 'ProjectInfo'
+                    entityType = 'project';
+                case 'SubjectInfo'
+                    entityType = 'subject';
+                case 'SessionInfo'
+                    entityType = 'session';
+                otherwise
+                    entityType = '';
+            end
+            if ~isempty(entityType)
+                % Older project folders remain readable: newly optional
+                % fields are supplied in memory and persist on the next
+                % supported metadata update.
+                value = UMITProjectStore.iAddMetadataDefaults(value, entityType);
+            end
         end
 
         function cleanupObj = iAcquireWriteLock(obj, operation)
@@ -5145,24 +5232,8 @@ classdef UMITProjectStore < handle
 
             for iField = 1:numel(updateFields)
                 fieldName = updateFields{iField};
-                value = updates.(fieldName);
-
-                if ismember(fieldName, {'displayName', 'description', ...
-                        'rigID', 'rigUUID'})
-                    if ~(ischar(value) || ...
-                            (isstring(value) && isscalar(value)))
-                        error(errID, ...
-                            'Field "%s" must be a text scalar.', fieldName);
-                    end
-                    value = char(string(value));
-                elseif strcmp(fieldName, 'acquisitionDate')
-                    if ~(isdatetime(value) && isscalar(value))
-                        error(errID, ...
-                            'Field "acquisitionDate" must be a datetime scalar.');
-                    end
-                end
-
-                metadata.(fieldName) = value;
+                metadata.(fieldName) = UMITProjectStore.iNormalizeMetadataValue( ...
+                    fieldName, updates.(fieldName), errID);
             end
         end
 
@@ -6482,6 +6553,86 @@ classdef UMITProjectStore < handle
     end
 
     methods (Static, Access = private)
+        function metadata = iAddMetadataDefaults(metadata, entityType)
+            %IADDMETADATADEFAULTS Add optional metadata fields missing from old files.
+
+            switch entityType
+                case 'project'
+                    defaults = struct( ...
+                        'institution', '', 'lab', '', ...
+                        'principalInvestigator', '', 'experimenters', {{}}, ...
+                        'projectStartDate', NaT, 'projectEndDate', NaT, ...
+                        'notes', '');
+                case 'subject'
+                    defaults = struct( ...
+                        'species', '', 'strain', '', 'genotype', '', 'sex', '', ...
+                        'dateOfBirth', NaT, 'ageAtProjectEntry', '', ...
+                        'ageReference', '', 'weight_g', NaN, 'housing', '', ...
+                        'diet', '', 'healthStatus', '', 'earTag', '', 'rfid', '', ...
+                        'notes', '');
+                case 'session'
+                    defaults = struct( ...
+                        'behavioralTask', '', 'stimulusNotes', '', ...
+                        'pharmacology', '', 'surgery', '', 'virus', '', ...
+                        'anesthesia', '', 'notes', '');
+                otherwise
+                    return
+            end
+
+            fields = fieldnames(defaults);
+            for iField = 1:numel(fields)
+                fieldName = fields{iField};
+                if ~isfield(metadata, fieldName)
+                    metadata.(fieldName) = defaults.(fieldName);
+                end
+            end
+        end
+
+        function metadata = iApplyMetadataInput(metadata, inputInfo, allowedFields, errID)
+            %IAPPLYMETADATAINPUT Apply supplied editable creation fields only.
+
+            suppliedFields = intersect(fieldnames(inputInfo), allowedFields);
+            for iField = 1:numel(suppliedFields)
+                fieldName = suppliedFields{iField};
+                metadata.(fieldName) = UMITProjectStore.iNormalizeMetadataValue( ...
+                    fieldName, inputInfo.(fieldName), errID);
+            end
+        end
+
+        function value = iNormalizeMetadataValue(fieldName, value, errID)
+            %INORMALIZEMETADATAVALUE Validate values accepted by update APIs.
+
+            dateFields = {'acquisitionDate', 'projectStartDate', ...
+                'projectEndDate', 'dateOfBirth'};
+            textListFields = {'experimenters'};
+            numericFields = {'weight_g'};
+
+            if ismember(fieldName, dateFields)
+                if ~(isdatetime(value) && isscalar(value))
+                    error(errID, 'Field "%s" must be a datetime scalar.', fieldName);
+                end
+            elseif ismember(fieldName, textListFields)
+                try
+                    value = UMITProjectStore.iNormalizeTextList(value, fieldName);
+                catch ME
+                    error(errID, 'Field "%s" must be text or a text list: %s', ...
+                        fieldName, ME.message);
+                end
+            elseif ismember(fieldName, numericFields)
+                if ~(isnumeric(value) && isreal(value) && isscalar(value) && ...
+                        (isfinite(value) || isnan(value)))
+                    error(errID, ...
+                        'Field "%s" must be a real scalar numeric value.', fieldName);
+                end
+                value = double(value);
+            else
+                if ~(ischar(value) || (isstring(value) && isscalar(value)))
+                    error(errID, 'Field "%s" must be a text scalar.', fieldName);
+                end
+                value = char(string(value));
+            end
+        end
+
         function tf = iIsProjectNotFoundError(ME)
             %IISPROJECTNOTFOUNDERROR Identify static-root UUID lookup misses.
 
