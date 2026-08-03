@@ -18,9 +18,8 @@ CLAUDE.md
 PLANNING_LOG.md
 
 .claude/
-.agents/
+.agents/*
 .codex/
 AGENTS.md
-_mlapp_tools/
 _branchComp/
 _apps_exported/
