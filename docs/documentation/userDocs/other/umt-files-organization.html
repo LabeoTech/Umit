@@ -1,0 +1,40 @@
+---
+layout: default
+permalink: /documentation/userDocs/other/umt-files-organization.html
+title: Organization of .umt files
+parent: Advanced User Resources
+grand_parent: Documentation
+nav_order: 4
+---
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Organization of .umt files</title></head><body>
+<h1>Organization of .umt files</h1>
+<p>UMT is umIT's schema-validated MATLAB container for processed and derived data. It carries enough dimension and event meaning to remain interpretable after being copied out of its original Save Folder.</p>
+<h2>Top-level schema (version 1)</h2>
+<table><tr><th>Field</th><th>Required?</th><th>Meaning</th></tr>
+<tr><td><samp>version</samp></td><td>Yes</td><td>UMT schema version used for validation and compatibility.</td></tr>
+<tr><td><samp>kind</samp></td><td>Yes</td><td><samp>image</samp> or <samp>roi</samp>; selects allowed dimension patterns.</td></tr>
+<tr><td><samp>data</samp></td><td>Yes</td><td>Structure of named entries.</td></tr>
+<tr><td><samp>labels</samp></td><td>No</td><td>Top-level labels that describe declared axes or observations.</td></tr>
+<tr><td><samp>eventInfo</samp></td><td>When the event axis requires it</td><td>Shared event identifiers, names, repetition representation, and optional baseline.</td></tr></table>
+<h2>Entries</h2>
+<p>Every <samp>data.&lt;entryName&gt;</samp> has a numeric/logical <samp>value</samp> and ordered <samp>dimNames</samp>. Optional entry <samp>meta</samp> contains processing facts such as <samp>FrameRateHz</samp>. The number and order of dimension names must match the value and an allowed pattern for the UMT kind.</p>
+<h2>Event information</h2>
+<table><tr><th>Field</th><th>Meaning</th></tr>
+<tr><td><samp>eventID</samp></td><td>Condition ID for each event-axis element.</td></tr>
+<tr><td><samp>repetitionIndex</samp></td><td>Repetition number, or zero for an aggregated representation.</td></tr>
+<tr><td><samp>eventName</samp></td><td>Human-readable condition name aligned with IDs.</td></tr>
+<tr><td><samp>eventAxisMode</samp></td><td><samp>instances</samp> or <samp>aggregated_repetitions</samp>.</td></tr>
+<tr><td><samp>baselinePeriod</samp></td><td>Optional baseline duration in seconds.</td></tr></table>
+<h2>Create, append, and validate</h2>
+<pre><code>umt = genUMTStruct(value, ...
+    'kind','image', ...
+    'entryName','main', ...
+    'dimNames',{'Y','X','T'}, ...
+    'SaveFolder',saveFolder);
+validateUMTStruct(umt,'requireEventInfo',false);</code></pre>
+<p>Use <samp>genUMTStruct</samp> for creation/appending and <samp>appendUMTEventInfo</samp> for event metadata. PipelineManager persists returned UMT structures when the output plan requires a file.</p>
+<h2>Identity boundaries</h2>
+<p>UMT does not embed project, subject, or session identity. Those facts belong to the centralized project store and Save Folder binding. UMT can carry scientific labels and processing metadata, but it must not become a portable copy of the project database or folder-wide mask/Raw Folder state.</p>
+<h2>Backward compatibility and editing</h2>
+<p>The version field allows validators and controlled migrations to distinguish schema revisions. Validate every loaded or programmatically changed UMT. Direct manual field editing is unsupported because apparently small changes can invalidate dimensions, labels, or event alignment.</p>
+</body></html>

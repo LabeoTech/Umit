@@ -1,0 +1,34 @@
+---
+layout: default
+permalink: /documentation/userDocs/tools/project-management-folder-binding.html
+title: Project management and folder binding
+parent: Related Apps and Tools
+grand_parent: Documentation
+nav_order: 6
+---
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Project management and folder binding</title></head><body>
+<h1>Project management and folder binding</h1>
+<p>Project Manager organizes project metadata and managed resources. Project Binding Manager assigns one external Save Folder to one project subject/session. They are documented together because both establish the context required by Image Reference Manager and Image Alignment Tool.</p>
+<h2>Open from DataViewer</h2><p>Choose <strong>Utilities &gt; Project Manager</strong>. If the current Save Folder already resolves, the matching store opens; otherwise you can open or create a project. Project Binding Manager opens automatically when an unbound folder requests a project-dependent tool, and can also be used for explicit reassignment and repair workflows.</p>
+<p style="text-align:center"><img src="../../assets/img/current/project-manager-current.png" alt="Current Project Manager with a demonstration subject selected" width="880"><br><em>Project tree, editable metadata, registry tabs, and context-sensitive actions.</em></p>
+<h2>Project Manager</h2>
+<table><tr><th>Control/action</th><th>Purpose</th></tr>
+<tr><td><strong>Open Project / New Project / Refresh</strong></td><td>Selects, creates, or reloads a centralized project.</td></tr>
+<tr><td><strong>Validate</strong></td><td>Checks project structure and reports whether writes are safe.</td></tr>
+<tr><td>Project tree</td><td>Selects project, subject, session, rig, calibration, and managed resource records.</td></tr>
+<tr><td>Details and registry tabs</td><td>Edits allowed descriptive metadata and displays structured registries.</td></tr>
+<tr><td><strong>Save Changes / Revert</strong></td><td>Commits validated edits transactionally or restores the selected record.</td></tr>
+<tr><td><strong>Add Subject / Add Session</strong></td><td>Creates hierarchy records. Adding a session selects its processed Save Folder and optional rig.</td></tr>
+<tr><td><strong>Rebind / Relocate / Repair Binding</strong></td><td>Changes an intended folder locator or repairs inconsistent link state after review.</td></tr>
+<tr><td><strong>Bind Raw Folder / Change Raw Folder</strong></td><td>Updates the session's raw-data locator.</td></tr>
+<tr><td><strong>Add Image Reference</strong></td><td>Imports a subject-managed image reference.</td></tr>
+<tr><td><strong>Set Active / Archive / Restore Resource</strong></td><td>Changes pointers while retaining resource history.</td></tr>
+<tr><td><strong>Remove Session from Project / Remove Subject / Delete Project</strong></td><td>Destructive administrative actions with explicit confirmation and dependency checks.</td></tr></table>
+<p style="text-align:center"><img src="../../assets/img/current/project-binding-manager.png" alt="Current Project Binding Manager" width="600"><br><em>Project Binding Manager chooses an existing or new project, subject, and session for the current Save Folder.</em></p>
+<h2>Project Binding Manager</h2>
+<ol><li>Choose <strong>Use existing project</strong> or <strong>Create new project</strong>.</li><li>Select or create a subject, then select or create a session.</li><li>Review the current Save Folder and action label: <strong>Bind Folder</strong>, <strong>Rebind Folder</strong>, or <strong>Use Binding</strong>.</li><li>Confirm. The manager writes <samp>UMITProjectBinding.umitlink</samp> and updates the centralized session processed-folder locator transactionally.</li></ol>
+<h2>Unbinding, recovery, and repair</h2>
+<p>Unbinding is explicit; no tool silently overwrites a link. A missing-project link offers retry, reassignment, or orphan-link removal. Malformed or conflicting UUID/path ownership is protected from automatic reassignment. Use Project Manager validation and <strong>Repair Binding</strong> only after confirming the intended project, subject, session, and folder.</p>
+<h2>DataViewer refresh</h2><p>When either manager closes, DataViewer resolves the link again and updates the project/Save Folder context and enabled tools. Project metadata never absorbs the bulk imaging files.</p>
+<div class="warnnote"><p><strong>UUIDs are identity; paths are locators.</strong><br>Do not repair a moved drive by creating duplicate project records or hand-editing <samp>.umitlink</samp>. Use the binding and relocation actions.</p></div>
+</body></html>

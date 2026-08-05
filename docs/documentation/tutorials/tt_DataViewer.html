@@ -1,21 +1,38 @@
 ---
 layout: default
-title: DataViewer app
-parent: Getting started
-has_children: true
-has_toc: false
+permalink: /documentation/tutorials/tt_DataViewer.html
+title: Introduction to DataViewer
+parent: Getting Started
+nav_order: 1
 ---
 <!DOCTYPE html>
-<html lang="en">
-<head>    
-    <meta charset="utf-8">
-    <title>DataViewer app</title>
-</head>
+<html lang="en"><head><meta charset="utf-8"><title>Introduction to DataViewer</title></head>
 <body>
-    <h1>DataViewer app</h1>
-    <hr>
-    <p>
-        The <b><i>DataViewer</i></b> app is designed for efficient processing and visualization of imaging datasets. Its primary objective is to facilitate basic exploration of individual recording whereby the users can quiclky process (e.g. filtering, normalization etc.) and visualize the data. Additionally, the application allows for batch processing, making it suitable for handling multiple recordings with the same ease as single recordings. <br>
-        As a result, <b><i>DataViewer</i></b> is ideal for the analysis of a single recording during an experiment, as well as for post-experiment data analysis in low to medium throughput experiments.
-    </p>
-</html>
+<h1>Introduction to DataViewer</h1>
+<h2>Purpose</h2>
+<p>DataViewer is the main workspace for opening mesoscale imaging data, moving through frames and events, inspecting pixel and ROI signals, and sending the current recording to processing and project tools.</p>
+<h2>Prerequisites</h2>
+<p>Start MATLAB with umIT on the path. To open data immediately, have a supported <samp>.dat</samp> or image-kind <samp>.umt</samp> file available.</p>
+<h2>Open the app</h2>
+<ol>
+  <li>Run <samp>DataViewer</samp> in MATLAB, or run <samp>DataViewer("path/to/file.dat")</samp>.</li>
+  <li>If no file was supplied, choose <strong>File &gt; Open</strong>.</li>
+  <li>Check the status line and the recording context shown above the image.</li>
+</ol>
+<p style="text-align:center"><img src="../assets/img/current/dataviewer-overview-current.png" alt="Current DataViewer with a demonstration recording" width="880"><br><em>Current DataViewer: application tabs, image, temporal profile, ROI table, and event controls.</em></p>
+<h2>What you are looking at</h2>
+<table>
+<tr><th>Area</th><th>Purpose</th></tr>
+<tr><td>Utilities, Pipeline, ROIs</td><td>Open related tools, configure processing, and create or manage ROIs.</td></tr>
+<tr><td>Image View</td><td>Shows the selected frame. Clicking a pixel moves the crosshair and updates the temporal profile.</td></tr>
+<tr><td>Temporal Profile</td><td>Shows the selected pixel or visible ROI signals over time.</td></tr>
+<tr><td>ROI table</td><td>Controls ROI selection, visibility, names, colors, and measurements.</td></tr>
+<tr><td>Events</td><td>Switches between continuous and event-aligned views when valid event metadata exists.</td></tr>
+</table>
+<h2>Expected result</h2>
+<p>The image, frame controls, temporal profile, and file context are populated. Missing optional metadata disables only its dependent features.</p>
+<h2>What is saved</h2>
+<p>Opening and viewing data does not change the imaging file. Display choices stay in memory unless a specific save or export command says otherwise.</p>
+<h2>Troubleshooting</h2>
+<table><tr><th>Problem</th><th>Action</th></tr><tr><td>A <samp>.dat</samp> file will not open</td><td>Confirm that valid <samp>AcqInfos.mat</samp> metadata is in the same Save Folder.</td></tr><tr><td>Project tools are disabled</td><td>Bind the Save Folder to a project, subject, and session.</td></tr></table>
+</body></html>

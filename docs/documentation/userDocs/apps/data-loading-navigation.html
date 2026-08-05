@@ -1,0 +1,24 @@
+---
+layout: default
+permalink: /documentation/userDocs/apps/data-loading-navigation.html
+title: Data loading and navigation
+parent: DataViewer
+grand_parent: Documentation
+nav_order: 3
+---
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Data loading and navigation</title></head><body>
+<h1>Data loading and navigation</h1>
+<h2>Loading sequence</h2>
+<ol><li>DataViewer validates the selected file and constructs a disk-backed <samp>.dat</samp> source or a UMT entry source.</li><li>For a UMT with several compatible image entries, the entry selector lists names, dimensions, and sizes; cancel leaves the current file unchanged.</li><li>DataViewer loads optional <samp>DataParams.mat</samp>, resolves any <samp>UMITProjectBinding.umitlink</samp>, and initializes event information.</li><li>The first frame, crosshair, time trace, ROI calculations, cache display, and enabled controls refresh together.</li></ol>
+<h2>Navigation controls</h2>
+<table><tr><th>Control</th><th>Effect</th><th>Persistence</th></tr>
+<tr><td>Previous / Next</td><td>Moves one frame within the active mode.</td><td>Temporary.</td></tr>
+<tr><td>Frame slider</td><td>Moves through source frames or event-relative frames.</td><td>Temporary.</td></tr>
+<tr><td>Play</td><td>Advances frames as a movie until stopped or the sequence ends.</td><td>Temporary.</td></tr>
+<tr><td>Speed</td><td>Requests a playback multiplier; the app may reduce it to avoid lag.</td><td>Temporary.</td></tr>
+<tr><td>Normal mode / Event mode</td><td>Switches between continuous source time and event-aligned time.</td><td>Temporary.</td></tr>
+<tr><td>Condition / Repetition</td><td>Selects an event ID and an instance or <strong>AVERAGE</strong>.</td><td>Temporary selection state.</td></tr></table>
+<h2>Changing files safely</h2>
+<p>Opening another file resets the source and project context. ROIs intentionally remain loaded when their image size is compatible, and their traces are recalculated. Before switching, DataViewer asks how to handle a currently displayed PipelineManager temporary result. Save any result that must persist.</p>
+<div class="warnnote"><p><strong>Do not infer dimensions from file size.</strong><br><samp>AcqInfos.mat</samp> is authoritative for <samp>.dat</samp> reconstruction. A file-size match is not a substitute for valid metadata.</p></div>
+</body></html>

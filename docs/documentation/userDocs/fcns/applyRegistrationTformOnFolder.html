@@ -1,0 +1,31 @@
+---
+permalink: /documentation/userDocs/fcns/applyRegistrationTformOnFolder.html
+layout: default
+title: applyRegistrationTformOnFolder
+parent: Image registration
+grand_parent: Functions
+nav_order: 2
+---
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><style>
+.mycollapsible{background-color:#eee;color:#000;cursor:pointer;padding:18px;width:100%;border:0;text-align:left;font-size:15px;margin-bottom:10px}.mycollapsible:hover{background-color:#888}.content{padding:0 18px;display:none;overflow:hidden;background:#fff;border:1px solid #000;margin-bottom:10px}
+</style><title>applyRegistrationTformOnFolder</title></head><body>
+<h2>applyRegistrationTformOnFolder</h2><hr>
+<p>Apply the registration transform stored in a Save Folder to every <samp>.dat</samp> file in that folder.</p>
+<div class="warnnote"><p><strong>Destructive and effectively irreversible</strong><br>This function rewrites every <samp>.dat</samp> file in place. Interpolation and pixels moved outside the frame cannot be recovered reliably. Back up the folder and inspect the quality-control image before continuing.</p></div>
+<h3 id="description">Description</h3><hr>
+<p>The function loads <samp>DataParams.registration.tform</samp>, streams each frame through the transform, writes a temporary file, and then replaces the original <samp>.dat</samp>. It updates registration status in <samp>DataParams.mat</samp>. Reapplication is blocked by default when the folder is already marked registered.</p>
+<h3>Input</h3><hr>
+<p><samp>SaveFolder</samp> must contain a valid DataParams file, a stored transform, authoritative acquisition metadata, and at least one <samp>.dat</samp> file.</p>
+<h3>Output</h3><hr>
+<p>There is no normal data output. The modified filenames and updated DataParams path are printed to the MATLAB command window.</p>
+<h3 id="parameters">Parameters</h3><hr>
+<button type="button" class="mycollapsible"><span class="iconplus"></span><samp><b>DataParamsFile</b></samp> - metadata filename<br><span class="title-desc"><i>DataParams.mat (default) | filename</i></span></button>
+<div class="content"><p>Selects the MAT-file containing the scalar <samp>DataParams</samp> structure.</p></div>
+<button type="button" class="mycollapsible"><span class="iconplus"></span><samp><b>RequireUserConfirmation</b></samp> - require destructive-operation confirmation<br><span class="title-desc"><i>true (default) | false</i></span></button>
+<div class="content"><p>When true, the function asks the user to continue. Disabling it records a forced-no-confirmation mode and should be reserved for controlled, backed-up automation.</p></div>
+<button type="button" class="mycollapsible"><span class="iconplus"></span><samp><b>OpenQCFigure</b></samp> - open saved QC figure before confirmation<br><span class="title-desc"><i>true (default) | false</i></span></button>
+<div class="content"><p>If a QC figure path is stored and the file exists, the figure opens before the confirmation dialog.</p></div>
+<button type="button" class="mycollapsible"><span class="iconplus"></span><samp><b>AllowReapply</b></samp> - allow a second destructive apply<br><span class="title-desc"><i>false (default) | true</i></span></button>
+<div class="content"><p>The default prevents accidental interpolation of already registered data. Set true only when the repeated operation is intentional and reviewed.</p></div>
+<script src="../../collapsible_behaviour.js"></script>
+</body></html>

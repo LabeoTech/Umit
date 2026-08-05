@@ -1,0 +1,28 @@
+---
+layout: default
+permalink: /documentation/userDocs/apps/project-session-integration.html
+title: Project and session integration
+parent: DataViewer
+grand_parent: Documentation
+nav_order: 8
+---
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Project and session integration</title></head><body>
+<h1>Project and session integration</h1>
+<p>A Save Folder can point to one centralized project, subject, and session through <samp>UMITProjectBinding.umitlink</samp>. The link contains immutable identifiers and location hints; project metadata and managed resources stay in the centralized store.</p>
+<h2>Binding states</h2>
+<table><tr><th>State</th><th>Meaning</th><th>Available actions</th></tr>
+<tr><td>Unbound</td><td>No link file exists.</td><td>Ordinary viewing works; project-dependent tools offer Project Binding Manager.</td></tr>
+<tr><td>Valid</td><td>The project, subject, session, role, and folder agree.</td><td>Image references, alignment, and project metadata are available.</td></tr>
+<tr><td>Read-only</td><td>The link resolves but project validation did not pass.</td><td>Viewing and reference inspection may work; writes are blocked.</td></tr>
+<tr><td>Missing project</td><td>The link points to a project UUID not found under the project root.</td><td>Retry, reassign, or explicitly remove an orphan link.</td></tr>
+<tr><td>Invalid/conflicting</td><td>The link is malformed or identity/path facts disagree.</td><td>Automatic replacement is blocked; inspect and repair deliberately.</td></tr></table>
+<h2>Refresh behavior</h2>
+<p>DataViewer resolves the binding after every load. When Project Manager closes, it resolves the current dataset again. Image Alignment Tool refreshes DataViewer after a successful apply: the current file is reopened when possible, project context is refreshed, and loaded ROIs are cleared because their coordinates may now be stale.</p>
+<h2>Ownership boundary</h2>
+<pre>Save Folder                          Central store
+-----------                         -------------
+recording data and view state  -->  link by UUID only
+applied transform UUID + QC         project/subject/session identity
+                                   managed references and transforms</pre>
+<p>See <a href="../tools/project-management-folder-binding.html">Project management and folder binding</a>.</p>
+</body></html>

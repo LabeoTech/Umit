@@ -1,0 +1,22 @@
+---
+permalink: /documentation/userDocs/fcns/genImageTimeSeriesUMT.html
+layout: default
+title: genImageTimeSeriesUMT
+parent: Analysis functions
+grand_parent: Functions
+---
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><style>
+.mycollapsible{background-color:#eee;color:#000;cursor:pointer;padding:18px;width:100%;border:0;text-align:left;font-size:15px;margin-bottom:10px}.mycollapsible:hover{background-color:#888}.content{padding:0 18px;display:none;overflow:hidden;background:#fff;border:1px solid #000;margin-bottom:10px}
+</style><title>genImageTimeSeriesUMT</title></head><body>
+<h2>genImageTimeSeriesUMT</h2><hr><p>Package an in-memory image time series as a validated UMT structure.</p>
+<h3 id="description">Description</h3><hr><p>The function replaces older ad hoc packaging with <samp>genUMTStruct</samp>. It declares image kind and Y-X-T dimensions, optionally adds top-level labels, and validates the result before returning it.</p>
+<h3>Input</h3><hr><p>A numeric or logical Y-X-T array held in RAM. Filename input is not supported.</p>
+<h3>Output</h3><hr><p>A UMT structure with <samp>kind='image'</samp> and one named entry with <samp>dimNames={'Y','X','T'}</samp>. PipelineManager passes the structure downstream and manages the default <samp>imageTimeSeries.umt</samp> file when persistence is required.</p>
+<h3 id="parameters">Parameters</h3><hr>
+<button type="button" class="mycollapsible"><span class="iconplus"></span><samp><b>EntryName</b></samp> - output entry name<br><span class="title-desc"><i>main (default) | valid field name</i></span></button>
+<div class="content"><p>Names the entry under <samp>outData.data</samp>. Choose a short scientific name such as <samp>correctedFluorescence</samp>.</p></div>
+<button type="button" class="mycollapsible"><span class="iconplus"></span><samp><b>Labels</b></samp> - optional top-level labels<br><span class="title-desc"><i>struct() (default) | scalar struct</i></span></button>
+<div class="content"><p>Use labels only when they describe declared axes or observations. Do not place project identity or folder-wide metadata here.</p></div>
+<div class="warnnote"><p><strong>Validation includes event rules.</strong><br>The returned structure is checked with event information required when the schema and dimensions call for it. Keep labels and any later event metadata aligned with the entry value.</p></div>
+<script src="../../collapsible_behaviour.js"></script>
+</body></html>

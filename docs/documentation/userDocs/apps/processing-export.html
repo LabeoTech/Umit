@@ -1,0 +1,25 @@
+---
+layout: default
+permalink: /documentation/userDocs/apps/processing-export.html
+title: Processing and export
+parent: DataViewer
+grand_parent: Documentation
+nav_order: 7
+---
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Processing and export</title></head><body>
+<h1>Processing and export</h1>
+<h2>Pipeline context</h2>
+<p>DataViewer keeps one PipelineManager context per active Save Folder. The current file is represented as a virtual file-source node. Closing Pipeline Manager preserves the graph and last result so it can be reopened. Switching Save Folders resets that context after temporary-output cleanup.</p>
+<h2>Returning results</h2>
+<p>After a run, DataViewer separates permanent, temporary, and viewer-compatible outputs. If several compatible images exist, an output-selector dialog shows file, source step, output name, type, and persistence. Non-image reports and terminal results stay on disk and are summarized rather than opened as images.</p>
+<h2>Temporary output lifecycle</h2>
+<p>DataViewer-managed temporary files start with <samp>PMTMP_</samp>. Saving the current temporary file writes a permanent copy. Opening another file, closing the app, or resetting context can remove temporary files after any required confirmation.</p>
+<h2>Other output commands</h2>
+<table><tr><th>Command</th><th>Writes</th><th>Source changed?</th></tr>
+<tr><td><strong>File &gt; Save</strong></td><td>A selected data file</td><td>No.</td></tr>
+<tr><td><strong>File &gt; Export &gt; to tif</strong></td><td>TIFF image data</td><td>No.</td></tr>
+<tr><td><strong>ROIs &gt; Save</strong></td><td><samp>.roi</samp></td><td>No image samples changed.</td></tr>
+<tr><td><strong>ROIs &gt; Export ROI data</strong></td><td>CSV tables</td><td>No.</td></tr>
+<tr><td><strong>Data History</strong></td><td>Nothing; displays <samp>dataHistory.mat</samp></td><td>No.</td></tr></table>
+<div class="warnnote"><p><strong>Alignment is different.</strong><br><strong>Apply Registration to Folder</strong> in Image Alignment Tool rewrites every <samp>.dat</samp> file in the target folder. Read the warning on the <a href="../tools/manual_image_registration_tool.html">Image Alignment Tool</a> page first.</p></div>
+</body></html>
