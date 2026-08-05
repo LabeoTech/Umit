@@ -1,0 +1,39 @@
+---
+layout: default
+permalink: /documentation/userDocs/other/events.html
+title: Events
+parent: Advanced User Resources
+grand_parent: Documentation
+nav_order: 1
+---
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Events</title></head><body>
+<h1>Events</h1>
+<p>An event marks a stimulus, behavioral condition, or other interval that can be aligned with imaging frames. Continuous <samp>.dat</samp> recordings use Save Folder <samp>events.mat</samp>; event-split UMT data carries its own top-level <samp>eventInfo</samp>.</p>
+<h2>Current events.mat variables</h2>
+<table><tr><th>Field</th><th>Meaning</th></tr>
+<tr><td><samp>RawFolder</samp></td><td>Raw analog-input source used when the event state was built.</td></tr>
+<tr><td><samp>AnalogIN</samp></td><td>Loaded analog traces.</td></tr>
+<tr><td><samp>sr</samp></td><td>Analog sampling rate in hertz.</td></tr>
+<tr><td><samp>trigThr</samp></td><td>Detection threshold for each selected channel.</td></tr>
+<tr><td><samp>trigPolarity</samp></td><td>Positive or negative edge polarity.</td></tr>
+<tr><td><samp>eventID</samp></td><td>Condition identifier associated with each detected event record.</td></tr>
+<tr><td><samp>state</samp></td><td>Logical selection/validity state for detected event records.</td></tr>
+<tr><td><samp>timestamps</samp></td><td>Event timing in seconds on the analog recording time base.</td></tr>
+<tr><td><samp>eventNameList</samp></td><td>Names indexed by condition ID.</td></tr>
+<tr><td><samp>baselinePeriod</samp></td><td>Pre-event baseline duration in seconds.</td></tr>
+<tr><td><samp>trigChanName</samp></td><td>Selected trigger channel names.</td></tr>
+<tr><td><samp>selectedEvents</samp></td><td>Current saved event selection.</td></tr>
+<tr><td><samp>EventFileName</samp></td><td>Optional condition-list source file.</td></tr>
+<tr><td><samp>EventFileParseMethod</samp></td><td>Condition-list parser, such as none or CSV.</td></tr>
+<tr><td><samp>b_hasExternalSignal</samp></td><td>Whether an external condition source was used.</td></tr></table>
+<h2>Detection, conditions, and repetitions</h2>
+<ol><li>Events Manager reads analog signals and uses threshold, polarity, trigger type, minimum inter-stimulus interval, and optional filtering to identify event intervals.</li><li>A condition list assigns IDs/names in chronological order.</li><li>Repeated event IDs become repetitions of the same condition.</li><li>The baseline duration and acquisition frame rate convert each event interval into a frame selection.</li></ol>
+<h2>Validation</h2>
+<p>The EventsManager object normalizes saved fields, checks compatible lengths and IDs, verifies timing against acquisition information, and rejects selections that cannot produce usable frame matrices. A missing file disables event features; malformed metadata is not guessed from imaging intensity.</p>
+<h2>How DataViewer uses events</h2>
+<p>Normal mode draws event intervals over the continuous trace. Event mode selects a condition and repetition, builds an event-relative frame matrix, and can average repetitions. Deleting and restoring conditions in the viewer changes normalized in-memory selection; Events Manager owns saved edits.</p>
+<h2>Analysis and event-split data</h2>
+<p>Functions such as <a href="../fcns/split_data_by_event.html"><samp>split_data_by_event</samp></a> and <a href="../fcns/genAmplitudeMaps.html"><samp>genAmplitudeMaps</samp></a> use event timing to create or aggregate event-aligned data. A UMT event axis is described by <samp>eventID</samp>, <samp>repetitionIndex</samp>, <samp>eventName</samp>, and <samp>eventAxisMode</samp>; it remains interpretable after the UMT file leaves the Save Folder.</p>
+<h2>Recovery</h2>
+<p>Condition-name editing keeps an original list that <strong>Restore</strong> can recover before saving. Closing Events Manager with unsaved changes asks for confirmation. Replace an existing <samp>events.mat</samp> only through the tool or validated code, and keep backups for irreplaceable event annotations.</p>
+</body></html>

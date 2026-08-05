@@ -1,0 +1,32 @@
+---
+layout: default
+permalink: /documentation/userDocs/apps/user-interface.html
+title: User interface
+parent: DataViewer
+grand_parent: Documentation
+nav_order: 2
+---
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>DataViewer user interface</title></head><body>
+<h1>User interface</h1>
+<h2>Menus</h2>
+<table><tr><th>Control</th><th>Available when</th><th>Effect and persistence</th></tr>
+<tr><td><strong>File &gt; Open</strong></td><td>Always</td><td>Opens <samp>.dat</samp> or image-kind <samp>.umt</samp>; read-only.</td></tr>
+<tr><td><strong>File &gt; Save</strong></td><td>Data is loaded</td><td>Saves the current data under a chosen supported name.</td></tr>
+<tr><td><strong>File &gt; Import &gt; from bin/from tif</strong></td><td>Always</td><td>Creates processed data and metadata in a Save Folder.</td></tr>
+<tr><td><strong>File &gt; Export &gt; to tif</strong></td><td>Compatible image data is loaded</td><td>Writes TIFF output; the source remains unchanged.</td></tr>
+<tr><td><strong>File &gt; Set Raw Folder</strong></td><td>Data and an accessible Save Folder</td><td>Stores a selected path, the Save Folder itself, or <samp>Missing</samp> in <samp>DataParams.mat</samp>.</td></tr>
+<tr><td><strong>Help &gt; Online documentation</strong></td><td>Always</td><td>Opens the documentation site.</td></tr></table>
+<h2>Tabs</h2>
+<table><tr><th>Tab</th><th>Controls</th></tr>
+<tr><td><strong>Utilities</strong></td><td>View Calibration, Logical Mask, Image Reference, Alignment Tool, Data History, Events Manager, OiS 2-Cam Alignment, Project Manager.</td></tr>
+<tr><td><strong>Pipeline</strong></td><td>Pipeline Manager launch, current pipeline file, status, last-run output, and latest summary.</td></tr>
+<tr><td><strong>ROIs</strong></td><td>Rectangle, Ellipse, Polygon, Threshold, Allen Atlas, Delete, Save, Load, Import, Export ROI data.</td></tr></table>
+<h2>Main work areas</h2>
+<table><tr><th>Area</th><th>What changes it</th><th>Written to disk?</th></tr>
+<tr><td>Image View</td><td>Frame, event, colormap, clipping, crosshair, mask and ROI overlays</td><td>No, unless an explicit save/export/alignment command runs.</td></tr>
+<tr><td>Temporal Profile</td><td>Selected pixel, visible ROIs, normal/event mode</td><td>No.</td></tr>
+<tr><td>ROI table</td><td>ROI creation, loading, selection, edits and statistics</td><td>Only <strong>Save</strong> or export writes files.</td></tr>
+<tr><td>Events</td><td>Mode, condition, repetition, delete and restore controls</td><td>Viewer selection is temporary; Events Manager owns <samp>events.mat</samp>.</td></tr></table>
+<h2>Utility dialogs</h2>
+<p><strong>View Calibration</strong> reports pixel scale, coordinate origin, and available calibration state. <strong>Logical Mask</strong> can create, preview, confirm, reset, or automatically derive a mask. <strong>Data History</strong> shows the current file's processing provenance. Status messages appear at the top-left context area with warning or error severity when action is needed.</p>
+</body></html>

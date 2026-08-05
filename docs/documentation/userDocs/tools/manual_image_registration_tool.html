@@ -1,95 +1,29 @@
 ---
 permalink: /documentation/userDocs/tools/manual_image_registration_tool.html
 layout: default
-title: Manual image registration
-parent: Tools
+title: Image Alignment Tool
+parent: Related Apps and Tools
 grand_parent: Documentation
 nav_order: 4
 ---
-<!DOCTYPE html>
-<html lang="en" dir="ltr">
-  <head>
-    <meta charset="utf-8">    
-    <style media="screen">
-      ul {
-        line-height: 1.5;
-      }
-    </style>
-    <title>Manual image registration</title>
-  </head>
-  <body>
-  <h2>Manual image registration tool</h2>
-    <hr>
-    <p>
-      The manual image registration tool is available in the <b><i>DataViewer</i></b> app. The tool allows one to interactively align an image from a <samp>.dat</samp> file to a reference image. The geometric transformations are then applied to the  misaligned <samp>.dat</samp> file.
-    </p>
-    <div class="warnnote">
-      <p><strong>Important</strong><br>
-        If you are using the <b><i>umIToolbox</i></b> app, click <a href="manual_image_registration_tool_olderVersion.html">here</a> to access the old manual aligment tool. This tool will be deprecated in a later version of the <b>umIT</b> toolbox.
-      </p>
-    </div>
-    <h3>Procedure</h3>
-    <ol>
-      <li>
-        <p>Open it in <b><i>DataViewer</i></b>.</p>
-        <p style="text-align: center;"><img src="../../assets/img/dataviewer_manual_alignment_fig1.png" alt="dataviewer_manual_alignment_fig1" width="660"></p><br>        
-      </li>
-      <li>
-        <p>Then go to <b>Utilities &rarr; Manual Coregistration </b> to launch the tool. Note that a frame from the current data is set as the <b>Misaligned file</b></p>
-        <p style="text-align: center;"><img src="../../assets/img/dataviewer_manual_alignment_fig2.png" alt="dataviewer_manual_alignment_fig2" width="660"></p>
-        <br>        
-      </li>
-      <li>
-        <p>Click on the green <b>Load</b> button to load the reference image from a <samp>.dat</samp> file</p>
-        <p style="text-align: center;">
-          <img src="../../assets/img/dataviewer_manual_alignment_fig3.png" alt="dataviewer_manual_alignment_fig3" width="660">
-        </p>
-      </li>
-      <li><p>
-        Once the reference and the misaligned images are loaded the <b>options</b> panel is visible and one can use the mouse cursor to align the frame (in magenta). See the <a href="#options">Options</a> section for a description of the available options to help with the coregistration.
-      </p>
-      <p style="text-align: center;">
-          <video src="../../assets/gifs/dataviewer_manual_alignment_mov1.mp4" alt="dataviewer_manual_alignment_mov1 " width="660" controls></video>
-      </p>
-      </li>
-      <p>
-        Once the moving image (magenta) is placed in the optimal position, click on the <b>Align</b> button to apply to the misaligned data.
-      </p>
-    </ol>
-    <h3>Interface components</h3>    
-    <h4 id="options">Options panel</h4>
-    <ul>
-      <li><b><i>Image sharpening</i></b>:
-        <ul>
-          <li><b><i>None</i></b>: No sharpening</li>
-          <li><b><i>Enhance Contrast</i></b>: Enhances the contrast of both images using the <a href="https://www.mathworks.com/help/images/ref/adapthisteq.html">adapthisteq</a> function</li>
-          <li><b><i>Gaussian Filter</i></b>:</li>Equivalent of an unsharp masking where two spatially filtered version of the images are subtracted. The operation consists of a filtered image with a sigma of .5 minus a blurred version of the image
-        </ul>
-      </li>
-      <li><b><i>Flip horizontally</i></b>: Mirrors moving image</li>
-      <li><b><i>Invert colors</i></b>: Invert colors of both images</li>
-      <li><b><i>Display result as:</i></b>
-        <ul>
-          <li><b><i>FalseColor</i></b>: Composite of green (reference) and magenta (moving)</li>
-          <li><b><i>Reference</i></b>: Displays reference image</li>
-          <li><b><i>Moving</i></b>: Displays moving image</li>
-          <li><b><i>Difference</i></b>: Shows the difference of the moving and reference images</li>
-          <li><b><i>Alternate view</i></b>:Alternates between the reference and moving images</li>
-        </ul>
-      </li>
-    </ul>
-    <h4> Align Button </h4>
-    <p>
-      Applies the coregistration to the misaligned <samp>.dat</samp> file.
-    </p>
-    <p>
-      A <samp>tform.mat</samp> file will also be saved in the <samp>.dat</samp> file's directory containing the geometric transformation <i>affine2d</i> object.
-    </p>
-    <h4> Export Button </h4>
-    <p>
-      Saves the <i>affine2d</i> object with the geometric transformation to a <samp>.mat</samp> file.
-    </p>    
-  </body>
-</html>
-
-
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Image Alignment Tool</title></head><body>
+<h1>Image Alignment Tool</h1>
+<p>Image Alignment Tool estimates and reviews a 2-D transform from the current moving image to a subject image reference, then optionally applies that transform to the entire Save Folder.</p>
+<h2>Open from DataViewer</h2><p>Load <samp>.dat</samp> or image-kind <samp>.umt</samp> data and choose <strong>Utilities &gt; Alignment Tool</strong>. A writable project/session binding is required. DataViewer passes the current frame as a locked moving source, source description, target Save Folder, and project/subject/session identifiers.</p>
+<p style="text-align:center"><img src="../../assets/img/current/image-alignment-tool.png" alt="Image Alignment Tool before selecting a reference" width="880"><br><em>The real two-camera demonstration frame is loaded as the moving source; no reference or transform was created for this capture.</em></p>
+<h2>Prerequisite: create an image reference</h2><ol><li>Open <strong>Utilities &gt; Image Reference</strong>.</li><li>Choose <strong>Create from current frame</strong> or <strong>Create from file</strong>.</li><li>Inspect it and choose <strong>Set Active</strong>.</li><li>Return to Alignment Tool and choose <strong>Select Image Reference</strong>.</li></ol>
+<h2>Controls and workflow</h2>
+<table><tr><th>Control</th><th>Meaning</th></tr>
+<tr><td><strong>Select Image Reference</strong></td><td>Opens Image Reference Manager in selection mode and loads the fixed image.</td></tr>
+<tr><td><strong>Select Moving source</strong></td><td>Chooses another supported image when launched standalone; locked when DataViewer supplied the source.</td></tr>
+<tr><td><strong>Alternate View / False Color Overlay</strong></td><td>Changes comparison display only.</td></tr>
+<tr><td><strong>Use enhanced contrast / Flip Horizontally</strong></td><td>Controls registration preparation and orientation.</td></tr>
+<tr><td><strong>Automatic registration</strong></td><td>Estimates a similarity transform and previews the candidate.</td></tr>
+<tr><td><strong>Free-hand Alignment / Confirm</strong></td><td>Adjusts a box interactively, then converts its geometry to a transform.</td></tr>
+<tr><td>Transformation, Step size, Apply Step</td><td>Fine-tunes horizontal/vertical translation, rotation, or scale.</td></tr>
+<tr><td><strong>Reset Fine Tuning / Reset Registration</strong></td><td>Removes manual adjustments or the full candidate.</td></tr>
+<tr><td><strong>Apply Registration to Folder</strong></td><td>Registers the transform as a session-managed resource, records the local applied resource UUID and QC state, and rewrites target data after confirmation.</td></tr></table>
+<div class="warnnote"><p><strong>Destructive and effectively irreversible</strong><br>Applying registration rewrites every <samp>.dat</samp> file in the target folder. Interpolation and out-of-frame loss cannot be reliably undone. Back up the Save Folder, review the impact summary and ROI warning, and confirm only once.</p></div>
+<h2>ROI and refresh behavior</h2><p>The impact dialog reports loaded ROI risk. After a successful apply, DataViewer reloads the most suitable current file, refreshes project state, and clears loaded ROIs because their coordinates may be stale. Save or export important ROI definitions before alignment and transform/recreate them afterward.</p>
+<h2>Close behavior</h2><p>Closing with an unsaved candidate asks for confirmation. Preview, view mode, and fine-tuning are temporary until apply.</p>
+</body></html>

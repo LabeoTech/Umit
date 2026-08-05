@@ -1,0 +1,28 @@
+---
+permalink: /documentation/userDocs/fcns/createRegistrationTform.html
+layout: default
+title: createRegistrationTform
+parent: Image registration
+grand_parent: Functions
+nav_order: 1
+---
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><style>
+.mycollapsible{background-color:#eee;color:#000;cursor:pointer;padding:18px;width:100%;border:0;text-align:left;font-size:15px;margin-bottom:10px}.mycollapsible:hover{background-color:#888}.content{padding:0 18px;display:none;overflow:hidden;background:#fff;border:1px solid #000;margin-bottom:10px}
+</style><title>createRegistrationTform</title></head><body>
+<h2>createRegistrationTform</h2><hr>
+<p>Estimate and store a 2-D transform that aligns one Save Folder image to its reference image.</p>
+<h3 id="description">Description</h3><hr>
+<p>The required fixed image must already be stored in <samp>DataParams.registration.referenceImage</samp>. The function selects a moving <samp>.dat</samp>, reduces Y-X-T data to one image, estimates a similarity transform, calculates advisory quality-control metrics, and updates <samp>DataParams.mat</samp>.</p>
+<div class="infonote"><p><strong>No .dat samples are changed.</strong><br>This function estimates and stores a candidate only. Use <a href="applyRegistrationTformOnFolder.html"><samp>applyRegistrationTformOnFolder</samp></a> separately after visual review.</p></div>
+<h3>Input</h3><hr><p><samp>SaveFolder</samp> must contain valid <samp>DataParams.mat</samp>, <samp>AcqInfos.mat</samp>, and one or more eligible <samp>.dat</samp> files.</p>
+<h3>Output</h3><hr><p><samp>outFile</samp> is a file manifest containing the updated <samp>DataParams.mat</samp> and timestamped QC <samp>.fig</samp> and <samp>.png</samp> files.</p>
+<h3 id="parameters">Parameters</h3><hr>
+<button type="button" class="mycollapsible"><span class="iconplus"></span><samp><b>UseFile</b></samp> - moving-image source<br><span class="title-desc"><i>auto (default) | .dat filename</i></span></button>
+<div class="content"><p><samp>auto</samp> selects the first eligible <samp>.dat</samp> in the folder. Supply a filename to control which channel or processing stage is registered.</p></div>
+<button type="button" class="mycollapsible"><span class="iconplus"></span><samp><b>ShowFigure</b></samp> - show QC after creation<br><span class="title-desc"><i>true (default) | false</i></span></button>
+<div class="content"><p>When false, the same QC figure and PNG are generated invisibly for non-interactive processing.</p></div>
+<button type="button" class="mycollapsible"><span class="iconplus"></span><samp><b>RefStatistic</b></samp> - reduce the moving time series<br><span class="title-desc"><i>mean (default) | median | first</i></span></button>
+<div class="content"><p>Chooses the statistic used to collapse Y-X-T into the 2-D moving image. If needed, that image is resized to the reference size before registration.</p></div>
+<div class="warnnote"><p><strong>QC metrics are advisory.</strong><br>Inspect anatomical alignment and borders visually. A higher numerical metric does not guarantee a scientifically acceptable transform.</p></div>
+<script src="../../collapsible_behaviour.js"></script>
+</body></html>

@@ -1,0 +1,27 @@
+---
+layout: default
+permalink: /documentation/userDocs/tools/image-reference-manager.html
+title: Image Reference Manager
+parent: Related Apps and Tools
+grand_parent: Documentation
+nav_order: 3
+---
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Image Reference Manager</title></head><body>
+<h1>Image Reference Manager</h1>
+<p>An image reference is a subject-owned fixed image used to align sessions consistently.</p>
+<h2>Open from DataViewer</h2><p>Load image data and choose <strong>Utilities &gt; Image Reference</strong>. The Save Folder must have a resolvable project, subject, and session binding. Read-only projects may view references, but creating, editing, activating, archiving, or restoring requires writable project access.</p>
+<p>DataViewer passes the project store, subject and session, current 2-D frame, source frame number, source type, and source provenance.</p>
+<p style="text-align:center"><img src="../../assets/img/current/image-reference-manager.png" alt="Image Reference Manager empty-reference state" width="760"><br><em>A bound demonstration subject with no existing reference. No resource was created for this capture.</em></p>
+<h2>Controls</h2>
+<table><tr><th>Control</th><th>Purpose and persistence</th></tr>
+<tr><td>Reference table</td><td>Lists active or archived resources, creation time, name, image size, source type, and managed file.</td></tr>
+<tr><td>Preview and metadata</td><td>Shows the selected image and its provenance; read-only until <strong>Edit</strong>.</td></tr>
+<tr><td><strong>Create from current frame</strong></td><td>Captures the frame received from DataViewer, prompts for description/notes, imports a managed subject resource, and can make it active.</td></tr>
+<tr><td><strong>Create from file</strong></td><td>Imports a supported 2-D image source as a managed resource.</td></tr>
+<tr><td><strong>Edit / Apply</strong></td><td>Adjusts reference framing after confirmation and creates the managed replacement required by store rules.</td></tr>
+<tr><td><strong>Set Active</strong></td><td>Changes the subject's active reference pointer.</td></tr>
+<tr><td><strong>Archive / Restore</strong></td><td>Archives without erasing history, or restores an archived resource. Archiving an active reference may require choosing a replacement.</td></tr></table>
+<h2>Basic workflow</h2><ol><li>Select an existing row, or choose <strong>Create from current frame</strong>.</li><li>Enter a clear name, description, and processing notes.</li><li>Inspect the preview and image size.</li><li>Choose <strong>Set Active</strong> when this should be the default alignment reference.</li></ol>
+<h2>DataViewer refresh</h2><p>The manager changes centralized resources, not the displayed pixels. DataViewer retains its current image and resolves reference state again when a dependent tool is opened.</p>
+<div class="warnnote"><p><strong>Identity and history</strong><br>Managed resources are identified by UUID. Do not edit or replace their files directly; archive and restore them through the manager.</p></div>
+</body></html>

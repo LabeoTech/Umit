@@ -1,0 +1,30 @@
+---
+permalink: /documentation/userDocs/fcns/genAmplitudeMaps.html
+layout: default
+title: genAmplitudeMaps
+parent: Imaging
+grand_parent: Functions
+---
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><style>
+.mycollapsible{background-color:#eee;color:#000;cursor:pointer;padding:18px;width:100%;border:0;text-align:left;font-size:15px;margin-bottom:10px}.mycollapsible:hover{background-color:#888}.content{padding:0 18px;display:none;overflow:hidden;background:#fff;border:1px solid #000;margin-bottom:10px}
+</style><title>genAmplitudeMaps</title></head><body>
+<h2>genAmplitudeMaps</h2><hr><p>Calculate one response-minus-baseline image for each event condition.</p>
+<h3 id="description">Description</h3><hr>
+<p>For every condition, the function aggregates baseline samples and response samples, subtracts the baseline map from the response map, and aggregates repetitions. Continuous data uses Save Folder <samp>events.mat</samp>. Event-split UMT data uses its top-level <samp>eventInfo</samp>.</p>
+<h3>Input</h3><hr>
+<table><tr><th>Input</th><th>Requirements</th></tr>
+<tr><td>Numeric Y-X-T</td><td>Continuous data; valid <samp>events.mat</samp> in <samp>SaveFolder</samp>.</td></tr>
+<tr><td><samp>.dat</samp> filename</td><td>Continuous data; uses low-RAM spatial slabs and <samp>events.mat</samp>.</td></tr>
+<tr><td>UMT structure or <samp>.umt</samp> file</td><td>Exactly one compatible image entry with Y-X-T or Y-X-T-E dimensions. Continuous Y-X-T also requires <samp>events.mat</samp>; Y-X-T-E requires valid <samp>eventInfo</samp> and <samp>FrameRateHz</samp>.</td></tr></table>
+<h3>Output</h3><hr>
+<p>A validated image UMT with entry <samp>AmplitudeMap</samp>, dimensions Y-X-E, aggregated event information, and the selected measures/time window in entry metadata. PipelineManager manages the default <samp>amplitudeMap.umt</samp> persistence.</p>
+<h3 id="parameters">Parameters</h3><hr>
+<button type="button" class="mycollapsible"><span class="iconplus"></span><samp><b>BaselineMeasure</b></samp> - aggregate baseline samples<br><span class="title-desc"><i>median (default) | mean | min | max</i></span></button>
+<div class="content"><p>The result becomes the baseline map for each event condition.</p></div>
+<button type="button" class="mycollapsible"><span class="iconplus"></span><samp><b>ResponseMeasure</b></samp> - aggregate response samples<br><span class="title-desc"><i>max (default) | mean | median | min</i></span></button>
+<div class="content"><p>The response map is calculated across the selected response frames and repetitions before baseline subtraction.</p></div>
+<button type="button" class="mycollapsible"><span class="iconplus"></span><samp><b>TimeWindow_sec</b></samp> - post-baseline response window<br><span class="title-desc"><i>all (default) | [start end]</i></span></button>
+<div class="content"><p><samp>all</samp> uses every frame after the baseline. A numeric non-negative interval is measured in seconds after the baseline and must fit inside each trial.</p></div>
+<div class="infonote"><p><strong>Low-RAM .dat behavior</strong><br>The file branch reads event frame slabs in X chunks instead of loading the full recording. The scientific calculation and output schema match the in-memory branch.</p></div>
+<script src="../../collapsible_behaviour.js"></script>
+</body></html>

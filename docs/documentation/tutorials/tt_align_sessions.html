@@ -4,6 +4,7 @@ title: Align recordings
 parent: Data processing
 grand_parent: umIToolbox app
 permalink: /documentation/tutorials/tt_align_sessions.html
+nav_exclude: true
 ---
 <!DOCTYPE html>
 <html lang="en" dir="ltr">
@@ -12,6 +13,11 @@ permalink: /documentation/tutorials/tt_align_sessions.html
     <title>How to perform align imaging sessions</title>
   </head>
   <body>
+    <div class="warnnote">
+        <p><strong>Previous release documentation</strong><br>
+            This page describes a previous release. Controls and workflows may differ. Start with the <a href="./gs_index.html">current documentation</a>; this historical page remains available for reference.
+        </p>
+    </div>
     <h2>Align imaging recording sessions</h2>
     <hr>
     <p>
@@ -148,7 +154,7 @@ permalink: /documentation/tutorials/tt_align_sessions.html
     <h4 id="automatic-alignment">Automatic alignement</h4>
     <hr>
     <p>
-      For the automatic alignment, in the main GUI, go to the <i>Pipeline control panel</i> tab, select the recordings to be aligned and launch the Pipeline Configuration app (as performed for the raw data <a href="#import-and-preprocess-data">import and preprocessing</a>):
+      For the automatic alignment, in the main GUI, go to the <i>Pipeline control panel</i> tab, select the recordings to be aligned and launch the Pipeline Configuration app (as performed for the raw data import and preprocessing):
     </p>    
     <p>
       In the <i>Pipeline Configuration</i> app, add the alignment function <samp>alignFrames</samp> to the pipeline. Here, you will be asked to give a file as input to the <samp>alignFrames</samp> function. In this case, we will align the frames of the data stored in the <samp>hemoCorr_fluo.dat</samp> file. Finally, click on the green "Run!" button to execute the pipeline.
