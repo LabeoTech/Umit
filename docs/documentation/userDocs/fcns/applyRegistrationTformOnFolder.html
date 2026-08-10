@@ -14,8 +14,15 @@ nav_order: 2
 <div class="warnnote"><p><strong>Destructive and effectively irreversible</strong><br>This function rewrites every <samp>.dat</samp> file in place. Interpolation and pixels moved outside the frame cannot be recovered reliably. Back up the folder and inspect the quality-control image before continuing.</p></div>
 <h3 id="description">Description</h3><hr>
 <p>The function loads <samp>DataParams.registration.tform</samp>, streams each frame through the transform, writes a temporary file, and then replaces the original <samp>.dat</samp>. It updates registration status in <samp>DataParams.mat</samp>. Reapplication is blocked by default when the folder is already marked registered.</p>
+<h3>Files modified</h3><hr>
+<table><tr><th>File type</th><th>Effect</th></tr>
+<tr><td>Every <samp>.dat</samp> file in the Save Folder</td><td>Every frame is geometrically transformed and the original binary file is replaced.</td></tr>
+<tr><td><samp>DataParams.mat</samp></td><td><samp>DataParams.registration</samp> is updated with the applied status, time, confirmation mode, transform information, and application note.</td></tr>
+<tr><td><samp>AcqInfos.mat</samp></td><td>Not modified by this function.</td></tr>
+<tr><td><samp>.umt</samp> and <samp>.roi</samp></td><td>Not modified. Their images, masks, or coordinates are not automatically brought into the transformed space.</td></tr>
+<tr><td><samp>events.mat</samp>, processing history/logs, and project resources</td><td>Not modified.</td></tr></table>
 <h3>Input</h3><hr>
-<p><samp>SaveFolder</samp> must contain a valid DataParams file, a stored transform, authoritative acquisition metadata, and at least one <samp>.dat</samp> file.</p>
+<p><samp>SaveFolder</samp> must contain a valid DataParams file, a stored transform, the acquisition metadata required to read the images, and at least one <samp>.dat</samp> file.</p>
 <h3>Output</h3><hr>
 <p>There is no normal data output. The modified filenames and updated DataParams path are printed to the MATLAB command window.</p>
 <h3 id="parameters">Parameters</h3><hr>
@@ -27,5 +34,6 @@ nav_order: 2
 <div class="content"><p>If a QC figure path is stored and the file exists, the figure opens before the confirmation dialog.</p></div>
 <button type="button" class="mycollapsible"><span class="iconplus"></span><samp><b>AllowReapply</b></samp> - allow a second destructive apply<br><span class="title-desc"><i>false (default) | true</i></span></button>
 <div class="content"><p>The default prevents accidental interpolation of already registered data. Set true only when the repeated operation is intentional and reviewed.</p></div>
+<div class="infonote"><p><strong>Planned interface cleanup</strong><br><samp>DataParamsFile</samp> currently exists for compatibility, but the supported recording metadata filename is <samp>DataParams.mat</samp>. Removing that parameter and hard-coding the standard filename is tracked in <samp>PLANNED_IMPLEMENTATIONS.md</samp>.</p></div>
 <script src="../../collapsible_behaviour.js"></script>
 </body></html>

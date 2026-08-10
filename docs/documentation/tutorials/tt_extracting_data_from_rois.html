@@ -8,11 +8,9 @@ nav_order: 5
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><title>Exploring temporal traces</title></head><body>
 <h1>Exploring temporal traces</h1>
-<h2>Purpose</h2><p>Compare the time course of a selected pixel and visible ROIs without first exporting data.</p>
-<h2>Prerequisites</h2><p>Open Y-X-T data. Create or load at least one ROI for ROI traces.</p>
+<p>Compare the time course of a selected pixel and visible ROIs without first exporting data. Open Y-X-T data, then create or load at least one ROI.</p>
 <ol><li>Click a pixel to update the black temporal profile.</li><li>Make one or more ROIs visible in the ROI table. A colored mean trace appears for each visible ROI.</li><li>Move the frame slider and confirm that the vertical time marker and current-frame ROI statistics update.</li><li>Switch to <strong>Event mode</strong> to compare a condition, repetition, or average when event information exists.</li><li>Choose <strong>ROIs &gt; Export ROI data</strong> to export spatial measurements, continuous time vectors, or event-aligned time vectors.</li></ol>
-<h2>Expected result</h2><p>The plot legend identifies the pixel and ROI traces. The ROI table reports current-frame measurements such as mean intensity and geometry.</p>
-<h2>What is saved</h2><p>Trace calculation is read-only and may use a disk cache. Export writes CSV files selected in the export dialog. It does not change the ROI file or imaging data.</p>
-<h2>Troubleshooting</h2><table><tr><th>Problem</th><th>Action</th></tr><tr><td>No ROI trace appears</td><td>Confirm the ROI is visible, overlaps the image and logical mask, and the data has a time dimension.</td></tr><tr><td>Event trace has no baseline</td><td>Review <samp>baselinePeriod</samp> in Events Manager or the UMT event information.</td></tr></table>
+<p style="text-align:center"><img src="../assets/img/current/dataviewer-rois-and-traces.png" alt="DataViewer with an ROI table row and matching temporal trace" width="880"><br><em>The visible red ROI appears in the table and contributes the matching red trace to the temporal plot.</em></p>
+<div class="infonote"><p><strong>What is saved?</strong><br>Trace calculation is read-only and may use a disk cache. CSV export is an option in the <strong>ROIs</strong> tab under <strong>Export ROI data</strong>; see <a href="../userDocs/apps/ROImanager.html#save-load-import-and-export">Save, load, import, and export</a>. The export does not change the ROI file or imaging data.</p></div>
 <p>For calculations intended for later statistics, run <a href="../userDocs/fcns/getDataFromROI.html"><samp>getDataFromROI</samp></a> in a pipeline.</p>
 </body></html>

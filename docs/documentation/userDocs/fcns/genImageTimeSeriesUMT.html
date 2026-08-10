@@ -17,6 +17,6 @@ grand_parent: Functions
 <div class="content"><p>Names the entry under <samp>outData.data</samp>. Choose a short scientific name such as <samp>correctedFluorescence</samp>.</p></div>
 <button type="button" class="mycollapsible"><span class="iconplus"></span><samp><b>Labels</b></samp> - optional top-level labels<br><span class="title-desc"><i>struct() (default) | scalar struct</i></span></button>
 <div class="content"><p>Use labels only when they describe declared axes or observations. Do not place project identity or folder-wide metadata here.</p></div>
-<div class="warnnote"><p><strong>Validation includes event rules.</strong><br>The returned structure is checked with event information required when the schema and dimensions call for it. Keep labels and any later event metadata aligned with the entry value.</p></div>
+<div class="infonote"><p><strong>This function creates Y-X-T data, not event-split data</strong><br>The returned entry has no E (event) dimension, so <samp>eventInfo</samp> is not required. Optional labels should describe the returned data. If a later function creates an E dimension, that function must add one condition ID, repetition value, and condition name for every E-axis element.</p></div>
 <script src="../../collapsible_behaviour.js"></script>
 </body></html>

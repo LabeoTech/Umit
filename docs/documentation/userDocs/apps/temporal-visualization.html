@@ -2,23 +2,9 @@
 layout: default
 permalink: /documentation/userDocs/apps/temporal-visualization.html
 title: Temporal visualization
-parent: DataViewer
-grand_parent: Documentation
-nav_order: 6
+nav_exclude: true
 ---
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Temporal visualization</title></head><body>
 <h1>Temporal visualization</h1>
-<h2>Normal mode</h2>
-<p>The temporal plot shows the selected pixel over the source time axis. Valid frame rate metadata converts samples to seconds. Event intervals from <samp>events.mat</samp> appear as shaded patches. Moving the frame control updates the time marker.</p>
-<h2>ROI traces</h2>
-<p>Every visible, non-empty ROI contributes its spatial mean trace. DataViewer reads from the temporal cache when possible and otherwise reads the necessary pixels directly from disk. Changing ROI geometry, visibility, mask, data file, or event selection recalculates the relevant traces.</p>
-<h2>Event mode</h2>
-<p>For continuous <samp>.dat</samp>, DataViewer builds event-relative frame selections from normalized <samp>events.mat</samp>. For UMT, it uses top-level <samp>eventInfo</samp> and the entry's declared event axis. <strong>AVERAGE</strong> displays the repetition mean and, where available, its standard error.</p>
-<table><tr><th>Control</th><th>State change</th><th>Disk change</th></tr>
-<tr><td>Normal/Event switch</td><td>Changes view mode and resets the displayed frame.</td><td>None.</td></tr>
-<tr><td>Condition</td><td>Selects the current event ID/name.</td><td>None.</td></tr>
-<tr><td>Repetition</td><td>Selects one instance or the average.</td><td>None.</td></tr>
-<tr><td>Delete condition/repetition</td><td>Removes it from the current normalized viewer selection after confirmation.</td><td>No source samples are deleted; use Events Manager for saved event metadata.</td></tr>
-<tr><td>Restore</td><td>Restores the original current-file event selection.</td><td>None.</td></tr></table>
-<p>See <a href="../other/events.html">Events</a> for structures and validation.</p>
+<div class="infonote"><p>This material is now part of <a href="data-loading-navigation.html">Data loading and basic exploration</a>. This compatibility page preserves the earlier URL.</p></div>
 </body></html>

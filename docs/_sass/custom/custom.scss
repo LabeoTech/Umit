@@ -57,6 +57,19 @@ pre, code, samp, .code-inline {
   font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
 }
 
+samp {
+  background-color: #f1f3f5;
+  border-radius: 3px;
+  padding: 0.08em 0.28em;
+}
+
+.inline-tool-icon {
+  height: 1.65em;
+  width: auto;
+  margin: 0 0.2em;
+  vertical-align: middle;
+}
+
 pre {
   text-align: left;
   white-space: pre-line;

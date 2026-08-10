@@ -1,24 +1,46 @@
 ---
 layout: default
 permalink: /documentation/userDocs/apps/data-loading-navigation.html
-title: Data loading and navigation
+title: Data loading and basic exploration
 parent: DataViewer
 grand_parent: Documentation
 nav_order: 3
 ---
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Data loading and navigation</title></head><body>
-<h1>Data loading and navigation</h1>
-<h2>Loading sequence</h2>
-<ol><li>DataViewer validates the selected file and constructs a disk-backed <samp>.dat</samp> source or a UMT entry source.</li><li>For a UMT with several compatible image entries, the entry selector lists names, dimensions, and sizes; cancel leaves the current file unchanged.</li><li>DataViewer loads optional <samp>DataParams.mat</samp>, resolves any <samp>UMITProjectBinding.umitlink</samp>, and initializes event information.</li><li>The first frame, crosshair, time trace, ROI calculations, cache display, and enabled controls refresh together.</li></ol>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Data loading and basic exploration</title></head><body>
+<h1>Data loading and basic exploration</h1>
+<h2>Open an image file</h2>
+<ol><li>In <em>DataViewer</em>, choose <strong>File &gt; Open</strong>.</li><li>Select a <samp>.dat</samp> file or an image-kind <samp>.umt</samp> file.</li><li>If the UMT contains more than one compatible image entry, select the entry by name and dimensions. Choose <strong>Cancel</strong> to keep the current file open.</li><li>Wait until the first image, frame controls, crosshair, and temporal trace appear.</li></ol>
+<p>Opening a <samp>.dat</samp> requires <samp>AcqInfos.mat</samp> in the same Save Folder. It supplies the shared image dimensions and frame rate. A <samp>.umt</samp> entry carries its own dimensions and labels.</p>
+<p style="text-align:center"><img src="../../assets/img/current/dataviewer-overview-current.png" alt="DataViewer with a demonstration image time series" width="880"><br><em>A continuous image file in Normal mode.</em></p>
 <h2>Navigation controls</h2>
-<table><tr><th>Control</th><th>Effect</th><th>Persistence</th></tr>
-<tr><td>Previous / Next</td><td>Moves one frame within the active mode.</td><td>Temporary.</td></tr>
-<tr><td>Frame slider</td><td>Moves through source frames or event-relative frames.</td><td>Temporary.</td></tr>
-<tr><td>Play</td><td>Advances frames as a movie until stopped or the sequence ends.</td><td>Temporary.</td></tr>
-<tr><td>Speed</td><td>Requests a playback multiplier; the app may reduce it to avoid lag.</td><td>Temporary.</td></tr>
-<tr><td>Normal mode / Event mode</td><td>Switches between continuous source time and event-aligned time.</td><td>Temporary.</td></tr>
-<tr><td>Condition / Repetition</td><td>Selects an event ID and an instance or <strong>AVERAGE</strong>.</td><td>Temporary selection state.</td></tr></table>
-<h2>Changing files safely</h2>
-<p>Opening another file resets the source and project context. ROIs intentionally remain loaded when their image size is compatible, and their traces are recalculated. Before switching, DataViewer asks how to handle a currently displayed PipelineManager temporary result. Save any result that must persist.</p>
-<div class="warnnote"><p><strong>Do not infer dimensions from file size.</strong><br><samp>AcqInfos.mat</samp> is authoritative for <samp>.dat</samp> reconstruction. A file-size match is not a substitute for valid metadata.</p></div>
+<table><tr><th>Control</th><th>Effect</th></tr>
+<tr><td>Previous / Next</td><td>Moves one frame within the active view.</td></tr>
+<tr><td>Frame slider</td><td>Moves through continuous frames or event-relative frames.</td></tr>
+<tr><td>Play</td><td>Advances frames as a movie until stopped or the sequence ends.</td></tr>
+<tr><td>Speed</td><td>Requests a playback multiplier. The app can reduce it when disk or display speed cannot keep up.</td></tr>
+<tr><td>Normal mode / Event mode</td><td>Switches between the continuous recording and an event-aligned view.</td></tr>
+<tr><td>Condition / Repetition</td><td>Selects a condition and one trial or <strong>AVERAGE</strong>.</td></tr></table>
+<p><strong>Event mode</strong> is available for <samp>.dat</samp> only when events were detected and a usable <samp>events.mat</samp> exists in the Save Folder. See <a href="../tools/events-manager_tool.html"><em>Events Manager</em></a>. For an event-based UMT entry, the event choices come from the UMT file itself.</p>
+<p style="text-align:center"><img src="../../assets/img/current/dataviewer-event-mode-current.png" alt="DataViewer event-aligned view" width="880"><br><em>Event mode displays the selected condition and repetition or their average.</em></p>
+<div class="warnnote"><p><strong>Ignored events stay ignored.</strong><br><strong>Delete condition</strong> and <strong>Delete repetition</strong> do not remove image samples. They update the ignored-event selection in <samp>events.mat</samp>. Those trials remain excluded in <em>DataViewer</em> and in analysis functions that use the event file. <strong>Restore</strong> makes them available again.</p></div>
+<h2>Image display</h2>
+<table><tr><th>Control</th><th>Use</th></tr>
+<tr><td>Click Image View</td><td>Moves the crosshair and changes the pixel shown in the temporal plot.</td></tr>
+<tr><td><strong>Colormap</strong> and <strong>Invert</strong></td><td>Choose or reverse the display palette.</td></tr>
+<tr><td><strong>Clip</strong></td><td>Adjust the lower and upper display limits.</td></tr>
+<tr><td><strong>Auto</strong></td><td>Calculates useful display limits from the current data.</td></tr>
+<tr><td><strong>Set Limits</strong></td><td>Enter exact display limits.</td></tr>
+<tr><td><strong>Hide crosshair</strong></td><td>Shows or hides the selected-pixel marker.</td></tr></table>
+<h2 id="image-calibration">Image calibration</h2>
+<p>Choose <strong>Utilities &gt; View Calibration</strong> to relate image pixels to physical coordinates. <strong>Pixel ratio (px/mm)</strong> states how many pixels correspond to one millimetre; use 0 or an empty value to keep pixel units. <strong>Origin X</strong> and <strong>Origin Y</strong> define the point reported as the coordinate origin. You can enter the point, reset it to the top-left pixel, or select it interactively on the image.</p>
+<p style="text-align:center"><img src="../../assets/img/current/dataviewer-view-calibration.png" alt="DataViewer image-calibration dialog" width="400"><br><em>Enter the pixel ratio and origin directly, or choose the origin interactively on the image.</em></p>
+<p><strong>Preview</strong> applies the proposed axes and origin marker only to the current display. <strong>Apply</strong> confirms the values and writes them to <samp>DataParams.mat</samp>. <strong>Cancel</strong> restores the calibration that was active when the dialog opened.</p>
+<h2>Temporal profiles</h2>
+<p>The black line is the selected pixel through time. Every visible, non-empty ROI adds a spatial-mean trace in the ROI color. The vertical marker follows the current frame. In Normal mode, event intervals appear as shaded patches. In Event mode, the axis is relative to event onset. Selecting one repetition shows that trial; selecting <strong>AVERAGE</strong> shows the event-aligned average for the crosshair and visible ROIs, with translucent shaded patches representing the standard error of the mean (SEM).</p>
+<p style="text-align:center"><img src="../../assets/img/current/dataviewer-rois-and-traces.png" alt="DataViewer ROI table and temporal traces" width="880"><br><em>The red ROI contributes the matching red trace.</em></p>
+<h2>Temporal cache</h2>
+<p>When opening a <samp>.dat</samp> file that does not fit in memory, <em>DataViewer</em> caches a spatial region through time instead of loading the complete recording. A dotted white rectangle marks the cached region. Clicking outside it automatically rebuilds the cache around the new pixel unless the cache has been locked from the image context menu. The cache changes reading speed only; the file on disk is unchanged.</p>
+<h2>Changing files</h2>
+<p>Opening another file resets the source and project context. ROIs intentionally remain loaded when their image size is compatible, and their traces are recalculated. Before switching, <em>DataViewer</em> asks how to handle a currently displayed <em>PipelineManager</em> temporary result. Save any result that must persist.</p>
+<div class="warnnote"><p><strong>Do not infer dimensions from file size.</strong><br><samp>AcqInfos.mat</samp> provides the dimensions used to reconstruct <samp>.dat</samp>. A file-size match is not a substitute for valid metadata.</p></div>
 </body></html>

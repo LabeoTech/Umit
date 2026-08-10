@@ -8,10 +8,11 @@ nav_order: 5
 ---
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Dual-Camera Coregistration</title></head><body>
 <h1>Dual-Camera Coregistration</h1>
-<p>This utility estimates and manages the transform between cameras in a two-camera optical imaging rig.</p>
-<h2>Open from DataViewer</h2><p>Choose <strong>Utilities &gt; OiS 2-Cam Alignment</strong>. The active Save Folder must have <samp>AcqInfos.MultiCam=true</samp>. DataViewer passes the folder and, when available, rig plus project/subject/session context.</p>
+<p>This tool is dedicated to performing the coregistration of images from Dual-Camera Imaging systems from <a href="http://www.labeotech.com">LabeoTech</a>. Its goal is to ensure that the outputs of both cameras are aligned.</p>
+<h2>Open from DataViewer</h2><p>Choose <strong>Utilities &gt; OiS 2-Cam Alignment</strong>. The active Save Folder must have <samp>AcqInfos.MultiCam=true</samp>. <em>DataViewer</em> passes the folder and, when available, rig plus project/subject/session context.</p>
 <p style="text-align:center"><img src="../../assets/img/current/dual-camera-coregistration.png" alt="Current dual-camera coregistration interface" width="880"><br><em>The current tool with the approved multi-camera demonstration context. No coregistration was saved during capture.</em></p>
-<h2>Important source rule</h2><p>The Save Folder passed by DataViewer is context only. Choose <strong>Load Coregistration Data</strong> and explicitly select unregistered source data; processed <samp>.dat</samp> files may already have a transform applied.</p>
+<div class="infonote"><p><strong>Normally a one-time hardware calibration</strong><br>Repeat the calibration when a camera is moved, the optical path changes, or image alignment no longer passes visual quality control. Once a calibration is active, a dual-camera data-import function such as <a href="../fcns/run_ImagesClassification.html"><em>run_ImagesClassification</em></a> automatically applies it to camera-2 data during import.</p></div>
+<h2>Important source rule</h2><p>Choose <strong>Load Coregistration Data</strong> and select an <strong>unregistered</strong> set of imported dual-camera <samp>.dat</samp> files. Do not estimate a new calibration from processed files that may already have the active camera transform applied.</p>
 <table><tr><th>Control</th><th>Purpose</th></tr>
 <tr><td><strong>Load Coregistration Data</strong></td><td>Loads camera images from an unregistered source folder.</td></tr>
 <tr><td><strong>Alternate View / False Color Overlay</strong></td><td>Compares cameras without changing data.</td></tr>
@@ -21,6 +22,14 @@ nav_order: 5
 <tr><td><strong>Save Coregistration</strong></td><td>After confirmation, stores the transform as a rig-managed resource when rig context is available and updates local camera coregistration state.</td></tr>
 <tr><td><strong>Browse Coregistration History</strong></td><td>Inspects active and archived rig resources.</td></tr>
 <tr><td><strong>Restore Previous Coregistration</strong></td><td>Restores a historical resource after confirmation rather than overwriting history.</td></tr></table>
-<h2>DataViewer refresh</h2><p>DataViewer waits for the utility to close and then reports closure. The current displayed data is not automatically rewritten by this utility.</p>
+<h2>Files and application of the transform</h2>
+<p><strong>Save Coregistration</strong> does not rewrite the calibration-source images. It saves the transform and preview information as a managed resource for the selected rig and records the active resource in the source folder's <samp>DataParams.cameraCoregistration</samp>.</p>
+<p>When that calibration is applied during dual-camera import or by the controlled application helper:</p>
+<ul><li>camera-2 channel <samp>.dat</samp> files are warped in place with nearest-neighbour interpolation;</li><li>camera-1 <samp>.dat</samp> files are not changed;</li><li><samp>AcqInfos.mat</samp> supplies channel, camera, size, binning, flip, and rotation information but is not itself geometrically transformed;</li><li>a local <samp>tformDualCam.mat</samp> copy records the adjusted transform used for that processed folder.</li></ul>
+<h2>Where the calibration is stored</h2>
+<p>The full calibration belongs to the rig's managed coregistration history. Its record includes <samp>tform</samp>, <samp>tformInfo</samp>, source and creation information, and stored preview images. The source folder's <samp>DataParams.cameraCoregistration</samp> keeps the active resource identifier and local application summary. Use <strong>Browse Coregistration History</strong> to identify the active and previous calibrations; do not delete managed files manually.</p>
+<h2>Quality control</h2>
+<p>Use <strong>Alternate View</strong> and <strong>False Color Overlay</strong> to compare vessels and field-of-view borders from both cameras before saving. The local QC summary records translation in pixels, rotation in degrees, X/Y scale, and the transform determinant. These values help identify unexpectedly large or reflected transforms but do not replace visual inspection.</p>
+<h2>DataViewer refresh</h2><p><em>DataViewer</em> waits for the utility to close and then reports closure. The currently displayed data is not automatically rewritten by this utility.</p>
 <div class="warnnote"><p><strong>Rig-level resource</strong><br>Camera coregistration belongs to the rig, not one subject. Verify the physical camera arrangement before making a transform active.</p></div>
 </body></html>

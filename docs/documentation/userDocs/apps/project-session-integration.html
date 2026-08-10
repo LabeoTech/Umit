@@ -4,25 +4,21 @@ permalink: /documentation/userDocs/apps/project-session-integration.html
 title: Project and session integration
 parent: DataViewer
 grand_parent: Documentation
-nav_order: 8
+nav_order: 6
 ---
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Project and session integration</title></head><body>
 <h1>Project and session integration</h1>
-<p>A Save Folder can point to one centralized project, subject, and session through <samp>UMITProjectBinding.umitlink</samp>. The link contains immutable identifiers and location hints; project metadata and managed resources stay in the centralized store.</p>
-<h2>Binding states</h2>
-<table><tr><th>State</th><th>Meaning</th><th>Available actions</th></tr>
-<tr><td>Unbound</td><td>No link file exists.</td><td>Ordinary viewing works; project-dependent tools offer Project Binding Manager.</td></tr>
-<tr><td>Valid</td><td>The project, subject, session, role, and folder agree.</td><td>Image references, alignment, and project metadata are available.</td></tr>
-<tr><td>Read-only</td><td>The link resolves but project validation did not pass.</td><td>Viewing and reference inspection may work; writes are blocked.</td></tr>
-<tr><td>Missing project</td><td>The link points to a project UUID not found under the project root.</td><td>Retry, reassign, or explicitly remove an orphan link.</td></tr>
-<tr><td>Invalid/conflicting</td><td>The link is malformed or identity/path facts disagree.</td><td>Automatic replacement is blocked; inspect and repair deliberately.</td></tr></table>
-<h2>Refresh behavior</h2>
-<p>DataViewer resolves the binding after every load. When Project Manager closes, it resolves the current dataset again. Image Alignment Tool refreshes DataViewer after a successful apply: the current file is reopened when possible, project context is refreshed, and loaded ROIs are cleared because their coordinates may now be stale.</p>
-<h2>Ownership boundary</h2>
-<pre>Save Folder                          Central store
------------                         -------------
-recording data and view state  -->  link by UUID only
-applied transform UUID + QC         project/subject/session identity
-                                   managed references and transforms</pre>
-<p>See <a href="../tools/project-management-folder-binding.html">Project management and folder binding</a>.</p>
+<p>A project helps track recordings from one mouse—or a cohort of mice—throughout a study. It becomes especially useful for longitudinal experiments, where each subject has several sessions and those sessions should share a consistent image reference.</p>
+<p>Projects do not require special Save Folder names or a fixed data-folder tree. A small <samp>UMITProjectBinding.umitlink</samp> file in each bound Save Folder points to the matching project, subject, and session information. Moving or renaming a data folder therefore does not change the scientific identity of its session.</p>
+<p>Project information is centralized under the umIT project root in the current user's profile. Display that root in MATLAB with:</p>
+<pre><code>getUmitFolder();</code></pre>
+<div class="infonote"><p><strong>Use the project-management interfaces.</strong><br>Although the project root folder is accessible, use <a href="../tools/project-management-folder-binding.html"><em>Project Manager</em> and <em>Project Binding Manager</em></a> or the project-management classes to create, edit, move, bind, or repair project information. Avoid editing the files in the project root by hand.</p></div>
+<pre>Project
+  ├── Subject
+  │     ├── Session
+  │     └── Session
+  └── Subject
+        └── Session</pre>
+<p>Each level has its own descriptive metadata. A subject can also own an image reference, allowing all of its sessions to be aligned to the same spatial coordinates.</p>
+<p>Project creation is optional for a single-recording pilot, but it is highly recommended when an experiment grows to several animals or repeated sessions. Use <a href="../tools/project-management-folder-binding.html"><em>Project Manager</em> and <em>Project Binding Manager</em></a> to create and connect the records. A bound project is required by <a href="../tools/image-reference-manager.html"><em>Image Reference Manager</em></a> and <a href="../tools/manual_image_registration_tool.html"><em>Image Alignment Tool</em></a>.</p>
 </body></html>

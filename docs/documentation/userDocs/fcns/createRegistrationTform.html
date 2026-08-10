@@ -16,6 +16,17 @@ nav_order: 1
 <div class="infonote"><p><strong>No .dat samples are changed.</strong><br>This function estimates and stores a candidate only. Use <a href="applyRegistrationTformOnFolder.html"><samp>applyRegistrationTformOnFolder</samp></a> separately after visual review.</p></div>
 <h3>Input</h3><hr><p><samp>SaveFolder</samp> must contain valid <samp>DataParams.mat</samp>, <samp>AcqInfos.mat</samp>, and one or more eligible <samp>.dat</samp> files.</p>
 <h3>Output</h3><hr><p><samp>outFile</samp> is a file manifest containing the updated <samp>DataParams.mat</samp> and timestamped QC <samp>.fig</samp> and <samp>.png</samp> files.</p>
+<h3>Quality control</h3><hr>
+<p>The timestamped QC figure shows the filtered reference, the filtered moving image, the registered moving image, and an overlay. Inspect matching vessels or other stable anatomy, along with the field-of-view borders. The numeric values below are stored in <samp>DataParams.registration.qcMetrics</samp>; the summary is stored in <samp>qcStatus</samp> and <samp>qcWarning</samp>.</p>
+<table><tr><th>Metric</th><th>How to interpret it</th></tr>
+<tr><td><samp>MIBefore</samp></td><td>Mutual information between the filtered reference and moving images before registration. It is a baseline similarity value, not a pass/fail score.</td></tr>
+<tr><td><samp>MIAfter</samp></td><td>Mutual information after applying the estimated transform. Compare it with <samp>MIBefore</samp>; values from different recordings are not directly graded against one universal threshold.</td></tr>
+<tr><td><samp>MIDelta</samp></td><td><samp>MIAfter - MIBefore</samp>. A positive value means this metric improved. A non-finite or non-positive value sets <samp>review_recommended</samp>.</td></tr>
+<tr><td><samp>translationXY_px</samp></td><td>X and Y displacement in pixels. A maximum component greater than 20% of the image diagonal triggers a review warning. Large values may be valid, but often indicate mismatched fields of view.</td></tr>
+<tr><td><samp>rotationDeg</samp></td><td>Estimated in-plane rotation. An absolute rotation above 15 degrees triggers a review warning.</td></tr>
+<tr><td><samp>scaleXY</samp></td><td>X/Y scale, where 1 means no scaling. A deviation greater than 10% from 1 on either axis triggers a review warning.</td></tr>
+<tr><td><samp>determinant</samp></td><td>Area scaling of the transform's linear component. For an ordinary similarity transform it should be positive and consistent with the reported scale; unexpected values deserve visual review.</td></tr></table>
+<p><samp>estimated_not_reviewed</samp> means none of the automatic warning conditions fired; it does not mean the registration has been accepted. <samp>review_recommended</samp> means one or more conditions fired and the reason is recorded in <samp>qcWarning</samp>.</p>
 <h3 id="parameters">Parameters</h3><hr>
 <button type="button" class="mycollapsible"><span class="iconplus"></span><samp><b>UseFile</b></samp> - moving-image source<br><span class="title-desc"><i>auto (default) | .dat filename</i></span></button>
 <div class="content"><p><samp>auto</samp> selects the first eligible <samp>.dat</samp> in the folder. Supply a filename to control which channel or processing stage is registered.</p></div>
@@ -23,6 +34,6 @@ nav_order: 1
 <div class="content"><p>When false, the same QC figure and PNG are generated invisibly for non-interactive processing.</p></div>
 <button type="button" class="mycollapsible"><span class="iconplus"></span><samp><b>RefStatistic</b></samp> - reduce the moving time series<br><span class="title-desc"><i>mean (default) | median | first</i></span></button>
 <div class="content"><p>Chooses the statistic used to collapse Y-X-T into the 2-D moving image. If needed, that image is resized to the reference size before registration.</p></div>
-<div class="warnnote"><p><strong>QC metrics are advisory.</strong><br>Inspect anatomical alignment and borders visually. A higher numerical metric does not guarantee a scientifically acceptable transform.</p></div>
+<div class="warnnote"><p><strong>QC metrics are advisory.</strong><br>Inspect anatomical alignment and borders visually. A higher mutual-information value does not guarantee a scientifically acceptable transform.</p></div>
 <script src="../../collapsible_behaviour.js"></script>
 </body></html>
