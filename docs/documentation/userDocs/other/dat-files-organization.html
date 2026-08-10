@@ -8,7 +8,8 @@ nav_order: 3
 ---
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Organization of .dat files</title></head><body>
 <h1>Organization of .dat files</h1>
-<p>A UMIT <samp>.dat</samp> file is a flat binary stream of MATLAB <samp>single</samp> values. It contains samples only; reconstruction depends on authoritative metadata in the same Save Folder.</p>
+<p>Imaging datasets are stored in binary files with the extension <samp>.dat</samp>. Each <samp>.dat</samp> file contains only a single channel. For example, in a recording where a fluorescence channel was acquired with red and green illuminations, each channel is stored separately in a dedicated <samp>.dat</samp> file. These files are created using one of the available Data Import functions. The binary files store only imaging data as 4-byte (32-bit) floating-point values (single precision).</p>
+<p>The file contains no header or dimensions. umIT reconstructs it using <samp>AcqInfos.mat</samp> in the same Save Folder, and all <samp>.dat</samp> files in that folder share the recorded height and width.</p>
 <h2>Ordering</h2>
 <pre>MATLAB array: data(Y, X, T)
 Serialized order:
@@ -18,12 +19,12 @@ Serialized order:
   frame T</pre>
 <p>This is MATLAB column-major Y-X-T order. The byte offset for pixel column <samp>x</samp> in frame <samp>t</samp> follows the same order; each value uses four bytes.</p>
 <h2>Metadata and file naming</h2>
-<p><samp>AcqInfos.mat</samp> provides Height, Width, Length/frame count, frame rate, channels, and multi-camera facts. File names identify logical channels or processing results, but names alone do not define dimensions. A multi-camera Save Folder may contain camera-specific source names and several derived channel files, each reconstructed with matching metadata.</p>
+<p><samp>AcqInfos.mat</samp> provides Height, Width, Length/frame count, frame rate, channels, and multi-camera facts. File names identify logical channels or processing results, but names alone do not define dimensions.</p>
 <h2>How DataViewer reads data</h2>
 <p><samp>DatImageSource</samp> validates file size against metadata, uses direct <samp>fseek</samp>/<samp>fread</samp> frame and pixel reads, and maintains an optional spatial-temporal cache. DataViewer does not require the whole recording in RAM. The lower-level <samp>mapDat</samp> helper is available for suitable programmatic workflows, but mapped size and type must still come from validated metadata.</p>
 <h2>Processing lifecycle</h2>
 <p>Analysis functions can return arrays for PipelineManager to persist, or accept a filename and stream spatial slabs for low-RAM processing. New outputs receive processing provenance in <samp>dataHistory.mat</samp>. Event-aligned additional dimensions are normally stored in UMT rather than changing the raw binary contract.</p>
-<h2>Safe access</h2>
+<h2>Programmatic access</h2>
 <pre><code>info = loadMetaData("C:\save\green.dat");
 data = loadData("C:\save\green.dat");      % use when it fits in memory
 % For large files, use DatImageSource or spatialSlabIO.</code></pre>

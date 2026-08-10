@@ -4,29 +4,51 @@ layout: default
 title: ROI management
 parent: DataViewer
 grand_parent: Documentation
-nav_order: 5
+nav_order: 4
 ---
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>ROI management</title></head><body>
 <h1>ROI management</h1>
-<p>ROI management is integrated into DataViewer. An ROI is a named shape used to summarize pixels over space and time.</p>
-<h2>Create ROIs</h2>
-<table><tr><th>Control</th><th>Workflow</th><th>Persistence</th></tr>
-<tr><td><strong>Rectangle, Ellipse, Polygon</strong></td><td>Draw interactively; right-click or keyboard actions can confirm, rename, or cancel while drawing.</td><td>Memory until <strong>Save</strong>.</td></tr>
-<tr><td><strong>Threshold</strong></td><td>Select a range, preview connected areas, name results, then create polygon ROIs.</td><td>Preview is temporary; created ROIs remain in memory.</td></tr>
-<tr><td><strong>Allen Atlas</strong></td><td>Search or check atlas areas, optionally merge modules, place and scale the selected atlas over the image, then confirm.</td><td>ROI geometry is in memory; remembered area choices are a preference, not an ROI file.</td></tr></table>
-<h2>Allen Atlas selection and placement</h2>
-<ol><li>Search for an anatomical label or expand the Neocortex tree.</li><li>Check an area or module. Selecting a result synchronizes the map and tree.</li><li>Use a module context menu to <strong>Merge module</strong> or <strong>Unmerge module</strong>.</li><li>Choose <strong>OK</strong>. DataViewer opens a placement box and live preview over the current image.</li><li>Move, resize, or adjust placement. Confirm to add the selected areas; cancel restores the previous ROI list.</li></ol>
+<p>ROI management is integrated into <em>DataViewer</em>. A region of interest (ROI) is a named shape used to summarize pixels over space and time. Drawing and editing remain in memory until you save a <samp>.roi</samp> file.</p>
+<h2>Draw rectangles, ellipses, and polygons</h2>
+<ol><li>Open the <strong>ROIs</strong> tab.</li><li>Choose <strong>Rectangle</strong>, <strong>Ellipse</strong>, or <strong>Polygon</strong>.</li><li>Drag a rectangle or ellipse. For a polygon, click successive vertices and double-click the final vertex.</li><li>Move or resize the active shape. Press <strong>N</strong> to rename it while drawing.</li><li>Double-click inside the ROI, or press <strong>Enter</strong>, to confirm. Press <strong>Escape</strong> or use the cancel item in its context menu to discard it.</li></ol>
+<p style="text-align:center"><img src="../../assets/img/current/dataviewer-roi-drawing-rectangle.png" alt="Rectangle ROI being drawn in DataViewer" width="880"><br><em>An ROI remains editable until it is confirmed by double-clicking inside it or pressing Enter.</em></p>
+<table><tr><th>During drawing</th><th>After confirmation</th></tr>
+<tr><td><img src="../../assets/img/current/dataviewer-roi-ellipse-drawing.png" alt="Ellipse ROI with drawing handles" width="420"><br><em>An ellipse remains adjustable while its handles are visible.</em></td><td><img src="../../assets/img/current/dataviewer-roi-ellipse-confirmed.png" alt="Confirmed ellipse ROI in the ROI table" width="420"><br><em>After confirmation, the ellipse is added to the table and its trace is displayed.</em></td></tr>
+<tr><td><img src="../../assets/img/current/dataviewer-roi-polygon-drawing.png" alt="Polygon ROI with drawing vertices" width="420"><br><em>Click successive vertices to shape a polygon.</em></td><td><img src="../../assets/img/current/dataviewer-roi-polygon-confirmed.png" alt="Confirmed polygon ROI in the ROI table" width="420"><br><em>The confirmed polygon appears as a named table row.</em></td></tr></table>
+<h2 id="threshold-based-rois">Threshold-based ROIs</h2>
+<p><strong>Threshold</strong> analyzes the currently displayed frame. The left preview overlays pixels that pass the threshold; the centre preview separates connected candidate ROIs.</p>
+<ol><li>Enter a base name and choose <strong>above threshold</strong> or <strong>below threshold</strong>.</li><li>Set the value directly, drag the slider, or choose <strong>Auto set</strong> to start at the masked-image mean plus or minus two standard deviations.</li><li>Increase <strong>Min pixels</strong> to remove small regions. <strong>Remove holes</strong> keeps results compatible with the ROI model; optional smoothing removes narrow bridges and irregular borders.</li><li>Inspect the candidate count and both previews, then choose <strong>Create ROIs</strong>.</li></ol>
+<p style="text-align:center"><img src="../../assets/img/current/dataviewer-roi-threshold.png" alt="Threshold ROI Creator dialog" width="880"><br><em>The threshold dialog previews the selected pixels and connected candidate ROIs before adding anything to the table.</em></p>
+<h2 id="allen-atlas-selection-and-placement">Allen Atlas selection and placement</h2>
+<ol><li>Search for an anatomical label or expand the Neocortex tree.</li><li>Check an area or module. Selecting a result synchronizes the map and tree.</li><li>Right-click a module in the Tree to choose <strong>Merge module</strong> or <strong>Unmerge module</strong>.</li><li>Choose <strong>OK</strong>. <em>DataViewer</em> opens a placement box and live preview over the current image. The estimated Bregma and Lambda positions are shown as a red and green dot, respectively, for placement aid only.</li><li>Move, resize, or adjust placement. Confirm to add the selected areas; cancel restores the previous ROI list.</li></ol>
 <p style="text-align:center"><img src="../../assets/img/current/allen-atlas-roi-creator.png" alt="Allen Atlas ROI selection interface" width="760"><br><em>The creator searches and selects regions; final placement occurs in DataViewer.</em></p>
-<div class="warnnote"><p><strong>Scientific limitation</strong><br>The atlas overlay is a user-positioned two-dimensional approximation. It does not estimate a transform, verify anatomical correspondence, or replace visual quality control.</p></div>
+<table><tr><th>Placement preview</th><th>Confirmed atlas areas</th></tr>
+<tr><td><img src="../../assets/img/current/dataviewer-allen-atlas-placement.png" alt="Allen Atlas areas being positioned over a recording" width="420"><br><em>Move and resize the placement box while comparing the outlines with the image.</em></td><td><img src="../../assets/img/current/dataviewer-allen-atlas-confirmed.png" alt="Confirmed Allen Atlas ROIs over a recording" width="420"><br><em>Confirmation adds the selected atlas areas to the ROI table.</em></td></tr></table>
+<div class="warnnote"><p><strong>Scientific limitation</strong><br>The atlas overlay is a user-positioned two-dimensional approximation. It does not estimate a transform, verify anatomical correspondence, or replace visual quality control. The positions of Bregma and Lambda are rough estimates: the Allen Mouse Brain Atlas does not provide mouse-skull landmark coordinates. See the <a href="https://community.brain-map.org/t/why-doesnt-the-3d-mouse-brain-atlas-have-bregma-coordinates/158">Allen Brain Map Community Forum discussion</a>.</p></div>
 <h2>ROI table and editing</h2>
-<p>The table controls <strong>Visible</strong>, <strong>Select</strong>, <strong>Name</strong>, type, color, centroid, size, and current-frame statistics. A selected ROI can enter editable mode. Multi-selection supports grouped edits and Boolean operations such as merge, intersect, XOR, and subtract; operations that would create unsupported holes are blocked. Deleting selected or all ROIs asks for confirmation.</p>
+<p>Each ROI has one row. <strong>Visible</strong> shows or hides its image overlay and temporal trace. <strong>Select</strong> enters edit mode and marks the ROI for deletion or grouped operations. Double-click inside an edited ROI, or press <strong>Enter</strong>, to keep a geometry change; press <strong>Escape</strong> to restore the stored shape.</p>
+<p>Click a <strong>Name</strong> cell to rename the ROI. Names are kept unique. Click the <strong>Color</strong> cell to open the color picker; the overlay, label, table cell, and temporal trace update together. The remaining columns report type, centroid, size, pixel count, and intensity statistics for the currently displayed frame. These intensity values are recalculated whenever the frame changes.</p>
+<p>Select several rows to move or resize them as a group. Right-click the group to access Boolean operations:</p>
+<table><tr><th>Operation</th><th>Result</th></tr>
+<tr><td><strong>Merge</strong></td><td>Combines all selected pixels.</td></tr>
+<tr><td><strong>Intersect</strong></td><td>Keeps only pixels shared by all selected ROIs.</td></tr>
+<tr><td><strong>XOR</strong></td><td>Keeps pixels belonging to an odd number of selected ROIs.</td></tr>
+<tr><td><strong>Subtract</strong></td><td>Subtracts later-selected ROIs from the first-selected ROI; selection order matters.</td></tr></table>
+<p>An operation is blocked when it would produce holes that the current ROI model cannot represent. Deleting selected or all ROIs always asks for confirmation.</p>
 <h2>Logical mask interaction</h2>
-<p>Creating or changing a logical mask can clip existing ROIs. DataViewer reports how many ROIs were changed and asks before deleting any that would become empty.</p>
-<h2>Save, load, import, and export</h2>
+<p>A logical mask defines the part of the image included during ROI creation and related calculations. Pixels outside the active mask are dimmed in the image view.</p>
+<ol><li>Open the <strong>Utilities</strong> tab and choose <strong>Logical Mask</strong> to start a manual mask.</li><li>Draw a polygon around the image area to include. Right-click and choose <strong>Add mask polygon</strong> when the mask needs several separate regions; all confirmed polygons are combined.</li><li>Move the polygons or their handles to refine the boundary. Double-click a polygon, press <strong>Enter</strong>, or right-click and choose <strong>Confirm logical mask</strong> to apply it. Press <strong>Escape</strong> to cancel.</li><li>To start from an automatically estimated boundary, right-click <strong>Logical Mask</strong> and choose <strong>Create Automatic Mask</strong>. Refine the proposed polygons before confirming them.</li></ol>
+<p style="text-align:center"><img src="../../assets/img/current/dataviewer-logical-mask-drawing.png" alt="Editable automatic logical-mask draft in DataViewer" width="880"><br><em>An automatic draft is an editable starting point. Refine its polygons and confirm only when the included image area is correct.</em></p>
+<h3>How the automatic mask is calculated</h3>
+<p><em>DataViewer</em> first calculates the average image across the frames in the active view. This means the calculation follows the data currently being displayed, including the selected event view or UMT entry when applicable. Pixels without a finite value are ignored.</p>
+<p>The initial mask contains the brightest 10% of pixels in that average image. <em>DataViewer</em> then joins nearby bright fragments, fills enclosed holes, removes isolated regions smaller than 0.1% of the image area, and lightly removes narrow bridges or protrusions. These cleanup distances are scaled to the image dimensions rather than fixed to one pixel size.</p>
+<p>Up to the six largest remaining connected regions are converted into editable polygons. The result is only a starting estimate: inspect, move, reshape, add, or remove polygons before confirming the mask. If no usable region is found, create the mask manually.</p>
+<p>Confirmation applies the mask immediately and saves it in <samp>DataParams.mat</samp>. Existing ROIs are clipped to the included area; <em>DataViewer</em> reports the changes and asks before deleting any ROI that would become empty. Right-click <strong>Logical Mask</strong> and choose <strong>Clear Existing Mask</strong> to return to full-image inclusion.</p>
+<h2 id="save-load-import-and-export">Save, load, import, and export</h2>
 <table><tr><th>Action</th><th>Details</th></tr>
-<tr><td><strong>Save</strong></td><td>Writes a schema-validated <samp>.roi</samp> file without runtime graphics handles.</td></tr>
-<tr><td><strong>Load</strong></td><td>Replaces or appends. Size mismatch offers a safe scaling or compatibility choice.</td></tr>
+<tr><td><strong>Save</strong></td><td>Writes a <samp>.roi</samp> file containing the shapes, names, colors, image context, and measurements.</td></tr>
+<tr><td><strong>Load</strong></td><td>Replaces or appends. A size mismatch offers scaling or compatibility choices.</td></tr>
 <tr><td><strong>Import</strong></td><td>Reads compatible ROI arrays from a selected file or MATLAB workspace variable, validates size, and rebuilds identifiers.</td></tr>
 <tr><td><strong>Export ROI data</strong></td><td>Writes selected spatial measurements, continuous traces, or event-aligned traces to CSV.</td></tr></table>
-<p>See the tutorial <a href="../../tutorials/tt_creating_rois.html">Working with ROIs</a>.</p>
+<p>See the tutorial <a href="../../tutorials/tt_creating_rois.html">Working with ROIs</a> and <a href="../other/roi-files-organization.html">Organization of .roi files</a>.</p>
 </body></html>

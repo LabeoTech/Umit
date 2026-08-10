@@ -4,7 +4,7 @@ permalink: /documentation/userDocs/other/how-to-create-custom-functions.html
 title: Creating analysis functions for PipelineManager
 parent: Advanced User Resources
 grand_parent: Documentation
-nav_order: 5
+nav_order: 6
 ---
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Creating analysis functions for PipelineManager</title></head><body>
 <h1>Creating analysis functions for PipelineManager</h1>
@@ -72,13 +72,13 @@ end</code></pre>
 <pre><code>info = scaleImage('pipelineInfo');
 data = single(reshape(1:24,[2 3 4]));
 result = scaleImage(data,tempdir,'Scale',2);
-assert(isequal(size(result),size(data)))
+assert(isequal(size(result),size(data)));
 pm = PipelineManager(tempdir,'Missing');  % then inspect pm.funcList</code></pre>
 <h2>Troubleshooting</h2>
 <table><tr><th>Symptom</th><th>Likely cause and fix</th></tr>
 <tr><td>Function is not listed</td><td>Name/file mismatch, invalid <samp>pipelineInfo</samp>, excluded folder, or parser error. Query it directly and inspect the error.</td></tr>
 <tr><td>Connection is unavailable</td><td>Semantic types do not match. Correct the declared type; do not weaken it merely to force a connection.</td></tr>
-<tr><td>Filename input fails</td><td><samp>supportsFile</samp> was declared without a tested file branch. Set it false or implement safe streaming.</td></tr>
+<tr><td>Filename input fails</td><td><samp>supportsFile</samp> was declared without a tested file branch. Set it false or implement and test file streaming.</td></tr>
 <tr><td>Output is not saved</td><td>Check output mode, managed filename, leaf policy, and whether a file-manifest function returned actual relative filenames.</td></tr>
 <tr><td>UMT validation fails</td><td>Value dimensions, <samp>dimNames</samp>, labels, kind, or event information disagree.</td></tr>
 <tr><td>Wrong metadata is used</td><td>Resolve metadata from the exact data file, not the first file found in the Save Folder.</td></tr></table>

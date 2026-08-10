@@ -8,28 +8,71 @@ nav_order: 1
 ---
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Pipeline Manager</title></head><body>
 <h1>Pipeline Manager</h1>
-<p>Pipeline Manager builds a directed processing graph and executes compatible analysis functions on one or more Save Folders.</p>
-<h2>Open from DataViewer</h2><p>Load <samp>.dat</samp> or <samp>.umt</samp> data, open the <strong>Pipeline</strong> tab, and choose <strong>Pipeline Manager</strong>. DataViewer passes the current Save Folder, Raw Folder state, file, persistent PipelineManager object, last result, and completion callbacks.</p>
-<p style="text-align:center"><img src="../../assets/img/current/pipeline-manager-current.png" alt="Current Pipeline Manager interface" width="880"><br><em>The current file enters the graph as a virtual source. Function categories come from live PipelineManager discovery.</em></p>
-<h2>Interface</h2>
+<p><em>Pipeline Manager</em> builds a directed acyclic graph (DAG): a sequence of analysis functions in which arrows show how data moves from one operation to the next. The included functions cover common widefield-imaging processing and analysis workflows. If you want to create a custom analysis function of your own, see <a href="../other/how-to-create-custom-functions.html">Creating analysis functions for PipelineManager</a>.</p>
+<p>The manager records which functions and parameters produced each result, chooses an execution order, and reduces memory use by passing large data through files when appropriate. Its graph makes parallel and sequential processing paths visible before the pipeline runs.</p>
+<h2>Open the app</h2>
+<p>From <em>DataViewer</em>, load a <samp>.dat</samp> or image-kind <samp>.umt</samp>, open the <strong>Pipeline</strong> tab, and choose <strong>Pipeline Manager</strong>. The current file is already present as the protected input node.</p>
+<p>To open the standalone app from MATLAB:</p>
+<pre><code>PipelineManagerTool;</code></pre>
+<p>Choose <strong>Select Data Folders</strong> before adding steps in standalone mode.</p>
+<p style="text-align:center"><img src="../../assets/img/current/pipeline-manager-current.png" alt="Current Pipeline Manager interface" width="880"><br><em>The current file is shown as the starting point in the graph. Function categories come from live <em>PipelineManager</em> discovery.</em></p>
+<h2>Interface layout</h2>
+<p>Available analysis functions are listed on the left. The middle shows the pipeline graph and execution order. The right side summarizes the selected step and its parameters. File, data, execution, and inspection controls are along the top; run progress and the activity log are at the bottom.</p>
 <table><tr><th>Area/control</th><th>Purpose</th></tr>
-<tr><td>Available Functions + search</td><td>Filters discovered public functions by category and name.</td></tr>
+<tr><td>Available Functions + search</td><td>Filters discovered functions by category and name.</td></tr>
 <tr><td><strong>Add</strong> / <strong>Add as New Branch</strong></td><td>Adds a compatible step and prompts for required sources.</td></tr>
 <tr><td>Pipeline Graph</td><td>Shows sources, steps, connections, persistence markers, and selection.</td></tr>
 <tr><td>Selected step details</td><td>Edits step tag and function options; summarizes inputs, outputs, and persistence.</td></tr>
 <tr><td>Execution Order</td><td>Shows the runnable order and virtual inputs.</td></tr>
 <tr><td><strong>Load</strong>, <strong>Save</strong>, <strong>Clear Pipeline</strong></td><td>Loads, saves, or clears the graph after applicable confirmation.</td></tr>
-<tr><td>Auto-save final outputs</td><td>Selects leaf persistence. DataViewer locks exploratory runs to viewer-managed temporary output where applicable.</td></tr>
+<tr><td>Auto-save final outputs</td><td>Controls automatic saving of outputs from the last steps. This choice is fixed to temporary viewer results when the app is opened from <em>DataViewer</em>.</td></tr>
 <tr><td>RAM / Safety</td><td>Selects automatic or RAM-safe planning and the safety policy.</td></tr>
 <tr><td><strong>Reuse Existing Files</strong></td><td>Allows compatible outputs already on disk to satisfy steps.</td></tr>
 <tr><td><strong>Run</strong> / <strong>Stop</strong></td><td>Reviews and executes the graph, or requests a cooperative stop.</td></tr></table>
-<h2>Basic workflow</h2>
-<ol><li>Select a function. PipelineManager uses semantic input and output types to determine valid connections.</li><li>Choose each input source. File inputs and data inputs are distinct; a function accepts filenames only when it declares and implements file support.</li><li>Edit parameters and output-saving choices.</li><li>Review the execution plan and run.</li><li>Inspect the activity log, folder <samp>pipeLog.mat</samp>, result summary, and any issues.</li></ol>
-<h2>Outputs and DataViewer refresh</h2>
-<p>Returned arrays or UMT structures can feed downstream steps. Functions may instead create a declared file manifest. Image-compatible results can be selected and opened in DataViewer; scalar tables, reports, and other terminal outputs are summarized but not displayed as images. On close, DataViewer retains the graph and last result, restores its window, and cleans temporary files only at defined lifecycle boundaries.</p>
+<h2>Build and run a first pipeline</h2>
+<ol><li>Expand a function category on the left, select a function, and choose <strong>Add</strong>.</li><li>If the function needs an input that is not determined automatically, select the source in the dialog. Compatible outputs from earlier steps, files in the Save Folder, and the current <em>DataViewer</em> file are shown where applicable.</li><li>Select the new graph step. Right-click it and choose <strong>Edit parameters</strong> to set analysis options.</li><li>Add the next function. The manager connects compatible input and output types and updates the execution order.</li><li>Use <strong>Save Outputs</strong> on a step when a particular intermediate result must be written.</li><li>Choose <strong>Run</strong>, inspect the execution plan and warnings, then confirm.</li><li>Follow progress in the graph, execution-order panel, and activity log. After the run, inspect <strong>Tools &gt; Show Latest Run Summary</strong>.</li></ol>
+<h2>Graph interactions</h2>
+<table><tr><th>Action</th><th>How and why</th></tr>
+<tr><td>Select a step</td><td>Click a node to show its name, tag, inputs, outputs, parameters, and save choices on the right.</td></tr>
+<tr><td>Edit parameters</td><td>Right-click a function node and choose <strong>Edit parameters</strong>.</td></tr>
+<tr><td>Reconnect inputs</td><td>Right-click and choose <strong>Reconnect inputs</strong>, select the input to change, then click a highlighted compatible source or choose a file.</td></tr>
+<tr><td>Save outputs</td><td>Right-click and choose <strong>Save Outputs</strong> to select which step outputs should persist.</td></tr>
+<tr><td>Remove a step</td><td>Right-click and choose <strong>Remove step</strong>. Downstream connections are rechecked; the protected <em>DataViewer</em> source cannot be removed.</td></tr>
+<tr><td>Clear the graph</td><td><strong>Clear Pipeline</strong> removes all steps after confirmation but keeps the selected folders and execution settings.</td></tr></table>
+<h2>Adding a parallel branch</h2>
+<p><strong>Add as New Branch</strong> starts another path instead of extending the currently selected path. Use branches when one pipeline should process several input files or generate two independent results from the same source. The graph shows where branches share an input and where they remain separate.</p>
+<h2>Pipeline script generation</h2>
+<p>Choose <strong>File &gt; Generate Script</strong> to export the current graph as a MATLAB script. The generated script reproduces the configured steps, connections, parameters, data folders, and execution settings. Review the file paths before running it on another computer.</p>
 <h2>Batch data folders</h2>
-<p><strong>Data Folders</strong> can add Save Folder/Raw Folder pairs, discover child folders, filter them, mark unavailable raw data as <samp>Missing</samp>, and enable or disable rows. A required Raw Folder input causes an incompatible row to be skipped rather than guessed.</p>
-<h2>Files and state</h2>
-<table><tr><th>Item</th><th>Changed by</th></tr><tr><td>Pipeline graph file</td><td><strong>Save</strong> only.</td></tr><tr><td>Analysis outputs</td><td>Run according to output policy.</td></tr><tr><td><samp>dataHistory.mat</samp>, <samp>pipeLog.mat</samp></td><td>Execution provenance and per-step log.</td></tr><tr><td><samp>PMTMP_*</samp></td><td>Viewer-managed temporary results, removable on switch/close.</td></tr></table>
-<div class="warnnote"><p><strong>Function warnings still apply.</strong><br>PipelineManager can include destructive folder functions. Read each function page and confirmation carefully.</p></div>
+<p><strong>Data &gt; Select Data Folders</strong> builds a table of Save Folder/Raw Folder pairs. Add folders one at a time or discover child Save Folders, filter the list, set a Raw Folder, use the Save Folder as its own raw source, mark unavailable raw data as <samp>Missing</samp>, and enable or disable rows. Invalid or duplicate Save Folders block the run. A step that requires raw data skips a row marked <samp>Missing</samp> rather than guessing a location.</p>
+<h2>Execution settings</h2>
+<table><tr><th>Setting</th><th>Meaning</th></tr>
+<tr><td><strong>Reuse existing files</strong></td><td>Uses an existing output only when its recorded pipeline history matches; disable it to force re-execution.</td></tr>
+<tr><td><strong>Avoid overwriting existing files</strong></td><td>Chooses another available output filename when possible.</td></tr>
+<tr><td><strong>Save recovery data on failure</strong></td><td>Saves the latest available data when a step fails, when possible.</td></tr>
+<tr><td><strong>Auto-save final outputs</strong></td><td><strong>Disabled</strong> saves only explicitly selected outputs; <strong>Enabled</strong> saves final branch outputs; <strong>Enabled as temporary files</strong> creates viewer-managed temporary results.</td></tr></table>
+<h2>RAM settings</h2>
+<p><strong>RAM: Auto</strong> lets the manager keep data in memory when estimates show that enough memory is available. <strong>RAM-safe</strong> prefers disk-backed processing for compatible functions. <strong>Strict</strong> blocks a plan that cannot meet its RAM rules; <strong>Best effort</strong> allows the manager to continue with warnings when a complete low-memory path is unavailable.</p>
+<p><strong>Execution &gt; Advanced RAM Settings</strong> exposes four planning controls:</p>
+<table><tr><th>Control</th><th>Default</th><th>Meaning</th></tr>
+<tr><td>Lookahead length</td><td><samp>2</samp></td><td>Number of downstream steps considered when deciding whether to retain or reload data.</td></tr>
+<tr><td>Cooldown steps</td><td><samp>2</samp></td><td>Number of steps an intermediate result may remain in memory before release.</td></tr>
+<tr><td>Safety overhead fraction</td><td><samp>0.15</samp></td><td>Fraction of available memory reserved as overhead (15% by default).</td></tr>
+<tr><td>Data size multiplier</td><td><samp>2.0</samp></td><td>Multiplier applied to estimated data size to account for working copies.</td></tr></table>
+<h2>Tools menu</h2>
+<table><tr><th>Command</th><th>Purpose</th></tr>
+<tr><td><strong>Show Execution Plan</strong></td><td>Lists executable steps, virtual inputs*, run order, and issues before execution.</td></tr>
+<tr><td><strong>Remove Invalid Steps</strong></td><td>Removes steps that cannot be made runnable after validation.</td></tr>
+<tr><td><strong>Show Latest Run Summary</strong></td><td>Displays completed, skipped, failed, and output rows from the most recent run.</td></tr>
+<tr><td><strong>View Folder Pipeline Log</strong></td><td>Loads <samp>pipeLog.mat</samp> for a selected enabled Save Folder.</td></tr>
+<tr><td><strong>Export Error Log</strong></td><td>Writes detailed diagnostic text for sharing or later review.</td></tr></table>
+<div class="infonote"><p><strong>* Virtual input</strong><br>A virtual input is a file or value that supplies a step without being produced by another step in the graph. Examples include the current <em>DataViewer</em> file and a file selected from the Save Folder.</p></div>
+<h2>Output files and control files</h2>
+<p>In standalone mode, saved final or explicitly selected outputs are written to each Save Folder using the function's declared file name. In <em>DataViewer</em> mode, compatible image results are offered for immediate display and are temporary by default; non-image reports and terminal results remain saved files when the function creates or requests them.</p>
+<table><tr><th>Item</th><th>Contents</th></tr>
+<tr><td>Pipeline file</td><td>The saved graph, connections, parameters, and execution choices. Written only by <strong>Save Pipeline</strong>.</td></tr>
+<tr><td><samp>dataHistory.mat</samp></td><td>For each output, the functions, versions, inputs, and parameters that produced it.</td></tr>
+<tr><td><samp>pipeLog.mat</samp></td><td>Per-step execution status, timing, messages, inputs, and outputs for that Save Folder.</td></tr>
+<tr><td>Temporary image results</td><td>Viewer-managed files removed when their lifecycle ends unless the user saves a permanent copy.</td></tr></table>
+<div class="warnnote"><p><strong>Read function-specific warnings before running.</strong><br>Some functions change an entire folder. For example, data-import functions can replace classified output files, and <samp>applyRegistrationTformOnFolder</samp> rewrites every <samp>.dat</samp> file. Review the function documentation, execution plan, and confirmation dialog.</p></div>
 </body></html>

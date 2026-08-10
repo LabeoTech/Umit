@@ -8,33 +8,56 @@ nav_order: 4
 ---
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Organization of .umt files</title></head><body>
 <h1>Organization of .umt files</h1>
-<p>UMT is umIT's schema-validated MATLAB container for processed and derived data. It carries enough dimension and event meaning to remain interpretable after being copied out of its original Save Folder.</p>
-<h2>Top-level schema (version 1)</h2>
+<p>Every <samp>.dat</samp> file in a Save Folder follows the dimensions in <samp>AcqInfos.mat</samp>. Processing results do not always fit that Y-X-T layout: an amplitude map has conditions instead of time, an ROI trace has an ROI axis, and a correlation matrix has two ROI axes. UMT files exist to store these smaller processed or reduced results together with their own named dimensions and scientific context.</p>
+<p>A typical imaging pipeline uses <samp>.dat</samp> for the high-volume image time series and <samp>.umt</samp> for intermediate or final measurements. <em>DataViewer</em> can open compatible image-kind UMT entries.</p>
+
+<h2>Top-level structure (version 1)</h2>
 <table><tr><th>Field</th><th>Required?</th><th>Meaning</th></tr>
-<tr><td><samp>version</samp></td><td>Yes</td><td>UMT schema version used for validation and compatibility.</td></tr>
-<tr><td><samp>kind</samp></td><td>Yes</td><td><samp>image</samp> or <samp>roi</samp>; selects allowed dimension patterns.</td></tr>
-<tr><td><samp>data</samp></td><td>Yes</td><td>Structure of named entries.</td></tr>
-<tr><td><samp>labels</samp></td><td>No</td><td>Top-level labels that describe declared axes or observations.</td></tr>
-<tr><td><samp>eventInfo</samp></td><td>When the event axis requires it</td><td>Shared event identifiers, names, repetition representation, and optional baseline.</td></tr></table>
-<h2>Entries</h2>
-<p>Every <samp>data.&lt;entryName&gt;</samp> has a numeric/logical <samp>value</samp> and ordered <samp>dimNames</samp>. Optional entry <samp>meta</samp> contains processing facts such as <samp>FrameRateHz</samp>. The number and order of dimension names must match the value and an allowed pattern for the UMT kind.</p>
+<tr><td><samp>version</samp></td><td>Yes</td><td>UMT format version used during validation.</td></tr>
+<tr><td><samp>kind</samp></td><td>Yes</td><td><samp>image</samp> or <samp>roi</samp>; determines which combinations of dimensions are accepted.</td></tr>
+<tr><td><samp>data</samp></td><td>Yes</td><td>Structure containing one or more named measurement entries.</td></tr>
+<tr><td><samp>labels</samp></td><td>No</td><td>Shared display/reference labels.</td></tr>
+<tr><td><samp>eventInfo</samp></td><td>For event-axis data</td><td>Shared condition names, identifiers, repetitions, and optional baseline duration.</td></tr></table>
+
+<h2>Entries are measurements</h2>
+<p>Think of each <samp>data.&lt;entryName&gt;</samp> as one measure derived from a dataset. For example, a single UMT file could contain an ROI-by-time fluorescence trace, an ROI-by-measure response summary, and an ROI-by-ROI correlation matrix. These entries can have distinct dimensions because each entry declares its own:</p>
+<table><tr><th>Entry field</th><th>Meaning</th></tr>
+<tr><td><samp>value</samp></td><td>The numeric or logical measurement.</td></tr>
+<tr><td><samp>dimNames</samp></td><td>The ordered meaning of every dimension, using names such as Y, X, T, E, F, ROI, Pixel, or Measure.</td></tr>
+<tr><td><samp>meta</samp></td><td>Optional processing information specific to that measurement, including <samp>FrameRateHz</samp> where applicable.</td></tr></table>
+<p>The number and order of <samp>dimNames</samp> must match <samp>value</samp>. Every entry must also match a supported pattern for its UMT kind.</p>
+
 <h2>Event information</h2>
 <table><tr><th>Field</th><th>Meaning</th></tr>
-<tr><td><samp>eventID</samp></td><td>Condition ID for each event-axis element.</td></tr>
-<tr><td><samp>repetitionIndex</samp></td><td>Repetition number, or zero for an aggregated representation.</td></tr>
-<tr><td><samp>eventName</samp></td><td>Human-readable condition name aligned with IDs.</td></tr>
+<tr><td><samp>eventID</samp></td><td>Condition ID for each E-axis element.</td></tr>
+<tr><td><samp>repetitionIndex</samp></td><td>Repetition number, or zero for a result already aggregated across repetitions.</td></tr>
+<tr><td><samp>eventName</samp></td><td>Condition name corresponding to each E-axis element.</td></tr>
 <tr><td><samp>eventAxisMode</samp></td><td><samp>instances</samp> or <samp>aggregated_repetitions</samp>.</td></tr>
 <tr><td><samp>baselinePeriod</samp></td><td>Optional baseline duration in seconds.</td></tr></table>
+
 <h2>Create, append, and validate</h2>
-<pre><code>umt = genUMTStruct(value, ...
-    'kind','image', ...
-    'entryName','main', ...
-    'dimNames',{'Y','X','T'}, ...
-    'SaveFolder',saveFolder);
-validateUMTStruct(umt,'requireEventInfo',false);</code></pre>
-<p>Use <samp>genUMTStruct</samp> for creation/appending and <samp>appendUMTEventInfo</samp> for event metadata. PipelineManager persists returned UMT structures when the output plan requires a file.</p>
-<h2>Identity boundaries</h2>
-<p>UMT does not embed project, subject, or session identity. Those facts belong to the centralized project store and Save Folder binding. UMT can carry scientific labels and processing metadata, but it must not become a portable copy of the project database or folder-wide mask/Raw Folder state.</p>
-<h2>Backward compatibility and editing</h2>
-<p>The version field allows validators and controlled migrations to distinguish schema revisions. Validate every loaded or programmatically changed UMT. Direct manual field editing is unsupported because apparently small changes can invalidate dimensions, labels, or event alignment.</p>
+<p>Normally an analysis function constructs a UMT result and <em>PipelineManager</em> passes it to the next step or saves it when required. For advanced MATLAB use, create and append entries with <samp>genUMTStruct</samp>:</p>
+<pre><code>% Create an image time-series measurement.
+umt = genUMTStruct(imageData, ...
+    'kind', 'image', ...
+    'entryName', 'correctedFluorescence', ...
+    'dimNames', {'Y','X','T'}, ...
+    'SaveFolder', saveFolder);
+
+% Append a Y-X amplitude measurement to the same container.
+umt = genUMTStruct(umt, ...
+    'value', amplitudeMap, ...
+    'entryName', 'peakAmplitude', ...
+    'dimNames', {'Y','X'});
+
+validateUMTStruct(umt, 'requireEventInfo', false);
+save(fullfile(saveFolder, 'processedResults.umt'), '-struct', ...
+    'umt', '-mat');</code></pre>
+<p>Use <samp>appendUMTEventInfo</samp> when one or more entries declare an E dimension. Validation requires all E-based entries to use the same E length and the event vectors to match it.</p>
+
+<div class="infonote"><p><strong>Project identity stays outside the UMT file</strong><br>A UMT file can carry scientific labels, dimensions, events, and processing information. Project, subject, and session organization remains in the central project information and the Save Folder link; folder-wide masks and Raw Folder paths remain in <samp>DataParams.mat</samp>.</p></div>
+
+<h2>Previous data and manual editing</h2>
+<p>Processed data created with the previous release, especially results saved as general <samp>.mat</samp> files, may not be compatible with the UMT structure. Load and convert those results deliberately; changing the extension does not convert the data.</p>
+<p>Validate every UMT loaded or changed in MATLAB. Direct field editing is unsupported because a small change can make entry dimensions, labels, or event information disagree.</p>
 </body></html>

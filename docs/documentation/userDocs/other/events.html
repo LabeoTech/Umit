@@ -8,32 +8,60 @@ nav_order: 1
 ---
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Events</title></head><body>
 <h1>Events</h1>
-<p>An event marks a stimulus, behavioral condition, or other interval that can be aligned with imaging frames. Continuous <samp>.dat</samp> recordings use Save Folder <samp>events.mat</samp>; event-split UMT data carries its own top-level <samp>eventInfo</samp>.</p>
+<p>An event marks a stimulus, behavioral condition, or other interval that can be aligned with imaging frames. Continuous <samp>.dat</samp> recordings use <samp>events.mat</samp> in the Save Folder; event-split UMT data carries its own top-level <samp>eventInfo</samp>.</p>
+<p>The <em>EventsManager</em> class creates, validates, loads, and saves <samp>events.mat</samp>. The <a href="../tools/events-manager_tool.html"><em>Events Manager</em> app</a> is its graphical interface and provides convenient controls for event detection from LabeoTech imaging-system analog inputs.</p>
+
 <h2>Current events.mat variables</h2>
-<table><tr><th>Field</th><th>Meaning</th></tr>
-<tr><td><samp>RawFolder</samp></td><td>Raw analog-input source used when the event state was built.</td></tr>
-<tr><td><samp>AnalogIN</samp></td><td>Loaded analog traces.</td></tr>
-<tr><td><samp>sr</samp></td><td>Analog sampling rate in hertz.</td></tr>
-<tr><td><samp>trigThr</samp></td><td>Detection threshold for each selected channel.</td></tr>
-<tr><td><samp>trigPolarity</samp></td><td>Positive or negative edge polarity.</td></tr>
-<tr><td><samp>eventID</samp></td><td>Condition identifier associated with each detected event record.</td></tr>
-<tr><td><samp>state</samp></td><td>Logical selection/validity state for detected event records.</td></tr>
-<tr><td><samp>timestamps</samp></td><td>Event timing in seconds on the analog recording time base.</td></tr>
-<tr><td><samp>eventNameList</samp></td><td>Names indexed by condition ID.</td></tr>
-<tr><td><samp>baselinePeriod</samp></td><td>Pre-event baseline duration in seconds.</td></tr>
-<tr><td><samp>trigChanName</samp></td><td>Selected trigger channel names.</td></tr>
-<tr><td><samp>selectedEvents</samp></td><td>Current saved event selection.</td></tr>
-<tr><td><samp>EventFileName</samp></td><td>Optional condition-list source file.</td></tr>
-<tr><td><samp>EventFileParseMethod</samp></td><td>Condition-list parser, such as none or CSV.</td></tr>
-<tr><td><samp>b_hasExternalSignal</samp></td><td>Whether an external condition source was used.</td></tr></table>
+<p>In the table, <samp>N</samp> is the number of analog samples, <samp>K</samp> is the number of recorded or selected analog channels, <samp>M</samp> is the number of detected ON/OFF transitions, and <samp>C</samp> is the number of conditions. Empty values are permitted where the corresponding source or option is not used.</p>
+<table><tr><th>Field</th><th>Class</th><th>Typical size</th><th>Meaning</th></tr>
+<tr><td><samp>RawFolder</samp></td><td><samp>char</samp></td><td>1-by-path length</td><td>Raw analog-input source used to build the event information.</td></tr>
+<tr><td><samp>AnalogIN*</samp></td><td><samp>single</samp></td><td>N-by-K</td><td>Loaded analog traces. Each column is one analog channel.</td></tr>
+<tr><td><samp>sr</samp></td><td><samp>single</samp></td><td>scalar</td><td>Analog sampling rate in hertz.</td></tr>
+<tr><td><samp>trigThr</samp></td><td><samp>single</samp> or <samp>char</samp></td><td>scalar or 1-by-K</td><td>Detection threshold for the selected channel(s), or <samp>'auto'</samp> before detection resolves it.</td></tr>
+<tr><td><samp>trigPolarity</samp></td><td><samp>char</samp></td><td>1-by-text length</td><td><samp>positive</samp> or <samp>negative</samp> trigger polarity.</td></tr>
+<tr><td><samp>eventID</samp></td><td><samp>uint16</samp></td><td>M-by-1</td><td>Condition identifier for every detected transition.</td></tr>
+<tr><td><samp>state</samp></td><td><samp>logical</samp></td><td>M-by-1</td><td><samp>true</samp> for an ON transition and <samp>false</samp> for an OFF transition.</td></tr>
+<tr><td><samp>timestamps</samp></td><td><samp>single</samp></td><td>M-by-1</td><td>Transition times in seconds on the analog recording time base.</td></tr>
+<tr><td><samp>eventNameList</samp></td><td><samp>cell</samp></td><td>1-by-C</td><td>Condition names indexed by <samp>eventID</samp>.</td></tr>
+<tr><td><samp>baselinePeriod</samp></td><td><samp>single</samp></td><td>scalar</td><td>Pre-event baseline duration in seconds.</td></tr>
+<tr><td><samp>trigChanName*</samp></td><td><samp>cell</samp></td><td>1-by-K</td><td>Names of the LabeoTech analog channels used for detection.</td></tr>
+<tr><td><samp>selectedEvents</samp></td><td><samp>logical</samp></td><td>M-by-1</td><td>Saved include/ignore flag for every transition; the size matches <samp>eventID</samp>.</td></tr>
+<tr><td><samp>EventFileName</samp></td><td><samp>char</samp></td><td>1-by-filename length</td><td>Optional condition-list source file.</td></tr>
+<tr><td><samp>EventFileParseMethod</samp></td><td><samp>char</samp></td><td>1-by-text length</td><td>Condition-list parser: <samp>none</samp>, <samp>csv</samp>, or <samp>vpixx</samp>.</td></tr>
+<tr><td><samp>b_hasExternalSignal</samp></td><td><samp>logical</samp></td><td>scalar</td><td>Indicates that the analog trace came from the MATLAB external-signal workflow.</td></tr></table>
+<p><small>* <samp>AnalogIN</samp> and LabeoTech channel names originate from the analog-input format of LabeoTech imaging systems. The class can also store one user-provided signal in <samp>AnalogIN</samp> through the external-signal workflow below.</small></p>
+
 <h2>Detection, conditions, and repetitions</h2>
-<ol><li>Events Manager reads analog signals and uses threshold, polarity, trigger type, minimum inter-stimulus interval, and optional filtering to identify event intervals.</li><li>A condition list assigns IDs/names in chronological order.</li><li>Repeated event IDs become repetitions of the same condition.</li><li>The baseline duration and acquisition frame rate convert each event interval into a frame selection.</li></ol>
-<h2>Validation</h2>
-<p>The EventsManager object normalizes saved fields, checks compatible lengths and IDs, verifies timing against acquisition information, and rejects selections that cannot produce usable frame matrices. A missing file disables event features; malformed metadata is not guessed from imaging intensity.</p>
-<h2>How DataViewer uses events</h2>
-<p>Normal mode draws event intervals over the continuous trace. Event mode selects a condition and repetition, builds an event-relative frame matrix, and can average repetitions. Deleting and restoring conditions in the viewer changes normalized in-memory selection; Events Manager owns saved edits.</p>
-<h2>Analysis and event-split data</h2>
-<p>Functions such as <a href="../fcns/split_data_by_event.html"><samp>split_data_by_event</samp></a> and <a href="../fcns/genAmplitudeMaps.html"><samp>genAmplitudeMaps</samp></a> use event timing to create or aggregate event-aligned data. A UMT event axis is described by <samp>eventID</samp>, <samp>repetitionIndex</samp>, <samp>eventName</samp>, and <samp>eventAxisMode</samp>; it remains interpretable after the UMT file leaves the Save Folder.</p>
-<h2>Recovery</h2>
-<p>Condition-name editing keeps an original list that <strong>Restore</strong> can recover before saving. Closing Events Manager with unsaved changes asks for confirmation. Replace an existing <samp>events.mat</samp> only through the tool or validated code, and keep backups for irreplaceable event annotations.</p>
+<ol><li><em>EventsManager</em> uses the threshold, polarity, trigger type, minimum inter-stimulus interval, and optional filtering to identify event transitions.</li><li>An optional condition file assigns condition IDs and names in chronological order. Without one, supported digital or generic detection rules assign the conditions.</li><li>Repeated event IDs become repetitions of the same condition.</li><li>The baseline duration and acquisition frame rate determine which imaging frames precede and follow each event.</li></ol>
+
+<h2 id="external-signals">Detect an external signal in MATLAB</h2>
+<p>The current app does not expose this workflow, but the class can detect one numeric trigger signal that was acquired outside a LabeoTech system:</p>
+<pre><code>saveFolder = "C:\data\mouse01\session01";
+signal = readmatrix("external-trigger.csv");
+sampleRateHz = 1000;
+
+ev = EventsManager(saveFolder);
+ev.trigType = 'EdgeSet';
+ev.trigPolarity = 'positive';
+ev.trigThr = 'auto';
+ev.getTriggersFromSignal(signal(:,1), sampleRateHz, true, ...
+    'FilterFreq', 0);
+ev.saveEvents();</code></pre>
+<p><samp>getTriggersFromSignal</samp> treats the vector as one condition named <samp>extSignal</samp>, updates the object, and records <samp>b_hasExternalSignal=true</samp>. Inspect the detected events before calling <samp>saveEvents</samp>.</p>
+
+<h2>Validation and ignored trials</h2>
+<p>The class checks field types and compatible lengths, validates timing against acquisition information when available, and prevents unusable frame selections. A missing file disables event features; malformed event information is not guessed from imaging intensity.</p>
+<p>When a condition or repetition is deleted in <em>DataViewer</em>, its entries in <samp>selectedEvents</samp> are set to <samp>false</samp> and saved in <samp>events.mat</samp>. The signal and timestamps are not erased. The ignored trials remain excluded from later <em>DataViewer</em> displays and from analysis functions that use <samp>events.mat</samp>, until they are restored.</p>
+
+<h2>Event information in UMT files</h2>
+<p>When continuous data is split into trials, the UMT file keeps the event-axis description at top level so it remains interpretable outside the original Save Folder. For an entry with an E dimension, each E element must match one row of the event vectors.</p>
+<table><tr><th>Field</th><th>Class</th><th>Size</th><th>Meaning</th></tr>
+<tr><td><samp>eventID</samp></td><td>numeric</td><td>E-by-1</td><td>Condition identifier for each event-axis element.</td></tr>
+<tr><td><samp>repetitionIndex</samp></td><td>numeric</td><td>E-by-1</td><td>Repetition number; zero denotes a condition already aggregated across repetitions.</td></tr>
+<tr><td><samp>eventName</samp></td><td><samp>string</samp> or <samp>cell</samp></td><td>E-by-1</td><td>Condition name corresponding to each E element.</td></tr>
+<tr><td><samp>eventAxisMode</samp></td><td><samp>char</samp></td><td>text scalar</td><td><samp>instances</samp> or <samp>aggregated_repetitions</samp>.</td></tr>
+<tr><td><samp>baselinePeriod</samp></td><td>numeric</td><td>scalar, optional</td><td>Baseline duration in seconds.</td></tr></table>
+<p>See <a href="umt-files-organization.html">Organization of .umt files</a> for the surrounding UMT structure.</p>
+
+<div class="warnnote"><p><strong>Protect saved event annotations</strong><br>Replace an existing <samp>events.mat</samp> only through the tool or validated code, and keep backups for irreplaceable event annotations.</p></div>
 </body></html>

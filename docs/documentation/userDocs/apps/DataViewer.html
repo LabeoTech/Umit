@@ -8,16 +8,17 @@ nav_order: 1
 ---
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>DataViewer overview</title></head><body>
 <h1>DataViewer overview</h1>
-<p>DataViewer opens continuous <samp>.dat</samp> recordings and image-kind <samp>.umt</samp> data without loading an entire large recording into memory. It combines image navigation, temporal signals, ROIs, event-aligned viewing, processing, and project-aware tools in one window.</p>
+<p><em>DataViewer</em> opens image time series. It combines image navigation, temporal signals, ROIs, event-aligned viewing, processing, and project-aware tools in one window.</p>
 <p style="text-align:center"><img src="../../assets/img/current/dataviewer-overview-current.png" alt="Current DataViewer overview" width="880"><br><em>Current DataViewer using a demonstration fluorescence recording.</em></p>
 <h2>Launch</h2>
-<pre><code>DataViewer
-DataViewer("C:\data\session\green.dat")
-DataViewer("FilePath","C:\data\session\result.umt")</code></pre>
-<h2>Supported sources</h2>
+<pre><code>DataViewer;
+DataViewer("C:\data\session\green.dat");
+DataViewer("FilePath","C:\data\session\result.umt");</code></pre>
+<h2>Supported files</h2>
 <table><tr><th>Source</th><th>Required information</th><th>Behavior</th></tr>
-<tr><td><samp>.dat</samp></td><td>Valid <samp>AcqInfos.mat</samp> in the Save Folder</td><td>Reads single-precision frames and traces directly from disk, with an optional spatial-temporal cache.</td></tr>
-<tr><td>Image-kind <samp>.umt</samp></td><td>Valid UMT schema and a compatible image entry</td><td>Uses the entry's declared dimensions, labels, and event information.</td></tr></table>
+<tr><td><a href="../other/dat-files-organization.html"><samp>.dat</samp></a></td><td><samp>AcqInfos.mat</samp> in the Save Folder</td><td>Stores one continuous image channel. Every <samp>.dat</samp> file in the same Save Folder has the dimensions recorded in <samp>AcqInfos.mat</samp>.</td></tr>
+<tr><td>Image-kind <a href="../other/umt-files-organization.html"><samp>.umt</samp></a></td><td>A compatible image entry</td><td>Stores processed or reduced results whose dimensions can differ from the original recording. The file carries the metadata needed to describe each entry.</td></tr></table>
+<p>This two-file framework keeps large, equally sized continuous channels simple while allowing smaller processed results—such as amplitude maps or event averages—to describe their own dimensions and labels.</p>
 <h2>Application data flow</h2>
 <pre>Save Folder (.dat/.umt + metadata)
         |
@@ -29,7 +30,7 @@ DataViewer("FilePath","C:\data\session\result.umt")</code></pre>
         +----> project binding ----> references, alignment, project manager
         |
         +----> rig context --------> dual-camera coregistration</pre>
-<div class="infonote"><p><strong>Optional metadata degrades safely.</strong><br>Missing <samp>DataParams.mat</samp> uses pixel coordinates and a full mask. Missing <samp>events.mat</samp> disables event features. A <samp>.dat</samp> file without valid <samp>AcqInfos.mat</samp> cannot be reconstructed safely.</p></div>
-<h2>Persistence at a glance</h2>
-<p>Navigation and display controls are temporary. A command writes to disk only when its page says so. See <a href="processing-export.html">Processing and export</a> and <a href="../other/mat-files-organization.html">Save Folder metadata files</a>.</p>
+<h2>What is kept and what is saved</h2>
+<p><em>DataViewer</em> is designed for basic exploration, so you do not need to save every display change. Frame position, colormap, clipping, crosshair position, and most previews last only for the current session. The app saves only metadata that must remain associated with the Save Folder, such as confirmed image calibration, coordinate origin, logical mask, Raw Folder location, and ignored event selections.</p>
+<p>Processed images and newly created ROIs are <strong>not</strong> saved automatically. Use the relevant save or export command when you need to keep them. See <a href="processing-export.html">Processing and export</a> and <a href="../other/mat-files-organization.html">Save Folder metadata files</a>.</p>
 </body></html>

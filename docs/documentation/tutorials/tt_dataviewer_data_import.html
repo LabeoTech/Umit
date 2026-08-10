@@ -8,15 +8,13 @@ nav_order: 2
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><title>Opening data</title></head><body>
 <h1>Opening data</h1>
-<h2>Purpose</h2><p>Open existing UMIT image data or import raw binary or TIFF recordings into a Save Folder.</p>
-<h2>Prerequisites</h2><p>For <samp>.dat</samp>, keep <samp>AcqInfos.mat</samp> beside the file. For <samp>.umt</samp>, the selected entry must be image-kind data with supported dimensions.</p>
+<p><em>DataViewer</em> opens existing UMIT image data and can start an import of raw binary or TIFF recordings into a Save Folder. For <samp>.dat</samp>, keep <samp>AcqInfos.mat</samp> beside the file. For <samp>.umt</samp>, select an image entry with supported dimensions.</p>
 <h2>Open an existing file</h2>
 <ol><li>Select <strong>File &gt; Open</strong>.</li><li>Choose a <samp>.dat</samp> or <samp>.umt</samp> file.</li><li>If the UMT contains several compatible image entries, select one in the entry dialog.</li><li>Wait for the loaded filename and frame count to appear.</li></ol>
 <h2>Import a recording</h2>
-<ol><li>Choose <strong>File &gt; Import &gt; from bin</strong> or <strong>from tif</strong>.</li><li>Select the raw source and a Save Folder when prompted.</li><li>Review the import options and start the import.</li><li>Open the generated <samp>.dat</samp> file.</li></ol>
-<div class="warnnote"><p><strong>Keep acquisition metadata together.</strong><br>DataViewer will not guess image dimensions for a <samp>.dat</samp> file when authoritative <samp>AcqInfos.mat</samp> metadata is missing or invalid.</p></div>
-<h2>Expected result</h2><p>The first frame appears, the slider spans the available frames, and the temporal profile is calculated for the center pixel.</p>
-<h2>What is saved</h2><p><strong>Open</strong> is read-only. Import creates processed data and acquisition metadata in the selected Save Folder. <strong>File &gt; Set Raw Folder</strong> updates <samp>DataParams.mat</samp>; it does not move raw data.</p>
-<h2>Troubleshooting</h2><table><tr><th>Message</th><th>Meaning</th></tr><tr><td>Unsupported file type</td><td>Use a <samp>.dat</samp> file or an image-kind <samp>.umt</samp>.</td></tr><tr><td>Invalid DataParams</td><td>Viewing continues with pixel coordinates and a full mask, but calibration and registration features are disabled.</td></tr></table>
-<p>See <a href="../userDocs/apps/data-loading-navigation.html">Data loading and navigation</a> for all supported states.</p>
+<p><strong>from bin</strong> imports recordings produced by the <a href="https://labeotech.com/product/modular-optical-imaging-system/">OiS200 LightTrack widefield imaging system</a>. <strong>from tif</strong> accepts generic TIFF image sequences produced by other rigs.</p>
+<ol><li>Choose <strong>File &gt; Import &gt; from bin</strong> or <strong>from tif</strong>.</li><li>Select the raw source and a Save Folder when prompted.</li><li>Review the import options and start the import.</li><li>Open one of the generated <samp>.dat</samp> files.</li></ol>
+<div class="warnnote"><p><strong>Keep acquisition metadata together.</strong><br><em>DataViewer</em> will not guess image dimensions for a <samp>.dat</samp> file when <samp>AcqInfos.mat</samp> is missing or invalid.</p></div>
+<div class="infonote"><p><strong>What is saved?</strong><br><strong>Open</strong> is read-only. Import creates processed data and acquisition metadata in the selected Save Folder. <strong>File &gt; Set Raw Folder</strong> updates <samp>DataParams.mat</samp>; it does not move raw data.</p></div>
+<p>See <a href="../userDocs/apps/data-loading-navigation.html">Data loading and basic exploration</a> for all supported controls.</p>
 </body></html>

@@ -8,6 +8,8 @@ nav_order: 2
 ---
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>DataViewer user interface</title></head><body>
 <h1>User interface</h1>
+<p style="text-align:center"><img src="../../assets/img/current/dataviewer-overview-current.png" alt="Current DataViewer interface" width="880"><br><em>The image and navigation controls are on the left; the temporal plot, ROI table, and event controls are on the right.</em></p>
+<p>The image panel displays the selected frame. Clicking a pixel moves the crosshair and updates the black temporal trace. The plot also shows colored traces for visible ROIs. The table below it controls ROI visibility, selection, names, colors, geometry, and current-frame measurements. Event controls become available when the Save Folder contains usable <samp>events.mat</samp> information.</p>
 <h2>Menus</h2>
 <table><tr><th>Control</th><th>Available when</th><th>Effect and persistence</th></tr>
 <tr><td><strong>File &gt; Open</strong></td><td>Always</td><td>Opens <samp>.dat</samp> or image-kind <samp>.umt</samp>; read-only.</td></tr>
@@ -17,16 +19,22 @@ nav_order: 2
 <tr><td><strong>File &gt; Set Raw Folder</strong></td><td>Data and an accessible Save Folder</td><td>Stores a selected path, the Save Folder itself, or <samp>Missing</samp> in <samp>DataParams.mat</samp>.</td></tr>
 <tr><td><strong>Help &gt; Online documentation</strong></td><td>Always</td><td>Opens the documentation site.</td></tr></table>
 <h2>Tabs</h2>
-<table><tr><th>Tab</th><th>Controls</th></tr>
-<tr><td><strong>Utilities</strong></td><td>View Calibration, Logical Mask, Image Reference, Alignment Tool, Data History, Events Manager, OiS 2-Cam Alignment, Project Manager.</td></tr>
-<tr><td><strong>Pipeline</strong></td><td>Pipeline Manager launch, current pipeline file, status, last-run output, and latest summary.</td></tr>
-<tr><td><strong>ROIs</strong></td><td>Rectangle, Ellipse, Polygon, Threshold, Allen Atlas, Delete, Save, Load, Import, Export ROI data.</td></tr></table>
-<h2>Main work areas</h2>
-<table><tr><th>Area</th><th>What changes it</th><th>Written to disk?</th></tr>
-<tr><td>Image View</td><td>Frame, event, colormap, clipping, crosshair, mask and ROI overlays</td><td>No, unless an explicit save/export/alignment command runs.</td></tr>
-<tr><td>Temporal Profile</td><td>Selected pixel, visible ROIs, normal/event mode</td><td>No.</td></tr>
-<tr><td>ROI table</td><td>ROI creation, loading, selection, edits and statistics</td><td>Only <strong>Save</strong> or export writes files.</td></tr>
-<tr><td>Events</td><td>Mode, condition, repetition, delete and restore controls</td><td>Viewer selection is temporary; Events Manager owns <samp>events.mat</samp>.</td></tr></table>
-<h2>Utility dialogs</h2>
-<p><strong>View Calibration</strong> reports pixel scale, coordinate origin, and available calibration state. <strong>Logical Mask</strong> can create, preview, confirm, reset, or automatically derive a mask. <strong>Data History</strong> shows the current file's processing provenance. Status messages appear at the top-left context area with warning or error severity when action is needed.</p>
+<table><tr><th>Tab</th><th>Control</th><th>Use</th></tr>
+<tr><td rowspan="8"><strong>Utilities</strong></td><td><strong>View Calibration</strong></td><td>Set pixel scale and coordinate origin. See <a href="data-loading-navigation.html#image-calibration">Image calibration</a>.</td></tr>
+<tr><td><strong>Logical Mask</strong></td><td>Draw, automatically create, preview, confirm, or reset the analysis mask.</td></tr>
+<tr><td><strong>Image Reference</strong></td><td>Create and manage a subject reference image. See <a href="../tools/image-reference-manager.html"><em>Image Reference Manager</em></a>.</td></tr>
+<tr><td><strong>Alignment Tool</strong></td><td>Align the current session to a subject reference. See <a href="../tools/manual_image_registration_tool.html"><em>Image Alignment Tool</em></a>.</td></tr>
+<tr><td><strong>Data History</strong></td><td>Inspect the processing steps and parameters that produced the current file.</td></tr>
+<tr><td><strong>Events Manager</strong></td><td>Detect and name events and create <samp>events.mat</samp>. See <a href="../tools/events-manager_tool.html"><em>Events Manager</em></a>.</td></tr>
+<tr><td><strong>OiS 2-Cam Alignment</strong></td><td>Calibrate dual-camera alignment when multi-camera metadata is present. See <a href="../tools/dual-cam-coregistration_tool.html"><em>Dual-Camera Coregistration</em></a>.</td></tr>
+<tr><td><strong>Project Manager</strong></td><td>Create projects, subjects, and sessions and manage bindings. See <a href="../tools/project-management-folder-binding.html">Project management and folder binding</a>.</td></tr>
+<tr><td><strong>Pipeline</strong></td><td><strong>Pipeline Manager</strong></td><td>Build and run processing graphs. The tab also summarizes the current graph file, status, last output, and most recent run. See <a href="../tools/pipeline_configuration_tool.html"><em>Pipeline Manager</em></a>.</td></tr>
+<tr><td rowspan="8"><strong>ROIs</strong></td><td><strong>Rectangle / Ellipse / Polygon</strong></td><td>Draw a new ROI interactively.</td></tr>
+<tr><td><strong>Threshold</strong></td><td>Create polygon ROIs from connected intensity regions.</td></tr>
+<tr><td><strong>Allen Atlas</strong></td><td>Select atlas areas and place their outlines over the image.</td></tr>
+<tr><td><strong>Delete</strong></td><td>Delete selected or all ROIs after confirmation.</td></tr>
+<tr><td><strong>Save / Load</strong></td><td>Write a <samp>.roi</samp> file, or replace/append the current list from one.</td></tr>
+<tr><td><strong>Import</strong></td><td>Import compatible ROI arrays from a file or MATLAB variable.</td></tr>
+<tr><td><strong>Export ROI data</strong></td><td>Write ROI measurements or temporal traces to CSV.</td></tr>
+<tr><td colspan="2">See <a href="ROImanager.html">ROI management</a> for the complete workflow.</td></tr></table>
 </body></html>

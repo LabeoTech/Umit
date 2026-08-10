@@ -2,23 +2,9 @@
 layout: default
 permalink: /documentation/userDocs/apps/image-visualization.html
 title: Image visualization
-parent: DataViewer
-grand_parent: Documentation
-nav_order: 4
+nav_exclude: true
 ---
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Image visualization</title></head><body>
 <h1>Image visualization</h1>
-<table><tr><th>Control</th><th>Purpose</th><th>Changes data?</th></tr>
-<tr><td>Click Image View</td><td>Moves the crosshair and selects the pixel used for the temporal profile.</td><td>No.</td></tr>
-<tr><td><strong>Colormap</strong></td><td>Chooses the display palette.</td><td>No.</td></tr>
-<tr><td><strong>Invert</strong></td><td>Reverses the palette.</td><td>No.</td></tr>
-<tr><td><strong>Clip</strong></td><td>Adjusts the lower and upper display limits.</td><td>No.</td></tr>
-<tr><td><strong>Auto</strong></td><td>Calculates useful limits for the current data.</td><td>No.</td></tr>
-<tr><td><strong>Set Limits</strong></td><td>Opens a dialog for exact limits.</td><td>No.</td></tr>
-<tr><td><strong>Hide crosshair</strong></td><td>Hides or shows the location marker.</td><td>No.</td></tr>
-<tr><td><strong>Logical Mask</strong></td><td>Shows only the active analysis area and can clip ROI geometry.</td><td>Confirmed mask changes update <samp>DataParams.mat</samp>; preview is temporary.</td></tr></table>
-<h2>Spatial units</h2>
-<p>When valid pixel calibration and origin exist in <samp>DataParams.mat</samp>, axes and ROI measurements can use physical coordinates. Otherwise the app shows pixels and a neutral origin. <strong>View Calibration</strong> reports the active state without modifying it.</p>
-<h2>Cache behavior</h2>
-<p>For large <samp>.dat</samp> recordings, DataViewer can cache a spatial region through time. Cache controls affect read performance and memory use, not file contents. Direct disk access remains available when a selected pixel or ROI is outside the cached region.</p>
+<div class="infonote"><p>This material is now part of <a href="data-loading-navigation.html">Data loading and basic exploration</a>. This compatibility page preserves the earlier URL.</p></div>
 </body></html>
