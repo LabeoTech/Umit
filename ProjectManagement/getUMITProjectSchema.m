@@ -179,8 +179,8 @@ switch version
             'requiredVariable', '', ...
             'validatorFunction', '');
 
-        % cameraCoregistration and calibrationFile resource types moved to
-        % the independent UMITRigStore/getUMITRigSchema -- rigs are no
+        % cameraCoregistration resources moved to the independent
+        % UMITRigStore/getUMITRigSchema -- rigs are no
         % longer owned by a project, see requiredSessionFields.rigUUID/rigID
         % for the pointer a session keeps to an external rig.
 

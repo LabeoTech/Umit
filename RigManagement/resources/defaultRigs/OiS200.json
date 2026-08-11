@@ -1,0 +1,33 @@
+{
+  "rigID": "OiS200",
+  "displayName": "OiS200 LightTrack Imaging System",
+  "description": "Built-in minimal Rig configuration migrated from the production OiS200 optical definitions.",
+  "cameras": [
+    {
+      "index": 1,
+      "displayName": "D1024 Camera 1",
+      "model": "D1024",
+      "spectrumID": "PF1024"
+    },
+    {
+      "index": 2,
+      "displayName": "D1024 Camera 2",
+      "model": "D1024",
+      "spectrumID": "PF1024"
+    }
+  ],
+  "illuminations": [
+    {
+      "name": "red",
+      "spectrumID": "LED_632nm"
+    },
+    {
+      "name": "green",
+      "spectrumID": "LED_521nm"
+    },
+    {
+      "name": "yellow",
+      "spectrumID": "LED_593nm"
+    }
+  ]
+}

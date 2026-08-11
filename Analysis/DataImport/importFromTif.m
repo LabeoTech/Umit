@@ -1,4 +1,4 @@
-function outFile = importFromTif(RawFolder, SaveFolder, varargin)
+function [outFile, rigResolution] = importFromTif(RawFolder, SaveFolder, varargin)
 % IMPORTFROMTIF Import single-channel imaging data stored in TIFF format.
 %
 % This function reads TIFF files located in "RawFolder" and their
@@ -38,7 +38,8 @@ function outFile = importFromTif(RawFolder, SaveFolder, varargin)
 % Shared declarations
 % -------------------------------------------------------------------------
 defaultOutput = {'fluo.dat', 'red.dat', 'green.dat', 'yellow.dat', 'speckle.dat'};
-allowedBinningSpatial = 2.^[0:5];
+rigResolution = [];
+allowedBinningSpatial = 2.^(0:5);
 allowedBinningTemp = 1:8;
 
 % -------------------------------------------------------------------------
@@ -113,6 +114,26 @@ if isfile(acqInfoPath)
     assert(isstruct(AcqInfoStream) && isscalar(AcqInfoStream), ...
         'The existing "AcqInfos.mat" file in "%s" does not contain a valid acquisition-info structure.', SaveFolder);
 end
+
+if ~isempty(AcqInfoStream) && isfield(AcqInfoStream, 'rigUUID') && ...
+        ~isempty(AcqInfoStream.rigUUID)
+    rigStore = UMITRigStore.open(AcqInfoStream.rigUUID);
+    rigInfo = rigStore.getRigInfo();
+    if ~strcmp(rigInfo.status, 'active')
+        error('Umitoolbox:importFromTif:ArchivedRig', ...
+            'Archived Rig "%s" cannot be assigned to new imaging data.', rigInfo.rigID);
+    end
+    wasCreated = false;
+    resolution = 'existingAcquisitionRig';
+else
+    [rigStore, wasCreated, resolution] = UMITRigStore.getOrCreateDefaultRig();
+    rigInfo = rigStore.getRigInfo();
+end
+rigResolution = struct( ...
+    'rigUUID', rigInfo.uuid, ...
+    'rigID', rigInfo.rigID, ...
+    'wasCreated', wasCreated, ...
+    'resolution', resolution);
 
 extraInfo = rmfield(tif_metadata, 'Tiffiles');
 coreFields = intersect(fieldnames(extraInfo), {'Width','Height','Length','FrameRateHz','ExposureMsec'});
@@ -238,7 +259,8 @@ for ii = 1:numel(tif_metadata.Tiffiles)
     end
 
     % Save data to .dat file
-    datFileName = [lower(char(string(tifEntry.IlluminationColor))) '.dat'];
+    channelTag = localNormalizeImportedTag(tifEntry.IlluminationColor);
+    datFileName = [channelTag '.dat'];
     datFilePath = fullfile(SaveFolder, datFileName);
 
     fid = fopen(datFilePath, 'w');
@@ -254,11 +276,16 @@ for ii = 1:numel(tif_metadata.Tiffiles)
 
     importedInfo = struct();
     importedInfo.DatFile = datFileName;
-    importedInfo.Tag = localNormalizeImportedTag(tifEntry.IlluminationColor);
+    importedInfo.Tag = channelTag;
     importedInfo.Color = char(string(tifEntry.IlluminationColor));
     importedInfo.Length = size(data,3);
     importedInfo.FrameRateHz = frameRateHz;
     importedInfo.ExposureMsec = tifEntry.ExposureMsec;
+    if isfield(tifEntry, 'CamIdx') && ~isempty(tifEntry.CamIdx)
+        importedInfo.CamIdx = tifEntry.CamIdx;
+    else
+        importedInfo.CamIdx = 1;
+    end
     AcqInfoStream = appendImportedChannelInfo(AcqInfoStream, importedInfo, 'Overwrite', true);
 
     outFile = [outFile, {datFileName}]; %#ok<AGROW>
@@ -267,7 +294,9 @@ end
 % -------------------------------------------------------------------------
 % Save folder-level acquisition metadata
 % -------------------------------------------------------------------------
-save(acqInfoPath, 'AcqInfoStream');
+AcqInfoStream.rigUUID = rigInfo.uuid;
+AcqInfoStream.rigID = rigInfo.rigID;
+saveMatAtomic(acqInfoPath, 'AcqInfoStream', AcqInfoStream);
 
 % Import has fully succeeded by this point (any failure above asserts/errors,
 % aborting the function before reaching here). Ensure DataParams.mat exists
@@ -382,7 +411,7 @@ prefixEsc = regexptranslate('escape', prefix);
 % Look for data stored in multiple files
 tifList = dir(fullfile(folder, [prefix '*.tif']));
 
-if numel(tifList) == 1 && strcmpi(tifList.name, filename)
+if isscalar(tifList) && strcmpi(tifList.name, filename)
     tifNames = {tifList.name};
     return
 elseif numel(tifList) > 1

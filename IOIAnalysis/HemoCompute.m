@@ -7,6 +7,9 @@ function [HbO, HbR] = HemoCompute(DataFolder, SaveFolder, FilterSet, Illuminatio
 %   This function approximates concentration changes of oxygenated (HbO)
 %   and deoxygenated (HbR) hemoglobin from two or three intrinsic imaging
 %   wavelengths.
+%   When UMITRigStore is available but AcqInfos does not identify a Rig, the
+%   existing active default Rig is used with a warning. AcqInfos is not
+%   modified by this fallback.
 %
 %   If selected channels have different temporal sampling rates or lengths,
 %   higher-frequency channels are anti-aliased and resampled to match the
@@ -18,7 +21,8 @@ function [HbO, HbR] = HemoCompute(DataFolder, SaveFolder, FilterSet, Illuminatio
 %       DataFolder    - Folder containing red.dat, green.dat, and/or yellow.dat.
 %       SaveFolder    - Folder where HbO/HbR outputs are saved. If empty,
 %                       outputs are returned only in RAM in standard mode.
-%       FilterSet     - 'gCaMP', 'jrGECO', or 'none'.
+%       FilterSet     - UMITRigStore filter-set ID when the Rig service is
+%                       available, or a legacy FilterSets.mat name otherwise.
 %       Illumination  - Cell array containing at least two wavelengths from
 %                       {'red','green','yellow','amber'}.
 %       b_normalize   - Logical scalar. If true, normalize input channels
@@ -28,6 +32,15 @@ function [HbO, HbR] = HemoCompute(DataFolder, SaveFolder, FilterSet, Illuminatio
 %       'HbT_uM'      - Total hemoglobin concentration in micromolar.
 %                       Default = 100.
 %       'O2_sat'      - Oxygen saturation percentage. Default = 60.
+%       'OpticalInfo' - Optional resolved optical-information structure.
+%                       It must contain the spectral fields documented by
+%                       ioi_epsilon_pathlength plus a channels struct array
+%                       with name, datFile, and camIdx for each requested
+%                       illumination. When supplied, no optical library
+%                       lookup is made.
+%                       Otherwise UMITRigStore is used when it is on the
+%                       MATLAB path; if it is absent, the legacy MAT optical
+%                       definitions under IOIAnalysis are used.
 %       'RAMSafeMode' - Logical scalar. If true, write HbO/HbR directly to
 %                       disk instead of holding them in RAM. Default = false.
 %
@@ -57,6 +70,7 @@ addRequired(p, 'Illumination', @(x) iscell(x) && ~isempty(x));
 addRequired(p, 'b_normalize', @(x) islogical(x) && isscalar(x));
 addParameter(p, 'HbT_uM', 100, @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x > 0);
 addParameter(p, 'O2_sat', 60, @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0 && x <= 100);
+addParameter(p, 'OpticalInfo', [], @(x) isempty(x) || (isstruct(x) && isscalar(x)));
 addParameter(p, 'RAMSafeMode', false, @(x) islogical(x) && isscalar(x));
 parse(p, DataFolder, SaveFolder, FilterSet, Illumination, b_normalize, varargin{:});
 
@@ -67,6 +81,7 @@ Illumination = p.Results.Illumination;
 b_normalize = p.Results.b_normalize;
 HbT_uM = double(p.Results.HbT_uM);
 O2_sat = double(p.Results.O2_sat);
+opticalInfo = p.Results.OpticalInfo;
 b_RAMsafeMode = p.Results.RAMSafeMode;
 
 if ~strcmp(DataFolder(end), filesep)
@@ -83,46 +98,44 @@ if bSave
     end
 end
 
-assert(any(strcmpi(FilterSet, {'gcamp','jrgeco','none'})), ...
-    'Umitoolbox:HemoCompute:InvalidFilterSet', ...
-    'FilterSet must be one of: gCaMP, jrGECO, none.');
-
-% Keep this exact normalization of amber to yellow.
-idx = contains(lower(Illumination), 'amber');
-if any(idx)
-    Illumination{idx} = 'yellow';
-end
-
-illuminationLower = lower(string(Illumination));
-validIllum = ismember(illuminationLower, {'red','green','yellow'});
-assert(all(validIllum), ...
-    'Umitoolbox:HemoCompute:InvalidIllumination', ...
-    'Illumination entries must be red, green, yellow, or amber.');
+illuminationLower = string(cellfun(@localNormalizeIlluminationName, ...
+    Illumination, 'UniformOutput', false));
 assert(numel(unique(illuminationLower)) >= 2, ...
     'Umitoolbox:HemoCompute:InvalidIllumination', ...
     'At least two different illumination wavelengths are needed for Hb computation.');
 
-acqFile = fullfile(DataFolder, 'AcqInfos.mat');
-assert(isfile(acqFile), ...
-    'Umitoolbox:HemoCompute:MissingAcqInfos', ...
-    'AcqInfos.mat was not found in "%s".', DataFolder);
-
-infos = load(acqFile, 'AcqInfoStream');
-assert(isfield(infos, 'AcqInfoStream') && isstruct(infos.AcqInfoStream), ...
-    'Umitoolbox:HemoCompute:InvalidAcqInfos', ...
-    'AcqInfos.mat does not contain a valid AcqInfoStream structure.');
-acq = infos.AcqInfoStream;
-
-assert(isfield(acq, 'Camera_Model'), ...
-    'Umitoolbox:HemoCompute:InvalidAcqInfos', ...
-    'AcqInfoStream must contain Camera_Model.');
+useRigOptics = ~isempty(opticalInfo);
+if ~useRigOptics
+    hasRigStore = exist('UMITRigStore', 'class') == 8 || ...
+        exist('UMITRigStore', 'file') == 2;
+    if hasRigStore
+        opticalInfo = localResolveRigOpticalInfo( ...
+            DataFolder, cellstr(illuminationLower), FilterSet);
+        useRigOptics = true;
+    end
+end
 
 % Resolve selected channel files and file-specific metadata.
 channelNames = {'red', 'green', 'yellow'};
-channelFiles = { ...
-    fullfile(DataFolder, 'red.dat'), ...
-    fullfile(DataFolder, 'green.dat'), ...
-    fullfile(DataFolder, 'yellow.dat')};
+if useRigOptics
+    channelFiles = cell(1, 3);
+    for iResolved = 1:numel(opticalInfo.channels)
+        row = find(strcmp(channelNames, opticalInfo.channels(iResolved).name), 1);
+        channelFiles{row} = fullfile(DataFolder, opticalInfo.channels(iResolved).datFile);
+    end
+else
+    channelFiles = { ...
+        fullfile(DataFolder, 'red.dat'), ...
+        fullfile(DataFolder, 'green.dat'), ...
+        fullfile(DataFolder, 'yellow.dat')};
+    acq = localLoadAcqInfo(DataFolder);
+    assert(isfield(acq, 'Camera_Model') && ~isempty(acq.Camera_Model), ...
+        'Umitoolbox:HemoCompute:InvalidAcqInfos', ...
+        'AcqInfoStream must contain Camera_Model for legacy optical lookup.');
+    assert(any(strcmpi(FilterSet, {'gcamp','jrgeco','none'})), ...
+        'Umitoolbox:HemoCompute:InvalidFilterSet', ...
+        'FilterSet must be one of: gCaMP, jrGECO, none.');
+end
 selectedChannels = ismember(channelNames, cellstr(illuminationLower));
 
 channelInfo = cell(1, 3);
@@ -264,13 +277,13 @@ end
 fprintf('Data checked!\n');
 
 % Compute extinction/pathlength model.
-A = ioi_epsilon_pathlength( ...
-    'Hillman', ...
-    HbT_uM, ...
-    O2_sat, ...
-    100 - O2_sat, ...
-    FilterSet, ...
-    acq.Camera_Model);
+if useRigOptics
+    A = ioi_epsilon_pathlength( ...
+        'Hillman', HbT_uM, O2_sat, 100 - O2_sat, opticalInfo);
+else
+    A = ioi_epsilon_pathlength( ...
+        'Hillman', HbT_uM, O2_sat, 100 - O2_sat, FilterSet, acq.Camera_Model);
+end
 
 % Temporal filters used for input normalization after all channels are on
 % the target timeline.
@@ -560,6 +573,84 @@ end
             2, ...
             'isData', true);
     end
+end
+
+function canonicalName = localNormalizeIlluminationName(name)
+%LOCALNORMALIZEILLUMINATIONNAME Normalize legacy illumination names locally.
+
+if ~(ischar(name) || (isstring(name) && isscalar(name)))
+    error('Umitoolbox:HemoCompute:InvalidIllumination', ...
+        'Illumination entries must be scalar text.');
+end
+canonicalName = lower(strtrim(char(string(name))));
+if strcmp(canonicalName, 'amber')
+    canonicalName = 'yellow';
+end
+if ~ismember(canonicalName, {'red', 'green', 'yellow'})
+    error('Umitoolbox:HemoCompute:InvalidIllumination', ...
+        'Illumination entries must be red, green, yellow, or amber.');
+end
+end
+
+function acqInfo = localLoadAcqInfo(dataFolder)
+%LOCALLOADACQINFO Load and validate the folder-level acquisition structure.
+
+acqFile = fullfile(char(string(dataFolder)), 'AcqInfos.mat');
+if ~isfile(acqFile)
+    error('Umitoolbox:HemoCompute:MissingAcqInfos', ...
+        'AcqInfos.mat was not found in "%s".', char(string(dataFolder)));
+end
+loaded = load(acqFile, 'AcqInfoStream');
+if ~isfield(loaded, 'AcqInfoStream') || ...
+        ~isstruct(loaded.AcqInfoStream) || ~isscalar(loaded.AcqInfoStream)
+    error('Umitoolbox:HemoCompute:InvalidAcqInfos', ...
+        'AcqInfos.mat does not contain a scalar AcqInfoStream structure.');
+end
+acqInfo = loaded.AcqInfoStream;
+end
+
+function opticalInfo = localResolveRigOpticalInfo(dataFolder, illuminations, filterSet)
+%LOCALRESOLVERIGOPTICALINFO Resolve optics through an available Rig store.
+
+acqInfo = localLoadAcqInfo(dataFolder);
+if isfield(acqInfo, 'rigUUID') && ~isempty(acqInfo.rigUUID)
+    rigStore = UMITRigStore.open(acqInfo.rigUUID);
+elseif isfield(acqInfo, 'rigID') && ~isempty(acqInfo.rigID)
+    rigStore = UMITRigStore.openByRigID(acqInfo.rigID);
+else
+    rigStore = localResolveActiveRig();
+    rigInfo = rigStore.getRigInfo();
+    warning('Umitoolbox:HemoCompute:MissingRigUsingActiveRig', ...
+        ['AcqInfoStream does not identify a Rig. Using active Rig "%s" ' ...
+        'for HemoCompute without modifying AcqInfos.mat.'], rigInfo.rigID);
+end
+opticalInfo = rigStore.resolveOpticalConfiguration( ...
+    acqInfo, illuminations, filterSet, dataFolder);
+end
+
+function rigStore = localResolveActiveRig()
+%LOCALRESOLVEACTIVERIG Resolve an existing active Rig without creating one.
+
+rigStore = UMITRigStore.getDefaultRig();
+if ~isempty(rigStore)
+    return
+end
+
+rigs = UMITRigStore.listRigs();
+candidates = rigs(rigs.Status == "active" & rigs.IsReadable, :);
+if height(candidates) == 1
+    rigStore = UMITRigStore.open(char(candidates.RigUUID(1)));
+    return
+end
+
+if isempty(candidates)
+    detail = 'No active readable Rig exists.';
+else
+    detail = 'Multiple active Rigs exist and none is selected as default.';
+end
+error('Umitoolbox:HemoCompute:MissingRig', ...
+    ['AcqInfoStream does not identify a Rig. %s Select an active default ' ...
+    'Rig before running HemoCompute.'], detail);
 end
 
 function data = iResampleChannelToLowestFrequency(data, sourceMeta, targetNt, targetFreq)

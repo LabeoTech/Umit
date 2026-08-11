@@ -1430,6 +1430,7 @@ classdef PipelineManager < handle
 
             % Validate configured parameter values before any folder-level work.
             obj.validateNodeParameters('throwOnError', true);
+            obj.validateNodePreflight('throwOnError', true);
 
             obj.updateTopoOrder();
 
@@ -1900,6 +1901,59 @@ classdef PipelineManager < handle
             end
         end
 
+        function [tf, report] = validateNodePreflight(obj, varargin)
+            %VALIDATENODEPREFLIGHT Run optional folder-aware node preflights.
+            %
+            %   A pipelineInfo may set supportsPreflight=true. PipelineManager
+            %   then calls the analysis function itself as
+            %   fcn('preflight', saveFolder, parameters). Preflights run for
+            %   every configured SaveFolder before any node executes and
+            %   report through the existing pipeline diagnostic surface.
+
+            p = inputParser;
+            addParameter(p, 'throwOnError', false, @(x)islogical(x)&&isscalar(x));
+            parse(p, varargin{:});
+            report = struct('errors', {{}}, 'warnings', {{}});
+
+            for iNode = 1:numel(obj.nodes)
+                node = obj.nodes(iNode);
+                if ~isfield(node, 'kind') || ~strcmpi(node.kind, 'stream') || ...
+                        ~isfield(node, 'info') || ...
+                        ~isfield(node.info, 'supportsPreflight') || ...
+                        ~isequal(node.info.supportsPreflight, true)
+                    continue
+                end
+                analysisFcn = obj.getCallableFuncName(node);
+                if exist(analysisFcn, 'file') ~= 2
+                    report.errors{end+1} = sprintf( ... %#ok<AGROW>
+                        'Node "%s" analysis function was not found for preflight: %s.', ...
+                        node.name, analysisFcn);
+                    continue
+                end
+                parameters = node.info.parameters;
+                for iParameter = 1:numel(parameters)
+                    if ~isfield(parameters, 'value') || isempty(parameters(iParameter).value)
+                        parameters(iParameter).value = parameters(iParameter).default;
+                    end
+                end
+                for iFolder = 1:numel(obj.SaveFolderList)
+                    try
+                        feval(analysisFcn, 'preflight', ...
+                            obj.SaveFolderList{iFolder}, parameters);
+                    catch ME
+                        report.errors{end+1} = sprintf( ... %#ok<AGROW>
+                            'Node "%s" preflight failed for "%s": %s', ...
+                            node.name, obj.SaveFolderList{iFolder}, ME.message);
+                    end
+                end
+            end
+            tf = isempty(report.errors);
+            if ~tf && p.Results.throwOnError
+                error('PipelineManager:validateNodePreflight:Failed', ...
+                    '%s', strjoin(report.errors, newline));
+            end
+        end
+
         function varargout = diagnosePipeline(obj, varargin)
             %DIAGNOSEPIPELINE Build and optionally print a full pipeline diagnostic report.
             %
@@ -1940,11 +1994,15 @@ classdef PipelineManager < handle
 
             [tfGraph, graphReport] = obj.validateGraph('throwOnError', false);
             [tfParams, paramReport] = obj.validateNodeParameters('throwOnError', false);
+            [tfPreflight, preflightReport] = obj.validateNodePreflight('throwOnError', false);
+            paramReport.errors = [paramReport.errors, preflightReport.errors];
+            paramReport.warnings = [paramReport.warnings, preflightReport.warnings];
 
             report = struct();
-            report.isValid        = tfGraph && tfParams;
+            report.isValid        = tfGraph && tfParams && tfPreflight;
             report.graphIsValid   = tfGraph;
-            report.paramsAreValid = tfParams;
+            report.paramsAreValid = tfParams && tfPreflight;
+            report.preflightIsValid = tfPreflight;
             report.errors         = [graphReport.errors, paramReport.errors];
             report.warnings       = [graphReport.warnings, paramReport.warnings];
             report.graphReport    = graphReport;
@@ -7421,8 +7479,11 @@ classdef PipelineManager < handle
 
             [tfGraph, graphReport] = obj.validateGraph('throwOnError', false);
             [tfParams, paramReport] = obj.validateNodeParameters('throwOnError', false);
+            [tfPreflight, preflightReport] = obj.validateNodePreflight('throwOnError', false);
+            paramReport.errors = [paramReport.errors, preflightReport.errors];
+            paramReport.warnings = [paramReport.warnings, preflightReport.warnings];
 
-            tf = tfGraph && tfParams;
+            tf = tfGraph && tfParams && tfPreflight;
 
             report = struct();
             report.errors = [graphReport.errors, paramReport.errors];
@@ -13958,9 +14019,32 @@ classdef PipelineManager < handle
             state  = false;
             values = cell(n,1);
 
-            rowH = 28;          % tighter row height
+            rowH = 28;
             btnH = 36;
-            figH = 20 + n*rowH + btnH + 20;
+            choiceRowH = 26;
+            panelChromeH = 28;
+            maxVisibleChoices = 6;
+            rowHeights = repmat({rowH}, 1, n);
+
+            % Multi-select parameters need enough vertical space for their
+            % checkbox grid. Keep long lists bounded; their panel remains
+            % scrollable for choices beyond the visible estimate.
+            for i = 1:n
+                p = params(i);
+                isTextChoice = ~obj.isUnrestrictedAllowedSpec(p.allowed) && ...
+                    iscell(p.allowed) && ...
+                    all(cellfun(@(x) ischar(x) || ...
+                    (isstring(x) && isscalar(x)), p.allowed));
+                isMultiSelect = strcmpi(p.type, 'char') && ...
+                    isTextChoice && ~isrow(p.allowed);
+                if isMultiSelect
+                    visibleChoices = min(numel(p.allowed), maxVisibleChoices);
+                    rowHeights{i} = max(rowH, ...
+                        visibleChoices * choiceRowH + panelChromeH);
+                end
+            end
+
+            figH = 20 + sum(cell2mat(rowHeights)) + btnH + 20;
 
             dlg = uifigure( ...
                 'Name',['Parameters: ' node.name], ...
@@ -13968,7 +14052,7 @@ classdef PipelineManager < handle
                 'Resize','on');
             movegui(dlg,'center')
             gl = uigridlayout(dlg,[n+1 2]);
-            gl.RowHeight   = [repmat({rowH},1,n), {btnH}];
+            gl.RowHeight   = [rowHeights, {btnH}];
             gl.ColumnWidth = {'1x','1.2x'};
             gl.RowSpacing  = 6;
             gl.Padding     = [15 15 15 10];
@@ -13993,7 +14077,7 @@ classdef PipelineManager < handle
                     % ---------------- LOGICAL ----------------
                     case 'logical'
 
-                        c = uicheckbox(gl);
+                        c = uicheckbox(gl, 'Text', '');
                         c.Value = logical(p.value);
 
                         % ---------------- NUMERIC ----------------
@@ -14052,7 +14136,7 @@ classdef PipelineManager < handle
                                 % Multi-select
                                 c = uipanel(gl,'Scrollable','on');
                                 gl2 = uigridlayout(c,[numel(p.allowed) 1]);
-                                gl2.RowHeight = repmat({22},1,numel(p.allowed));
+                                gl2.RowHeight = repmat({choiceRowH},1,numel(p.allowed));
                                 gl2.Padding = [5 5 5 5];
 
                                 for k = 1:numel(p.allowed)
@@ -14286,6 +14370,7 @@ classdef PipelineManager < handle
             info.name        = char(string(name));
             info.version     = '1.0.0';
             info.description = char(string(description));
+            info.supportsPreflight = false;
 
             % Legacy analysis functions may use a single positional opts struct instead
             % of regular name-value parameters.
