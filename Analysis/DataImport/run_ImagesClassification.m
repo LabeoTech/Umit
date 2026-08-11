@@ -39,6 +39,11 @@ function classifiedFiles = run_ImagesClassification(RawFolder, SaveFolder, varar
 %                        - 'GENBACKUP' creates a timestamped .zip backup of
 %                          managed existing files before import.
 %
+%       ApplyCoregistration - Apply the default rig's active dual-camera
+%                             transform when available. Default: true.
+%                             Set false only when preparing unregistered
+%                             calibration data.
+%
 %   Output:
 %       outFile        - File manifest of outputs saved in SaveFolder.
 %
@@ -64,7 +69,7 @@ function classifiedFiles = run_ImagesClassification(RawFolder, SaveFolder, varar
 
 default_Output = {'fluo_475.dat', 'fluo_567.dat', 'fluo.dat', ...
     'red.dat', 'green.dat', 'yellow.dat', 'speckle.dat', 'AcqInfos.mat'};
-allowedBinning = [1:8];
+allowedBinning = 1:8;
 
 if nargin == 1 && (ischar(RawFolder) || (isstring(RawFolder) && isscalar(RawFolder))) ...
         && strcmpi(strtrim(char(string(RawFolder))), 'pipelineInfo')
@@ -82,6 +87,8 @@ addParameter(p, 'BinningTemp', 1, ...
     @(x) isnumeric(x) && isscalar(x) && isfinite(x) && any(x == allowedBinning));
 addParameter(p, 'backupOpts', '', ...
     @(x) ischar(x) || (isstring(x) && isscalar(x)));
+addParameter(p, 'ApplyCoregistration', true, ...
+    @(x) islogical(x) && isscalar(x));
 parse(p, RawFolder, SaveFolder, varargin{:});
 
 RawFolder = char(string(p.Results.RawFolder));
@@ -89,6 +96,7 @@ SaveFolder = char(string(p.Results.SaveFolder));
 BinningSpatial = p.Results.BinningSpatial;
 BinningTemp = p.Results.BinningTemp;
 backupOpts = char(string(p.Results.backupOpts));
+ApplyCoregistration = p.Results.ApplyCoregistration;
 
 classifiedFiles = ImagesClassification( ...
     RawFolder, ...
@@ -107,7 +115,8 @@ end
 acqInfoPath = fullfile(SaveFolder, 'AcqInfos.mat');
 if isfile(acqInfoPath)
     info = load(acqInfoPath);
-    if isfield(info, 'AcqInfoStream') && isstruct(info.AcqInfoStream) && ...
+    if ApplyCoregistration && ...
+            isfield(info, 'AcqInfoStream') && isstruct(info.AcqInfoStream) && ...
             isfield(info.AcqInfoStream, 'MultiCam') && info.AcqInfoStream.MultiCam
 
         disp('Dual Camera data found!')
@@ -267,6 +276,11 @@ classifiedFiles = unique(cellfun(@(x) fullfile(SaveFolder, x), classifiedFiles, 
             ['Backup handling option passed to ImagesClassification. Use '''', ''ERASE'', ' ...
              '''GENBACKUP'', or a custom zip base name.'], ...
             'kind', 'parameter', 'default', 'ERASE','allowed',{'ERASE','GENBACKUP'}, 'callType', 'namevalue');
+
+        info = PipelineManager.addInput(info, 'ApplyCoregistration', 'parameter', ...
+            'Apply the default rig''s active dual-camera transform during import.', ...
+            'kind', 'parameter', 'default', true, 'allowed', [false true], ...
+            'callType', 'namevalue');
 
         info = PipelineManager.addOutput(info, 'classifiedFiles', 'ImageTimeSeries', 'file', ...
             'Generated file manifest saved in SaveFolder.', ...

@@ -34,6 +34,7 @@ classdef UMITRigStore < handle
     %       restoreResource
     %       purgeResource
     %       setActiveCameraCoregistration
+    %       clearActiveCameraCoregistration
     %       setActiveCalibrationFile
     %       getActiveCameraCoregistration
     %       getActiveCalibrationFile
@@ -540,7 +541,7 @@ classdef UMITRigStore < handle
             % fires correctly when this function returns.
             newLockFolder = fullfile(newRigPath, ...
                 obj.Schema.folders.internal, obj.Schema.folders.lock);
-            lockCleanup = onCleanup(@() obj.iReleaseWriteLock(newLockFolder)); %#ok<NASGU>
+            lockCleanup = onCleanup(@() obj.iReleaseWriteLock(newLockFolder));
 
             try
                 saveMatAtomic( ...
@@ -825,6 +826,17 @@ classdef UMITRigStore < handle
             %SETACTIVECAMERACOREGISTRATION Select an active camera transform.
 
             obj.iSetActiveResource('cameraCoregistration', resourceUUID);
+        end
+
+        function clearActiveCameraCoregistration(obj)
+            %CLEARACTIVECAMERACOREGISTRATION Temporarily leave no active transform.
+            %
+            %   The previously active camera coregistration remains available and
+            %   can be reactivated with setActiveCameraCoregistration. This is used
+            %   by recalibration workflows that must classify unregistered source
+            %   data without deleting or archiving resource history.
+
+            obj.iClearActiveResource('cameraCoregistration');
         end
 
         function setActiveCalibrationFile(obj, resourceUUID)
@@ -1153,7 +1165,7 @@ classdef UMITRigStore < handle
 
             transactionPath = obj.iCreateTransactionFolder(['add_', resourceType]);
             stagedFile = fullfile(transactionPath, fileName);
-            cleanupStage = onCleanup(@() UMITRigStore.iRemoveFolderIfPresent(transactionPath)); %#ok<NASGU>
+            cleanupStage = onCleanup(@() UMITRigStore.iRemoveFolderIfPresent(transactionPath));
 
             [ok, message] = copyfile(sourceFile, stagedFile, 'f');
             if ~ok
@@ -1248,6 +1260,56 @@ classdef UMITRigStore < handle
             end
 
             obj.iAppendLog(['setActive_', resourceType], resourceUUID, 'completed');
+        end
+
+        function iClearActiveResource(obj, resourceType)
+            %ICLEARACTIVERESOURCE Demote the active resource without archiving it.
+
+            errID = 'Umitoolbox:UMITRigStore:clearActiveResourceFailed';
+
+            obj.iAssertWritable();
+            lockCleanup = obj.iAcquireWriteLock(['clearActive_', resourceType]); %#ok<NASGU>
+            obj.iAssertHealthyForMutation();
+
+            if ~isfield(obj.Schema.resourceTypes, resourceType)
+                error(errID, 'Unsupported resource type: %s', resourceType);
+            end
+
+            RigInfo = obj.iLoadRigInfo();
+            originalRigInfo = RigInfo;
+            resourceDef = obj.Schema.resourceTypes.(resourceType);
+            pointerField = resourceDef.activePointerField;
+            previousActiveUUID = char(string(RigInfo.(pointerField)));
+
+            if isempty(previousActiveUUID)
+                return
+            end
+
+            recordIndex = obj.iFindResourceIndex( ...
+                RigInfo.resourceRegistry, previousActiveUUID);
+            if isempty(recordIndex) || ...
+                    ~strcmp(RigInfo.resourceRegistry(recordIndex).type, resourceType) || ...
+                    ~strcmp(RigInfo.resourceRegistry(recordIndex).status, 'active')
+                error(errID, ...
+                    'The active pointer for resource type "%s" is inconsistent.', ...
+                    resourceType);
+            end
+
+            RigInfo.resourceRegistry(recordIndex).status = 'available';
+            RigInfo.resourceRegistry(recordIndex).modifiedOn = datetime('now');
+            RigInfo.(pointerField) = '';
+            RigInfo.modifiedOn = datetime('now');
+
+            try
+                obj.iSaveRigInfo(RigInfo);
+                obj.iAssertValidAfterMutation();
+            catch ME
+                obj.iSaveRigInfo(originalRigInfo);
+                rethrow(ME)
+            end
+
+            obj.iAppendLog(['clearActive_', resourceType], ...
+                previousActiveUUID, 'completed');
         end
 
         function resource = iGetActiveResource(obj, resourceType)
