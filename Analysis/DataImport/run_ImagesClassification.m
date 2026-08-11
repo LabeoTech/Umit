@@ -7,8 +7,8 @@ function [classifiedFiles, rigResolution] = run_ImagesClassification(RawFolder, 
 %
 %   This wrapper calls ImagesClassification to split raw interlaced binary
 %   data into separate channel .dat files and a shared AcqInfos.mat file.
-%   For dual-camera acquisitions, it also attempts to apply the saved
-%   camera coregistration transform when available.
+%   For dual-camera acquisitions, it automatically applies the resolved
+%   Rig's active camera-coregistration resource when one is configured.
 %
 %   Inputs:
 %       RawFolder  - Path to the folder containing the raw binary
@@ -39,23 +39,25 @@ function [classifiedFiles, rigResolution] = run_ImagesClassification(RawFolder, 
 %                        - 'GENBACKUP' creates a timestamped .zip backup of
 %                          managed existing files before import.
 %
-%       ApplyCoregistration - Apply the default rig's active dual-camera
-%                             transform when available. Default: true.
-%                             Set false only when preparing unregistered
-%                             calibration data.
-%
 %   Outputs:
 %       outFile        - File manifest of outputs saved in SaveFolder.
-%       rigResolution  - Struct containing rigUUID, rigID, wasCreated, and
-%                        the default-Rig resolution path used for import.
+%       rigResolution  - Struct containing rigUUID, rigID, wasCreated, the
+%                        default-Rig resolution path, and a nested
+%                        cameraCoregistration struct. The nested struct
+%                        reports status ('applied' or 'skipped'),
+%                        wasApplied, skipReason, resourceUUID, displayName,
+%                        fileName, managedFilePath, rigUUID, rigID, and
+%                        whether DataParams provenance was recorded.
 %
 %   Notes:
 %       - This function does not expose SubROI selection. It always calls
 %         ImagesClassification with b_SubROI = 0.
 %       - The returned file manifest uses full paths.
-%       - Dual-camera coregistration is attempted only when:
-%           1) AcqInfos.mat indicates MultiCam = true
-%           2) a saved coregistration tform file is available
+%       - An active resource is never inferred from available or archived
+%         Rig resources. A Rig with no active pointer imports without
+%         coregistration.
+%       - Invalid active-resource metadata or a missing managed file is an
+%         error; import never silently substitutes another resource.
 %
 %   Examples:
 %       outFile = run_ImagesClassification(rawFolder, saveFolder);
@@ -90,8 +92,6 @@ addParameter(p, 'BinningTemp', 1, ...
     @(x) isnumeric(x) && isscalar(x) && isfinite(x) && any(x == allowedBinning));
 addParameter(p, 'backupOpts', '', ...
     @(x) ischar(x) || (isstring(x) && isscalar(x)));
-addParameter(p, 'ApplyCoregistration', true, ...
-    @(x) islogical(x) && isscalar(x));
 parse(p, RawFolder, SaveFolder, varargin{:});
 
 RawFolder = char(string(p.Results.RawFolder));
@@ -99,7 +99,6 @@ SaveFolder = char(string(p.Results.SaveFolder));
 BinningSpatial = p.Results.BinningSpatial;
 BinningTemp = p.Results.BinningTemp;
 backupOpts = char(string(p.Results.backupOpts));
-ApplyCoregistration = p.Results.ApplyCoregistration;
 
 % Resolve an active Rig before the legacy importer mutates SaveFolder.
 % ImagesClassification itself remains independent of UMITRigStore so the
@@ -110,7 +109,30 @@ rigResolution = struct( ...
     'rigUUID', defaultRigInfo.uuid, ...
     'rigID', defaultRigInfo.rigID, ...
     'wasCreated', wasCreated, ...
-    'resolution', resolution);
+    'resolution', resolution, ...
+    'cameraCoregistration', localEmptyCoregistrationResolution(defaultRigInfo));
+
+% Resolve and validate the active pointer before classification changes the
+% destination folder. getActiveCameraCoregistration deliberately returns
+% empty when no pointer is configured and throws for inconsistent pointers
+% or missing managed files; those errors must not be converted into a skip.
+try
+    activeResource = defaultRigStore.getActiveCameraCoregistration();
+    if ~isempty(activeResource)
+        tformFile = defaultRigStore.resolveResourcePath(activeResource.uuid);
+        tformPayload = localLoadCoregistrationResource(tformFile);
+        rigResolution.cameraCoregistration = localResourceResolution( ...
+            rigResolution.cameraCoregistration, activeResource, tformFile);
+    end
+catch ME
+    coregError = MException( ...
+        'Umitoolbox:run_ImagesClassification:InvalidActiveCameraCoregistration', ...
+        ['The active camera-coregistration resource for Rig "%s" (%s) ' ...
+         'could not be validated: %s'], ...
+        defaultRigInfo.rigID, defaultRigInfo.uuid, ME.message);
+    coregError = addCause(coregError, ME);
+    throwAsCaller(coregError)
+end
 
 classifiedFiles = ImagesClassification( ...
     RawFolder, ...
@@ -125,114 +147,107 @@ if ~iscell(classifiedFiles)
     classifiedFiles = {};
 end
 
-% For Dual-Camera Imaging systems, apply the coregistration using the tform
-% file created in DataViewer's OiS Dual Cam Coregistration utility.
+% Bind the imported acquisition to the resolved Rig, then apply its active
+% camera-coregistration resource to compatible dual-camera data.
 acqInfoPath = fullfile(SaveFolder, 'AcqInfos.mat');
-if isfile(acqInfoPath)
-    info = load(acqInfoPath);
-    if ~isfield(info, 'AcqInfoStream') || ~isstruct(info.AcqInfoStream) || ...
-            ~isscalar(info.AcqInfoStream)
-        error('Umitoolbox:run_ImagesClassification:InvalidAcqInfos', ...
-            'ImagesClassification did not produce a scalar AcqInfoStream.');
-    end
-    info.AcqInfoStream.rigUUID = defaultRigInfo.uuid;
-    info.AcqInfoStream.rigID = defaultRigInfo.rigID;
-    saveMatAtomic(acqInfoPath, 'AcqInfoStream', info.AcqInfoStream);
-    if ApplyCoregistration && ...
-            isfield(info, 'AcqInfoStream') && isstruct(info.AcqInfoStream) && ...
-            isfield(info.AcqInfoStream, 'MultiCam') && info.AcqInfoStream.MultiCam
+if ~isfile(acqInfoPath)
+    error('Umitoolbox:run_ImagesClassification:InvalidAcqInfos', ...
+        'ImagesClassification did not produce AcqInfos.mat.');
+end
 
-        disp('Dual Camera data found!')
+info = load(acqInfoPath, 'AcqInfoStream');
+if ~isfield(info, 'AcqInfoStream') || ~isstruct(info.AcqInfoStream) || ...
+        ~isscalar(info.AcqInfoStream)
+    error('Umitoolbox:run_ImagesClassification:InvalidAcqInfos', ...
+        'ImagesClassification did not produce a scalar AcqInfoStream.');
+end
+info.AcqInfoStream.rigUUID = defaultRigInfo.uuid;
+info.AcqInfoStream.rigID = defaultRigInfo.rigID;
+saveMatAtomic(acqInfoPath, 'AcqInfoStream', info.AcqInfoStream);
 
-        % Resolve the active camera coregistration transform from the rig's
-        % managed resource (kept current by DataViewer_Coreg2Cams's "Save
-        % Calibration" action). The legacy flat tform file
-        % (getUmitFolder('tformFiles')/coreg2cam_tform.mat) is no longer
-        % consulted -- UMITRigStore is the sole persistence layer.
-        tformFile = '';
-        resourceUUID = '';
-        try
-            activeResource = defaultRigStore.getActiveCameraCoregistration();
-            if ~isempty(activeResource)
-                tformFile = defaultRigStore.resolveResourcePath(activeResource.uuid);
-                resourceUUID = activeResource.uuid;
-            end
-        catch ME
-            warning('Umitoolbox:run_ImagesClassification:activeCoregistrationLookupFailed', ...
-                'Could not resolve the rig''s active camera coregistration resource. %s', ...
-                ME.message);
-            tformFile = '';
-            resourceUUID = '';
-        end
-
-        if isfile(tformFile)
-            tf = load(tformFile);
-            disp('Applying coregistration to data from camera #2...');
-            [status, warnmsg] = applyTform2Cams(SaveFolder, tf.tform, tf.tformInfo);
-            if ~status
-                warning(['Coregistration failed! Data import will resume without coregistration. ', warnmsg]);
-            else
-                disp('Done!')
-
-                % Record this application in the imported SaveFolder's
-                % DataParams.mat. Only DataViewer_Coreg2Cams's own "Save
-                % Calibration" action recorded DataParams.cameraCoregistration
-                % before now -- not the many downstream SaveFolders that
-                % actually receive the transform via import, which is the
-                % common case. Best-effort: a failure here must not undo an
-                % otherwise-successful coregistration.
-                try
-                    if ~isfile(fullfile(SaveFolder, 'DataParams.mat'))
-                        createDataParams(SaveFolder);
-                    end
-
-                    DataParams = loadDataParams(SaveFolder);
-                    cc = DataParams.cameraCoregistration;
-
-                    cc.isCoregistered = true;
-                    cc.isReviewed = false;
-                    cc.tform = tf.tform;
-                    cc.resourceUUID = resourceUUID;
-                    cc.rigID = defaultRigID;
-                    cc.transformType = 'similarity';
-                    cc.method = 'run_ImagesClassification';
-                    cc.sourceFile = tformFile;
-                    if isfield(tf.tformInfo, 'SavedOn')
-                        cc.sourceFileTimestamp = char(tf.tformInfo.SavedOn);
-                    else
-                        cc.sourceFileTimestamp = '';
-                    end
-                    cc.createdOn = char(datetime('now'));
-                    cc.source = SaveFolder;
-                    cc.appliedOn = char(datetime('now'));
-                    cc.appliedBy = 'run_ImagesClassification';
-                    cc.confirmationMode = 'automatic-import-application';
-                    cc.notes = ['Dual-camera coregistration automatically applied during ' ...
-                        'raw data import using the rig''s active camera coregistration.'];
-
-                    T = localGetTransformMatrix(tf.tform);
-                    A = T(1:2, 1:2);
-                    cc.qcMetrics.translationXY_px = [T(3,1), T(3,2)];
-                    cc.qcMetrics.rotationDeg = atan2d(A(1,2), A(1,1));
-                    cc.qcMetrics.scaleXY = [hypot(A(1,1), A(1,2)), hypot(A(2,1), A(2,2))];
-                    cc.qcMetrics.determinant = det(A);
-
-                    DataParams.cameraCoregistration = cc;
-                    DataParams.lastModified = datetime('now');
-
-                    validateDataParams(DataParams);
-                    save(fullfile(SaveFolder, 'DataParams.mat'), 'DataParams', '-mat');
-                catch ME
-                    warning('Umitoolbox:run_ImagesClassification:cameraCoregistrationDataParamsFailed', ...
-                        ['Coregistration succeeded, but DataParams.cameraCoregistration could not ' ...
-                        'be recorded: %s'], ME.message);
-                end
-            end
+isMultiCamera = isfield(info.AcqInfoStream, 'MultiCam') && ...
+    isscalar(info.AcqInfoStream.MultiCam) && logical(info.AcqInfoStream.MultiCam);
+if isMultiCamera
+    disp('Dual Camera data found!')
+    if isempty(activeResource)
+        rigResolution.cameraCoregistration.status = 'skipped';
+        rigResolution.cameraCoregistration.skipReason = 'noActiveResource';
+        fprintf(['No active camera-coregistration resource is configured for ' ...
+            'Rig "%s" (%s); import will continue without coregistration.\n'], ...
+            defaultRigInfo.rigID, defaultRigInfo.uuid);
+    else
+        fprintf(['Applying camera coregistration "%s" from managed file "%s" ' ...
+            '(resource UUID %s), owned by Rig "%s" (UUID %s).\n'], ...
+            activeResource.displayName, activeResource.fileName, activeResource.uuid, ...
+            defaultRigInfo.rigID, defaultRigInfo.uuid);
+        [status, warnmsg] = applyTform2Cams( ...
+            SaveFolder, tformPayload.tform, tformPayload.tformInfo);
+        if ~status
+            rigResolution.cameraCoregistration.status = 'skipped';
+            rigResolution.cameraCoregistration.skipReason = 'applicationFailed';
+            warning('Umitoolbox:run_ImagesClassification:cameraCoregistrationFailed', ...
+                ['Coregistration failed; data import will resume without ' ...
+                 'coregistration. %s'], warnmsg);
         else
-            warning(['Coregistration TFORM file not found! Data from camera #2 will not be ' ...
-                'coregistered with camera #1. Data import will resume without coregistration.'])
+            rigResolution.cameraCoregistration.status = 'applied';
+            rigResolution.cameraCoregistration.wasApplied = true;
+            disp('Done!')
+
+            % Record this application in the imported SaveFolder's
+            % DataParams.mat. Best-effort: a failure here must not undo an
+            % otherwise-successful coregistration.
+            try
+                if ~isfile(fullfile(SaveFolder, 'DataParams.mat'))
+                    createDataParams(SaveFolder);
+                end
+
+                DataParams = loadDataParams(SaveFolder);
+                cc = DataParams.cameraCoregistration;
+
+                cc.isCoregistered = true;
+                cc.isReviewed = false;
+                cc.tform = tformPayload.tform;
+                cc.resourceUUID = activeResource.uuid;
+                cc.rigID = defaultRigID;
+                cc.transformType = 'similarity';
+                cc.method = 'run_ImagesClassification';
+                cc.sourceFile = tformFile;
+                if isfield(tformPayload.tformInfo, 'SavedOn')
+                    cc.sourceFileTimestamp = char(tformPayload.tformInfo.SavedOn);
+                else
+                    cc.sourceFileTimestamp = '';
+                end
+                cc.createdOn = char(datetime('now'));
+                cc.source = SaveFolder;
+                cc.appliedOn = char(datetime('now'));
+                cc.appliedBy = 'run_ImagesClassification';
+                cc.confirmationMode = 'automatic-import-application';
+                cc.notes = ['Dual-camera coregistration automatically applied during ' ...
+                    'raw data import using the rig''s active camera coregistration.'];
+
+                T = localGetTransformMatrix(tformPayload.tform);
+                A = T(1:2, 1:2);
+                cc.qcMetrics.translationXY_px = [T(3,1), T(3,2)];
+                cc.qcMetrics.rotationDeg = atan2d(A(1,2), A(1,1));
+                cc.qcMetrics.scaleXY = [hypot(A(1,1), A(1,2)), hypot(A(2,1), A(2,2))];
+                cc.qcMetrics.determinant = det(A);
+
+                DataParams.cameraCoregistration = cc;
+                DataParams.lastModified = datetime('now');
+
+                validateDataParams(DataParams);
+                save(fullfile(SaveFolder, 'DataParams.mat'), 'DataParams', '-mat');
+                rigResolution.cameraCoregistration.dataParamsRecorded = true;
+            catch ME
+                warning('Umitoolbox:run_ImagesClassification:cameraCoregistrationDataParamsFailed', ...
+                    ['Coregistration succeeded, but DataParams.cameraCoregistration could not ' ...
+                    'be recorded: %s'], ME.message);
+            end
         end
     end
+else
+    rigResolution.cameraCoregistration.status = 'skipped';
+    rigResolution.cameraCoregistration.skipReason = 'singleCameraAcquisition';
 end
 
 % Classification has fully succeeded by this point (any failure above throws
@@ -280,11 +295,6 @@ classifiedFiles = unique(cellfun(@(x) fullfile(SaveFolder, x), classifiedFiles, 
              '''GENBACKUP'', or a custom zip base name.'], ...
             'kind', 'parameter', 'default', 'ERASE','allowed',{'ERASE','GENBACKUP'}, 'callType', 'namevalue');
 
-        info = PipelineManager.addInput(info, 'ApplyCoregistration', 'parameter', ...
-            'Apply the default rig''s active dual-camera transform during import.', ...
-            'kind', 'parameter', 'default', true, 'allowed', [false true], ...
-            'callType', 'namevalue');
-
         info = PipelineManager.addOutput(info, 'classifiedFiles', 'ImageTimeSeries', 'file', ...
             'Generated file manifest saved in SaveFolder.', ...
             default_Output, 1, 'isData', true, 'saveFileName', '');
@@ -300,5 +310,90 @@ classifiedFiles = unique(cellfun(@(x) fullfile(SaveFolder, x), classifiedFiles, 
         else
             T = tform;
         end
+    end
+
+    function result = localEmptyCoregistrationResolution(rigInfo)
+        %LOCALEMPTYCOREGISTRATIONRESOLUTION Create a stable caller-facing result.
+
+        result = struct( ...
+            'status', 'pending', ...
+            'wasApplied', false, ...
+            'skipReason', '', ...
+            'resourceUUID', '', ...
+            'displayName', '', ...
+            'fileName', '', ...
+            'managedFilePath', '', ...
+            'rigUUID', rigInfo.uuid, ...
+            'rigID', rigInfo.rigID, ...
+            'dataParamsRecorded', false);
+    end
+
+    function result = localResourceResolution(result, resource, resourcePath)
+        %LOCALRESOURCERESOLUTION Copy active managed-resource identity.
+
+        result.resourceUUID = resource.uuid;
+        result.displayName = resource.displayName;
+        result.fileName = resource.fileName;
+        result.managedFilePath = resourcePath;
+    end
+
+    function payload = localLoadCoregistrationResource(resourcePath)
+        %LOCALLOADCOREGISTRATIONRESOURCE Validate the managed MAT payload.
+
+        payload = load(resourcePath, '-mat');
+        if ~isfield(payload, 'tform') || isempty(payload.tform)
+            error('Umitoolbox:run_ImagesClassification:InvalidCoregistrationPayload', ...
+                'Managed file must contain a nonempty variable named "tform".');
+        end
+        payload.tform = localNormalizeCoregistrationTransform(payload.tform);
+        if ~isfield(payload, 'tformInfo')
+            payload.tformInfo = struct();
+        elseif ~isstruct(payload.tformInfo) || ~isscalar(payload.tformInfo)
+            error('Umitoolbox:run_ImagesClassification:InvalidCoregistrationPayload', ...
+                'Variable "tformInfo" must be a scalar struct when present.');
+        end
+
+        T = localGetTransformMatrix(payload.tform);
+        if ~isnumeric(T) || ~isequal(size(T), [3 3]) || any(~isfinite(T), 'all')
+            error('Umitoolbox:run_ImagesClassification:InvalidCoregistrationPayload', ...
+                'The active camera-coregistration transform must have a finite 3-by-3 matrix.');
+        end
+    end
+
+    function tform = localNormalizeCoregistrationTransform(tform)
+        %LOCALNORMALIZECOREGISTRATIONTRANSFORM Convert supported transforms for legacy use.
+        %   applyTform2Cams uses affine2d's postmultiply T convention. Newer
+        %   MATLAB transform classes expose a premultiply A matrix, so that
+        %   matrix must be transposed during conversion.
+
+        if isa(tform, 'affine2d')
+            return
+        end
+
+        if isnumeric(tform)
+            if ~isequal(size(tform), [3 3]) || any(~isfinite(tform), 'all')
+                error('Umitoolbox:run_ImagesClassification:InvalidCoregistrationPayload', ...
+                    'A numeric camera-coregistration transform must be a finite 3-by-3 matrix.');
+            end
+            tform = affine2d(double(tform));
+            return
+        end
+
+        modernTransformClasses = { ...
+            'affinetform2d', 'simtform2d', 'rigidtform2d', 'transltform2d'};
+        isModernTransform = any(cellfun( ...
+            @(className) isa(tform, className), modernTransformClasses));
+        if ~isModernTransform || ~isprop(tform, 'A')
+            error('Umitoolbox:run_ImagesClassification:InvalidCoregistrationPayload', ...
+                ['Variable "tform" must be affine2d, a supported modern 2-D ' ...
+                 'affine transform, or a finite numeric 3-by-3 matrix.']);
+        end
+
+        matrix = double(tform.A);
+        if ~isequal(size(matrix), [3 3]) || any(~isfinite(matrix), 'all')
+            error('Umitoolbox:run_ImagesClassification:InvalidCoregistrationPayload', ...
+                'The modern camera-coregistration transform must have a finite 3-by-3 A matrix.');
+        end
+        tform = affine2d(matrix.');
     end
 end

@@ -1,7 +1,8 @@
-function outFile = run_HemoCompute(SaveFolder, data, varargin)
+function varargout = run_HemoCompute(SaveFolder, data, varargin)
 %RUN_HEMOCOMPUTE Wrapper around HemoCompute.
 %
 %   outFile = run_HemoCompute(SaveFolder, data)
+%   [HbOFile, HbRFile] = run_HemoCompute(SaveFolder, data)
 %   outFile = run_HemoCompute(SaveFolder, data, 'FilterSet', 'none', ...)
 %   run_HemoCompute('preflight', SaveFolder, parameters)
 %
@@ -25,17 +26,18 @@ function outFile = run_HemoCompute(SaveFolder, data, varargin)
 %       'HbT_concentration_uM'   - Total hemoglobin concentration.
 %       'StO2perc'               - Oxygen saturation percentage.
 %
-%   Output:
-%       outFile - {'HbO.dat','HbR.dat'} or the corresponding
-%                 '_preallocData' names when RAM-safe mode uses file
-%                 preallocation fallbacks.
+%   Outputs:
+%       outFile           - With one requested output, returns
+%                           {HbOFile,HbRFile} for legacy callers.
+%       HbOFile, HbRFile  - With two requested outputs, returns the two
+%                           files separately for PipelineManager.
 
 % Default outputs for pipeline management.
 default_Output = {'HbO.dat', 'HbR.dat'}; 
 
 if nargin == 1 && (ischar(SaveFolder) || (isstring(SaveFolder) && isscalar(SaveFolder))) && ...
         strcmpi(strtrim(char(string(SaveFolder))), 'pipelineInfo')
-    outFile = localPipelineInfo();
+    varargout{1} = localPipelineInfo();
     return
 end
 
@@ -46,7 +48,9 @@ if nargin >= 1 && (ischar(SaveFolder) || (isstring(SaveFolder) && isscalar(SaveF
             'Use run_HemoCompute(''preflight'', SaveFolder, parameters).');
     end
     localPreflight(data, varargin{1});
-    outFile = [];
+    if nargout > 0
+        varargout = cell(1, nargout);
+    end
     return
 end
 
@@ -99,10 +103,17 @@ catch ME
     throw(ME)
 end
 
-if b_lowRAMmode
-    outFile = {HbO, HbR};
+if nargout <= 1
+    if b_lowRAMmode
+        varargout{1} = {HbO, HbR};
+    else
+        varargout{1} = default_Output;
+    end
+elseif nargout == 2
+    varargout = {HbO, HbR};
 else
-    outFile = default_Output;
+    error('Umitoolbox:run_HemoCompute:TooManyOutputs', ...
+        'run_HemoCompute supports at most two outputs.');
 end
 
 fprintf('Finished HemoCompute.\n');
@@ -189,7 +200,7 @@ fprintf('Finished HemoCompute.\n');
             'HbO', ...
             'ImageTimeSeries', ...
             'data', ...
-            'Oxygenated hemoglobin output.', ...
+            'Oxygenated hemoglobin data or RAM-safe backing file.', ...
             default_Output{1}, ...
             1, ...
             'isData', true);
@@ -198,7 +209,7 @@ fprintf('Finished HemoCompute.\n');
             'HbR', ...
             'ImageTimeSeries', ...
             'data', ...
-            'Deoxygenated hemoglobin output.', ...
+            'Deoxygenated hemoglobin data or RAM-safe backing file.', ...
             default_Output{2}, ...
             2, ...
             'isData', true);
