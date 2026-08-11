@@ -2,9 +2,10 @@ function temporarySaveFolder = prepareDualCameraCalibrationData(RawFolder, optio
 %PREPAREDUALCAMERACALIBRATIONDATA Classify raw dual-camera calibration data.
 %   temporarySaveFolder = prepareDualCameraCalibrationData(RawFolder)
 %   validates the acquisition metadata through ReadInfoFile, creates a
-%   workflow-owned temporary SaveFolder, and runs run_ImagesClassification
-%   with default classification settings while explicitly disabling active
-%   transform application. The caller owns the returned folder and must
+%   workflow-owned temporary SaveFolder, and runs the Rig-independent legacy
+%   ImagesClassification importer with default classification settings. This
+%   deliberately produces unregistered source data even when the default Rig
+%   has an active transform. The caller owns the returned folder and must
 %   remove it when calibration succeeds or is cancelled.
 %
 %   This helper never writes to RawFolder. If metadata validation or
@@ -82,8 +83,7 @@ end
 end
 
 function classifiedFiles = classifyUnregisteredData(rawFolder, saveFolder)
-%CLASSIFYUNREGISTEREDDATA Run default classification without applying a tform.
+%CLASSIFYUNREGISTEREDDATA Run the Rig-independent importer without a tform.
 
-classifiedFiles = run_ImagesClassification( ...
-    rawFolder, saveFolder, 'ApplyCoregistration', false);
+classifiedFiles = ImagesClassification(rawFolder, saveFolder, 1, 1, 0);
 end

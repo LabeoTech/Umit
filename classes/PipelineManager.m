@@ -11271,7 +11271,8 @@ classdef PipelineManager < handle
             %         key for backward compatibility.
             %
             %   Modern output contract:
-            %       - outputMode = 'data' -> function returns data (array/struct/etc.)
+            %       - outputMode = 'data' -> function returns data in RAM or one
+            %                                existing backing filename
             %       - outputMode = 'file' -> function returns filename(s) that already
             %                                exist on disk
             %
@@ -11449,6 +11450,32 @@ classdef PipelineManager < handle
                 end
 
                 % =====================================================
+                % File-backed representation of a logical data output
+                % =====================================================
+                if ischar(val) || isstring(val) || iscell(val)
+                    fileList = localNormalizeReturnedFileList( ...
+                        val, nodeLocal, outName);
+                    if numel(fileList) ~= 1
+                        error('PipelineManager:registerOutputs:InvalidDataFileManifest', ...
+                            ['Node "%s" output "%s" returned %d backing files.\n' ...
+                            'A logical data output must resolve to exactly one file.'], ...
+                            char(string(nodeLocal.name)), outName, numel(fileList));
+                    end
+
+                    [fullFn, folderBoundName] = localResolveReturnedFile( ...
+                        folder, fileList(1));
+                    rec.fileName = string(fullFn);
+                    obj.dataStore(key) = rec;
+
+                    keyCompat = obj.makeKey(nodeIDLocal, char(folderBoundName));
+                    recCompat = rec;
+                    recCompat.remainingConsumers = 0;
+                    obj.dataStore(keyCompat) = recCompat;
+                    createdFiles(end+1,1) = folderBoundName; %#ok<AGROW>
+                    continue
+                end
+
+                % =====================================================
                 % Modern manager-owned data outputs
                 % =====================================================
                 if strcmpi(obj.ramMode,'ramsafe')
@@ -11462,11 +11489,6 @@ classdef PipelineManager < handle
                         [~,fn,ext] = fileparts(char(string(tmpFile)));
                         createdFiles(end+1,1) = string(fn) + string(ext); %#ok<AGROW>
 
-                    elseif ischar(val) || isstring(val) || iscell(val)
-                        error('PipelineManager:registerOutputs:InvalidDataOutput', ...
-                            ['Node "%s" output "%s" has outputMode="data" but returned text-like file information.\n' ...
-                            'Data outputs must return data, not filename(s).'], ...
-                            char(string(nodeLocal.name)), outName);
                     else
                         rec.ramValue = val;
                     end
@@ -11489,11 +11511,6 @@ classdef PipelineManager < handle
                         createdFiles(end+1,1) = string(fn) + string(ext); %#ok<AGROW>
                     end
 
-                elseif ischar(val) || isstring(val) || iscell(val)
-                    error('PipelineManager:registerOutputs:InvalidDataOutput', ...
-                        ['Node "%s" output "%s" has outputMode="data" but returned text-like file information.\n' ...
-                        'Data outputs must return data, not filename(s).'], ...
-                        char(string(nodeLocal.name)), outName);
                 else
                     rec.ramValue = val;
                 end
@@ -11522,15 +11539,15 @@ classdef PipelineManager < handle
                         fileListOut = string(valIn(:));
                     catch
                         error('PipelineManager:registerOutputs:InvalidFileOutput', ...
-                            ['Node "%s" output "%s" has outputMode="file" but returned an invalid cell array.\n' ...
-                            'File outputs must return filename(s).'], ...
+                            ['Node "%s" output "%s" returned an invalid file list.\n' ...
+                            'File-backed outputs must return filename(s).'], ...
                             char(string(nodeIn.name)), outNameIn);
                     end
 
                 else
                     error('PipelineManager:registerOutputs:InvalidFileOutput', ...
-                        ['Node "%s" output "%s" has outputMode="file" but returned a non-text value.\n' ...
-                        'File outputs must return filename(s).'], ...
+                        ['Node "%s" output "%s" returned a non-text file value.\n' ...
+                        'File-backed outputs must return filename(s).'], ...
                         char(string(nodeIn.name)), outNameIn);
                 end
 
