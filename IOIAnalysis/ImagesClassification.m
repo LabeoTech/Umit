@@ -252,7 +252,9 @@ for ind = 1:numel(channelInfo)
     importedInfo.Length = channelInfo(ind).datLength;
     importedInfo.FrameRateHz = channelInfo(ind).FrameRateHz;
     importedInfo.ExposureMsec = channelInfo(ind).ExposureMsec;
-    if ~isempty(channelInfo(ind).CamIdx)
+    if isempty(channelInfo(ind).CamIdx)
+        importedInfo.CamIdx = 1;
+    else
         importedInfo.CamIdx = channelInfo(ind).CamIdx;
     end
     AcqInfoStream = appendImportedChannelInfo(AcqInfoStream, importedInfo, 'Overwrite', true);

@@ -1,4 +1,4 @@
-function classifiedFiles = run_ImagesClassification(RawFolder, SaveFolder, varargin)
+function [classifiedFiles, rigResolution] = run_ImagesClassification(RawFolder, SaveFolder, varargin)
 %RUN_IMAGESCLASSIFICATION Classify raw interlaced IOS binaries into channels.
 %
 %   outFile = run_ImagesClassification(RawFolder, SaveFolder)
@@ -44,8 +44,10 @@ function classifiedFiles = run_ImagesClassification(RawFolder, SaveFolder, varar
 %                             Set false only when preparing unregistered
 %                             calibration data.
 %
-%   Output:
+%   Outputs:
 %       outFile        - File manifest of outputs saved in SaveFolder.
+%       rigResolution  - Struct containing rigUUID, rigID, wasCreated, and
+%                        the default-Rig resolution path used for import.
 %
 %   Notes:
 %       - This function does not expose SubROI selection. It always calls
@@ -69,6 +71,7 @@ function classifiedFiles = run_ImagesClassification(RawFolder, SaveFolder, varar
 
 default_Output = {'fluo_475.dat', 'fluo_567.dat', 'fluo.dat', ...
     'red.dat', 'green.dat', 'yellow.dat', 'speckle.dat', 'AcqInfos.mat'};
+rigResolution = [];
 allowedBinning = 1:8;
 
 if nargin == 1 && (ischar(RawFolder) || (isstring(RawFolder) && isscalar(RawFolder))) ...
@@ -98,6 +101,17 @@ BinningTemp = p.Results.BinningTemp;
 backupOpts = char(string(p.Results.backupOpts));
 ApplyCoregistration = p.Results.ApplyCoregistration;
 
+% Resolve an active Rig before the legacy importer mutates SaveFolder.
+% ImagesClassification itself remains independent of UMITRigStore so the
+% IOIAnalysis folder retains its legacy execution path.
+[defaultRigStore, wasCreated, resolution] = UMITRigStore.getOrCreateDefaultRig();
+defaultRigInfo = defaultRigStore.getRigInfo();
+rigResolution = struct( ...
+    'rigUUID', defaultRigInfo.uuid, ...
+    'rigID', defaultRigInfo.rigID, ...
+    'wasCreated', wasCreated, ...
+    'resolution', resolution);
+
 classifiedFiles = ImagesClassification( ...
     RawFolder, ...
     SaveFolder, ...
@@ -105,6 +119,7 @@ classifiedFiles = ImagesClassification( ...
     BinningTemp, ...
     0, ...
     'backupOpts', backupOpts);
+defaultRigID = defaultRigInfo.rigID;
 
 if ~iscell(classifiedFiles)
     classifiedFiles = {};
@@ -115,29 +130,19 @@ end
 acqInfoPath = fullfile(SaveFolder, 'AcqInfos.mat');
 if isfile(acqInfoPath)
     info = load(acqInfoPath);
+    if ~isfield(info, 'AcqInfoStream') || ~isstruct(info.AcqInfoStream) || ...
+            ~isscalar(info.AcqInfoStream)
+        error('Umitoolbox:run_ImagesClassification:InvalidAcqInfos', ...
+            'ImagesClassification did not produce a scalar AcqInfoStream.');
+    end
+    info.AcqInfoStream.rigUUID = defaultRigInfo.uuid;
+    info.AcqInfoStream.rigID = defaultRigInfo.rigID;
+    saveMatAtomic(acqInfoPath, 'AcqInfoStream', info.AcqInfoStream);
     if ApplyCoregistration && ...
             isfield(info, 'AcqInfoStream') && isstruct(info.AcqInfoStream) && ...
             isfield(info.AcqInfoStream, 'MultiCam') && info.AcqInfoStream.MultiCam
 
         disp('Dual Camera data found!')
-
-        % Ensure a rig exists for this machine. Import is the entry point of
-        % data into the toolbox, so a rigless project/DataViewer instance
-        % should never arise from normal use -- a default rig is silently
-        % auto-created here if none exists yet (see UMITRigStore.
-        % getOrCreateDefaultRig). This never blocks import: which rig ends
-        % up owning centralized resources is resolved later, independently
-        % of this call.
-        defaultRigID = '';
-        defaultRigStore = [];
-        try
-            defaultRigStore = UMITRigStore.getOrCreateDefaultRig();
-            defaultRigID = defaultRigStore.getRigInfo().rigID;
-        catch ME
-            warning('Umitoolbox:run_ImagesClassification:defaultRigFailed', ...
-                ['Could not resolve/create a default rig for this machine. ' ...
-                'Import will continue without one. %s'], ME.message);
-        end
 
         % Resolve the active camera coregistration transform from the rig's
         % managed resource (kept current by DataViewer_Coreg2Cams's "Save
@@ -146,20 +151,18 @@ if isfile(acqInfoPath)
         % consulted -- UMITRigStore is the sole persistence layer.
         tformFile = '';
         resourceUUID = '';
-        if ~isempty(defaultRigStore)
-            try
-                activeResource = defaultRigStore.getActiveCameraCoregistration();
-                if ~isempty(activeResource)
-                    tformFile = defaultRigStore.resolveResourcePath(activeResource.uuid);
-                    resourceUUID = activeResource.uuid;
-                end
-            catch ME
-                warning('Umitoolbox:run_ImagesClassification:activeCoregistrationLookupFailed', ...
-                    'Could not resolve the rig''s active camera coregistration resource. %s', ...
-                    ME.message);
-                tformFile = '';
-                resourceUUID = '';
+        try
+            activeResource = defaultRigStore.getActiveCameraCoregistration();
+            if ~isempty(activeResource)
+                tformFile = defaultRigStore.resolveResourcePath(activeResource.uuid);
+                resourceUUID = activeResource.uuid;
             end
+        catch ME
+            warning('Umitoolbox:run_ImagesClassification:activeCoregistrationLookupFailed', ...
+                'Could not resolve the rig''s active camera coregistration resource. %s', ...
+                ME.message);
+            tformFile = '';
+            resourceUUID = '';
         end
 
         if isfile(tformFile)

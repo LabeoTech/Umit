@@ -1,0 +1,92 @@
+{
+  "illuminationAliases": {
+    "Amber": "yellow"
+  },
+  "cameraAliases": {
+    "CS2100M": "ThorQLux",
+    "D1024": "PF1024",
+    "D1312": "PF1312"
+  },
+  "spectra": [
+    {
+      "legacyID": "Red",
+      "category": "illumination",
+      "newID": "LED_632nm"
+    },
+    {
+      "legacyID": "Green",
+      "category": "illumination",
+      "newID": "LED_521nm"
+    },
+    {
+      "legacyID": "Yellow",
+      "category": "illumination",
+      "newID": "LED_593nm"
+    },
+    {
+      "legacyID": "FF01441511717",
+      "category": "filter",
+      "newID": "FF01441511717"
+    },
+    {
+      "legacyID": "FF01496LP",
+      "category": "filter",
+      "newID": "FF01496LP"
+    },
+    {
+      "legacyID": "FF01512630",
+      "category": "filter",
+      "newID": "FF01512630"
+    },
+    {
+      "legacyID": "FF0151444",
+      "category": "filter",
+      "newID": "FF0151444"
+    },
+    {
+      "legacyID": "FF0154080",
+      "category": "filter",
+      "newID": "FF0154080"
+    },
+    {
+      "legacyID": "FF0155423",
+      "category": "filter",
+      "newID": "FF0155423"
+    },
+    {
+      "legacyID": "FF0156524",
+      "category": "filter",
+      "newID": "FF0156524"
+    },
+    {
+      "legacyID": "FF0161850",
+      "category": "filter",
+      "newID": "FF0161850"
+    },
+    {
+      "legacyID": "FF0247230",
+      "category": "filter",
+      "newID": "FF0247230"
+    },
+    {
+      "legacyID": "FF02472SP",
+      "category": "filter",
+      "newID": "FF02472SP"
+    },
+    {
+      "legacyID": "PF1024",
+      "category": "camera",
+      "newID": "PF1024"
+    },
+    {
+      "legacyID": "PF1312",
+      "category": "camera",
+      "newID": "PF1312"
+    },
+    {
+      "legacyID": "ThorQLux",
+      "category": "camera",
+      "newID": "ThorQLux"
+    }
+  ]
+}

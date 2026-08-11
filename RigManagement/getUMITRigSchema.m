@@ -27,7 +27,7 @@ function schema = getUMITRigSchema(version)
 %         to preserve compatibility with Windows filesystems.
 
 if nargin < 1 || isempty(version)
-    version = 2;
+    version = 3;
 end
 
 if ~isnumeric(version) || ~isscalar(version) || ~isfinite(version) || ...
@@ -304,6 +304,61 @@ switch version
         schema.editableFields = struct();
         schema.editableFields.rig = {'displayName', 'description', 'isDefault', 'metadata'};
         schema.editableFields.resource = {'displayName', 'description'};
+
+    case 3
+        % Consolidates rig identity, hardware metadata, and optical-resource
+        % references. The default Rig is now a store-level pointer rather
+        % than editable state duplicated in every rig record. The unused
+        % generic calibrationFile resource is removed; camera
+        % coregistration remains the only versioned per-Rig resource.
+        schema = getUMITRigSchema(2);
+        schema.version = 3;
+
+        schema.folders = rmfield(schema.folders, 'calibrationFiles');
+        schema.pathTemplates = rmfield(schema.pathTemplates, 'calibrationFiles');
+        schema.resourceTypes = rmfield(schema.resourceTypes, 'calibrationFile');
+
+        schema.store = struct();
+        schema.store.internalFolder = '.umit';
+        schema.store.defaultFile = 'defaultRig.mat';
+        schema.store.defaultVariable = 'DefaultRig';
+        schema.store.lockFolder = 'store.lock';
+        schema.store.lockMetadata = 'lockInfo.mat';
+
+        schema.spectrum = struct();
+        schema.spectrum.wavelengthNm = (400:700)';
+        schema.spectrum.categories = {'illumination', 'filter', 'camera'};
+        schema.spectrum.fileExtension = '.txt';
+        schema.spectrum.libraryFolder = 'library';
+        schema.spectrum.spectraFolder = 'spectra';
+        schema.spectrum.filterSetsFolder = 'filterSets';
+
+        schema.canonicalIlluminations = {'red', 'green', 'yellow'};
+        schema.rigStatuses = {'active', 'archived'};
+
+        schema.requiredRigFields = { ...
+            'schemaVersion', ...
+            'uuid', ...
+            'rigID', ...
+            'displayName', ...
+            'description', ...
+            'createdOn', ...
+            'modifiedOn', ...
+            'status', ...
+            'archivedOn', ...
+            'metadata', ...
+            'cameras', ...
+            'illuminations', ...
+            'activeCoregistrationUUID', ...
+            'resourceRegistry'};
+
+        schema.cameraFields = { ...
+            'index', 'displayName', 'manufacturer', 'model', ...
+            'serialNumber', 'spectrumID'};
+        schema.illuminationFields = { ...
+            'name', 'displayName', 'manufacturer', 'model', 'spectrumID'};
+
+        schema.editableFields.rig = {'displayName', 'description', 'metadata'};
 
     otherwise
         error('Umitoolbox:getUMITRigSchema:unsupportedVersion', ...
