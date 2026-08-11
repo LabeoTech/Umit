@@ -613,6 +613,8 @@ function opticalInfo = localResolveRigOpticalInfo(dataFolder, illuminations, fil
 %LOCALRESOLVERIGOPTICALINFO Resolve optics through an available Rig store.
 
 acqInfo = localLoadAcqInfo(dataFolder);
+[acqInfo, ~] = resolveImportedChannelFallback(acqInfo, dataFolder, ...
+    'RequiredChannels', illuminations);
 if isfield(acqInfo, 'rigUUID') && ~isempty(acqInfo.rigUUID)
     rigStore = UMITRigStore.open(acqInfo.rigUUID);
 elseif isfield(acqInfo, 'rigID') && ~isempty(acqInfo.rigID)

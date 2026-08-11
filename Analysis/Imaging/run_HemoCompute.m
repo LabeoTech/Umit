@@ -253,6 +253,8 @@ if ~isfield(loaded, 'AcqInfoStream') || ...
         'AcqInfos.mat does not contain a scalar AcqInfoStream structure.');
 end
 acqInfo = loaded.AcqInfoStream;
+[acqInfo, ~] = resolveImportedChannelFallback(acqInfo, saveFolder, ...
+    'RequiredChannels', illuminations);
 
 if isfield(acqInfo, 'rigUUID') && ~isempty(acqInfo.rigUUID)
     rigStore = UMITRigStore.open(acqInfo.rigUUID);

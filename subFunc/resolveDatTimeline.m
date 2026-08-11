@@ -55,6 +55,16 @@ try
         datFile = [datBase, datExt];
     end
 
+    % Older classified SaveFolders may predate ImportedChannels. Resolve
+    % those records in memory from legacy evidence before matching timelines.
+    if ~isfield(AcqInfoStream, 'ImportedChannels') && ~isnumeric(fileOrLength)
+        [folderPath, ~, ~] = fileparts(char(string(fileOrLength)));
+        if isempty(folderPath)
+            folderPath = pwd;
+        end
+        [AcqInfoStream, ~] = resolveImportedChannelFallback(AcqInfoStream, folderPath);
+    end
+
     importedChannels = iGetImportedChannels(AcqInfoStream);
 
     % Exact file match is authoritative for imported channels.
@@ -177,6 +187,7 @@ if ~isfield(AcqInfoStream, 'ImportedChannels') || isempty(AcqInfoStream.Imported
 end
 
 raw = AcqInfoStream.ImportedChannels(:).';
+importedChannels = repmat(importedChannels, 1, numel(raw));
 for iEntry = 1:numel(raw)
     if ~isfield(raw(iEntry), 'DatFile') || ...
             ~isfield(raw(iEntry), 'Length') || ...
@@ -192,9 +203,9 @@ for iEntry = 1:numel(raw)
         datExt = '.dat';
     end
 
-    importedChannels(end+1).DatFile = [datBase, datExt]; %#ok<AGROW>
-    importedChannels(end).Length = double(raw(iEntry).Length);
-    importedChannels(end).FrameRateHz = double(raw(iEntry).FrameRateHz);
+    importedChannels(iEntry).DatFile = [datBase, datExt];
+    importedChannels(iEntry).Length = double(raw(iEntry).Length);
+    importedChannels(iEntry).FrameRateHz = double(raw(iEntry).FrameRateHz);
 end
 
 end
@@ -202,20 +213,27 @@ end
 function candidates = iBuildTimelineCandidates(AcqInfoStream)
 %IBUILDTIMELINECANDIDATES Build base/imported timeline candidates.
 
-candidates = struct('Length', {}, 'FrameRateHz', {}, 'SourceType', {}, 'SourceIndex', {});
+hasBaseTimeline = isfield(AcqInfoStream, 'Length') && ...
+    ~isempty(AcqInfoStream.Length) && isfield(AcqInfoStream, 'FrameRateHz') && ...
+    ~isempty(AcqInfoStream.FrameRateHz);
+importedChannels = iGetImportedChannels(AcqInfoStream);
+candidates = repmat(struct('Length', 0, 'FrameRateHz', 0, ...
+    'SourceType', '', 'SourceIndex', 0), 1, ...
+    double(hasBaseTimeline) + numel(importedChannels));
+candidateIdx = 0;
 
-if isfield(AcqInfoStream, 'Length') && ~isempty(AcqInfoStream.Length) && ...
-        isfield(AcqInfoStream, 'FrameRateHz') && ~isempty(AcqInfoStream.FrameRateHz)
-    candidates(end+1) = struct( ... %#ok<AGROW>
+if hasBaseTimeline
+    candidateIdx = candidateIdx + 1;
+    candidates(candidateIdx) = struct( ...
         'Length', double(AcqInfoStream.Length), ...
         'FrameRateHz', double(AcqInfoStream.FrameRateHz), ...
         'SourceType', 'AcqInfoStream.Length', ...
         'SourceIndex', 0);
 end
 
-importedChannels = iGetImportedChannels(AcqInfoStream);
 for iEntry = 1:numel(importedChannels)
-    candidates(end+1) = struct( ... %#ok<AGROW>
+    candidateIdx = candidateIdx + 1;
+    candidates(candidateIdx) = struct( ...
         'Length', double(importedChannels(iEntry).Length), ...
         'FrameRateHz', double(importedChannels(iEntry).FrameRateHz), ...
         'SourceType', 'ImportedChannels.Length', ...
