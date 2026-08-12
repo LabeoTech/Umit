@@ -113,6 +113,10 @@ nE = size(roiData, 3);
 
 baselineFrames = round(baselinePeriodSec * frameRateHz);
 baselineFrames = max(1, min(baselineFrames, nT));
+assert(baselineFrames < nT, ...
+    'Umitoolbox:calculateResponseFeatures:InvalidTimeWindow', ...
+    ['The baseline period consumes the entire recording. At least one ' ...
+     'response frame is required.']);
 
 if ischar(timeWindowSec) || (isstring(timeWindowSec) && isscalar(timeWindowSec))
     frOn = baselineFrames + 1;
