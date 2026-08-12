@@ -118,7 +118,7 @@ classdef UMITRigStore < handle
             end
         end
 
-        function obj = create(rigInfo)
+        function obj = create(rigInfo, varargin)
             %CREATE Create a new rig under the static UMIT rigs root.
             %
             %   store = UMITRigStore.create(rigInfo)
@@ -133,6 +133,11 @@ classdef UMITRigStore < handle
             %       illuminations
 
             errID = 'Umitoolbox:UMITRigStore:createFailed';
+            p = inputParser;
+            p.FunctionName = 'UMITRigStore.create';
+            addParameter(p, 'InternalStoreLockHeld', false, ...
+                @(x) islogical(x) && isscalar(x));
+            parse(p, varargin{:});
 
             if ~isstruct(rigInfo) || ~isscalar(rigInfo)
                 error(errID, '"rigInfo" must be a scalar struct.');
@@ -157,6 +162,9 @@ classdef UMITRigStore < handle
             illuminations = UMITRigStore.iValidateIlluminationRecords( ...
                 schema, illuminations, true);
 
+            if ~p.Results.InternalStoreLockHeld
+                storeLock = UMITRigStore.iAcquireStoreLock('createRig'); %#ok<NASGU>
+            end
             rigsRoot = UMITRigStore.getRigsRoot();
             rigPath = fullfile(rigsRoot, rigID);
 
@@ -499,11 +507,17 @@ classdef UMITRigStore < handle
                     'Spectrum could not be normalized to the canonical grid.');
             end
 
+            storeLock = UMITRigStore.iAcquireStoreLock('importSpectrum'); %#ok<NASGU>
             destinationFolder = UMITRigStore.iUserSpectrumFolder(category);
             if ~isfolder(destinationFolder)
                 mkdir(destinationFolder);
             end
             destination = fullfile(destinationFolder, [spectrumID '.txt']);
+            if ~isempty(UMITRigStore.iFindLibraryFile(category, spectrumID, '.txt'))
+                error('Umitoolbox:UMITRigStore:spectrumAlreadyExists', ...
+                    ['Spectrum "%s" already exists. Create a new physical-profile ' ...
+                     'ID instead of replacing a referenced spectrum.'], spectrumID);
+            end
             UMITRigStore.iWriteSpectrumFile( ...
                 destination, wavelength, response, metadata);
             spectrum = UMITRigStore.getSpectrum(category, spectrumID);
@@ -518,6 +532,7 @@ classdef UMITRigStore < handle
 
             [category, spectrumID] = UMITRigStore.iNormalizeSpectrumIdentity( ...
                 category, spectrumID);
+            storeLock = UMITRigStore.iAcquireStoreLock('removeSpectrum'); %#ok<NASGU>
             userFile = fullfile(UMITRigStore.iUserSpectrumFolder(category), ...
                 [spectrumID '.txt']);
             if ~isfile(userFile)
@@ -587,6 +602,7 @@ classdef UMITRigStore < handle
                     'Filter-set input must be a scalar struct containing id.');
             end
             filterSet = UMITRigStore.iValidateFilterSet(filterSet, filterSet.id);
+            storeLock = UMITRigStore.iAcquireStoreLock('importFilterSet'); %#ok<NASGU>
             libraryRoot = fullfile(UMITRigStore.getRigsRoot(), ...
                 getUMITRigSchema().spectrum.libraryFolder, ...
                 getUMITRigSchema().spectrum.filterSetsFolder);
@@ -594,6 +610,11 @@ classdef UMITRigStore < handle
                 mkdir(libraryRoot);
             end
             destination = fullfile(libraryRoot, [filterSet.id '.json']);
+            if ~isempty(UMITRigStore.iFindFilterSetFile(filterSet.id))
+                error('Umitoolbox:UMITRigStore:filterSetAlreadyExists', ...
+                    ['Filter set "%s" already exists. Create a new ID instead ' ...
+                     'of replacing a referenced definition.'], filterSet.id);
+            end
             serializable = filterSet;
             if isfield(serializable, 'file')
                 serializable = rmfield(serializable, 'file');
@@ -629,14 +650,15 @@ classdef UMITRigStore < handle
         function obj = setDefaultRig(rigUUID)
             %SETDEFAULTRIG Select exactly one active store-level default Rig.
 
+            storeLock = UMITRigStore.iAcquireStoreLock('setDefaultRig'); %#ok<NASGU>
             obj = UMITRigStore.open(rigUUID);
+            rigLock = obj.iAcquireWriteLock('setDefaultRig'); %#ok<NASGU>
             RigInfo = obj.getRigInfo();
             if ~strcmp(RigInfo.status, 'active')
                 error('Umitoolbox:UMITRigStore:setDefaultRigFailed', ...
                     'Archived Rig "%s" cannot become the default Rig.', RigInfo.rigID);
             end
 
-            lockCleanup = UMITRigStore.iAcquireStoreLock('setDefaultRig'); %#ok<NASGU>
             UMITRigStore.iWriteDefaultRigUUID(RigInfo.uuid);
         end
 
@@ -695,7 +717,7 @@ classdef UMITRigStore < handle
 
             if height(readableRigs) == 0
                 definition = UMITRigStore.iLoadDefaultRigDefinition();
-                obj = UMITRigStore.create(definition);
+                obj = UMITRigStore.create(definition, 'InternalStoreLockHeld', true);
                 UMITRigStore.iWriteDefaultRigUUID(obj.getRigInfo().uuid);
                 wasCreated = true;
                 resolution = 'createdDefault';
@@ -983,6 +1005,7 @@ classdef UMITRigStore < handle
 
             errID = 'Umitoolbox:UMITRigStore:archiveRigFailed';
             obj.iAssertWritable();
+            storeLock = UMITRigStore.iAcquireStoreLock('archiveRig'); %#ok<NASGU>
             lockCleanup = obj.iAcquireWriteLock('archiveRig'); %#ok<NASGU>
             obj.iAssertHealthyForMutation();
 
@@ -1468,6 +1491,12 @@ classdef UMITRigStore < handle
                     sprintf('Missing rig field(s): %s', strjoin(missingFields, ', ')));
             end
 
+            try
+                UMITRigStore.iValidateRigIdentity(obj.Schema, RigInfo, obj.RigRoot);
+            catch ME
+                report = obj.iAddIssue(report, 'error', 'invalidRigIdentity', ME.message);
+            end
+
             if isfield(RigInfo, 'status') && isfield(obj.Schema, 'rigStatuses') && ...
                     ~ismember(RigInfo.status, obj.Schema.rigStatuses)
                 report = obj.iAddIssue(report, 'error', 'invalidRigStatus', ...
@@ -1492,41 +1521,88 @@ classdef UMITRigStore < handle
             end
 
             if strcmp(mode, 'full') && isfield(RigInfo, 'resourceRegistry')
-                for iRecord = 1:numel(RigInfo.resourceRegistry)
-                    record = RigInfo.resourceRegistry(iRecord);
+                if ~isstruct(RigInfo.resourceRegistry)
+                    report = obj.iAddIssue(report, 'error', 'invalidResourceRegistry', ...
+                        'resourceRegistry must be a struct array.');
+                else
+                    resourceUUIDs = strings(0, 1);
+                    for iRecord = 1:numel(RigInfo.resourceRegistry)
+                        record = RigInfo.resourceRegistry(iRecord);
+                        try
+                            UMITRigStore.iValidateResourceRecord(obj.Schema, record);
+                            resourceUUIDs(end+1, 1) = string(record.uuid); %#ok<AGROW>
+                        catch ME
+                            report = obj.iAddIssue(report, 'error', 'invalidResourceRecord', ME.message);
+                            continue
+                        end
 
-                    if ~isfield(obj.Schema.resourceTypes, record.type)
-                        report = obj.iAddIssue(report, 'error', 'unknownResourceType', ...
-                            sprintf('Resource %s has unknown type "%s".', record.uuid, record.type));
-                        continue
+                        expectedState = obj.Schema.folders.active;
+                        if strcmp(record.status, 'archived')
+                            expectedState = obj.Schema.folders.archive;
+                        end
+                        expectedPath = obj.iBuildResourceRelativePath( ...
+                            record.type, expectedState, record.fileName);
+                        try
+                            if ~strcmpi(strrep(record.relativePath, '\\', '/'), expectedPath)
+                                error('Umitoolbox:UMITRigStore:invalidResourcePath', ...
+                                    'Resource %s has a non-canonical managed path.', record.uuid);
+                            end
+                            resourcePath = obj.iResolveRelativePath(record.relativePath);
+                        catch ME
+                            report = obj.iAddIssue(report, 'error', 'invalidResourcePath', ME.message);
+                            continue
+                        end
+                        if ~isfile(resourcePath)
+                            report = obj.iAddIssue(report, 'error', 'missingResourceFile', ...
+                                sprintf('Resource %s file is missing: %s', record.uuid, resourcePath));
+                            continue
+                        end
+                        try
+                            if ~strcmpi(computeFileChecksum(resourcePath), record.checksum)
+                                error('Umitoolbox:UMITRigStore:resourceChecksumMismatch', ...
+                                    'Resource %s checksum does not match its registry record.', record.uuid);
+                            end
+                            if strcmp(record.type, 'cameraCoregistration')
+                                UMITRigStore.iValidateCameraCoregistrationFile(resourcePath);
+                            end
+                        catch ME
+                            report = obj.iAddIssue(report, 'error', 'invalidResourcePayload', ME.message);
+                        end
+                    end
+                    if numel(unique(lower(resourceUUIDs))) ~= numel(resourceUUIDs)
+                        report = obj.iAddIssue(report, 'error', 'duplicateResourceUUID', ...
+                            'resourceRegistry contains duplicate resource UUIDs.');
                     end
 
-                    resourcePath = obj.iResolveRelativePath(record.relativePath);
-                    if ~isfile(resourcePath)
-                        report = obj.iAddIssue(report, 'error', 'missingResourceFile', ...
-                            sprintf('Resource %s file is missing: %s', record.uuid, resourcePath));
-                    end
-                end
-
-                for iType = fieldnames(obj.Schema.resourceTypes)'
-                    resourceType = iType{1};
-                    resourceDef = obj.Schema.resourceTypes.(resourceType);
-                    pointerField = resourceDef.activePointerField;
-                    activeUUID = RigInfo.(pointerField);
-
-                    if isempty(activeUUID)
-                        continue
-                    end
-
-                    idx = obj.iFindResourceIndex(RigInfo.resourceRegistry, activeUUID);
-                    if isempty(idx)
-                        report = obj.iAddIssue(report, 'error', 'danglingActivePointer', ...
-                            sprintf('%s points to a resource not in the registry: %s', ...
-                                pointerField, activeUUID));
-                    elseif strcmp(RigInfo.resourceRegistry(idx).status, 'archived')
-                        report = obj.iAddIssue(report, 'error', 'activePointsToArchived', ...
-                            sprintf('%s points to an archived resource: %s', ...
-                                pointerField, activeUUID));
+                    for iType = fieldnames(obj.Schema.resourceTypes)'
+                        resourceType = iType{1};
+                        resourceDef = obj.Schema.resourceTypes.(resourceType);
+                        pointerField = resourceDef.activePointerField;
+                        if ~isfield(RigInfo, pointerField)
+                            report = obj.iAddIssue(report, 'error', 'missingActivePointer', ...
+                                sprintf('Rig metadata is missing active pointer %s.', pointerField));
+                            continue
+                        end
+                        activeUUID = RigInfo.(pointerField);
+                        if ~(ischar(activeUUID) || (isstring(activeUUID) && isscalar(activeUUID)))
+                            report = obj.iAddIssue(report, 'error', 'invalidActivePointer', ...
+                                sprintf('%s must be a text scalar.', pointerField));
+                            continue
+                        end
+                        if isempty(activeUUID)
+                            continue
+                        end
+                        idx = obj.iFindResourceIndex(RigInfo.resourceRegistry, activeUUID);
+                        if isempty(idx)
+                            report = obj.iAddIssue(report, 'error', 'danglingActivePointer', ...
+                                sprintf('%s points to a resource not in the registry: %s', ...
+                                    pointerField, activeUUID));
+                        elseif ~strcmp(RigInfo.resourceRegistry(idx).type, resourceType) || ...
+                                ~strcmp(RigInfo.resourceRegistry(idx).status, 'active')
+                            report = obj.iAddIssue(report, 'error', 'invalidActivePointer', ...
+                                sprintf('%s does not point to an active %s resource: %s', ...
+                                pointerField, resourceType, activeUUID));
+                        end
                     end
                 end
             end
@@ -1555,12 +1631,14 @@ classdef UMITRigStore < handle
             saveMatAtomic( ...
                 fullfile(obj.RigRoot, obj.Schema.files.rigMetadata), ...
                 obj.Schema.metadataVariables.rig, RigInfo);
+            UMITRigStore.iRemoveObsoleteCalibrationFolder(obj);
         end
 
         function iUpdateHardwareField(obj, fieldName, value)
             %IUPDATEHARDWAREFIELD Atomically replace one validated hardware field.
 
             obj.iAssertWritable();
+            storeLock = UMITRigStore.iAcquireStoreLock(['set_', fieldName]); %#ok<NASGU>
             lockCleanup = obj.iAcquireWriteLock(['set_', fieldName]); %#ok<NASGU>
             obj.iAssertHealthyForMutation();
             RigInfo = obj.iLoadRigInfo();
@@ -1871,9 +1949,23 @@ classdef UMITRigStore < handle
         function path = iResolveRelativePath(obj, relativePath)
             %IRESOLVERELATIVEPATH Resolve a rig-relative path.
 
+            if ~(ischar(relativePath) || (isstring(relativePath) && isscalar(relativePath)))
+                error('Umitoolbox:UMITRigStore:invalidRelativePath', ...
+                    'Managed resource paths must be text scalars.');
+            end
             relativePath = char(string(relativePath));
+            if isempty(relativePath)
+                error('Umitoolbox:UMITRigStore:invalidRelativePath', ...
+                    'Managed resource paths cannot be empty.');
+            end
             relativePath = strrep(relativePath, '/', filesep);
-            path = fullfile(obj.RigRoot, relativePath);
+            rootPath = UMITRigStore.iAbsolutePath(obj.RigRoot);
+            path = UMITRigStore.iAbsolutePath(fullfile(rootPath, relativePath));
+            rootPrefix = [rootPath filesep];
+            if ~strcmpi(path, rootPath) && ~startsWith(path, rootPrefix, 'IgnoreCase', true)
+                error('Umitoolbox:UMITRigStore:invalidRelativePath', ...
+                    'Managed resource path escapes the Rig folder: %s', relativePath);
+            end
         end
 
         function cleanupObj = iAcquireWriteLock(obj, operation)
@@ -2072,6 +2164,95 @@ classdef UMITRigStore < handle
     end
 
     methods (Static, Access = private)
+        function iValidateRigIdentity(schema, RigInfo, rigRoot)
+            %IVALIDATERIGIDENTITY Validate immutable identity and folder binding.
+
+            if ~isstruct(RigInfo) || ~isscalar(RigInfo)
+                error('Umitoolbox:UMITRigStore:invalidRigMetadata', ...
+                    'Rig metadata must be a scalar struct.');
+            end
+            UMITRigStore.iAssertUUIDMatchesSchema(schema, RigInfo.uuid, 'Rig UUID');
+            rigID = UMITRigStore.iNormalizeManagedID(schema, RigInfo.rigID, 'rigID');
+            [~, folderName] = fileparts(UMITRigStore.iAbsolutePath(rigRoot));
+            if ~strcmpi(rigID, folderName)
+                error('Umitoolbox:UMITRigStore:invalidRigIdentity', ...
+                    'Rig metadata rigID does not match its folder name.');
+            end
+            if ~isnumeric(RigInfo.schemaVersion) || ~isscalar(RigInfo.schemaVersion) || ...
+                    RigInfo.schemaVersion ~= schema.version
+                error('Umitoolbox:UMITRigStore:invalidRigMetadata', ...
+                    'Rig schemaVersion must be %d.', schema.version);
+            end
+        end
+
+        function iValidateResourceRecord(schema, record)
+            %IVALIDATERESOURCERECORD Validate one persisted managed resource.
+
+            if ~isstruct(record) || ~isscalar(record)
+                error('Umitoolbox:UMITRigStore:invalidResourceRecord', ...
+                    'Each resourceRegistry entry must be a scalar struct.');
+            end
+            missing = setdiff(schema.resourceRecordFields, fieldnames(record));
+            if ~isempty(missing)
+                error('Umitoolbox:UMITRigStore:invalidResourceRecord', ...
+                    'Resource record is missing field(s): %s.', strjoin(missing, ', '));
+            end
+            UMITRigStore.iAssertUUIDMatchesSchema(schema, record.uuid, 'Resource UUID');
+            if ~(ischar(record.type) || (isstring(record.type) && isscalar(record.type))) || ...
+                    ~isfield(schema.resourceTypes, char(string(record.type)))
+                error('Umitoolbox:UMITRigStore:invalidResourceRecord', ...
+                    'Resource type is invalid.');
+            end
+            if ~(ischar(record.status) || (isstring(record.status) && isscalar(record.status))) || ...
+                    ~ismember(char(string(record.status)), schema.resourceStates)
+                error('Umitoolbox:UMITRigStore:invalidResourceRecord', ...
+                    'Resource status is invalid.');
+            end
+            textFields = {'fileName', 'relativePath', 'displayName', 'description', 'checksum', 'sourceFile'};
+            for iField = 1:numel(textFields)
+                value = record.(textFields{iField});
+                if ~(ischar(value) || (isstring(value) && isscalar(value)))
+                    error('Umitoolbox:UMITRigStore:invalidResourceRecord', ...
+                        'Resource field "%s" must be text.', textFields{iField});
+                end
+            end
+            if isempty(record.fileName) || contains(record.fileName, {'/', '\\'}) || ...
+                    ~strcmp(record.fileName, char(java.io.File(record.fileName).getName()))
+                error('Umitoolbox:UMITRigStore:invalidResourceRecord', ...
+                    'Resource fileName must be a plain file name.');
+            end
+            if isempty(record.checksum)
+                error('Umitoolbox:UMITRigStore:invalidResourceRecord', ...
+                    'Resource checksum cannot be empty.');
+            end
+        end
+
+        function iValidateCameraCoregistrationFile(filePath)
+            try
+                payload = load(filePath, '-mat');
+            catch ME
+                error('Umitoolbox:UMITRigStore:invalidCoregistrationPayload', ...
+                    'Camera-coregistration MAT file cannot be loaded: %s', ME.message);
+            end
+            if ~isfield(payload, 'tform') || isempty(payload.tform)
+                error('Umitoolbox:UMITRigStore:invalidCoregistrationPayload', ...
+                    'Camera-coregistration MAT file must contain tform.');
+            end
+            if isfield(payload, 'tformInfo') && ...
+                    (~isstruct(payload.tformInfo) || ~isscalar(payload.tformInfo))
+                error('Umitoolbox:UMITRigStore:invalidCoregistrationPayload', ...
+                    'Camera-coregistration tformInfo must be a scalar struct.');
+            end
+        end
+
+        function iAssertUUIDMatchesSchema(schema, value, label)
+            if ~(ischar(value) || (isstring(value) && isscalar(value))) || ...
+                    isempty(regexp(char(string(value)), schema.namingRules.uuidPattern, 'once'))
+                error('Umitoolbox:UMITRigStore:invalidUUID', ...
+                    '%s must be a canonical UUID.', label);
+            end
+        end
+
         function RigInfo = iUpgradeRigInfo(RigInfo)
             %IUPGRADERIGINFO Backfill fields added by later schema versions.
             %
@@ -2109,6 +2290,18 @@ classdef UMITRigStore < handle
             end
             if ~isfield(RigInfo, 'schemaVersion') || RigInfo.schemaVersion < 3
                 RigInfo.schemaVersion = 3;
+            end
+        end
+
+        function iRemoveObsoleteCalibrationFolder(obj)
+            %IREMOVEOBSOLETECALIBRATIONFOLDER Remove retired v1/v2 resources.
+            % The folder has no supported schema-v3 meaning. It is removed only
+            % after the v3 metadata write succeeds, and its exact path is built
+            % from the validated Rig root rather than from persisted metadata.
+
+            legacyFolder = fullfile(obj.RigRoot, 'calibration-files');
+            if isfolder(legacyFolder)
+                UMITRigStore.iRemoveFolderIfPresent(legacyFolder);
             end
         end
 
@@ -2500,13 +2693,23 @@ classdef UMITRigStore < handle
 
         function iWriteJSON(filePath, value)
             jsonText = jsonencode(value, 'PrettyPrint', true);
-            fid = fopen(filePath, 'w');
+            folder = fileparts(filePath);
+            stagedPath = [tempname(folder) '.json'];
+            cleanupStage = onCleanup(@() UMITRigStore.iDeleteFileIfPresent(stagedPath));
+            fid = fopen(stagedPath, 'w');
             if fid == -1
                 error('Umitoolbox:UMITRigStore:fileWriteFailed', ...
                     'Could not write file: %s', filePath);
             end
             cleanup = onCleanup(@() fclose(fid));
             fprintf(fid, '%s\n', jsonText);
+            clear cleanup
+            [ok, message] = movefile(stagedPath, filePath, 'f');
+            if ~ok
+                error('Umitoolbox:UMITRigStore:fileWriteFailed', ...
+                    'Could not install file "%s": %s', filePath, message);
+            end
+            clear cleanupStage
         end
 
         function metadata = iReadSpectrumMetadata(filePath)
@@ -2559,7 +2762,10 @@ classdef UMITRigStore < handle
             %IWRITESPECTRUMFILE Write metadata and samples as one text file.
 
             jsonLines = splitlines(string(jsonencode(metadata, 'PrettyPrint', true)));
-            fid = fopen(filePath, 'w');
+            folder = fileparts(filePath);
+            stagedPath = [tempname(folder) '.txt'];
+            cleanupStage = onCleanup(@() UMITRigStore.iDeleteFileIfPresent(stagedPath));
+            fid = fopen(stagedPath, 'w');
             if fid == -1
                 error('Umitoolbox:UMITRigStore:fileWriteFailed', ...
                     'Could not write file: %s', filePath);
@@ -2569,6 +2775,13 @@ classdef UMITRigStore < handle
                 fprintf(fid, '# %s\n', char(jsonLines(iLine)));
             end
             fprintf(fid, '%d\t%.17g\n', [wavelength(:), response(:)].');
+            clear cleanup
+            [ok, message] = movefile(stagedPath, filePath, 'f');
+            if ~ok
+                error('Umitoolbox:UMITRigStore:fileWriteFailed', ...
+                    'Could not install spectrum "%s": %s', filePath, message);
+            end
+            clear cleanupStage
         end
 
         function id = iNormalizeManagedID(schema, idIn, idLabel)
@@ -2746,6 +2959,12 @@ classdef UMITRigStore < handle
 
             if isfolder(path)
                 rmdir(path, 's');
+            end
+        end
+
+        function iDeleteFileIfPresent(path)
+            if isfile(path)
+                delete(path);
             end
         end
 
