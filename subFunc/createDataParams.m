@@ -192,6 +192,8 @@ DataParams.registration.method = '';
 DataParams.registration.referenceDescription = '';
 DataParams.registration.referenceFile = '';
 DataParams.registration.referenceImage = [];
+DataParams.registration.imageReferenceUUID = '';
+DataParams.registration.imageReferenceChecksum = '';
 DataParams.registration.createdOn = '';
 DataParams.registration.source = '';
 
@@ -328,6 +330,27 @@ end
 DataParams.folders.RawFolder = char(string(DataParams.folders.RawFolder));
 DataParams.folders.RawFolderStatus = char(string(DataParams.folders.RawFolderStatus));
 DataParams.folders.RawFolderSetBy = char(string(DataParams.folders.RawFolderSetBy));
+
+if ~isfield(DataParams, 'registration') || ...
+        ~isstruct(DataParams.registration) || ...
+        ~isscalar(DataParams.registration)
+    DataParams.registration = struct();
+end
+
+registrationDefaults = struct( ...
+    'imageReferenceUUID', '', ...
+    'imageReferenceChecksum', '');
+registrationFields = fieldnames(registrationDefaults);
+for k = 1:numel(registrationFields)
+    fieldName = registrationFields{k};
+    if ~isfield(DataParams.registration, fieldName)
+        DataParams.registration.(fieldName) = ...
+            registrationDefaults.(fieldName);
+    else
+        DataParams.registration.(fieldName) = char(string( ...
+            DataParams.registration.(fieldName)));
+    end
+end
 
 end
 

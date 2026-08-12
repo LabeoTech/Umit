@@ -105,6 +105,21 @@ else
     DataParams.registration.resourceUUID = char(string(DataParams.registration.resourceUUID));
 end
 
+registrationProvenanceDefaults = struct( ...
+    'imageReferenceUUID', '', ...
+    'imageReferenceChecksum', '');
+provenanceFields = fieldnames(registrationProvenanceDefaults);
+for k = 1:numel(provenanceFields)
+    thisField = provenanceFields{k};
+    if ~isfield(DataParams.registration, thisField)
+        DataParams.registration.(thisField) = ...
+            registrationProvenanceDefaults.(thisField);
+    else
+        DataParams.registration.(thisField) = char(string( ...
+            DataParams.registration.(thisField)));
+    end
+end
+
 if ~isfield(DataParams, 'cameraCoregistration') || ...
         ~isstruct(DataParams.cameraCoregistration) || ...
         ~isscalar(DataParams.cameraCoregistration)
