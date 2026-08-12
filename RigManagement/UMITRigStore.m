@@ -27,9 +27,10 @@ classdef UMITRigStore < handle
     %       setDefaultRig
     %       getOrCreateDefaultRig
     %       normalizeIlluminationName
-    %       getSpectrum / importSpectrum / removeSpectrum
-    %       getFilterSet / importFilterSet
+    %       getSpectrum / listSpectra / importSpectrum / removeSpectrum
+    %       getFilterSet / listFilterSets / importFilterSet
     %       getRigInfo
+    %       duplicate
     %       setCameras
     %       setIlluminations
     %       resolveOpticalConfiguration
@@ -129,6 +130,7 @@ classdef UMITRigStore < handle
             %   Optional fields:
             %       displayName
             %       description
+            %       metadata
             %       cameras
             %       illuminations
 
@@ -151,6 +153,14 @@ classdef UMITRigStore < handle
                 rigInfo, 'displayName', rigID, true, errID);
             description = UMITRigStore.iGetTextField( ...
                 rigInfo, 'description', '', true, errID);
+            if isfield(rigInfo, 'metadata')
+                metadata = rigInfo.metadata;
+                if ~isstruct(metadata) || ~isscalar(metadata)
+                    error(errID, 'Field "metadata" must be a scalar struct.');
+                end
+            else
+                metadata = struct();
+            end
             if isfield(rigInfo, 'isDefault')
                 error(errID, ...
                     ['"isDefault" is no longer Rig metadata. Create the Rig, ' ...
@@ -201,7 +211,7 @@ classdef UMITRigStore < handle
             RigInfo.modifiedOn = nowTime;
             RigInfo.status = 'active';
             RigInfo.archivedOn = NaT;
-            RigInfo.metadata = struct();
+            RigInfo.metadata = metadata;
             RigInfo.cameras = cameras;
             RigInfo.illuminations = illuminations;
             RigInfo.activeCoregistrationUUID = '';
@@ -462,6 +472,50 @@ classdef UMITRigStore < handle
                 'file', spectrumFile);
         end
 
+        function spectra = listSpectra(category)
+            %LISTSPECTRA List shared spectra without exposing library paths.
+            %
+            %   spectra = UMITRigStore.listSpectra(category)
+            %
+            %   CATEGORY is "illumination", "camera", or "filter". The
+            %   returned table contains ID, Category, Origin, DisplayName,
+            %   Manufacturer, and Model. Origin is "user" or "builtIn".
+
+            [category, ~] = UMITRigStore.iNormalizeSpectrumIdentity( ...
+                category, 'LibraryEntry');
+            schema = getUMITRigSchema();
+            userFolder = UMITRigStore.iUserSpectrumFolder(category);
+            builtInFolder = fullfile(fileparts(mfilename('fullpath')), ...
+                'resources', schema.spectrum.libraryFolder, ...
+                schema.spectrum.spectraFolder, category);
+            [files, origins] = UMITRigStore.iListLibraryFiles( ...
+                {userFolder, builtInFolder}, ["user", "builtIn"], '.txt');
+
+            ID = strings(0, 1);
+            Category = strings(0, 1);
+            Origin = strings(0, 1);
+            DisplayName = strings(0, 1);
+            Manufacturer = strings(0, 1);
+            Model = strings(0, 1);
+            for iFile = 1:numel(files)
+                [~, spectrumID] = fileparts(files{iFile});
+                spectrum = UMITRigStore.getSpectrum(category, spectrumID);
+                ID(end+1, 1) = string(spectrum.id); %#ok<AGROW>
+                Category(end+1, 1) = string(category); %#ok<AGROW>
+                Origin(end+1, 1) = origins(iFile); %#ok<AGROW>
+                DisplayName(end+1, 1) = UMITRigStore.iMetadataText( ...
+                    spectrum.metadata, 'displayName', spectrum.id); %#ok<AGROW>
+                Manufacturer(end+1, 1) = UMITRigStore.iMetadataText( ...
+                    spectrum.metadata, 'manufacturer', ''); %#ok<AGROW>
+                Model(end+1, 1) = UMITRigStore.iMetadataText( ...
+                    spectrum.metadata, 'model', ''); %#ok<AGROW>
+            end
+            spectra = table(ID, Category, Origin, DisplayName, Manufacturer, Model);
+            if ~isempty(spectra)
+                spectra = sortrows(spectra, 'ID');
+            end
+        end
+
         function spectrum = importSpectrum(sourceFile, category, spectrumID, metadata)
             %IMPORTSPECTRUM Normalize and import a shared optical spectrum.
             %
@@ -592,6 +646,37 @@ classdef UMITRigStore < handle
             filterSet = jsondecode(fileread(filterFile));
             filterSet = UMITRigStore.iValidateFilterSet(filterSet, filterSetID);
             filterSet.file = filterFile;
+        end
+
+        function filterSets = listFilterSets()
+            %LISTFILTERSETS List shared filter sets without exposing paths.
+            %
+            %   The returned table contains ID, Origin, DisplayName,
+            %   ExcitationSpectrumID, and EmissionSpectrumID. Origin is
+            %   "user" or "builtIn".
+
+            [files, origins] = UMITRigStore.iAllFilterSetFiles();
+            ID = strings(0, 1);
+            Origin = strings(0, 1);
+            DisplayName = strings(0, 1);
+            ExcitationSpectrumID = strings(0, 1);
+            EmissionSpectrumID = strings(0, 1);
+            for iFile = 1:numel(files)
+                [~, filterSetID] = fileparts(files{iFile});
+                filterSet = UMITRigStore.getFilterSet(filterSetID);
+                ID(end+1, 1) = string(filterSet.id); %#ok<AGROW>
+                Origin(end+1, 1) = origins(iFile); %#ok<AGROW>
+                DisplayName(end+1, 1) = string(filterSet.displayName); %#ok<AGROW>
+                ExcitationSpectrumID(end+1, 1) = ...
+                    string(filterSet.excitationSpectrumID); %#ok<AGROW>
+                EmissionSpectrumID(end+1, 1) = ...
+                    string(filterSet.emissionSpectrumID); %#ok<AGROW>
+            end
+            filterSets = table(ID, Origin, DisplayName, ...
+                ExcitationSpectrumID, EmissionSpectrumID);
+            if ~isempty(filterSets)
+                filterSets = sortrows(filterSets, 'ID');
+            end
         end
 
         function filterSet = importFilterSet(filterSet)
@@ -745,6 +830,55 @@ classdef UMITRigStore < handle
             %GETRIGINFO Return current rig metadata.
 
             RigInfo = obj.iLoadRigInfo();
+        end
+
+        function newStore = duplicate(obj, newRigID, varargin)
+            %DUPLICATE Create an independent active copy of this Rig.
+            %
+            %   newStore = sourceStore.duplicate(newRigID)
+            %   newStore = sourceStore.duplicate(newRigID, ...
+            %       'DisplayName', displayName)
+            %
+            %   Description, metadata, cameras, and illuminations are
+            %   copied. The new Rig receives fresh identity and timestamps.
+            %   Archived/default state, active coregistration, the resource
+            %   registry, and managed resource files are not copied. By
+            %   default the display name is the source display name followed
+            %   by " Copy"; callers may provide an explicit DisplayName.
+
+            errID = 'Umitoolbox:UMITRigStore:duplicateFailed';
+            p = inputParser;
+            p.FunctionName = 'UMITRigStore.duplicate';
+            addParameter(p, 'DisplayName', '', ...
+                @(x) ischar(x) || (isstring(x) && isscalar(x)));
+            parse(p, varargin{:});
+
+            obj.iAssertWritable();
+            storeLock = UMITRigStore.iAcquireStoreLock('duplicateRig'); %#ok<NASGU>
+            sourceLock = obj.iAcquireWriteLock('duplicateRig'); %#ok<NASGU>
+            report = obj.validate('Mode', 'full');
+            if ~report.isValid
+                error(errID, 'Source Rig validation failed: %s', ...
+                    UMITRigStore.iJoinIssueMessages(report.errors));
+            end
+            sourceInfo = obj.iLoadRigInfo();
+            displayName = char(string(p.Results.DisplayName));
+            if isempty(displayName)
+                if isempty(sourceInfo.displayName)
+                    displayName = char(string(newRigID));
+                else
+                    displayName = [sourceInfo.displayName ' Copy'];
+                end
+            end
+            duplicateInfo = struct( ...
+                'rigID', newRigID, ...
+                'displayName', displayName, ...
+                'description', sourceInfo.description, ...
+                'metadata', sourceInfo.metadata, ...
+                'cameras', sourceInfo.cameras, ...
+                'illuminations', sourceInfo.illuminations);
+            newStore = UMITRigStore.create(duplicateInfo, ...
+                'InternalStoreLockHeld', true);
         end
 
         function setCameras(obj, cameras)
@@ -2456,27 +2590,49 @@ classdef UMITRigStore < handle
                 {userFolder, builtInFolder}, [filterSetID '.json']);
         end
 
-        function files = iAllFilterSetFiles()
+        function [files, origins] = iAllFilterSetFiles()
             schema = getUMITRigSchema();
             folders = { ...
                 fullfile(UMITRigStore.getRigsRoot(), ...
                     schema.spectrum.libraryFolder, schema.spectrum.filterSetsFolder), ...
                 fullfile(fileparts(mfilename('fullpath')), 'resources', ...
                     schema.spectrum.libraryFolder, schema.spectrum.filterSetsFolder)};
+            [files, origins] = UMITRigStore.iListLibraryFiles( ...
+                folders, ["user", "builtIn"], '.json');
+        end
+
+        function [files, origins] = iListLibraryFiles(folders, folderOrigins, extension)
+            %ILISTLIBRARYFILES Enumerate user-first library files by stable ID.
+
             files = {};
+            origins = strings(0, 1);
             seen = strings(0, 1);
             for iFolder = 1:numel(folders)
                 if ~isfolder(folders{iFolder})
                     continue
                 end
-                entries = dir(fullfile(folders{iFolder}, '*.json'));
+                entries = dir(fullfile(folders{iFolder}, ['*' extension]));
                 for iEntry = 1:numel(entries)
-                    id = lower(string(erase(entries(iEntry).name, '.json')));
+                    [~, entryID] = fileparts(entries(iEntry).name);
+                    id = lower(string(entryID));
                     if any(seen == id)
                         continue
                     end
                     seen(end+1, 1) = id; %#ok<AGROW>
                     files{end+1} = fullfile(entries(iEntry).folder, entries(iEntry).name); %#ok<AGROW>
+                    origins(end+1, 1) = folderOrigins(iFolder); %#ok<AGROW>
+                end
+            end
+        end
+
+        function value = iMetadataText(metadata, fieldName, defaultValue)
+            %IMETADATATEXT Read optional display metadata as a string scalar.
+
+            value = string(defaultValue);
+            if isfield(metadata, fieldName)
+                candidate = metadata.(fieldName);
+                if ischar(candidate) || (isstring(candidate) && isscalar(candidate))
+                    value = string(candidate);
                 end
             end
         end
