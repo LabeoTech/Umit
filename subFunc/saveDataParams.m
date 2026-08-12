@@ -84,6 +84,27 @@ else
     DataParams.folders.RawFolderSetBy = char(string(DataParams.folders.RawFolderSetBy));
 end
 
+if ~isfield(DataParams, 'registration') || ...
+        ~isstruct(DataParams.registration) || ...
+        ~isscalar(DataParams.registration)
+    DataParams.registration = struct();
+end
+
+registrationProvenanceDefaults = struct( ...
+    'imageReferenceUUID', '', ...
+    'imageReferenceChecksum', '');
+provenanceFields = fieldnames(registrationProvenanceDefaults);
+for k = 1:numel(provenanceFields)
+    thisField = provenanceFields{k};
+    if ~isfield(DataParams.registration, thisField)
+        DataParams.registration.(thisField) = ...
+            registrationProvenanceDefaults.(thisField);
+    else
+        DataParams.registration.(thisField) = char(string( ...
+            DataParams.registration.(thisField)));
+    end
+end
+
 end
 
 function statusText = iInferRawFolderStatus(rawFolder)

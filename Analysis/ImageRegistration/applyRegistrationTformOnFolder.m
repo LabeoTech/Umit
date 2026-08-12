@@ -19,8 +19,6 @@ function varargout = applyRegistrationTformOnFolder(SaveFolder, varargin)
 %                    files.
 %
 %   Name-Value parameters:
-%       DataParamsFile            - Name of the DataParams MAT-file stored
-%                                   in the folder. Default: 'DataParams.mat'
 %       RequireUserConfirmation   - Logical scalar. If true, the saved QC
 %                                   figure is opened when available and the
 %                                   user is asked to confirm before the
@@ -52,23 +50,17 @@ end
 p = inputParser;
 p.FunctionName = mfilename;
 addRequired(p, 'SaveFolder', @isfolder);
-addParameter(p, 'DataParamsFile', 'DataParams.mat', @(x) ischar(x) || (isstring(x) && isscalar(x)));
 addParameter(p, 'RequireUserConfirmation', true, @(x) islogical(x) && isscalar(x));
 addParameter(p, 'OpenQCFigure', true, @(x) islogical(x) && isscalar(x));
 addParameter(p, 'AllowReapply', false, @(x) islogical(x) && isscalar(x));
 parse(p, SaveFolder, varargin{:});
 
 SaveFolder = char(string(p.Results.SaveFolder));
-dataParamsFile = char(string(p.Results.DataParamsFile));
 requireUserConfirmation = p.Results.RequireUserConfirmation;
 openQCFigure = p.Results.OpenQCFigure;
 allowReapply = p.Results.AllowReapply;
 
-if ~endsWith(dataParamsFile, '.mat', 'IgnoreCase', true)
-    dataParamsFile = [dataParamsFile '.mat'];
-end
-
-dataParamsPath = fullfile(SaveFolder, dataParamsFile);
+dataParamsPath = fullfile(SaveFolder, 'DataParams.mat');
 assert(isfile(dataParamsPath), ...
     'Umitoolbox:applyRegistrationTformOnFolder:MissingDataParams', ...
     'DataParams file not found: "%s".', dataParamsPath);
@@ -148,14 +140,14 @@ for iFile = 1:numel(datList)
     assert(fidIn ~= -1, ...
         'Umitoolbox:applyRegistrationTformOnFolder:FileOpenFailed', ...
         'Could not open "%s" for reading.', datPath);
-    cIn = onCleanup(@() fclose(fidIn)); %#ok<NASGU>
+    cIn = onCleanup(@() fclose(fidIn));
 
     tmpPath = fullfile(SaveFolder, [fileName '.tmp']);
     fidOut = fopen(tmpPath, 'w');
     assert(fidOut ~= -1, ...
         'Umitoolbox:applyRegistrationTformOnFolder:FileOpenFailed', ...
         'Could not open temporary output file "%s".', tmpPath);
-    cOut = onCleanup(@() fclose(fidOut)); %#ok<NASGU>
+    cOut = onCleanup(@() fclose(fidOut));
 
     fseek(fidIn, 0, 'bof');
     firstFrame = fread(fidIn, ny * nx, '*single');
@@ -188,7 +180,8 @@ end
 
 DataParams.registration.isRegistered = true;
 DataParams.registration.isReviewed = reviewedFlag;
-DataParams.registration.appliedOn = datestr(now, 'yyyy-mm-dd HH:MM:SS');
+DataParams.registration.appliedOn = char( ...
+    datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
 DataParams.registration.appliedBy = mfilename;
 DataParams.registration.confirmationMode = confirmationMode;
 validateDataParams(DataParams);
@@ -220,15 +213,6 @@ info = PipelineManager.addInput( ...
     'position', 1, ...
     'callType', 'positional', ...
     'isData', false);
-
-info = PipelineManager.addInput( ...
-    info, ...
-    'DataParamsFile', ...
-    'parameter', ...
-    'Name of the DataParams MAT-file stored in the folder.', ...
-    'kind', 'parameter', ...
-    'default', 'DataParams.mat', ...
-    'callType', 'namevalue');
 
 info = PipelineManager.addInput( ...
     info, ...

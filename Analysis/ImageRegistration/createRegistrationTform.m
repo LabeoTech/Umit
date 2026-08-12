@@ -5,10 +5,11 @@ function outFile = createRegistrationTform(SaveFolder, varargin)
 %   outFile = createRegistrationTform(SaveFolder, 'Name', Value, ...)
 %   info    = createRegistrationTform('pipelineInfo')
 %
-%   This function estimates a 2D geometric transform that aligns one image
-%   from the current folder to the reference image stored in
-%   DataParams.registration.referenceImage. The estimated transform and its
-%   associated QC metadata are stored back into DataParams.mat.
+%   This function resolves SaveFolder's UMIT project binding and estimates a
+%   2D geometric transform that aligns one image from the current folder to
+%   the subject's active project-managed Image Reference. The exact fixed
+%   image and managed-resource UUID/checksum provenance used for the estimate
+%   are stored in DataParams.registration with the transform and QC metadata.
 %
 %   This function does NOT modify any .dat files. It only estimates and
 %   stores the transform, generates QC artifacts, and updates
@@ -40,8 +41,10 @@ function outFile = createRegistrationTform(SaveFolder, varargin)
 %                    {DataParams.mat, QC .fig, QC .png}
 %
 %   Notes:
-%       - The reference image must already be stored in
-%         DataParams.registration.referenceImage.
+%       - SaveFolder must have a valid UMITProjectBinding.umitlink whose
+%         subject has an active, available managed Image Reference.
+%       - Folder-local reference images are not used as a fallback.
+%       - Managed Image Reference resources are read but never modified.
 %       - QC metrics are advisory only and do not replace visual review.
 %       - The QC artifacts are timestamped and saved in SaveFolder.
 %
@@ -97,30 +100,28 @@ RefStatistic = lower(char(string(p.Results.RefStatistic)));
 clear p
 
 % -------------------------------------------------------------------------
-% Load and validate DataParams
+% Resolve and validate the active managed Image Reference
 % -------------------------------------------------------------------------
 dataParamsFile = fullfile(SaveFolder, 'DataParams.mat');
 assert(isfile(dataParamsFile), ...
     'Umitoolbox:createRegistrationTform:MissingDataParams', ...
     'DataParams.mat was not found in "%s".', SaveFolder);
 
-tmp = load(dataParamsFile, 'DataParams');
-assert(isfield(tmp, 'DataParams'), ...
-    'Umitoolbox:createRegistrationTform:MissingDataParamsVariable', ...
-    'DataParams.mat does not contain a variable named "DataParams".');
+[~, managedReference, ImageReference] = ...
+    iResolveManagedImageReference(SaveFolder);
+refFr = single(ImageReference.image);
 
-DataParams = tmp.DataParams;
-validateDataParams(DataParams);
-
-assert(~isempty(DataParams.registration.referenceImage), ...
-    'Umitoolbox:createRegistrationTform:MissingReferenceImage', ...
-    ['DataParams.registration.referenceImage is empty. A folder ' ...
-     'reference image must be defined before estimating registration.']);
-
-refFr = single(DataParams.registration.referenceImage);
-assert(ndims(refFr) == 2, ...
-    'Umitoolbox:createRegistrationTform:InvalidReferenceImage', ...
-    'DataParams.registration.referenceImage must be a 2D image.');
+% Load only after managed-reference validation. loadDataParams normalizes
+% older DataParams files in memory without writing them.
+DataParams = loadDataParams(SaveFolder);
+if ~isempty(DataParams.view.imageSizeYX) && ...
+        ~isequal(size(refFr), double(DataParams.view.imageSizeYX(:).'))
+    error('Umitoolbox:createRegistrationTform:ReferenceSizeMismatch', ...
+        ['The active managed Image Reference size [%s] does not match ' ...
+         'DataParams.view.imageSizeYX [%s].'], ...
+        num2str(size(refFr)), ...
+        num2str(double(DataParams.view.imageSizeYX(:).')));
+end
 
 % -------------------------------------------------------------------------
 % Resolve moving-image source file
@@ -249,7 +250,7 @@ MIDelta = MIAfter - MIBefore;
 % -------------------------------------------------------------------------
 % Save QC artifacts
 % -------------------------------------------------------------------------
-ts = datestr(now, 'yyyy-mm-dd_HHMMSS');
+ts = char(datetime('now', 'Format', 'yyyy-MM-dd_HHmmss'));
 qcFigFile = fullfile(SaveFolder, ['registrationQC_' ts '.fig']);
 qcPngFile = fullfile(SaveFolder, ['registrationQC_' ts '.png']);
 
@@ -296,13 +297,15 @@ DataParams.registration.tform = tform;
 DataParams.registration.transformType = 'similarity';
 DataParams.registration.method = ...
     'imregcorr initialization + multimodal imregtform optimization';
-DataParams.registration.referenceDescription = ...
-    'Folder reference image stored in DataParams.registration.referenceImage';
-[~, usedName, usedExt] = fileparts(targetFile);
-DataParams.registration.referenceFile = [usedName usedExt];
+DataParams.registration.referenceDescription = iReferenceDescription( ...
+    managedReference, ImageReference);
+DataParams.registration.referenceFile = managedReference.absolutePath;
 DataParams.registration.referenceImage = refFr;
-DataParams.registration.createdOn = datestr(now, 'yyyy-mm-dd HH:MM:SS');
-DataParams.registration.source = mfilename;
+DataParams.registration.imageReferenceUUID = managedReference.uuid;
+DataParams.registration.imageReferenceChecksum = managedReference.checksum;
+DataParams.registration.createdOn = char( ...
+    datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+DataParams.registration.source = targetFile;
 DataParams.registration.qcStatus = qcStatus;
 DataParams.registration.qcWarning = qcWarning;
 DataParams.registration.qcMetrics = struct( ...
@@ -319,11 +322,10 @@ DataParams.registration.appliedOn = '';
 DataParams.registration.appliedBy = '';
 DataParams.registration.confirmationMode = '';
 DataParams.registration.notes = '';
-
-DataParams.lastModified = datestr(now, 'yyyy-mm-dd HH:MM:SS');
+DataParams.registration.resourceUUID = '';
 
 validateDataParams(DataParams);
-save(dataParamsFile, 'DataParams');
+saveDataParams(SaveFolder, DataParams);
 
 outFile = {dataParamsFile, qcFigFile, qcPngFile};
 
@@ -332,15 +334,16 @@ function info = localPipelineInfo()
 
 info = PipelineManager.createPipelineInfo( ...
     mfilename, ...
-    ['Estimate and store a folder registration transform using the ' ...
-     'reference image in DataParams.']);
+    ['Estimate and store a folder registration transform using the bound ' ...
+     'subject''s active project-managed Image Reference.']);
 
 info = PipelineManager.addInput( ...
     info, ...
     'SaveFolder', ...
     'SaveFolder', ...
-    ['Folder containing DataParams.mat, AcqInfos.mat, and the source ' ...
-     '.dat files.'], ...
+    ['Project-bound folder containing DataParams.mat, AcqInfos.mat, and ' ...
+     'source .dat files. Its subject must have an active managed Image ' ...
+     'Reference.'], ...
     'kind', 'input', ...
     'position', 1, ...
     'callType', 'positional', ...
@@ -394,6 +397,114 @@ end
 % =========================================================================
 % Local helpers
 % =========================================================================
+
+function [bindingContext, resource, ImageReference] = ...
+        iResolveManagedImageReference(saveFolder)
+%IRESOLVEMANAGEDIMAGEREFERENCE Resolve and validate the fixed image source.
+
+try
+    [bindingContext, store] = ...
+        UMITProjectStore.resolveProjectBinding(saveFolder);
+catch ME
+    error('Umitoolbox:createRegistrationTform:BindingResolutionFailed', ...
+        ['Could not resolve the project binding for SaveFolder "%s". ' ...
+         'No folder-local reference was used. %s'], saveFolder, ME.message);
+end
+
+try
+    resource = store.getActiveImageReference(bindingContext.subjectID);
+catch ME
+    error( ...
+        'Umitoolbox:createRegistrationTform:ActiveImageReferenceResolutionFailed', ...
+        ['Could not resolve the active managed Image Reference for subject ' ...
+         'UUID %s. %s'], bindingContext.subjectUUID, ME.message);
+end
+
+if isempty(resource)
+    error('Umitoolbox:createRegistrationTform:NoActiveImageReference', ...
+        ['Subject "%s" (%s) has no active managed Image Reference. ' ...
+         'Select one in Image Reference Manager before estimating registration.'], ...
+        bindingContext.subjectID, bindingContext.subjectUUID);
+end
+
+if ~strcmp(resource.type, 'imageReference') || ...
+        ~strcmp(resource.status, 'active') || ...
+        ~strcmpi(resource.ownerUUID, bindingContext.subjectUUID)
+    error('Umitoolbox:createRegistrationTform:InvalidActiveImageReference', ...
+        ['The resolved resource is not an active Image Reference owned by ' ...
+         'the SaveFolder subject.']);
+end
+
+if ~resource.fileExists || ~isfile(resource.absolutePath)
+    error('Umitoolbox:createRegistrationTform:MissingImageReferenceFile', ...
+        'The active managed Image Reference file is missing: %s', ...
+        resource.absolutePath);
+end
+
+try
+    actualChecksum = computeFileChecksum(resource.absolutePath);
+catch ME
+    error('Umitoolbox:createRegistrationTform:InvalidImageReferenceFile', ...
+        'Could not checksum the active managed Image Reference file: %s', ...
+        ME.message);
+end
+if ~strcmp(actualChecksum, resource.checksum)
+    error('Umitoolbox:createRegistrationTform:ImageReferenceChecksumMismatch', ...
+        ['The active managed Image Reference file does not match its ' ...
+         'registered SHA-256 checksum: %s'], resource.absolutePath);
+end
+
+try
+    loaded = load(resource.absolutePath, 'ImageReference', '-mat');
+catch ME
+    error('Umitoolbox:createRegistrationTform:InvalidImageReferenceFile', ...
+        'Could not load the active managed Image Reference file: %s', ...
+        ME.message);
+end
+if ~isfield(loaded, 'ImageReference')
+    error('Umitoolbox:createRegistrationTform:InvalidImageReferencePayload', ...
+        ['The active managed Image Reference file does not contain the ' ...
+         'required ImageReference variable: %s'], resource.absolutePath);
+end
+
+ImageReference = loaded.ImageReference;
+try
+    validateImageReferenceStruct(ImageReference);
+catch ME
+    error('Umitoolbox:createRegistrationTform:InvalidImageReferencePayload', ...
+        'The active managed Image Reference payload is invalid: %s', ...
+        ME.message);
+end
+
+if ~strcmpi(ImageReference.projectUUID, bindingContext.projectUUID) || ...
+        ~strcmpi(ImageReference.subjectUUID, bindingContext.subjectUUID)
+    error('Umitoolbox:createRegistrationTform:ImageReferenceIdentityMismatch', ...
+        ['The active Image Reference payload project/subject UUIDs do not ' ...
+         'match the resolved SaveFolder binding.']);
+end
+
+end
+
+
+function description = iReferenceDescription(resource, ImageReference)
+%IREFERENCEDESCRIPTION Choose the best managed-reference description.
+
+candidates = { ...
+    resource.description, ...
+    ImageReference.description, ...
+    resource.displayName, ...
+    ImageReference.name};
+
+description = '';
+for k = 1:numel(candidates)
+    candidate = strtrim(char(string(candidates{k})));
+    if ~isempty(candidate)
+        description = candidate;
+        return
+    end
+end
+
+end
 
 function targetFile = iResolveTargetFile(saveFolder, useFile)
 %IRESOLVETARGETFILE Resolve the .dat file used to estimate registration.
@@ -513,19 +624,19 @@ maxShift = max(abs(translationXY));
 fovDiag = hypot(imageSizeYX(1), imageSizeYX(2));
 
 if ~isfinite(MIDelta) || MIDelta <= 0
-    warnings{end+1} = 'Mutual information did not improve after registration.'; %#ok<AGROW>
+    warnings{end+1} = 'Mutual information did not improve after registration.';
 end
 
 if isfinite(maxShift) && maxShift > 0.20 * fovDiag
-    warnings{end+1} = 'Estimated translation is large relative to the field of view.'; %#ok<AGROW>
+    warnings{end+1} = 'Estimated translation is large relative to the field of view.';
 end
 
 if isfinite(rotationDeg) && abs(rotationDeg) > 15
-    warnings{end+1} = 'Estimated rotation is large.'; %#ok<AGROW>
+    warnings{end+1} = 'Estimated rotation is large.';
 end
 
 if all(isfinite(scaleXY)) && any(abs(scaleXY - 1) > 0.10)
-    warnings{end+1} = 'Estimated scale deviates substantially from 1.'; %#ok<AGROW>
+    warnings{end+1} = 'Estimated scale deviates substantially from 1.';
 end
 
 if isempty(warnings)
