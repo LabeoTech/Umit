@@ -1008,6 +1008,10 @@ classdef EventsManager < handle
                     'Tag', figTag, ...
                     'WindowState', 'maximized');
 
+                if iUseDarkTheme()
+                    f.Color = [0.27 0.27 0.27];
+                end
+
                 nRows = ceil(sqrt(nChan));
                 nCols = ceil(nChan / nRows);
 
@@ -1043,7 +1047,7 @@ classdef EventsManager < handle
                 axYSize = [0 1];
             end
 
-            traceColor = iGetTraceColor(ax(1));
+            [traceColor, axesColor, axesBackground] = iGetPlotColors(ax(1));
 
             idxEv = [];
             evNames = {};
@@ -1096,6 +1100,43 @@ classdef EventsManager < handle
                     'LineStyle', '-', ...
                     'Color', traceColor);
 
+                if ~isempty(obj.baselinePeriod) && isfinite(obj.baselinePeriod) && ...
+                        obj.baselinePeriod > 0 && ~isempty(idxEv)
+                    if mean(axesColor) > 0.5
+                        baselineColor = [1 1 1];
+                    else
+                        baselineColor = [0.35 0.35 0.35];
+                    end
+                    baselineHandles = gobjects(0);
+
+                    for iEv = 1:numel(idxEv)
+                        xOn = double(obj.timestamps(obj.eventID == idxEv(iEv) & ...
+                            obj.state == 1 & obj.selectedEvents));
+                        if isempty(xOn)
+                            continue
+                        end
+
+                        for iOnset = 1:numel(xOn)
+                            xStart = max(xVec(1), xOn(iOnset) - double(obj.baselinePeriod));
+                            xEnd = min(xVec(end), xOn(iOnset));
+                            if xEnd <= xStart
+                                continue
+                            end
+
+                            hBaseline = patch(ax(iChan), ...
+                                [xStart xEnd xEnd xStart].', ...
+                                [axYSize(1) axYSize(1) axYSize(2) axYSize(2)].', ...
+                                baselineColor, ...
+                                'FaceAlpha', 0.15, ...
+                                'EdgeColor', 'none', ...
+                                'Tag', 'BaselinePatch');
+                            baselineHandles(end+1) = hBaseline; %#ok<AGROW>
+                        end
+                    end
+                else
+                    baselineHandles = gobjects(0);
+                end
+
                 if isnumeric(obj.trigThr) && isscalar(obj.trigThr) && isfinite(obj.trigThr)
                     ln = line(ax(iChan), ...
                         [xVec(1) xVec(end)], ...
@@ -1104,15 +1145,28 @@ classdef EventsManager < handle
                     ln.Tag = 'thrLn';
                 end
 
-                title(ax(iChan), chanName{iChan}, 'Interpreter', 'none');
+                ax(iChan).XColor = axesColor;
+                ax(iChan).YColor = axesColor;
+                ax(iChan).GridColor = axesColor;
+                ax(iChan).Color = axesBackground;
+                title(ax(iChan), chanName{iChan}, 'Interpreter', 'none', ...
+                    'Color', axesColor);
                 ylabel(ax(iChan), 'amp. (V)');
                 grid(ax(iChan), 'on');
                 box(ax(iChan), 'on');
 
-                if iChan == 1 && ~isempty(ptc) && ~isempty(evNames)
+                if iChan == 1 && (~isempty(ptc) && ~isempty(evNames) || ...
+                        ~isempty(baselineHandles))
                     validPatch = isgraphics(ptc);
-                    if any(validPatch)
-                        legend(ax(iChan), ptc(validPatch), evNames(validPatch), ...
+                    legendHandles = ptc(validPatch);
+                    legendNames = evNames(validPatch);
+                    if ~isempty(baselineHandles)
+                        legendHandles(end+1) = baselineHandles(1);
+                        legendNames{end+1} = sprintf('Baseline (%.3g s)', ...
+                            double(obj.baselinePeriod));
+                    end
+                    if ~isempty(legendHandles)
+                        legend(ax(iChan), legendHandles, legendNames, ...
                             'Location', 'northeast', ...
                             'Interpreter', 'none');
                     end
@@ -1164,8 +1218,10 @@ classdef EventsManager < handle
                 [~, outIdx] = ismember(outNames, obj.AIChanList);
             end
 
-            function color = iGetTraceColor(oneAxes)
-                color = [0 0 0];
+            function [traceColor, axesColor, axesBackground] = iGetPlotColors(oneAxes)
+                traceColor = [0 0 0];
+                axesColor = [0 0 0];
+                axesBackground = [1 1 1];
 
                 bgColor = [];
                 figH = ancestor(oneAxes, 'figure');
@@ -1180,8 +1236,24 @@ classdef EventsManager < handle
                 if isnumeric(bgColor) && numel(bgColor) == 3 && all(isfinite(bgColor))
                     luminance = 0.2126 * bgColor(1) + 0.7152 * bgColor(2) + 0.0722 * bgColor(3);
                     if luminance < 0.5
-                        color = [1 1 1];
+                        traceColor = [1 1 1];
+                        axesColor = [0.75 0.75 0.75];
+                        axesBackground = [0.43 0.43 0.43];
                     end
+                end
+            end
+
+            function tf = iUseDarkTheme()
+                tf = false;
+
+                if exist('getUmitTheme', 'file') ~= 2
+                    return
+                end
+
+                try
+                    tf = strcmpi(getUmitTheme(), 'dark');
+                catch
+                    tf = false;
                 end
             end
         end
