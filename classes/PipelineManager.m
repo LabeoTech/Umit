@@ -14041,6 +14041,8 @@ classdef PipelineManager < handle
             choiceRowH = 26;
             panelChromeH = 28;
             maxVisibleChoices = 6;
+            rowSpacing = 6;
+            dialogPadding = [15 15 15 10];
             rowHeights = repmat({rowH}, 1, n);
 
             % Multi-select parameters need enough vertical space for their
@@ -14061,7 +14063,11 @@ classdef PipelineManager < handle
                 end
             end
 
-            figH = 20 + sum(cell2mat(rowHeights)) + btnH + 20;
+            % Include every vertical contribution made by the grid layout.
+            % Omitting the n inter-row gaps places the nested action row below
+            % the visible figure for dialogs with several parameters.
+            figH = dialogPadding(2) + dialogPadding(4) + ...
+                sum(cell2mat(rowHeights)) + btnH + rowSpacing * n;
 
             dlg = uifigure( ...
                 'Name',['Parameters: ' node.name], ...
@@ -14071,8 +14077,8 @@ classdef PipelineManager < handle
             gl = uigridlayout(dlg,[n+1 2]);
             gl.RowHeight   = [rowHeights, {btnH}];
             gl.ColumnWidth = {'1x','1.2x'};
-            gl.RowSpacing  = 6;
-            gl.Padding     = [15 15 15 10];
+            gl.RowSpacing  = rowSpacing;
+            gl.Padding     = dialogPadding;
 
             controls = gobjects(n,1);
 
