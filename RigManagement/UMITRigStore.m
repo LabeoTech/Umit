@@ -416,6 +416,27 @@ classdef UMITRigStore < handle
             end
         end
 
+        function definition = getBuiltInRigDefinition(templateID)
+            %GETBUILTINRIGDEFINITION Return a hydrated built-in Rig template.
+            %
+            %   definition = UMITRigStore.getBuiltInRigDefinition('OiS200')
+            %
+            %   This operation is read-only. It returns a complete rigInfo
+            %   structure suitable for review or customization before it is
+            %   passed to UMITRigStore.create. It never creates a Rig or
+            %   changes the template's canonical Rig ID.
+
+            if nargin < 1 || isempty(templateID)
+                templateID = 'OiS200';
+            end
+            templateID = char(string(templateID));
+            if ~strcmpi(templateID, 'OiS200')
+                error('Umitoolbox:UMITRigStore:unknownBuiltInRig', ...
+                    'Unknown built-in Rig definition: %s', templateID);
+            end
+            definition = UMITRigStore.iLoadDefaultRigDefinition();
+        end
+
         function canonicalName = normalizeIlluminationName(name)
             %NORMALIZEILLUMINATIONNAME Return a canonical Rig illumination name.
             %
@@ -707,6 +728,44 @@ classdef UMITRigStore < handle
             UMITRigStore.iWriteJSON(destination, serializable);
         end
 
+        function filterSet = updateFilterSet(filterSetID, filterSet)
+            %UPDATEFILTERSET Replace an existing user filter-set definition.
+            %
+            %   filterSet = UMITRigStore.updateFilterSet(filterSetID, definition)
+            %   validates the complete replacement before taking the store
+            %   lock. Built-in definitions and filter-set IDs are immutable.
+
+            schema = getUMITRigSchema();
+            filterSetID = UMITRigStore.iNormalizeManagedID( ...
+                schema, filterSetID, 'filterSetID');
+            if ~isstruct(filterSet) || ~isscalar(filterSet)
+                error('Umitoolbox:UMITRigStore:invalidFilterSet', ...
+                    'Filter-set input must be a scalar struct.');
+            end
+            filterSet.id = filterSetID;
+            filterSet = UMITRigStore.iValidateFilterSet(filterSet, filterSetID);
+
+            userFolder = fullfile(UMITRigStore.getRigsRoot(), ...
+                schema.spectrum.libraryFolder, schema.spectrum.filterSetsFolder);
+            storeLock = UMITRigStore.iAcquireStoreLock('updateFilterSet'); %#ok<NASGU>
+            destination = UMITRigStore.iFindCaseInsensitiveFile( ...
+                {userFolder}, [filterSetID '.json']);
+            if isempty(destination)
+                if isempty(UMITRigStore.iFindFilterSetFile(filterSetID))
+                    error('Umitoolbox:UMITRigStore:filterSetNotFound', ...
+                        'Filter set "%s" was not found.', filterSetID);
+                end
+                error('Umitoolbox:UMITRigStore:builtInFilterSetReadOnly', ...
+                    'Built-in filter set "%s" cannot be edited.', filterSetID);
+            end
+
+            serializable = filterSet;
+            if isfield(serializable, 'file')
+                serializable = rmfield(serializable, 'file');
+            end
+            UMITRigStore.iWriteJSON(destination, serializable);
+        end
+
         function obj = getDefaultRig()
             %GETDEFAULTRIG Resolve the active store-level default Rig.
             %
@@ -802,6 +861,12 @@ classdef UMITRigStore < handle
 
             if height(readableRigs) == 0
                 definition = UMITRigStore.iLoadDefaultRigDefinition();
+                if isfolder(fullfile(UMITRigStore.getRigsRoot(), definition.rigID))
+                    definition.rigID = [definition.rigID '_' ...
+                        strrep(UMITRigStore.iGenerateUUID(), '-', '')];
+                    definition.rigID = definition.rigID( ...
+                        1:min(64, numel(definition.rigID)));
+                end
                 obj = UMITRigStore.create(definition, 'InternalStoreLockHeld', true);
                 UMITRigStore.iWriteDefaultRigUUID(obj.getRigInfo().uuid);
                 wasCreated = true;
@@ -894,6 +959,46 @@ classdef UMITRigStore < handle
             illuminations = UMITRigStore.iValidateIlluminationRecords( ...
                 obj.Schema, illuminations, true);
             obj.iUpdateHardwareField('illuminations', illuminations);
+        end
+
+        function setHardwareConfiguration(obj, cameras, illuminations)
+            %SETHARDWARECONFIGURATION Atomically replace all Rig hardware.
+            %
+            %   store.setHardwareConfiguration(cameras, illuminations)
+            %
+            %   Both collections are validated before either is persisted.
+            %   The update is written under one Rig/store lock and rolls
+            %   back to the original metadata if post-write validation
+            %   fails. Use this method for staged GUI configuration edits.
+
+            cameras = UMITRigStore.iValidateCameraRecords( ...
+                obj.Schema, cameras, true);
+            illuminations = UMITRigStore.iValidateIlluminationRecords( ...
+                obj.Schema, illuminations, true);
+
+            obj.iAssertWritable();
+            storeLock = UMITRigStore.iAcquireStoreLock( ...
+                'setHardwareConfiguration'); %#ok<NASGU>
+            lockCleanup = obj.iAcquireWriteLock( ...
+                'setHardwareConfiguration'); %#ok<NASGU>
+            obj.iAssertHealthyForMutation();
+
+            RigInfo = obj.iLoadRigInfo();
+            originalRigInfo = RigInfo;
+            RigInfo.cameras = cameras;
+            RigInfo.illuminations = illuminations;
+            RigInfo.modifiedOn = datetime('now');
+
+            try
+                obj.iSaveRigInfo(RigInfo);
+                obj.iAssertValidAfterMutation();
+            catch ME
+                obj.iSaveRigInfo(originalRigInfo);
+                rethrow(ME)
+            end
+
+            obj.iAppendLog( ...
+                'setHardwareConfiguration', RigInfo.uuid, 'completed');
         end
 
         function optical = resolveOpticalConfiguration(obj, acqInfo, requestedIlluminations, filterSetID, dataFolder)
@@ -2707,11 +2812,6 @@ classdef UMITRigStore < handle
                 definition.cameras);
             definition.illuminations = UMITRigStore.iHydrateDefaultIlluminations( ...
                 definition.illuminations);
-            if isfolder(fullfile(UMITRigStore.getRigsRoot(), definition.rigID))
-                definition.rigID = [definition.rigID '_' ...
-                    strrep(UMITRigStore.iGenerateUUID(), '-', '')];
-                definition.rigID = definition.rigID(1:min(64, numel(definition.rigID)));
-            end
         end
 
         function cameras = iHydrateDefaultCameras(cameras)
