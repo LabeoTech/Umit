@@ -115,16 +115,20 @@ if isfile(acqInfoPath)
         'The existing "AcqInfos.mat" file in "%s" does not contain a valid acquisition-info structure.', SaveFolder);
 end
 
-if ~isempty(AcqInfoStream) && isfield(AcqInfoStream, 'rigUUID') && ...
-        ~isempty(AcqInfoStream.rigUUID)
-    rigStore = UMITRigStore.open(AcqInfoStream.rigUUID);
-    rigInfo = rigStore.getRigInfo();
-    if ~strcmp(rigInfo.status, 'active')
+if ~isempty(AcqInfoStream) && ...
+        ((isfield(AcqInfoStream, 'rigUUID') && ~isempty(AcqInfoStream.rigUUID)) || ...
+         (isfield(AcqInfoStream, 'rigID') && ~isempty(AcqInfoStream.rigID)))
+    [rigInfo, wasMigrated] = UMITRigStore.ensureDatasetRigAssociation(SaveFolder);
+    rigStore = UMITRigStore.open(rigInfo.uuid); %#ok<NASGU>
+    if strcmpi(rigInfo.status, 'archived')
         error('Umitoolbox:importFromTif:ArchivedRig', ...
-            'Archived Rig "%s" cannot be assigned to new imaging data.', rigInfo.rigID);
+            'Archived Rig "%s" cannot receive new imaging data.', rigInfo.rigID);
     end
     wasCreated = false;
     resolution = 'existingAcquisitionRig';
+    if wasMigrated
+        resolution = 'completedAcquisitionRigAssociation';
+    end
 else
     [rigStore, wasCreated, resolution] = UMITRigStore.getOrCreateDefaultRig();
     rigInfo = rigStore.getRigInfo();

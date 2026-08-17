@@ -118,6 +118,14 @@ classdef DatImageSource < handle
             obj.MaxCacheBytes = p.Results.maxCacheBytes;
             obj.setCacheMode(p.Results.cacheMode);
 
+            dataFolder = fileparts(obj.FilePath);
+            if isfile(fullfile(dataFolder, 'AcqInfos.mat')) && ...
+                    exist('UMITRigStore', 'class') == 8
+                % Legacy .dat folders acquire the current Active Rig once;
+                % existing UUID/ID associations, including archived history,
+                % are preserved by the backend.
+                UMITRigStore.ensureDatasetRigAssociation(dataFolder);
+            end
             obj.Info = loadMetaData(obj.FilePath);
             obj.validateContinuousDatLayout(obj.Info);
 
