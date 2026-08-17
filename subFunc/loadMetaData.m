@@ -532,11 +532,33 @@ else
     Info.FirstDim = 'y';
 end
 
+exposureMsec = [];
 if ~isempty(fieldnames(importedEntry)) && isfield(importedEntry, 'ExposureMsec') && ...
         ~isempty(importedEntry.ExposureMsec)
-    Info.ExposureMsec = importedEntry.ExposureMsec;
+    exposureMsec = importedEntry.ExposureMsec;
 elseif isfield(rawInfo, 'ExposureMsec') && ~isempty(rawInfo.ExposureMsec)
-    Info.ExposureMsec = rawInfo.ExposureMsec;
+    exposureMsec = rawInfo.ExposureMsec;
+end
+
+if ~isempty(exposureMsec)
+    Info.ExposureMsec = exposureMsec;
+end
+
+% Keep the speckle-specific exposure name available to legacy analysis code.
+% ExposureMsec remains the canonical normalized field; this is only a
+% file-facing compatibility alias for data identified as speckle.
+if iIsSpeckleDataFile(fileName, importedEntry, rawInfo, acqInfo)
+    speckleExposure = iFirstNonEmptyField(importedEntry, {'ExposureSpeckleMsec'});
+    if isempty(speckleExposure)
+        speckleExposure = iFirstNonEmptyField(rawInfo, {'ExposureSpeckleMsec'});
+    end
+    if isempty(speckleExposure)
+        speckleExposure = exposureMsec;
+    end
+
+    if ~isempty(speckleExposure)
+        Info.ExposureSpeckleMsec = speckleExposure;
+    end
 end
 
 if ~isempty(fieldnames(importedEntry)) && isfield(importedEntry, 'CamIdx') && ...
@@ -566,6 +588,87 @@ end
 
 if isfield(rawInfo, 'TimelineSourceIndex') && ~isempty(rawInfo.TimelineSourceIndex)
     Info.TimelineSourceIndex = rawInfo.TimelineSourceIndex;
+end
+
+end
+
+function value = iFirstNonEmptyField(S, fieldNames)
+%IFIRSTNONEMPTYFIELD Return the first non-empty field found in a struct.
+
+value = [];
+if ~isstruct(S) || ~isscalar(S)
+    return
+end
+
+for iField = 1:numel(fieldNames)
+    fieldName = fieldNames{iField};
+    if isfield(S, fieldName) && ~isempty(S.(fieldName))
+        value = S.(fieldName);
+        return
+    end
+end
+
+end
+
+function tf = iIsSpeckleDataFile(fileName, importedEntry, rawInfo, acqInfo)
+%IISSPECKLEDATAFILE Identify a file using speckle channel metadata.
+
+[~, baseName] = fileparts(fileName);
+tf = iContainsSpeckleText(baseName) || ...
+    iContainsSpeckleText(importedEntry) || ...
+    iHasNonEmptyField(importedEntry, 'ExposureSpeckleMsec') || ...
+    iHasNonEmptyField(rawInfo, 'ExposureSpeckleMsec') || ...
+    iHasNonEmptyField(acqInfo, 'ExposureSpeckleMsec');
+if tf || ~isstruct(acqInfo) || ~isscalar(acqInfo)
+    return
+end
+
+tf = iContainsSpeckleText(acqInfo);
+if tf
+    return
+end
+
+acqFields = fieldnames(acqInfo);
+for iField = 1:numel(acqFields)
+    candidate = acqInfo.(acqFields{iField});
+    if isstruct(candidate) && isscalar(candidate) && iContainsSpeckleText(candidate)
+        tf = true;
+        return
+    end
+end
+
+end
+
+function tf = iHasNonEmptyField(S, fieldName)
+%IHASNONEMPTYFIELD Check whether a scalar struct has a populated field.
+
+tf = isstruct(S) && isscalar(S) && isfield(S, fieldName) && ...
+    ~isempty(S.(fieldName));
+
+end
+
+function tf = iContainsSpeckleText(value)
+%ICONTAINSSPECKLETEXT Check common channel labels for "speckle".
+
+tf = false;
+if ischar(value) || (isstring(value) && isscalar(value))
+    tf = contains(char(string(value)), 'speckle', 'IgnoreCase', true);
+    return
+end
+
+if ~isstruct(value) || ~isscalar(value)
+    return
+end
+
+labelFields = {'Tag', 'Color', 'Name', 'datName'};
+for iField = 1:numel(labelFields)
+    fieldName = labelFields{iField};
+    if isfield(value, fieldName) && ...
+            (ischar(value.(fieldName)) || (isstring(value.(fieldName)) && isscalar(value.(fieldName)))) && ...
+            contains(char(string(value.(fieldName))), 'speckle', 'IgnoreCase', true)
+        tf = true;
+        return
+    end
 end
 
 end
