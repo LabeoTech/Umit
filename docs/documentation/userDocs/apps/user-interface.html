@@ -11,12 +11,17 @@ nav_order: 2
 <p style="text-align:center"><img src="../../assets/img/current/dataviewer-overview-current.png" alt="Current DataViewer interface" width="880"><br><em>The image and navigation controls are on the left; the temporal plot, ROI table, and event controls are on the right.</em></p>
 <p>The image panel displays the selected frame. Clicking a pixel moves the crosshair and updates the black temporal trace. The plot also shows colored traces for visible ROIs. The table below it controls ROI visibility, selection, names, colors, geometry, and current-frame measurements. Event controls become available when the Save Folder contains usable <samp>events.mat</samp> information.</p>
 <h2>Menus</h2>
+<p style="text-align:center"><img src="../../assets/img/current/dataviewer-management-menu.png" alt="DataViewer Management menu" width="880"><br><em>The Management menu separates routine folder, project, and rig association from File operations.</em></p>
 <table><tr><th>Control</th><th>Available when</th><th>Effect and persistence</th></tr>
 <tr><td><strong>File &gt; Open</strong></td><td>Always</td><td>Opens <samp>.dat</samp> or image-kind <samp>.umt</samp>; read-only.</td></tr>
 <tr><td><strong>File &gt; Save</strong></td><td>Data is loaded</td><td>Saves the current data under a chosen supported name.</td></tr>
 <tr><td><strong>File &gt; Import &gt; from bin/from tif</strong></td><td>Always</td><td>Creates processed data and metadata in a Save Folder.</td></tr>
 <tr><td><strong>File &gt; Export &gt; to tif</strong></td><td>Compatible image data is loaded</td><td>Writes TIFF output; the source remains unchanged.</td></tr>
-<tr><td><strong>File &gt; Set Raw Folder</strong></td><td>Data and an accessible Save Folder</td><td>Stores a selected path, the Save Folder itself, or <samp>Missing</samp> in <samp>DataParams.mat</samp>.</td></tr>
+<tr><td><strong>Management &gt; Set Raw Folder</strong></td><td>Data and an accessible Save Folder</td><td>Stores a selected path, the Save Folder itself, or <samp>Missing</samp> in <samp>DataParams.mat</samp>.</td></tr>
+<tr><td><strong>Management &gt; Project &gt; Bind Current Session</strong></td><td>Data and an accessible Save Folder</td><td>Opens Project Binding Manager with the current Save Folder, without duplicating project, subject, and session choices in DataViewer.</td></tr>
+<tr><td><strong>Management &gt; Project &gt; Project Manager</strong></td><td>Always</td><td>Opens the full project-administration interface.</td></tr>
+<tr><td><strong>Management &gt; Rig &gt; Assign Rig</strong></td><td>Data is loaded</td><td>Lists readable Active or Available rigs. The current rig is checked; replacing it requires confirmation.</td></tr>
+<tr><td><strong>Management &gt; Rig &gt; Rig Manager</strong></td><td>Always</td><td>Opens the full rig-administration interface.</td></tr>
 <tr><td><strong>Help &gt; Online documentation</strong></td><td>Always</td><td>Opens the documentation site.</td></tr></table>
 <h2>Tabs</h2>
 <table><tr><th>Tab</th><th>Control</th><th>Use</th></tr>
