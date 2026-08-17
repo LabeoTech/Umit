@@ -25,6 +25,9 @@ classdef UMITRigStore < handle
     %       rigExists
     %       getDefaultRig
     %       setDefaultRig
+    %       getActiveRig
+    %       listAssignableRigs
+    %       validateLifecycle
     %       getOrCreateDefaultRig
     %       normalizeIlluminationName
     %       getSpectrum / listSpectra / importSpectrum / removeSpectrum
@@ -210,7 +213,16 @@ classdef UMITRigStore < handle
             RigInfo.description = description;
             RigInfo.createdOn = nowTime;
             RigInfo.modifiedOn = nowTime;
-            RigInfo.status = 'active';
+            lifecycle = UMITRigStore.validateLifecycle();
+            if ~lifecycle.isValid && lifecycle.activeCount ~= 0
+                error(errID, 'Rig lifecycle is invalid: %s', ...
+                    UMITRigStore.iJoinIssueMessages(lifecycle.errors));
+            end
+            if lifecycle.activeCount == 0
+                RigInfo.status = 'active';
+            else
+                RigInfo.status = 'available';
+            end
             RigInfo.archivedOn = NaT;
             RigInfo.metadata = metadata;
             RigInfo.cameras = cameras;
@@ -374,6 +386,134 @@ classdef UMITRigStore < handle
                 IsDefault = IsReadable & strcmpi(RigUUID, string(defaultUUID));
             end
             rigs = table(RigUUID, RigID, DisplayName, IsDefault, Status, IsReadable, RigRoot);
+        end
+
+        function report = validateLifecycle()
+            %VALIDATE LIFECYCLE Validate the store-wide Rig state.
+            %
+            %   Exactly one readable Rig must be active. The report is
+            %   separate from per-Rig validation because the invariant spans
+            %   multiple metadata files.
+
+            rigs = UMITRigStore.listRigs();
+            activeRows = rigs.IsReadable & strcmpi(rigs.Status, "active");
+            activeCount = nnz(activeRows);
+            errors = struct('code', {}, 'message', {});
+
+            if activeCount == 0
+                errors(end+1) = struct( ...
+                    'code', 'zeroActiveRig', ...
+                    'message', 'Rig store must contain exactly one Active Rig.');
+            elseif activeCount > 1
+                errors(end+1) = struct( ...
+                    'code', 'multipleActiveRigs', ...
+                    'message', sprintf( ...
+                    'Rig store contains %d Active Rigs; exactly one is required.', ...
+                    activeCount));
+            end
+
+            activeRigUUID = '';
+            if activeCount == 1
+                activeRigUUID = char(rigs.RigUUID(find(activeRows, 1, 'first')));
+            end
+
+            report = struct( ...
+                'isValid', isempty(errors), ...
+                'activeCount', activeCount, ...
+                'activeRigUUID', activeRigUUID, ...
+                'errors', errors);
+        end
+
+        function obj = getActiveRig()
+            %GETACTIVERIG Resolve the sole Active Rig for new work.
+
+            report = UMITRigStore.validateLifecycle();
+            if ~report.isValid
+                error('Umitoolbox:UMITRigStore:invalidLifecycle', ...
+                    '%s', UMITRigStore.iJoinIssueMessages(report.errors));
+            end
+            obj = UMITRigStore.open(report.activeRigUUID);
+        end
+
+        function rigs = listAssignableRigs()
+            %LISTASSIGNABLERIGS Return Active and Available readable Rigs.
+
+            rigs = UMITRigStore.listRigs();
+            rigs = rigs(rigs.IsReadable & ...
+                ismember(lower(rigs.Status), ["active", "available"]), :);
+        end
+
+        function [rigInfo, wasMigrated] = ensureDatasetRigAssociation(dataFolder)
+            %ENSUREDATASETRIGASSOCIATION Resolve and persist one dataset Rig.
+            %
+            %   Existing UUID/ID associations are preserved, including
+            %   Archived historical Rigs. A missing association is assigned
+            %   the current Active Rig exactly once.
+
+            errID = 'Umitoolbox:UMITRigStore:datasetRigMigrationFailed';
+            if ~(ischar(dataFolder) || (isstring(dataFolder) && isscalar(dataFolder)))
+                error(errID, '"dataFolder" must be a character vector or string scalar.');
+            end
+            dataFolder = char(string(dataFolder));
+            acqPath = fullfile(dataFolder, 'AcqInfos.mat');
+            if ~isfolder(dataFolder) || ~isfile(acqPath)
+                error(errID, 'AcqInfos.mat is required for Rig association: %s', dataFolder);
+            end
+
+            loaded = load(acqPath);
+            names = fieldnames(loaded);
+            if isempty(names)
+                error(errID, 'AcqInfos.mat contains no acquisition metadata: %s', acqPath);
+            end
+            metadataName = 'AcqInfoStream';
+            if isfield(loaded, metadataName)
+                metadata = loaded.(metadataName);
+            elseif isfield(loaded, 'AcqInfos')
+                metadataName = 'AcqInfos';
+                metadata = loaded.(metadataName);
+            else
+                metadataName = names{1};
+                metadata = loaded.(metadataName);
+            end
+            if ~isstruct(metadata) || ~isscalar(metadata)
+                error(errID, 'AcqInfos.mat does not contain scalar acquisition metadata.');
+            end
+
+            hasUUID = isfield(metadata, 'rigUUID') && ...
+                ~isempty(strtrim(char(string(metadata.rigUUID))));
+            hasID = isfield(metadata, 'rigID') && ...
+                ~isempty(strtrim(char(string(metadata.rigID))));
+
+            if hasUUID
+                try
+                    rigStore = UMITRigStore.open(metadata.rigUUID);
+                catch ME
+                    error(errID, 'Existing Rig UUID could not be resolved: %s', ME.message);
+                end
+            elseif hasID
+                try
+                    rigStore = UMITRigStore.openByRigID(metadata.rigID);
+                catch ME
+                    error(errID, 'Existing Rig ID could not be resolved: %s', ME.message);
+                end
+            else
+                rigStore = UMITRigStore.getActiveRig();
+            end
+
+            rigInfo = rigStore.getRigInfo();
+            if hasUUID && hasID && ...
+                    ~strcmpi(char(string(metadata.rigUUID)), rigInfo.uuid)
+                error(errID, 'Existing rigID and rigUUID identify different Rigs.');
+            end
+            if ~hasUUID || ~hasID
+                metadata.rigUUID = rigInfo.uuid;
+                metadata.rigID = rigInfo.rigID;
+                loaded.(metadataName) = metadata;
+                UMITRigStore.iSaveLoadedMatAtomic(acqPath, loaded);
+                wasMigrated = true;
+            else
+                wasMigrated = false;
+            end
         end
 
         function tf = rigExists(rigID)
@@ -811,23 +951,24 @@ classdef UMITRigStore < handle
             RigInfo = obj.getRigInfo();
             if ~strcmp(RigInfo.status, 'active')
                 error('Umitoolbox:UMITRigStore:invalidDefaultRig', ...
-                    'The default Rig "%s" is archived.', RigInfo.rigID);
+                    'The default Rig "%s" is not Active.', RigInfo.rigID);
             end
         end
 
         function obj = setDefaultRig(rigUUID)
-            %SETDEFAULTRIG Select exactly one active store-level default Rig.
+            %SETDEFAULTRIG Backward-compatible alias for activating a Rig.
 
-            storeLock = UMITRigStore.iAcquireStoreLock('setDefaultRig'); %#ok<NASGU>
-            obj = UMITRigStore.open(rigUUID);
-            rigLock = obj.iAcquireWriteLock('setDefaultRig'); %#ok<NASGU>
-            RigInfo = obj.getRigInfo();
-            if ~strcmp(RigInfo.status, 'active')
-                error('Umitoolbox:UMITRigStore:setDefaultRigFailed', ...
-                    'Archived Rig "%s" cannot become the default Rig.', RigInfo.rigID);
+            try
+                obj = UMITRigStore.open(rigUUID);
+                obj.activateRig();
+                UMITRigStore.iWriteDefaultRigUUID(obj.getRigInfo().uuid);
+            catch ME
+                if startsWith(ME.identifier, 'Umitoolbox:UMITRigStore:')
+                    error('Umitoolbox:UMITRigStore:setDefaultRigFailed', ...
+                        '%s', ME.message);
+                end
+                rethrow(ME)
             end
-
-            UMITRigStore.iWriteDefaultRigUUID(RigInfo.uuid);
         end
 
         function [obj, wasCreated, resolution] = getOrCreateDefaultRig()
@@ -858,6 +999,11 @@ classdef UMITRigStore < handle
             resolution = 'existingDefault';
             storeLock = UMITRigStore.iAcquireStoreLock('getOrCreateDefaultRig'); %#ok<NASGU>
 
+            lifecycle = UMITRigStore.validateLifecycle();
+            if lifecycle.activeCount > 1
+                error(errID, 'Multiple Active Rigs exist. Activate one explicitly.');
+            end
+
             obj = UMITRigStore.getDefaultRig();
             if ~isempty(obj)
                 return
@@ -872,18 +1018,16 @@ classdef UMITRigStore < handle
             end
 
             rigs = UMITRigStore.listRigs();
-            rigs = rigs(rigs.Status ~= "archived", :);
-
             readableRigs = rigs(rigs.IsReadable, :);
 
-            if height(readableRigs) == 1
-                obj = UMITRigStore.open(char(readableRigs.RigUUID(1)));
+            if lifecycle.activeCount == 1
+                obj = UMITRigStore.getActiveRig();
                 UMITRigStore.iWriteDefaultRigUUID(obj.getRigInfo().uuid);
                 resolution = 'promotedExisting';
                 return
             end
 
-            if height(readableRigs) == 0
+            if isempty(readableRigs) || all(readableRigs.Status == "archived")
                 definition = UMITRigStore.iLoadDefaultRigDefinition();
                 if isfolder(fullfile(UMITRigStore.getRigsRoot(), definition.rigID))
                     definition.rigID = [definition.rigID '_' ...
@@ -899,9 +1043,8 @@ classdef UMITRigStore < handle
             end
 
             error(errID, ...
-                ['Multiple active rigs exist and no store-level default is selected. ' ...
-                'Call UMITRigStore.setDefaultRig, or open a specific rig by ' ...
-                'rigID/rigUUID instead of requesting the default.']);
+                ['No Active Rig exists. Restore or activate an Available Rig ' ...
+                'before requesting the default.']);
         end
     end
 
@@ -922,7 +1065,7 @@ classdef UMITRigStore < handle
         end
 
         function newStore = duplicate(obj, newRigID, varargin)
-            %DUPLICATE Create an independent active copy of this Rig.
+            %DUPLICATE Create an independent Available copy of this Rig.
             %
             %   newStore = sourceStore.duplicate(newRigID)
             %   newStore = sourceStore.duplicate(newRigID, ...
@@ -1253,7 +1396,77 @@ classdef UMITRigStore < handle
             obj.iAppendLog('renameRigID', RigInfo.uuid, 'completed');
         end
 
-        function archiveRig(obj)
+        function activateRig(obj)
+            %ACTIVATERIG Make this Available Rig the acquisition Rig.
+            %
+            %   The previous Active Rig is demoted to Available. Archived
+            %   Rigs must be restored before activation.
+
+            errID = 'Umitoolbox:UMITRigStore:activateRigFailed';
+            obj.iAssertWritable();
+            storeLock = UMITRigStore.iAcquireStoreLock('activateRig'); %#ok<NASGU>
+            obj.iAssertHealthyForMutation();
+            RigInfo = obj.iLoadRigInfo();
+            if strcmp(RigInfo.status, 'archived')
+                error(errID, 'Archived Rig "%s" must be restored before activation.', RigInfo.rigID);
+            end
+
+            lifecycle = UMITRigStore.validateLifecycle();
+            rigRows = UMITRigStore.listRigs();
+            activeMask = strcmpi(string(rigRows.Status), 'active');
+            activeUUIDs = string(rigRows.RigUUID(activeMask));
+            if strcmp(RigInfo.status, 'active') && lifecycle.isValid
+                UMITRigStore.iWriteDefaultRigUUID(RigInfo.uuid);
+                return
+            end
+
+            % Demote every other Active Rig. This also repairs stores written
+            % by older code that accidentally left multiple Active entries.
+            targetLock = obj.iAcquireWriteLock('activateRig'); %#ok<NASGU>
+            otherRigs = {};
+            otherLocks = {};
+            originalOtherInfos = {};
+            for i = 1:numel(activeUUIDs)
+                if strcmp(char(activeUUIDs(i)), RigInfo.uuid)
+                    continue
+                end
+                other = UMITRigStore.open(char(activeUUIDs(i)));
+                other.iAssertWritable();
+                otherRigs{end+1} = other; %#ok<AGROW>
+                otherLocks{end+1} = other.iAcquireWriteLock('activateRig'); %#ok<AGROW>
+                originalOtherInfos{end+1} = other.iLoadRigInfo(); %#ok<AGROW>
+            end
+            originalTarget = RigInfo;
+
+            RigInfo.status = 'active';
+            RigInfo.archivedOn = NaT;
+            RigInfo.modifiedOn = datetime('now');
+            try
+                for i = 1:numel(otherRigs)
+                    otherInfo = originalOtherInfos{i};
+                    otherInfo.status = 'available';
+                    otherInfo.archivedOn = NaT;
+                    otherInfo.modifiedOn = datetime('now');
+                    otherRigs{i}.iSaveRigInfo(otherInfo);
+                end
+                obj.iSaveRigInfo(RigInfo);
+                UMITRigStore.iAssertLifecycleValid();
+            catch ME
+                try
+                    for i = 1:numel(otherRigs)
+                        otherRigs{i}.iSaveRigInfo(originalOtherInfos{i});
+                    end
+                    obj.iSaveRigInfo(originalTarget);
+                catch
+                end
+                rethrow(ME)
+            end
+            UMITRigStore.iWriteDefaultRigUUID(RigInfo.uuid);
+            obj.LastValidationReport = obj.validate('Mode', 'quick');
+            obj.iAppendLog('activateRig', RigInfo.uuid, 'completed');
+        end
+
+        function archiveRig(obj, replacementRigUUID)
             %ARCHIVERIG Soft-delete this rig: mark it archived, keep its data.
             %
             %   store.archiveRig()
@@ -1263,49 +1476,90 @@ classdef UMITRigStore < handle
             %   rigID) keep resolving via openByRigID/open/rigExists.
             %   Archived rigs are excluded from getOrCreateDefaultRig's
             %   candidate pool, so they stop being selected for new work.
-            %   The default rig cannot be archived directly -- mark a
-            %   different rig as default first (setDefaultRig).
+            %   An Active Rig requires replacementRigUUID. The replacement
+            %   becomes Active as part of the same lifecycle transition.
 
             errID = 'Umitoolbox:UMITRigStore:archiveRigFailed';
+            if nargin < 2
+                replacementRigUUID = '';
+            end
             obj.iAssertWritable();
             storeLock = UMITRigStore.iAcquireStoreLock('archiveRig'); %#ok<NASGU>
             lockCleanup = obj.iAcquireWriteLock('archiveRig'); %#ok<NASGU>
             obj.iAssertHealthyForMutation();
 
             RigInfo = obj.iLoadRigInfo();
-            originalRigInfo = RigInfo;
-
             if strcmp(RigInfo.status, 'archived')
                 error(errID, 'Rig is already archived: %s', RigInfo.rigID);
             end
 
-            defaultUUID = UMITRigStore.iReadDefaultRigUUID();
-            if strcmpi(defaultUUID, RigInfo.uuid)
-                error(errID, ...
-                    ['Cannot archive the default Rig "%s". Select a different ' ...
-                    'default with UMITRigStore.setDefaultRig first.'], RigInfo.rigID);
+            lifecycle = UMITRigStore.validateLifecycle();
+            if ~lifecycle.isValid
+                error(errID, '%s', UMITRigStore.iJoinIssueMessages(lifecycle.errors));
             end
 
+            replacement = [];
+            if strcmp(RigInfo.status, 'active')
+                if isempty(strtrim(char(string(replacementRigUUID))))
+                    error(errID, ...
+                        'Archiving the Active Rig requires another Rig to become Active.');
+                end
+                try
+                    replacement = UMITRigStore.open(replacementRigUUID);
+                catch ME
+                    error(errID, 'Replacement Rig could not be resolved: %s', ME.message);
+                end
+                replacementInfo = replacement.getRigInfo();
+                if strcmp(replacementInfo.uuid, RigInfo.uuid) || ...
+                        strcmp(replacementInfo.status, 'archived')
+                    error(errID, 'Replacement Rig must be a different non-archived Rig.');
+                end
+                if ~strcmp(replacementInfo.status, 'available')
+                    error(errID, 'Replacement Rig must be Available.');
+                end
+            end
+
+            originalRigInfo = RigInfo;
+            originalReplacementInfo = [];
+            if ~isempty(replacement)
+                replacementLock = replacement.iAcquireWriteLock('archiveRig'); %#ok<NASGU>
+                originalReplacementInfo = replacement.iLoadRigInfo();
+                replacementInfo.status = 'active';
+                replacementInfo.archivedOn = NaT;
+                replacementInfo.modifiedOn = datetime('now');
+                RigInfo.status = 'archived';
+            end
             RigInfo.status = 'archived';
             RigInfo.archivedOn = datetime('now');
             RigInfo.modifiedOn = datetime('now');
 
             try
+                if ~isempty(replacement)
+                    replacement.iSaveRigInfo(replacementInfo);
+                end
                 obj.iSaveRigInfo(RigInfo);
-                obj.iAssertValidAfterMutation();
+                UMITRigStore.iAssertLifecycleValid();
             catch ME
                 obj.iSaveRigInfo(originalRigInfo);
+                if ~isempty(replacement)
+                    replacement.iSaveRigInfo(originalReplacementInfo);
+                end
                 rethrow(ME)
+            end
+
+            if ~isempty(replacement)
+                UMITRigStore.iWriteDefaultRigUUID(replacementInfo.uuid);
             end
 
             obj.iAppendLog('archiveRig', RigInfo.uuid, 'completed');
         end
 
         function restoreRig(obj)
-            %RESTORERIG Restore an archived Rig to active status.
+            %RESTORERIG Restore an archived Rig to Available status.
 
             errID = 'Umitoolbox:UMITRigStore:restoreRigFailed';
             obj.iAssertWritable();
+            storeLock = UMITRigStore.iAcquireStoreLock('restoreRig'); %#ok<NASGU>
             lockCleanup = obj.iAcquireWriteLock('restoreRig'); %#ok<NASGU>
             report = obj.validate('Mode', 'full');
             if ~report.isValid
@@ -1318,12 +1572,17 @@ classdef UMITRigStore < handle
                 error(errID, 'Rig is not archived: %s', RigInfo.rigID);
             end
             originalRigInfo = RigInfo;
-            RigInfo.status = 'active';
+            lifecycle = UMITRigStore.validateLifecycle();
+            if lifecycle.activeCount == 0
+                RigInfo.status = 'active';
+            else
+                RigInfo.status = 'available';
+            end
             RigInfo.archivedOn = NaT;
             RigInfo.modifiedOn = datetime('now');
             try
                 obj.iSaveRigInfo(RigInfo);
-                obj.iAssertValidAfterMutation();
+                UMITRigStore.iAssertLifecycleValid();
             catch ME
                 obj.iSaveRigInfo(originalRigInfo);
                 rethrow(ME)
@@ -2427,6 +2686,47 @@ classdef UMITRigStore < handle
     end
 
     methods (Static, Access = private)
+        function iAssertLifecycleValid()
+            report = UMITRigStore.validateLifecycle();
+            if ~report.isValid
+                error('Umitoolbox:UMITRigStore:invalidLifecycle', ...
+                    '%s', UMITRigStore.iJoinIssueMessages(report.errors));
+            end
+        end
+
+        function iSaveLoadedMatAtomic(filePath, loaded)
+            %ISAVELOADEDMATATOMIC Preserve all legacy MAT variables while
+            % replacing one updated acquisition metadata payload.
+
+            folder = fileparts(filePath);
+            stagedPath = [tempname(folder) '.mat'];
+            cleanupStage = onCleanup(@() UMITRigStore.iDeleteFileIfPresent(stagedPath));
+            save(stagedPath, '-mat', '-struct', 'loaded');
+            verify = load(stagedPath, '-mat'); %#ok<NASGU>
+            backupPath = [tempname(folder) '.bak.mat'];
+            backupCreated = false;
+            if isfile(filePath)
+                [ok, message] = movefile(filePath, backupPath, 'f');
+                if ~ok
+                    error('Umitoolbox:UMITRigStore:datasetRigMigrationFailed', ...
+                        'Could not back up AcqInfos.mat: %s', message);
+                end
+                backupCreated = true;
+            end
+            [ok, message] = movefile(stagedPath, filePath, 'f');
+            if ~ok
+                if backupCreated && isfile(backupPath)
+                    movefile(backupPath, filePath, 'f');
+                end
+                error('Umitoolbox:UMITRigStore:datasetRigMigrationFailed', ...
+                    'Could not install migrated AcqInfos.mat: %s', message);
+            end
+            if backupCreated && isfile(backupPath)
+                delete(backupPath);
+            end
+            clear cleanupStage
+        end
+
         function iValidateRigIdentity(schema, RigInfo, rigRoot)
             %IVALIDATERIGIDENTITY Validate immutable identity and folder binding.
 

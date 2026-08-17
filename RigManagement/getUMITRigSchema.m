@@ -164,8 +164,8 @@ switch version
         %                profiles, ...) that hasn't been designed yet.
         %                Never validated against a fixed shape; callers
         %                merge new keys in via updateRigMetadata.
-        %   status     - 'active' | 'archived'. Rigs are soft-deleted via
-        %                archiveRig, never removed, so sessions that
+        %   status     - 'active' | 'available' | 'archived'. Rigs are
+        %                soft-deleted via archiveRig, never removed, so sessions that
         %                reference a rigID/rigUUID keep resolving.
         %   archivedOn - Timestamp set when status becomes 'archived'.
         %
@@ -261,7 +261,7 @@ switch version
         % -----------------------------------------------------------------
         % Rig-level status (soft-delete, distinct from per-resource status)
         % -----------------------------------------------------------------
-        schema.rigStatuses = {'active', 'archived'};
+        schema.rigStatuses = {'active', 'available', 'archived'};
 
         % -----------------------------------------------------------------
         % Required metadata fields
@@ -334,7 +334,7 @@ switch version
         schema.spectrum.filterSetsFolder = 'filterSets';
 
         schema.canonicalIlluminations = {'red', 'green', 'yellow'};
-        schema.rigStatuses = {'active', 'archived'};
+        schema.rigStatuses = {'active', 'available', 'archived'};
 
         schema.requiredRigFields = { ...
             'schemaVersion', ...

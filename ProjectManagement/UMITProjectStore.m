@@ -1134,7 +1134,7 @@ classdef UMITProjectStore < handle
             %       displayName
             %       description
             %       acquisitionDate
-            %       rigID
+            %       rigID or rigUUID (required for imaging Sessions)
             %
             %   The session registry entry, SessionInfo, and SaveFolder
             %   UMITProjectBinding.umitlink are installed as one rollback-safe
@@ -1954,6 +1954,34 @@ classdef UMITProjectStore < handle
             obj.iAppendLog('updateSessionMetadata', ...
                 SessionInfo.uuid, 'completed');
             clear cleanupBackup lockCleanup
+        end
+
+        function SessionInfo = migrateSessionRigAssignment(obj, subjectID, sessionID)
+            %MIGRATESESSIONRIGASSIGNMENT Assign Active Rig to one legacy Session.
+            %
+            %   Existing Session Rig references are never replaced. This is
+            %   intended for legacy SaveFolders whose AcqInfos.mat lacks a
+            %   Rig association.
+
+            errID = 'Umitoolbox:UMITProjectStore:sessionRigMigrationFailed';
+            [~, ~, ~, SessionInfo] = obj.iResolveSession(subjectID, sessionID);
+            hasUUID = isfield(SessionInfo, 'rigUUID') && ...
+                ~isempty(strtrim(char(string(SessionInfo.rigUUID))));
+            hasID = isfield(SessionInfo, 'rigID') && ...
+                ~isempty(strtrim(char(string(SessionInfo.rigID))));
+            if hasUUID && hasID
+                return
+            end
+            if ~isfield(SessionInfo, 'processedDataFolder') || ...
+                    isempty(SessionInfo.processedDataFolder)
+                error(errID, 'Legacy Session has no available SaveFolder.');
+            end
+
+            [rigInfo, ~] = UMITRigStore.ensureDatasetRigAssociation( ...
+                SessionInfo.processedDataFolder);
+            obj.updateSessionMetadata(subjectID, sessionID, struct( ...
+                'rigUUID', rigInfo.uuid, 'rigID', rigInfo.rigID));
+            SessionInfo = obj.getSessionInfo(subjectID, sessionID);
         end
 
         function updateResourceMetadata(obj, resourceUUID, updates)
@@ -5127,46 +5155,29 @@ classdef UMITProjectStore < handle
             end
         end
 
-        function [rigUUID, rigID] = iResolveOptionalRigFromInfo(~, info, errID)
-            %IRESOLVEOPTIONALRIGFROMINFO Resolve optional rigID from input metadata.
+        function [rigUUID, rigID] = iResolveOptionalRigFromInfo(obj, info, errID)
+            %IRESOLVEOPTIONALRIGFROMINFO Resolve required new-session Rig.
             %
             %   Rigs are independent of this project (see UMITRigStore).
             %   This resolves against the external rig store, never a
             %   project-embedded registry.
 
-            rigUUID = '';
-            rigID = '';
-
-            if ~isfield(info, 'rigID')
-                return
+            hasID = isfield(info, 'rigID');
+            hasUUID = isfield(info, 'rigUUID');
+            if ~hasID && ~hasUUID
+                error('Umitoolbox:UMITProjectStore:sessionRigRequired', ...
+                    'A new imaging Session requires an Active or Available Rig.');
             end
-
-            requestedRigID = UMITProjectStore.iGetTextField( ...
-                info, 'rigID', '', true, errID);
-            if isempty(requestedRigID)
-                return
-            end
-
-            try
-                rigStore = UMITRigStore.openByRigID(requestedRigID);
-            catch ME
-                error(errID, 'Rig ID was not found: %s (%s)', requestedRigID, ME.message);
-            end
-
-            RigInfo = rigStore.getRigInfo();
-            rigUUID = RigInfo.uuid;
-            rigID = RigInfo.rigID;
+            [rigUUID, rigID] = obj.iResolveAssignableRig( ...
+                info, errID);
         end
 
-        function [rigUUID, rigID] = iResolveRigUpdate(~, updates, errID)
+        function [rigUUID, rigID] = iResolveRigUpdate(obj, updates, errID)
             %IRESOLVERIGUPDATE Resolve and cross-check a session rig update.
             %
             %   Rigs are independent of this project (see UMITRigStore).
             %   This resolves against the external rig store, never a
             %   project-embedded registry.
-
-            rigUUID = '';
-            rigID = '';
 
             hasID = isfield(updates, 'rigID');
             hasUUID = isfield(updates, 'rigUUID');
@@ -5183,12 +5194,35 @@ classdef UMITProjectStore < handle
             end
 
             if isempty(requestedID) && isempty(requestedUUID)
-                return
+                error('Umitoolbox:UMITProjectStore:sessionRigRequired', ...
+                    'A Session Rig assignment cannot be cleared.');
+            end
+            updates.rigID = requestedID;
+            updates.rigUUID = requestedUUID;
+            [rigUUID, rigID] = obj.iResolveAssignableRig( ...
+                updates, errID);
+        end
+
+        function [rigUUID, rigID] = iResolveAssignableRig(~, info, errID)
+            %IRESOLVEASSIGNABLERIG Resolve only Active/Available Rigs.
+
+            requestedID = '';
+            requestedUUID = '';
+            if isfield(info, 'rigID')
+                requestedID = UMITProjectStore.iGetTextField( ...
+                    info, 'rigID', '', true, errID);
+            end
+            if isfield(info, 'rigUUID')
+                requestedUUID = UMITProjectStore.iGetTextField( ...
+                    info, 'rigUUID', '', true, errID);
+            end
+            if isempty(requestedID) && isempty(requestedUUID)
+                error('Umitoolbox:UMITProjectStore:sessionRigRequired', ...
+                    'A new imaging Session requires an Active or Available Rig.');
             end
 
             rigStoreByID = [];
             rigStoreByUUID = [];
-
             if ~isempty(requestedID)
                 try
                     rigStoreByID = UMITRigStore.openByRigID(requestedID);
@@ -5196,7 +5230,6 @@ classdef UMITProjectStore < handle
                     error(errID, 'Rig ID was not found: %s (%s)', requestedID, ME.message);
                 end
             end
-
             if ~isempty(requestedUUID)
                 try
                     rigStoreByUUID = UMITRigStore.open(requestedUUID);
@@ -5204,18 +5237,19 @@ classdef UMITProjectStore < handle
                     error(errID, 'Rig UUID was not found: %s (%s)', requestedUUID, ME.message);
                 end
             end
-
             if ~isempty(rigStoreByID) && ~isempty(rigStoreByUUID) && ...
                     ~strcmp(rigStoreByID.getRigInfo().uuid, rigStoreByUUID.getRigInfo().uuid)
                 error(errID, 'rigID and rigUUID identify different rigs.');
             end
-
             resolvedStore = rigStoreByID;
             if isempty(resolvedStore)
                 resolvedStore = rigStoreByUUID;
             end
-
             RigInfo = resolvedStore.getRigInfo();
+            if ~ismember(lower(string(RigInfo.status)), ["active", "available"])
+                error('Umitoolbox:UMITProjectStore:archivedRigAssignment', ...
+                    'Archived Rig "%s" cannot be assigned to a new Session.', RigInfo.rigID);
+            end
             rigUUID = RigInfo.uuid;
             rigID = RigInfo.rigID;
         end
@@ -5682,6 +5716,10 @@ classdef UMITProjectStore < handle
                 report = obj.iAddIssue(report, 'error', ...
                     'session_rig_incomplete', 'session', sessionRel, ...
                     'Session has rigID but no rigUUID.', false);
+            elseif ~hasRigID && ~hasRigUUID
+                report = obj.iAddIssue(report, 'error', ...
+                    'session_rig_required', 'session', sessionRel, ...
+                    'Imaging Session has no Rig assignment.', false);
             end
 
             bindingRoles = { ...
