@@ -52,14 +52,12 @@ if ~isfield(ROIFile, 'ROIs') || isempty(ROIFile.ROIs)
     return
 end
 
-for iROI = 1:numel(ROIFile.ROIs)
-    if isfield(ROIFile.ROIs(iROI), 'ID')
-        ROIFile.ROIs(iROI) = rmfield(ROIFile.ROIs(iROI), 'ID');
-    end
-
-    if isfield(ROIFile.ROIs(iROI), 'runtime')
-        ROIFile.ROIs(iROI) = rmfield(ROIFile.ROIs(iROI), 'runtime');
-    end
+runtimeFields = intersect({'ID', 'runtime'}, fieldnames(ROIFile.ROIs));
+if ~isempty(runtimeFields)
+    % Remove fields from the complete struct array in one operation. Removing
+    % fields one element at a time can create heterogeneous-struct assignment
+    % errors when the array contains more than one ROI.
+    ROIFile.ROIs = rmfield(ROIFile.ROIs, runtimeFields);
 end
 
 end

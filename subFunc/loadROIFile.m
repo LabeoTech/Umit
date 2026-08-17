@@ -28,7 +28,9 @@ if ~strcmpi(ext, '.roi')
         'ROI files must use the .roi extension.');
 end
 
-S = load(filePath, 'ROIFile');
+% The .roi extension is custom, so force MAT-file loading instead of letting
+% LOAD interpret the file as an ASCII data file.
+S = load(filePath, 'ROIFile', '-mat');
 
 if ~isfield(S, 'ROIFile')
     error('loadROIFile:MissingROIFileVariable', ...
