@@ -29,6 +29,7 @@ classdef UMITRigStore < handle
     %       normalizeIlluminationName
     %       getSpectrum / listSpectra / importSpectrum / removeSpectrum
     %       getFilterSet / listFilterSets / importFilterSet
+    %       updateFilterSet / removeFilterSet
     %       getRigInfo
     %       duplicate
     %       setCameras
@@ -764,6 +765,29 @@ classdef UMITRigStore < handle
                 serializable = rmfield(serializable, 'file');
             end
             UMITRigStore.iWriteJSON(destination, serializable);
+        end
+
+        function removeFilterSet(filterSetID)
+            %REMOVEFILTERSET Delete a user-library filter-set definition.
+            %
+            %   Built-in filter sets cannot be deleted. Removal is performed
+            %   under the shared Rig-store lock and never edits packaged
+            %   library resources.
+
+            schema = getUMITRigSchema();
+            filterSetID = UMITRigStore.iNormalizeManagedID( ...
+                schema, filterSetID, 'filterSetID');
+            storeLock = UMITRigStore.iAcquireStoreLock('removeFilterSet'); %#ok<NASGU>
+            userFolder = fullfile(UMITRigStore.getRigsRoot(), ...
+                schema.spectrum.libraryFolder, schema.spectrum.filterSetsFolder);
+            userFile = UMITRigStore.iFindCaseInsensitiveFile( ...
+                {userFolder}, [filterSetID '.json']);
+            if isempty(userFile)
+                error('Umitoolbox:UMITRigStore:filterSetRemovalFailed', ...
+                    'Only user-library filter sets can be removed: %s.', ...
+                    filterSetID);
+            end
+            delete(userFile);
         end
 
         function obj = getDefaultRig()
