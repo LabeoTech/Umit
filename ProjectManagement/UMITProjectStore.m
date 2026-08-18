@@ -4803,10 +4803,16 @@ classdef UMITProjectStore < handle
 
             obj.iAssertWritable();
             lockCleanup = obj.iAcquireWriteLock('iStampSessionRig'); %#ok<NASGU>
-            obj.iAssertHealthyForMutation();
 
-            [~, ~, ~, SessionInfo, sessionPath] = ...
+            [~, ~, ~, SessionInfo, sessionPath, ~, sessionRecord] = ...
                 obj.iResolveSession(subjectID, sessionID);
+            % A session this method is asked to repair is, by definition,
+            % failing full validation on its own blank Rig fields -- exempt
+            % exactly that pre-diagnosed issue on this session, and no other,
+            % from the otherwise-unchanged mutation-health gate.
+            obj.iAssertHealthyForMutation(struct( ...
+                'codes', {{'session_rig_required', 'session_rig_incomplete'}}, ...
+                'relativePath', sessionRecord.relativePath));
 
             SessionInfo.rigUUID = rigUUID;
             SessionInfo.rigID = rigID;
@@ -4946,15 +4952,30 @@ classdef UMITProjectStore < handle
             end
         end
 
-        function iAssertHealthyForMutation(obj)
+        function iAssertHealthyForMutation(obj, exemptIssue)
             %IASSERTHEALTHYFORMUTATION Revalidate before every mutation.
+            %
+            %   exemptIssue, if supplied, is a scalar struct with fields
+            %   'codes' (cellstr) and 'relativePath' naming the single,
+            %   already-diagnosed issue that the calling mutation exists to
+            %   repair. Matching errors are excluded from THIS call's gate
+            %   only -- every other error, and every other caller's
+            %   unqualified call, still blocks the mutation exactly as
+            %   before.
 
             report = obj.validate('Mode', 'full');
-            if ~report.isValid
+            blockingErrors = report.errors;
+            if nargin > 1 && ~isempty(exemptIssue)
+                isExempt = arrayfun(@(issue) ...
+                    strcmp(issue.relativePath, exemptIssue.relativePath) && ...
+                    any(strcmp(issue.code, exemptIssue.codes)), blockingErrors);
+                blockingErrors = blockingErrors(~isExempt);
+            end
+            if ~isempty(blockingErrors)
                 obj.IsReadOnly = true;
                 error('Umitoolbox:UMITProjectStore:invalidProject', ...
                     'Project validation failed: %s', ...
-                    UMITProjectStore.iJoinIssueMessages(report.errors));
+                    UMITProjectStore.iJoinIssueMessages(blockingErrors));
             end
         end
 
