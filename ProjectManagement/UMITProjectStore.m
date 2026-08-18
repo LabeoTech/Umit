@@ -1134,7 +1134,15 @@ classdef UMITProjectStore < handle
             %       displayName
             %       description
             %       acquisitionDate
-            %       rigID or rigUUID (required for imaging Sessions)
+            %
+            %   Rig identity is never supplied by the caller: rigID/rigUUID
+            %   are rejected as sessionInfo fields, since UMITRigStore is the
+            %   sole owner of Rig assignment. The session's Rig is always
+            %   auto-resolved from the SaveFolder's AcqInfos.mat via
+            %   UMITRigStore.ensureDatasetRigAssociation (Active Rig, or a
+            %   previously assigned Rig if the dataset already has one --
+            %   assign a specific Rig with UMITRigStore.assignDatasetRig
+            %   before calling addSession to pin a non-Active Rig).
             %
             %   The session registry entry, SessionInfo, and SaveFolder
             %   UMITProjectBinding.umitlink are installed as one rollback-safe
@@ -1157,6 +1165,15 @@ classdef UMITProjectStore < handle
                 error('Umitoolbox:UMITProjectStore:folderBindingRequired', ...
                     ['Raw-folder and binding UUID fields cannot be assigned ' ...
                      'through addSession. The store owns binding identities.']);
+            end
+
+            forbiddenRigFields = intersect(fieldnames(sessionInfo), ...
+                {'rigID', 'rigUUID'});
+            if ~isempty(forbiddenRigFields)
+                error('Umitoolbox:UMITProjectStore:rigAssignmentNotSupported', ...
+                    ['Rig assignment is owned by UMITRigStore. Assign the Rig ' ...
+                     'to the SaveFolder (e.g. via UMITRigStore.assignDatasetRig) ' ...
+                     'before creating the session.']);
             end
 
             if ~isfield(sessionInfo, 'processedDataFolder') || ...
@@ -1215,8 +1232,9 @@ classdef UMITProjectStore < handle
             obj.iAssertUniqueRegistryID( ...
                 SubjectInfo.sessionRegistry, sessionID, 'session');
 
-            [rigUUID, rigID] = ...
-                obj.iResolveOptionalRigFromInfo(sessionInfo, errID);
+            rigInfo = UMITRigStore.ensureDatasetRigAssociation(saveFolder);
+            rigUUID = rigInfo.uuid;
+            rigID = rigInfo.rigID;
 
             sessionUUID = UMITProjectStore.iGenerateUUID();
             sessionRel = UMITProjectStore.iJoinRelative( ...
@@ -1877,7 +1895,10 @@ classdef UMITProjectStore < handle
             %
             %   Data-folder paths and binding UUIDs are managed only through
             %   bindRawDataFolder, bindProcessedDataFolder, and the matching
-            %   unbind methods.
+            %   unbind methods. rigID/rigUUID are rejected here as well --
+            %   UMITRigStore is the sole owner of Rig assignment; change a
+            %   session's Rig via UMITRigStore.assignDatasetRig on its
+            %   SaveFolder instead.
 
             errID = 'Umitoolbox:UMITProjectStore:updateSessionFailed';
             obj.iAssertUpdateStruct(updates, errID);
@@ -1891,6 +1912,16 @@ classdef UMITProjectStore < handle
                      'through updateSessionMetadata. Use the binding methods.']);
             end
 
+            forbiddenRigFields = intersect(fieldnames(updates), ...
+                {'rigID', 'rigUUID'});
+            if ~isempty(forbiddenRigFields)
+                error('Umitoolbox:UMITProjectStore:rigAssignmentNotSupported', ...
+                    ['Rig assignment is owned by UMITRigStore and cannot be ' ...
+                     'changed through updateSessionMetadata. Use ' ...
+                     'UMITRigStore.assignDatasetRig on the session''s ' ...
+                     'SaveFolder instead.']);
+            end
+
             obj.iAssertWritable();
             lockCleanup = obj.iAcquireWriteLock('updateSessionMetadata');
             obj.iAssertHealthyForMutation();
@@ -1899,23 +1930,8 @@ classdef UMITProjectStore < handle
                 sessionPath, sessionIndex] = ...
                 obj.iResolveSession(subjectID, sessionID);
 
-            rigFields = intersect(fieldnames(updates), ...
-                {'rigID', 'rigUUID'});
-            updatesWithoutRig = updates;
-            if ~isempty(rigFields)
-                updatesWithoutRig = rmfield( ...
-                    updatesWithoutRig, rigFields);
-            end
-
             SessionInfo = obj.iApplyEditableUpdates( ...
-                SessionInfo, updatesWithoutRig, ...
-                setdiff(obj.Schema.editableFields.session, ...
-                {'rigID', 'rigUUID'}), errID);
-
-            if ~isempty(rigFields)
-                [SessionInfo.rigUUID, SessionInfo.rigID] = ...
-                    obj.iResolveRigUpdate(updates, errID);
-            end
+                SessionInfo, updates, obj.Schema.editableFields.session, errID);
 
             SessionInfo.modifiedOn = datetime('now');
             SubjectInfo.sessionRegistry(sessionIndex).displayName = ...
@@ -1979,8 +1995,7 @@ classdef UMITProjectStore < handle
 
             [rigInfo, ~] = UMITRigStore.ensureDatasetRigAssociation( ...
                 SessionInfo.processedDataFolder);
-            obj.updateSessionMetadata(subjectID, sessionID, struct( ...
-                'rigUUID', rigInfo.uuid, 'rigID', rigInfo.rigID));
+            obj.iStampSessionRig(subjectID, sessionID, rigInfo.uuid, rigInfo.rigID);
             SessionInfo = obj.getSessionInfo(subjectID, sessionID);
         end
 
@@ -4777,6 +4792,45 @@ classdef UMITProjectStore < handle
                 obj.Schema.metadataVariables.session, SessionInfo);
         end
 
+        function SessionInfo = iStampSessionRig(obj, subjectID, sessionID, rigUUID, rigID)
+            %ISTAMPSESSIONRIG Persist an already-resolved Rig pointer.
+            %
+            %   Internal-only mirror-write used by migrateSessionRigAssignment.
+            %   Unlike the public API, this never validates a caller-supplied
+            %   Rig -- it only persists a value UMITRigStore has already
+            %   resolved (UMITRigStore remains the sole authority deciding
+            %   which Rig is valid to assign).
+
+            obj.iAssertWritable();
+            lockCleanup = obj.iAcquireWriteLock('iStampSessionRig'); %#ok<NASGU>
+            obj.iAssertHealthyForMutation();
+
+            [~, ~, ~, SessionInfo, sessionPath] = ...
+                obj.iResolveSession(subjectID, sessionID);
+
+            SessionInfo.rigUUID = rigUUID;
+            SessionInfo.rigID = rigID;
+            SessionInfo.modifiedOn = datetime('now');
+
+            backupPath = obj.iCreateRecoveryFolder('iStampSessionRig');
+            cleanupBackup = onCleanup(@() ...
+                UMITProjectStore.iRemoveFolderIfPresent(backupPath));
+            copyfile(fullfile(sessionPath, obj.Schema.files.sessionMetadata), ...
+                fullfile(backupPath, obj.Schema.files.sessionMetadata), 'f');
+
+            try
+                obj.iSaveSessionInfo(sessionPath, SessionInfo);
+                obj.iAssertValidAfterMutation();
+            catch ME
+                copyfile(fullfile(backupPath, obj.Schema.files.sessionMetadata), ...
+                    fullfile(sessionPath, obj.Schema.files.sessionMetadata), 'f');
+                rethrow(ME)
+            end
+
+            obj.iAppendLog('iStampSessionRig', SessionInfo.uuid, 'completed');
+            clear cleanupBackup lockCleanup
+        end
+
         function value = iLoadMetadata(~, filePath, variableName)
             %ILOADMETADATA Load one required metadata variable from a MAT file.
 
@@ -5153,105 +5207,6 @@ classdef UMITProjectStore < handle
                         '%s ID already exists: %s', typeName, newID);
                 end
             end
-        end
-
-        function [rigUUID, rigID] = iResolveOptionalRigFromInfo(obj, info, errID)
-            %IRESOLVEOPTIONALRIGFROMINFO Resolve required new-session Rig.
-            %
-            %   Rigs are independent of this project (see UMITRigStore).
-            %   This resolves against the external rig store, never a
-            %   project-embedded registry.
-
-            hasID = isfield(info, 'rigID');
-            hasUUID = isfield(info, 'rigUUID');
-            if ~hasID && ~hasUUID
-                error('Umitoolbox:UMITProjectStore:sessionRigRequired', ...
-                    'A new imaging Session requires an Active or Available Rig.');
-            end
-            [rigUUID, rigID] = obj.iResolveAssignableRig( ...
-                info, errID);
-        end
-
-        function [rigUUID, rigID] = iResolveRigUpdate(obj, updates, errID)
-            %IRESOLVERIGUPDATE Resolve and cross-check a session rig update.
-            %
-            %   Rigs are independent of this project (see UMITRigStore).
-            %   This resolves against the external rig store, never a
-            %   project-embedded registry.
-
-            hasID = isfield(updates, 'rigID');
-            hasUUID = isfield(updates, 'rigUUID');
-            requestedID = '';
-            requestedUUID = '';
-
-            if hasID
-                requestedID = UMITProjectStore.iGetTextField( ...
-                    updates, 'rigID', '', true, errID);
-            end
-            if hasUUID
-                requestedUUID = UMITProjectStore.iGetTextField( ...
-                    updates, 'rigUUID', '', true, errID);
-            end
-
-            if isempty(requestedID) && isempty(requestedUUID)
-                error('Umitoolbox:UMITProjectStore:sessionRigRequired', ...
-                    'A Session Rig assignment cannot be cleared.');
-            end
-            updates.rigID = requestedID;
-            updates.rigUUID = requestedUUID;
-            [rigUUID, rigID] = obj.iResolveAssignableRig( ...
-                updates, errID);
-        end
-
-        function [rigUUID, rigID] = iResolveAssignableRig(~, info, errID)
-            %IRESOLVEASSIGNABLERIG Resolve only Active/Available Rigs.
-
-            requestedID = '';
-            requestedUUID = '';
-            if isfield(info, 'rigID')
-                requestedID = UMITProjectStore.iGetTextField( ...
-                    info, 'rigID', '', true, errID);
-            end
-            if isfield(info, 'rigUUID')
-                requestedUUID = UMITProjectStore.iGetTextField( ...
-                    info, 'rigUUID', '', true, errID);
-            end
-            if isempty(requestedID) && isempty(requestedUUID)
-                error('Umitoolbox:UMITProjectStore:sessionRigRequired', ...
-                    'A new imaging Session requires an Active or Available Rig.');
-            end
-
-            rigStoreByID = [];
-            rigStoreByUUID = [];
-            if ~isempty(requestedID)
-                try
-                    rigStoreByID = UMITRigStore.openByRigID(requestedID);
-                catch ME
-                    error(errID, 'Rig ID was not found: %s (%s)', requestedID, ME.message);
-                end
-            end
-            if ~isempty(requestedUUID)
-                try
-                    rigStoreByUUID = UMITRigStore.open(requestedUUID);
-                catch ME
-                    error(errID, 'Rig UUID was not found: %s (%s)', requestedUUID, ME.message);
-                end
-            end
-            if ~isempty(rigStoreByID) && ~isempty(rigStoreByUUID) && ...
-                    ~strcmp(rigStoreByID.getRigInfo().uuid, rigStoreByUUID.getRigInfo().uuid)
-                error(errID, 'rigID and rigUUID identify different rigs.');
-            end
-            resolvedStore = rigStoreByID;
-            if isempty(resolvedStore)
-                resolvedStore = rigStoreByUUID;
-            end
-            RigInfo = resolvedStore.getRigInfo();
-            if ~ismember(lower(string(RigInfo.status)), ["active", "available"])
-                error('Umitoolbox:UMITProjectStore:archivedRigAssignment', ...
-                    'Archived Rig "%s" cannot be assigned to a new Session.', RigInfo.rigID);
-            end
-            rigUUID = RigInfo.uuid;
-            rigID = RigInfo.rigID;
         end
 
         function metadata = iApplyEditableUpdates(~, metadata, updates, allowedFields, errID)
