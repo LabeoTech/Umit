@@ -455,29 +455,9 @@ classdef UMITRigStore < handle
                 error(errID, '"dataFolder" must be a character vector or string scalar.');
             end
             dataFolder = char(string(dataFolder));
-            acqPath = fullfile(dataFolder, 'AcqInfos.mat');
-            if ~isfolder(dataFolder) || ~isfile(acqPath)
-                error(errID, 'AcqInfos.mat is required for Rig association: %s', dataFolder);
-            end
 
-            loaded = load(acqPath);
-            names = fieldnames(loaded);
-            if isempty(names)
-                error(errID, 'AcqInfos.mat contains no acquisition metadata: %s', acqPath);
-            end
-            metadataName = 'AcqInfoStream';
-            if isfield(loaded, metadataName)
-                metadata = loaded.(metadataName);
-            elseif isfield(loaded, 'AcqInfos')
-                metadataName = 'AcqInfos';
-                metadata = loaded.(metadataName);
-            else
-                metadataName = names{1};
-                metadata = loaded.(metadataName);
-            end
-            if ~isstruct(metadata) || ~isscalar(metadata)
-                error(errID, 'AcqInfos.mat does not contain scalar acquisition metadata.');
-            end
+            [loaded, metadataName] = UMITRigStore.iLoadAcqInfoStream(dataFolder, errID);
+            metadata = loaded.(metadataName);
 
             hasUUID = isfield(metadata, 'rigUUID') && ...
                 ~isempty(strtrim(char(string(metadata.rigUUID))));
@@ -509,10 +489,88 @@ classdef UMITRigStore < handle
                 metadata.rigUUID = rigInfo.uuid;
                 metadata.rigID = rigInfo.rigID;
                 loaded.(metadataName) = metadata;
+                acqPath = fullfile(dataFolder, 'AcqInfos.mat');
                 UMITRigStore.iSaveLoadedMatAtomic(acqPath, loaded);
                 wasMigrated = true;
             else
                 wasMigrated = false;
+            end
+        end
+
+        function rigInfo = assignDatasetRig(dataFolder, rigUUID)
+            %ASSIGNDATASETRIG Explicitly (re)assign one Rig to a dataset.
+            %
+            %   Unlike ensureDatasetRigAssociation (which only fills a blank
+            %   association and never overwrites), this is the explicit,
+            %   caller-driven reassignment primitive: it overwrites any
+            %   existing Rig pointer in the SaveFolder's AcqInfos.mat with
+            %   the specified Rig. This is the only supported way to change
+            %   which Rig owns a dataset -- UMITProjectStore has no write
+            %   path of its own and only mirrors whatever is resolved here.
+            %
+            %   Only Active/Available Rigs may be assigned.
+
+            errID = 'Umitoolbox:UMITRigStore:datasetRigAssignmentFailed';
+            if ~(ischar(dataFolder) || (isstring(dataFolder) && isscalar(dataFolder)))
+                error(errID, '"dataFolder" must be a character vector or string scalar.');
+            end
+            if ~(ischar(rigUUID) || (isstring(rigUUID) && isscalar(rigUUID))) || ...
+                    isempty(strtrim(char(string(rigUUID))))
+                error(errID, '"rigUUID" must be a non-empty character vector or string scalar.');
+            end
+            dataFolder = char(string(dataFolder));
+
+            try
+                rigStore = UMITRigStore.open(rigUUID);
+            catch ME
+                error(errID, 'Rig UUID was not found: %s (%s)', rigUUID, ME.message);
+            end
+
+            rigInfo = rigStore.getRigInfo();
+            if ~ismember(lower(string(rigInfo.status)), ["active", "available"])
+                error('Umitoolbox:UMITRigStore:archivedRigAssignment', ...
+                    'Rig "%s" is %s and cannot be assigned.', ...
+                    rigInfo.rigID, rigInfo.status);
+            end
+
+            [loaded, metadataName] = UMITRigStore.iLoadAcqInfoStream(dataFolder, errID);
+            metadata = loaded.(metadataName);
+            metadata.rigUUID = rigInfo.uuid;
+            metadata.rigID = rigInfo.rigID;
+            loaded.(metadataName) = metadata;
+
+            acqPath = fullfile(dataFolder, 'AcqInfos.mat');
+            UMITRigStore.iSaveLoadedMatAtomic(acqPath, loaded);
+        end
+
+        function [rigUUID, rigID] = readDatasetRigAssociation(dataFolder)
+            %READDATASETRIGASSOCIATION Read-only probe of a dataset's Rig pointer.
+            %
+            %   Returns empty rigUUID/rigID when AcqInfos.mat is missing,
+            %   invalid, or has no Rig association yet. Never bootstraps,
+            %   never writes -- callers that need a guaranteed association
+            %   should use ensureDatasetRigAssociation instead.
+
+            rigUUID = '';
+            rigID = '';
+            if ~(ischar(dataFolder) || (isstring(dataFolder) && isscalar(dataFolder)))
+                return
+            end
+            dataFolder = char(string(dataFolder));
+
+            try
+                [loaded, metadataName] = UMITRigStore.iLoadAcqInfoStream( ...
+                    dataFolder, 'Umitoolbox:UMITRigStore:readDatasetRigAssociationFailed');
+            catch
+                return
+            end
+            metadata = loaded.(metadataName);
+
+            if isfield(metadata, 'rigUUID')
+                rigUUID = char(string(metadata.rigUUID));
+            end
+            if isfield(metadata, 'rigID')
+                rigID = char(string(metadata.rigID));
             end
         end
 
@@ -2691,6 +2749,38 @@ classdef UMITRigStore < handle
             if ~report.isValid
                 error('Umitoolbox:UMITRigStore:invalidLifecycle', ...
                     '%s', UMITRigStore.iJoinIssueMessages(report.errors));
+            end
+        end
+
+        function [loaded, metadataName] = iLoadAcqInfoStream(dataFolder, errID)
+            %ILOADACQINFOSTREAM Load and validate one dataset's AcqInfos.mat.
+            %
+            %   Shared by ensureDatasetRigAssociation, assignDatasetRig, and
+            %   readDatasetRigAssociation so the acquisition-metadata
+            %   load/parse/validate logic exists in exactly one place.
+
+            acqPath = fullfile(dataFolder, 'AcqInfos.mat');
+            if ~isfolder(dataFolder) || ~isfile(acqPath)
+                error(errID, 'AcqInfos.mat is required for Rig association: %s', dataFolder);
+            end
+
+            loaded = load(acqPath);
+            names = fieldnames(loaded);
+            if isempty(names)
+                error(errID, 'AcqInfos.mat contains no acquisition metadata: %s', acqPath);
+            end
+            metadataName = 'AcqInfoStream';
+            if isfield(loaded, metadataName)
+                metadata = loaded.(metadataName);
+            elseif isfield(loaded, 'AcqInfos')
+                metadataName = 'AcqInfos';
+                metadata = loaded.(metadataName);
+            else
+                metadataName = names{1};
+                metadata = loaded.(metadataName);
+            end
+            if ~isstruct(metadata) || ~isscalar(metadata)
+                error(errID, 'AcqInfos.mat does not contain scalar acquisition metadata.');
             end
         end
 
