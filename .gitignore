@@ -16,6 +16,7 @@ Analysis/Custom_Functions/
 *_exported.m
 CLAUDE.md
 PLANNING_LOG.md
+claude-context/
 
 .claude/
 .agents/*
