@@ -1,0 +1,77 @@
+---
+layout: default
+permalink: /documentation/userDocs/tools/rig-manager_tool.html
+title: Rigs and Optical Library
+parent: Related Apps and Tools
+grand_parent: Documentation
+nav_order: 7
+---
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Rigs and Optical Library</title></head><body>
+<h1>Rigs and Optical Library</h1>
+<p>Every recording is acquired by a physical imaging system — one or two cameras, a set of illumination sources, and the optical properties of each — and umIT needs to know which setup produced a dataset in order to interpret it correctly. <strong>Rig Manager</strong> is where that setup, called a <strong>Rig</strong>, is described and kept up to date: create a Rig, correct its hardware as your setup changes, and assign the right Rig to a recording session. The <strong>Optical Library</strong> underneath it holds the spectral profiles and filter sets that any Rig's cameras and illuminations can reference, so the same physical component doesn't need to be redescribed for every Rig that uses it.</p>
+<div class="infonote"><p><strong>A Rig is not a Project</strong><br>Rig identity is independent of Project/Subject/Session metadata. Creating, editing, or archiving a Rig has no effect on which sessions use it — that is a separate assignment step, covered next.</p></div>
+<h2>Open from DataViewer</h2>
+<p>Choose <strong>Management &gt; Rig &gt; Rig Manager...</strong> to administer Rigs: create new ones, correct or update their hardware, archive old configurations, and manage the Optical Library. Choose <strong>Management &gt; Rig &gt; Assign Rig</strong> for the everyday action of telling umIT which Rig acquired the data in the currently loaded Save Folder — it lists only readable Active or Available Rigs, marks the one currently assigned, and asks for confirmation before replacing it. Archived Rigs are never offered for a new assignment.</p>
+<p style="text-align:center"><img src="../../assets/img/current/dataviewer-management-rig-menu.png" alt="DataViewer Management menu showing the Rig submenu with Assign Rig and Rig Manager items" width="880"><br><em>Assign Rig is enabled once data is loaded; Rig Manager is always available for administration.</em></p>
+<h2>Rig Management workspace</h2>
+<p>The main workspace follows the same left-list/right-detail layout as Project Manager. The top toolbar provides <strong>New Rig</strong>, <strong>Duplicate Rig</strong>, <strong>Refresh</strong>, and <strong>Optical Library</strong> on the left, and <strong>Validate</strong> with a <strong>Quick</strong>/<strong>Full</strong> mode selector and a compact <samp>RigID | Writable | Valid</samp> status readout on the right.</p>
+<p>The <strong>Rigs</strong> table lists every Rig with its default marker, display name, Rig ID, and state (Active, Available, Archived, or Invalid / unreadable). A <strong>Show archived Rigs</strong> checkbox controls whether archived Rigs appear in the list. Selecting a row opens that Rig below in a details panel with three tabs — <strong>Overview</strong>, <strong>Hardware</strong>, and <strong>Coregistration</strong> — and a row of contextual actions beneath the tabs: <strong>Save Details</strong>, <strong>Revert Details</strong>, <strong>Rename Rig ID...</strong>, <strong>Set Active</strong> (renamed from "Set as Default" when the Rig is not already the default), and <strong>Archive Rig</strong> / <strong>Restore Rig</strong>.</p>
+<div class="infonote"><p><strong>Built-in and newly created Rigs start with minimal information</strong><br>A fresh Rig only carries the hardware identity and spectral profiles it needs to function — descriptive fields such as manufacturer, model, and serial number are left blank. Take the time to fill these in for your own equipment so each Rig's record stays meaningful once your lab has more than one.</p></div>
+<p style="text-align:center"><img src="../../assets/img/current/rig-manager-overview.png" alt="Rig Manager main workspace showing the Rigs table and the Overview tab of a selected Rig" width="880"><br><em>The Overview tab of the default OiS200 Rig. UUIDs are not shown here; they remain in an advanced/details role.</em></p>
+<h3>Overview tab</h3>
+<p>Overview exposes the descriptive fields that are safe to edit with low friction: Rig ID, Display Name, Description, Default Rig, State, and Created/Modified timestamps.</p>
+<h2>Hardware tab</h2>
+<p>Hardware separates the two device categories explicitly instead of exposing a generic metadata table.</p>
+<h3>Cameras</h3>
+<p><strong>Camera 1</strong> is always present and shown as the standard configuration: Display Name, Manufacturer, Model, Serial Number, and a required Spectral Profile with <strong>Select...</strong> and <strong>Preview</strong> actions.</p>
+<p><strong>Camera 2</strong> is treated as an exceptional, opt-in configuration. For a single-camera Rig it collapses to a single <strong>Add second camera...</strong> action; the full Camera 2 field set (and a <strong>Remove Camera 2</strong> action) only appears once a second camera has been deliberately added.</p>
+<p style="text-align:center"><img src="../../assets/img/current/rig-manager-hardware-single-camera.png" alt="Hardware tab for a single-camera Rig, showing the collapsed Add second camera action and the Illuminations table" width="880"><br><em>A single-camera Rig: Camera 2 is collapsed to one explicit action, and Illuminations use a compact table.</em></p>
+<p style="text-align:center"><img src="../../assets/img/current/rig-manager-hardware-dual-camera.png" alt="Hardware tab for a dual-camera Rig, showing both Camera 1 and Camera 2 configured" width="880"><br><em>The built-in OiS200 Rig with Camera 2 already configured.</em></p>
+<h3>Illuminations</h3>
+<p>Red, Green, and Yellow illuminations are always presented as rows of one compact table (Illumination, Display Name, Manufacturer, Model, Spectral Profile) instead of three separate panels. The canonical <strong>Illumination</strong> names are read-only; descriptive fields and the spectral profile are editable while Hardware editing is active. Selecting a row shows a contextual line below the table (for example <samp>Red | Spectrum: Not selected</samp>) with <strong>Add / Replace...</strong>, <strong>Remove Spectrum</strong>, and <strong>Preview Spectrum</strong> actions. The spectral profile is never free-text; it is always chosen through the picker described under Optical Library below.</p>
+<h3>Staged hardware edits</h3>
+<p>Hardware fields are read-only until <strong>Edit Configuration</strong> is pressed, which stages changes locally (the status bar reports "Hardware edits are staged until Apply."). Pressing <strong>Apply</strong> checks that every configured camera has a spectral profile, then asks whether the change is a metadata correction to this Rig or a physical hardware change that should instead <strong>Duplicate as new Rig</strong> — because changing a camera's or illumination's physical spectral profile, or adding/removing Camera 2, can change how future analysis resolves that Rig. Choosing to duplicate follows the same flow as the toolbar's <strong>Duplicate Rig</strong> action, described below.</p>
+<h2>Coregistration tab</h2>
+<p>This tab exposes the same Rig-owned camera-coregistration resources managed by the <a href="dual-cam-coregistration_tool.html">Dual-Camera Coregistration</a> tool, but only for review and lifecycle actions — <strong>Import...</strong>, <strong>Activate</strong>, <strong>Edit Details</strong>, <strong>Archive</strong>, <strong>Restore</strong>, and <strong>Purge</strong> — not for running a new calibration.</p>
+<p>For a single-camera Rig the tab explains that coregistration only applies to dual-camera Rigs and keeps every action disabled:</p>
+<p style="text-align:center"><img src="../../assets/img/current/rig-manager-coregistration-single-camera.png" alt="Coregistration tab for a single-camera Rig, with all actions disabled and an explanatory note" width="880"><br><em>Single-camera Rigs keep coregistration visible but inert.</em></p>
+<p>For a dual-camera Rig the same tab becomes an active resource manager:</p>
+<p style="text-align:center"><img src="../../assets/img/current/rig-manager-coregistration-dual-camera.png" alt="Coregistration tab for a dual-camera Rig, with Import enabled" width="880"><br><em>The OiS200 Rig has Camera 2 configured, so Import and the lifecycle actions are available.</em></p>
+<h2>Optical Library</h2>
+<p>The toolbar's <strong>Optical Library</strong> action switches the whole workspace to a dedicated view for resources shared across every Rig, with a <strong>Back to Rigs</strong> action to return. A category selector switches between <strong>Illumination Spectra</strong>, <strong>Camera Spectra</strong>, <strong>Filter Spectra</strong>, and <strong>Filter Sets</strong>; a search box filters by ID, name, origin, manufacturer, or model.</p>
+<p style="text-align:center"><img src="../../assets/img/current/rig-manager-optical-library.png" alt="Optical Library workspace with the built-in green LED illumination spectrum selected, plotting its normalized response from 400 to 700 nm" width="880"><br><em>Selecting an entry plots its spectral response (here, the built-in green LED) and shows its metadata.</em></p>
+<p>Built-in entries can never be removed. User-imported spectra can be removed with <strong>Remove User Spectrum</strong> unless another Rig still references them, in which case removal is refused and the reason is shown. Filter sets use <strong>Add New</strong> and <strong>Edit Selected</strong> instead of Import/Remove, and reject duplicate IDs.</p>
+<h3>Selecting a spectrum for a camera or illumination</h3>
+<p>The <strong>Select...</strong> action next to a camera's or illumination's Spectral Profile field opens a picker rather than a plain dropdown of IDs. The picker shows the profile ID, its metadata, whether it is built-in or user-imported, a spectral curve preview, and an <strong>Import New...</strong> action so a missing spectrum can be added without leaving the Rig you are configuring.</p>
+<h3>Importing a spectrum</h3>
+<p><strong>Import New...</strong> accepts a plain text, CSV, or spreadsheet file with two numeric columns: wavelength in nanometers, and relative response (transmission, reflectance, or emission — whichever applies to that spectrum). A header row is fine; it is detected and skipped automatically. The source must cover the full 400–700 nm range with strictly increasing wavelengths and nonnegative, non-zero response values — it does not need to already be on a 1 nm grid, since it is resampled and normalized to a 0–1 peak on import.</p>
+<p>For example, a manufacturer such as Semrock typically publishes a bandpass filter's transmission curve as a two-column CSV like this (illustrative values, not an exact reproduction of any specific datasheet):</p>
+<pre>Wavelength (nm),%Transmission
+495.0,0.05
+500.0,0.20
+505.0,1.10
+510.0,8.40
+515.0,45.30
+520.0,92.10
+525.0,95.60
+530.0,93.20
+535.0,60.70
+540.0,12.50
+545.0,1.80
+</pre>
+<p>A file like this — as long as it extends out to cover 400 and 700 nm, even at near-zero transmission — imports directly as a camera, illumination, or filter spectrum.</p>
+<h2>Creating a new Rig</h2>
+<p><strong>New Rig</strong> starts a guided flow instead of an empty form:</p>
+<ol>
+<li>Choose a starting point: the built-in <strong>OiS200 LightTrack Imaging System</strong> template, a <strong>Blank custom Rig</strong>, or <strong>Duplicate existing Rig</strong>.</li>
+<li>For the OiS200 template, confirm whether to include its optional second camera. For a blank custom Rig, configure Camera 1's (and optionally Camera 2's) spectral profile through the same picker used elsewhere.</li>
+<li>Enter Rig ID, Display Name, and Description.</li>
+<li>Decide whether the new Rig becomes the default (this is asked automatically only when no default exists yet).</li>
+<li>Review a summary (ID, display name, camera/illumination counts, default status) before confirming <strong>Create Rig</strong>.</li>
+</ol>
+<p>Every camera in the definition must have a spectral profile before creation proceeds; an incomplete configuration is rejected with a specific message naming the missing camera.</p>
+<h2>Duplicating a Rig</h2>
+<p><strong>Duplicate Rig</strong> (and <strong>Duplicate existing Rig</strong> from the New Rig flow) creates a new, independent Rig starting from an existing one: its descriptive metadata, cameras, and illuminations are copied over under a new Rig ID, but it never inherits the source's default status or its camera-coregistration history. Use this — rather than editing a Rig's hardware in place — whenever a physical change to your equipment should be tracked as a new Rig instead of overwriting the history of the one you already have.</p>
+<h2>Validation, archived, and invalid Rigs</h2>
+<p><strong>Validate</strong> re-checks the selected Rig in <strong>Quick</strong> or <strong>Full</strong> mode and updates the <samp>RigID | Writable | Valid</samp> status text. A Rig that fails validation still opens so you can see what's wrong, but every control that could change it is disabled until the problem is resolved. Archived Rigs remain visible (toggle them with <strong>Show archived Rigs</strong>) and stay read-only until restored with <strong>Restore Rig</strong>. The current default Rig is marked in the Rigs table and only changes through <strong>Set Active</strong>, never by editing Rig metadata directly.</p>
+</body></html>
