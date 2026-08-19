@@ -324,6 +324,7 @@ Nx = metaData.datSize(2);
 Nt = metaData.datLength;
 
 chunkSizePixels = ceil(Nx / nChunks);
+nChunks = ceil(Nx / chunkSizePixels);
 
 % -------------------------------------------------------------------------
 % File handles

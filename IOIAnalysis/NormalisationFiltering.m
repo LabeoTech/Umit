@@ -428,6 +428,7 @@ else
     end
 
     chunkX = ceil(Nx / nChunks);
+    nChunks = ceil(Nx / chunkX);
     fprintf('Filtering data (%i chunk(s))...\n', nChunks)
 
     for c = 1:nChunks

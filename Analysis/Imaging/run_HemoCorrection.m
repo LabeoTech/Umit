@@ -88,7 +88,9 @@ if useGreen
     channelList{end+1} = 'green'; 
 end
 if useAmber
-    channelList{end+1} = 'amber'; 
+    % Normalize to the canonical name also used by run_HemoCompute
+    % (UMITRigStore.normalizeIlluminationName maps 'amber' -> 'yellow').
+    channelList{end+1} = 'yellow';
 end
 if ~isempty(otherChan)
     channelList{end+1} = otherChan; %#ok<AGROW>
@@ -104,7 +106,11 @@ switch lower(algorithm)
     case 'ratiometric'
         assert(numel(channelList) == 1, ...
             'Umitoolbox:run_HemoCorrection:InvalidInput', ...
-            'Ratiometric correction requires exactly one reference channel.');
+            ['Ratiometric correction requires exactly one reference channel, ' ...
+             'but %d are currently selected (%s). Red, Green, and Amber each ' ...
+             'default to true; set all but one to false before using ' ...
+             'Algorithm=''Ratiometric''.'], ...
+            numel(channelList), strjoin(channelList, ', '));
 
         refFile = localResolveReferenceFile(SaveFolder, channelList{1});
         fprintf('Using channel "%s" in hemodynamic correction...\n', refFile);
@@ -316,6 +322,7 @@ cOut = onCleanup(@() safeFclose(fidOut));
 dataBytes = prod([fluoMeta.datSize, max(fluoMeta.datLength, refMeta.datLength), getByteSize(fluoMeta.Datatype)]);
 nChunks = calculateMaxChunkSize(dataBytes, 3, .1);
 chunkX = ceil(Nx / nChunks);
+nChunks = ceil(Nx / chunkX);
 
 for ii = 1:nChunks
     xStart = (ii - 1) * chunkX + 1;

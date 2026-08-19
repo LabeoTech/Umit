@@ -312,6 +312,11 @@ for iEntry = 1:numel(entryNames)
             permOrder = [idxTarget setdiff(1:ndims(thisData), idxTarget)];
             dataP = permute(thisData, permOrder);
             szP = size(dataP);
+            assert(numel(sourceEventInfo.eventID) == szP(1), ...
+                'apply_aggregate_function:EventAxisMismatch', ...
+                ['Entry "%s" has %d elements along dimension "E", but ' ...
+                 'sourceEventInfo.eventID has %d elements.'], ...
+                entryNames{iEntry}, szP(1), numel(sourceEventInfo.eventID));
             dataP = reshape(dataP, szP(1), []);
 
             outFlat = zeros(nCond, size(dataP, 2), 'single');
@@ -658,6 +663,13 @@ end
 % Helper: Core aggregation function
 % =========================================================================
 function out = iCalcAgg(vals, aggFcn)
+%ICALCAGG Reduce VALS along dimension 1 using AGGFCN, omitting NaN.
+%
+% For a pixel/column that is entirely NaN, 'sum' returns 0 (sum's own
+% 'omitnan' convention: an empty/all-NaN input sums to 0), while 'mean',
+% 'median', 'std', 'max', and 'min' all return NaN. A fully-masked pixel
+% therefore reads as a valid zero under 'sum' aggregation, not as missing
+% data the way it does under every other aggregateFcn.
 
 switch lower(aggFcn)
     case 'mean'

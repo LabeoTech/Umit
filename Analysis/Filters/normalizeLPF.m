@@ -100,7 +100,32 @@ if ~isfolder(SaveFolder)
         'SaveFolder "%s" does not exist.', SaveFolder);
 end
 
-Fs = iGetFrameRateHz(SaveFolder);
+% Resolve a file input's path/extension up front (if any) so the frame
+% rate below is read from the file actually being processed, not an
+% arbitrary file in SaveFolder.
+isFileInput = ischar(data) || (isstring(data) && isscalar(data));
+dataFile = '';
+ext = '';
+if isFileInput
+    dataFile = char(string(data));
+    if ~isfile(dataFile)
+        altPath = fullfile(SaveFolder, dataFile);
+        if isfile(altPath)
+            dataFile = altPath;
+        else
+            error('normalizeLPF:InputFileNotFound', ...
+                'Input file "%s" was not found.', data);
+        end
+    end
+    [~,~,ext] = fileparts(dataFile);
+    ext = lower(ext);
+end
+
+if isFileInput && ismember(ext, {'.dat','.umt'})
+    Fs = iGetFrameRateHz(SaveFolder, dataFile);
+else
+    Fs = iGetFrameRateHz(SaveFolder);
+end
 
 if BaselineCutoffHz < 0 || BaselineCutoffHz > Fs/2
     error('normalizeLPF:InvalidCutoff', ...
@@ -133,22 +158,7 @@ end
 % -------------------------------------------------------------------------
 % Case 2: File input
 % -------------------------------------------------------------------------
-if ischar(data) || (isstring(data) && isscalar(data))
-
-    dataFile = char(string(data));
-
-    if ~isfile(dataFile)
-        altPath = fullfile(SaveFolder, dataFile);
-        if isfile(altPath)
-            dataFile = altPath;
-        else
-            error('normalizeLPF:InputFileNotFound', ...
-                'Input file "%s" was not found.', data);
-        end
-    end
-
-    [~,~,ext] = fileparts(dataFile);
-    ext = lower(ext);
+if isFileInput
 
     switch ext
         case '.dat'
@@ -337,7 +347,7 @@ function outFile = normalizeLPF_lowRAMmode( ...
 % filtering to NormalisationFiltering in file mode and returning the output
 % filename.
 
-outFile = fullfile(fileparts(inFile), 'normLPF.dat');
+outFile = fullfile(SaveFolder, 'normLPF.dat');
 
 NormalisationFiltering( ...
     pwd, inFile, ...
@@ -346,16 +356,6 @@ NormalisationFiltering( ...
     bNormalize, ...
     bApplyExpFit, ...
     Fs, outFile);
-
-% Keep a lightweight metadata sidecar for convenience if available.
-srcMeta = fullfile(SaveFolder, 'AcqInfos.mat');
-dstMeta = strrep(outFile, '.dat', '.mat');
-if isfile(srcMeta) && ~isfile(dstMeta)
-    try
-        copyfile(srcMeta, dstMeta);
-    catch
-    end
-end
 
 end
 
@@ -499,29 +499,39 @@ end
 % =========================================================================
 % Helper: Get frame rate from AcqInfos.mat
 % =========================================================================
-function freqHz = iGetFrameRateHz(SaveFolder)
-%IGETFRAMERATEHZ Resolve frame rate using loadMetaData when possible.
+function freqHz = iGetFrameRateHz(SaveFolder, dataFile)
+%IGETFRAMERATEHZ Resolve the frame rate for the data being processed.
 %
-% This avoids relying directly on AcqInfos.mat as the single source of
-% truth now that derived .dat files can legally have a temporal length that
-% differs from the original acquisition length.
+% When dataFile is given, resolve it from that file's own metadata via
+% loadMetaData -- never from an arbitrary, unrelated file in SaveFolder.
+% Otherwise (a raw numeric array or an in-RAM UMT struct, neither of which
+% has a file identity of its own) fall back to the single authoritative
+% AcqInfos.mat.
 
-candidateFiles = [dir(fullfile(SaveFolder, '*.dat')); dir(fullfile(SaveFolder, '*.umt'))];
+if nargin >= 2 && ~isempty(dataFile)
+    meta = loadMetaData(dataFile);
+    if ~isfield(meta, 'Freq') || isempty(meta.Freq)
+        error('normalizeLPF:MissingFrameRate', ...
+            'loadMetaData did not return Freq for "%s".', dataFile);
+    end
+    freqHz = double(meta.Freq);
+    return
+end
 
-if isempty(candidateFiles)
+acqInfoFile = fullfile(SaveFolder, 'AcqInfos.mat');
+if ~isfile(acqInfoFile)
     error('normalizeLPF:MissingReferenceData', ...
-        ['Could not determine frame rate because no supported data file ' ...
-         '(*.dat or *.umt) was found in SaveFolder "%s".'], ...
+        'Could not determine frame rate because "AcqInfos.mat" was not found in "%s".', ...
         SaveFolder);
 end
 
-meta = loadMetaData(fullfile(SaveFolder, candidateFiles(1).name));
-
-if ~isfield(meta, 'Freq') || isempty(meta.Freq)
+S = load(acqInfoFile, 'AcqInfoStream');
+if ~isfield(S, 'AcqInfoStream') || ~isfield(S.AcqInfoStream, 'FrameRateHz') || ...
+        isempty(S.AcqInfoStream.FrameRateHz)
     error('normalizeLPF:MissingFrameRate', ...
-        'loadMetaData did not return Freq for "%s".', candidateFiles(1).name);
+        '"AcqInfos.mat" in "%s" does not define FrameRateHz.', SaveFolder);
 end
 
-freqHz = double(meta.Freq);
+freqHz = double(S.AcqInfoStream.FrameRateHz);
 
 end

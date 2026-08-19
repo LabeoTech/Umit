@@ -523,6 +523,15 @@ if strcmpi(useFile, 'auto')
     [~, idx] = sort({fileList.name});
     fileList = fileList(idx);
     targetFile = fullfile(saveFolder, fileList(1).name);
+
+    % UseFile='auto' picks the alphabetically first .dat file in
+    % SaveFolder, which may be a derived pipeline output rather than a raw
+    % imported channel. Surface the actual selection so it is visible at
+    % call time, not only later via DataParams.registration.source.
+    fprintf(['createRegistrationTform: UseFile=''auto'' selected "%s" ' ...
+        '(alphabetically first .dat file in "%s"). Pass UseFile explicitly ' ...
+        'to control which file is used for registration.\n'], ...
+        fileList(1).name, saveFolder);
     return
 end
 
