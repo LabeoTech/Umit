@@ -186,7 +186,7 @@ classdef PipelineManager < handle
             % -------------------------------------------------------------
             % Validate SaveFolder list
             % -------------------------------------------------------------
-            errID = 'umIToolbox:PipelineManager:wrongInput';
+            errID = 'Umitoolbox:PipelineManager:wrongInput';
 
             b_saveFolderExists = false(numel(saveFolderListIn),1);
             for iSF = 1:numel(saveFolderListIn)

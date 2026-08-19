@@ -86,7 +86,7 @@ if R.validateAfterSet
 end
 
 filePath = fullfile(char(string(folderPath)), 'DataParams.mat');
-save(filePath, 'DataParams', '-mat');
+saveMatAtomic(filePath, 'DataParams', DataParams);
 end
 
 function S = iSetNestedField(S, parts, value)

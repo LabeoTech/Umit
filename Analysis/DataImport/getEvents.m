@@ -47,7 +47,7 @@ function outFile = getEvents(RawFolder, SaveFolder, varargin)
 % Allowed values used both by pipelineInfo and runtime validation
 % -------------------------------------------------------------------------
 allowedStimChannel = {'Internal-main', 'Internal-Aux', 'AI1', 'AI2', 'AI3', 'AI4', 'AI5', 'AI6', 'AI7', 'AI8'};
-allowedThreshold = {'auto', Inf};
+allowedThreshold = {'auto', [0 Inf]};
 allowedTriggerType = {'EdgeSet', 'EdgeToggle'};
 allowedTriggerPolarity = {'Positive', 'Negative'};
 allowedMinInterStimTime = [0.5, Inf];
@@ -138,7 +138,7 @@ stimChannel = cellfun(@strtrim, stimChannel, 'UniformOutput', false);
 stimChannel = stimChannel(~cellfun(@isempty, stimChannel));
 
 if isempty(stimChannel)
-    warning('umIToolbox:getEvents:NoStimChannelSelected', ...
+    warning('Umitoolbox:getEvents:NoStimChannelSelected', ...
         'No stim channels selected. Event file creation aborted.');
     outFile = '';
     return
@@ -154,7 +154,7 @@ end
 if ischar(threshold) || (isstring(threshold) && isscalar(threshold))
     threshold = char(validatestring(char(string(threshold)), allowedThreshold(1)));
 elseif ~(isnumeric(threshold) && isscalar(threshold) && isfinite(threshold))
-    error('umIToolbox:getEvents:WrongInput', ...
+    error('Umitoolbox:getEvents:WrongInput', ...
         'Threshold must be a finite numeric scalar or ''auto''.');
 end
 
@@ -164,7 +164,7 @@ end
 if ischar(baselinePeriod) || (isstring(baselinePeriod) && isscalar(baselinePeriod))
     baselinePeriod = char(validatestring(char(string(baselinePeriod)), allowedBaselinePeriod(1)));
 elseif ~(isnumeric(baselinePeriod) && isscalar(baselinePeriod) && isfinite(baselinePeriod) && baselinePeriod >= 0)
-    error('umIToolbox:getEvents:WrongInput', ...
+    error('Umitoolbox:getEvents:WrongInput', ...
         'baselinePeriod must be a non-negative numeric scalar or ''auto''.');
 end
 
@@ -177,7 +177,7 @@ end
 if ~strcmpi(csvColNames, allowedCSVColNames{1}) && ...
         ~strcmpi(conditionFileType, 'CSV')
     conditionFileType = 'CSV';
-    warning('umIToolbox:getEvents:ConditionFileTypeCoerced', ...
+    warning('Umitoolbox:getEvents:ConditionFileTypeCoerced', ...
         ['Condition file type set to "CSV" because specific columns ' ...
         'were provided in "CSVColNames".']);
 end
@@ -204,7 +204,7 @@ evObj = EventsManager(SaveFolder, RawFolder, conditionFileType);
 
 if evObj.b_isDigital && ~isempty(evObj.timestamps)
     if filterFreq > 0
-        warning('umIToolbox:getEvents:FilterFreqIgnored', ...
+        warning('Umitoolbox:getEvents:FilterFreqIgnored', ...
             ['FilterFreq was ignored because digital stimulation was ' ...
             'detected automatically by EventsManager.']);
     end
@@ -213,7 +213,7 @@ if evObj.b_isDigital && ~isempty(evObj.timestamps)
     if isempty(digitalChanName)
         digitalChanName = 'unknown';
     end
-    warning('umIToolbox:getEvents:DigitalStimulationDetected', ...
+    warning('Umitoolbox:getEvents:DigitalStimulationDetected', ...
         ['Automatic detection of digital stimulation in channel "%s". ' ...
         'Trigger parameters from getEvents were bypassed.'], digitalChanName);
 
@@ -227,19 +227,19 @@ else
     for ii = 1:numel(stimChannel)
         if strcmpi(stimChannel{ii}, 'Internal-main')
             if numel(evObj.AIChanList) < 2
-                error('umIToolbox:getEvents:MissingInternalMainChannel', ...
+                error('Umitoolbox:getEvents:MissingInternalMainChannel', ...
                     'Could not translate "Internal-main" because AIChanList is incomplete.');
             end
-            warning('umIToolbox:getEvents:InternalMainTranslated', ...
+            warning('Umitoolbox:getEvents:InternalMainTranslated', ...
                 'Translated "Internal-main" channel to "%s".', evObj.AIChanList{2});
             stimChannel{ii} = evObj.AIChanList{2};
 
         elseif strcmpi(stimChannel{ii}, 'Internal-Aux')
             if numel(evObj.AIChanList) < 3
-                error('umIToolbox:getEvents:MissingInternalAuxChannel', ...
+                error('Umitoolbox:getEvents:MissingInternalAuxChannel', ...
                     'Could not translate "Internal-Aux" because AIChanList is incomplete.');
             end
-            warning('umIToolbox:getEvents:InternalAuxTranslated', ...
+            warning('Umitoolbox:getEvents:InternalAuxTranslated', ...
                 'Translated "Internal-Aux" channel to "%s".', evObj.AIChanList{3});
             stimChannel{ii} = evObj.AIChanList{3};
         end

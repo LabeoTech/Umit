@@ -138,7 +138,7 @@ if ~isstruct(data)
          'a UMT struct, or a .umt filename containing a UMT struct.']);
 end
 
-[entryNames, entryData, entryDims, labels, sourceEventInfo, hasE] = ...
+[entryNames, entryData, entryDims, labels, sourceEventInfo, hasE, entryMetas] = ...
     iExtractValidUMTData(data);
 
 outStruct = data;
@@ -162,9 +162,13 @@ for iEntry = 1:numel(entryNames)
                 'Unsupported dimNames in entry "%s".', entryNames{iEntry});
     end
 
-    outStruct.data.(entryNames{iEntry}) = struct( ...
+    outStruct = genUMTStruct( ...
+        outStruct, ...
         'value', detrended, ...
-        'dimNames', {dimNames});
+        'entryName', entryNames{iEntry}, ...
+        'dimNames', dimNames, ...
+        'meta', entryMetas{iEntry}, ...
+        'overwrite', true);
 end
 
 if ~isempty(fieldnames(labels))
@@ -348,7 +352,7 @@ end
 eventsFile = fullfile(SaveFolder, 'events.mat');
 if isfile(eventsFile)
     try
-        evObj = EventsManager(SaveFolder, '', 'csv');
+        evObj = EventsManager(SaveFolder);
         if ~isempty(evObj.baselinePeriod)
             baselineSec = double(evObj.baselinePeriod);
         end
@@ -464,7 +468,7 @@ end
 % =========================================================================
 % Helper: validate/extract UMT data
 % =========================================================================
-function [entryNames, entryData, entryDims, labels, eventInfo, hasE] = iExtractValidUMTData(umt)
+function [entryNames, entryData, entryDims, labels, eventInfo, hasE, entryMetas] = iExtractValidUMTData(umt)
 %IEXTRACTVALIDUMTDATA Validate and extract image-backed UMT entries.
 
 validateUMTStruct(umt, 'requireEventInfo', false);
@@ -483,6 +487,7 @@ end
 
 entryData = cell(size(entryNames));
 entryDims = cell(size(entryNames));
+entryMetas = cell(size(entryNames));
 hasE = false(size(entryNames));
 
 allowed = { ...
@@ -505,6 +510,12 @@ for iEntry = 1:numel(entryNames)
     entryData{iEntry} = thisEntry.value;
     entryDims{iEntry} = thisDims;
     hasE(iEntry) = any(strcmp(thisDims, 'E'));
+
+    if isfield(thisEntry, 'meta') && isstruct(thisEntry.meta) && isscalar(thisEntry.meta)
+        entryMetas{iEntry} = thisEntry.meta;
+    else
+        entryMetas{iEntry} = struct();
+    end
 end
 
 if any(hasE)

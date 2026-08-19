@@ -81,7 +81,7 @@ if bLowRAM
     metaData = loadMetaData(dataFile);
 
     assert(strcmpi(metaData.Datatype, 'single'), ...
-        'umIToolbox:GSR:InvalidInput', ...
+        'Umitoolbox:GSR:InvalidInput', ...
         'GSR currently supports only single-precision .dat inputs.');
 
     frameSize = metaData.datSize;
@@ -175,17 +175,17 @@ disp('Finished GSR.');
 
         dataParamsFile = fullfile(saveFolder, 'DataParams.mat');
         if ~isfile(dataParamsFile)
-            warning('umIToolbox:GSR:MissingDataParams', ...
+            warning('Umitoolbox:GSR:MissingDataParams', ...
                 'DataParams.mat not found in "%s". Falling back to UseMask = false.', saveFolder);
             return
         end
 
         S = load(dataParamsFile, 'DataParams');
         assert(isfield(S, 'DataParams'), ...
-            'umIToolbox:GSR:InvalidInput', ...
+            'Umitoolbox:GSR:InvalidInput', ...
             'File "%s" does not contain variable "DataParams".', dataParamsFile);
         if ~(isfield(S, 'DataParams') && isfield(S.DataParams, 'mask') && isfield(S.DataParams.mask, 'logical'))
-            warning('umIToolbox:GSR:MissingMask', ...
+            warning('Umitoolbox:GSR:MissingMask', ...
                 'Logical mask was not set. Falling back to UseMask = false.');
             return
         end
@@ -195,18 +195,18 @@ disp('Finished GSR.');
 
         % Check for empty masks
         if isempty(logical_mask)
-            warning('umIToolbox:GSR:TrivialMask', ...
+            warning('Umitoolbox:GSR:TrivialMask', ...
                 'DataParams.mask.logical is empty. Falling back to UseMask = false.');
             logical_mask = true(frameSizeLocal);
             return
         end
         % Test size
         assert(isequal(size(logical_mask), frameSizeLocal), ...
-            'umIToolbox:GSR:InvalidInput', ...
+            'Umitoolbox:GSR:InvalidInput', ...
             'Logical mask size does not match the data frame size.');
         % Warn if mask is all True
         if all(logical_mask(:))
-            warning('umIToolbox:GSR:TrivialMask', ...
+            warning('Umitoolbox:GSR:TrivialMask', ...
                 'DataParams.mask.logical is all TRUE. Falling back to UseMask = false.');
             logical_mask = true(frameSizeLocal);
             return
@@ -231,7 +231,7 @@ disp('Finished GSR.');
             return
         end
 
-        error('umIToolbox:GSR:MissingInput', ...
+        error('Umitoolbox:GSR:MissingInput', ...
             'Input data file "%s" was not found.', dataFileIn);
     end
 
@@ -256,7 +256,7 @@ dataSum = sum(double(data(:)), 'omitnan');
 dataCount = sum(~isnan(data(:)));
 
 if dataCount == 0
-    error('umIToolbox:GSR:InvalidInput', ...
+    error('Umitoolbox:GSR:InvalidInput', ...
         'Input data contain only NaN values.');
 end
 
@@ -269,7 +269,7 @@ idx_invalid_trace = idx_invalid_trace(:);
 % Build valid mask for global-signal estimation
 maskIdx = logical_mask(:) & ~idx_invalid_trace;
 assert(any(maskIdx), ...
-    'umIToolbox:GSR:InvalidInput', ...
+    'Umitoolbox:GSR:InvalidInput', ...
     'Logical mask does not contain any valid pixels for GSR.');
 
 % Replace invalid traces with zeros before regression
@@ -284,7 +284,7 @@ Sig = single(globalSum ./ globalCount);
 
 sigMean = mean(Sig);
 assert(isfinite(sigMean) && sigMean ~= 0, ...
-    'umIToolbox:GSR:InvalidInput', ...
+    'Umitoolbox:GSR:InvalidInput', ...
     'Global signal mean is zero or invalid. Cannot normalize signal.');
 Sig = Sig ./ sigMean;
 
@@ -330,7 +330,7 @@ nChunks = ceil(Nx / chunkSizePixels);
 % File handles
 % -------------------------------------------------------------------------
 fid_in = fopen(dataFile, 'r');
-assert(fid_in ~= -1, 'umIToolbox:GSR:FileOpenError', ...
+assert(fid_in ~= -1, 'Umitoolbox:GSR:FileOpenError', ...
     'Could not open input file "%s".', dataFile);
 c_in = onCleanup(@() safeFclose(fid_in)); %#ok<NASGU>
 
@@ -338,7 +338,7 @@ outFileName = fullfile(SaveFolder, 'GSR.dat');
 preallocateDatFile(outFileName, [Ny, Nx, Nt], metaData.Datatype);
 
 fid_out = fopen(outFileName, 'r+');
-assert(fid_out ~= -1, 'umIToolbox:GSR:FileOpenError', ...
+assert(fid_out ~= -1, 'Umitoolbox:GSR:FileOpenError', ...
     'Could not open output file "%s".', outFileName);
 c_out = onCleanup(@() safeFclose(fid_out)); %#ok<NASGU>
 
@@ -352,6 +352,7 @@ dataCount   = 0;
 
 h = waitbar(0, 'GSR: computing global signal (pass 1)...');
 h.Name = 'GSR (pass 1/2)';
+cleanupWaitbar = onCleanup(@() iCloseWaitbarSafely(h)); %#ok<NASGU>
 
 % =====================================================================
 % PASS 1 - Compute dataset mean and global signal
@@ -393,13 +394,13 @@ end
 
 if dataCount == 0
     if isgraphics(h), close(h); end
-    error('umIToolbox:GSR:InvalidInput', ...
+    error('Umitoolbox:GSR:InvalidInput', ...
         'Input data contain only NaN values.');
 end
 
 if ~any(globalCount > 0)
     if isgraphics(h), close(h); end
-    error('umIToolbox:GSR:InvalidInput', ...
+    error('Umitoolbox:GSR:InvalidInput', ...
         'Logical mask does not contain any valid pixels for GSR.');
 end
 
@@ -409,7 +410,7 @@ Sig   = single(globalSum ./ globalCount);
 sigMean = mean(Sig);
 if ~isfinite(sigMean) || sigMean == 0
     if isgraphics(h), close(h); end
-    error('umIToolbox:GSR:InvalidInput', ...
+    error('Umitoolbox:GSR:InvalidInput', ...
         'Global signal mean is zero or invalid. Cannot normalize signal.');
 end
 Sig = Sig ./ sigMean;
@@ -462,6 +463,14 @@ for ii = 1:nChunks
 
     clear slab A idx_invalid_trace
 end
+
+if isgraphics(h)
+    close(h);
+end
+end
+
+function iCloseWaitbarSafely(h)
+%ICLOSEWAITBARSAFELY Close a waitbar handle if it still exists.
 
 if isgraphics(h)
     close(h);

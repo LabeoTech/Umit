@@ -18,14 +18,14 @@ function outData = normalizeZScore(data, SaveFolder, varargin)
 %       1) Numeric array with dimensions Y x X x T
 %       2) Filename to a .dat file storing Y x X x T data
 %       3) UMT struct with image entries of dimensions Y x X x T
-%       4) Filename to a .umt or .mat file containing one UMT struct
+%       4) Filename to a .umt file containing one UMT struct
 %
 %   Input/output behavior:
 %       - If the input is a numeric YXT array, the output is a numeric YXT
 %         array with the same size.
 %       - If the input is a .dat filename, the output is a .dat filename.
 %       - If the input is a UMT struct, the output is a UMT struct.
-%       - If the input is a .umt or .mat filename, the file is loaded in
+%       - If the input is a .umt filename, the file is loaded in
 %         RAM and the output is a UMT struct.
 %
 %   Limitations:
@@ -125,18 +125,22 @@ end
 if ~isstruct(data)
     error('normalizeZScore:UnsupportedInputType', ...
         ['Input "data" must be a YXT array, a .dat filename, ' ...
-         'a UMT struct, or a .umt/.mat filename containing a UMT struct.']);
+         'a UMT struct, or a .umt filename containing a UMT struct.']);
 end
 
-[entryNames, entryData, entryDims, labels] = iExtractValidUMTData(data);
+[entryNames, entryData, entryDims, labels, entryMetas] = iExtractValidUMTData(data);
 
 outStruct = data;
 outStruct.data = struct();
 
 for iEntry = 1:numel(entryNames)
-    outStruct.data.(entryNames{iEntry}) = struct( ...
+    outStruct = genUMTStruct( ...
+        outStruct, ...
         'value', iZscoreArray(entryData{iEntry}), ...
-        'dimNames', {entryDims{iEntry}});
+        'entryName', entryNames{iEntry}, ...
+        'dimNames', entryDims{iEntry}, ...
+        'meta', entryMetas{iEntry}, ...
+        'overwrite', true);
 end
 
 if ~isempty(fieldnames(labels))
@@ -163,7 +167,7 @@ outData = outStruct;
             'data', ...
             {'ImageTimeSeries','ProcessedData','UnknownDataType'}, ...
             ['Input data. Accepted forms: YXT array, .dat filename, ' ...
-             'UMT struct, or .umt/.mat file containing one UMT struct.'], ...
+             'UMT struct, or .umt file containing one UMT struct.'], ...
             'kind', 'input', ...
             'position', 1, ...
             'callType', 'positional', ...
@@ -294,7 +298,7 @@ end
 % =========================================================================
 % Helper: validate/extract UMT data
 % =========================================================================
-function [entryNames, entryData, entryDims, labels] = iExtractValidUMTData(umt)
+function [entryNames, entryData, entryDims, labels, entryMetas] = iExtractValidUMTData(umt)
 %IEXTRACTVALIDUMTDATA Validate and extract continuous YXT image entries.
 
 validateUMTStruct(umt, 'requireEventInfo', false);
@@ -313,6 +317,7 @@ end
 
 entryData = cell(size(entryNames));
 entryDims = cell(size(entryNames));
+entryMetas = cell(size(entryNames));
 
 for iEntry = 1:numel(entryNames)
     thisEntry = umt.data.(entryNames{iEntry});
@@ -327,6 +332,12 @@ for iEntry = 1:numel(entryNames)
 
     entryData{iEntry} = thisEntry.value;
     entryDims{iEntry} = thisDims;
+
+    if isfield(thisEntry, 'meta') && isstruct(thisEntry.meta) && isscalar(thisEntry.meta)
+        entryMetas{iEntry} = thisEntry.meta;
+    else
+        entryMetas{iEntry} = struct();
+    end
 end
 
 if isfield(umt, 'eventInfo')

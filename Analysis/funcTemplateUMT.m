@@ -75,7 +75,7 @@ entryName = char(string(p.Results.EntryName));
 localValidateData(data);
 localValidateSaveFolder(SaveFolder);
 if ~isvarname(entryName)
-    error('umIToolbox:funcTemplateUMT:InvalidEntryName', ...
+    error('Umitoolbox:funcTemplateUMT:InvalidEntryName', ...
         'ENTRYNAME must be a valid MATLAB field name.');
 end
 
@@ -97,6 +97,12 @@ end
 
 function info = localGetPipelineInfo()
 %LOCALGETPIPELINEINFO Declare the PipelineManager integration contract.
+
+% CONVENTION: a parameter that accepts either a keyword or a numeric range
+% (e.g. 'auto' or an explicit [min max]) should declare 'allowed' as
+% {'keyword', [min max]}, matching calculateResponseFeatures'
+% TimeWindow_sec and genAmplitudeMaps' equivalent parameter. Do not invent
+% a new encoding for this shape.
 
 info = PipelineManager.createPipelineInfo( ...
     'funcTemplateUMT', ...
@@ -156,7 +162,7 @@ function localValidateData(data)
 %LOCALVALIDATEDATA Check the documented YXT input contract.
 
 if ~(isnumeric(data) && isreal(data) && ~isempty(data) && ndims(data) == 3)
-    error('umIToolbox:funcTemplateUMT:InvalidData', ...
+    error('Umitoolbox:funcTemplateUMT:InvalidData', ...
         'DATA must be a nonempty, real numeric Y-by-X-by-T array.');
 end
 end
@@ -167,7 +173,7 @@ function localValidateSaveFolder(SaveFolder)
 isTextScalar = ischar(SaveFolder) || ...
     (isstring(SaveFolder) && isscalar(SaveFolder));
 if ~isTextScalar || ~isfolder(SaveFolder)
-    error('umIToolbox:funcTemplateUMT:InvalidSaveFolder', ...
+    error('Umitoolbox:funcTemplateUMT:InvalidSaveFolder', ...
         'SAVEFOLDER must be the path to an existing folder.');
 end
 end
