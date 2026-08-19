@@ -1444,6 +1444,29 @@ classdef PipelineManager < handle
                     'No SaveFolder specified.');
             end
 
+            % -------------------------------------------------------------
+            % 0a) Refuse legacy-schema SaveFolders (silent-wrong-result risk)
+            % -------------------------------------------------------------
+            legacyFolders = {};
+            legacyMessages = {};
+            for f = 1:numel(obj.SaveFolderList)
+                [isLegacyFolder, legacyMessage] = isLegacySchemaFolder(obj.SaveFolderList{f});
+                if isLegacyFolder
+                    legacyFolders{end+1} = obj.SaveFolderList{f}; %#ok<AGROW>
+                    legacyMessages{end+1} = legacyMessage; %#ok<AGROW>
+                end
+            end
+
+            if ~isempty(legacyFolders)
+                detailLines = strings(1, numel(legacyFolders));
+                for iF = 1:numel(legacyFolders)
+                    detailLines(iF) = sprintf('  %s\n    %s', legacyFolders{iF}, legacyMessages{iF});
+                end
+                error('PipelineManager:executePipeline:LegacySchema', ...
+                    'Pipeline execution blocked for legacy-schema SaveFolder(s):\n%s', ...
+                    strjoin(detailLines, '\n'));
+            end
+
             obj.emitExecutionProgress(progressFcn, 'validationFinished', ...
                 'numFolders', nFolders, ...
                 'status', 'completed', ...
