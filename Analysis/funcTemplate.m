@@ -106,6 +106,17 @@ end
 function info = localGetPipelineInfo()
 %LOCALGETPIPELINEINFO Declare the PipelineManager integration contract.
 
+% CONVENTION: new Analysis/ functions should use the positional order
+% (data, SaveFolder, ...) shown by this template's own signature. A few
+% existing functions predate this convention and use a different order;
+% follow this template for new functions instead of copying them.
+%
+% CONVENTION: a parameter that accepts either a keyword or a numeric range
+% (e.g. 'auto' or an explicit [min max]) should declare 'allowed' as
+% {'keyword', [min max]}, matching calculateResponseFeatures'
+% TimeWindow_sec and genAmplitudeMaps' equivalent parameter. Do not invent
+% a new encoding for this shape.
+
 % EDIT: Rename the function, description, and output file in every copy.
 info = PipelineManager.createPipelineInfo( ...
     'funcTemplate', ...
@@ -184,7 +195,7 @@ function localValidateData(data)
 %LOCALVALIDATEDATA Check the documented YXT input contract.
 
 if ~(isnumeric(data) && isreal(data) && ~isempty(data) && ndims(data) == 3)
-    error('umIToolbox:funcTemplate:InvalidData', ...
+    error('Umitoolbox:funcTemplate:InvalidData', ...
         'DATA must be a nonempty, real numeric Y-by-X-by-T array.');
 end
 end
@@ -195,7 +206,7 @@ function localValidateSaveFolder(SaveFolder)
 isTextScalar = ischar(SaveFolder) || ...
     (isstring(SaveFolder) && isscalar(SaveFolder));
 if ~isTextScalar || ~isfolder(SaveFolder)
-    error('umIToolbox:funcTemplate:InvalidSaveFolder', ...
+    error('Umitoolbox:funcTemplate:InvalidSaveFolder', ...
         'SAVEFOLDER must be the path to an existing folder.');
 end
 end

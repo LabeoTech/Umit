@@ -12,7 +12,7 @@ function outData = normalizeBSLN(data, SaveFolder, varargin)
 %                1) Numeric 3-D array with dimensions Y x X x T
 %                2) Filename to a .dat file storing Y x X x T data
 %                3) UMT struct
-%                4) Filename to a .umt or .mat file containing a UMT struct
+%                4) Filename to a .umt file containing a UMT struct
 %
 %   SaveFolder : Folder containing AcqInfos.mat and, for trial mode,
 %                events.mat.
@@ -46,7 +46,7 @@ function outData = normalizeBSLN(data, SaveFolder, varargin)
 %   - In trial mode, all UMT entries must contain E, and the UMT must
 %     provide shared top-level eventInfo with eventAxisMode = 'instances'.
 %   - RAM-safe mode is only implemented for raw .dat files.
-%   - If a .umt or .mat file is provided, the UMT content is loaded
+%   - If a .umt file is provided, the UMT content is loaded
 %     into RAM and processed there.
 
 default_Output = 'normBSLN.umt'; %#ok<NASGU>
@@ -124,10 +124,11 @@ if isnumeric(data) || islogical(data)
                 {single(outVal)}, ...
                 {{'Y','X','T'}}, ...
                 struct(), ...
-                struct());
+                struct(), ...
+                {struct()});
 
         case 'trial'
-            evObj = EventsManager(SaveFolder, '', 'csv');
+            evObj = EventsManager(SaveFolder);
             [frMat, conditionIDlist, repetitionList] = evObj.getFrameMatrix(size(rawData, 3));
 
             if isempty(frMat)
@@ -181,7 +182,8 @@ if isnumeric(data) || islogical(data)
                 {outVal}, ...
                 {{'Y','X','T','E'}}, ...
                 labels, ...
-                eventInfo);
+                eventInfo, ...
+                {struct()});
     end
 
     return
@@ -218,7 +220,8 @@ if ischar(data) || (isstring(data) && isscalar(data))
                 {outVal}, ...
                 {outDimNames}, ...
                 labels, ...
-                eventInfo);
+                eventInfo, ...
+                {struct()});
             return
 
         case {'.umt','.mat'}
@@ -264,10 +267,10 @@ end
 if ~isstruct(data)
     error('normalizeBSLN:UnsupportedInputType', ...
         ['Input "data" must be a YXT array, a .dat filename, ' ...
-         'a UMT struct, or a .umt/.mat filename containing a UMT struct.']);
+         'a UMT struct, or a .umt filename containing a UMT struct.']);
 end
 
-[entryNames, entryData, entryDims, sourceLabels, sourceEventInfo, hasE] = ...
+[entryNames, entryData, entryDims, sourceLabels, sourceEventInfo, hasE, entryMetas] = ...
     iExtractValidUMTData(data);
 
 switch normalizationMode
@@ -321,7 +324,7 @@ switch normalizationMode
         end
 
         outData = iPackageOutputUMT( ...
-            entryNames, outEntryData, outEntryDims, sourceLabels, struct());
+            entryNames, outEntryData, outEntryDims, sourceLabels, struct(), entryMetas);
 
     case 'trial'
         if ~all(hasE)
@@ -341,7 +344,7 @@ switch normalizationMode
                  '"instances".']);
         end
 
-        evObj = EventsManager(SaveFolder, '', 'csv');
+        evObj = EventsManager(SaveFolder);
         freqHz = iGetFrameRateHz(SaveFolder);
 
         outEntryData = entryData;
@@ -386,7 +389,7 @@ switch normalizationMode
         end
 
         outData = iPackageOutputUMT( ...
-            entryNames, outEntryData, outEntryDims, outLabels, sourceEventInfo);
+            entryNames, outEntryData, outEntryDims, outLabels, sourceEventInfo, entryMetas);
 end
 
 % =========================================================================
@@ -403,7 +406,7 @@ end
             'data', ...
             {'ImageTimeSeries','ProcessedData','UnknownDataType'}, ...
             ['Input data. Accepted forms: YXT array, .dat filename, ' ...
-             'UMT struct, or .umt/.mat file containing one UMT struct.'], ...
+             'UMT struct, or .umt file containing one UMT struct.'], ...
             'kind', 'input', ...
             'position', 1, ...
             'callType', 'positional', ...
@@ -438,6 +441,7 @@ end
             'Baseline period mode: auto or numeric seconds.', ...
             'kind', 'parameter', ...
             'default', 'auto', ...
+            'allowed', {'auto', [0 Inf]}, ...
             'callType', 'namevalue');
 
         info = PipelineManager.addInput( ...
@@ -447,7 +451,7 @@ end
             'If true, center normalized data at one.', ...
             'kind', 'parameter', ...
             'default', false, ...
-            'allowed', {true,false}, ...
+            'allowed', [true false], ...
             'callType', 'namevalue');
 
         info = PipelineManager.addOutput( ...
@@ -515,7 +519,7 @@ switch lower(normalizationMode)
         outDimNames = {'Y','X','T'};
 
     case 'trial'
-        evObj = EventsManager(SaveFolder, '', 'csv');
+        evObj = EventsManager(SaveFolder);
         [frMat, conditionIDlist, repetitionList] = evObj.getFrameMatrix(Nt);
 
         if isempty(frMat)
@@ -575,7 +579,7 @@ end
 % =========================================================================
 % Helper: Extract and validate image-backed data from a UMT structure
 % =========================================================================
-function [entryNames, entryData, entryDims, labels, eventInfo, hasE] = iExtractValidUMTData(umt)
+function [entryNames, entryData, entryDims, labels, eventInfo, hasE, entryMetas] = iExtractValidUMTData(umt)
 
 validateUMTStruct(umt, 'requireEventInfo', false);
 
@@ -593,6 +597,7 @@ end
 
 entryData = cell(size(entryNames));
 entryDims = cell(size(entryNames));
+entryMetas = cell(size(entryNames));
 hasE = false(size(entryNames));
 
 for iEntry = 1:numel(entryNames)
@@ -609,6 +614,12 @@ for iEntry = 1:numel(entryNames)
     entryData{iEntry} = single(thisEntry.value);
     entryDims{iEntry} = thisDims;
     hasE(iEntry) = any(strcmp(thisDims, 'E'));
+
+    if isfield(thisEntry, 'meta') && isstruct(thisEntry.meta) && isscalar(thisEntry.meta)
+        entryMetas{iEntry} = thisEntry.meta;
+    else
+        entryMetas{iEntry} = struct();
+    end
 end
 
 if isfield(umt, 'labels')
@@ -627,7 +638,7 @@ end
 % =========================================================================
 % Helper: Package processed entries into a UMT output
 % =========================================================================
-function outUMT = iPackageOutputUMT(entryNames, entryData, entryDims, labelsIn, eventInfoIn)
+function outUMT = iPackageOutputUMT(entryNames, entryData, entryDims, labelsIn, eventInfoIn, entryMetasIn)
 
 outUMT = [];
 
@@ -654,21 +665,24 @@ for iEntry = 1:numel(entryNames)
                 entryData{iEntry}, ...
                 'kind', 'image', ...
                 'entryName', entryNames{iEntry}, ...
-                'dimNames', entryDims{iEntry});
+                'dimNames', entryDims{iEntry}, ...
+                'meta', entryMetasIn{iEntry});
         else
             outUMT = genUMTStruct( ...
                 entryData{iEntry}, ...
                 'kind', 'image', ...
                 'entryName', entryNames{iEntry}, ...
                 'dimNames', entryDims{iEntry}, ...
-                'labels', labelsOut);
+                'labels', labelsOut, ...
+                'meta', entryMetasIn{iEntry});
         end
     else
         outUMT = genUMTStruct( ...
             outUMT, ...
             'value', entryData{iEntry}, ...
             'entryName', entryNames{iEntry}, ...
-            'dimNames', entryDims{iEntry});
+            'dimNames', entryDims{iEntry}, ...
+            'meta', entryMetasIn{iEntry});
     end
 end
 

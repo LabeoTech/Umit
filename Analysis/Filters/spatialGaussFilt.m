@@ -136,7 +136,7 @@ if ~isstruct(data)
          'a UMT struct, or a .umt filename containing a UMT struct.']);
 end
 
-[entryNames, entryData, entryDims, labels, sourceEventInfo, hasE] = ...
+[entryNames, entryData, entryDims, labels, sourceEventInfo, hasE, entryMetas] = ...
     iExtractValidUMTData(data);
 
 outStruct = data;
@@ -171,9 +171,13 @@ for iEntry = 1:numel(entryNames)
                 'Unsupported dimNames in entry "%s".', entryNames{iEntry});
     end
 
-    outStruct.data.(entryNames{iEntry}) = struct( ...
+    outStruct = genUMTStruct( ...
+        outStruct, ...
         'value', filtData, ...
-        'dimNames', {dimNames});
+        'entryName', entryNames{iEntry}, ...
+        'dimNames', dimNames, ...
+        'meta', entryMetas{iEntry}, ...
+        'overwrite', true);
 end
 
 if ~isempty(fieldnames(labels))
@@ -237,6 +241,7 @@ outData = outStruct;
             'Positive scalar Gaussian sigma.', ...
             'kind', 'parameter', ...
             'default', 1, ...
+            'allowed', [eps, Inf], ...
             'callType', 'namevalue');
 
         info = PipelineManager.addOutput( ...
@@ -393,7 +398,7 @@ end
 % =========================================================================
 % Local helper: validate/extract UMT data
 % =========================================================================
-function [entryNames, entryData, entryDims, labels, eventInfo, hasE] = iExtractValidUMTData(umt)
+function [entryNames, entryData, entryDims, labels, eventInfo, hasE, entryMetas] = iExtractValidUMTData(umt)
 %IEXTRACTVALIDUMTDATA Validate and extract image-backed UMT entries.
 
 validateUMTStruct(umt, 'requireEventInfo', false);
@@ -412,6 +417,7 @@ end
 
 entryData = cell(size(entryNames));
 entryDims = cell(size(entryNames));
+entryMetas = cell(size(entryNames));
 hasE = false(size(entryNames));
 
 allowed = { ...
@@ -436,6 +442,12 @@ for iEntry = 1:numel(entryNames)
     entryData{iEntry} = thisEntry.value;
     entryDims{iEntry} = thisDims;
     hasE(iEntry) = any(strcmp(thisDims, 'E'));
+
+    if isfield(thisEntry, 'meta') && isstruct(thisEntry.meta) && isscalar(thisEntry.meta)
+        entryMetas{iEntry} = thisEntry.meta;
+    else
+        entryMetas{iEntry} = struct();
+    end
 end
 
 if any(hasE)

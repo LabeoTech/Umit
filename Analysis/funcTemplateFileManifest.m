@@ -81,7 +81,7 @@ save(matPath, 'summary', '-mat');
 
 fid = fopen(textPath, 'w');
 if fid == -1
-    error('umIToolbox:funcTemplateFileManifest:FileOpenFailed', ...
+    error('Umitoolbox:funcTemplateFileManifest:FileOpenFailed', ...
         'Could not create report file "%s".', textPath);
 end
 fileCleanup = onCleanup(@() safeFclose(fid));
@@ -149,7 +149,7 @@ function localValidateData(data)
 %LOCALVALIDATEDATA Require nonempty real numeric or logical input.
 
 if ~((isnumeric(data) || islogical(data)) && isreal(data) && ~isempty(data))
-    error('umIToolbox:funcTemplateFileManifest:InvalidData', ...
+    error('Umitoolbox:funcTemplateFileManifest:InvalidData', ...
         'DATA must be a nonempty, real numeric or logical array.');
 end
 end
@@ -160,7 +160,7 @@ function localValidateSaveFolder(SaveFolder)
 isTextScalar = ischar(SaveFolder) || ...
     (isstring(SaveFolder) && isscalar(SaveFolder));
 if ~isTextScalar || ~isfolder(SaveFolder)
-    error('umIToolbox:funcTemplateFileManifest:InvalidSaveFolder', ...
+    error('Umitoolbox:funcTemplateFileManifest:InvalidSaveFolder', ...
         'SAVEFOLDER must be the path to an existing folder.');
 end
 end

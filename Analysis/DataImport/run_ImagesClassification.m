@@ -242,8 +242,7 @@ if isMultiCamera
                 DataParams.cameraCoregistration = cc;
                 DataParams.lastModified = datetime('now');
 
-                validateDataParams(DataParams);
-                save(fullfile(SaveFolder, 'DataParams.mat'), 'DataParams', '-mat');
+                saveDataParams(SaveFolder, DataParams);
                 rigResolution.cameraCoregistration.dataParamsRecorded = true;
             catch ME
                 warning('Umitoolbox:run_ImagesClassification:cameraCoregistrationDataParamsFailed', ...

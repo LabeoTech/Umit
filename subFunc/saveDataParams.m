@@ -34,7 +34,7 @@ validateDataParams(DataParams);
 DataParams.lastModified = datetime('now');
 
 filePath = fullfile(folderPath, 'DataParams.mat');
-save(filePath, 'DataParams', '-mat');
+saveMatAtomic(filePath, 'DataParams', DataParams);
 end
 
 function DataParams = iNormalizeDataParams(DataParams)

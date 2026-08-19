@@ -34,6 +34,9 @@ function outData = calculateResponseFeatures(data, varargin)
 %         response peaking on that frame reports a latency of 0 s.
 %       - AUCamplitude integrates the baseline-corrected response over the
 %         selected window with unit frame spacing, omitting NaN samples.
+%       - The baseline level is the median (not mean) of the baseline
+%         period, matching the convention used elsewhere in Analysis/
+%         (normalizeBSLN, apply_detrend, genAmplitudeMaps).
 %       - FrameRateHz must exist in the selected entry meta.
 %       - ROI entries that retain the Pixel dimension are not supported by
 %         this function in the current version.
@@ -88,6 +91,10 @@ entryNames = fieldnames(data.data);
 assert(~isempty(entryNames), ...
     'Umitoolbox:calculateResponseFeatures:EmptyInput', ...
     'Input roi UMT contains no data entries.');
+assert(numel(entryNames) == 1, ...
+    'Umitoolbox:calculateResponseFeatures:multipleCompatibleUMTEntries', ...
+    ['Multiple compatible data entries were found in the UMT input. ' ...
+     'The current version can process only one entry.']);
 
 entryName = entryNames{1};
 entry = data.data.(entryName);
@@ -157,7 +164,7 @@ for iEvent = 1:nE
         avgResp = -1 .* avgResp;
     end
 
-    avgBsln = mean(avgResp(:, 1:baselineFrames), 2, 'omitnan');
+    avgBsln = median(avgResp(:, 1:baselineFrames), 2, 'omitnan');
     thr = avgBsln + STD_threshold .* std(avgResp(:, 1:baselineFrames), 0, 2, 'omitnan');
 
     windowResp = avgResp(:, frOn:frOff);
@@ -241,6 +248,7 @@ outData = genUMTStruct( ...
             'Baseline standard-deviation multiplier used for thresholding.', ...
             'kind', 'parameter', ...
             'default', 1, ...
+            'allowed', [0 Inf], ...
             'callType', 'namevalue');
 
         info = PipelineManager.addInput( ...
