@@ -52,7 +52,7 @@ addRequired(p, 'bExpFit', @(x) isscalar(x) && (isnumeric(x) || islogical(x)))
 addOptional(p, 'Freq', [], @(x) (isscalar(x) && isnumeric(x)) || isempty(x))
 addOptional(p, 'saveFilename', '', @(x) ischar(x) || (isstring(x) && isscalar(x)))
 
-parse(p, FolderData, FileData, lowFreq, highFreq, bExpfit, bDivide, varargin{:});
+parse(p, FolderData, FileData, lowFreq, highFreq, bDivide, bExpfit, varargin{:});
 
 lowFreq   = p.Results.lowFreq;
 highFreq  = p.Results.highFreq;
@@ -118,7 +118,7 @@ end
 if lowFreq > 0
     UseLPFilt = 1;
     if (1/lowFreq) > (size(OutData,3)/Freq)
-        lowFreq = 1 / ((size(OutData,3)/Freq));
+        lowFreq = 1 / (2 * (size(OutData,3)/Freq));
     end
     f = fdesign.lowpass('N,F3dB', 4, lowFreq, Freq);
     lpass = design(f, 'butter');
@@ -298,12 +298,12 @@ preallocateDatFile(outDat, storedSize, dataType);
 fidIn  = fopen(inFile, 'r');
 assert(fidIn ~= -1, 'NormalisationFiltering:OpenInputFailed', ...
     'Failed to open input file "%s".', inFile);
-cIn = onCleanup(@() safeFclose(fidIn)); %#ok<NASGU>
+cIn = onCleanup(@() safeFclose(fidIn));
 
 fidOut = fopen(outDat, 'r+');
 assert(fidOut ~= -1, 'NormalisationFiltering:OpenOutputFailed', ...
     'Failed to open output file "%s".', outDat);
-cOut = onCleanup(@() safeFclose(fidOut)); %#ok<NASGU>
+cOut = onCleanup(@() safeFclose(fidOut));
 
 % ---------------- Filter design ----------------
 if lowFreq > 0
@@ -357,7 +357,7 @@ if hasEvents
     permToYXTE = [idxY idxX idxT idxE];
     dataYXTE = permute(storedData, permToYXTE);
 
-    [Ny, Nx, Nt, Ne] = size(dataYXTE);
+    [Ny, ~, Nt, Ne] = size(dataYXTE);
 
     for e = 1:Ne
         fprintf('Trial %d / %d\n', e, Ne);
