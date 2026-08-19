@@ -55,6 +55,12 @@ classdef DatImageSource < handle
         Precision char = 'single'
         BytesPerSample double = 4
         FrameRateHz double = NaN
+
+        % Non-empty when the dataset's stored Rig UUID/ID could not be
+        % resolved against UMITRigStore at load time (e.g. deleted Rig,
+        % dataset moved from another install). Holds the failure reason;
+        % callers use this to surface a non-blocking warning to the user.
+        RigAssociationIssue char = ''
     end
 
     properties
@@ -123,8 +129,19 @@ classdef DatImageSource < handle
                     exist('UMITRigStore', 'class') == 8
                 % Legacy .dat folders acquire the current Active Rig once;
                 % existing UUID/ID associations, including archived history,
-                % are preserved by the backend.
-                UMITRigStore.ensureDatasetRigAssociation(dataFolder);
+                % are preserved by the backend. This is a best-effort
+                % convenience step, not a precondition for reading pixel
+                % data, so an unresolvable/stale Rig reference (deleted
+                % Rig, dataset moved from another install, etc.) must not
+                % block the load.
+                try
+                    UMITRigStore.ensureDatasetRigAssociation(dataFolder);
+                catch ME
+                    obj.RigAssociationIssue = ME.message;
+                    warning('Umitoolbox:DatImageSource:rigAssociationSkipped', ...
+                        'Could not resolve/assign a Rig for "%s": %s', ...
+                        dataFolder, ME.message);
+                end
             end
             obj.Info = loadMetaData(obj.FilePath);
             obj.validateContinuousDatLayout(obj.Info);
