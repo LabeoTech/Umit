@@ -17,7 +17,8 @@ function outData = calculateResponseFeatures(data, varargin)
 %                          deviation. Default: 1
 %       ResponsePolarity - 'positive' or 'negative'. Default: 'positive'
 %       TimeWindow_sec   - 'all' or [start end] in seconds relative to
-%                          stimulus onset. Default: 'all'
+%                          stimulus onset, where 0 is the first frame after
+%                          the baseline period. Default: 'all'
 %
 %   Output:
 %       outData - ROI UMT structure with one entry using dimensions
@@ -29,6 +30,10 @@ function outData = calculateResponseFeatures(data, varargin)
 %       - Shared top-level eventInfo must exist and use
 %         eventAxisMode = 'instances'.
 %       - baselinePeriod must exist in top-level eventInfo.
+%       - Latencies are measured from the first response frame, so a
+%         response peaking on that frame reports a latency of 0 s.
+%       - AUCamplitude integrates the baseline-corrected response over the
+%         selected window with unit frame spacing, omitting NaN samples.
 %       - FrameRateHz must exist in the selected entry meta.
 %       - ROI entries that retain the Pixel dimension are not supported by
 %         this function in the current version.
@@ -123,8 +128,11 @@ if ischar(timeWindowSec) || (isstring(timeWindowSec) && isscalar(timeWindowSec))
     frOff = nT;
 else
     timeWindowSec = double(timeWindowSec(:).');
-    frOn = round(timeWindowSec(1) * frameRateHz) + baselineFrames;
-    frOff = round(timeWindowSec(2) * frameRateHz) + baselineFrames;
+    % Frame baselineFrames+1 is the first response frame, i.e. t = 0 after
+    % stimulus onset. Anchoring on baselineFrames instead would reject the
+    % natural "0 to N seconds" request that this parameter advertises.
+    frOn = baselineFrames + 1 + round(timeWindowSec(1) * frameRateHz);
+    frOff = baselineFrames + 1 + round(timeWindowSec(2) * frameRateHz);
 
     assert(frOn >= baselineFrames + 1 && frOff <= nT && frOn <= frOff, ...
         'Umitoolbox:calculateResponseFeatures:InvalidTimeWindow', ...
@@ -158,7 +166,11 @@ for iEvent = 1:nE
     peakIdx = frOn + peakIdxLocal - 1;
 
     avgAmp = mean(windowResp, 2, 'omitnan') - avgBsln;
-    aucAmp = trapz(windowResp, 2) - trapz(avgResp(:, 1:baselineFrames), 2);
+    % Integrate the baseline-corrected trace over the response window.
+    % Subtracting a separate baseline integral would compare areas over two
+    % different supports, so the correction would scale with the ratio of
+    % the two window lengths.
+    aucAmp = iTrapzOmitNaN(windowResp - avgBsln);
     peakAmp = peakValue - avgBsln;
 
     onsetAmp = nan(nROI, 1, 'single');
@@ -171,8 +183,9 @@ for iEvent = 1:nE
             if ~isempty(onsetLocal)
                 onsetIdx = frOn + onsetLocal - 1;
                 onsetAmp(iROI) = avgResp(iROI, onsetIdx) - avgBsln(iROI);
-                onsetLat(iROI) = (onsetIdx - baselineFrames) / frameRateHz;
-                peakLat(iROI) = (peakIdx(iROI) - baselineFrames) / frameRateHz;
+                % Frame baselineFrames+1 is t = 0 after stimulus onset.
+                onsetLat(iROI) = (onsetIdx - baselineFrames - 1) / frameRateHz;
+                peakLat(iROI) = (peakIdx(iROI) - baselineFrames - 1) / frameRateHz;
             end
         end
     end
@@ -277,4 +290,26 @@ if isnumeric(x) && isvector(x) && numel(x) == 2
     x = double(x(:).');
     tf = all(isfinite(x)) && all(x >= 0) && x(1) <= x(2);
 end
+end
+
+function area = iTrapzOmitNaN(values)
+%ITRAPZOMITNAN Trapezoidal integration along dim 2 that omits NaN samples.
+%
+%   With unit spacing, TRAPZ is the weighted sum of the samples using
+%   weights [0.5 1 ... 1 0.5]. Applying those weights with 'omitnan' matches
+%   TRAPZ exactly on finite data while keeping the NaN convention used by
+%   every other reduction in this function.
+
+nSamples = size(values, 2);
+
+if nSamples < 2
+    area = zeros(size(values,1), 1, 'like', values);
+    return
+end
+
+weights = ones(1, nSamples, 'like', values);
+weights(1) = 0.5;
+weights(end) = 0.5;
+
+area = sum(values .* weights, 2, 'omitnan');
 end

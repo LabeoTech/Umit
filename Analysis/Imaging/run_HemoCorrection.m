@@ -277,11 +277,12 @@ end
 function outFile = localRatiometricLowRAM(SaveFolder, fluoFile, fluoMeta, refFile, defaultOutput)
 %LOCALRATIOMETRICLOWRAM Ratiometric correction in low-RAM mode.
 
+% Write through a scratch file, then move it onto the declared output.
+% Renaming the output when it already exists would make every pipeline
+% re-run write to a different file and leave the stale original in place.
 outFile = fullfile(SaveFolder, defaultOutput);
-if isfile(outFile)
-    [folderPath, baseName, ext] = fileparts(outFile);
-    outFile = fullfile(folderPath, [baseName '_preallocData' ext]);
-end
+[~, outBaseName, outExt] = fileparts(defaultOutput);
+tmpFile = fullfile(SaveFolder, [outBaseName '_writing' outExt]);
 
 refPath = fullfile(SaveFolder, refFile);
 refMeta = localNormalizeDatMeta(loadMetaData(refPath));
@@ -303,12 +304,12 @@ assert(fidRef ~= -1, ...
     'Could not open reference file "%s".', refFile);
 cRef = onCleanup(@() safeFclose(fidRef)); 
 
-preallocateDatFile(outFile, [Ny, Nx, Nt], fluoMeta.Datatype);
+preallocateDatFile(tmpFile, [Ny, Nx, Nt], fluoMeta.Datatype);
 
-fidOut = fopen(outFile, 'r+');
+fidOut = fopen(tmpFile, 'r+');
 assert(fidOut ~= -1, ...
     'Umitoolbox:run_HemoCorrection:FileOpenError', ...
-    'Could not create output file "%s".', outFile);
+    'Could not create output file "%s".', tmpFile);
 cOut = onCleanup(@() safeFclose(fidOut)); 
 
 % Chunk along X to control RAM.
@@ -354,8 +355,17 @@ for ii = 1:nChunks
     spatialSlabIO('write', fidOut, Ny, Nx, Nt, xIdx, fluoMeta.Datatype, fSlab);
 end
 
-[~, outName, outExt] = fileparts(outFile);
-outFile = [outName outExt];
+% Close every handle before the move: on Windows an open handle blocks it,
+% and the input may be the file the declared output overwrites.
+fclose(fidOut);
+fclose(fidFluo);
+fclose(fidRef);
+
+[moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
+assert(moveOk, 'Umitoolbox:run_HemoCorrection:OutputMoveFailed', ...
+    'Failed to move "%s" onto "%s": %s', tmpFile, outFile, moveMsg);
+
+outFile = defaultOutput;
 end
 
 function refData = localResampleReferenceToFluoTimeline(refData, refMeta, fluoMeta)

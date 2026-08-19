@@ -28,7 +28,8 @@ function outData = genAmplitudeMaps(data, SaveFolder, varargin)
 %                           'mean' | 'median' | 'min' | 'max'
 %                           Default: 'max'
 %       'TimeWindow_sec'  - Response window in seconds relative to stimulus
-%                           onset. Use:
+%                           onset, where 0 is the first frame after the
+%                           baseline period. Use:
 %                               'all'
 %                               [startSec endSec]
 %                           Default: 'all'
@@ -569,8 +570,12 @@ else
     assert(timeWindowSec(1) <= timeWindowSec(2), ...
         'Umitoolbox:genAmplitudeMaps:invalidTimeWindow', ...
         'TimeWindow_sec must satisfy start <= end.');
-    frOn = round(timeWindowSec(1) * frameRateHz) + baselineFrames(end);
-    frOff = round(timeWindowSec(2) * frameRateHz) + baselineFrames(end);
+    % Frame baselineFrames(end)+1 is the first response frame, i.e. t = 0
+    % after stimulus onset. Anchoring on baselineFrames(end) instead would
+    % reject the natural "0 to N seconds" request that this parameter
+    % advertises as allowed.
+    frOn = baselineFrames(end) + 1 + round(timeWindowSec(1) * frameRateHz);
+    frOff = baselineFrames(end) + 1 + round(timeWindowSec(2) * frameRateHz);
     assert(frOn >= baselineFrames(end) + 1, ...
         'Umitoolbox:genAmplitudeMaps:invalidTimeWindow', ...
         'TimeWindow_sec starts before the post-baseline response period.');

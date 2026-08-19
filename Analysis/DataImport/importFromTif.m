@@ -17,9 +17,16 @@ function [outFile, rigResolution] = importFromTif(RawFolder, SaveFolder, varargi
 %                 saved.
 %
 % Name-Value parameters:
-%   BinningSpatial - Spatial downsampling factor.
+%   BinningSpatial - Spatial downsampling factor. Despite the name, this is
+%                    resampling, not box binning: it calls IMRESIZE with the
+%                    default bicubic kernel, matching ImagesClassification.
 %                    Allowed values: 1, 2, 4, 8, 16, 32
-%   BinningTemp    - Temporal downsampling factor.
+%   BinningTemp    - Temporal downsampling factor. Despite the name, this is
+%                    resampling, not box binning: it calls IMRESIZE3 with
+%                    linear interpolation along T, matching
+%                    ImagesClassification. It changes the noise
+%                    characteristics differently from averaging BinningTemp
+%                    consecutive frames.
 %                    Allowed values: 1:8
 %
 % Output:
@@ -424,22 +431,31 @@ elseif numel(tifList) > 1
         numel(tifNames), prefix);
 
     expr = ['^' prefixEsc '[-_]?(\d+)\.tif$'];
-    suffixes = regexp(tifNames, expr, 'tokens', 'ignorecase');
+    suffixes = regexp(tifNames, expr, 'tokens', 'once', 'ignorecase');
     idx = ~cellfun(@isempty, suffixes);
 
-    if ~any(idx) && any(strcmpi({tifList.name}, filename))
+    % The unnumbered base file ("img.tif" alongside "img_1.tif", "img_2.tif")
+    % carries the first frames of the sequence but matches no numeric
+    % pattern. Treating it as index 0 keeps it in the import; matching on the
+    % numeric pattern alone would silently drop its frames.
+    baseIdx = strcmpi(tifNames, [prefix '.tif']);
+
+    if ~any(idx) && any(baseIdx)
         % Similar files exist but do not belong to a numeric sequence.
         tifNames = {filename};
         return
     end
 
-    tifNames = tifNames(idx);
-    suffixes = suffixes(idx);
-    suffixes = [suffixes{:}];
-    suffixes = [suffixes{:}];
+    seqNames = tifNames(idx);
+    seqOrder = cellfun(@(t) str2double(t{1}), suffixes(idx));
 
-    [~, fileOrd] = sort(cellfun(@str2double, suffixes));
-    tifNames = tifNames(fileOrd);
+    if any(baseIdx)
+        seqNames = [tifNames(baseIdx), seqNames];
+        seqOrder = [0, seqOrder];
+    end
+
+    [~, fileOrd] = sort(seqOrder);
+    tifNames = seqNames(fileOrd);
 else
     tifNames = {};
 end

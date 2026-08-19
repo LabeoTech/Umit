@@ -26,18 +26,23 @@ function [classifiedFiles, rigResolution] = run_ImagesClassification(RawFolder, 
 %       backupOpts     - Backup handling option passed to
 %                        ImagesClassification before writing outputs into
 %                        SaveFolder.
-%                        Allowed values:
-%                            'ERASE'
-%                            'GENBACKUP'
-%                        Default: ''
+%                        Values:
+%                            ''           resolve interactively
+%                            'ERASE'      delete without a backup
+%                            'GENBACKUP'  zip, then delete
+%                            <char>       zip under that base name, then
+%                                         delete
+%                        Default: '' for a direct call; 'GENBACKUP' when the
+%                        function is driven by PipelineManager, which cannot
+%                        answer an interactive prompt and must not default to
+%                        a destructive action.
 %
 %                        Notes:
-%                        - If left empty, the backup handling is resolved
-%                          interactively by the called function.
-%                        - 'ERASE' deletes managed existing files from
-%                          SaveFolder before import.
-%                        - 'GENBACKUP' creates a timestamped .zip backup of
-%                          managed existing files before import.
+%                        - All values delete the managed existing files in
+%                          SaveFolder; only 'ERASE' does so without first
+%                          creating a .zip backup.
+%                        - Raw acquisition files (.bin, .tif, info.txt,
+%                          Comments.txt, Snapshot*.png) are never managed.
 %
 %   Outputs:
 %       outFile        - File manifest of outputs saved in SaveFolder.
@@ -209,7 +214,6 @@ if isMultiCamera
                 cc.tform = tformPayload.tform;
                 cc.resourceUUID = activeResource.uuid;
                 cc.rigID = defaultRigID;
-                cc.transformType = 'similarity';
                 cc.method = 'run_ImagesClassification';
                 cc.sourceFile = tformFile;
                 if isfield(tformPayload.tformInfo, 'SavedOn')
@@ -225,12 +229,15 @@ if isMultiCamera
                 cc.notes = ['Dual-camera coregistration automatically applied during ' ...
                     'raw data import using the rig''s active camera coregistration.'];
 
-                T = localGetTransformMatrix(tformPayload.tform);
-                A = T(1:2, 1:2);
-                cc.qcMetrics.translationXY_px = [T(3,1), T(3,2)];
-                cc.qcMetrics.rotationDeg = atan2d(A(1,2), A(1,1));
-                cc.qcMetrics.scaleXY = [hypot(A(1,1), A(1,2)), hypot(A(2,1), A(2,2))];
-                cc.qcMetrics.determinant = det(A);
+                % getTformQCMetrics normalises the premultiply/postmultiply
+                % convention, so the recorded metrics do not depend on which
+                % transform class the saved resource happens to hold.
+                tformQC = getTformQCMetrics(tformPayload.tform);
+                cc.transformType = tformQC.transformType;
+                cc.qcMetrics.translationXY_px = tformQC.translationXY;
+                cc.qcMetrics.rotationDeg = tformQC.rotationDeg;
+                cc.qcMetrics.scaleXY = tformQC.scaleXY;
+                cc.qcMetrics.determinant = tformQC.determinant;
 
                 DataParams.cameraCoregistration = cc;
                 DataParams.lastModified = datetime('now');
@@ -291,9 +298,10 @@ classifiedFiles = unique(cellfun(@(x) fullfile(SaveFolder, x), classifiedFiles, 
             'kind', 'parameter', 'default', 1, 'allowed', allowedBinning, 'callType', 'namevalue');
 
         info = PipelineManager.addInput(info, 'backupOpts', 'parameter', ...
-            ['Backup handling option passed to ImagesClassification. Use '''', ''ERASE'', ' ...
-             '''GENBACKUP'', or a custom zip base name.'], ...
-            'kind', 'parameter', 'default', 'ERASE','allowed',{'ERASE','GENBACKUP'}, 'callType', 'namevalue');
+            ['Backup handling for managed files already present in SaveFolder. ' ...
+             '''GENBACKUP'' zips them before the import; ''ERASE'' deletes them ' ...
+             'without a backup.'], ...
+            'kind', 'parameter', 'default', 'GENBACKUP', 'allowed', {'GENBACKUP','ERASE'}, 'callType', 'namevalue');
 
         info = PipelineManager.addOutput(info, 'classifiedFiles', 'ImageTimeSeries', 'file', ...
             'Generated file manifest saved in SaveFolder.', ...

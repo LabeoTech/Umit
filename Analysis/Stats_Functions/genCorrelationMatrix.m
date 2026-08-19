@@ -39,6 +39,10 @@ function outFile = genCorrelationMatrix(data, SaveFolder, varargin)
 %         not supported.
 %       - The main output is a roi UMT correlation matrix file.
 %       - SPC maps are saved as a second image UMT file when requested.
+%       - Traces that are entirely NaN (masked pixels) are reported as NaN
+%         and do not propagate into the coefficients of the other ROIs.
+%         Partially masked traces use the pairwise-complete estimator, which
+%         requires the Statistics and Machine Learning Toolbox.
 
 
 default_Output = {'corrMatrix.umt', 'corrMatrix_SPCMaps.umt'};
@@ -311,41 +315,94 @@ nROI = numel(roiMasks);
 switch corrAlgorithm
     case 'centroid_vs_centroid'
         roiVals = data2D(centroidList, :);
-        B = corrcoef(roiVals');
+        B = iCorrRows(roiVals, roiVals);
 
     case 'avg_vs_avg'
         roiVals = zeros(nROI, nT, 'single');
         for iROI = 1:nROI
             roiVals(iROI,:) = mean(data2D(roiMasks{iROI}, :), 1, 'omitnan');
         end
-        B = corrcoef(roiVals');
+        B = iCorrRows(roiVals, roiVals);
 
     case 'centroid_vs_agg'
+        % One centroid-vs-all-pixels correlation per target ROI, rather than
+        % one corrcoef call per (seed, pixel) pair.
+        sources = data2D(centroidList, :);
         B = zeros(nROI, nROI, 'single');
-        for iROI = 1:nROI
-            source = data2D(centroidList(iROI), :);
-            for jROI = 1:nROI
-                target = data2D(roiMasks{jROI}, :);
-                rhoVals = zeros(1, size(target,1), 'single');
-                for k = 1:size(target,1)
-                    rhoTmp = corrcoef(source, target(k,:));
-                    rhoVals(k) = rhoTmp(1,2);
-                end
-                switch spatialAggFcn
-                    case 'mean'
-                        B(iROI,jROI) = mean(rhoVals, 'omitnan');
-                    case 'median'
-                        B(iROI,jROI) = median(rhoVals, 'omitnan');
-                    case 'min'
-                        B(iROI,jROI) = min(rhoVals, [], 'omitnan');
-                    case 'max'
-                        B(iROI,jROI) = max(rhoVals, [], 'omitnan');
-                end
-            end
+        for jROI = 1:nROI
+            rhoVals = iCorrRows(sources, data2D(roiMasks{jROI}, :));
+            B(:,jROI) = iAggregateRho(rhoVals, spatialAggFcn);
         end
 end
 
 B = single(B);
+end
+
+function agg = iAggregateRho(rhoVals, spatialAggFcn)
+%IAGGREGATERHO Reduce per-pixel correlations along the pixel dimension.
+
+switch spatialAggFcn
+    case 'mean'
+        agg = mean(rhoVals, 2, 'omitnan');
+    case 'median'
+        agg = median(rhoVals, 2, 'omitnan');
+    case 'min'
+        agg = min(rhoVals, [], 2, 'omitnan');
+    case 'max'
+        agg = max(rhoVals, [], 2, 'omitnan');
+    otherwise
+        error('Umitoolbox:genCorrelationMatrix:InvalidAggFcn', ...
+            'Unknown spatial aggregation function "%s".', spatialAggFcn);
+end
+end
+
+function R = iCorrRows(A, B)
+%ICORRROWS Correlate every row of A against every row of B over time.
+%
+%   A is m-by-T, B is n-by-T and R is m-by-n. Traces that are entirely NaN
+%   -- the normal state of masked pixels after GSR or normalization -- are
+%   excluded and reported as NaN instead of poisoning the whole matrix, and
+%   partially masked traces fall back to the pairwise-complete estimator.
+
+X = A';
+Y = B';
+
+keepX = ~all(isnan(X), 1);
+keepY = ~all(isnan(Y), 1);
+
+R = nan(size(X,2), size(Y,2), 'single');
+if ~any(keepX) || ~any(keepY)
+    return
+end
+
+Xk = X(:, keepX);
+Yk = Y(:, keepY);
+
+if any(isnan(Xk), 'all') || any(isnan(Yk), 'all')
+    % Only some samples of these traces are masked. CORR drops NaN samples
+    % per pair, which is slower but is the only correct reduction here.
+    Rk = corr(Xk, Yk, 'rows', 'pairwise');
+else
+    Rk = iFastCorr(Xk, Yk);
+end
+
+R(keepX, keepY) = single(Rk);
+end
+
+function R = iFastCorr(X, Y)
+%IFASTCORR Correlate the columns of two NaN-free matrices as one product.
+
+Xc = X - mean(X, 1);
+Yc = Y - mean(Y, 1);
+
+% Zero-variance traces divide by zero and yield NaN, matching CORRCOEF.
+Xc = Xc ./ vecnorm(Xc, 2, 1);
+Yc = Yc ./ vecnorm(Yc, 2, 1);
+
+R = Xc' * Yc;
+
+% Guard against rounding pushing a coefficient just outside [-1, 1].
+R = max(min(R, 1), -1);
 end
 
 function SPCMaps = iComputeSPCMaps(data, centroidList)
@@ -356,14 +413,12 @@ data2D = reshape(single(data), nY*nX, []);
 nROI = numel(centroidList);
 SPCMaps = cell(nROI,1);
 
+% One seeds-by-all-pixels correlation instead of one corrcoef call per
+% (seed, pixel) pair.
+rho = iCorrRows(data2D(centroidList, :), data2D);
+
 for iROI = 1:nROI
-    seed = data2D(centroidList(iROI), :);
-    tmpOut = zeros(1, size(data2D,1), 'single');
-    for j = 1:size(data2D,1)
-        rho = corrcoef(seed, data2D(j,:));
-        tmpOut(j) = rho(1,2);
-    end
-    SPCMaps{iROI} = reshape(tmpOut, nY, nX);
+    SPCMaps{iROI} = reshape(rho(iROI,:), nY, nX);
 end
 end
 
