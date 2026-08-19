@@ -11,8 +11,9 @@ function outFile = genCorrelationMatrix(data, SaveFolder, varargin)
 %       4) .umt filename containing one image UMT struct
 %
 %   Name-Value parameters:
-%       ROImasks_filename    - ROI file name or full path.
-%                              Default: 'myROI.roimsk'
+%       ROImasks_filename    - UMIT .roi file name or full path. A bare
+%                              filename is resolved inside SaveFolder.
+%                              Default: 'myROI.roi'
 %       CorrAlgorithm        - Correlation algorithm:
 %                              'centroid_vs_centroid'
 %                              'centroid_vs_agg'
@@ -27,16 +28,15 @@ function outFile = genCorrelationMatrix(data, SaveFolder, varargin)
 %       b_genSPCMaps         - Generate seed-pixel correlation maps and
 %                              save them as an image UMT file in SaveFolder.
 %                              Default: false
-%       object               - Optional legacy Acquisition / Modality object.
-%                              Kept only for ROI-file lookup compatibility.
 %
 %   Output:
 %       outFile - File manifest cell array containing the generated UMT
 %                 file name(s) saved in SaveFolder.
 %
 %   Notes:
-%       - The ROI file lookup still relies on findMyROIfile(...). That path
-%         is intentionally preserved for now and should be revised later.
+%       - ROI files are read through loadROIFile(...), which migrates and
+%         validates the current UMIT .roi schema. Pre-.roi ROI files are
+%         not supported.
 %       - The main output is a roi UMT correlation matrix file.
 %       - SPC maps are saved as a second image UMT file when requested.
 
@@ -54,14 +54,13 @@ p.FunctionName = mfilename;
 
 addRequired(p, 'data');
 addRequired(p, 'SaveFolder', @(x) ischar(x) || (isstring(x) && isscalar(x)));
-addParameter(p, 'ROImasks_filename', 'myROI.roimsk', @(x) ischar(x) || (isstring(x) && isscalar(x)));
+addParameter(p, 'ROImasks_filename', 'myROI.roi', @(x) ischar(x) || (isstring(x) && isscalar(x)));
 addParameter(p, 'CorrAlgorithm', 'centroid_vs_centroid', @(x) (ischar(x) || (isstring(x) && isscalar(x))) && ...
     ismember(lower(char(string(x))), {'centroid_vs_centroid','centroid_vs_agg','avg_vs_avg'}));
 addParameter(p, 'SpatialAggFcn', 'mean', @(x) (ischar(x) || (isstring(x) && isscalar(x))) && ...
     ismember(lower(char(string(x))), {'mean','max','min','median'}));
 addParameter(p, 'b_FisherZ_transform', false, @(x) islogical(x) && isscalar(x));
 addParameter(p, 'b_genSPCMaps', false, @(x) islogical(x) && isscalar(x));
-addParameter(p, 'object', [], @(x) isempty(x) || isa(x,'Acquisition') || isa(x,'Modality'));
 
 parse(p, data, SaveFolder, varargin{:});
 
@@ -71,38 +70,22 @@ corrAlgorithm = lower(char(string(p.Results.CorrAlgorithm)));
 spatialAggFcn = lower(char(string(p.Results.SpatialAggFcn)));
 bFisherZ = p.Results.b_FisherZ_transform;
 bGenSPCMaps = p.Results.b_genSPCMaps;
-object = p.Results.object;
 
 assert(isfolder(SaveFolder), 'Umitoolbox:genCorrelationMatrix:InvalidSaveFolder', ...
     'SaveFolder "%s" does not exist.', SaveFolder);
 
-% NOTE:
-% This legacy ROI lookup path is intentionally preserved for now. It should
-% be revised once ROI file creation/management are fully modernized.
-roiFile = findMyROIfile(roiFile, object);
-assert(isfile(roiFile), 'Umitoolbox:genCorrelationMatrix:MissingROIFile', ...
-    'ROI file was not found: "%s".', roiFile);
-
-roiData = load(roiFile);
-assert(isfield(roiData, 'ROI_info') && isstruct(roiData.ROI_info), ...
-    'Umitoolbox:genCorrelationMatrix:InvalidROIFile', ...
-    'ROI file must contain a struct variable named "ROI_info".');
-assert(isfield(roiData, 'img_info') && isstruct(roiData.img_info) && ...
-    isfield(roiData.img_info, 'imageData'), ...
-    'Umitoolbox:genCorrelationMatrix:InvalidROIFile', ...
-    'ROI file must contain img_info.imageData.');
+roiSet = iLoadROISet(roiFile, SaveFolder);
 
 [value, dimNames] = iResolveImageInput(data, SaveFolder);
 assert(isequal(dimNames, {'Y','X','T'}), ...
     'Umitoolbox:genCorrelationMatrix:WrongFormat', ...
     'Input data must be an Image time series with dimensions {''Y'',''X'',''T''}.');
-assert(isequal(size(value,1), size(roiData.img_info.imageData,1)) && ...
-    isequal(size(value,2), size(roiData.img_info.imageData,2)), ...
+assert(isequal([size(value,1), size(value,2)], roiSet.imageSizeYX), ...
     'Umitoolbox:genCorrelationMatrix:IncompatibleSizes', ...
     'Input frame size is different from the frame size in the ROI file.');
 
-roiNames = {roiData.ROI_info.Name}';
-[centroidList, roiMasks] = iExtractROIGeometry(roiData);
+roiNames = roiSet.names;
+[centroidList, roiMasks] = iExtractROIGeometry(roiSet);
 
 corrMatrix = iComputeCorrelationMatrix(value, roiMasks, centroidList, corrAlgorithm, spatialAggFcn);
 if bFisherZ
@@ -150,7 +133,7 @@ if bGenSPCMaps
 
     spcFile = 'corrMatrix_SPCMaps.umt';
     saveData(fullfile(SaveFolder, spcFile), spcUMT);
-    outFile = [outFile, {spcFile}]; %#ok<AGROW>
+    outFile = [outFile, {spcFile}];
 end
 
     function info = localPipelineInfo()
@@ -169,8 +152,8 @@ end
             'kind', 'input', 'position', 2, 'callType', 'positional', 'isData', false);
 
         info = PipelineManager.addInput(info, 'ROImasks_filename', 'parameter', ...
-            'ROI file name or full path.', ...
-            'kind', 'parameter', 'default', 'myROI.roimsk', 'callType', 'namevalue');
+            'UMIT .roi file name or full path, resolved inside SaveFolder.', ...
+            'kind', 'parameter', 'default', 'myROI.roi', 'callType', 'namevalue');
 
         info = PipelineManager.addInput(info, 'CorrAlgorithm', 'parameter', ...
             'ROI correlation algorithm.', ...
@@ -190,10 +173,6 @@ end
         info = PipelineManager.addInput(info, 'b_genSPCMaps', 'parameter', ...
             'Generate and save SPC maps as a second UMT output file.', ...
             'kind', 'parameter', 'default', false, 'callType', 'namevalue');
-
-        info = PipelineManager.addInput(info, 'object', 'parameter', ...
-            'Optional legacy Acquisition/Modality object for ROI lookup.', ...
-            'kind', 'parameter', 'default', [], 'callType', 'namevalue');
 
         info = PipelineManager.addOutput(info, 'outFile', 'ProcessedData', ...
             'file', 'Generated UMT file manifest saved in SaveFolder.', ...
@@ -254,18 +233,72 @@ value = single(entry.value);
 dimNames = cellstr(string(entry.dimNames));
 end
 
-function [centroidList, roiMasks] = iExtractROIGeometry(roiData)
+function [centroidList, roiMasks] = iExtractROIGeometry(roiSet)
 %IEXTRACTROIGEOMETRY Extract ROI masks and centroid pixels.
 
-nROI = numel(roiData.ROI_info);
+nROI = numel(roiSet.masks);
 roiMasks = cell(nROI,1);
 centroidList = zeros(nROI,1);
 
 for iROI = 1:nROI
-    roiMasks{iROI} = roiData.ROI_info(iROI).Stats.ROI_binary_mask(:);
-    cIdx = find(bwmorph(roiData.ROI_info(iROI).Stats.ROI_binary_mask, 'shrink', Inf));
+    thisMask = roiSet.masks{iROI};
+    roiMasks{iROI} = thisMask(:);
+
+    cIdx = find(bwmorph(thisMask, 'shrink', Inf));
+    if isempty(cIdx)
+        % bwmorph can shrink a thin or empty ROI to nothing. Fall back to
+        % the first mask pixel so a degenerate ROI cannot abort the run
+        % with a bare index error.
+        cIdx = find(thisMask);
+    end
+    if isempty(cIdx)
+        error('Umitoolbox:genCorrelationMatrix:EmptyROIMask', ...
+            'ROI "%s" has an empty mask.', roiSet.names{iROI});
+    end
     centroidList(iROI) = cIdx(1);
 end
+end
+
+% =========================================================================
+% Local helper: load and normalize a UMIT .roi file
+% =========================================================================
+function roiSet = iLoadROISet(roiFile, SaveFolder)
+%ILOADROISET Resolve and load a UMIT .roi file into names, masks, and size.
+
+roiFile = char(string(roiFile));
+if ~isfile(roiFile)
+    roiFile = fullfile(SaveFolder, roiFile);
+end
+
+if ~isfile(roiFile)
+    error('Umitoolbox:genCorrelationMatrix:MissingROIFile', ...
+        'ROI file was not found: "%s".', roiFile);
+end
+
+[~, ~, ext] = fileparts(roiFile);
+if ~strcmpi(ext, '.roi')
+    error('Umitoolbox:genCorrelationMatrix:UnsupportedROIFile', ...
+        ['ROI files must use the UMIT ".roi" format. Pre-.roi ROI files ' ...
+         'are not supported. Received: "%s".'], roiFile);
+end
+
+% loadROIFile migrates and validates the schema, so masks are guaranteed to
+% be 2-D and to match imageInfo.imageSizeYX, and ROI names are unique.
+ROIFile = loadROIFile(roiFile);
+
+if isempty(ROIFile.ROIs)
+    error('Umitoolbox:genCorrelationMatrix:EmptyROIFile', ...
+        'ROI file "%s" does not contain any ROI.', roiFile);
+end
+
+roiSet = struct();
+roiSet.filePath = roiFile;
+roiSet.imageSizeYX = double(ROIFile.imageInfo.imageSizeYX(:).');
+roiSet.names = cellstr(string({ROIFile.ROIs.name}))';
+roiSet.masks = arrayfun(@(r) logical(r.mask), ROIFile.ROIs, ...
+    'UniformOutput', false);
+roiSet.masks = roiSet.masks(:);
+
 end
 
 function B = iComputeCorrelationMatrix(data, roiMasks, centroidList, corrAlgorithm, spatialAggFcn)
