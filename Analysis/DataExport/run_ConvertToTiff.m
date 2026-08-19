@@ -20,7 +20,13 @@ function outFile = run_ConvertToTiff(data, SaveFolder)
 %
 %   Output:
 %       outFile - File manifest cell array containing the generated file
-%                 name(s) saved in SaveFolder.
+%                 name(s) saved in SaveFolder. Names are derived from the
+%                 input, so they are not fixed:
+%                     array input        -> img_out.tif
+%                     file input         -> img_<inputStem>.tif
+%                     event-split input  -> one <baseName>_C<id>_R<rep>.tif
+%                                           per event
+%                 A <baseName>_info.txt is always written alongside.
 
 
 default_Output = {'img_out.tif','img_out_info.txt'}; %#ok<NASGU>
@@ -99,7 +105,12 @@ outFile{end+1} = infoName;
             'isData', false);
 
         info = PipelineManager.addOutput(info, 'outFile', 'ImageTimeSeries', 'file', ...
-            'Generated TIFF file manifest saved in SaveFolder.', ...
+            ['Generated TIFF file manifest saved in SaveFolder. The base name is ' ...
+             '''img_out'' for array input and ''img_<inputStem>'' for file input; ' ...
+             'event-split input writes one ''<baseName>_C<eventID>_R<repetition>.tif'' ' ...
+             'per event instead of a single ''<baseName>.tif''. The declared names ' ...
+             'are the array-input, non-event case. Read the returned manifest for ' ...
+             'the names actually written.'], ...
             default_Output, 1, 'isData', true, 'saveFileName', '');
     end
 end

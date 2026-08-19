@@ -15,7 +15,15 @@ function varargout = run_HemoCompute(SaveFolder, data, varargin)
 %
 %   Inputs:
 %       SaveFolder - Folder containing AcqInfos.mat and intrinsic channels.
-%       data       - Numeric YXT array or raw .dat filename.
+%       data       - Execution-mode selector, NOT the pixel data. HemoCompute
+%                    always reads the illumination channel files resolved
+%                    from AcqInfos.mat and the Rig optical configuration, so
+%                    the content of "data" is never consumed. A .dat filename
+%                    selects RAM-safe mode; a numeric YXT array selects
+%                    standard mode. A filename that is not one of the
+%                    resolved illumination channels raises a warning, because
+%                    the run then processes the raw channels rather than the
+%                    file that was wired in.
 %
 %   Name-Value parameters:
 %       'FilterSet'              - Filter set name.
@@ -27,10 +35,13 @@ function varargout = run_HemoCompute(SaveFolder, data, varargin)
 %       'StO2perc'               - Oxygen saturation percentage.
 %
 %   Outputs:
-%       outFile           - With one requested output, returns
-%                           {HbOFile,HbRFile} for legacy callers.
-%       HbOFile, HbRFile  - With two requested outputs, returns the two
-%                           files separately for PipelineManager.
+%       outFile           - With one requested output, returns a
+%                           {HbOFile,HbRFile} manifest of the names written
+%                           into SaveFolder, in both execution modes.
+%       HbO, HbR          - With two requested outputs, returns whatever
+%                           HemoCompute produced: numeric YXT arrays in
+%                           standard mode, backing filenames in RAM-safe
+%                           mode. This is the form PipelineManager uses.
 
 % Default outputs for pipeline management.
 default_Output = {'HbO.dat', 'HbR.dat'}; 
@@ -85,6 +96,12 @@ assert(numel(illumination) >= 2, ...
 b_lowRAMmode = ischar(data) || (isstring(data) && isscalar(data));
 opticalInfo = localResolveOpticalInfo(SaveFolder, illumination, filterSet);
 
+% "data" only selects the execution mode; HemoCompute re-reads the
+% illumination channels from SaveFolder. Warn when a file was wired in that
+% is not one of those channels, so a pipeline cannot silently process the
+% raw channels instead of the file the user connected.
+localWarnUnusedDataInput(data, b_lowRAMmode, opticalInfo);
+
 try
     [HbO, HbR] = HemoCompute( ...
         SaveFolder, ...
@@ -105,9 +122,13 @@ end
 
 if nargout <= 1
     if b_lowRAMmode
+        % RAM-safe mode: HemoCompute already returns the backing filenames.
         varargout{1} = {HbO, HbR};
     else
-        varargout{1} = default_Output;
+        % Standard mode: HemoCompute returns the numeric arrays and writes
+        % them into SaveFolder under the declared names. Confirm the files
+        % before reporting them, instead of returning the literals blindly.
+        varargout{1} = localConfirmWrittenOutputs(SaveFolder, default_Output);
     end
 elseif nargout == 2
     varargout = {HbO, HbR};
@@ -135,7 +156,10 @@ fprintf('Finished HemoCompute.\n');
         info = PipelineManager.addInput(info, ...
             'data', ...
             'ImageTimeSeries', ...
-            'Numeric YXT input or raw .dat filename.', ...
+            ['Execution-mode selector, not the processed data. A .dat filename ' ...
+             'selects RAM-safe mode and a numeric array selects standard mode; ' ...
+             'HemoCompute reads the illumination channels from SaveFolder in ' ...
+             'both cases.'], ...
             'position', 2, ...
             'callType', 'positional', ...
             'isData', true, ...
@@ -217,6 +241,50 @@ fprintf('Finished HemoCompute.\n');
 
         info.supportsPreflight = true;
     end
+end
+
+function localWarnUnusedDataInput(data, b_lowRAMmode, opticalInfo)
+%LOCALWARNUNUSEDDATAINPUT Warn when the "data" input cannot influence the run.
+
+if ~b_lowRAMmode
+    % A numeric array is the documented way to request standard mode. It
+    % never reaches HemoCompute, but that is expected here, so it does not
+    % warrant a warning on every run.
+    return
+end
+
+[~, inputStem, inputExt] = fileparts(char(string(data)));
+inputName = [inputStem inputExt];
+
+channelFiles = {};
+if isstruct(opticalInfo) && isfield(opticalInfo, 'channels') && ...
+        isfield(opticalInfo.channels, 'datFile')
+    channelFiles = cellstr(string({opticalInfo.channels.datFile}));
+end
+
+if ~isempty(channelFiles) && any(strcmpi(channelFiles, inputName))
+    return
+end
+
+warning('Umitoolbox:run_HemoCompute:DataInputNotConsumed', ...
+    ['Input file "%s" is not one of the resolved illumination channels ' ...
+     '(%s). HemoCompute processes those channels, not the file wired into ' ...
+     'this step.'], inputName, strjoin(channelFiles, ', '));
+
+end
+
+function outFiles = localConfirmWrittenOutputs(SaveFolder, expectedFiles)
+%LOCALCONFIRMWRITTENOUTPUTS Verify the standard-mode outputs reached disk.
+
+outFiles = cellstr(string(expectedFiles));
+missing = outFiles(~cellfun(@(f) isfile(fullfile(SaveFolder, f)), outFiles));
+
+if ~isempty(missing)
+    error('Umitoolbox:run_HemoCompute:MissingOutputFile', ...
+        'HemoCompute did not write the expected output file(s): %s.', ...
+        strjoin(missing, ', '));
+end
+
 end
 
 function tf = iValidateStO2Percentage(value)

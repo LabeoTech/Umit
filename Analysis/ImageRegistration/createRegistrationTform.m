@@ -242,7 +242,11 @@ MIDelta = MIAfter - MIBefore;
 % -------------------------------------------------------------------------
 % Derive QC metrics
 % -------------------------------------------------------------------------
-[translationXY, rotationDeg, scaleXY, determinantVal] = iExtractTformMetrics(tform);
+tformQC = getTformQCMetrics(tform);
+translationXY = tformQC.translationXY;
+rotationDeg = tformQC.rotationDeg;
+scaleXY = tformQC.scaleXY;
+determinantVal = tformQC.determinant;
 
 [qcStatus, qcWarning] = iBuildQCStatus( ...
     MIDelta, translationXY, rotationDeg, scaleXY, size(refFrMask));
@@ -383,9 +387,10 @@ info = PipelineManager.addOutput( ...
     'outFile', ...
     'Unknown', ...
     'file', ...
-    ['Generated registration QC artifacts and updated DataParams.mat ' ...
-     'saved in SaveFolder.'], ...
-    {'DataParams.mat','registrationQC_<timestamp>.fig','registrationQC_<timestamp>.png'}, ...
+    ['Updated DataParams.mat saved in SaveFolder. The run also writes ' ...
+     'timestamped registrationQC_*.fig and registrationQC_*.png artifacts ' ...
+     'whose exact names are recorded in DataParams.registration.'], ...
+    {'DataParams.mat'}, ...
     1, ...
     'isData', false, ...
     'saveFileName', '');
@@ -583,34 +588,6 @@ for k = 1:numel(iIdx)
 end
 
 MI = sum(vals);
-
-end
-
-function [translationXY, rotationDeg, scaleXY, determinantVal] = iExtractTformMetrics(tform)
-%IEXTRACTTFORMMETRICS Extract QC metrics from a 2D transform object.
-
-translationXY = [NaN NaN];
-rotationDeg = NaN;
-scaleXY = [NaN NaN];
-determinantVal = NaN;
-
-if isa(tform, 'affine2d') || isa(tform, 'projective2d') || ...
-        isa(tform, 'images.geotrans.GeometricTransformation2D')
-    T = tform.T;
-    A = T(1:2,1:2);
-    translationXY = T(3,1:2);
-elseif isa(tform, 'rigidtform2d') || isa(tform, 'simtform2d') || isa(tform, 'affinetform2d')
-    A = tform.A(1:2,1:2);
-    translationXY = tform.A(3,1:2);
-else
-    return
-end
-
-sx = norm(A(:,1));
-sy = norm(A(:,2));
-scaleXY = [sx sy];
-determinantVal = det(A);
-rotationDeg = atan2d(A(2,1), A(1,1));
 
 end
 

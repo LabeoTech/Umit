@@ -11,9 +11,15 @@ function outData = run_SpeckleMapping(SaveFolder, data, varargin)
 %
 %   Inputs:
 %       SaveFolder - Folder containing the channel files.
-%       data       - Either:
-%                    1) Numeric Y x X x T array, or
-%                    2) .dat filename used to trigger RAM-safe mode.
+%       data       - Execution-mode selector, NOT the processed data.
+%                    SPECKLEMAPPING always reads "<channel>.dat" from
+%                    SaveFolder, so the content of "data" is never consumed.
+%                    Either:
+%                    1) Numeric Y x X x T array, selecting standard mode, or
+%                    2) .dat filename, selecting RAM-safe mode. A filename
+%                       other than "<channel>.dat" raises a warning, because
+%                       the run then processes the channel file rather than
+%                       the file that was wired in.
 %
 %   Name-Value parameters:
 %       sType     - Standard-deviation mode.
@@ -107,11 +113,25 @@ if bLowRAMmode
     loadMetaData(dataPath); %#ok<NASGU>
 end
 
-channelPath = fullfile(SaveFolder, [channel '.dat']);
+channelFile = [channel '.dat'];
+channelPath = fullfile(SaveFolder, channelFile);
 assert(isfile(channelPath), ...
     'Umitoolbox:run_SpeckleMapping:MissingChannelFile', ...
-    'Channel file "%s" was not found in "%s".', [channel '.dat'], SaveFolder);
+    'Channel file "%s" was not found in "%s".', channelFile, SaveFolder);
 loadMetaData(channelPath); %#ok<NASGU>
+
+% SPECKLEMAPPING reads the channel file, not "data". Warn when a different
+% file was wired in, so a pipeline cannot silently process another channel.
+if bLowRAMmode
+    [~, inputStem, inputExt] = fileparts(data);
+    if ~strcmpi([inputStem inputExt], channelFile)
+        warning('Umitoolbox:run_SpeckleMapping:DataInputNotConsumed', ...
+            ['Input file "%s" is not the selected channel file "%s". ' ...
+             'SpeckleMapping processes "%s", not the file wired into this ' ...
+             'step. Set the "channel" parameter to match the intended input.'], ...
+            [inputStem inputExt], channelFile, channelFile);
+    end
+end
 
 % -------------------------------------------------------------------------
 % Dispatch
@@ -164,7 +184,9 @@ info = PipelineManager.addInput( ...
     info, ...
     'data', ...
     'ImageTimeSeries', ...
-    'Numeric YXT array or .dat filename used to trigger RAM-safe mode.', ...
+    ['Execution-mode selector, not the processed data. A .dat filename ' ...
+     'selects RAM-safe mode and a numeric array selects standard mode; ' ...
+     'SpeckleMapping reads "<channel>.dat" from SaveFolder in both cases.'], ...
     'kind', 'input', ...
     'position', 2, ...
     'callType', 'positional', ...

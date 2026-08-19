@@ -359,18 +359,23 @@ function outFile = iApplyDetrendDatFile(inFile, SaveFolder, defaultOutput)
 
 [Ny, Nx, Nt] = iGetRawDatInfo(SaveFolder, inFile);
 frames = iGetDetrendFrameCount(SaveFolder, Nt);
-[~,defOutFilename,ext] = fileparts(defaultOutput);
-outFile = fullfile(fileparts(inFile), [defOutFilename, '_PREALLOCATED_FILE', ext]);
-preallocateDatFile(outFile, [Ny, Nx, Nt], 'single');
+
+% Write through a scratch file so the declared pipeline output only appears
+% once the run has completed, and so the input can safely be the file that
+% the declared output would overwrite (a pipeline re-run).
+outFile = fullfile(fileparts(inFile), defaultOutput);
+[~, defOutFilename, ext] = fileparts(defaultOutput);
+tmpFile = fullfile(fileparts(inFile), [defOutFilename, '_writing', ext]);
+preallocateDatFile(tmpFile, [Ny, Nx, Nt], 'single');
 
 fidIn = fopen(inFile, 'r');
 assert(fidIn ~= -1, 'apply_detrend:OpenInputFailed', ...
     'Failed to open input file "%s".', inFile);
 cIn = onCleanup(@() safeFclose(fidIn)); %#ok<NASGU>
 
-fidOut = fopen(outFile, 'r+');
+fidOut = fopen(tmpFile, 'r+');
 assert(fidOut ~= -1, 'apply_detrend:OpenOutputFailed', ...
-    'Failed to open output file "%s".', outFile);
+    'Failed to open output file "%s".', tmpFile);
 cOut = onCleanup(@() safeFclose(fidOut)); %#ok<NASGU>
 
 nChunks = calculateMaxChunkSize(Nx * Ny * Nt * 4, 2, 0.3);
@@ -396,6 +401,11 @@ end
 
 fclose(fidIn);
 fclose(fidOut);
+
+[moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
+assert(moveOk, 'apply_detrend:OutputMoveFailed', ...
+    'Failed to move "%s" onto "%s": %s', tmpFile, outFile, moveMsg);
+
 disp('Finished detrend!');
 end
 
