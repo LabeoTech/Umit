@@ -181,12 +181,19 @@ if isscalar(valueIn)
         entryName);
 end
 sz = size(valueIn);
-nonSingletonDims = find(sz ~= 1);
-if numel(nonSingletonDims) == 1 && nonSingletonDims ~= 1
-    error(errID, ...
-        ['Operation aborted. Entry "%s" is one-dimensional but not stored ' ...
-        'as a column vector.'], ...
-        entryName);
+if nDimsExpected == 1
+    % Only a genuinely 1-D declared entry is ambiguous between a row and a
+    % column orientation. For nDimsExpected >= 2, the array's own shape
+    % positionally assigns a size to every declared dimension (e.g. a
+    % single ROI paired with N timepoints is legitimately [1, N]), so this
+    % check must not run there.
+    nonSingletonDims = find(sz ~= 1);
+    if numel(nonSingletonDims) == 1 && nonSingletonDims ~= 1
+        error(errID, ...
+            ['Operation aborted. Entry "%s" is one-dimensional but not stored ' ...
+            'as a column vector.'], ...
+            entryName);
+    end
 end
 if numel(sz) < nDimsExpected
     sz(end+1:nDimsExpected) = 1;

@@ -401,6 +401,14 @@ if strcmp(spatialAggFcn, 'none')
         roiMask = roiSet.masks{iROI};
         pixVals = value2D(roiMask(:), :);
         pixelCounts(iROI) = size(pixVals, 1);
+
+        if numel(permSz) > 2
+            % The trailing-dimension assignment below indexes each declared
+            % trailing dimension with its own ':' range, which only accepts
+            % a flattened RHS when there is a single trailing dimension.
+            pixVals = reshape(pixVals, [size(pixVals,1), permSz(3:end)]);
+        end
+
         roiPixVals{iROI} = single(pixVals);
     end
 
@@ -432,6 +440,14 @@ else
         roiMask = roiSet.masks{iROI};
         pixVals = value2D(roiMask(:), :);
         pixVals = iApplyAggFcn(pixVals, spatialAggFcn);
+
+        if numel(permSz) > 2
+            % See the matching comment in the 'none' branch above: the
+            % trailing-dimension assignment below needs a shape-conforming
+            % RHS whenever there is more than one trailing dimension.
+            pixVals = reshape(pixVals, [size(pixVals,1), permSz(3:end)]);
+        end
+
         roiPixVals{iROI} = single(pixVals);
     end
 
