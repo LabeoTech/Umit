@@ -308,17 +308,16 @@ else
         'Umitoolbox:HemoCompute:MissingSaveFolder', ...
         'SaveFolder must be provided when RAMSafeMode is true.');
 
-    hboPath = fullfile(SaveFolder, default_Output_HbO);
-    if isfile(hboPath)
-        [folderPath, baseName, ext] = fileparts(hboPath);
-        hboPath = fullfile(folderPath, [baseName '_preallocData' ext]);
-    end
-
-    hbrPath = fullfile(SaveFolder, default_Output_HbR);
-    if isfile(hbrPath)
-        [folderPath, baseName, ext] = fileparts(hbrPath);
-        hbrPath = fullfile(folderPath, [baseName '_preallocData' ext]);
-    end
+    % Write through scratch files, then move them onto the declared
+    % outputs. Renaming the output when it already exists would make every
+    % pipeline re-run write to a different file and leave the stale
+    % original in place.
+    hboOutPath = fullfile(SaveFolder, default_Output_HbO);
+    hbrOutPath = fullfile(SaveFolder, default_Output_HbR);
+    [~, hboBaseName, hboExt] = fileparts(default_Output_HbO);
+    [~, hbrBaseName, hbrExt] = fileparts(default_Output_HbR);
+    hboPath = fullfile(SaveFolder, [hboBaseName '_writing' hboExt]);
+    hbrPath = fullfile(SaveFolder, [hbrBaseName '_writing' hbrExt]);
 
     preallocateDatFile(hboPath, [Ny, Nx, Nt], 'single');
     fid_hbo = fopen(hboPath, 'r+');
@@ -444,10 +443,15 @@ if b_RAMsafeMode
     fclose(fid_hbr);
     fclose(fid_hbo);
 
-    [~, hboName, hboExt] = fileparts(hboPath);
-    [~, hbrName, hbrExt] = fileparts(hbrPath);
-    HbO = [hboName hboExt];
-    HbR = [hbrName hbrExt];
+    [moveOk, moveMsg] = movefile(hboPath, hboOutPath, 'f');
+    assert(moveOk, 'Umitoolbox:HemoCompute:OutputMoveFailed', ...
+        'Failed to move "%s" onto "%s": %s', hboPath, hboOutPath, moveMsg);
+    [moveOk, moveMsg] = movefile(hbrPath, hbrOutPath, 'f');
+    assert(moveOk, 'Umitoolbox:HemoCompute:OutputMoveFailed', ...
+        'Failed to move "%s" onto "%s": %s', hbrPath, hbrOutPath, moveMsg);
+
+    HbO = default_Output_HbO;
+    HbR = default_Output_HbR;
     return
 end
 
