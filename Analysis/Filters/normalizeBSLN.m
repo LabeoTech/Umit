@@ -478,10 +478,12 @@ if fidIn == -1
     error('normalizeBSLN:FileOpenFailed', ...
         'Failed to open "%s".', inFile);
 end
-cleanObj = onCleanup(@() fclose(fidIn)); %#ok<NASGU>
+cleanObj = onCleanup(@() safeFclose(fidIn)); %#ok<NASGU>
 
+% Conservative fixed chunk-size budget (not derived from calculateMaxChunkSize's
+% dynamic available-RAM estimate, to keep this path's chunk sizing predictable).
 targetBytes = 128 * 1024 * 1024; % 128 MB
-bytesPerX = Ny * Nt * 4;
+bytesPerX = Ny * Nt * getByteSize('single');
 xPerSlab = max(1, floor(targetBytes / max(bytesPerX, 1)));
 
 switch lower(normalizationMode)

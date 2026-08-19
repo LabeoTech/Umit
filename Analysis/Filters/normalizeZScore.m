@@ -145,10 +145,6 @@ elseif isfield(outStruct, 'labels')
     outStruct = rmfield(outStruct, 'labels');
 end
 
-if isfield(outStruct, 'eventInfo')
-    outStruct = rmfield(outStruct, 'eventInfo');
-end
-
 validateUMTStruct(outStruct, 'requireEventInfo', true);
 outData = outStruct;
 
@@ -262,8 +258,7 @@ for c = 1:nChunks
     spatialSlabIO('write', fidOut, Ny, Nx, Nt, xIdx, 'single', slab);
 end
 
-fclose(fidIn);
-fclose(fidOut);
+clear cIn cOut; % close fidIn/fidOut via safeFclose before the move below
 
 [moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
 assert(moveOk, 'normalizeZScore:OutputMoveFailed', ...

@@ -88,6 +88,7 @@ if isnumeric(data) || islogical(data)
     else
         outData = iApplyDetrendToYXTE(data, frames);
     end
+    disp('Finished detrend!');
     return
 end
 
@@ -292,6 +293,11 @@ delta_x = Nt - frames;
 M = delta_y ./ delta_x;
 b = median(in2D(:, 1:frames), 2, 'omitnan');
 
+% Unchanged from the legacy algorithm (see function header): the slope M is
+% estimated over (Nt - frames) samples but the axis below spans (Nt - 1)
+% samples starting at -2, so trend(1) = -2*M + b rather than 0. This is a
+% preserved quirk of the original implementation, not a derived formula --
+% do not "fix" the axis without re-validating against legacy output.
 trend = M .* linspace(-2, Nt-3, Nt) + b;
 out2D = in2D - trend + b;
 end
@@ -319,7 +325,9 @@ if nargin > 2 && ~isempty(dataFile)
         if isfield(meta, 'Freq') && ~isempty(meta.Freq)
             freqHz = double(meta.Freq);
         end
-    catch
+    catch ME
+        warning('apply_detrend:FrameRateFromFileFailed', ...
+            'Could not resolve frame rate from "%s": %s', dataFile, ME.message);
     end
 else
     try
@@ -331,7 +339,9 @@ else
                 freqHz = double(S.AcqInfoStream.FrameRateHz);
             end
         end
-    catch
+    catch ME
+        warning('apply_detrend:FrameRateFromAcqInfosFailed', ...
+            'Could not resolve frame rate from "%s": %s', acqInfoFile, ME.message);
     end
 end
 
@@ -342,7 +352,9 @@ if isfile(eventsFile)
         if ~isempty(evObj.baselinePeriod)
             baselineSec = double(evObj.baselinePeriod);
         end
-    catch
+    catch ME
+        warning('apply_detrend:BaselinePeriodResolutionFailed', ...
+            'Could not resolve baselinePeriod from "%s": %s', eventsFile, ME.message);
     end
 end
 
@@ -414,8 +426,7 @@ for c = 1:nChunks
     fprintf('Chunk %i/%i [Completed]\n', c, nChunks)
 end
 
-fclose(fidIn);
-fclose(fidOut);
+clear cIn cOut; % close fidIn/fidOut via safeFclose before the move below
 
 [moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
 assert(moveOk, 'apply_detrend:OutputMoveFailed', ...

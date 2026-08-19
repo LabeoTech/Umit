@@ -106,9 +106,9 @@ evntInfo = iStandardizeEvents(evntInfo, opts.Direction);
 % Dispatch processing mode
 % -------------------------------------------------------------------------
 if ischar(dataIn) || (isstring(dataIn) && isscalar(dataIn))
-    mapStruct = RAMsafeMode(char(string(dataIn)), metaData, SaveFolder, evntInfo, opts);
+    mapStruct = RAMsafeMode(char(string(dataIn)), metaData, evntInfo, opts);
 else
-    mapStruct = standardMode(dataIn, metaData, SaveFolder, evntInfo, opts);
+    mapStruct = standardMode(dataIn, metaData, evntInfo, opts);
 end
 
 outData = iPackageOutputUMT(mapStruct);
@@ -204,7 +204,7 @@ outData = iPackageOutputUMT(mapStruct);
 end
 
 %% ==================== STANDARD MODE ====================
-function mapStruct = standardMode(data, metaData, SaveFolder, evntInfo, opts)
+function mapStruct = standardMode(data, metaData, evntInfo, opts)
 ampMaps = cell(size(evntInfo.eventNameList));
 phiMaps = ampMaps;
 if opts.b_useAverageMovie
@@ -264,7 +264,7 @@ mapStruct = buildMaps(ampMaps, phiMaps, metaData, opts, evntInfo);
 end
 
 %% ==================== LOW-RAM MODE ====================
-function mapStruct = RAMsafeMode(datFile, metaData, SaveFolder, evntInfo, opts)
+function mapStruct = RAMsafeMode(datFile, metaData, evntInfo, opts)
 nY = metaData.datSize(1);
 nX = metaData.datSize(2);
 nT = metaData.datLength;

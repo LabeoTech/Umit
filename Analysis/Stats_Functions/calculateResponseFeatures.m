@@ -39,7 +39,6 @@ function outData = calculateResponseFeatures(data, varargin)
 %         this function in the current version.
 
 
-dependency = 'getDataFromROI'; %#ok<NASGU>
 default_Output = 'RespFeatures.umt'; %#ok<NASGU>
 
 if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) ...

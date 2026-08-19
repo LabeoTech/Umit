@@ -401,11 +401,6 @@ if strcmp(spatialAggFcn, 'none')
         roiMask = roiSet.masks{iROI};
         pixVals = value2D(roiMask(:), :);
         pixelCounts(iROI) = size(pixVals, 1);
-
-        if numel(permSz) > 2
-            pixVals = reshape(pixVals, [size(pixVals,1), permSz(3:end)]);
-        end
-
         roiPixVals{iROI} = single(pixVals);
     end
 
@@ -437,11 +432,6 @@ else
         roiMask = roiSet.masks{iROI};
         pixVals = value2D(roiMask(:), :);
         pixVals = iApplyAggFcn(pixVals, spatialAggFcn);
-
-        if numel(permSz) > 2
-            pixVals = reshape(pixVals, [size(pixVals,1), permSz(3:end)]);
-        end
-
         roiPixVals{iROI} = single(pixVals);
     end
 
