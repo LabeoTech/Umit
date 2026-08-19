@@ -341,8 +341,7 @@ for c = 1:nChunks
     fwrite(fidOut, slab, 'single');
 end
 
-fclose(fidIn);
-fclose(fidOut);
+clear cIn cOut; % close fidIn/fidOut via safeFclose before the move below
 
 [moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
 assert(moveOk, 'spatialGaussFilt:OutputMoveFailed', ...

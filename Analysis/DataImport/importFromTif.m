@@ -126,7 +126,7 @@ if ~isempty(AcqInfoStream) && ...
         ((isfield(AcqInfoStream, 'rigUUID') && ~isempty(AcqInfoStream.rigUUID)) || ...
          (isfield(AcqInfoStream, 'rigID') && ~isempty(AcqInfoStream.rigID)))
     [rigInfo, wasMigrated] = UMITRigStore.ensureDatasetRigAssociation(SaveFolder);
-    rigStore = UMITRigStore.open(rigInfo.uuid); %#ok<NASGU>
+    UMITRigStore.open(rigInfo.uuid); % validates the associated rig still resolves
     if strcmpi(rigInfo.status, 'archived')
         error('Umitoolbox:importFromTif:ArchivedRig', ...
             'Archived Rig "%s" cannot receive new imaging data.', rigInfo.rigID);
@@ -276,7 +276,7 @@ for ii = 1:numel(tif_metadata.Tiffiles)
 
     fid = fopen(datFilePath, 'w');
     assert(fid ~= -1, 'Failed to create data file "%s".', datFilePath);
-    c = onCleanup(@() fclose(fid));
+    c = onCleanup(@() safeFclose(fid));
 
     nWritten = fwrite(fid, data, 'single');
     assert(nWritten == numel(data), ...

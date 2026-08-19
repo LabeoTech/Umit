@@ -147,6 +147,9 @@ end
 % -------------------------------------------------------------------------
 % Build filtered images for registration
 % -------------------------------------------------------------------------
+% Band-pass via difference-of-Gaussians: a narrow 0.5-px blur removes pixel
+% noise, and a wide blur (5% of the largest frame dimension, empirically
+% chosen) approximates and removes the slow illumination gradient.
 radius = 0.05 * max(size(refFr));
 radius = max(radius, 1);
 
@@ -177,6 +180,10 @@ end
 % -------------------------------------------------------------------------
 % Optimize registration parameters
 % -------------------------------------------------------------------------
+% Sweep of imregconfig('multimodal') optimizer settings from coarse/fast
+% (index 1) to fine/slow (index 4); the best-scoring result across the sweep
+% is kept below. GrowthFactor/Epsilon/InitialRadius values are empirically
+% tuned step sizes, not derived from a formula.
 GF = [1.10, 1.05, 1.02, 1.01];
 Eps = [1e-10, 1e-15, 1e-20, 1e-25];
 IR = [6.25e-3, 6.25e-5, 6.25e-8, 6.25e-10];
@@ -385,7 +392,7 @@ info = PipelineManager.addInput( ...
 info = PipelineManager.addOutput( ...
     info, ...
     'outFile', ...
-    'Unknown', ...
+    'UnknownDataType', ...
     'file', ...
     ['Updated DataParams.mat saved in SaveFolder. The run also writes ' ...
      'timestamped registrationQC_*.fig and registrationQC_*.png artifacts ' ...
@@ -613,6 +620,9 @@ if ~isfinite(MIDelta) || MIDelta <= 0
     warnings{end+1} = 'Mutual information did not improve after registration.';
 end
 
+% QC thresholds below are empirically chosen review triggers, not derived
+% limits: 20% of the frame diagonal for translation, 15 degrees for
+% rotation, and 10% deviation from unity for scale.
 if isfinite(maxShift) && maxShift > 0.20 * fovDiag
     warnings{end+1} = 'Estimated translation is large relative to the field of view.';
 end

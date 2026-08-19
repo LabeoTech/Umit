@@ -142,14 +142,14 @@ for iFile = 1:numel(datPlan)
     assert(fidIn ~= -1, ...
         'Umitoolbox:applyRegistrationTformOnFolder:FileOpenFailed', ...
         'Could not open "%s" for reading.', datPath);
-    cIn = onCleanup(@() fclose(fidIn));
+    cIn = onCleanup(@() safeFclose(fidIn));
 
     tmpPath = fullfile(SaveFolder, [fileName '.tmp']);
     fidOut = fopen(tmpPath, 'w');
     assert(fidOut ~= -1, ...
         'Umitoolbox:applyRegistrationTformOnFolder:FileOpenFailed', ...
         'Could not open temporary output file "%s".', tmpPath);
-    cOut = onCleanup(@() fclose(fidOut));
+    cOut = onCleanup(@() safeFclose(fidOut));
 
     fseek(fidIn, 0, 'bof');
     firstFrame = fread(fidIn, ny * nx, ['*' datatype]);

@@ -425,6 +425,8 @@ end
 function out = iZFisherTruncated(data)
 %IZFISHERTRUNCATED Truncate rho before Fisher Z transform.
 
+% atanh(+-1) is +-Inf, so rho is clamped just inside the unit interval before
+% the transform; 0.998 is an empirical margin, not a derived bound.
 lim = 0.998;
 data(data < -lim) = -lim;
 data(data > lim) = lim;

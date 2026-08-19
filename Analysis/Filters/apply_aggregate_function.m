@@ -451,18 +451,20 @@ nY = double(meta.Height);
 nX = double(meta.Width);
 nT = double(meta.datLength);
 
+% Conservative fixed chunk-size budget (not derived from calculateMaxChunkSize's
+% dynamic available-RAM estimate, to keep this path's chunk sizing predictable).
 targetBytes = 128 * 1024 * 1024; % 128 MB
 fid = fopen(dataFile, 'r');
 if fid == -1
     error('apply_aggregate_function:FileOpenFailed', ...
         'Failed to open "%s".', dataFile);
 end
-cleanObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
+cleanObj = onCleanup(@() safeFclose(fid)); %#ok<NASGU>
 
 switch dimName
 
     case 'T'
-        bytesPerX = nY * nT * 4;
+        bytesPerX = nY * nT * getByteSize('single');
         xPerSlab = max(1, floor(targetBytes / max(bytesPerX, 1)));
 
         aggData = zeros(nY, nX, 'single');
@@ -501,7 +503,7 @@ switch dimName
             maxReps = max(maxReps, sum(conditionIDlist(:) == condIDs(iCond)));
         end
 
-        bytesPerX = nY * max(nT, trialLen * max(maxReps,1)) * 4;
+        bytesPerX = nY * max(nT, trialLen * max(maxReps,1)) * getByteSize('single');
         xPerSlab = max(1, floor(targetBytes / max(bytesPerX, 1)));
 
         aggData = zeros(nY, nX, trialLen, nCond, 'single');

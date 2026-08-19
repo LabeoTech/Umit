@@ -79,10 +79,6 @@ else
     outData = iRunStandard(src, baselineMeasure, responseMeasure, timeWindowSec, SaveFolder);
 end
 
-if nargout == 0 %#ok<UNRCH>
-    clear outData
-end
-
     function info = localPipelineInfo()
         info = PipelineManager.createPipelineInfo( ...
             mfilename, ...
