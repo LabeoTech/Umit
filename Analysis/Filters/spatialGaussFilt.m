@@ -47,11 +47,8 @@ function outData = spatialGaussFilt(data, SaveFolder, varargin)
 %         eventInfo unchanged.
 %       - NaN values are replaced by zero before filtering and restored
 %         afterward, preserving the original algorithm behavior.
-%       - Spatial NaN masks are tracked in YX only to avoid large logical
-%         allocations across T/E dimensions.
-%       - Low-RAM mode makes one extra read pass over the .dat file to build
-%         that YX mask over the whole time series, so its result matches the
-%         in-memory mode and does not depend on the chunk boundaries.
+%       - NaN masks are tracked per frame: a pixel that is NaN in one frame
+%         does not cause valid data in other frames to be discarded.
 
 default_Output = 'spatialGaussFilt.dat';
 
@@ -273,23 +270,13 @@ if ismatrix(inBlock)
     end
 
 elseif ndims(inBlock) == 3
-    spatialMask = any(isnan(inBlock), 3);
+    spatialMask = isnan(inBlock);
 
     if any(spatialMask(:))
         work = inBlock;
-        for iT = 1:size(work, 3)
-            frame = work(:,:,iT);
-            frame(spatialMask) = 0;
-            work(:,:,iT) = frame;
-        end
-
+        work(spatialMask) = 0;
         outBlock = imgaussfilt(work, sigma, 'FilterDomain', 'spatial');
-
-        for iT = 1:size(outBlock, 3)
-            frame = outBlock(:,:,iT);
-            frame(spatialMask) = NaN;
-            outBlock(:,:,iT) = frame;
-        end
+        outBlock(spatialMask) = NaN;
     else
         outBlock = imgaussfilt(inBlock, sigma, 'FilterDomain', 'spatial');
     end
@@ -311,22 +298,16 @@ function outFile = iSpatialGaussDatFile(inFile, SaveFolder, sigma, defaultOutput
 % Write through a scratch file so the declared pipeline output only appears
 % once the run has completed, and so the input can safely be the file the
 % declared output would overwrite.
-outFile = fullfile(fileparts(inFile), defaultOutput);
+outFile = fullfile(SaveFolder, defaultOutput);
 [~, outStem, outExt] = fileparts(defaultOutput);
-tmpFile = fullfile(fileparts(inFile), [outStem, '_writing', outExt]);
+tmpFile = fullfile(SaveFolder, [outStem, '_writing', outExt]);
 preallocateDatFile(tmpFile, [Ny, Nx, Nt], 'single');
 
 frameBytes = Ny * Nx * getByteSize('single');
 totalBytes = frameBytes * Nt;
 nChunks = calculateMaxChunkSize(totalBytes, 2, 0.1);
 chunkFrames = ceil(Nt / nChunks);
-
-% The in-RAM path masks NaN over the whole time series before filtering, so
-% the file path must use the same whole-file mask. Computing it per chunk
-% would make the result depend on the chunk boundaries, and filtering the
-% raw slab would let NaN bleed outwards by the kernel radius.
-spatialMask = iReadSpatialNaNMask(inFile, Ny, Nx, Nt, frameBytes, nChunks, chunkFrames);
-hasNaN = any(spatialMask(:));
+nChunks = ceil(Nt / chunkFrames);
 
 fidIn  = fopen(inFile, 'r');
 assert(fidIn ~= -1, 'spatialGaussFilt:OpenInputFailed', ...
@@ -347,7 +328,10 @@ for c = 1:nChunks
     slab = fread(fidIn, [Nx*Ny, nThisChunk], '*single');
     slab = reshape(slab, Ny, Nx, nThisChunk);
 
-    if hasNaN
+    % NaN masking is per chunk (per frame), not collapsed across the whole
+    % file, so the result does not depend on chunk boundaries.
+    spatialMask = isnan(slab);
+    if any(spatialMask(:))
         slab = iApplyMaskedGauss(slab, sigma, spatialMask);
     else
         slab = imgaussfilt(slab, sigma, 'FilterDomain', 'spatial');
@@ -366,46 +350,19 @@ assert(moveOk, 'spatialGaussFilt:OutputMoveFailed', ...
 end
 
 % =========================================================================
-% Local helper: whole-file spatial NaN mask for the low-RAM .dat path
-% =========================================================================
-function spatialMask = iReadSpatialNaNMask(inFile, Ny, Nx, Nt, frameBytes, nChunks, chunkFrames)
-%IREADSPATIALNANMASK Accumulate any(isnan(...),3) over an entire YXT .dat file.
-
-fid = fopen(inFile, 'r');
-assert(fid ~= -1, 'spatialGaussFilt:OpenInputFailed', ...
-    'Failed to open input file "%s".', inFile);
-c = onCleanup(@() safeFclose(fid)); %#ok<NASGU>
-
-spatialMask = false(Ny, Nx);
-
-for k = 1:nChunks
-    tStart = (k-1) * chunkFrames + 1;
-    tEnd   = min(tStart + chunkFrames - 1, Nt);
-    if tStart > Nt
-        break
-    end
-    nThisChunk = tEnd - tStart + 1;
-
-    fseek(fid, (tStart-1) * frameBytes, 'bof');
-    slab = fread(fid, [Nx*Ny, nThisChunk], '*single');
-    slab = reshape(slab, Ny, Nx, nThisChunk);
-
-    spatialMask = spatialMask | any(isnan(slab), 3);
-end
-
-fclose(fid);
-end
-
-% =========================================================================
 % Local helper: zero-fill / filter / restore with a supplied spatial mask
 % =========================================================================
 function outSlab = iApplyMaskedGauss(inSlab, sigma, spatialMask)
 %IAPPLYMASKEDGAUSS Filter a YXT slab, keeping masked pixels out of the kernel.
+%
+% spatialMask must be the same size as inSlab (a per-frame NaN mask, not
+% collapsed across T), so a pixel that is NaN in one frame does not cause
+% valid data in other frames to be discarded.
 
 outSlab = inSlab;
-outSlab(repmat(spatialMask, 1, 1, size(inSlab,3))) = 0;
+outSlab(spatialMask) = 0;
 outSlab = imgaussfilt(outSlab, sigma, 'FilterDomain', 'spatial');
-outSlab(repmat(spatialMask, 1, 1, size(inSlab,3))) = NaN;
+outSlab(spatialMask) = NaN;
 end
 
 % =========================================================================

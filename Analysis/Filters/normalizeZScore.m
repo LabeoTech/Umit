@@ -221,22 +221,27 @@ function outFile = iZscoreDatFile(inFile, SaveFolder)
 
 [Ny, Nx, Nt] = iGetRawDatInfo(SaveFolder, inFile);
 
-outFile = fullfile(fileparts(inFile), 'normZ.dat');
-preallocateDatFile(outFile, [Ny, Nx, Nt], 'single');
+% Write through a scratch file so the declared pipeline output only
+% appears once the run has completed, and so the input can safely be the
+% file that the declared output would overwrite (a pipeline re-run).
+outFile = fullfile(SaveFolder, 'normZ.dat');
+tmpFile = fullfile(SaveFolder, 'normZ_writing.dat');
+preallocateDatFile(tmpFile, [Ny, Nx, Nt], 'single');
 
 fidIn  = fopen(inFile,  'r');
 assert(fidIn ~= -1, 'normalizeZScore:OpenInputFailed', ...
     'Failed to open input file "%s".', inFile);
 cIn = onCleanup(@() safeFclose(fidIn)); %#ok<NASGU>
 
-fidOut = fopen(outFile, 'r+');
+fidOut = fopen(tmpFile, 'r+');
 assert(fidOut ~= -1, 'normalizeZScore:OpenOutputFailed', ...
-    'Failed to open output file "%s".', outFile);
+    'Failed to open output file "%s".', tmpFile);
 cOut = onCleanup(@() safeFclose(fidOut)); %#ok<NASGU>
 
 totalBytes = Ny * Nx * Nt * getByteSize('single');
 nChunks = calculateMaxChunkSize(totalBytes, 2);
 chunkX = ceil(Nx / nChunks);
+nChunks = ceil(Nx / chunkX);
 
 for c = 1:nChunks
     xStart = (c-1) * chunkX + 1;
@@ -259,6 +264,10 @@ end
 
 fclose(fidIn);
 fclose(fidOut);
+
+[moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
+assert(moveOk, 'normalizeZScore:OutputMoveFailed', ...
+    'Failed to move "%s" onto "%s": %s', tmpFile, outFile, moveMsg);
 end
 
 % =========================================================================

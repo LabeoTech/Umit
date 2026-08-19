@@ -193,13 +193,28 @@ if exist('ConvertToTiff', 'file') == 2
     return
 end
 
+% Fallback writer. imwrite() treats single/double image data as already
+% normalized to [0,1] and clips outside that range, which would silently
+% corrupt processed DeltaR/R data that is not in that range. Write true
+% 32-bit floating-point TIFF frames instead, preserving the exact values.
+tagstruct.ImageLength = size(data, 1);
+tagstruct.ImageWidth = size(data, 2);
+tagstruct.Photometric = Tiff.Photometric.MinIsBlack;
+tagstruct.BitsPerSample = 32;
+tagstruct.SamplesPerPixel = 1;
+tagstruct.SampleFormat = Tiff.SampleFormat.IEEEFP;
+tagstruct.PlanarConfiguration = Tiff.PlanarConfiguration.Chunky;
+tagstruct.Compression = Tiff.Compression.None;
+
+tiffObj = Tiff(filePath, 'w');
+cleanupObj = onCleanup(@() tiffObj.close()); %#ok<NASGU>
+
 for iFrame = 1:size(data, 3)
-    frame = data(:,:,iFrame);
-    if iFrame == 1
-        imwrite(frame, filePath, 'tif', 'Compression', 'none');
-    else
-        imwrite(frame, filePath, 'tif', 'WriteMode', 'append', 'Compression', 'none');
+    if iFrame > 1
+        tiffObj.writeDirectory();
     end
+    tiffObj.setTag(tagstruct);
+    tiffObj.write(data(:,:,iFrame));
 end
 end
 

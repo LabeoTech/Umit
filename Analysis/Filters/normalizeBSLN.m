@@ -66,8 +66,8 @@ addRequired(p, 'SaveFolder', @(x) ischar(x) || (isstring(x) && isscalar(x)));
 addParameter(p, 'normalizationMode', 'recording', ...
     @(x) ischar(x) || (isstring(x) && isscalar(x)));
 addParameter(p, 'baselineMode', 'auto', ...
-    @(x) (ischar(x) || (isstring(x) && isscalar(x))) || ...
-         (isnumeric(x) && isscalar(x) && isfinite(x) && x > 0));
+    @(x) (((ischar(x) || (isstring(x) && isscalar(x))) && strcmpi(char(string(x)), 'auto')) || ...
+         (isnumeric(x) && isscalar(x) && isfinite(x) && x > 0)));
 addParameter(p, 'b_centerAtOne', false, ...
     @(x) islogical(x) && isscalar(x));
 
@@ -113,6 +113,7 @@ if isnumeric(data) || islogical(data)
             nBaseFrames = iResolveRecordingBaselineFrames(nT, freqHz, baselineMode);
 
             bsln = median(rawData(:,:,1:nBaseFrames), 3, 'omitnan');
+            bsln(bsln == 0) = 1;
             outVal = (rawData - bsln) ./ bsln;
             if b_centerAtOne
                 outVal = outVal + 1;
@@ -147,6 +148,7 @@ if isnumeric(data) || islogical(data)
             for iTrial = 1:nTrials
                 validMask = ~isnan(frMat(iTrial, :));
                 frameIdx = frMat(iTrial, validMask);
+                eventNames{iTrial} = evObj.eventNameList{conditionIDlist(iTrial)};
 
                 if isempty(frameIdx)
                     continue
@@ -156,6 +158,7 @@ if isnumeric(data) || islogical(data)
                 trialData(:,:,validMask) = rawData(:,:,frameIdx);
 
                 bsln = median(trialData(:,:,1:nBaseFrames), 3, 'omitnan');
+                bsln(bsln == 0) = 1;
                 trialData = (trialData - bsln) ./ bsln;
 
                 if b_centerAtOne
@@ -163,7 +166,6 @@ if isnumeric(data) || islogical(data)
                 end
 
                 outVal(:,:,:,iTrial) = trialData;
-                eventNames{iTrial} = evObj.eventNameList{conditionIDlist(iTrial)};
             end
 
             labels = struct();
@@ -306,6 +308,7 @@ switch normalizationMode
             data2D = reshape(dataP, prod(spatialShape), nT);
 
             bsln = median(data2D(:, 1:nBaseFrames), 2, 'omitnan');
+            bsln(bsln == 0) = 1;
             data2D = (data2D - bsln) ./ bsln;
 
             if b_centerAtOne
@@ -364,6 +367,7 @@ switch normalizationMode
 
             for iTrial = 1:nTrials
                 bsln = median(data2D(:, 1:nBaseFrames, iTrial), 2, 'omitnan');
+                bsln(bsln == 0) = 1;
                 data2D(:, :, iTrial) = (data2D(:, :, iTrial) - bsln) ./ bsln;
 
                 if b_centerAtOne
@@ -495,6 +499,7 @@ switch lower(normalizationMode)
             slab = spatialSlabIO('read', fidIn, Ny, Nx, Nt, xIdx, 'single');
 
             bsln = median(slab(:,:,1:nBaseFrames), 3, 'omitnan');
+            bsln(bsln == 0) = 1;
             slab = (slab - bsln) ./ bsln;
 
             if b_centerAtOne
@@ -533,6 +538,7 @@ switch lower(normalizationMode)
             for iTrial = 1:nTrials
                 validMask = ~isnan(frMat(iTrial, :));
                 frameIdx = frMat(iTrial, validMask);
+                eventNames{iTrial} = evObj.eventNameList{conditionIDlist(iTrial)};
 
                 if isempty(frameIdx)
                     continue
@@ -542,6 +548,7 @@ switch lower(normalizationMode)
                 trialData(:,:,validMask) = slabData(:,:,frameIdx);
 
                 bsln = median(trialData(:,:,1:nBaseFrames), 3, 'omitnan');
+                bsln(bsln == 0) = 1;
                 trialData = (trialData - bsln) ./ bsln;
 
                 if b_centerAtOne
@@ -549,7 +556,6 @@ switch lower(normalizationMode)
                 end
 
                 outVal(:, xIdx, :, iTrial) = trialData;
-                eventNames{iTrial} = evObj.eventNameList{conditionIDlist(iTrial)};
             end
 
             xStart = xEnd + 1;
@@ -708,24 +714,27 @@ end
 % Helper: Frame rate
 % =========================================================================
 function freqHz = iGetFrameRateHz(SaveFolder)
-%IGETFRAMERATEHZ Resolve frame rate through loadMetaData when possible.
+%IGETFRAMERATEHZ Resolve the frame rate for data with no file identity of
+%its own (a raw numeric array or an in-RAM UMT struct), from the single
+%authoritative AcqInfos.mat. Do not select an arbitrary file from
+%SaveFolder: a specific input file's own metadata is instead resolved
+%directly via loadMetaData at its own call site (see iGetRawDatInfo).
 
-candidateFiles = [dir(fullfile(SaveFolder, '*.dat')); dir(fullfile(SaveFolder, '*.umt'))];
-if isempty(candidateFiles)
+acqInfoFile = fullfile(SaveFolder, 'AcqInfos.mat');
+if ~isfile(acqInfoFile)
     error('normalizeBSLN:MissingReferenceData', ...
-        ['Could not determine frame rate because no supported data file ' ...
-         '(*.dat or *.umt) was found in SaveFolder "%s".'], ...
+        'Could not determine frame rate because "AcqInfos.mat" was not found in "%s".', ...
         SaveFolder);
 end
 
-meta = loadMetaData(fullfile(SaveFolder, candidateFiles(1).name));
-
-if ~isfield(meta, 'Freq') || isempty(meta.Freq)
+S = load(acqInfoFile, 'AcqInfoStream');
+if ~isfield(S, 'AcqInfoStream') || ~isfield(S.AcqInfoStream, 'FrameRateHz') || ...
+        isempty(S.AcqInfoStream.FrameRateHz)
     error('normalizeBSLN:MissingFrameRate', ...
-        'loadMetaData did not return Freq for "%s".', candidateFiles(1).name);
+        '"AcqInfos.mat" in "%s" does not define FrameRateHz.', SaveFolder);
 end
 
-freqHz = double(meta.Freq);
+freqHz = double(S.AcqInfoStream.FrameRateHz);
 end
 
 % =========================================================================
@@ -734,6 +743,10 @@ end
 function nBaseFrames = iResolveRecordingBaselineFrames(nT, freqHz, baselineMode)
 
 if ischar(baselineMode) || (isstring(baselineMode) && isscalar(baselineMode))
+    assert(strcmpi(char(string(baselineMode)), 'auto'), ...
+        'normalizeBSLN:InvalidBaselineMode', ...
+        'baselineMode must be ''auto'' or a positive numeric scalar, got "%s".', ...
+        char(string(baselineMode)));
     nBaseFrames = round(0.2 * nT);
 else
     nBaseFrames = round(double(baselineMode) * freqHz);

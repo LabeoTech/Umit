@@ -69,7 +69,7 @@ opts.ScreenYsize_cm = double(p.Results.ScreenYsize_cm);
 if isnumeric(data) || islogical(data)
     validateattributes(data, {'numeric','logical'}, {'nonempty','3d'}, mfilename, 'data');
     dataIn = single(data);
-    metaData = iResolveRepresentativeMeta(SaveFolder);
+    metaData = iResolveRepresentativeMeta(dataIn, SaveFolder);
 else
     dataFile = char(string(data));
     if ~isfile(dataFile)
@@ -233,8 +233,15 @@ for ind = 1:numel(evntInfo.eventNameList)
 
         avg_mov = zeros([metaData.datSize, trial_len + bsln_len],'single');
         for ii = 1:length(indxOn)
-            DeltaR = data(:,:,framestamps(indxOn(ii))-bsln_len : framestamps(indxOn(ii))+trial_len-1) - ...
-                median(data(:,:,framestamps(indxOn(ii))-bsln_len : framestamps(indxOn(ii))-1), 3,'omitnan');
+            tStart = framestamps(indxOn(ii)) - bsln_len;
+            tEnd   = framestamps(indxOn(ii)) + trial_len - 1;
+            assert(tStart >= 1 && tEnd <= size(data, 3), ...
+                'umIToolbox:genRetinotopyMaps:InvalidBaseline', ...
+                ['Could not fit the average-movie baseline and trial windows ' ...
+                 'within the recording for trial %d of direction %d.'], ii, ind);
+
+            DeltaR = data(:,:,tStart:tEnd) - ...
+                median(data(:,:,tStart:framestamps(indxOn(ii))-1), 3,'omitnan');
             avg_mov = avg_mov + DeltaR;
         end
         avg_mov = avg_mov / length(indxOn);
@@ -300,10 +307,13 @@ for ind = 1:numel(evntInfo.eventNameList)
         elemsPerFrame = nY * nX;
 
         for ii = 1:length(indxOn)
-            tStart = max(framestamps(indxOn(ii)) - bsln_len,1);
-            tEnd   = min(framestamps(indxOn(ii)) + trial_len - 1,nT);
+            tStart = framestamps(indxOn(ii)) - bsln_len;
+            tEnd   = framestamps(indxOn(ii)) + trial_len - 1;
+            assert(tStart >= 1 && tEnd <= nT, ...
+                'umIToolbox:genRetinotopyMaps:InvalidBaseline', ...
+                ['Could not fit the average-movie baseline and trial windows ' ...
+                 'within the recording for trial %d of direction %d.'], ii, ind);
             nFrames = tEnd - tStart + 1;
-            assert(nFrames > 0, 'Failed to split data by trials');
 
             trialData = zeros(nY, nX, nFrames, 'single');
             for f = 1:nFrames
@@ -332,6 +342,7 @@ for ind = 1:numel(evntInfo.eventNameList)
         phiMap = phiMaps{ind};
         nChunks = calculateMaxChunkSize(nY * nX * nT * 4,1,.1);
         chunkX  = ceil(nX / nChunks);
+        nChunks = ceil(nX / chunkX);
 
         for c = 1:nChunks
             fprintf('Processing spatial slab [%i/%i] for direction %s\n', c, nChunks, evntInfo.eventNameList{ind})
@@ -502,14 +513,32 @@ end
 end
 
 %% ==================== REPRESENTATIVE METADATA ====================
-function metaData = iResolveRepresentativeMeta(SaveFolder)
-candidateFiles = [dir(fullfile(SaveFolder, '*.dat')); dir(fullfile(SaveFolder, '*.umt'))];
-assert(~isempty(candidateFiles), ...
-    'umIToolbox:genRetinotopyMaps:MissingInput', ...
-    ['Could not determine metadata because no supported data file ' ...
-     '(*.dat or *.umt) was found in "%s".'], SaveFolder);
+function metaData = iResolveRepresentativeMeta(data, SaveFolder)
+%IRESOLVEREPRESENTATIVEMETA Build metadata for a raw numeric YXT array.
+%
+% datSize/datLength/dim_names come directly from the array being
+% processed, not from an arbitrary file in SaveFolder. A raw numeric array
+% has no file identity of its own to resolve Freq from, so it is read
+% directly from the single authoritative AcqInfos.mat instead.
 
-metaData = loadMetaData(fullfile(SaveFolder, candidateFiles(1).name));
+metaData = struct();
+metaData.dim_names = {'Y','X','T'};
+metaData.datSize = [size(data,1), size(data,2)];
+metaData.datLength = size(data,3);
+
+acqInfoFile = fullfile(SaveFolder, 'AcqInfos.mat');
+assert(isfile(acqInfoFile), ...
+    'umIToolbox:genRetinotopyMaps:MissingInput', ...
+    'Could not determine frame rate because "AcqInfos.mat" was not found in "%s".', ...
+    SaveFolder);
+
+S = load(acqInfoFile, 'AcqInfoStream');
+assert(isfield(S, 'AcqInfoStream') && isfield(S.AcqInfoStream, 'FrameRateHz') && ...
+    ~isempty(S.AcqInfoStream.FrameRateHz), ...
+    'umIToolbox:genRetinotopyMaps:MissingInput', ...
+    '"AcqInfos.mat" in "%s" does not define FrameRateHz.', SaveFolder);
+
+metaData.Freq = double(S.AcqInfoStream.FrameRateHz);
 end
 
 %% ==================== PACKAGE OUTPUT ====================

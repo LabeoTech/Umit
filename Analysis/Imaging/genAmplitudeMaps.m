@@ -376,17 +376,17 @@ end
 
 if ischar(dataIn) || (isstring(dataIn) && isscalar(dataIn))
     fileName = char(string(dataIn));
-    [loadedData, Info] = loadData(fileName);
     [~,~,ext] = fileparts(fileName);
     ext = lower(ext);
     if strcmp(ext, '.dat')
         src.representation = 'continuous';
         src.fileName = fileName;
-        src.Info = Info;
+        src.Info = loadMetaData(fileName);
         src.isRawDat = true;
         src.data = [];
         return
     elseif strcmp(ext, '.umt')
+        loadedData = loadData(fileName);
         src.UMT = loadedData;
         [entry, rep] = iSelectUMTImageEntry(loadedData, SaveFolder);
         src.entry = entry;
@@ -494,19 +494,22 @@ out = single(out);
 end
 
 function slab = iReadFrameSlab(fid, Ny, Nx, frameIdx, xIdx)
+%IREADFRAMESLAB Read one frame's contiguous X-slab in a single fread.
+%
+% xIdx must be a contiguous ascending column range (as built by the
+% caller's xStart:xEnd chunking), so the whole [Ny x numel(xIdx)] slab is
+% one contiguous block on disk.
+
 bytesPerElement = getByteSize('single');
-slab = zeros(Ny, numel(xIdx), 'single');
-for iX = 1:numel(xIdx)
-    x = xIdx(iX);
-    offset = ((frameIdx - 1) * Ny * Nx + (x - 1) * Ny) * bytesPerElement;
-    fseek(fid, offset, 'bof');
-    tmp = fread(fid, Ny, '*single');
-    if numel(tmp) ~= Ny
-        error('Umitoolbox:genAmplitudeMaps:fileReadFailed', ...
-            'Unexpected end of file while reading frame %d.', frameIdx);
-    end
-    slab(:, iX) = tmp;
+nCols = numel(xIdx);
+offset = ((frameIdx - 1) * Ny * Nx + (xIdx(1) - 1) * Ny) * bytesPerElement;
+fseek(fid, offset, 'bof');
+tmp = fread(fid, Ny * nCols, '*single');
+if numel(tmp) ~= Ny * nCols
+    error('Umitoolbox:genAmplitudeMaps:fileReadFailed', ...
+        'Unexpected end of file while reading frame %d.', frameIdx);
 end
+slab = reshape(tmp, Ny, nCols);
 end
 
 function outData = iBuildOutputUMT(ampMap, eventInfoOut, baselineMeasure, responseMeasure, timeWindowSec)

@@ -299,23 +299,37 @@ end
 % =========================================================================
 % Helper: determine baseline frame count
 % =========================================================================
-function frames = iGetDetrendFrameCount(SaveFolder, Nt)
+function frames = iGetDetrendFrameCount(SaveFolder, Nt, dataFile)
 %IGETDETRENDFRAMECOUNT Determine the detrend baseline window in frames.
 %
-% Prefer loadMetaData(...) over direct AcqInfos.mat reading so the reported
-% temporal metadata stays consistent with the actual on-disk .dat size.
+% When dataFile is given, prefer loadMetaData(dataFile) so the reported
+% frame rate stays consistent with that specific file's on-disk size.
+% Never select an arbitrary, unrelated file from SaveFolder: when there is
+% no file being processed (a raw numeric array or an in-RAM UMT struct),
+% fall back to the single authoritative AcqInfos.mat instead.
 
 frames = 7;
 
 freqHz = [];
 baselineSec = [];
 
-candidateFiles = [dir(fullfile(SaveFolder, '*.dat')); dir(fullfile(SaveFolder, '*.umt'))];
-if ~isempty(candidateFiles)
+if nargin > 2 && ~isempty(dataFile)
     try
-        meta = loadMetaData(fullfile(SaveFolder, candidateFiles(1).name));
+        meta = loadMetaData(dataFile);
         if isfield(meta, 'Freq') && ~isempty(meta.Freq)
             freqHz = double(meta.Freq);
+        end
+    catch
+    end
+else
+    try
+        acqInfoFile = fullfile(SaveFolder, 'AcqInfos.mat');
+        if isfile(acqInfoFile)
+            S = load(acqInfoFile, 'AcqInfoStream');
+            if isfield(S, 'AcqInfoStream') && isfield(S.AcqInfoStream, 'FrameRateHz') && ...
+                    ~isempty(S.AcqInfoStream.FrameRateHz)
+                freqHz = double(S.AcqInfoStream.FrameRateHz);
+            end
         end
     catch
     end
@@ -358,14 +372,14 @@ function outFile = iApplyDetrendDatFile(inFile, SaveFolder, defaultOutput)
 %IAPPLYDETRENDDATFILE Apply detrending to a raw continuous YXT .dat file.
 
 [Ny, Nx, Nt] = iGetRawDatInfo(SaveFolder, inFile);
-frames = iGetDetrendFrameCount(SaveFolder, Nt);
+frames = iGetDetrendFrameCount(SaveFolder, Nt, inFile);
 
 % Write through a scratch file so the declared pipeline output only appears
 % once the run has completed, and so the input can safely be the file that
 % the declared output would overwrite (a pipeline re-run).
-outFile = fullfile(fileparts(inFile), defaultOutput);
+outFile = fullfile(SaveFolder, defaultOutput);
 [~, defOutFilename, ext] = fileparts(defaultOutput);
-tmpFile = fullfile(fileparts(inFile), [defOutFilename, '_writing', ext]);
+tmpFile = fullfile(SaveFolder, [defOutFilename, '_writing', ext]);
 preallocateDatFile(tmpFile, [Ny, Nx, Nt], 'single');
 
 fidIn = fopen(inFile, 'r');
@@ -380,6 +394,7 @@ cOut = onCleanup(@() safeFclose(fidOut)); %#ok<NASGU>
 
 nChunks = calculateMaxChunkSize(Nx * Ny * Nt * 4, 2, 0.3);
 chunkX = ceil(Nx / nChunks);
+nChunks = ceil(Nx / chunkX);
 
 for c = 1:nChunks
     xStart = (c-1) * chunkX + 1;
