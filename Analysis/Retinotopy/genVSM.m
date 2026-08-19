@@ -31,7 +31,7 @@ function outData = genVSM(retinotopyUMT, SaveFolder, varargin)
 %                              patch generation. Default: false
 %       MaskFile             - Mask filename used when b_UseMask is true.
 %                              Default: 'ImagingReferenceFrame.mat'
-%       object               - Optional Modality object for mask lookup.
+%                              A bare filename is resolved inside SaveFolder.
 %
 %   Output:
 %       outData - UMT struct containing one image entry named VSM with
@@ -42,8 +42,7 @@ function outData = genVSM(retinotopyUMT, SaveFolder, varargin)
 %       - Patch generation is preserved as an optional side effect.
 
 % Default output for pipeline management.
-default_Output = 'visualSignMap.umt'; %#ok<NASGU>
-default_object = '';
+default_Output = 'visualSignMap.umt';
 
 if nargin == 1 && (ischar(retinotopyUMT) || (isstring(retinotopyUMT) && isscalar(retinotopyUMT))) && ...
         strcmpi(strtrim(char(string(retinotopyUMT))), 'pipelineInfo')
@@ -61,7 +60,6 @@ addParameter(p, 'b_CreatePatches', false, @(x) islogical(x) && isscalar(x));
 addParameter(p, 'PatchFileName', 'VisualCtxAreas.mat', @(x) ischar(x) || (isstring(x) && isscalar(x)));
 addParameter(p, 'b_UseMask', false, @(x) islogical(x) && isscalar(x));
 addParameter(p, 'MaskFile', 'ImagingReferenceFrame.mat', @(x) ischar(x) || (isstring(x) && isscalar(x)));
-addParameter(p, 'object', default_object, @(x) isempty(x) || isa(x, 'Modality'));
 parse(p, retinotopyUMT, SaveFolder, varargin{:});
 
 opts = struct();
@@ -71,7 +69,6 @@ opts.b_CreatePatches = p.Results.b_CreatePatches;
 opts.PatchFileName = char(string(p.Results.PatchFileName));
 opts.b_UseMask = p.Results.b_UseMask;
 opts.MaskFile = char(string(p.Results.MaskFile));
-object = p.Results.object;
 SaveFolder = char(string(p.Results.SaveFolder));
 
 validateUMTStruct(retinotopyUMT, 'requireEventInfo', false);
@@ -103,7 +100,7 @@ phaseAz = azMap(:,:,2);
 phaseEl = elMap(:,:,2);
 
 phaseAz(isnan(phaseAz)) = 1000;
-phaseEl(isnan(phaseAz)) = 1000;
+phaseEl(isnan(phaseEl)) = 1000;
 
 if opts.PhaseMapFilter_Sigma > 0
     disp('Filtering phase maps...')
@@ -134,7 +131,7 @@ outData = genUMTStruct( ...
 disp('Finished creating VSM');
 
 if opts.b_CreatePatches
-    genVAmask(vsm, size(vsm), SaveFolder, opts, object)
+    genVAmask(vsm, size(vsm), SaveFolder, opts)
 end
 
     function info = localPipelineInfo()
@@ -236,7 +233,7 @@ end
     end
 end
 
-function genVAmask(vsm, frameSize, SaveFolder, opts, object)
+function genVAmask(vsm, frameSize, SaveFolder, opts)
 %GENVAMASK Generate a .mat file with segmented visual-area patches.
 
 if ~endsWith(opts.PatchFileName, '.mat')
@@ -247,7 +244,10 @@ if opts.b_UseMask
     if isempty(fileparts(opts.MaskFile))
         opts.MaskFile = fullfile(SaveFolder, opts.MaskFile);
     end
-    opts.MaskFile = findMyROIfile(opts.MaskFile, object);
+    if ~isfile(opts.MaskFile)
+        error('Umitoolbox:genVAmask:MissingMaskFile', ...
+            'Mask file was not found: "%s".', opts.MaskFile);
+    end
     a = load(opts.MaskFile, 'logical_mask');
     if isempty(fieldnames(a))
         error('umIToolbox:genVAmask:MissingInput', ...
