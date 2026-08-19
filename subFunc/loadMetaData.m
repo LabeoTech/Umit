@@ -204,6 +204,15 @@ elseif numel(Info.datSize) == numel(Info.dim_names)
     nonTProd = prod(Info.datSize(setdiff(1:numel(Info.datSize), idxT)));
 elseif numel(Info.datSize) == numel(Info.dim_names) - 1
     nonTProd = prod(Info.datSize);
+elseif iIsLegacyEventSplitDatSize(Info)
+    error('Umitoolbox:loadMetaData:legacyEventSplitUnsupported', ...
+        ['This file appears to be a legacy transformed/event-split dataset ' ...
+         '(non-YXT, non-3D-image-time-series) created by an older version of ' ...
+         'UMIT. This format is not currently supported for opening in this ' ...
+         'version. There is currently no automated way to convert it to the ' ...
+         'current format \x2014 reprocessing from the original raw/continuous ' ...
+         'data is recommended if this analysis is needed. File: "%s".'], ...
+        fileName);
 else
     error('Umitoolbox:loadMetaData:invalidDatSize', ...
         ['datSize for "%s" is incompatible with dim_names. Expected either ' ...
@@ -243,6 +252,35 @@ end
 importedEntry = iFindImportedChannelForInfo(acqInfo, fileName, actualLength);
 Info = iFinalizeDatInfo(Info, acqInfo, fileName, folderPath, actualLength, ...
     importedEntry, hasLegacySidecar);
+
+end
+
+function tf = iIsLegacyEventSplitDatSize(Info)
+%IISLEGACYEVENTSPLITDATSIZE Detect the pre-Astrocyte-fix event-split layout.
+%
+% This legacy convention stores 4 dim_names (a non-YXT dimension, e.g. 'E',
+% plus Y/X/T) with datSize and datLength each holding 2 elements -- a 2-and-2
+% split that matches neither currently-supported datSize/dim_names
+% convention. Detection is metadata-shape-only so it never over-matches
+% currently-loadable 3D YXT or full/({numel(dim_names)-1})-length datSize
+% files, which are already handled by the branches above this check.
+
+tf = false;
+
+if ~isfield(Info, 'dim_names') || numel(Info.dim_names) ~= 4
+    return
+end
+
+if ~any(~ismember(Info.dim_names, {'Y', 'X', 'T'}))
+    return
+end
+
+if ~isfield(Info, 'datSize') || ~isfield(Info, 'datLength') || ...
+        isempty(Info.datSize) || isempty(Info.datLength)
+    return
+end
+
+tf = numel(Info.datSize) == 2 && numel(Info.datLength) == 2;
 
 end
 
