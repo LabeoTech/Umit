@@ -35,9 +35,11 @@ function nChunks = calculateMaxChunkSize(data, sizeFactor, RAMoverhead)
 %   Output:
 %       nChunks :
 %           Number of chunks required to keep the estimated memory use within
-%           the computed RAM budget. Guaranteed to be at least 1 when usable
-%           RAM can be estimated. Returns [] if no usable RAM remains after
-%           overhead reservation.
+%           the computed RAM budget. Always an integer >= 1; never empty. If
+%           RAM cannot be measured, or if measurement indicates no usable RAM
+%           remains after overhead reservation, nChunks is instead derived
+%           from a fixed conservative byte budget (see fallbackBudgetBytes
+%           below) rather than from measured RAM, and a warning is issued.
 %
 %   Notes:
 %       - The RAM budget is conservative and clamps usable memory to at most
@@ -50,6 +52,11 @@ if ~exist('RAMoverhead','var')
     RAMoverhead = .2;
 end
 
+% Conservative fixed chunk-size budget used whenever RAM cannot be measured
+% or no usable RAM remains, instead of falling back to nChunks = 1 (which
+% would mean "one chunk covering the whole array" - the worst choice when
+% memory is unavailable). Matches normalizeBSLN.m's hard-coded budget.
+fallbackBudgetBytes = 128 * 1024 * 1024; % 128 MB
 
 % -------------------------------------------------------------------------
 % Data memory footprint
@@ -89,9 +96,11 @@ try
             error('Unsupported platform');
     end
 catch ME
-    warning('calculateMaxChunkSize:NoOSAccess', ...
-            'RAM query failed, falling back to 1 chunk.\n%s', ME.message);
-    nChunks = 1;
+    nChunks = max(1, ceil(requiredBytes / fallbackBudgetBytes));
+    warning('Umitoolbox:calculateMaxChunkSize:RAMQueryFailed', ...
+            ['RAM query failed, falling back to a fixed %d MB budget ' ...
+             '(nChunks = %d).\n%s'], ...
+            fallbackBudgetBytes / (1024*1024), nChunks, ME.message);
     return
 end
 
@@ -104,11 +113,13 @@ reservedBytes = RAMoverhead * totalRAM;
 maxUsableFraction = 0.7;   % tunable, but stable
 usableRAM = min(availableRAM, totalRAM * maxUsableFraction) - reservedBytes;
 
-if usableRAM <= 0   
-    nChunks = [];
-    warning('calculateMaxChunkSize:NoUsableRAM', ...
-            'No usable RAM after overhead reservation.');   
-        return
+if usableRAM <= 0
+    nChunks = max(1, ceil(requiredBytes / fallbackBudgetBytes));
+    warning('Umitoolbox:calculateMaxChunkSize:NoUsableRAM', ...
+            ['No usable RAM after overhead reservation, falling back to a ' ...
+             'fixed %d MB budget (nChunks = %d).'], ...
+            fallbackBudgetBytes / (1024*1024), nChunks);
+    return
 end
 
 % -------------------------------------------------------------------------
