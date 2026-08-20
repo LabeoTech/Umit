@@ -332,7 +332,7 @@ nChunks = ceil(Nx / chunkSizePixels);
 fid_in = fopen(dataFile, 'r');
 assert(fid_in ~= -1, 'Umitoolbox:GSR:FileOpenError', ...
     'Could not open input file "%s".', dataFile);
-c_in = onCleanup(@() safeFclose(fid_in)); %#ok<NASGU>
+c_in = onCleanup(@() safeFclose(fid_in));
 
 outFileName = fullfile(SaveFolder, 'GSR.dat');
 preallocateDatFile(outFileName, [Ny, Nx, Nt], metaData.Datatype);
@@ -340,7 +340,7 @@ preallocateDatFile(outFileName, [Ny, Nx, Nt], metaData.Datatype);
 fid_out = fopen(outFileName, 'r+');
 assert(fid_out ~= -1, 'Umitoolbox:GSR:FileOpenError', ...
     'Could not open output file "%s".', outFileName);
-c_out = onCleanup(@() safeFclose(fid_out)); %#ok<NASGU>
+c_out = onCleanup(@() safeFclose(fid_out));
 
 % -------------------------------------------------------------------------
 % Prepare accumulators
@@ -352,7 +352,7 @@ dataCount   = 0;
 
 h = waitbar(0, 'GSR: computing global signal (pass 1)...');
 h.Name = 'GSR (pass 1/2)';
-cleanupWaitbar = onCleanup(@() iCloseWaitbarSafely(h)); %#ok<NASGU>
+cleanupWaitbar = onCleanup(@() iCloseWaitbarSafely(h));
 
 % =====================================================================
 % PASS 1 - Compute dataset mean and global signal

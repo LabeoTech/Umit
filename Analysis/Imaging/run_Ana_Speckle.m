@@ -28,7 +28,7 @@ function outData = run_Ana_Speckle(SaveFolder, data, varargin)
 %         metadata resolution are handled through loadMetaData(...).
 
 % Default output for pipeline management.
-default_Output = 'Flow.dat'; %#ok<NASGU>
+default_Output = 'Flow.dat';
 
 if nargin == 1 && (ischar(SaveFolder) || (isstring(SaveFolder) && isscalar(SaveFolder))) && ...
         strcmpi(strtrim(char(string(SaveFolder))), 'pipelineInfo')

@@ -41,7 +41,7 @@ function outData = run_SpeckleMapping(SaveFolder, data, varargin)
 %       outData   - UMT struct of kind "image" containing the speckle map.
 
 % Defaults:
-default_Output = 'SpeckleMap'; %#ok<NASGU>
+default_Output = 'SpeckleMap';
 
 allowedSType = {'Spatial', 'Temporal'};
 allowedChannel = {'fluo_475','fluo','red','green','yellow','speckle'};
@@ -110,7 +110,7 @@ if bLowRAMmode
         'Umitoolbox:run_SpeckleMapping:FileNotFound', ...
         'Input .dat file not found: "%s".', data);
 
-    loadMetaData(dataPath); %#ok<NASGU>
+    loadMetaData(dataPath);
 end
 
 channelFile = [channel '.dat'];
@@ -118,7 +118,7 @@ channelPath = fullfile(SaveFolder, channelFile);
 assert(isfile(channelPath), ...
     'Umitoolbox:run_SpeckleMapping:MissingChannelFile', ...
     'Channel file "%s" was not found in "%s".', channelFile, SaveFolder);
-loadMetaData(channelPath); %#ok<NASGU>
+loadMetaData(channelPath);
 
 % SPECKLEMAPPING reads the channel file, not "data". Warn when a different
 % file was wired in, so a pipeline cannot silently process another channel.

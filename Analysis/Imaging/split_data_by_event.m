@@ -29,7 +29,7 @@ function outData = split_data_by_event(data, SaveFolder)
 %         are rejected.
 
 % Default output for pipeline management:
-default_Output = 'dataByEv.umt'; %#ok<NASGU>
+default_Output = 'dataByEv.umt';
 
 if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) && ...
         strcmpi(strtrim(char(string(data))), 'pipelineInfo')
@@ -132,6 +132,12 @@ end
 
 if ischar(data) || (isstring(data) && isscalar(data))
     inPath = char(string(data));
+    if ~isfile(inPath)
+        altPath = fullfile(SaveFolder, inPath);
+        if isfile(altPath)
+            inPath = altPath;
+        end
+    end
     assert(isfile(inPath), ...
         'Umitoolbox:split_data_by_event:missingInputFile', ...
         'Input file was not found: %s', inPath);
@@ -221,7 +227,7 @@ assert(~isempty(validNames), ...
     'Umitoolbox:split_data_by_event:noCompatibleUMTEntry', ...
     'No compatible continuous image entry with dimNames {''Y'',''X'',''T''} was found in the UMT input.');
 
-assert(numel(validNames) == 1, ...
+assert(isscalar(validNames), ...
     'Umitoolbox:split_data_by_event:multipleCompatibleUMTEntries', ...
     ['Multiple compatible continuous image entries were found in the UMT input. ' ...
      'The current version can process only one image entry.']);
