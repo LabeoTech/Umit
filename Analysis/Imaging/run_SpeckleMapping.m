@@ -94,6 +94,12 @@ end
 % -------------------------------------------------------------------------
 % Validate file-backed input when applicable
 % -------------------------------------------------------------------------
+% RAMSafeMode is inferred here from the type of `data` (array vs. filename)
+% as a stand-in for a flag PipelineManager does not yet pass explicitly.
+% `data` itself is not consumed in RAM-safe mode -- this function always
+% reads a named file from SaveFolder. See
+% TASK_F3_F44_ramsafe_explicit_flag_deferred.md for the planned fix.
+localWarnRAMSafeModeProxyOnce(mfilename);
 bLowRAMmode = ischar(data);
 
 if bLowRAMmode
@@ -240,5 +246,28 @@ disp('Finished Speckle Mapping.')
             'isData', true);
 
     end
+
+end
+
+function localWarnRAMSafeModeProxyOnce(callerName)
+%LOCALWARNRAMSAFEMODEPROXYONCE Warn once per session about the RAMSafeMode proxy.
+
+persistent hasWarned
+if isempty(hasWarned)
+    hasWarned = false;
+end
+
+if hasWarned
+    return
+end
+
+warning('Umitoolbox:RunWrapper:RAMSafeModeProxy', ...
+    ['%s infers RAMSafeMode from the type of "data" (array vs. filename) as a ' ...
+     'stand-in for a flag PipelineManager does not yet pass explicitly. "data" ' ...
+     'itself is not consumed in RAM-safe mode -- this function always reads a ' ...
+     'named file from SaveFolder. See TASK_F3_F44_ramsafe_explicit_flag_deferred.md ' ...
+     'for the planned fix.'], callerName);
+
+hasWarned = true;
 
 end
