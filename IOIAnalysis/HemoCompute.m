@@ -307,6 +307,7 @@ lpass_low = design(f, 'butter');
 maxNativeLength = max(nativeLength(idxSelected));
 nChunks = calculateMaxChunkSize(Ny * Nx * maxNativeLength * 4, 12, .1);
 chunkX  = ceil(NbPix(2) / nChunks);
+nChunks = ceil(NbPix(2) / chunkX);
 
 % Output allocation / preallocation.
 if ~b_RAMsafeMode
