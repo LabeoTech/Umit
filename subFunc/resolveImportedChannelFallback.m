@@ -175,8 +175,7 @@ if ~isfile(datPath)
     return
 end
 
-length = iInferDatLength(datPath, acqInfo);
-sidecarFreq = iReadLegacySidecarFrequency(folderPath, datFile);
+[length, sidecarFreq] = iResolveLegacyDatMetadata(datPath, acqInfo);
 if ~isempty(sidecarFreq)
     frameRateHz = sidecarFreq;
 elseif ~isempty(legacyFreq)
@@ -302,31 +301,43 @@ if length < 1
         'Channel file "%s" does not contain any complete frames.', datPath);
 end
 
+if ~isfield(acqInfo, 'Length') || isempty(acqInfo.Length)
+    error('Umitoolbox:resolveImportedChannelFallback:missingExpectedLength', ...
+        ['Cannot safely infer the frame geometry for legacy channel "%s" without ' ...
+         'a per-channel metadata sidecar or AcqInfoStream.Length.'], datPath);
 end
 
-function frameRateHz = iReadLegacySidecarFrequency(folderPath, datFile)
-
-frameRateHz = [];
-[~, base] = fileparts(datFile);
-sidecar = fullfile(folderPath, [base '.mat']);
-if ~isfile(sidecar)
-    return
+expectedLength = double(acqInfo.Length);
+validateattributes(expectedLength, {'numeric'}, ...
+    {'scalar', 'real', 'finite', 'positive', 'integer'});
+if length ~= expectedLength
+    error('Umitoolbox:resolveImportedChannelFallback:ambiguousLegacyGeometry', ...
+        ['The frame count inferred for legacy channel "%s" from AcqInfoStream ' ...
+         'Height/Width is %g, but AcqInfoStream.Length is %g. The acquisition ' ...
+         'may have been spatially binned or cropped. Restore its per-channel ' ...
+         'metadata sidecar or reprocess it from raw data.'], ...
+        datPath, length, expectedLength);
 end
 
-loaded = load(sidecar);
-candidateNames = {'Info', 'info', 'metadata', 'metaData'};
-for iCandidate = 1:numel(candidateNames)
-    if isfield(loaded, candidateNames{iCandidate}) && ...
-            isstruct(loaded.(candidateNames{iCandidate})) && ...
-            isscalar(loaded.(candidateNames{iCandidate}))
-        candidate = loaded.(candidateNames{iCandidate});
-        candidateFreq = iFirstNumericField(candidate, {'FrameRateHz', 'Freq'});
-        if ~isnan(candidateFreq)
-            frameRateHz = candidateFreq;
-        end
+end
+
+function [length, frameRateHz] = iResolveLegacyDatMetadata(datPath, acqInfo)
+
+[folderPath, baseName] = fileparts(datPath);
+hasSidecar = isfile(fullfile(folderPath, [baseName '.mat'])) || ...
+    isfile(fullfile(folderPath, [baseName '_info.mat']));
+
+if hasSidecar
+    info = loadMetaData(datPath);
+    if strcmp(info.MetadataSource, 'legacy_sidecar')
+        length = double(info.Length);
+        frameRateHz = double(info.FrameRateHz);
         return
     end
 end
+
+length = iInferDatLength(datPath, acqInfo);
+frameRateHz = [];
 
 end
 

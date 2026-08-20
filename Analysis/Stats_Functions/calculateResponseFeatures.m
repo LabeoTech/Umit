@@ -49,6 +49,9 @@ function outData = calculateResponseFeatures(data, varargin)
 %       - The selected entry must use dimensions {'ROI','T','E'}.
 %       - Shared top-level eventInfo must exist and use
 %         eventAxisMode = 'instances'.
+%       - Each E slice is one event instance and is analyzed independently.
+%         Repetitions are not averaged inside this function; condition-level
+%         aggregation belongs in a subsequent statistics/grouping step.
 %       - baselinePeriod must exist in top-level eventInfo.
 %       - Latencies are measured from the first response frame, so a
 %         response peaking on that frame reports a latency of 0 s.

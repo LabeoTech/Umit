@@ -34,6 +34,12 @@ function outData = genRetinotopyMaps(data, SaveFolder, varargin)
 %       - If events.mat uses generic labels, the function can locally
 %         standardize them according to Direction without modifying the
 %         file on disk. A warning is raised when this assumption is used.
+%       - With b_useAverageMovie = false, only ON-to-OFF stimulus epochs
+%         are concatenated before the FFT. Inter-stimulus gaps are excluded.
+%         This makes bin nSweeps+1 represent the stimulus repetition in the
+%         concatenated window, at the cost of discontinuities between epochs.
+%         Previous releases transformed one contiguous first-onset-to-last-
+%         offset span, so their maps are not numerically comparable.
 %       - For raw .dat input, both FFT paths process spatial X slabs. The
 %         final Y x X amplitude and phase maps remain resident in RAM, while
 %         average-movie and baseline scratch storage scales with slab width.

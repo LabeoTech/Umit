@@ -1,0 +1,122 @@
+---
+layout: default
+permalink: /documentation/release-notes-2-0.html
+title: Version 2.0 release notes
+nav_order: 4
+has_toc: true
+---
+
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <title>umIT version 2.0 release notes</title>
+</head>
+<body>
+<h1>Version 2.0 release and migration notes</h1>
+
+<div class="warnnote">
+  <p><strong>Re-running an analysis may change its numeric output.</strong><br>
+  Version 2.0 adds consistent NaN omission and zero-denominator protection across the analysis
+  stack. Results produced from masked data are therefore not bit-comparable with the previous
+  release. These differences are expected corrections, but historical and new outputs should not
+  be pooled without deliberate validation.</p>
+</div>
+
+<h2>Before reusing an existing processed folder</h2>
+
+<p>Version 2.0 reads previous-release per-channel metadata sidecars as the authority for processed
+frame dimensions, frame count, and channel frame rate. If a legacy folder has no usable sidecar,
+umIT cross-checks the frame count inferred from <samp>AcqInfos.mat</samp> against the acquisition's
+recorded length. A binned or cropped folder whose geometry cannot be proved is blocked with a clear
+compatibility error instead of being processed with an incorrect frame count. Restore the original
+sidecars or reprocess from raw data when this occurs.</p>
+
+<p>The pre-changeover implementation is preserved by the Git tag
+<samp>pre-dev-changeover</samp>.</p>
+
+<h2>Changes that affect scientific results</h2>
+
+<ul>
+  <li><strong>Events and triggers:</strong> negative-polarity automatic thresholding, biphasic
+  detection, unmatched-edge repair, and <samp>EdgeToggle</samp> handling were revised. Event
+  timestamps can change, which shifts every event-locked result.</li>
+  <li><strong>Event baseline:</strong> <samp>events.mat</samp>
+  <samp>baselinePeriod</samp> is authoritative. Its automatic value is 20% of the shortest onset
+  interval. The previous split-data fallback used 20% of a rounded mean interval and could select a
+  longer window.</li>
+  <li><strong>Retinotopy:</strong> non-average mode concatenates only stimulus ON-to-OFF epochs
+  before the FFT; inter-stimulus gaps are excluded. The previous release transformed one contiguous
+  span. Amplitude, phase, azimuth, elevation, and visual-sign maps can all change.</li>
+  <li><strong>Response features:</strong> the current path treats event-axis slices individually;
+  the baseline statistic changed from mean to median, AUC is computed from the baseline-corrected
+  response window, the <samp>all</samp> window reaches the end of the record, and latency starts at
+  the first response frame.</li>
+  <li><strong>Amplitude maps:</strong> repetitions are pooled by condition, the response window is
+  shifted by one frame, and the constant-value option was removed.</li>
+  <li><strong>Detrending:</strong> the terminal median window and event-baseline source changed.</li>
+  <li><strong>Temporal filtering:</strong> the clamped array-path low-pass cutoff was harmonized
+  with the file-backed path.</li>
+  <li><strong>Trial splitting:</strong> trials are truncated to the shortest valid length;
+  <samp>PadWith</samp> was removed and dimensions changed from <samp>{E,Y,X,T}</samp> to
+  <samp>{Y,X,T,E}</samp>.</li>
+  <li><strong>Speckle mapping:</strong> the wrapper reads the named raw channel from the SaveFolder
+  instead of consuming an upstream array. Until the next signature revision, standard and RAM-safe
+  <samp>run_Ana_Speckle</samp> paths may still resolve different filenames and emit a warning.</li>
+  <li><strong>Hemodynamics:</strong> Rig Store optical spectra and per-channel camera responses are
+  preferred when available, which is required for dual-camera rigs and can change HbO/HbR scaling.</li>
+</ul>
+
+<h2>Breaking changes</h2>
+
+<h3>Removed analysis functions</h3>
+<p><samp>trim_movie</samp>, <samp>transformDat2Mat</samp>, <samp>normalizeCOND</samp>,
+<samp>SPCM</samp>, <samp>alignFrames</samp>, <samp>calculate_response_amplitude</samp>,
+<samp>getEventsFromCSV</samp>, <samp>MV_gen_SF_TF_matrix</samp>,
+<samp>MVcalculate_SF_TF_average</samp>, and <samp>mergeDirs_in_eventFile</samp>. Saved pipelines that
+reference these functions must be rebuilt.</p>
+
+<h3>Removed capabilities</h3>
+<ul>
+  <li><samp>HemoCompute</samp> no longer accepts four-dimensional <samp>{E,Y,X,T}</samp> input.</li>
+  <li><samp>SpeckleMapping</samp> no longer accepts numeric-array input.</li>
+  <li><samp>apply_aggregate_function</samp> no longer supports <samp>mode</samp>, a list of multiple
+  dimensions, or the previous <samp>E</samp> semantics.</li>
+  <li><samp>normalizeBSLN</samp> no longer accepts numeric <samp>baseline_sec</samp> for event data.</li>
+  <li>Legacy <samp>rChan</samp>/<samp>yChan</samp>/<samp>gChan</samp> channel resolution was removed
+  from hemodynamic correction.</li>
+</ul>
+
+<h3>Files and metadata</h3>
+<ul>
+  <li><samp>&lt;base&gt;_corrected.dat</samp> became <samp>fluoHemoCorr.dat</samp>.</li>
+  <li><samp>tform.mat</samp> became <samp>tformDualCam.mat</samp>.</li>
+  <li>Several previous <samp>.dat</samp> plus <samp>.mat</samp> result pairs are now self-describing
+  <samp>.umt</samp> files.</li>
+  <li><samp>AcqInfoStream.Width</samp>/<samp>Height</samp> now describe processed frames, and
+  <samp>BinningSpatial</samp> replaces the previous overloaded <samp>Binning</samp> field.</li>
+  <li>New imports no longer write per-channel metadata sidecars.</li>
+</ul>
+
+<p>Some invalid or ambiguous datasets now stop with an error instead of falling back silently,
+including retinotopy recordings whose first baseline cannot fit, out-of-range response windows,
+hemodynamic low-pass cutoffs at or above Nyquist, and unknown camera models used for optical
+pathlength calculation.</p>
+
+<h2>Corrections to previous-release results</h2>
+
+<p>Users should consider re-running affected analyses when any of the following applies:</p>
+<ul>
+  <li>A drawn, non-square or non-symmetric import ROI was used. The previous preview could swap X
+  and Y when applying the crop.</li>
+  <li>A visual sign map was generated. The previous implementation could mask elevation phase with
+  the azimuth NaN mask.</li>
+  <li><samp>HemoCompute</samp> processed a width not divisible by 16. The previous implementation
+  could leave the rightmost columns zero-filled.</li>
+</ul>
+
+<p>Three additional previous-release problems failed visibly rather than producing plausible
+results: masked unchunked GSR could return all NaNs, non-square normalized HemoCompute could stop
+with an error, and saved HemoCorrection output could be overwritten with incompatible MAT content.</p>
+</body>
+</html>
