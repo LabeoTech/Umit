@@ -431,6 +431,39 @@ else
     nChunks = ceil(Nx / chunkX);
     fprintf('Filtering data (%i chunk(s))...\n', nChunks)
 
+    % Global exponential-fit pre-pass (F-13/F-14). The detrend fit must be
+    % one whole-image fit shared by every chunk, not recomputed per chunk --
+    % otherwise the fit (and therefore the output) depends on nChunks, which
+    % itself varies with available RAM via calculateMaxChunkSize. Stream the
+    % whole-image mean trace across X-chunks via a running NaN-safe sum plus
+    % a running per-time-point count of non-NaN pixels, the same technique as
+    % the F-8 HemoCompute clamp-floor pre-pass and the F-1/F-2 SpeckleMapping
+    % fix, so this stays RAM-safe and so masked pixels do not drag the fit.
+    if bExpFit
+        sumS = zeros(1, Nt);
+        countS = zeros(1, Nt);
+        for c = 1:nChunks
+            xStart = (c-1) * chunkX + 1;
+            xEnd   = min(xStart + chunkX - 1, Nx);
+            xIdx   = xStart:xEnd;
+
+            slab = spatialSlabIO('read', fidIn, Ny, Nx, Nt, xIdx, dataType);
+            slab = reshape(double(slab), [], Nt);
+            isValidS = ~isnan(slab);
+            slab(~isValidS) = 0;
+            sumS = sumS + sum(slab, 1);
+            countS = countS + sum(isValidS, 1);
+        end
+        clear slab isValidS
+
+        S = sumS ./ countS;
+        rng('shuffle');
+        initB = double(rand(1,6) .* [30 1 20 1 1 mean(S)]);
+        B = fminsearch(@(P) sum((S - ExpFun(P, 1:Nt)).^2), initB, Opt);
+        Approx = ExpFun([B(1:4) 0 0], 1:Nt);
+        Pred = [ones(1,Nt); linspace(0,1,Nt); Approx]';
+    end
+
     for c = 1:nChunks
         xStart = (c-1) * chunkX + 1;
         xEnd   = min(xStart + chunkX - 1, Nx);
@@ -439,13 +472,13 @@ else
         fprintf('Chunk #%i [Reading data from file...]\n', c)
         slab = spatialSlabIO('read', fidIn, Ny, Nx, Nt, xIdx, dataType);
 
-        if bExpFit
-            S = mean(reshape(slab, [], Nt), 1);
-            initB = double(rand(1,6) .* [30 1 20 1 1 mean(double(S))]);
-            B = fminsearch(@(P) sum((double(S) - ExpFun(P, 1:Nt)).^2), ...
-                initB, Opt);
-            Approx = ExpFun([B(1:4) 0 0], 1:Nt);
-            Pred = [ones(1,Nt); linspace(0,1,Nt); Approx]';
+        % F-14: mask NaNs before filtering and restore them afterward, the
+        % same policy iFilterArray applies for in-RAM inputs
+        % (Analysis/Filters/normalizeLPF.m). Per-chunk masking is exact here
+        % since the mask is per-element and filtering runs per pixel along T.
+        idxNaN = isnan(slab);
+        if any(idxNaN(:))
+            slab(idxNaN) = 0;
         end
 
         fprintf('Chunk #%i [Temporal filtering...]\n', c)
@@ -484,6 +517,10 @@ else
                 fprintf('%d%% ', pct);
                 lastPct = pct;
             end
+        end
+
+        if any(idxNaN(:))
+            slab(idxNaN) = NaN;
         end
 
         fprintf('\nChunk #%i [Writing to file...]\n', c)
