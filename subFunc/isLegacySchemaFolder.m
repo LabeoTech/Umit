@@ -18,13 +18,16 @@ function [isLegacy, message] = isLegacySchemaFolder(saveFolder)
 %   PipelineManager and DataViewer use this check to block/disable
 %   processing while leaving viewing/inspection unaffected.
 %
-%   This check only inspects AcqInfos.mat field names (no .dat data is
-%   read), so it is cheap to run at pipeline start-up and in UI refresh
-%   callbacks.
+%   When ImportedChannels is absent, this check attempts the same
+%   resolveImportedChannelFallback inference that run_HemoCompute's own
+%   preflight already relies on. A dataset is only reported as legacy when
+%   that fallback cannot infer any channel (no usable legacy IlluminationN
+%   metadata or canonical red/green/yellow .dat files) or the available
+%   evidence is ambiguous/conflicting.
 %
 %   isLegacy is true and message explains why whenever the centralized
-%   ImportedChannels registry is not available, including when
-%   AcqInfos.mat itself is missing.
+%   ImportedChannels registry is not available and cannot be safely
+%   inferred, including when AcqInfos.mat itself is missing.
 
 acqInfoPath = fullfile(saveFolder, 'AcqInfos.mat');
 
@@ -42,6 +45,16 @@ if ~isfield(S, 'AcqInfoStream') || ~isstruct(S.AcqInfoStream) || ~isscalar(S.Acq
 end
 
 if ~isfield(S.AcqInfoStream, 'ImportedChannels')
+    try
+        resolved = resolveImportedChannelFallback(S.AcqInfoStream, saveFolder);
+        if isfield(resolved, 'ImportedChannels') && ~isempty(resolved.ImportedChannels)
+            isLegacy = false;
+            message = '';
+            return
+        end
+    catch
+        % Ambiguous or conflicting legacy evidence: fall through and report legacy.
+    end
     isLegacy = true;
     message = iBuildMessage(['This dataset uses a legacy metadata schema (its AcqInfos.mat predates ' ...
         'the centralized per-channel ImportedChannels registry).']);
