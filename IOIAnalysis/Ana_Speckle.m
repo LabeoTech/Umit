@@ -192,6 +192,7 @@ if bRAMsafe
     fW = ceil(0.5 * tFreq);
     nChunks = calculateMaxChunkSize(ny * nx * (nt-1) * getByteSize('single'), 2);
     chunkX = ceil(nx / nChunks);
+    nChunks = ceil(nx / chunkX);
 
     fprintf('\nPASS 3/3: Applying temporal median filter...\n');
     lastPct = -1;
