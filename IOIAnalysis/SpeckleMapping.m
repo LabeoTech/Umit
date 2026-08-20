@@ -105,6 +105,7 @@ if bRAMSafeMode
 
     nChunks = calculateMaxChunkSize(totalBytes, 1, .1);
     chunkT  = ceil(Nt / nChunks);
+    nChunks = ceil(Nt / chunkT);
 
     lastPct = -1;
     fprintf('0%% ');
@@ -142,6 +143,7 @@ if bRAMSafeMode
 
             nChunks = calculateMaxChunkSize(totalBytes, 10, .1);
             chunkT  = ceil(Nt / nChunks);
+            nChunks = ceil(Nt / chunkT);
 
             lastPct = -1;
             fprintf('0%% ');
@@ -177,6 +179,7 @@ if bRAMSafeMode
 
             nChunks = calculateMaxChunkSize(Nx * Ny * Nt * getByteSize(dataType), 12, .15);
             chunkX  = ceil(Nx / nChunks);
+            nChunks = ceil(Nx / chunkX);
 
             lastPct = -1;
             fprintf('0%% ');
