@@ -85,6 +85,11 @@ reference these functions must be rebuilt.</p>
   <li><samp>normalizeBSLN</samp> no longer accepts numeric <samp>baseline_sec</samp> for event data.</li>
   <li>Legacy <samp>rChan</samp>/<samp>yChan</samp>/<samp>gChan</samp> channel resolution was removed
   from hemodynamic correction.</li>
+  <li>The standalone system-optical-spectra editor and its TXT spectral-profile importer were
+  retired. Manage illumination, camera, and filter spectra through the Rig Manager's
+  <a href="{{ site.baseurl }}/documentation/userDocs/tools/rig-manager_tool.html">Optical
+  Library</a> instead; it was verified to reproduce the retired editor's hemodynamic
+  calculation exactly for the shipped spectrum library.</li>
 </ul>
 
 <h3>Files and metadata</h3>
