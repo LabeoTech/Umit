@@ -50,6 +50,13 @@ speckleFileName = char(string(p.Results.SpeckleFileName));
 
 fprintf('Calculating blood flow...\n');
 
+% RAMSafeMode is inferred here from the type of `data` (array vs. filename)
+% as a stand-in for a flag PipelineManager does not yet pass explicitly.
+% `data` itself is not consumed in RAM-safe mode -- this function always
+% reads a named file from SaveFolder. See
+% TASK_F3_F44_ramsafe_explicit_flag_deferred.md for the planned fix.
+localWarnRAMSafeModeProxyOnce(mfilename);
+
 % Decide RAM-safe mode from input type.
 bRAMsafeMode = ischar(data) || (isstring(data) && isscalar(data));
 
@@ -130,4 +137,27 @@ fprintf('Finished Ana_Speckle.\n');
             1, ...
             'isData', true);
     end
+end
+
+function localWarnRAMSafeModeProxyOnce(callerName)
+%LOCALWARNRAMSAFEMODEPROXYONCE Warn once per session about the RAMSafeMode proxy.
+
+persistent hasWarned
+if isempty(hasWarned)
+    hasWarned = false;
+end
+
+if hasWarned
+    return
+end
+
+warning('Umitoolbox:RunWrapper:RAMSafeModeProxy', ...
+    ['%s infers RAMSafeMode from the type of "data" (array vs. filename) as a ' ...
+     'stand-in for a flag PipelineManager does not yet pass explicitly. "data" ' ...
+     'itself is not consumed in RAM-safe mode -- this function always reads a ' ...
+     'named file from SaveFolder. See TASK_F3_F44_ramsafe_explicit_flag_deferred.md ' ...
+     'for the planned fix.'], callerName);
+
+hasWarned = true;
+
 end
