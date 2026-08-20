@@ -37,8 +37,8 @@ function outFile = createRegistrationTform(SaveFolder, varargin)
 %                    Default: 'mean'
 %
 %   Output:
-%       outFile    - File manifest of generated/updated files:
-%                    {DataParams.mat, QC .fig, QC .png}
+%       outFile    - SaveFolder-relative file manifest of generated/updated
+%                    files: {DataParams.mat, QC .fig, QC .png}
 %
 %   Notes:
 %       - SaveFolder must have a valid UMITProjectBinding.umitlink whose
@@ -262,8 +262,10 @@ determinantVal = tformQC.determinant;
 % Save QC artifacts
 % -------------------------------------------------------------------------
 ts = char(datetime('now', 'Format', 'yyyy-MM-dd_HHmmss'));
-qcFigFile = fullfile(SaveFolder, ['registrationQC_' ts '.fig']);
-qcPngFile = fullfile(SaveFolder, ['registrationQC_' ts '.png']);
+qcFigName = ['registrationQC_' ts '.fig'];
+qcPngName = ['registrationQC_' ts '.png'];
+qcFigFile = fullfile(SaveFolder, qcFigName);
+qcPngFile = fullfile(SaveFolder, qcPngName);
 
 fig = figure('Name', ['Registration QC - ' ts], 'Visible', 'off', 'Tag', 'registrationQC');
 tiledlayout(fig, 3, 2, 'Padding', 'compact', 'TileSpacing', 'compact');
@@ -327,8 +329,8 @@ DataParams.registration.qcMetrics = struct( ...
     'rotationDeg', rotationDeg, ...
     'scaleXY', scaleXY, ...
     'determinant', determinantVal);
-DataParams.registration.qcFigureFile = qcFigFile;
-DataParams.registration.qcPreviewImageFile = qcPngFile;
+DataParams.registration.qcFigureFile = qcFigName;
+DataParams.registration.qcPreviewImageFile = qcPngName;
 DataParams.registration.appliedOn = '';
 DataParams.registration.appliedBy = '';
 DataParams.registration.confirmationMode = '';
@@ -338,7 +340,7 @@ DataParams.registration.resourceUUID = '';
 validateDataParams(DataParams);
 saveDataParams(SaveFolder, DataParams);
 
-outFile = {dataParamsFile, qcFigFile, qcPngFile};
+outFile = {'DataParams.mat', qcFigName, qcPngName};
 
 function info = localPipelineInfo()
 %LOCALPIPELINEINFO Return PipelineManager metadata for this function.

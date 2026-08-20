@@ -1,9 +1,10 @@
 function [classifiedFiles, rigResolution] = run_ImagesClassification(RawFolder, SaveFolder, varargin)
 %RUN_IMAGESCLASSIFICATION Classify raw interlaced IOS binaries into channels.
 %
-%   outFile = run_ImagesClassification(RawFolder, SaveFolder)
-%   outFile = run_ImagesClassification(RawFolder, SaveFolder, 'Name', Value, ...)
-%   info    = run_ImagesClassification('pipelineInfo')
+%   classifiedFiles = run_ImagesClassification(RawFolder, SaveFolder)
+%   classifiedFiles = run_ImagesClassification(RawFolder, SaveFolder, 'Name', Value, ...)
+%   [classifiedFiles, rigResolution] = run_ImagesClassification(...)
+%   info = run_ImagesClassification('pipelineInfo')
 %
 %   This wrapper calls ImagesClassification to split raw interlaced binary
 %   data into separate channel .dat files and a shared AcqInfos.mat file.
@@ -45,7 +46,8 @@ function [classifiedFiles, rigResolution] = run_ImagesClassification(RawFolder, 
 %                          Comments.txt, Snapshot*.png) are never managed.
 %
 %   Outputs:
-%       outFile        - File manifest of outputs saved in SaveFolder.
+%       classifiedFiles - SaveFolder-relative file manifest of outputs saved
+%                        in SaveFolder.
 %       rigResolution  - Struct containing rigUUID, rigID, wasCreated, the
 %                        default-Rig resolution path, and a nested
 %                        cameraCoregistration struct. The nested struct
@@ -57,7 +59,7 @@ function [classifiedFiles, rigResolution] = run_ImagesClassification(RawFolder, 
 %   Notes:
 %       - This function does not expose SubROI selection. It always calls
 %         ImagesClassification with b_SubROI = 0.
-%       - The returned file manifest uses full paths.
+%       - The returned file manifest uses SaveFolder-relative names.
 %       - An active resource is never inferred from available or archived
 %         Rig resources. A Rig with no active pointer imports without
 %         coregistration.
@@ -65,14 +67,14 @@ function [classifiedFiles, rigResolution] = run_ImagesClassification(RawFolder, 
 %         error; import never silently substitutes another resource.
 %
 %   Examples:
-%       outFile = run_ImagesClassification(rawFolder, saveFolder);
+%       classifiedFiles = run_ImagesClassification(rawFolder, saveFolder);
 %
-%       outFile = run_ImagesClassification( ...
+%       classifiedFiles = run_ImagesClassification( ...
 %           rawFolder, saveFolder, ...
 %           'BinningSpatial', 2, ...
 %           'BinningTemp', 4);
 %
-%       outFile = run_ImagesClassification( ...
+%       classifiedFiles = run_ImagesClassification( ...
 %           rawFolder, saveFolder, ...
 %           'backupOpts', 'GENBACKUP');
 
@@ -272,8 +274,9 @@ catch ME
         'Import succeeded, but DataParams.mat RawFolder could not be recorded: %s', ME.message);
 end
 
-% Return full saved paths, consistent with wrapper-level file manifest style.
-classifiedFiles = unique(cellfun(@(x) fullfile(SaveFolder, x), classifiedFiles, 'UniformOutput', false), 'stable');
+% Return SaveFolder-relative names so the manifest remains relocatable,
+% consistent with funcTemplateFileManifest's convention.
+classifiedFiles = unique(classifiedFiles, 'stable');
 
     function info = localPipelineInfo()
         info = PipelineManager.createPipelineInfo(mfilename, ...
