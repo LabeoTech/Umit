@@ -78,24 +78,37 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 hWima = 5;
 imgFilesList = dir([DataFolder 'img*.bin']);
+if isempty(imgFilesList)
+    error('No image binary files found! Classification aborted.')
+end
 
-% Check for each camera.
-cam2_idx = contains({imgFilesList.name}, 'Cam2');
-imgFileSet = {imgFilesList(~cam2_idx), imgFilesList(cam2_idx)};
-imgFileSet(cellfun(@isempty, imgFileSet)) = [];
+% Validate camera-specific image file sequences. In dual-camera recordings,
+% both img_*.bin and imgCam2_*.bin sequences are validated independently.
+imgFilesListCam1 = dir([DataFolder 'img_*.bin']);
+imgFilesListCam2 = dir([DataFolder 'imgCam2_*.bin']);
+
+if isempty(imgFilesListCam1)
+    error('Image binary files (img_xxxxx.bin) missing! Classification aborted.')
+end
+if AcqInfoStream.MultiCam && isempty(imgFilesListCam2)
+    error('Camera #2 image binary files (imgCam2_xxxxx.bin) missing! Classification aborted.')
+end
+
+imgFileSet = {imgFilesListCam1};
+if AcqInfoStream.MultiCam
+    imgFileSet{end+1} = imgFilesListCam2;
+end
+
 for ii = 1:length(imgFileSet)
     thisImgFilesList = imgFileSet{ii};
     imgFileNames = sort({thisImgFilesList.name})';
-    imgFileIndx = str2double(erase(imgFileNames, "img_" | "imgCam2_" | ".bin"));
-    if imgFileIndx(1) ~= 0 || any(diff(imgFileIndx) ~= 1)
-        error('Image binary files (img_xxxxx.bin) missing! Classification aborted.')
+    imgFileIndx = str2double(regexprep(imgFileNames, '^(img_|imgCam2_)|\.bin$', ''));
+    if any(isnan(imgFileIndx)) || imgFileIndx(1) ~= 0 || any(diff(imgFileIndx) ~= 1)
+        error('Image binary files missing! Classification aborted.')
     end
 end
 
-headerFiles = dir([DataFolder 'img_*.bin']);
-if isempty(headerFiles)
-    headerFiles = imgFilesList;
-end
+headerFiles = imgFilesListCam1;
 header = memmapfile([DataFolder headerFiles(1).name], ...
     'Offset', 0, 'Format', {'int32', hWima, 'header'; 'uint64', 1, 'frame'}, 'repeat', 1);
 nx = double(header.Data.header(2));
