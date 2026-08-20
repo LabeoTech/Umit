@@ -87,8 +87,9 @@ if bRAMSafeMode
     % ---------------------------------------------------------------------
     % LOW-RAM MODE
     % ---------------------------------------------------------------------
-    frameOut = zeros(Ny, Nx, 'single');
+    frameOut = zeros(Ny, Nx);
     mData = zeros(Ny, Nx, 'single');
+    countData = zeros(Ny, Nx, 'single');
 
     fidIn = fopen(datFile, 'r');
     assert(fidIn ~= -1, ...
@@ -119,6 +120,7 @@ if bRAMSafeMode
 
         % Use omitnan during accumulation.
         mData = mData + sum(slab, 3, 'omitnan');
+        countData = countData + sum(~isnan(slab), 3);
 
         pct = floor(100 * c / nChunks);
         if pct ~= lastPct
@@ -129,13 +131,14 @@ if bRAMSafeMode
         clear slab
     end
 
-    mData = mData ./ Nt;
+    mData = mData ./ countData;
 
     fprintf('\nPass 2/2 - Calculating Speckle Contrast (%s algorithm)...\n', sType)
 
     switch lower(sType)
         case 'spatial'
             Kernel = single(fspecial('disk', 2) > 0);
+            countOut = zeros(Ny, Nx);
 
             nChunks = calculateMaxChunkSize(totalBytes, 10, .1);
             chunkT  = ceil(Nt / nChunks);
@@ -154,6 +157,7 @@ if bRAMSafeMode
 
                 frameBlock = frameBlock ./ mData;
                 frameBlock = stdfilt(frameBlock, Kernel);
+                countOut = countOut + sum(~isnan(frameBlock), 3);
                 frameBlock = sum(frameBlock, 3, 'omitnan');
                 frameOut = frameOut + frameBlock;
 
@@ -166,7 +170,7 @@ if bRAMSafeMode
                 clear frameBlock
             end
 
-            frameOut = frameOut ./ Nt;
+            frameOut = frameOut ./ countOut;
 
         case 'temporal'
             Kernel = ones(1, 1, 5, 'single');
