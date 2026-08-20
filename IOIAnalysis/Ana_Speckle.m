@@ -111,24 +111,26 @@ assert(nt >= 2, 'Ana_Speckle:InvalidInputLength', ...
 % Low-RAM mode
 % -------------------------------------------------------------------------
 if bRAMsafe
+    % Write through a fixed-name scratch file, then move it onto the
+    % declared output. Renaming the output when it already exists would
+    % make every pipeline re-run write to a different file and leave the
+    % stale original in place.
     outFile = fullfile(SaveFolder, default_Output);
-    if isfile(outFile)
-        [folderPath, baseName, ext] = fileparts(outFile);
-        outFile = fullfile(folderPath, [baseName '_preallocData' ext]);
-    end
-
-    preallocateDatFile(outFile, [ny, nx, nt-1], 'single');
+    [~, baseName, ext] = fileparts(default_Output);
+    tmpFile = fullfile(SaveFolder, [baseName '_writing' ext]);
     outMeta.datFile = outFile;
+
+    preallocateDatFile(tmpFile, [ny, nx, nt-1], 'single');
 
     fidIn  = fopen(datFile, 'r');
     assert(fidIn ~= -1, 'Ana_Speckle:OpenInputFailed', ...
         'Could not open input file "%s".', datFile);
-    cIn = onCleanup(@() safeFclose(fidIn)); %#ok<NASGU>
+    cIn = onCleanup(@() safeFclose(fidIn));
 
-    fidOut = fopen(outFile, 'r+');
+    fidOut = fopen(tmpFile, 'r+');
     assert(fidOut ~= -1, 'Ana_Speckle:OpenOutputFailed', ...
-        'Could not open output file "%s".', outFile);
-    cOut = onCleanup(@() safeFclose(fidOut)); %#ok<NASGU>
+        'Could not open output file "%s".', tmpFile);
+    cOut = onCleanup(@() safeFclose(fidOut));
 
     % Pass 1: temporal mean
     fprintf('PASS 1/3: Calculating temporal mean\n');
@@ -203,6 +205,12 @@ if bRAMsafe
         end
     end
 
+    clear cIn cOut; % close fidIn/fidOut via safeFclose before the move below
+
+    [moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
+    assert(moveOk, 'Ana_Speckle:OutputMoveFailed', ...
+        'Failed to move "%s" onto "%s": %s', tmpFile, outFile, moveMsg);
+
     if nargout > 0
         varargout{1} = outFile;
         if nargout > 1
@@ -219,7 +227,7 @@ end
 fid = fopen(datFile, 'r');
 assert(fid ~= -1, 'Ana_Speckle:OpenInputFailed', ...
     'Could not open input file "%s".', datFile);
-cStd = onCleanup(@() safeFclose(fid)); %#ok<NASGU>
+cStd = onCleanup(@() safeFclose(fid));
 
 dat = fread(fid, inf, '*single');
 dat = reshape(dat, ny, nx, nt);
@@ -243,7 +251,7 @@ end
 % Temporal median filter
 tic
 fW = ceil(0.5 * tFreq);
-datOut = medfilt1(datOut, fW, [], 1, 'truncate'); %#ok<NASGU>
+datOut = medfilt1(datOut, fW, [], 1, 'truncate');
 
 % Finalize to Y X (T-1)
 datOut = permute(datOut, [2 3 1]);
@@ -259,7 +267,7 @@ else
     fFlow = fopen(outMeta.datFile, 'w');
     assert(fFlow ~= -1, 'Ana_Speckle:OpenOutputFailed', ...
         'Could not open output file "%s" for writing.', outMeta.datFile);
-    cFlow = onCleanup(@() safeFclose(fFlow)); %#ok<NASGU>
+    cFlow = onCleanup(@() safeFclose(fFlow));
     fwrite(fFlow, datOut, 'single');
 end
 
