@@ -45,13 +45,11 @@ function outData = normalizeBSLN(data, SaveFolder, varargin)
 %   - In recording mode, UMT entries must not contain E.
 %   - In trial mode, all UMT entries must contain E, and the UMT must
 %     provide shared top-level eventInfo with eventAxisMode = 'instances'.
-%   - RAM-safe mode is only implemented for raw .dat files.
-%   - If a .umt file is provided, the UMT content is loaded
-%     into RAM and processed there.
-%   - RAM-safe mode chunks spatially in recording mode, but in trial mode
-%     it still allocates the full Y x X x trialLen x nTrials output array
-%     before writing it out, so peak RAM is not bounded by trial count
-%     (DFR-20260819-012).
+%   - Raw .dat input uses spatially chunked reads, but the complete output
+%     remains resident in RAM. Its single-precision payload is 4*Y*X*T
+%     bytes in recording mode or 4*Y*X*trialLen*nTrials bytes in trial mode.
+%   - If a .umt file is provided, its content is loaded fully into RAM and
+%     processed there.
 
 default_Output = 'normBSLN.umt'; %#ok<NASGU>
 
@@ -216,7 +214,7 @@ if ischar(data) || (isstring(data) && isscalar(data))
     switch ext
         case '.dat'
             [outVal, outDimNames, labels, eventInfo] = ...
-                normalizeBSLN_lowRAMmode( ...
+                normalizeBSLN_chunkedDatMode( ...
                     dataFile, SaveFolder, normalizationMode, baselineMode, b_centerAtOne);
 
             outData = iPackageOutputUMT( ...
@@ -230,8 +228,8 @@ if ischar(data) || (isstring(data) && isscalar(data))
 
         case {'.umt','.mat'}
             warning('normalizeBSLN:UMTFileLoadsInRAM', ...
-                ['RAM-safe mode is not available for data stored in this format. ' ...
-                 'Loading the UMT content into RAM.']);
+                ['The chunked raw-DAT path is not available for data stored ' ...
+                 'in this format. Loading the UMT content into RAM.']);
 
             try
                 loadedUMT = loadData(dataFile);
@@ -471,9 +469,9 @@ end
 end
 
 % =========================================================================
-% Helper: Low-RAM execution for raw .dat input
+% Helper: Chunked raw-DAT input execution with an in-memory output
 % =========================================================================
-function [outVal, outDimNames, labels, eventInfo] = normalizeBSLN_lowRAMmode( ...
+function [outVal, outDimNames, labels, eventInfo] = normalizeBSLN_chunkedDatMode( ...
     inFile, SaveFolder, normalizationMode, baselineMode, b_centerAtOne)
 
 labels = struct();

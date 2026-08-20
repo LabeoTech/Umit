@@ -34,10 +34,9 @@ function outData = genRetinotopyMaps(data, SaveFolder, varargin)
 %       - If events.mat uses generic labels, the function can locally
 %         standardize them according to Direction without modifying the
 %         file on disk. A warning is raised when this assumption is used.
-%       - RAM-safe mode's b_useAverageMovie branch still allocates a full
-%         Y x X x (trial_len+baseline_len) accumulator per direction before
-%         computing the FFT, so peak RAM is not spatially bounded in that
-%         branch (DFR-20260819-012).
+%       - For raw .dat input, both FFT paths process spatial X slabs. The
+%         final Y x X amplitude and phase maps remain resident in RAM, while
+%         average-movie and baseline scratch storage scales with slab width.
 
 % Default output for pipeline management.
 default_Output = 'retinotopyMaps.umt';
@@ -115,7 +114,7 @@ evntInfo = iStandardizeEvents(evntInfo, opts.Direction);
 % Dispatch processing mode
 % -------------------------------------------------------------------------
 if ischar(dataIn) || (isstring(dataIn) && isscalar(dataIn))
-    mapStruct = RAMsafeMode(char(string(dataIn)), metaData, evntInfo, opts);
+    mapStruct = chunkedDatMode(char(string(dataIn)), metaData, evntInfo, opts);
 else
     mapStruct = standardMode(dataIn, metaData, evntInfo, opts);
 end
@@ -272,8 +271,8 @@ close(w);
 mapStruct = buildMaps(ampMaps, phiMaps, metaData, opts, evntInfo);
 end
 
-%% ==================== LOW-RAM MODE ====================
-function mapStruct = RAMsafeMode(datFile, metaData, evntInfo, opts)
+%% ==================== CHUNKED RAW-DAT MODE ====================
+function mapStruct = chunkedDatMode(datFile, metaData, evntInfo, opts)
 nY = metaData.datSize(1);
 nX = metaData.datSize(2);
 nT = metaData.datLength;
@@ -311,34 +310,55 @@ for ind = 1:numel(evntInfo.eventNameList)
              'recording contains inter-stimulus time or disable b_useAverageMovie.']);
 
         total_len = trial_len + bsln_len;
-        avg_mov = zeros(nY, nX, total_len, 'single');
-        bytesPerElem = 4;
-        elemsPerFrame = nY * nX;
 
-        for ii = 1:length(indxOn)
-            tStart = framestamps(indxOn(ii)) - bsln_len;
-            tEnd   = framestamps(indxOn(ii)) + trial_len - 1;
-            assert(tStart >= 1 && tEnd <= nT, ...
-                'Umitoolbox:genRetinotopyMaps:InvalidBaseline', ...
-                ['Could not fit the average-movie baseline and trial windows ' ...
-                 'within the recording for trial %d of direction %d.'], ii, ind);
-            nFrames = tEnd - tStart + 1;
+        % Estimate all slab-sized live arrays: average accumulator,
+        % baseline frames, complex FFT output, and small frame/map scratch.
+        bytesPerX = double(nY) * 4 * ...
+            (double(total_len) + double(bsln_len) + ...
+             2 * double(trial_len) + 4);
+        nChunks = calculateMaxChunkSize(bytesPerX * double(nX), 1, .1);
+        chunkX = max(1, ceil(nX / nChunks));
+        nChunks = ceil(nX / chunkX);
 
-            trialData = zeros(nY, nX, nFrames, 'single');
-            for f = 1:nFrames
-                fseek(fidIn, (tStart+f-2) * elemsPerFrame * bytesPerElem, 'bof');
-                frame = fread(fidIn, elemsPerFrame, '*single');
-                trialData(:,:,f) = reshape(frame, [nY, nX]);
+        ampMap = ampMaps{ind};
+        phiMap = phiMaps{ind};
+        for c = 1:nChunks
+            xStart = (c-1) * chunkX + 1;
+            xEnd = min(xStart + chunkX - 1, nX);
+            xIdx = xStart:xEnd;
+
+            avgSlab = zeros(nY, numel(xIdx), total_len, 'single');
+            for ii = 1:length(indxOn)
+                tStart = framestamps(indxOn(ii)) - bsln_len;
+                tEnd = framestamps(indxOn(ii)) + trial_len - 1;
+                assert(tStart >= 1 && tEnd <= nT, ...
+                    'Umitoolbox:genRetinotopyMaps:InvalidBaseline', ...
+                    ['Could not fit the average-movie baseline and trial windows ' ...
+                     'within the recording for trial %d of direction %d.'], ii, ind);
+
+                baselineData = zeros(nY, numel(xIdx), bsln_len, 'single');
+                for f = 1:bsln_len
+                    baselineData(:,:,f) = iReadFrameXSlab( ...
+                        fidIn, nY, nX, tStart + f - 1, xIdx);
+                end
+                baseline = median(baselineData, 3, 'omitnan');
+                avgSlab(:,:,1:bsln_len) = avgSlab(:,:,1:bsln_len) + ...
+                    (baselineData - baseline);
+
+                for f = (bsln_len + 1):total_len
+                    frameSlab = iReadFrameXSlab( ...
+                        fidIn, nY, nX, tStart + f - 1, xIdx);
+                    avgSlab(:,:,f) = avgSlab(:,:,f) + (frameSlab - baseline);
+                end
             end
 
-            baseline = median(trialData(:,:,1:bsln_len), 3, 'omitnan');
-            avg_mov = avg_mov + (trialData - baseline);
+            avgSlab = avgSlab / length(indxOn);
+            fSlab = fft(avgSlab(:,:,bsln_len+1:end), [], 3);
+            ampMap(:,xIdx) = (abs(fSlab(:,:,freqFFT)) * 2) / size(fSlab,3);
+            phiMap(:,xIdx) = mod(-angle(fSlab(:,:,freqFFT)), 2*pi);
         end
-
-        avg_mov = avg_mov / length(indxOn);
-        fDat = fft(avg_mov(:,:,bsln_len+1:end),[],3);
-        ampMaps{ind} = (abs(fDat(:,:,freqFFT))*2)/size(fDat,3);
-        phiMaps{ind} = mod(-angle(fDat(:,:,freqFFT)),2*pi);
+        ampMaps{ind} = ampMap;
+        phiMaps{ind} = phiMap;
         waitbar(ind/numel(evntInfo.eventNameList),w);
 
     else
@@ -376,6 +396,29 @@ end
 close(w);
 
 mapStruct = buildMaps(ampMaps, phiMaps, metaData, opts, evntInfo);
+end
+
+function frameSlab = iReadFrameXSlab(fid, nY, nX, frameIdx, xIdx)
+%IREADFRAMEXSLAB Read contiguous X columns from one DAT frame.
+
+bytesPerElement = getByteSize('single');
+offsetElements = (double(frameIdx) - 1) * double(nY) * double(nX) + ...
+    (double(xIdx(1)) - 1) * double(nY);
+status = fseek(fid, offsetElements * bytesPerElement, 'bof');
+if status ~= 0
+    error('Umitoolbox:genRetinotopyMaps:FileReadFailed', ...
+        'Could not seek to frame %d, X column %d.', frameIdx, xIdx(1));
+end
+
+nElements = double(nY) * numel(xIdx);
+raw = fread(fid, nElements, '*single');
+if numel(raw) ~= nElements
+    error('Umitoolbox:genRetinotopyMaps:FileReadFailed', ...
+        ['Could not read the requested DAT slab at frame %d ' ...
+         '(expected %d elements, read %d).'], ...
+        frameIdx, nElements, numel(raw));
+end
+frameSlab = reshape(raw, nY, numel(xIdx));
 end
 
 %% ==================== BUILD MAPS ====================

@@ -40,10 +40,11 @@ function outData = genAmplitudeMaps(data, SaveFolder, varargin)
 %         averaged-across-trials. With the default ResponseMeasure='max',
 %         this means the single largest response-window value across all
 %         trials of a condition, not the mean of each trial's own peak.
-%       - RAM-safe mode chunks reads/writes spatially, but for each
-%         condition it still allocates the full Y x X x frames x trials
-%         baseline/response buffers before aggregating, so peak RAM is not
-%         bounded by trial count (DFR-20260819-012).
+%       - Raw .dat input is processed in spatial X slabs. Slab width is
+%         derived from the baseline/response frame counts and the largest
+%         condition repetition count, so both trial buffers stay within the
+%         calculated scratch-memory budget. The final Y x X x E amplitude
+%         map remains resident in RAM.
 
 % Legacy pipeline placeholder
 default_Output = 'amplitudeMap.umt';
@@ -85,7 +86,7 @@ assert(iValidateTimeWindowInput(timeWindowSec), ...
 src = iResolveInput(data, SaveFolder);
 
 if src.isRawDat
-    outData = iRunLowRAM(src, baselineMeasure, responseMeasure, timeWindowSec, SaveFolder);
+    outData = iRunChunkedDat(src, baselineMeasure, responseMeasure, timeWindowSec, SaveFolder);
 else
     outData = iRunStandard(src, baselineMeasure, responseMeasure, timeWindowSec, SaveFolder);
 end
@@ -272,7 +273,7 @@ outData = iBuildOutputUMT( ...
 
 end
 
-function outData = iRunLowRAM(src, baselineMeasure, responseMeasure, timeWindowSec, SaveFolder)
+function outData = iRunChunkedDat(src, baselineMeasure, responseMeasure, timeWindowSec, SaveFolder)
 Info = src.Info;
 Ny = double(Info.Height);
 Nx = double(Info.Width);
@@ -302,9 +303,15 @@ end
 cleanupFid = onCleanup(@() safeFclose(fid));
 
 bytesPerElement = getByteSize('single');
-nChunks = calculateMaxChunkSize(Ny * Nx * Nt * bytesPerElement, 2, 0.2);
+trialCounts = arrayfun(@(eventID) sum(conditionIDlist == eventID), eventIDs);
+maxTrials = max(trialCounts);
+scratchBytes = double(Ny) * double(Nx) * ...
+    double(numel(baselineFrames) + numel(responseFrames)) * ...
+    double(maxTrials) * double(bytesPerElement);
+nChunks = calculateMaxChunkSize(scratchBytes, 1, 0.2);
 nChunks = max(1, nChunks);
 chunkX = ceil(Nx / nChunks);
+nChunks = ceil(Nx / chunkX);
 
 for iEv = 1:nEvents
     idxTrials = conditionIDlist == eventIDs(iEv);
