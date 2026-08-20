@@ -317,8 +317,15 @@ if ~isempty(entryNames)
     end
 
     idxT = find(strcmp(dimNames, 'T'), 1, 'first');
-    if ~isempty(idxT) && (~isfield(Info, 'datLength') || isempty(Info.datLength))
-        Info.datLength = dimSizes(idxT);
+    if ~isempty(idxT)
+        if ~isfield(Info, 'datLength') || isempty(Info.datLength)
+            Info.datLength = dimSizes(idxT);
+        end
+        % Length must mirror this entry's own temporal extent (datLength),
+        % not a stale acquisition-level value already copied in from
+        % AcqInfos.mat above -- the entry's T can legitimately differ from
+        % the base acquisition length (e.g. a derived T-1 output).
+        Info.Length = Info.datLength;
     end
 end
 

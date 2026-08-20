@@ -32,8 +32,9 @@ function varargout = Ana_Speckle(SaveFolder, bNormalize, varargin)
 %                       execution. Default: false
 %
 %   Outputs:
-%       data / outFile - Standard mode returns a numeric array with size
-%                        Y x X x (T-1). Low-RAM mode returns the output
+%       data / outFile - Standard mode returns a UMT struct (kind='image',
+%                        dimNames {'Y','X','T'}) wrapping a Y x X x (T-1)
+%                        blood-flow array. Low-RAM mode returns the output
 %                        filename.
 %       metaData       - Flat compatibility metadata describing the output.
 %
@@ -42,14 +43,18 @@ function varargout = Ana_Speckle(SaveFolder, bNormalize, varargin)
 %         is always applied, independent of bNormalize; bNormalize affects
 %         only the output-level normalization in step 5.
 %       - The output temporal length is T-1 by design. No interpolation is
-%         applied to force the result back to T.
-%       - Raw and derived .dat lengths are resolved through loadMetaData,
-%         which infers datLength from the actual file size.
+%         applied to force the result back to T. Because T-1 never matches
+%         a known imported/base timeline in AcqInfos.mat, the result is
+%         packaged as a self-describing UMT struct and saved as "Flow.umt"
+%         instead of a raw .dat file (a raw .dat here would fail
+%         saveData's/loadMetaData's timeline-matching check).
+%       - Raw .dat length is resolved through loadMetaData, which infers
+%         datLength from the actual file size.
 %       - ExposureSpeckleMsec is read from the metadata returned by
 %         loadMetaData(...).
 
 % Default output for pipeline management.
-default_Output = 'Flow.dat'; 
+default_Output = 'Flow.umt';
 
 if nargin == 1 && (ischar(SaveFolder) || (isstring(SaveFolder) && isscalar(SaveFolder))) && ...
         strcmpi(strtrim(char(string(SaveFolder))), 'pipelineInfo')
@@ -121,25 +126,27 @@ assert(nt >= 2, 'Ana_Speckle:InvalidInputLength', ...
 % Low-RAM mode
 % -------------------------------------------------------------------------
 if bRAMsafe
-    % Write through a fixed-name scratch file, then move it onto the
-    % declared output. Renaming the output when it already exists would
-    % make every pipeline re-run write to a different file and leave the
-    % stale original in place.
+    % Compute through a fixed-name raw scratch file (bounded RAM via slab
+    % I/O), then package the finished result into a self-describing UMT
+    % struct and write that onto the declared .umt output through its own
+    % scratch-then-move step below. Renaming the declared output when it
+    % already exists would make every pipeline re-run write to a different
+    % file and leave the stale original in place.
     outFile = fullfile(SaveFolder, default_Output);
-    [~, baseName, ext] = fileparts(default_Output);
-    tmpFile = fullfile(SaveFolder, [baseName '_writing' ext]);
+    [~, baseName] = fileparts(default_Output);
+    computeScratchFile = fullfile(SaveFolder, [baseName '_compute.dat']);
     outMeta.datFile = outFile;
 
-    preallocateDatFile(tmpFile, [ny, nx, nt-1], 'single');
+    preallocateDatFile(computeScratchFile, [ny, nx, nt-1], 'single');
 
     fidIn  = fopen(datFile, 'r');
     assert(fidIn ~= -1, 'Ana_Speckle:OpenInputFailed', ...
         'Could not open input file "%s".', datFile);
     cIn = onCleanup(@() safeFclose(fidIn));
 
-    fidOut = fopen(tmpFile, 'r+');
+    fidOut = fopen(computeScratchFile, 'r+');
     assert(fidOut ~= -1, 'Ana_Speckle:OpenOutputFailed', ...
-        'Could not open output file "%s".', tmpFile);
+        'Could not open output file "%s".', computeScratchFile);
     cOut = onCleanup(@() safeFclose(fidOut));
 
     % Pass 1: temporal mean
@@ -236,11 +243,35 @@ if bRAMsafe
         end
     end
 
-    clear cIn cOut; % close fidIn/fidOut via safeFclose before the move below
+    clear cIn cOut; % close fidIn/fidOut via safeFclose before the read-back below
 
-    [moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
+    fidScratch = fopen(computeScratchFile, 'r');
+    assert(fidScratch ~= -1, 'Ana_Speckle:OpenOutputFailed', ...
+        'Could not reopen computed flow data "%s".', computeScratchFile);
+    cScratch = onCleanup(@() safeFclose(fidScratch));
+    flowData = fread(fidScratch, ny * nx * (nt-1), '*single');
+    flowData = reshape(flowData, ny, nx, nt-1);
+    clear cScratch % close fidScratch before deleting the scratch file below
+    delete(computeScratchFile);
+
+    entryMeta = struct( ...
+        'FrameRateHz', tFreq, ...
+        'ExposureSpeckleMsec', double(Iptr.ExposureSpeckleMsec));
+    umtOut = genUMTStruct(flowData, ...
+        'kind', 'image', ...
+        'entryName', 'main', ...
+        'dimNames', {'Y','X','T'}, ...
+        'meta', entryMeta);
+
+    % Write through a fixed-name scratch file, then move it onto the
+    % declared output, matching the same re-run safety pattern used for
+    % the compute scratch file above.
+    umtScratchFile = fullfile(SaveFolder, [baseName '_writing.umt']);
+    save(umtScratchFile, '-struct', 'umtOut', '-mat');
+
+    [moveOk, moveMsg] = movefile(umtScratchFile, outFile, 'f');
     assert(moveOk, 'Ana_Speckle:OutputMoveFailed', ...
-        'Failed to move "%s" onto "%s": %s', tmpFile, outFile, moveMsg);
+        'Failed to move "%s" onto "%s": %s', umtScratchFile, outFile, moveMsg);
 
     if nargout > 0
         varargout{1} = outFile;
@@ -292,18 +323,23 @@ end
 
 outMeta.datFile = fullfile(SaveFolder, default_Output);
 
+entryMeta = struct( ...
+    'FrameRateHz', tFreq, ...
+    'ExposureSpeckleMsec', double(Iptr.ExposureSpeckleMsec));
+umtOut = genUMTStruct(datOut, ...
+    'kind', 'image', ...
+    'entryName', 'main', ...
+    'dimNames', {'Y','X','T'}, ...
+    'meta', entryMeta);
+
 if nargout > 0
-    varargout{1} = datOut;
+    varargout{1} = umtOut;
     if nargout > 1
         varargout{2} = outMeta;
     end
 else
     fprintf('Saving data to file: "%s"...\n', default_Output);
-    fFlow = fopen(outMeta.datFile, 'w');
-    assert(fFlow ~= -1, 'Ana_Speckle:OpenOutputFailed', ...
-        'Could not open output file "%s" for writing.', outMeta.datFile);
-    cFlow = onCleanup(@() safeFclose(fFlow));
-    fwrite(fFlow, datOut, 'single');
+    saveData(outMeta.datFile, umtOut);
 end
 
 fprintf('Done!\n');
@@ -357,9 +393,9 @@ fprintf('Done!\n');
 
         info = PipelineManager.addOutput(info, ...
             'outData', ...
-            {'ImageTimeSeries'}, ...
+            {'ImageTimeSeries', 'ProcessedData'}, ...
             'data', ...
-            'Blood-flow output with size Y x X x (T-1).', ...
+            'Blood-flow output: a UMT struct wrapping a Y x X x (T-1) array.', ...
             default_Output, ...
             1, ...
             'isData', true);
