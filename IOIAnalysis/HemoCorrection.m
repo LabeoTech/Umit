@@ -147,15 +147,21 @@ for iFile = 1:numel(resolvedFiles)
 end
 
 if ischar(data) || (isstring(data) && isscalar(data))
+    % Write through a fixed-name scratch file, then move it onto the
+    % declared output. Renaming the output when it already exists would
+    % make every pipeline re-run write to a different file and leave the
+    % stale original in place.
     outPath = fullfile(SaveFolder, default_Output);
-    if isfile(outPath)
-        [folderPath, baseName, ext] = fileparts(outPath);
-        outPath = fullfile(folderPath, [baseName '_preallocData' ext]);
-    end
+    [~, baseName, ext] = fileparts(default_Output);
+    tmpPath = fullfile(SaveFolder, [baseName '_writing' ext]);
 
-    outFileData = HemoCorrection_lowRAMmode(outPath, fileData, fMetaData, resolvedFiles, lowPassFreq);
-    [~, baseName, ext] = fileparts(outFileData);
-    varargout{1} = [baseName ext];
+    HemoCorrection_lowRAMmode(tmpPath, fileData, fMetaData, resolvedFiles, lowPassFreq);
+
+    [moveOk, moveMsg] = movefile(tmpPath, outPath, 'f');
+    assert(moveOk, 'Umitoolbox:HemoCorrection:OutputMoveFailed', ...
+        'Failed to move "%s" onto "%s": %s', tmpPath, outPath, moveMsg);
+
+    varargout{1} = default_Output;
 else
     correctedData = HemoCorrection_standardMode(fileData, fMetaData, resolvedFiles, lowPassFreq);
     if nargout > 0
