@@ -24,6 +24,26 @@ function outData = calculateResponseFeatures(data, varargin)
 %       outData - ROI UMT structure with one entry using dimensions
 %                 {'ROI','Measure','E'}.
 %
+%   Required workflow:
+%       split_data_by_event -> getDataFromROI -> calculateResponseFeatures
+%
+%       split_data_by_event is the usual producer of an event-split image
+%       UMT. It supplies top-level eventInfo with eventAxisMode set to
+%       'instances' and baselinePeriod from EventsManager. Any other
+%       producer that supplies an equivalent valid event-split image UMT
+%       can be used instead.
+%
+%       getDataFromROI converts the image data to kind = 'roi', preserves
+%       eventInfo and entry.meta.FrameRateHz, and must produce entry
+%       dimensions {'ROI','T','E'}. Use SpatialAggFcn other than 'none';
+%       entries retaining the Pixel dimension are rejected. Although
+%       getDataFromROI also accepts continuous data, it cannot manufacture
+%       event metadata that is absent from its input.
+%
+%       calculateResponseFeatures uses baselinePeriod and FrameRateHz to
+%       convert the baseline and response windows from seconds to frames.
+%       It cannot derive these fields or accept them as direct parameters.
+%
 %   Notes:
 %       - The input must have kind = 'roi'.
 %       - The selected entry must use dimensions {'ROI','T','E'}.

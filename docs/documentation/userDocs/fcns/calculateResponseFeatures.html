@@ -77,15 +77,39 @@ grand_parent: Functions
         <i>Response features</i>
 
     </p>
+    <h3 id="workflow">Required workflow</h3>
+    <hr>
+    <p>
+        Prepare the input in this order:
+    </p>
+    <div class="codeinput">
+        <code>split_data_by_event &rarr; getDataFromROI &rarr; calculateResponseFeatures</code>
+    </div>
+    <ol>
+        <li><a href="split_data_by_event.html"><samp>split_data_by_event</samp></a> normally creates the event-split image UMT. It carries the shared <samp>eventInfo</samp>, including <samp>eventAxisMode='instances'</samp> and the <samp>baselinePeriod</samp> configured in <em>Events Manager</em>.</li>
+        <li><a href="getDataFromROI.html"><samp>getDataFromROI</samp></a> extracts and spatially aggregates each ROI while preserving the event metadata and entry <samp>FrameRateHz</samp>. Use any <samp>SpatialAggFcn</samp> except <samp>'none'</samp>, because <samp>calculateResponseFeatures</samp> rejects entries that retain the <samp>Pixel</samp> dimension.</li>
+        <li><samp>calculateResponseFeatures</samp> uses the baseline period and frame rate to convert the baseline and response windows from seconds to frames and calculate the requested features.</li>
+    </ol>
+    <p>
+        The final input must be a <samp>kind='roi'</samp> UMT with entry dimensions <samp>{'ROI','T','E'}</samp>, top-level <samp>eventInfo.eventAxisMode='instances'</samp> and <samp>eventInfo.baselinePeriod</samp>, and <samp>entry.meta.FrameRateHz</samp>. The function cannot derive or accept substitutes for missing event metadata.
+    </p>
+    <div class="infonote">
+        <p><strong>Alternative event-splitting producers</strong><br>
+            <samp>split_data_by_event</samp> is the usual producer, not a hard dependency. Any producer of a valid event-split image UMT with the required metadata can start the chain. <samp>getDataFromROI</samp> also accepts continuous image data, but it cannot create event metadata that is absent from its input.
+        </p>
+    </div>
+    <p>
+        See <a href="../../tutorials/tt_extracting_data_from_rois.html">Exploring temporal traces</a> for the related interactive ROI workflow.
+    </p>
     <h3>Input</h3>
     <hr>
     <p>
-        This function accepts data from a <small>.mat</small> file created using the function <i>getDataFromROI</i> with the temporal signal split by event (with dimensions 'O', 'E', 'T').
+        This function accepts a ROI UMT produced by the required workflow above, with one entry using dimensions <samp>{'ROI','T','E'}</samp>.
     </p>
     <h3>Output</h3>
     <hr>
     <p>
-        The output of this function is a <samp>.mat</samp> file containing the response features stated in the description.
+        The output is a ROI UMT containing the response features stated in the description, with dimensions <samp>{'ROI','Measure','E'}</samp>.
     </p>
     <p>
         For additional details on the data structure of the output file, please click <a href="../other/mat-files-organization.html">here</a>.
