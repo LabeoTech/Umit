@@ -7,16 +7,23 @@ function varargout = Ana_Speckle(SaveFolder, bNormalize, varargin)
 %
 %   This function computes blood-flow maps from laser speckle data using
 %   the existing algorithm:
-%       1) optional normalization by the temporal mean intensity
+%       1) always-on removal of static structure: each frame is divided by
+%          MeanMap (the per-pixel temporal mean of the raw input), which
+%          otherwise contaminates the local spatial std/mean ratio below
 %       2) local contrast estimation from each frame
 %       3) conversion from contrast to flow using private_flow_from_contrast
 %       4) temporal median filtering
+%       5) optional output-level normalization of the finished flow map by
+%          its own per-pixel temporal mean
 %
 %   Inputs:
 %       SaveFolder   - Folder containing the speckle .dat file and
 %                      metadata sources resolvable by loadMetaData(...).
-%       bNormalize   - Logical scalar. If true, normalize each frame by the
-%                      temporal mean before contrast computation.
+%       bNormalize   - Logical scalar. If true, normalize the finished flow
+%                      map (after temporal median filtering) by its own
+%                      per-pixel temporal mean. Does not affect the
+%                      always-on MeanMap correction in step 1, which runs
+%                      regardless of this flag.
 %
 %   Name-Value parameters:
 %       'Filename'    - Basename or filename of the speckle .dat input.
@@ -31,6 +38,9 @@ function varargout = Ana_Speckle(SaveFolder, bNormalize, varargin)
 %       metaData       - Flat compatibility metadata describing the output.
 %
 %   Notes:
+%       - The MeanMap (or per-frame equivalent in RAMSafe mode) correction
+%         is always applied, independent of bNormalize; bNormalize affects
+%         only the output-level normalization in step 5.
 %       - The output temporal length is T-1 by design. No interpolation is
 %         applied to force the result back to T.
 %       - Raw and derived .dat lengths are resolved through loadMetaData,
@@ -161,10 +171,7 @@ if bRAMsafe
         fseek(fidIn, (t-1) * frameBytes, 'bof');
         frameNext = fread(fidIn, ny * nx, '*single');
         frameNext = reshape(frameNext, ny, nx);
-
-        if bNormalize
-            frameNext = frameNext ./ MeanMap;
-        end
+        frameNext = frameNext ./ MeanMap;
 
         std_laser  = imgaussfilt(stdfilt(frameNext, speckle_window), 1);
         mean_laser = imgaussfilt(convnfft(frameNext, speckle_window, 'same', 1:2, OPTIONS) / sum(speckle_window(:)), 1);
@@ -205,6 +212,29 @@ if bRAMsafe
         end
     end
 
+    % Pass 4: output-level normalization (streaming), only when requested.
+    % Reuses the same X-chunking as Pass 3 rather than a new chunk scheme.
+    if bNormalize
+        fprintf('\nNormalizing output by its own temporal mean...\n');
+        lastPct = -1;
+
+        for c = 1:nChunks
+            xStart = (c-1) * chunkX + 1;
+            xEnd   = min(xStart + chunkX - 1, nx);
+            xIdx   = xStart:xEnd;
+
+            slab = spatialSlabIO('read', fidOut, ny, nx, nt-1, xIdx, 'single');
+            slab = slab ./ mean(slab, 3);
+            spatialSlabIO('write', fidOut, ny, nx, nt-1, xIdx, 'single', slab);
+
+            pct = floor(100 * c / nChunks);
+            if pct ~= lastPct
+                fprintf('%d%% ', pct);
+                lastPct = pct;
+            end
+        end
+    end
+
     clear cIn cOut; % close fidIn/fidOut via safeFclose before the move below
 
     [moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
@@ -237,10 +267,7 @@ datOut = zeros(nt-1, ny, nx, 'single');
 speckle_window = fspecial('disk', 2) > 0;
 
 for t = 1:nt-1
-    tmp_laser = dat(:,:,t);
-    if bNormalize
-        tmp_laser = tmp_laser ./ MeanMap;
-    end
+    tmp_laser = dat(:,:,t) ./ MeanMap;
 
     std_laser = imgaussfilt(stdfilt(tmp_laser, speckle_window), 1);
     mean_laser = imgaussfilt(convnfft(tmp_laser, speckle_window, 'same', 1:2, OPTIONS) / sum(speckle_window(:)), 1);
@@ -255,6 +282,13 @@ datOut = medfilt1(datOut, fW, [], 1, 'truncate');
 
 % Finalize to Y X (T-1)
 datOut = permute(datOut, [2 3 1]);
+
+% Output-level normalization by the flow map's own per-pixel temporal
+% mean. Independent of the always-on MeanMap correction applied above.
+if bNormalize
+    datOut = datOut ./ mean(datOut, 3);
+end
+
 outMeta.datFile = fullfile(SaveFolder, default_Output);
 
 if nargout > 0
