@@ -275,12 +275,3 @@ outData = genUMTStruct( ...
 
 disp('Done');
 end
-
-function data = remOutlier(data)
-%REMOUTLIER Replace values above the 99th percentile with the 99th percentile.
-dataSort = data(~isnan(data));
-dataSort = sort(dataSort(:));
-idx99 = floor(0.99 * length(dataSort));
-val99th = dataSort(idx99);
-data(data > val99th) = val99th;
-end
