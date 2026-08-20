@@ -48,7 +48,7 @@ function outData = apply_detrend(data, SaveFolder, varargin)
 %         converted to a frame count and used to determine the detrend
 %         baseline window. Otherwise a default of 7 frames is used.
 
-default_Output = 'data_detrended.dat'; %#ok<NASGU>
+default_Output = 'data_detrended.dat';
 
 if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) ...
         && strcmpi(strtrim(char(string(data))), 'pipelineInfo')
@@ -143,6 +143,14 @@ end
 
 outStruct = data;
 outStruct.data = struct();
+if isfield(outStruct, 'eventInfo')
+    % Strip before rebuilding entries one at a time below: with mixed
+    % YXT/YXTE entries, a non-E entry can be appended before any E entry
+    % exists yet, which would make a carried-forward eventInfo temporarily
+    % inconsistent with the entries seen so far. eventInfo is re-attached
+    % once, after every entry is in place, via appendUMTEventInfo below.
+    outStruct = rmfield(outStruct, 'eventInfo');
+end
 
 for iEntry = 1:numel(entryNames)
 
@@ -185,9 +193,6 @@ if any(hasE)
         'eventAxisMode', sourceEventInfo.eventAxisMode, ...
         'overwrite', true);
 else
-    if isfield(outStruct, 'eventInfo')
-        outStruct = rmfield(outStruct, 'eventInfo');
-    end
     validateUMTStruct(outStruct, 'requireEventInfo', true);
 end
 
@@ -387,7 +392,7 @@ end
 function outFile = iApplyDetrendDatFile(inFile, SaveFolder, defaultOutput)
 %IAPPLYDETRENDDATFILE Apply detrending to a raw continuous YXT .dat file.
 
-[Ny, Nx, Nt] = iGetRawDatInfo(SaveFolder, inFile);
+[Ny, Nx, Nt] = getRawDatInfo(SaveFolder, inFile);
 frames = iGetDetrendFrameCount(SaveFolder, Nt, inFile);
 
 % Write through a scratch file so the declared pipeline output only appears
@@ -401,12 +406,12 @@ preallocateDatFile(tmpFile, [Ny, Nx, Nt], 'single');
 fidIn = fopen(inFile, 'r');
 assert(fidIn ~= -1, 'apply_detrend:OpenInputFailed', ...
     'Failed to open input file "%s".', inFile);
-cIn = onCleanup(@() safeFclose(fidIn)); %#ok<NASGU>
+cIn = onCleanup(@() safeFclose(fidIn));
 
 fidOut = fopen(tmpFile, 'r+');
 assert(fidOut ~= -1, 'apply_detrend:OpenOutputFailed', ...
     'Failed to open output file "%s".', tmpFile);
-cOut = onCleanup(@() safeFclose(fidOut)); %#ok<NASGU>
+cOut = onCleanup(@() safeFclose(fidOut));
 
 nChunks = calculateMaxChunkSize(Nx * Ny * Nt * 4, 2, 0.3);
 chunkX = ceil(Nx / nChunks);
@@ -437,32 +442,6 @@ assert(moveOk, 'apply_detrend:OutputMoveFailed', ...
     'Failed to move "%s" onto "%s": %s', tmpFile, outFile, moveMsg);
 
 disp('Finished detrend!');
-end
-
-% =========================================================================
-% Helper: raw .dat dimensions from AcqInfos.mat / file size
-% =========================================================================
-function [Ny, Nx, Nt] = iGetRawDatInfo(SaveFolder, inFile)
-%IGETRAWDATINFO Return YXT dimensions for a raw .dat file.
-%
-% Prefer loadMetaData(...) so Nt follows the real file size rather than a
-% potentially stale AcqInfoStream.Length value.
-
-if ~isfolder(SaveFolder)
-    error('apply_detrend:MissingSaveFolder', ...
-        'SaveFolder "%s" does not exist.', SaveFolder);
-end
-
-meta = loadMetaData(inFile);
-
-if ~isfield(meta, 'Height') || ~isfield(meta, 'Width') || ~isfield(meta, 'datLength')
-    error('apply_detrend:InvalidMetaData', ...
-        'loadMetaData did not return Height, Width, and datLength for "%s".', inFile);
-end
-
-Ny = double(meta.Height);
-Nx = double(meta.Width);
-Nt = double(meta.datLength);
 end
 
 % =========================================================================

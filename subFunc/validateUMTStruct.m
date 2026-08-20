@@ -3,6 +3,7 @@ function validateUMTStruct(umt, varargin)
 %
 %   validateUMTStruct(umt)
 %   validateUMTStruct(umt, 'requireEventInfo', false)
+%   validateUMTStruct(umt, 'requireAtLeastOneEntry', false)
 %
 %   Required top-level fields:
 %       version
@@ -31,9 +32,11 @@ errID = 'Umitoolbox:validateUMTStruct:invalidInput';
 p = inputParser;
 p.FunctionName = 'validateUMTStruct';
 addParameter(p, 'requireEventInfo', true, @(x) islogical(x) && isscalar(x));
+addParameter(p, 'requireAtLeastOneEntry', true, @(x) islogical(x) && isscalar(x));
 parse(p, varargin{:});
 
 requireEventInfo = p.Results.requireEventInfo;
+requireAtLeastOneEntry = p.Results.requireAtLeastOneEntry;
 
 if ~isstruct(umt) || ~isscalar(umt)
     error(errID, ...
@@ -75,7 +78,7 @@ if ~isstruct(umt.data) || ~isscalar(umt.data)
 end
 
 entryNames = fieldnames(umt.data);
-if isempty(entryNames)
+if isempty(entryNames) && requireAtLeastOneEntry
     error(errID, ...
         'Operation aborted. "data" must contain at least one entry.');
 end
@@ -121,7 +124,7 @@ for iEntry = 1:numel(entryNames)
 
     if ~iIsAllowedPattern(kind, dimNames, schema)
         error(errID, ...
-            ['Operation aborted. Entry "%s" has invalid dimNames for kind "%s".'], ...
+            'Operation aborted. Entry "%s" has invalid dimNames for kind "%s".', ...
             entryName, kind);
     end
 
@@ -134,7 +137,7 @@ for iEntry = 1:numel(entryNames)
         thisLen = dimSizes(iDim);
 
         if isfield(dimUsage, thisDim)
-            dimUsage.(thisDim)(end+1) = thisLen; %#ok<AGROW>
+            dimUsage.(thisDim)(end+1) = thisLen;
         else
             dimUsage.(thisDim) = thisLen;
         end
@@ -174,26 +177,32 @@ if isfield(umt, 'labels')
     end
 end
 
-if bUsesEvents
-    if numel(unique(eLengths)) ~= 1
-        error(errID, ...
-            ['Operation aborted. All entries that use the "E" dimension ' ...
-             'must have the same E length when shared top-level eventInfo ' ...
-             'is used.']);
-    end
+% With zero entries (only reachable when requireAtLeastOneEntry=false, i.e.
+% a UMT shell being built up one appended entry at a time), whether
+% eventInfo is consistent with E-dimension usage cannot yet be judged, so
+% this check is deferred to the caller's post-build validateUMTStruct call.
+if ~isempty(entryNames)
+    if bUsesEvents
+        if numel(unique(eLengths)) ~= 1
+            error(errID, ...
+                ['Operation aborted. All entries that use the "E" dimension ' ...
+                 'must have the same E length when shared top-level eventInfo ' ...
+                 'is used.']);
+        end
 
-    if isfield(umt, 'eventInfo')
-        iValidateEventInfoStruct(umt.eventInfo, eLengths(1), schema, errID);
-    elseif requireEventInfo
-        error(errID, ...
-            ['Operation aborted. Top-level "eventInfo" is required when at ' ...
-             'least one entry uses the "E" dimension.']);
-    end
-else
-    if isfield(umt, 'eventInfo')
-        error(errID, ...
-            ['Operation aborted. Top-level "eventInfo" is only allowed when ' ...
-             'at least one entry uses the "E" dimension.']);
+        if isfield(umt, 'eventInfo')
+            iValidateEventInfoStruct(umt.eventInfo, eLengths(1), schema, errID);
+        elseif requireEventInfo
+            error(errID, ...
+                ['Operation aborted. Top-level "eventInfo" is required when at ' ...
+                 'least one entry uses the "E" dimension.']);
+        end
+    else
+        if isfield(umt, 'eventInfo')
+            error(errID, ...
+                ['Operation aborted. Top-level "eventInfo" is only allowed when ' ...
+                 'at least one entry uses the "E" dimension.']);
+        end
     end
 end
 
@@ -271,7 +280,7 @@ if nDimsExpected == 1
     % single ROI paired with N timepoints is legitimately [1, N]), so this
     % check must not run there.
     nonSingletonDims = find(sz ~= 1);
-    if numel(nonSingletonDims) == 1 && nonSingletonDims ~= 1
+    if isscalar(nonSingletonDims) && nonSingletonDims ~= 1
         error(errID, ...
             ['Operation aborted. Entry "%s" is one-dimensional but not stored ' ...
              'as a column vector.'], ...
@@ -357,7 +366,7 @@ reservedFields = [{'value','dimNames','meta'}, schema.requiredEntryFields, schem
 colliding = intersect(metaFields, reservedFields);
 if ~isempty(colliding)
     error(errID, ...
-        ['Operation aborted. Entry "%s.meta" contains reserved field name(s): %s.'], ...
+        'Operation aborted. Entry "%s.meta" contains reserved field name(s): %s.', ...
         entryName, strjoin(colliding, ', '));
 end
 

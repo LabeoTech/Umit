@@ -49,7 +49,7 @@ function outData = normalizeZScore(data, SaveFolder, varargin)
 %       - Raw .dat files are assumed to store YXT data in single precision.
 %       - For UMT/.umt input, RAM-safe mode is not available.
 
-default_Output = 'normZ.dat'; %#ok<NASGU>
+default_Output = 'normZ.dat';
 
 if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) ...
         && strcmpi(strtrim(char(string(data))), 'pipelineInfo')
@@ -219,7 +219,7 @@ end
 function outFile = iZscoreDatFile(inFile, SaveFolder)
 %IZSCOREDATFILE Apply z-score normalization to a raw YXT .dat file.
 
-[Ny, Nx, Nt] = iGetRawDatInfo(SaveFolder, inFile);
+[Ny, Nx, Nt] = getRawDatInfo(SaveFolder, inFile);
 
 % Write through a scratch file so the declared pipeline output only
 % appears once the run has completed, and so the input can safely be the
@@ -231,12 +231,12 @@ preallocateDatFile(tmpFile, [Ny, Nx, Nt], 'single');
 fidIn  = fopen(inFile,  'r');
 assert(fidIn ~= -1, 'normalizeZScore:OpenInputFailed', ...
     'Failed to open input file "%s".', inFile);
-cIn = onCleanup(@() safeFclose(fidIn)); %#ok<NASGU>
+cIn = onCleanup(@() safeFclose(fidIn));
 
 fidOut = fopen(tmpFile, 'r+');
 assert(fidOut ~= -1, 'normalizeZScore:OpenOutputFailed', ...
     'Failed to open output file "%s".', tmpFile);
-cOut = onCleanup(@() safeFclose(fidOut)); %#ok<NASGU>
+cOut = onCleanup(@() safeFclose(fidOut));
 
 totalBytes = Ny * Nx * Nt * getByteSize('single');
 nChunks = calculateMaxChunkSize(totalBytes, 2);
@@ -272,29 +272,6 @@ end
 % =========================================================================
 % Helper: extract raw .dat dimensions from AcqInfos.mat / file size
 % =========================================================================
-function [Ny, Nx, Nt] = iGetRawDatInfo(SaveFolder, inFile)
-%IGETRAWDATINFO Return YXT dimensions for a raw .dat file.
-%
-% Prefer loadMetaData(...) so Nt follows the actual file size rather than a
-% potentially stale AcqInfoStream.Length value.
-
-if ~isfolder(SaveFolder)
-    error('normalizeZScore:MissingSaveFolder', ...
-        'SaveFolder "%s" does not exist.', SaveFolder);
-end
-
-meta = loadMetaData(inFile);
-
-if ~isfield(meta, 'Height') || ~isfield(meta, 'Width') || ~isfield(meta, 'datLength')
-    error('normalizeZScore:InvalidMetaData', ...
-        'loadMetaData did not return Height, Width, and datLength for "%s".', inFile);
-end
-
-Ny = double(meta.Height);
-Nx = double(meta.Width);
-Nt = double(meta.datLength);
-end
-
 % =========================================================================
 % Helper: validate/extract UMT data
 % =========================================================================

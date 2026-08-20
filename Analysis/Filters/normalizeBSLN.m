@@ -48,6 +48,10 @@ function outData = normalizeBSLN(data, SaveFolder, varargin)
 %   - RAM-safe mode is only implemented for raw .dat files.
 %   - If a .umt file is provided, the UMT content is loaded
 %     into RAM and processed there.
+%   - RAM-safe mode chunks spatially in recording mode, but in trial mode
+%     it still allocates the full Y x X x trialLen x nTrials output array
+%     before writing it out, so peak RAM is not bounded by trial count
+%     (DFR-20260819-012).
 
 default_Output = 'normBSLN.umt'; %#ok<NASGU>
 
@@ -475,14 +479,14 @@ function [outVal, outDimNames, labels, eventInfo] = normalizeBSLN_lowRAMmode( ..
 labels = struct();
 eventInfo = struct();
 
-[Ny, Nx, Nt, freqHz] = iGetRawDatInfo(SaveFolder, inFile);
+[Ny, Nx, Nt, freqHz] = getRawDatInfo(SaveFolder, inFile);
 
 fidIn = fopen(inFile, 'r');
 if fidIn == -1
     error('normalizeBSLN:FileOpenFailed', ...
         'Failed to open "%s".', inFile);
 end
-cleanObj = onCleanup(@() safeFclose(fidIn)); %#ok<NASGU>
+cleanObj = onCleanup(@() safeFclose(fidIn));
 
 % Conservative fixed chunk-size budget (not derived from calculateMaxChunkSize's
 % dynamic available-RAM estimate, to keep this path's chunk sizing predictable).
@@ -696,34 +700,6 @@ if ~isempty(eventInfoIn) && isstruct(eventInfoIn) && ~isempty(fieldnames(eventIn
 else
     validateUMTStruct(outUMT, 'requireEventInfo', true);
 end
-end
-
-% =========================================================================
-% Helper: Acquisition info for raw .dat
-% =========================================================================
-function [Ny, Nx, Nt, freqHz] = iGetRawDatInfo(SaveFolder, inFile)
-%IGETRAWDATINFO Resolve raw .dat dimensions via loadMetaData.
-%
-% Prefer loadMetaData(...) so Nt follows the actual file size rather than a
-% potentially stale AcqInfoStream.Length value.
-
-if ~isfolder(SaveFolder)
-    error('normalizeBSLN:MissingSaveFolder', ...
-        'SaveFolder "%s" does not exist.', SaveFolder);
-end
-
-meta = loadMetaData(inFile);
-
-if ~isfield(meta, 'Height') || ~isfield(meta, 'Width') || ...
-        ~isfield(meta, 'datLength') || ~isfield(meta, 'Freq')
-    error('normalizeBSLN:InvalidMetaData', ...
-        'loadMetaData did not return Height, Width, datLength, and Freq for "%s".', inFile);
-end
-
-Ny = double(meta.Height);
-Nx = double(meta.Width);
-Nt = double(meta.datLength);
-freqHz = double(meta.Freq);
 end
 
 % =========================================================================
