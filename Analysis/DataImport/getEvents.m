@@ -32,8 +32,10 @@ function outFile = getEvents(RawFolder, SaveFolder, varargin)
 %   baselinePeriod    - Event baseline duration in seconds or 'auto'
 %
 % Output:
-%   outFile     - Full path to the generated "events.mat" file. Returns
-%                 empty if no event file was generated.
+%   outFile     - SaveFolder-relative name of the generated "events.mat"
+%                 file ("events.mat"). Returns empty only when no stim
+%                 channel is selected (event file creation aborted); every
+%                 other executed path writes and returns the file.
 %
 % Notes:
 %   - Digital stimulation is detected automatically by EventsManager. When
@@ -261,7 +263,7 @@ else
     evObj.saveEvents(SaveFolder);
 end
 
-outFile = fullfile(SaveFolder, 'events.mat');
+outFile = 'events.mat';
 
 % -------------------------------------------------------------------------
 % Local pipelineInfo factory
