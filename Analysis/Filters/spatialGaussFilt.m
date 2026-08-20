@@ -141,6 +141,15 @@ end
 
 outStruct = data;
 outStruct.data = struct();
+if isfield(outStruct, 'eventInfo')
+    % Strip before rebuilding entries one at a time below: with mixed
+    % YX/YXT/YXE/YXTE entries, a non-E entry can be appended before any E
+    % entry exists yet, which would make a carried-forward eventInfo
+    % temporarily inconsistent with the entries seen so far. eventInfo is
+    % re-attached once, after every entry is in place, via
+    % appendUMTEventInfo below.
+    outStruct = rmfield(outStruct, 'eventInfo');
+end
 
 for iEntry = 1:numel(entryNames)
 
@@ -194,9 +203,6 @@ if any(hasE)
         'eventAxisMode', sourceEventInfo.eventAxisMode, ...
         'overwrite', true);
 else
-    if isfield(outStruct, 'eventInfo')
-        outStruct = rmfield(outStruct, 'eventInfo');
-    end
     validateUMTStruct(outStruct, 'requireEventInfo', true);
 end
 
@@ -298,7 +304,7 @@ end
 function outFile = iSpatialGaussDatFile(inFile, SaveFolder, sigma, defaultOutput)
 %ISPATIALGAUSSDATFILE Apply spatial filtering to a raw YXT .dat file.
 
-[Ny, Nx, Nt] = iGetRawDatInfo(SaveFolder, inFile);
+[Ny, Nx, Nt] = getRawDatInfo(SaveFolder, inFile);
 
 % Write through a scratch file so the declared pipeline output only appears
 % once the run has completed, and so the input can safely be the file the
@@ -317,12 +323,12 @@ nChunks = ceil(Nt / chunkFrames);
 fidIn  = fopen(inFile, 'r');
 assert(fidIn ~= -1, 'spatialGaussFilt:OpenInputFailed', ...
     'Failed to open input file "%s".', inFile);
-cIn = onCleanup(@() safeFclose(fidIn)); %#ok<NASGU>
+cIn = onCleanup(@() safeFclose(fidIn));
 
 fidOut = fopen(tmpFile, 'r+');
 assert(fidOut ~= -1, 'spatialGaussFilt:OpenOutputFailed', ...
     'Failed to open output file "%s".', tmpFile);
-cOut = onCleanup(@() safeFclose(fidOut)); %#ok<NASGU>
+cOut = onCleanup(@() safeFclose(fidOut));
 
 for c = 1:nChunks
     tStart = (c-1) * chunkFrames + 1;
@@ -367,32 +373,6 @@ outSlab = inSlab;
 outSlab(spatialMask) = 0;
 outSlab = imgaussfilt(outSlab, sigma, 'FilterDomain', 'spatial');
 outSlab(spatialMask) = NaN;
-end
-
-% =========================================================================
-% Local helper: raw .dat dimensions from AcqInfos.mat / file size
-% =========================================================================
-function [Ny, Nx, Nt] = iGetRawDatInfo(SaveFolder, inFile)
-%IGETRAWDATINFO Return YXT dimensions for a raw .dat file.
-%
-% Prefer loadMetaData(...) so Nt follows the actual file size rather than a
-% potentially stale AcqInfoStream.Length value.
-
-if ~isfolder(SaveFolder)
-    error('spatialGaussFilt:MissingSaveFolder', ...
-        'SaveFolder "%s" does not exist.', SaveFolder);
-end
-
-meta = loadMetaData(inFile);
-
-if ~isfield(meta, 'Height') || ~isfield(meta, 'Width') || ~isfield(meta, 'datLength')
-    error('spatialGaussFilt:InvalidMetaData', ...
-        'loadMetaData did not return Height, Width, and datLength for "%s".', inFile);
-end
-
-Ny = double(meta.Height);
-Nx = double(meta.Width);
-Nt = double(meta.datLength);
 end
 
 % =========================================================================

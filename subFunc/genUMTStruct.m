@@ -26,8 +26,6 @@ function out = genUMTStruct(data, varargin)
 %         AcqInfos.mat via loadMetaData, with a direct AcqInfos.mat
 %         fallback if needed.
 
-errID = 'Umitoolbox:genUMTStruct:invalidInput';
-
 if iLooksLikeUMT(data)
     out = iAppendToExistingUMT(data, varargin{:});
 else
@@ -100,7 +98,12 @@ end
 
 function out = iAppendToExistingUMT(umt, varargin)
 errID = 'Umitoolbox:genUMTStruct:invalidInput';
-validateUMTStruct(umt, 'requireEventInfo', false);
+% Appending is also how callers build a UMT up one entry at a time from an
+% empty shell (data = struct()), so an existing entry is not required here
+% -- only that the shell itself is well-formed. The dispatcher's own
+% validateUMTStruct(out, ...) call after this function returns still
+% enforces "at least one entry" on the final result.
+validateUMTStruct(umt, 'requireEventInfo', false, 'requireAtLeastOneEntry', false);
 out = umt;
 schema = getUMTSchema(out.version);
 
@@ -188,7 +191,7 @@ if nDimsExpected == 1
     % single ROI paired with N timepoints is legitimately [1, N]), so this
     % check must not run there.
     nonSingletonDims = find(sz ~= 1);
-    if numel(nonSingletonDims) == 1 && nonSingletonDims ~= 1
+    if isscalar(nonSingletonDims) && nonSingletonDims ~= 1
         error(errID, ...
             ['Operation aborted. Entry "%s" is one-dimensional but not stored ' ...
             'as a column vector.'], ...
@@ -208,7 +211,7 @@ elseif numel(sz) > nDimsExpected
 end
 
 % MATLAB reshape requires at least two dimensions.
-if numel(sz) == 1
+if isscalar(sz)
     sz = [sz, 1];
 end
 
@@ -389,7 +392,7 @@ reservedFields = [{'value','dimNames','meta'}, schema.requiredEntryFields, schem
 colliding = intersect(fieldnames(meta), reservedFields);
 if ~isempty(colliding)
     error(errID, ...
-        ['Operation aborted. "%s.meta" contains reserved field name(s): %s.'], ...
+        'Operation aborted. "%s.meta" contains reserved field name(s): %s.', ...
         entryName, strjoin(colliding, ', '));
 end
 if isfield(meta, 'FrameRateHz')
