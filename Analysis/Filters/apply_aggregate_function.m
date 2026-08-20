@@ -27,13 +27,12 @@ function outData = apply_aggregate_function(data, SaveFolder, varargin)
 %   - Raw YXT arrays and raw .dat files use live event information from
 %     events.mat through EventsManager.
 %   - UMT inputs use the frozen shared top-level eventInfo stored in the UMT.
-%   - RAM-safe mode is only implemented for raw .dat input.
-%   - If a .umt file is provided, RAM-safe mode is not available
-%     and the UMT content is loaded into RAM.
-%   - For E-dimension aggregation, RAM-safe mode chunks the input read but
-%     still allocates the full Y x X x trialLen x nCond output array before
-%     writing it out, so peak RAM is not bounded by condition count
-%     (DFR-20260819-012).
+%   - Raw .dat input uses spatially chunked reads. The complete aggregate
+%     output remains resident in RAM: 4*Y*X bytes for T aggregation, or
+%     4*Y*X*trialLen*nConditions bytes for E aggregation (single precision).
+%     The E path sizes each slab for the simultaneous input, condition,
+%     permutation, and aggregate workspaces.
+%   - If a .umt file is provided, its content is loaded fully into RAM.
 %   - Output eventInfo.eventAxisMode is always 'aggregated_repetitions' for
 %     E-dimension aggregation: repetitions have been collapsed by aggFcn, so
 %     eventInfo.repetitionIndex is a fixed all-zero sentinel, not a real
@@ -188,7 +187,7 @@ if ischar(data) || (isstring(data) && isscalar(data))
     switch ext
         case '.dat'
             [aggData, outDimNames, labels, eventInfo] = ...
-                iExecuteLowRAMDat(dataFile, SaveFolder, aggFcn, dimName);
+                iExecuteChunkedDat(dataFile, SaveFolder, aggFcn, dimName);
 
             outData = iPackageOutputUMT( ...
                 {'main'}, ...
@@ -446,9 +445,9 @@ outData = iPackageOutputUMT( ...
 end
 
 % =========================================================================
-% Helper: Low-RAM execution for raw .dat input
+% Helper: Chunked raw-DAT input execution with an in-memory output
 % =========================================================================
-function [aggData, outDimNames, labels, eventInfo] = iExecuteLowRAMDat(dataFile, SaveFolder, aggFcn, dimName)
+function [aggData, outDimNames, labels, eventInfo] = iExecuteChunkedDat(dataFile, SaveFolder, aggFcn, dimName)
 
 labels = struct();
 eventInfo = struct();
@@ -476,7 +475,8 @@ cleanObj = onCleanup(@() safeFclose(fid));
 switch dimName
 
     case 'T'
-        bytesPerX = nY * nT * getByteSize('single');
+        % slabP/reshape can coexist with slab during aggregation.
+        bytesPerX = 2 * nY * nT * getByteSize('single');
         xPerSlab = max(1, floor(targetBytes / max(bytesPerX, 1)));
 
         aggData = zeros(nY, nX, 'single');
@@ -515,7 +515,11 @@ switch dimName
             maxReps = max(maxReps, sum(conditionIDlist(:) == condIDs(iCond)));
         end
 
-        bytesPerX = nY * max(nT, trialLen * max(maxReps,1)) * getByteSize('single');
+        % Live scratch can include the input slab, condBlock, permuted
+        % condP copy, and one trial-length aggregate result at once.
+        bytesPerX = nY * ...
+            (nT + 2 * trialLen * max(maxReps,1) + trialLen) * ...
+            getByteSize('single');
         xPerSlab = max(1, floor(targetBytes / max(bytesPerX, 1)));
 
         aggData = zeros(nY, nX, trialLen, nCond, 'single');
