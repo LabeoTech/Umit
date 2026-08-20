@@ -60,6 +60,9 @@ end
 AcqInfo = S.AcqInfoStream;
 clear S
 
+assertBinningMetadata(AcqInfo, 'AcqInfos.mat', ...
+    'Re-import the original raw data with the current data importer.');
+
 % Get list of channels for each camera:
 if AcqInfo.MultiCam
     NbIllum = sum(cellfun(@(X) contains(X, 'Illumination'), fieldnames(AcqInfo)));
@@ -100,24 +103,12 @@ if isempty(Cam2List)
     return
 end
 
-% Check for existence of BinningSpatial/Binning, rotation and X/Y offset fields
+assertBinningMetadata(tformInfo, 'camera-coregistration transform', ...
+    'Regenerate the camera-coregistration transform with the current calibration workflow.');
+
+% Check for existence of rotation and X/Y offset fields
 acqFieldNames = fieldnames(AcqInfo);
 tformFieldNames = fieldnames(tformInfo);
-
-if ~isfield(AcqInfo, 'BinningSpatial')
-    if isfield(AcqInfo, 'Binning')
-        AcqInfo.BinningSpatial = AcqInfo.Binning;
-    else
-        AcqInfo.BinningSpatial = 1;
-    end
-end
-if ~isfield(tformInfo, 'BinningSpatial')
-    if isfield(tformInfo, 'Binning')
-        tformInfo.BinningSpatial = tformInfo.Binning;
-    else
-        tformInfo.BinningSpatial = 1;
-    end
-end
 
 fNames = {'Rotation', 'X_Offset', 'Y_Offset'};
 defaults = [0 0 0];
@@ -293,9 +284,9 @@ function newtform = updateTForm(tform, tf_info, acqInfo, frameSizeYX, ang)
 %   newtform    - Updated affine2d transformation.
 
 % 1. Process Spatial Binning
-AcqBinFactor = double(acqInfo.BinningSpatial);
-AcqBinFactor = AcqBinFactor * double(acqInfo.Width) / frameSizeYX(2);
-binFactor = AcqBinFactor / double(tf_info.BinningSpatial);
+AcqBinFactor = double(acqInfo.Binning) * double(acqInfo.BinningSpatial);
+TformBinFactor = double(tf_info.Binning) * double(tf_info.BinningSpatial);
+binFactor = AcqBinFactor / TformBinFactor;
 binningMat = [binFactor 0 0; 0 binFactor 0; 0 0 1];
 
 % 2. Process XY Offset
@@ -326,4 +317,30 @@ end
 
 newMat(:,3) = [0; 0; 1];
 newtform = affine2d(newMat);
+end
+
+function assertBinningMetadata(info, sourceName, recoveryInstruction)
+%ASSERTBINNINGMETADATA Require unambiguous hardware and software binning.
+
+requiredFields = {'Binning', 'BinningSpatial'};
+hasRequiredFields = isstruct(info) && isscalar(info) && ...
+    all(isfield(info, requiredFields));
+
+if hasRequiredFields
+    for iField = 1:numel(requiredFields)
+        value = info.(requiredFields{iField});
+        if ~(isnumeric(value) && isscalar(value) && isreal(value) && ...
+                isfinite(value) && value > 0)
+            hasRequiredFields = false;
+            break
+        end
+    end
+end
+
+if ~hasRequiredFields
+    error('Umitoolbox:applyTform2Cams:MissingBinningMetadata', ...
+        ['%s must contain positive scalar Binning (hardware) and ' ...
+         'BinningSpatial (software classification) fields. The metadata ' ...
+         'are legacy or incomplete. %s'], sourceName, recoveryInstruction);
+end
 end

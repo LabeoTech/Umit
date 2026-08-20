@@ -32,6 +32,27 @@ Info = matfile(fullfile(DataFolder,'AcqInfos.mat'));
 AcqInfo = Info.AcqInfoStream;
 clear Info;
 
+requiredBinningFields = {'Binning', 'BinningSpatial'};
+hasRequiredBinning = isstruct(AcqInfo) && isscalar(AcqInfo) && ...
+    all(isfield(AcqInfo, requiredBinningFields));
+if hasRequiredBinning
+    for iField = 1:numel(requiredBinningFields)
+        binningValue = AcqInfo.(requiredBinningFields{iField});
+        if ~(isnumeric(binningValue) && isscalar(binningValue) && ...
+                isreal(binningValue) && isfinite(binningValue) && binningValue > 0)
+            hasRequiredBinning = false;
+            break
+        end
+    end
+end
+if ~hasRequiredBinning
+    error('Umitoolbox:genTform2Cams:MissingBinningMetadata', ...
+        ['AcqInfos.mat must contain positive scalar Binning (hardware) and ' ...
+         'BinningSpatial (software classification) fields. The metadata ' ...
+         'are legacy or incomplete. Re-import the original raw data with ' ...
+         'the current data importer.']);
+end
+
 % Get list of channels for each camera:
 if( AcqInfo.MultiCam )
     NbIllum = sum(cellfun(@(X) contains(X, 'Illumination'), fieldnames(AcqInfo)));
@@ -145,14 +166,17 @@ disp('Done!')
 % Store registered images and metadata in structure:
 tformInfo.RegisteredImages = {cam1Img, imwarp(cam2Img,tform,'OutputView',imref2d(size(cam1Img)))};
 tformInfo.OriginalImages = {cam1Img, cam2Img};
+% Store hardware and software binning independently. Their product is the
+% effective spatial binning in the transform's pixel coordinate system.
+tformInfo.Binning = AcqInfo.Binning;
+tformInfo.BinningSpatial = AcqInfo.BinningSpatial;
 % Instantiate default values for Rotation and offset:
-tformInfo.Binning = 1;
 tformInfo.Rotation = 0;
 tformInfo.X_Offset = 0;
 tformInfo.Y_Offset = 0;
 fn = fieldnames(AcqInfo);
-indfn = find(ismember(fn,{'Binning','Rotation','X_Offset','Y_Offset'}));
-% Update rotation and offset fields from Info.txt file:
+indfn = find(ismember(fn,{'Rotation','X_Offset','Y_Offset'}));
+% Update rotation and offset fields from AcqInfos.mat:
 for ii = 1:length(indfn)
     tformInfo.(fn{indfn(ii)}) = AcqInfo.(fn{indfn(ii)});   
 end
