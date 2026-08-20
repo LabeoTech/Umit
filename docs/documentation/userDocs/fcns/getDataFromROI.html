@@ -51,6 +51,9 @@ grand_parent: Functions
     <p>
       This function extracts and aggregates data from ROIs. The function uses the ROIs stored in a <samp>ROImasks_&lt;NAME&gt;.mat</samp> file to extract the data from any imaging dataset created in <b><i>umIT</i></b>. Additionally, this function applies an aggregation function (i.e., mean, max, min, median, mode, sum or standard deviation) to summarize the pixel values from an ROI.
     </p>
+    <p>
+      To calculate event response features, use the workflow <a href="split_data_by_event.html"><samp>split_data_by_event</samp></a> &rarr; <samp>getDataFromROI</samp> with <samp>SpatialAggFcn</samp> other than <samp>'none'</samp> &rarr; <a href="calculateResponseFeatures.html"><samp>calculateResponseFeatures</samp></a>.
+    </p>
     <h3>Input</h3>
     <hr>
     <p>
