@@ -8,12 +8,14 @@ function varargout = Ana_Speckle(Folder, bNormalize, varargin)
 %
 % Inputs:
 %   Folder      : Path to the folder containing the dataset.
-%   bNormalize  : Logical flag to normalize the output by the temporal mean.
+%   bNormalize  : Logical flag. Does NOT affect the always-on MeanMap
+%                 correction below; controls only whether the finished
+%                 flow output is normalized by its own temporal mean.
 %   filename    : (Optional) Name of the .dat file to process (default: 'speckle').
 %   bLowRAM     : (Optional) Logical flag to enable low RAM hybrid processing (default: false).
 %
 % Outputs:
-%   data        : 3D matrix containing blood flow data (Y × X × T-1).
+%   data        : 3D matrix containing blood flow data (Y ï¿½ X ï¿½ T-1).
 %   metaData    : Structure containing metadata of the processed dataset.
 %
 % Behavior:
@@ -21,6 +23,11 @@ function varargout = Ana_Speckle(Folder, bNormalize, varargin)
 %   - Low RAM mode uses a two-pass approach to compute temporal mean and flow.
 %   - Standard mode loads the full dataset into memory for faster computation.
 %   - The function applies temporal median filtering and converts contrast to flow.
+%   - Each frame is always divided by MeanMap (the per-pixel temporal mean of
+%     the raw input) before contrast estimation; this removes static
+%     structure and is independent of bNormalize. bNormalize instead gates a
+%     separate output-level step: dividing the finished flow map by its own
+%     per-pixel temporal mean.
 
 
 disp('Running Ana speckle...');
@@ -60,7 +67,7 @@ if bRAMsafe
     % --- Low RAM mode: two-pass processing ---    
     outFile = fullfile(Folder, 'FLOWDATA.dat');
     
-    % Determine output size: (T-1) × Y × X   
+    % Determine output size: (T-1) ï¿½ Y ï¿½ X   
     outMeta = struct();
     outMeta.datFile = 'FLOWDATA.dat';
     outMeta.datSize = [ny, nx];
@@ -102,10 +109,8 @@ if bRAMsafe
         fseek(fidIn, (t-1)*ny*nx*getByteSize('single'),'bof'); % frame t+1
         frameNext = fread(fidIn, ny*nx, '*single');
         frameNext = reshape(frameNext, ny, nx);
-        if bNormalize
-            % Normalize by temporal mean
-            frameNext = frameNext ./ MeanMap;
-        end
+        % Remove static structure via the temporal mean (always applied)
+        frameNext = frameNext ./ MeanMap;
         % Compute std and smoothed mean for contrast
         speckle_window = fspecial('disk',2) > 0;
         std_laser  = imgaussfilt(stdfilt(frameNext, speckle_window),1);
@@ -137,7 +142,7 @@ if bRAMsafe
         xEnd   = min(xStart + chunkX - 1, nx);
         xIdx   = xStart:xEnd;
         
-        % Read slab: Y × Xchunk × (T-1)
+        % Read slab: Y ï¿½ Xchunk ï¿½ (T-1)
         slab = spatialSlabIO( ...
             'read', fidOut, ny, nx, nt-1, xIdx, 'single');
         
@@ -154,7 +159,30 @@ if bRAMsafe
             lastPct = pct;
         end
     end
-       
+
+    % Pass 4: output-level normalization (streaming), only when requested.
+    % Reuses the same X-chunking as Pass 3 rather than a new chunk scheme.
+    if bNormalize
+        fprintf('\nNormalizing output by its own temporal mean...\n');
+        lastPct = -1;
+
+        for c = 1:nChunks
+            xStart = (c-1)*chunkX + 1;
+            xEnd   = min(xStart + chunkX - 1, nx);
+            xIdx   = xStart:xEnd;
+
+            slab = spatialSlabIO('read', fidOut, ny, nx, nt-1, xIdx, 'single');
+            slab = slab ./ mean(slab, 3);
+            spatialSlabIO('write', fidOut, ny, nx, nt-1, xIdx, 'single', slab);
+
+            pct = floor(100 * c / nChunks);
+            if pct ~= lastPct
+                fprintf('%d%% ', pct);
+                lastPct = pct;
+            end
+        end
+    end
+
     fclose(fidIn);
     fclose(fidOut);
     
@@ -181,10 +209,8 @@ else
 
 
     for t = 1:nt-1
-        tmp_laser = dat(:,:,t);
-        if bNormalize
-            tmp_laser = tmp_laser ./ MeanMap;
-        end
+        % Remove static structure via the temporal mean (always applied)
+        tmp_laser = dat(:,:,t) ./ MeanMap;
         std_laser = imgaussfilt(stdfilt(tmp_laser,speckle_window),1);
         mean_laser = imgaussfilt(convnfft(tmp_laser,speckle_window,'same',1:2,OPTIONS)/sum(speckle_window(:)),1);
         contrast = std_laser ./ mean_laser;
@@ -198,6 +224,12 @@ end
 
 %% Finalize output
 datOut = permute(datOut, [2 3 1]);
+
+% Output-level normalization by the flow map's own per-pixel temporal
+% mean. Independent of the always-on MeanMap correction applied above.
+if bNormalize
+    datOut = datOut ./ mean(datOut,3);
+end
 
 % Meta data
 metaData = struct();
