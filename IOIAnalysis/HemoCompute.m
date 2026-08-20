@@ -328,6 +328,50 @@ else
     c_hbr = onCleanup(@() safeFclose(fid_hbr)); 
 end
 
+% Clamp-floor pre-pass. min(Red/Green/Yel(:)) must be a whole-image
+% reduction, not a chunk-local one, or the clamp floor (and therefore the
+% normalized output) depends on chunkX, which itself varies with available
+% RAM via calculateMaxChunkSize. Fold the minimum across chunks one slab at
+% a time so this stays RAM-safe regardless of b_RAMsafeMode.
+globalMinRed = Inf;
+globalMinGreen = Inf;
+globalMinYel = Inf;
+if b_normalize
+    for indP = 1:nChunks
+        xStart = (indP - 1) * chunkX + 1;
+        xEnd   = min(xStart + chunkX - 1, NbPix(2));
+        xIdx   = xStart:xEnd;
+
+        if fidList(1)
+            Red = spatialSlabIO('read', fidList(1), NbPix(1), NbPix(2), ...
+                channelInfo{1}.Length, xIdx, channelInfo{1}.Datatype);
+            Red = iResampleChannelToLowestFrequency(Red, channelInfo{1}, Nt, Freq);
+            Red = reshape(Red, [], Nt);
+            Red = single(filtfilt(lpass_high.sosMatrix, lpass_high.ScaleValues, double(Red)'))';
+            globalMinRed = min(globalMinRed, min(Red(:)));
+        end
+
+        if fidList(2)
+            Green = spatialSlabIO('read', fidList(2), NbPix(1), NbPix(2), ...
+                channelInfo{2}.Length, xIdx, channelInfo{2}.Datatype);
+            Green = iResampleChannelToLowestFrequency(Green, channelInfo{2}, Nt, Freq);
+            Green = reshape(Green, [], Nt);
+            Green = single(filtfilt(lpass_high.sosMatrix, lpass_high.ScaleValues, double(Green)'))';
+            globalMinGreen = min(globalMinGreen, min(Green(:)));
+        end
+
+        if fidList(3)
+            Yel = spatialSlabIO('read', fidList(3), NbPix(1), NbPix(2), ...
+                channelInfo{3}.Length, xIdx, channelInfo{3}.Datatype);
+            Yel = iResampleChannelToLowestFrequency(Yel, channelInfo{3}, Nt, Freq);
+            Yel = reshape(Yel, [], Nt);
+            Yel = single(filtfilt(lpass_high.sosMatrix, lpass_high.ScaleValues, double(Yel)'))';
+            globalMinYel = min(globalMinYel, min(Yel(:)));
+        end
+    end
+    clear Red Green Yel
+end
+
 % Computation loop.
 h = waitbar(0, 'Computing');
 for indP = 1:nChunks
@@ -351,7 +395,7 @@ for indP = 1:nChunks
             waitbar(indP/nChunks, h, 'Red channel [Normalizing data...]')
             Red = single(filtfilt(lpass_high.sosMatrix, lpass_high.ScaleValues, double(Red)'))';
             tmp = single(filtfilt(lpass_low.sosMatrix, lpass_low.ScaleValues, double(Red)'))';
-            tmp(tmp < min(Red(:))) = min(Red(:));
+            tmp(tmp < globalMinRed) = globalMinRed;
             Red = Red ./ tmp;
         end
 
@@ -372,7 +416,7 @@ for indP = 1:nChunks
             waitbar(indP/nChunks, h, 'Green channel [Normalizing data...]')
             Green = single(filtfilt(lpass_high.sosMatrix, lpass_high.ScaleValues, double(Green)'))';
             tmp = single(filtfilt(lpass_low.sosMatrix, lpass_low.ScaleValues, double(Green)'))';
-            tmp(tmp < min(Green(:))) = min(Green(:));
+            tmp(tmp < globalMinGreen) = globalMinGreen;
             Green = Green ./ tmp;
         end
 
@@ -393,7 +437,7 @@ for indP = 1:nChunks
             waitbar(indP/nChunks, h, 'Yellow channel [Normalizing data...]')
             Yel = single(filtfilt(lpass_high.sosMatrix, lpass_high.ScaleValues, double(Yel)'))';
             tmp = single(filtfilt(lpass_low.sosMatrix, lpass_low.ScaleValues, double(Yel)'))';
-            tmp(tmp < min(Yel(:))) = min(Yel(:));
+            tmp(tmp < globalMinYel) = globalMinYel;
             Yel = Yel ./ tmp;
         end
 
