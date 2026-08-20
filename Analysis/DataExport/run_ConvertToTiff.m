@@ -29,7 +29,7 @@ function outFile = run_ConvertToTiff(data, SaveFolder)
 %                 A <baseName>_info.txt is always written alongside.
 
 
-default_Output = {'img_out.tif','img_out_info.txt'}; %#ok<NASGU>
+default_Output = {'img_out.tif','img_out_info.txt'};
 
 if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) ...
         && strcmpi(strtrim(char(string(data))), 'pipelineInfo')
@@ -170,7 +170,7 @@ entryNames = fieldnames(data.data);
 assert(~isempty(entryNames), ...
     'Umitoolbox:run_ConvertToTiff:EmptyUMTData', ...
     'Input UMT contains no image entries.');
-assert(numel(entryNames) == 1, ...
+assert(isscalar(entryNames), ...
     'Umitoolbox:run_ConvertToTiff:multipleCompatibleUMTEntries', ...
     ['Multiple compatible image entries were found in the UMT input. ' ...
      'The current version can process only one image entry.']);
@@ -211,7 +211,7 @@ tagstruct.PlanarConfiguration = Tiff.PlanarConfiguration.Chunky;
 tagstruct.Compression = Tiff.Compression.None;
 
 tiffObj = Tiff(filePath, 'w');
-cleanupObj = onCleanup(@() tiffObj.close()); %#ok<NASGU>
+cleanupObj = onCleanup(@() tiffObj.close());
 
 for iFrame = 1:size(data, 3)
     if iFrame > 1
@@ -228,7 +228,7 @@ function iWriteEventInfoText(filePath, rows)
 fid = fopen(filePath, 'w');
 assert(fid ~= -1, 'Umitoolbox:run_ConvertToTiff:FileOpenFailed', ...
     'Failed to create "%s".', filePath);
-cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
+cleanupObj = onCleanup(@() fclose(fid));
 
 fprintf(fid, 'tiffFile,conditionName,repetitionIndex\n');
 for iRow = 1:size(rows,1)

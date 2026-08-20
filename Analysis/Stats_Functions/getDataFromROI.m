@@ -56,6 +56,9 @@ function outData = getDataFromROI(data, SaveFolder, varargin)
 %       - Event-aware processing for raw .dat should be handled upstream by
 %         converting data to a UMT image structure with E as the last
 %         dimension when needed.
+%       - With SpatialAggFcn='none', the Pixel dimension is sized to the
+%         largest ROI's pixel count; every smaller ROI is NaN-padded to
+%         that length.
 
 
 default_Output = 'ROI_data.umt';

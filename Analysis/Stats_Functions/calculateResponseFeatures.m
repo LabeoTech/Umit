@@ -40,9 +40,17 @@ function outData = calculateResponseFeatures(data, varargin)
 %       - FrameRateHz must exist in the selected entry meta.
 %       - ROI entries that retain the Pixel dimension are not supported by
 %         this function in the current version.
+%       - PeakAmplitude and AUCamplitude are reported for every ROI, even
+%         when its peak does not cross the STD_threshold response
+%         threshold. OnsetLatency and PeakLatency are only defined for
+%         ROIs that do cross threshold and stay NaN otherwise.
+%       - With ResponsePolarity='negative', the trace is sign-flipped
+%         before all feature computation, so PeakAmplitude/OnsetAmplitude
+%         report a positive magnitude of the negative-going response, not
+%         a negative value relative to the original data.
 
 
-default_Output = 'RespFeatures.umt'; %#ok<NASGU>
+default_Output = 'RespFeatures.umt';
 
 if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) ...
         && strcmpi(strtrim(char(string(data))), 'pipelineInfo')
@@ -62,7 +70,7 @@ addParameter(p, 'TimeWindow_sec', 'all', @(x) iValidateTimeWindowInput(x));
 parse(p, data, varargin{:});
 
 STD_threshold = double(p.Results.STD_threshold);
-responsePolarity = lower(char(string(p.Results.ResponsePolarity)));
+responsePolarity = char(string(p.Results.ResponsePolarity));
 timeWindowSec = p.Results.TimeWindow_sec;
 
 assert(isstruct(data) && isscalar(data), ...
@@ -91,7 +99,7 @@ entryNames = fieldnames(data.data);
 assert(~isempty(entryNames), ...
     'Umitoolbox:calculateResponseFeatures:EmptyInput', ...
     'Input roi UMT contains no data entries.');
-assert(numel(entryNames) == 1, ...
+assert(isscalar(entryNames), ...
     'Umitoolbox:calculateResponseFeatures:multipleCompatibleUMTEntries', ...
     ['Multiple compatible data entries were found in the UMT input. ' ...
      'The current version can process only one entry.']);
@@ -160,7 +168,7 @@ outVals = nan(nROI, nMeasure, nE, 'single');
 for iEvent = 1:nE
     avgResp = roiData(:, :, iEvent);
 
-    if strcmp(responsePolarity, 'negative')
+    if strcmpi(responsePolarity, 'negative')
         avgResp = -1 .* avgResp;
     end
 

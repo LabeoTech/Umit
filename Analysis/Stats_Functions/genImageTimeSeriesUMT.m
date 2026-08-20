@@ -19,7 +19,7 @@ function outData = genImageTimeSeriesUMT(data, varargin)
 %       outData   - UMT struct with kind = 'image' and dimNames {'Y','X','T'}.
 
 % Default output for pipeline management.
-default_Output = 'imageTimeSeries.umt'; %#ok<NASGU>
+default_Output = 'imageTimeSeries.umt';
 
 if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) && ...
         strcmpi(strtrim(char(string(data))), 'pipelineInfo')

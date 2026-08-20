@@ -30,6 +30,14 @@ function outData = apply_aggregate_function(data, SaveFolder, varargin)
 %   - RAM-safe mode is only implemented for raw .dat input.
 %   - If a .umt file is provided, RAM-safe mode is not available
 %     and the UMT content is loaded into RAM.
+%   - For E-dimension aggregation, RAM-safe mode chunks the input read but
+%     still allocates the full Y x X x trialLen x nCond output array before
+%     writing it out, so peak RAM is not bounded by condition count
+%     (DFR-20260819-012).
+%   - Output eventInfo.eventAxisMode is always 'aggregated_repetitions' for
+%     E-dimension aggregation: repetitions have been collapsed by aggFcn, so
+%     eventInfo.repetitionIndex is a fixed all-zero sentinel, not a real
+%     per-entry repetition count.
 %
 % See also: spatialSlabIO, genUMTStruct, appendUMTEventInfo
 
@@ -324,7 +332,7 @@ for iEntry = 1:numel(entryNames)
 
             outFlat = zeros(nCond, size(dataP, 2), 'single');
             for iCond = 1:nCond
-                idxCond = find(sourceEventInfo.eventID(:) == condIDs(iCond));
+                idxCond = sourceEventInfo.eventID(:) == condIDs(iCond);
                 outFlat(iCond, :) = single(iCalcAgg(dataP(idxCond, :), aggFcn));
             end
 
@@ -463,7 +471,7 @@ if fid == -1
     error('apply_aggregate_function:FileOpenFailed', ...
         'Failed to open "%s".', dataFile);
 end
-cleanObj = onCleanup(@() safeFclose(fid)); %#ok<NASGU>
+cleanObj = onCleanup(@() safeFclose(fid));
 
 switch dimName
 

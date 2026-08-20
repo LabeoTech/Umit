@@ -55,7 +55,9 @@ function outData = normalizeLPF(data, SaveFolder, varargin)
 %       - The filtering algorithm itself is delegated to the IOI library
 %         function "NormalisationFiltering". This wrapper only handles
 %         input resolution, validation, low-RAM orchestration, and UMT I/O.
-%       - Raw .dat input is processed through a dedicated low-RAM helper.
+%       - Raw .dat input is passed through to NormalisationFiltering in its
+%         own file mode; the chunking itself happens inside
+%         NormalisationFiltering, not in a low-RAM helper in this wrapper.
 %       - UMT input must have kind = 'image'.
 %       - All UMT entries must use dimensions:
 %             {'Y','X','T'} or {'Y','X','T','E'}
@@ -63,6 +65,10 @@ function outData = normalizeLPF(data, SaveFolder, varargin)
 %         the E dimension unchanged.
 %       - If a .umt or .mat file is provided, RAM-safe mode is not
 %         available and the UMT content is loaded into RAM.
+%       - For in-RAM (non-.dat) inputs, NaN pixels are replaced by 0 before
+%         filtering and restored afterward. This biases the low-pass
+%         baseline near mask borders, and with Normalize=true can feed a
+%         near-zero divisor there.
 
 default_Output = 'normLPF.dat'; %#ok<NASGU>
 

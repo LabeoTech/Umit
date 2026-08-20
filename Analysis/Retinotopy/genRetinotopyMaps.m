@@ -34,9 +34,13 @@ function outData = genRetinotopyMaps(data, SaveFolder, varargin)
 %       - If events.mat uses generic labels, the function can locally
 %         standardize them according to Direction without modifying the
 %         file on disk. A warning is raised when this assumption is used.
+%       - RAM-safe mode's b_useAverageMovie branch still allocates a full
+%         Y x X x (trial_len+baseline_len) accumulator per direction before
+%         computing the FFT, so peak RAM is not spatially bounded in that
+%         branch (DFR-20260819-012).
 
 % Default output for pipeline management.
-default_Output = 'retinotopyMaps.umt'; %#ok<NASGU>
+default_Output = 'retinotopyMaps.umt';
 
 if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) && ...
         strcmpi(strtrim(char(string(data))), 'pipelineInfo')
@@ -287,7 +291,7 @@ end
 
 w = waitbar(0,'Calculating FFT (Low RAM usage) ...','Name','genRetinotopyMaps');
 fidIn = fopen(datFile,'r');
-cIn = onCleanup(@() safeFclose(fidIn)); %#ok<NASGU>
+cIn = onCleanup(@() safeFclose(fidIn));
 
 for ind = 1:numel(evntInfo.eventNameList)
     waitbar((ind-1)/numel(evntInfo.eventNameList), w, ...

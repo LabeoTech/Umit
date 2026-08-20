@@ -33,9 +33,20 @@ function outData = genAmplitudeMaps(data, SaveFolder, varargin)
 %                               'all'
 %                               [startSec endSec]
 %                           Default: 'all'
+%
+%   Notes:
+%       - BaselineMeasure and ResponseMeasure are applied jointly across
+%         frames AND trials within each condition, not per-trial-then-
+%         averaged-across-trials. With the default ResponseMeasure='max',
+%         this means the single largest response-window value across all
+%         trials of a condition, not the mean of each trial's own peak.
+%       - RAM-safe mode chunks reads/writes spatially, but for each
+%         condition it still allocates the full Y x X x frames x trials
+%         baseline/response buffers before aggregating, so peak RAM is not
+%         bounded by trial count (DFR-20260819-012).
 
 % Legacy pipeline placeholder
-default_Output = 'amplitudeMap.umt'; %#ok<NASGU>
+default_Output = 'amplitudeMap.umt';
 
 if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) ...
         && strcmpi(strtrim(char(string(data))), 'pipelineInfo')
@@ -288,7 +299,7 @@ if fid == -1
     error('Umitoolbox:genAmplitudeMaps:fileOpenFailed', ...
         'Could not open file "%s".', src.fileName);
 end
-cleanupFid = onCleanup(@() safeFclose(fid)); %#ok<NASGU>
+cleanupFid = onCleanup(@() safeFclose(fid));
 
 bytesPerElement = getByteSize('single');
 nChunks = calculateMaxChunkSize(Ny * Nx * Nt * bytesPerElement, 2, 0.2);
@@ -296,7 +307,7 @@ nChunks = max(1, nChunks);
 chunkX = ceil(Nx / nChunks);
 
 for iEv = 1:nEvents
-    idxTrials = find(conditionIDlist == eventIDs(iEv));
+    idxTrials = conditionIDlist == eventIDs(iEv);
     trialMat = frMat(idxTrials, :);
 
     for iChunk = 1:nChunks
@@ -372,6 +383,12 @@ end
 
 if ischar(dataIn) || (isstring(dataIn) && isscalar(dataIn))
     fileName = char(string(dataIn));
+    if ~isfile(fileName)
+        altPath = fullfile(SaveFolder, fileName);
+        if isfile(altPath)
+            fileName = altPath;
+        end
+    end
     [~,~,ext] = fileparts(fileName);
     ext = lower(ext);
     if strcmp(ext, '.dat')
@@ -432,7 +449,7 @@ assert(~isempty(matchNames), ...
     'Umitoolbox:genAmplitudeMaps:noCompatibleUMTEntry', ...
     ['No compatible image entry was found in the UMT input. Supported ' ...
      'dimNames are YXT and YXTE.']);
-assert(numel(matchNames) == 1, ...
+assert(isscalar(matchNames), ...
     'Umitoolbox:genAmplitudeMaps:multipleCompatibleUMTEntries', ...
     ['Multiple compatible UMT entries were found. The current version ' ...
      'supports exactly one compatible image entry.']);
@@ -460,7 +477,7 @@ assert(numel(eventIDs) == size(dataYXTE, 4), ...
 uniqueIDs = unique(eventIDs, 'stable');
 ampMap = zeros(size(dataYXTE,1), size(dataYXTE,2), numel(uniqueIDs), 'single');
 for iEv = 1:numel(uniqueIDs)
-    idxE = find(eventIDs == uniqueIDs(iEv));
+    idxE = eventIDs == uniqueIDs(iEv);
     thisData = dataYXTE(:,:,:,idxE);
     baselineVals = thisData(:,:,baselineFrames,:);
     responseVals = thisData(:,:,responseFrames,:);
