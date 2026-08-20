@@ -285,6 +285,7 @@ dataBytes = max(numel(fData) * getByteSize(class(fData)), ...
     prod(fMetaData.datSize) * maxNt * getByteSize('single'));
 nChunks = calculateMaxChunkSize(dataBytes, 2 + numChannels, 0.15);
 chunkSizePixels = ceil(Nx / nChunks);
+nChunks = ceil(Nx / chunkSizePixels);
 
 if nChunks > 1
     fid = {};
@@ -442,6 +443,7 @@ Nt = fMetaData.datLength;
 dataBytes = prod([fMetaData.datSize, maxNt, getByteSize(fMetaData.Datatype)]);
 nChunks = calculateMaxChunkSize(dataBytes, 2 + numel(colorList), .1);
 chunkSizePixels = ceil(Nx / nChunks);
+nChunks = ceil(Nx / chunkSizePixels);
 
 spatSigma = 1;
 pad = ceil(3 * spatSigma);
