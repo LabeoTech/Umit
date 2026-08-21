@@ -49,28 +49,42 @@ grand_parent: Functions
     <h3 id="description">Description</h3>
     <hr>
     <p>
-      This function uses reflectance (intrinsic) signals to estimate the concentration levels of oxygenated (HbO) and deoxygenated (HbR) hemoglobin.
-      <div class="warnnote">
-        <p><strong>Important</strong><br>
-          This function works <b>specifically</b> for data generated using widefield imaging systems from <a href="http://www.labeotech.com">Labeo Technologies Inc.</a> <b>only</b>!
-        </p>
-      </div>
+      This wrapper uses reflectance (intrinsic) signals to estimate changes in oxygenated (HbO)
+      and deoxygenated (HbR) hemoglobin. It resolves illumination spectra, camera responses, and
+      filter transmission from the Rig associated with the acquisition. If the acquisition does
+      not identify a Rig, the active default Rig is used with a warning and the acquisition
+      metadata is not modified.
     </p>
     <h3>Input</h3>
     <hr>
     <p>
-      Series of <samp>.dat</samp> files containing image time series data with dimensions Y,X,T or image time series split by events with dimensions E,Y,X,T. This function uses one to three files containing reflectance (red, yellow and green) data. The file names must be the following:<br>
+      Call the wrapper as <samp>run_HemoCompute(SaveFolder, data, ...)</samp>.
     </p>
     <ul>
-      <li><i>red.dat</i>: red channel</li>
-      <li><i>yellow.dat</i>: yellow/amber channel</li>
-      <li><i>green.dat</i>: green channel</li>
+      <li><samp>SaveFolder</samp> contains <samp>AcqInfos.mat</samp> and the imported reflectance channels.</li>
+      <li><samp>data</samp> selects the execution mode; its pixel values are not processed directly. A numeric Y-X-T array selects standard mode, while a <samp>.dat</samp> filename selects RAM-safe mode.</li>
     </ul>
-    <p>The abovementioned files are created using the <a href="./run_ImagesClassification.html">run_ImagesClassification</a> function.</p>
+    <p>
+      HemoCompute reads the two or three channels selected by <samp>Illuminations</samp> from the
+      SaveFolder. Supported canonical names are <samp>red</samp>, <samp>green</samp>, and
+      <samp>yellow</samp>; the historical name <samp>amber</samp> is normalized to
+      <samp>yellow</samp>. Imported channel filenames and timebases are resolved from
+      <samp>AcqInfos.mat</samp>. Four-dimensional event-split input is not supported.
+    </p>
     <h3>Output</h3>
     <hr>
     <p>
-      This function creates the files <samp>HbO.dat</samp> and <samp>HbR.dat</samp> containing the image time series with the approximate variation of the oxygenated and deoxygenated hemoglobin, respectively.
+      Every execution mode writes <samp>HbO.dat</samp> and <samp>HbR.dat</samp> in the SaveFolder.
+      With one requested output, the wrapper returns the manifest
+      <samp>{'HbO.dat','HbR.dat'}</samp>. With two requested outputs, it returns those two
+      filenames individually; it does not return numeric arrays.
+    </p>
+    <pre><code>files = run_HemoCompute(saveFolder, data);
+[hbOFile, hbRFile] = run_HemoCompute(saveFolder, data);
+hbO = loadData(fullfile(saveFolder, hbOFile));</code></pre>
+    <p>
+      Call the lower-level <samp>HemoCompute</samp> function directly when its numeric standard-mode
+      arrays are required instead of file-backed wrapper outputs.
     </p>
     <h3 id="parameters">Parameters</h3>
     <hr>
@@ -106,32 +120,34 @@ grand_parent: Functions
 
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
-      <samp><b>Red</b></samp> - Red channel<br>
-      <span class="title-desc"><i> true (default) | false </i></span>
+      <samp><b>Illuminations</b></samp> - Reflectance channels<br>
+      <span class="title-desc"><i> {'red','green','yellow'} (default) | two or three canonical names</i></span>
     </button>
     <div class="content">
       <p>
-        If <b>true</b>, the function includes the <b>Red</b> channel in the estimation of oxy/deoxygenated hemoglobin.
+        Select two or three different channels from <samp>red</samp>, <samp>green</samp>, and
+        <samp>yellow</samp>. The selected channels must exist in the SaveFolder and be represented
+        by the acquisition and Rig optical configuration.
       </p>
     </div>
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
-      <samp><b>Green</b></samp> - Green channel<br>
-      <span class="title-desc"><i> true (default) | false </i></span>
+      <samp><b>HbT_concentration_uM</b></samp> - Total hemoglobin concentration<br>
+      <span class="title-desc"><i> 100 (default) | positive numeric scalar</i></span>
     </button>
     <div class="content">
       <p>
-        If <b>true</b>, the function includes the <b>Green</b> channel in the estimation of oxy/deoxygenated hemoglobin.
+        Sets the assumed total hemoglobin concentration in micromolar.
       </p>
     </div>
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
-      <samp><b>Amber</b></samp> - Yellow/Amber channel<br>
-      <span class="title-desc"><i> true (default) | false </i></span>
+      <samp><b>StO2perc</b></samp> - Oxygen saturation<br>
+      <span class="title-desc"><i> 60 (default) | numeric scalar from 0 to 100</i></span>
     </button>
     <div class="content">
       <p>
-        If <b>true</b>, the function includes the <b>Amber</b> channel in the estimation of oxy/deoxygenated hemoglobin.
+        Sets the assumed tissue oxygen saturation as a percentage.
       </p>
     </div>
     <!-- JavaScript code to collapse sections -->
