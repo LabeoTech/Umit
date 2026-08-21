@@ -63,6 +63,9 @@ sidecars or reprocess from raw data when this occurs.</p>
   <li><strong>Speckle mapping:</strong> the wrapper reads the named raw channel from the SaveFolder
   instead of consuming an upstream array. Until the next signature revision, standard and RAM-safe
   <samp>run_Ana_Speckle</samp> paths may still resolve different filenames and emit a warning.</li>
+  <li><strong>Speckle blood flow:</strong> <samp>Ana_Speckle</samp> now calculates one flow frame
+  for every raw speckle frame. Its timeline therefore changes from T-1 to the full source length T;
+  the added last sample can also affect the trailing temporal-median window and normalized output.</li>
   <li><strong>Hemodynamics:</strong> Rig Store optical spectra and per-channel camera responses are
   preferred when available, which is required for dual-camera rigs and can change HbO/HbR scaling.</li>
 </ul>
@@ -99,6 +102,9 @@ reference these functions must be rebuilt.</p>
 <ul>
   <li>The <samp>run_HemoCorrection</samp> wrapper writes <samp>hemoCorr_fluo.dat</samp> in every
   file-returning mode; <samp>fluoHemoCorr.dat</samp> remains an internal legacy-core name.</li>
+  <li><samp>Ana_Speckle</samp> outputs <samp>Flow.dat</samp> instead of
+  <samp>Flow.umt</samp>. Standard mode returns a single Y,X,T array; RAM-safe mode returns the full
+  path to the raw <samp>Flow.dat</samp> file.</li>
   <li><samp>tform.mat</samp> became <samp>tformDualCam.mat</samp>.</li>
   <li>Several previous <samp>.dat</samp> plus <samp>.mat</samp> result pairs are now self-describing
   <samp>.umt</samp> files.</li>

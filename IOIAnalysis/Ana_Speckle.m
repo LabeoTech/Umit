@@ -32,29 +32,25 @@ function varargout = Ana_Speckle(SaveFolder, bNormalize, varargin)
 %                       execution. Default: false
 %
 %   Outputs:
-%       data / outFile - Standard mode returns a UMT struct (kind='image',
-%                        dimNames {'Y','X','T'}) wrapping a Y x X x (T-1)
-%                        blood-flow array. Low-RAM mode returns the output
-%                        filename.
+%       data / outFile - Standard mode returns a single Y x X x T
+%                        blood-flow array. Low-RAM mode returns the full
+%                        path to the raw Flow.dat output.
 %       metaData       - Flat compatibility metadata describing the output.
 %
 %   Notes:
 %       - The MeanMap (or per-frame equivalent in RAMSafe mode) correction
 %         is always applied, independent of bNormalize; bNormalize affects
 %         only the output-level normalization in step 5.
-%       - The output temporal length is T-1 by design. No interpolation is
-%         applied to force the result back to T. Because T-1 never matches
-%         a known imported/base timeline in AcqInfos.mat, the result is
-%         packaged as a self-describing UMT struct and saved as "Flow.umt"
-%         instead of a raw .dat file (a raw .dat here would fail
-%         saveData's/loadMetaData's timeline-matching check).
+%       - One flow frame is calculated from each input frame, so the output
+%         retains the input temporal length T and follows the normal raw
+%         .dat timeline contract.
 %       - Raw .dat length is resolved through loadMetaData, which infers
 %         datLength from the actual file size.
 %       - ExposureSpeckleMsec is read from the metadata returned by
 %         loadMetaData(...).
 
 % Default output for pipeline management.
-default_Output = 'Flow.umt';
+default_Output = 'Flow.dat';
 
 if nargin == 1 && (ischar(SaveFolder) || (isstring(SaveFolder) && isscalar(SaveFolder))) && ...
         strcmpi(strtrim(char(string(SaveFolder))), 'pipelineInfo')
@@ -109,13 +105,13 @@ OPTIONS.Brep = 0;
 outMeta = struct();
 outMeta.datFile = fullfile(SaveFolder, default_Output);
 outMeta.datSize = [ny, nx];
-outMeta.datLength = nt - 1;
+outMeta.datLength = nt;
 outMeta.Freq = tFreq;
 outMeta.Datatype = 'single';
 outMeta.dim_names = {'Y','X','T'};
 outMeta.Height = ny;
 outMeta.Width = nx;
-outMeta.Length = nt - 1;
+outMeta.Length = nt;
 outMeta.FrameRateHz = tFreq;
 outMeta.ExposureSpeckleMsec = double(Iptr.ExposureSpeckleMsec);
 
@@ -127,17 +123,16 @@ assert(nt >= 2, 'Ana_Speckle:InvalidInputLength', ...
 % -------------------------------------------------------------------------
 if bRAMsafe
     % Compute through a fixed-name raw scratch file (bounded RAM via slab
-    % I/O), then package the finished result into a self-describing UMT
-    % struct and write that onto the declared .umt output through its own
-    % scratch-then-move step below. Renaming the declared output when it
-    % already exists would make every pipeline re-run write to a different
-    % file and leave the stale original in place.
+    % I/O), then move the completed file onto the declared Flow.dat output.
+    % Renaming the declared output when it already exists would make every
+    % pipeline re-run write to a different file and leave the stale original
+    % in place.
     outFile = fullfile(SaveFolder, default_Output);
     [~, baseName] = fileparts(default_Output);
     computeScratchFile = fullfile(SaveFolder, [baseName '_compute.dat']);
     outMeta.datFile = outFile;
 
-    preallocateDatFile(computeScratchFile, [ny, nx, nt-1], 'single');
+    preallocateDatFile(computeScratchFile, [ny, nx, nt], 'single');
 
     fidIn  = fopen(datFile, 'r');
     assert(fidIn ~= -1, 'Ana_Speckle:OpenInputFailed', ...
@@ -174,7 +169,7 @@ if bRAMsafe
     lastPct = -1;
     speckle_window = fspecial('disk', 2) > 0;
 
-    for t = 1:nt-1
+    for t = 1:nt
         fseek(fidIn, (t-1) * frameBytes, 'bof');
         frameNext = fread(fidIn, ny * nx, '*single');
         frameNext = reshape(frameNext, ny, nx);
@@ -188,7 +183,7 @@ if bRAMsafe
         fseek(fidOut, (t-1) * frameBytes, 'bof');
         fwrite(fidOut, flow, 'single');
 
-        pct = floor(100 * t / (nt-1));
+        pct = floor(100 * t / nt);
         if pct ~= lastPct && mod(pct, 10) == 0
             fprintf('%d%% ', pct);
             lastPct = pct;
@@ -197,7 +192,7 @@ if bRAMsafe
 
     % Pass 3: temporal median filter in X chunks
     fW = ceil(0.5 * tFreq);
-    nChunks = calculateMaxChunkSize(ny * nx * (nt-1) * getByteSize('single'), 2);
+    nChunks = calculateMaxChunkSize(ny * nx * nt * getByteSize('single'), 2);
     chunkX = ceil(nx / nChunks);
     nChunks = ceil(nx / chunkX);
 
@@ -209,9 +204,9 @@ if bRAMsafe
         xEnd   = min(xStart + chunkX - 1, nx);
         xIdx   = xStart:xEnd;
 
-        slab = spatialSlabIO('read', fidOut, ny, nx, nt-1, xIdx, 'single');
+        slab = spatialSlabIO('read', fidOut, ny, nx, nt, xIdx, 'single');
         slab = medfilt1(slab, fW, [], 3, 'truncate');
-        spatialSlabIO('write', fidOut, ny, nx, nt-1, xIdx, 'single', slab);
+        spatialSlabIO('write', fidOut, ny, nx, nt, xIdx, 'single', slab);
 
         pct = floor(100 * c / nChunks);
         if pct ~= lastPct
@@ -231,9 +226,9 @@ if bRAMsafe
             xEnd   = min(xStart + chunkX - 1, nx);
             xIdx   = xStart:xEnd;
 
-            slab = spatialSlabIO('read', fidOut, ny, nx, nt-1, xIdx, 'single');
+            slab = spatialSlabIO('read', fidOut, ny, nx, nt, xIdx, 'single');
             slab = slab ./ mean(slab, 3);
-            spatialSlabIO('write', fidOut, ny, nx, nt-1, xIdx, 'single', slab);
+            spatialSlabIO('write', fidOut, ny, nx, nt, xIdx, 'single', slab);
 
             pct = floor(100 * c / nChunks);
             if pct ~= lastPct
@@ -243,35 +238,11 @@ if bRAMsafe
         end
     end
 
-    clear cIn cOut; % close fidIn/fidOut via safeFclose before the read-back below
+    clear cIn cOut; % close fidIn/fidOut before replacing the declared output
 
-    fidScratch = fopen(computeScratchFile, 'r');
-    assert(fidScratch ~= -1, 'Ana_Speckle:OpenOutputFailed', ...
-        'Could not reopen computed flow data "%s".', computeScratchFile);
-    cScratch = onCleanup(@() safeFclose(fidScratch));
-    flowData = fread(fidScratch, ny * nx * (nt-1), '*single');
-    flowData = reshape(flowData, ny, nx, nt-1);
-    clear cScratch % close fidScratch before deleting the scratch file below
-    delete(computeScratchFile);
-
-    entryMeta = struct( ...
-        'FrameRateHz', tFreq, ...
-        'ExposureSpeckleMsec', double(Iptr.ExposureSpeckleMsec));
-    umtOut = genUMTStruct(flowData, ...
-        'kind', 'image', ...
-        'entryName', 'main', ...
-        'dimNames', {'Y','X','T'}, ...
-        'meta', entryMeta);
-
-    % Write through a fixed-name scratch file, then move it onto the
-    % declared output, matching the same re-run safety pattern used for
-    % the compute scratch file above.
-    umtScratchFile = fullfile(SaveFolder, [baseName '_writing.umt']);
-    save(umtScratchFile, '-struct', 'umtOut', '-mat');
-
-    [moveOk, moveMsg] = movefile(umtScratchFile, outFile, 'f');
+    [moveOk, moveMsg] = movefile(computeScratchFile, outFile, 'f');
     assert(moveOk, 'Ana_Speckle:OutputMoveFailed', ...
-        'Failed to move "%s" onto "%s": %s', umtScratchFile, outFile, moveMsg);
+        'Failed to move "%s" onto "%s": %s', computeScratchFile, outFile, moveMsg);
 
     if nargout > 0
         varargout{1} = outFile;
@@ -295,10 +266,10 @@ dat = fread(fid, inf, '*single');
 dat = reshape(dat, ny, nx, nt);
 MeanMap = mean(dat, 3);
 
-datOut = zeros(nt-1, ny, nx, 'single');
+datOut = zeros(nt, ny, nx, 'single');
 speckle_window = fspecial('disk', 2) > 0;
 
-for t = 1:nt-1
+for t = 1:nt
     tmp_laser = dat(:,:,t) ./ MeanMap;
 
     std_laser = imgaussfilt(stdfilt(tmp_laser, speckle_window), 1);
@@ -312,7 +283,7 @@ tic
 fW = ceil(0.5 * tFreq);
 datOut = medfilt1(datOut, fW, [], 1, 'truncate');
 
-% Finalize to Y X (T-1)
+% Finalize to Y X T
 datOut = permute(datOut, [2 3 1]);
 
 % Output-level normalization by the flow map's own per-pixel temporal
@@ -323,23 +294,14 @@ end
 
 outMeta.datFile = fullfile(SaveFolder, default_Output);
 
-entryMeta = struct( ...
-    'FrameRateHz', tFreq, ...
-    'ExposureSpeckleMsec', double(Iptr.ExposureSpeckleMsec));
-umtOut = genUMTStruct(datOut, ...
-    'kind', 'image', ...
-    'entryName', 'main', ...
-    'dimNames', {'Y','X','T'}, ...
-    'meta', entryMeta);
-
 if nargout > 0
-    varargout{1} = umtOut;
+    varargout{1} = datOut;
     if nargout > 1
         varargout{2} = outMeta;
     end
 else
     fprintf('Saving data to file: "%s"...\n', default_Output);
-    saveData(outMeta.datFile, umtOut);
+    saveData(outMeta.datFile, datOut);
 end
 
 fprintf('Done!\n');
@@ -395,10 +357,11 @@ fprintf('Done!\n');
             'outData', ...
             {'ImageTimeSeries', 'ProcessedData'}, ...
             'data', ...
-            'Blood-flow output: a UMT struct wrapping a Y x X x (T-1) array.', ...
+            'Blood-flow output: a single Y x X x T image time series.', ...
             default_Output, ...
             1, ...
-            'isData', true);
+            'isData', true, ...
+            'saveFileName', default_Output);
     end
 end
 
