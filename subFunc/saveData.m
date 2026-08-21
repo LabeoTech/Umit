@@ -182,5 +182,5 @@ function save2umt(filePath, data)
 validateUMTStruct(data);
 
 disp('Writing data to .UMT file ...');
-save(filePath, '-struct', 'data', '-mat');
+save(filePath, '-struct', 'data', '-mat','-v7.3');
 end
