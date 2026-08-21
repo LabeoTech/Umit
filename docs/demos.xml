@@ -18,6 +18,16 @@
             <type>M-file</type>
             <source>funcTemplate</source>
         </demoitem>
+        <demoitem>
+            <label>Fresh acquisition initializer template</label>
+            <type>M-file</type>
+            <source>funcTemplateAcquisitionInitializer</source>
+        </demoitem>
+        <demoitem>
+            <label>Fresh acquisition companion template</label>
+            <type>M-file</type>
+            <source>funcTemplateAcquisitionCompanion</source>
+        </demoitem>
     </demosection>
 
 </demos>
