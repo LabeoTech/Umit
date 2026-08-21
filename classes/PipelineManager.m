@@ -4442,6 +4442,7 @@ classdef PipelineManager < handle
             outputMode = strings(0,1);
             outputTypes = cell(0,1);
             isData = false(0,1);
+            isRequired = true(0,1);
             isFinalOutput = false(0,1);
             isSaveable = false(0,1);
             isViewerCompatibleCandidate = false(0,1);
@@ -4475,6 +4476,10 @@ classdef PipelineManager < handle
                     end
 
                     outIsData = isfield(outDef,'isData') && logical(outDef.isData);
+                    requiredLocal = true;
+                    if isfield(outDef,'isRequired') && ~isempty(outDef.isRequired)
+                        requiredLocal = logical(outDef.isRequired);
+                    end
                     saveable = obj.isManagerSaveableOutput(outDef);
                     finalOut = outIsData && ~obj.outputHasDownstreamConsumer(nodeLocal.id, outNameLocal);
                     viewerCandidate = obj.isViewerCompatibleOutputCandidate(outDef);
@@ -4559,6 +4564,7 @@ classdef PipelineManager < handle
                         outputMode(end+1,1) = string(outModeLocal); %#ok<AGROW>
                         outputTypes{end+1,1} = typeList; %#ok<AGROW>
                         isData(end+1,1) = outIsData; %#ok<AGROW>
+                        isRequired(end+1,1) = requiredLocal; %#ok<AGROW>
                         isFinalOutput(end+1,1) = finalOut; %#ok<AGROW>
                         isSaveable(end+1,1) = saveable; %#ok<AGROW>
                         isViewerCompatibleCandidate(end+1,1) = viewerCandidate; %#ok<AGROW>
@@ -4571,7 +4577,7 @@ classdef PipelineManager < handle
             end
 
             outputPlan = table(nodeID, stepTag, functionName, outputName, outputMode, ...
-                outputTypes, isData, isFinalOutput, isSaveable, ...
+                outputTypes, isData, isRequired, isFinalOutput, isSaveable, ...
                 isViewerCompatibleCandidate, plannedPersistence, plannedFileName, ...
                 plannedFilePath, reason);
         end
@@ -4816,6 +4822,7 @@ classdef PipelineManager < handle
             outputName = strings(0,1);
             outputMode = strings(0,1);
             outputTypes = cell(0,1);
+            isRequired = true(0,1);
             isFinalOutput = false(0,1);
             plannedPersistence = strings(0,1);
             actualPersistence = strings(0,1);
@@ -4826,6 +4833,7 @@ classdef PipelineManager < handle
             isTemporary = false(0,1);
             isViewerCompatible = false(0,1);
             compatibilityReason = strings(0,1);
+            createdThisRun = obj.buildCreatedFilesTableFromGlobalLog();
 
             for iFolder = 1:numel(obj.SaveFolderList)
                 saveFolder = string(obj.SaveFolderList{iFolder});
@@ -4833,7 +4841,26 @@ classdef PipelineManager < handle
 
                 for iRow = 1:height(outputPlan)
                     plannedFile = string(outputPlan.plannedFileName(iRow));
-                    [actualPath, actualName, existsFlag] = obj.resolveActualOutputFile(char(saveFolder), plannedFile);
+                    requiredFlag = true;
+                    if ismember('isRequired', outputPlan.Properties.VariableNames)
+                        requiredFlag = logical(outputPlan.isRequired(iRow));
+                    end
+
+                    optionalFileWasRecorded = true;
+                    if ~requiredFlag
+                        optionalFileWasRecorded = ~isempty(createdThisRun) && any( ...
+                            strcmpi(createdThisRun.SaveFolder, saveFolder) & ...
+                            strcmpi(createdThisRun.FileName, plannedFile));
+                    end
+
+                    if optionalFileWasRecorded
+                        [actualPath, actualName, existsFlag] = ...
+                            obj.resolveActualOutputFile(char(saveFolder), plannedFile);
+                    else
+                        actualPath = "";
+                        actualName = "";
+                        existsFlag = false;
+                    end
 
                     actualPersist = string(outputPlan.plannedPersistence(iRow));
                     if ~existsFlag && actualPersist == "already_file"
@@ -4862,6 +4889,7 @@ classdef PipelineManager < handle
                     outputName(end+1,1) = outputPlan.outputName(iRow); %#ok<AGROW>
                     outputMode(end+1,1) = outputPlan.outputMode(iRow); %#ok<AGROW>
                     outputTypes{end+1,1} = outputPlan.outputTypes{iRow}; %#ok<AGROW>
+                    isRequired(end+1,1) = requiredFlag; %#ok<AGROW>
                     isFinalOutput(end+1,1) = finalFlag; %#ok<AGROW>
                     plannedPersistence(end+1,1) = outputPlan.plannedPersistence(iRow); %#ok<AGROW>
                     actualPersistence(end+1,1) = actualPersist; %#ok<AGROW>
@@ -4876,11 +4904,11 @@ classdef PipelineManager < handle
             end
 
             manifest = table(saveFolderCol, rawFolderCol, nodeID, stepTag, functionName, ...
-                outputName, outputMode, outputTypes, isFinalOutput, plannedPersistence, ...
+                outputName, outputMode, outputTypes, isRequired, isFinalOutput, plannedPersistence, ...
                 actualPersistence, plannedFileName, actualFileName, filePath, fileExists, ...
                 isTemporary, isViewerCompatible, compatibilityReason, ...
                 'VariableNames', {'SaveFolder','RawFolder','NodeID','StepTag','FunctionName', ...
-                'OutputName','OutputMode','OutputTypes','IsFinalOutput','PlannedPersistence', ...
+                'OutputName','OutputMode','OutputTypes','IsRequired','IsFinalOutput','PlannedPersistence', ...
                 'ActualPersistence','PlannedFileName','ActualFileName','FilePath','FileExists', ...
                 'IsTemporary','IsViewerCompatible','CompatibilityReason'});
         end
@@ -11562,6 +11590,8 @@ classdef PipelineManager < handle
             %       - returnsValue=false   -> a non-DATA file-effect declaration;
             %                                defOutfilename names or patterns are
             %                                resolved after successful execution
+            %       - isRequired=false    -> an empty returned non-DATA file list is
+            %                                accepted and registers no artifact
             %
             %   For outputMode = 'file':
             %       - The returned value must be text-like (char/string/cellstr)
@@ -11681,6 +11711,11 @@ classdef PipelineManager < handle
                     returnsValueLocal = logical(outDef.returnsValue);
                 end
 
+                isRequiredLocal = true;
+                if isfield(outDef, 'isRequired') && ~isempty(outDef.isRequired)
+                    isRequiredLocal = logical(outDef.isRequired);
+                end
+
                 % Non-DATA file outputs are folder-level artifacts. Register them
                 % so setup steps such as getEvents are logged and can contribute
                 % dataHistory entries, but continue to ignore non-DATA non-file
@@ -11714,6 +11749,9 @@ classdef PipelineManager < handle
                             folder, outDef, nodeLocal, outName);
                     end
                     if isempty(fileList)
+                        if ~isRequiredLocal
+                            continue
+                        end
                         error('PipelineManager:registerOutputs:MissingFileOutput', ...
                             ['Node "%s" output "%s" has outputMode="file" but returned no filename.\n' ...
                             'File outputs must return filename(s).'], ...
@@ -14721,6 +14759,8 @@ classdef PipelineManager < handle
             %               returnsValue   - False only when a non-DATA file output
             %                                describes file effects instead of a
             %                                MATLAB return value.
+            %               isRequired     - False only when a returned non-DATA
+            %                                file output may legitimately be empty.
             %
             %   Notes:
             %       - supportsFile and dataMode are input-only concepts.
@@ -14787,7 +14827,8 @@ classdef PipelineManager < handle
                 'position', {}, ...
                 'isData', {}, ...
                 'saveFileName', {}, ...
-                'returnsValue', {} );
+                'returnsValue', {}, ...
+                'isRequired', {} );
 
             info.notes = {};
 
@@ -15009,7 +15050,8 @@ classdef PipelineManager < handle
             %       description, defOutfilename, position)
             %
             %   info = PipelineManager.addOutput(..., 'isData', tf, ...
-            %       'saveFileName', fileName, 'returnsValue', tf)
+            %       'saveFileName', fileName, 'returnsValue', tf, ...
+            %       'isRequired', tf)
             %
             %   Inputs:
             %       info           - pipelineInfo struct created by createPipelineInfo.
@@ -15031,6 +15073,9 @@ classdef PipelineManager < handle
             %                        value for this declaration. Default: true.
             %                        False is reserved for non-DATA file effects
             %                        resolved from defOutfilename after execution.
+            %       isRequired     - Whether a returned file output must contain at
+            %                        least one filename. Default: true. False is
+            %                        reserved for returned, non-DATA file outputs.
             %
             %   Notes:
             %       - For file-manifest outputs, this method stores ONE logical
@@ -15045,11 +15090,13 @@ classdef PipelineManager < handle
             addParameter(p, 'isData', true, @(x) islogical(x) && isscalar(x));
             addParameter(p, 'saveFileName', '', @(x) ischar(x) || (isstring(x) && isscalar(x)));
             addParameter(p, 'returnsValue', true, @(x) islogical(x) && isscalar(x));
+            addParameter(p, 'isRequired', true, @(x) islogical(x) && isscalar(x));
             parse(p, varargin{:});
 
             isData = p.Results.isData;
             saveFileName = char(string(p.Results.saveFileName));
             returnsValue = p.Results.returnsValue;
+            isRequired = p.Results.isRequired;
 
             % -------------------------------------------------------------
             % Normalize NAME
@@ -15103,6 +15150,13 @@ classdef PipelineManager < handle
                 error('addOutput:InvalidNonReturningOutput', ...
                     ['returnsValue=false is valid only for outputMode="file", ' ...
                      'isData=false declarations.']);
+            end
+
+
+            if ~isRequired && (~strcmp(outputMode, 'file') || isData || ~returnsValue)
+                error('addOutput:InvalidOptionalOutput', ...
+                    ['isRequired=false is valid only for returned, non-DATA ' ...
+                     'outputMode="file" declarations.']);
             end
 
             % -------------------------------------------------------------
@@ -15209,7 +15263,8 @@ classdef PipelineManager < handle
                 'position', position, ...
                 'isData', logical(isData), ...
                 'saveFileName', saveFileName, ...
-                'returnsValue', logical(returnsValue));
+                'returnsValue', logical(returnsValue), ...
+                'isRequired', logical(isRequired));
 
             if ~isfield(info, 'outputs') || isempty(info.outputs)
                 info.outputs = newOutput;
