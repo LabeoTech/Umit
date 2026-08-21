@@ -40,63 +40,83 @@ grand_parent: Functions
     <title>genVSM</title>
   </head>
   <body>
-    <h2>genVSM - generate Visual Sign Map</h2>
+    <h2>genVSM - generate a visual sign map and cortical-area ROIs</h2>
     <hr>
     <p>
-      Creates a visual sign map using the azimuth and elevation maps.
+      Creates a visual sign map from azimuth and elevation maps and writes detected cortical patches to a DataViewer-compatible <samp>.roi</samp> file.
     </p>
+    <h3>Syntax</h3>
+    <hr>
+    <pre><code>[outData, roiFile] = genVSM(retinotopyUMT, SaveFolder)
+[outData, roiFile] = genVSM(retinotopyUMT, SaveFolder, 'Name', Value)</code></pre>
     <h3 id="description">Description</h3>
     <hr>
     <p>
-      This function uses the azimuth and elevation phase maps created in the function <samp>genRetinotopyMaps</samp> to create the Visual Sign Map (VSM). Optionally, this function can segment the VSM to create ROIs compatible with the <samp>ROImanager</samp> app.
+      This function uses the azimuth and elevation phase maps created by <samp>genRetinotopyMaps</samp> to create a visual sign map (VSM). It always attempts to segment the VSM into connected cortical patches. When patches are detected, each patch is stored as a canonical ROI named <samp>CtxArea_&lt;index&gt;</samp>, for example <samp>CtxArea_1</samp>, in a <samp>.roi</samp> file that can be opened in DataViewer.
     </p>
     <h3>Input</h3>
     <hr>
-    <p>
-      Azimuth and Elevation maps stored in the <samp>AzimuthMap</samp> and <samp>ElevationMap</samp> <samp>.dat </samp> files.
-    </p>
+    <ul>
+      <li>
+        <samp>retinotopyUMT</samp> - A scalar UMIT data object containing <samp>AzimuthMap</samp> and <samp>ElevationMap</samp> entries. Each entry must have dimensions <samp>{'Y','X','F'}</samp> with two frames: amplitude in frame 1 and phase in frame 2.
+      </li>
+      <li>
+        <samp>SaveFolder</samp> - Folder used to resolve input masks and save the generated ROI file.
+      </li>
+    </ul>
 
     <h3> The algorithm</h3>
     <hr>
     <p>
-      In brief, the visual sign map is calculated as the sine of the difference between the gradients of the azimuth and elevation phase maps. This function uses the algorithm described by Sereno et al. <a href="#refs">[1,2]</a> and Garret et al. <a href="#refs">[3]</a>.
+      In brief, the visual sign map is calculated as the sine of the difference between the gradients of the azimuth and elevation phase maps. The function then segments the map into connected patches and converts each patch into an ROI. This function uses the algorithm described by Sereno et al. <a href="#refs">[1,2]</a> and Garrett et al. <a href="#refs">[3]</a>.
     </p>
     <h3>Output</h3>
     <hr>
+    <ul>
+      <li>
+        <samp>outData</samp> - An image UMIT data object containing the VSM with dimensions <samp>{'Y','X'}</samp>. The default pipeline output filename is <samp>visualSignMap.umt</samp>.
+      </li>
+      <li>
+        <samp>roiFile</samp> - The folder-relative name of the created <samp>.roi</samp> file. The default is <samp>VisualCtxAreas.roi</samp>. If no patches are detected, the function issues a warning, returns an empty character vector, and does not create or overwrite an ROI file.
+      </li>
+    </ul>
     <p>
-      The output of this function is a numerical matrix with dimensions Y,X containing the visual sign map and its associated meta data structure.
+      The generated file contains one ROI per connected patch, named <samp>CtxArea_1</samp>, <samp>CtxArea_2</samp>, and so on. These names identify segmented regions; they do not assign anatomical area identities. Open the file from the DataViewer ROIs tab. See <a href="../other/roi-files-organization.html">ROI files organization</a> for the file format and <a href="../apps/ROImanager.html">ROI management in DataViewer</a> for the user workflow.
+    </p>
+    <p>
+      When <samp>genVSM</samp> runs through PipelineManager, the ROI output is optional: it is recorded in the output manifest only when a file was created during that run.
     </p>
     <h3 id="parameters">Parameters</h3>
     <hr>
     <p>The parameters of this function are the following:</p>
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
-      <samp><b>SpatialFilter_Sigma</b></samp> - Spatial filter size <br>
+      <samp><b>PhaseMapFilter_Sigma</b></samp> - Phase-map spatial filter size <br>
       <span class="title-desc"><i> 0 (default) | positive number</i></span>
     </button>
     <div class="content">
       <p>
-        Standard deviation of the gaussian spatial filter (in pixels) to be applied to the visual sign map. Set to skip spatial filter.
+        Standard deviation of the Gaussian spatial filter, in pixels, applied to the azimuth and elevation phase maps before calculating the VSM. Set to <samp>0</samp> to skip filtering.
       </p>
     </div>
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
-      <samp><b>b_CreateROIs</b></samp> - create ROI mask <br>
-      <span class="title-desc"><i> false (default) | true</i></span>
+      <samp><b>VSMFilter_Sigma</b></samp> - VSM spatial filter size <br>
+      <span class="title-desc"><i> 0 (default) | positive number</i></span>
     </button>
     <div class="content">
       <p>
-        Set to <b>true</b> to export a labeled matrix containing masks based on the visual sign map.
+        Standard deviation of the Gaussian spatial filter, in pixels, applied to the visual sign map before segmentation. Set to <samp>0</samp> to skip filtering.
       </p>
     </div>
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
-      <samp><b>ROIfileName</b></samp> - Name of ROI mask file <br>
-      <span class="title-desc"><i> VisualCtxAreas.mat (default) | char</i></span>
+      <samp><b>ROIFileName</b></samp> - ROI filename <br>
+      <span class="title-desc"><i> VisualCtxAreas.roi (default) | character vector | string scalar</i></span>
     </button>
     <div class="content">
       <p>
-        Name of the <samp>.mat</samp> file with the labeled matrix with the ROIs extracted from the visual sign map. This file will be stored in the same folder as the input files to this function.
+        Name of the DataViewer-compatible <samp>.roi</samp> file saved in <samp>SaveFolder</samp>. Supply a filename only, without folder components. The <samp>.roi</samp> extension is appended when omitted; other extensions are rejected.
       </p>
     </div>
     <button title="click to expand" type="button" class="mycollapsible">
@@ -106,7 +126,7 @@ grand_parent: Functions
     </button>
     <div class="content">
       <p>
-        Set to <b>true</b> to use a logical mask stored in a variable named <samp>logical_mask</samp> in a <samp>.mat</samp> file. This mask is used to exclude non-pertinent areas of the visual sign map before the ROI creation.
+        Set to <b>true</b> to use a logical mask stored in a variable named <samp>logical_mask</samp> in a <samp>.mat</samp> file. The mask excludes non-pertinent areas of the visual sign map before segmentation.
       </p>
     </div>
     <button title="click to expand" type="button" class="mycollapsible">
@@ -116,9 +136,12 @@ grand_parent: Functions
     </button>
     <div class="content">
       <p>
-        Name of the file containing the logical mask.
+        Name or path of the <samp>.mat</samp> file containing <samp>logical_mask</samp>. A filename without folder components is resolved relative to <samp>SaveFolder</samp>.
       </p>
     </div>
+    <p>
+      <strong>API change:</strong> <samp>b_CreatePatches</samp> and <samp>PatchFileName</samp> have been removed. ROI creation is now always attempted, and <samp>ROIFileName</samp> controls the canonical <samp>.roi</samp> output filename.
+    </p>
     <h3>References</h3>
     <hr>
     <ol id="refs">
