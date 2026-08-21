@@ -10035,16 +10035,38 @@ classdef PipelineManager < handle
         end
 
         function tf = isFreshSaveFolder(~, saveFolder)
-            %ISFRESHSAVEFOLDER True only when the existing folder has no entries.
+            %ISFRESHSAVEFOLDER True when no processed-dataset artifacts exist.
+            %
+            % RawFolder and SaveFolder are frequently the same directory, so raw
+            % acquisition files and subfolders do not disqualify initialization.
+            % Existing image/derived data, bindings, or owned SaveFolder metadata
+            % make the folder legacy/ambiguous and retain the hard processing block.
 
+            blockedExtensions = {'.dat', '.umt', '.roi', '.umitlink'};
+            blockedNames = { ...
+                'AcqInfos.mat', ...
+                'DataParams.mat', ...
+                'events.mat', ...
+                'Text_events.mat', ...
+                'dataHistory.mat', ...
+                'pipeLog.mat', ...
+                'LogBook.mat'};
+
+            tf = true;
             entries = dir(saveFolder);
-            if isempty(entries)
-                tf = true;
-                return
-            end
+            for iEntry = 1:numel(entries)
+                if entries(iEntry).isdir
+                    continue
+                end
 
-            names = {entries.name};
-            tf = ~any(~ismember(names, {'.', '..'}));
+                entryName = entries(iEntry).name;
+                [~, ~, extension] = fileparts(entryName);
+                if any(strcmpi(entryName, blockedNames)) || ...
+                        any(strcmpi(extension, blockedExtensions))
+                    tf = false;
+                    return
+                end
+            end
         end
 
         function tf = isSetupExecutionNode(obj, nodeLocal)
@@ -14702,8 +14724,8 @@ classdef PipelineManager < handle
             %           freshSaveFolderRole - 'none',
             %               'acquisition-initializer', or
             %               'acquisition-companion'. The latter two roles are
-            %               considered only for root nodes targeting a truly
-            %               empty SaveFolder.
+            %               considered only for root nodes targeting a SaveFolder
+            %               with no recognized processed-dataset artifacts.
             %
             %   Metadata groups:
             %       info.arguments

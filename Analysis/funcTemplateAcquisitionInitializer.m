@@ -2,8 +2,9 @@ function outFiles = funcTemplateAcquisitionInitializer(RawFolder, SaveFolder)
 %FUNCTEMPLATEACQUISITIONINITIALIZER Fresh SaveFolder importer template.
 %
 %   OUTFILES = FUNCTEMPLATEACQUISITIONINITIALIZER(RAWFOLDER, SAVEFOLDER)
-%   illustrates an acquisition importer that may initialize a truly empty
-%   SAVEFOLDER. For a runnable example, RAWFOLDER must contain
+%   illustrates an acquisition importer that may initialize an unprocessed
+%   SAVEFOLDER. RAWFOLDER and SAVEFOLDER may be the same directory. For a
+%   runnable example, RAWFOLDER must contain
 %   funcTemplateAcquisition.mat with variables imageData and
 %   AcqInfoStream. The metadata must describe IMAGEData exactly.
 %
@@ -43,7 +44,7 @@ localValidateFolder(RawFolder, ...
 localValidateFolder(SaveFolder, ...
     'Umitoolbox:funcTemplateAcquisitionInitializer:InvalidSaveFolder', ...
     'SAVEFOLDER');
-localRequireEmptySaveFolder(SaveFolder);
+localRequireUninitializedSaveFolder(SaveFolder);
 
 RawFolder = char(string(RawFolder));
 SaveFolder = char(string(SaveFolder));
@@ -100,7 +101,7 @@ info = PipelineManager.addInput(info, 'RawFolder', 'RawFolder', ...
     'kind', 'input', 'position', 1, 'callType', 'positional', ...
     'isData', false);
 info = PipelineManager.addInput(info, 'SaveFolder', 'SaveFolder', ...
-    'Empty destination initialized by this importer.', ...
+    'Unprocessed destination initialized by this importer.', ...
     'kind', 'input', 'position', 2, 'callType', 'positional', ...
     'isData', false);
 
@@ -131,14 +132,27 @@ if ~isTextScalar || ~isfolder(value)
 end
 end
 
-function localRequireEmptySaveFolder(SaveFolder)
-%LOCALREQUIREEMPTYSAVEFOLDER Avoid overwriting an existing dataset.
+function localRequireUninitializedSaveFolder(SaveFolder)
+%LOCALREQUIREUNINITIALIZEDSAVEFOLDER Avoid overwriting dataset artifacts.
 
+blockedExtensions = {'.dat', '.umt', '.roi', '.umitlink'};
+blockedNames = { ...
+    'AcqInfos.mat', 'DataParams.mat', 'events.mat', 'Text_events.mat', ...
+    'dataHistory.mat', 'pipeLog.mat', 'LogBook.mat'};
 entries = dir(SaveFolder);
-names = {entries.name};
-if any(~ismember(names, {'.', '..'}))
-    error('Umitoolbox:funcTemplateAcquisitionInitializer:NonemptySaveFolder', ...
-        'This example importer requires a truly empty SAVEFOLDER.');
+for iEntry = 1:numel(entries)
+    if entries(iEntry).isdir
+        continue
+    end
+
+    entryName = entries(iEntry).name;
+    [~, ~, extension] = fileparts(entryName);
+    if any(strcmpi(entryName, blockedNames)) || ...
+            any(strcmpi(extension, blockedExtensions))
+        error('Umitoolbox:funcTemplateAcquisitionInitializer:InitializedSaveFolder', ...
+            ['This example importer requires a SAVEFOLDER with no existing ' ...
+             'processed-dataset artifacts. Raw acquisition files are allowed.']);
+    end
 end
 end
 
