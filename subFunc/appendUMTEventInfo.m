@@ -157,18 +157,17 @@ if nDimsExpected == 0
     dimSizes = [];
     return
 end
-if isscalar(value)
-    error(errID, ...
-        'Operation aborted. Scalar entry "%s" must use dimNames = {}.', ...
-        entryName);
-end
+% MATLAB represents an all-singleton array as a scalar regardless of how
+% many semantic axes it has. dimNames retains those declared dimensions.
 sz = size(value);
-nonSingletonDims = find(sz ~= 1);
-if numel(nonSingletonDims) == 1 && nonSingletonDims ~= 1
-    error(errID, ...
-        ['Operation aborted. Entry "%s" is one-dimensional but not stored ' ...
-         'as a column vector.'], ...
-        entryName);
+if nDimsExpected == 1
+    nonSingletonDims = find(sz ~= 1);
+    if isscalar(nonSingletonDims) && nonSingletonDims ~= 1
+        error(errID, ...
+            ['Operation aborted. Entry "%s" is one-dimensional but not stored ' ...
+             'as a column vector.'], ...
+            entryName);
+    end
 end
 if numel(sz) < nDimsExpected
     sz(end+1:nDimsExpected) = 1;
