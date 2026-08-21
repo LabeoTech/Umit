@@ -178,11 +178,9 @@ if nDimsExpected == 0
     valueOut = valueIn;
     return
 end
-if isscalar(valueIn)
-    error(errID, ...
-        'Operation aborted. Scalar entry "%s" must use dimNames = {}.', ...
-        entryName);
-end
+% MATLAB represents an all-singleton array as a scalar regardless of how
+% many semantic axes it has. Preserve those axes through dimNames; the size
+% normalization below extends the physical [1 1] shape as needed.
 sz = size(valueIn);
 if nDimsExpected == 1
     % Only a genuinely 1-D declared entry is ambiguous between a row and a

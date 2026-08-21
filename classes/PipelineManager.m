@@ -1695,12 +1695,14 @@ classdef PipelineManager < handle
 
                     globalStatus = "Cancelled";
                     shortErrMsg  = folderSkipMsg;
+                    longErrMsg   = folderSkipMsg;
                     outputFilesStr = "";
 
                 elseif folderWasSkipped
 
                     globalStatus = "Skipped";
                     shortErrMsg  = folderSkipMsg;
+                    longErrMsg   = folderSkipMsg;
                     outputFilesStr = "";
 
                 else
@@ -1736,6 +1738,7 @@ classdef PipelineManager < handle
                     % Build short error summary
                     % ---------------------------------------------------------
                     msgList = strings(0,1);
+                    longMsgList = strings(0,1);
 
                     if ~isempty(folderRunLog) && any(ismember(folderRunLog.Properties.VariableNames, {'Messages_short','Status'}))
                         keepMask = strcmpi(string(folderRunLog.Status), 'failed') | ...
@@ -1746,6 +1749,13 @@ classdef PipelineManager < handle
                             tmpMsgs = strip(tmpMsgs);
                             tmpMsgs = tmpMsgs(strlength(tmpMsgs) > 0);
                             msgList = [msgList; tmpMsgs(:)]; %#ok<AGROW>
+
+                            if ismember('Messages', folderRunLog.Properties.VariableNames)
+                                tmpLongMsgs = string(folderRunLog.Messages(keepMask));
+                                tmpLongMsgs = strip(tmpLongMsgs);
+                                tmpLongMsgs = tmpLongMsgs(strlength(tmpLongMsgs) > 0);
+                                longMsgList = [longMsgList; tmpLongMsgs(:)]; %#ok<AGROW>
+                            end
                         end
                     end
 
@@ -1759,14 +1769,23 @@ classdef PipelineManager < handle
                             fatalShort = folderFatalME.message;
                         end
                         msgList(end+1,1) = string(fatalShort); %#ok<AGROW>
+                        longMsgList(end+1,1) = string(getReport( ...
+                            folderFatalME, 'extended', 'hyperlinks', 'off')); %#ok<AGROW>
                     end
 
                     msgList = unique(msgList, 'stable');
+                    longMsgList = unique(longMsgList, 'stable');
 
                     if isempty(msgList)
                         shortErrMsg = "No Errors";
                     else
                         shortErrMsg = strjoin(msgList, " | ");
+                    end
+
+                    if isempty(longMsgList)
+                        longErrMsg = shortErrMsg;
+                    else
+                        longErrMsg = strjoin(longMsgList, sprintf('\n\n'));
                     end
 
                     % ---------------------------------------------------------
@@ -1796,6 +1815,7 @@ classdef PipelineManager < handle
                     {char(string(obj.RawFolderList_truncated{f}))}, ...
                     {char(globalStatus)}, ...
                     {char(shortErrMsg)}, ...
+                    {char(longErrMsg)}, ...
                     folderStartedOn, ...
                     folderFinishedOn, ...
                     folderDuration_s, ...
@@ -1805,6 +1825,7 @@ classdef PipelineManager < handle
                     'RawFolder', ...
                     'Status', ...
                     'Messages_short', ...
+                    'Messages_long', ...
                     'StartedOn', ...
                     'FinishedOn', ...
                     'Duration_s', ...

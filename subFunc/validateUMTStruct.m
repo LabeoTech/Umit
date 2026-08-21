@@ -267,11 +267,8 @@ if nDimsExpected == 0
     dimSizes = [];
     return
 end
-if isscalar(value)
-    error(errID, ...
-        'Operation aborted. Scalar entry "%s" must use dimNames = {}.', ...
-        entryName);
-end
+% A scalar value may legitimately represent several declared dimensions
+% when every dimension has length one. dimNames retains that semantic shape.
 sz = size(value);
 if nDimsExpected == 1
     % Only a genuinely 1-D declared entry is ambiguous between a row and a
