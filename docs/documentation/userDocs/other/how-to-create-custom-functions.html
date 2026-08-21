@@ -13,7 +13,9 @@ nav_order: 6
 <table><tr><th>Template</th><th>Use it when</th></tr>
 <tr><td><a href="https://github.com/labeotech/Umit/blob/master/Analysis/funcTemplate.m"><samp>funcTemplate.m</samp></a></td><td>The function receives and returns numeric data in RAM.</td></tr>
 <tr><td><a href="https://github.com/labeotech/Umit/blob/master/Analysis/funcTemplateUMT.m"><samp>funcTemplateUMT.m</samp></a></td><td>The function returns a validated UMT structure.</td></tr>
-<tr><td><a href="https://github.com/labeotech/Umit/blob/master/Analysis/funcTemplateFileManifest.m"><samp>funcTemplateFileManifest.m</samp></a></td><td>The function writes its own files and returns the files actually created.</td></tr></table>
+<tr><td><a href="https://github.com/labeotech/Umit/blob/master/Analysis/funcTemplateFileManifest.m"><samp>funcTemplateFileManifest.m</samp></a></td><td>The function writes its own files and returns the files actually created.</td></tr>
+<tr><td><a href="https://github.com/labeotech/Umit/blob/master/Analysis/funcTemplateAcquisitionInitializer.m"><samp>funcTemplateAcquisitionInitializer.m</samp></a></td><td>An acquisition importer owns <samp>AcqInfos.mat</samp> and may initialize a truly empty Save Folder.</td></tr>
+<tr><td><a href="https://github.com/labeotech/Umit/blob/master/Analysis/funcTemplateAcquisitionCompanion.m"><samp>funcTemplateAcquisitionCompanion.m</samp></a></td><td>A root side-artifact importer accompanies an initializer without owning <samp>AcqInfos.mat</samp>.</td></tr></table>
 <h2>Procedure</h2>
 <ol>
 <li>Copy the closest template to <samp>Analysis/&lt;Category&gt;/YourFunction.m</samp>. PipelineManager scans public analysis folders and uses the containing folder as the category.</li>
@@ -41,6 +43,25 @@ info = PipelineManager.addInput(info,'data','ImageTimeSeries', ...
 % outputMode='data' means return the value; PipelineManager manages persistence.
 info = PipelineManager.addOutput(info,'outData','ImageTimeSeries','data', ...
     'Scaled output.','scaleImage.dat',1,'isData',true);</code></pre>
+<h2>Initialize a fresh Save Folder</h2>
+<p>PipelineManager normally requires current acquisition metadata before executing a pipeline. A function can opt into the fresh-folder import gate by declaring one of two narrowly scoped roles. Ordinary analysis functions keep the default <samp>freshSaveFolderRole='none'</samp>.</p>
+<table><tr><th>Role</th><th>Contract</th></tr>
+<tr><td><samp>acquisition-initializer</samp></td><td>A root acquisition importer that writes authoritative image data and a valid current-schema <samp>AcqInfos.mat</samp>. It must derive metadata from raw acquisition facts.</td></tr>
+<tr><td><samp>acquisition-companion</samp></td><td>A root importer for an acquisition side artifact, such as events. It may run on a fresh folder only with one successful initializer and must not create or repair <samp>AcqInfos.mat</samp>.</td></tr>
+<tr><td><samp>none</samp></td><td>The default for processing, export, report, and other pipeline functions. It does not make a fresh folder eligible.</td></tr></table>
+<pre><code>% In the acquisition importer:
+info = PipelineManager.createPipelineInfo('importMyAcquisition', ...
+    'Import images and acquisition metadata.');
+info.freshSaveFolderRole = 'acquisition-initializer';
+
+% In a separate side-artifact function:
+info = PipelineManager.createPipelineInfo('importMyEvents', ...
+    'Import acquisition events.');
+info.freshSaveFolderRole = 'acquisition-companion';</code></pre>
+<p>Fresh means that the destination directory already exists and contains no entries. The pipeline DAG must contain exactly one root initializer. Companion roots are permitted in that DAG, and every other stream node must descend from the initializer. PipelineManager runs the initializer first and checks that it created valid current metadata before running companions or downstream analysis. If the initializer fails or leaves missing or legacy metadata, the remaining nodes do not run.</p>
+<p>The exception never applies to a non-empty folder without valid current <samp>AcqInfos.mat</samp>; that folder remains legacy or ambiguous and is blocked. PipelineManager never creates, migrates, or repairs acquisition metadata. Older saved pipelines that lack the role field use the callable function's current declaration, while an absent or unknown role remains ineligible.</p>
+<h3>Ownership checklist for fresh imports</h3>
+<ul><li>The initializer alone creates <samp>AcqInfos.mat</samp>, after successfully importing enough data to describe it.</li><li>The initializer returns success only when <samp>AcqInfos.mat</samp> contains a scalar <samp>AcqInfoStream</samp> with the current <samp>ImportedChannels</samp> registry.</li><li>A companion creates only its declared side artifact. For example, EventsManager owns <samp>events.mat</samp>.</li><li>Do not use either role to bypass metadata validation for analysis, export, or reporting functions.</li></ul>
 <h2>Complete worked example</h2>
 <pre><code>function outData = scaleImage(data,SaveFolder,varargin)
 if nargin == 1 && strcmpi(string(data),'pipelineInfo')
@@ -81,7 +102,9 @@ pm = PipelineManager(tempdir,'Missing');  % then inspect pm.funcList</code></pre
 <tr><td>Filename input fails</td><td><samp>supportsFile</samp> was declared without a tested file branch. Set it false or implement and test file streaming.</td></tr>
 <tr><td>Output is not saved</td><td>Check output mode, managed filename, leaf policy, and whether a file-manifest function returned actual relative filenames.</td></tr>
 <tr><td>UMT validation fails</td><td>Value dimensions, <samp>dimNames</samp>, labels, kind, or event information disagree.</td></tr>
-<tr><td>Wrong metadata is used</td><td>Resolve metadata from the exact data file, not the first file found in the Save Folder.</td></tr></table>
+<tr><td>Wrong metadata is used</td><td>Resolve metadata from the exact data file, not the first file found in the Save Folder.</td></tr>
+<tr><td>Fresh-folder configuration is rejected</td><td>Confirm the folder is empty, the DAG has exactly one root initializer, companions are roots, and all other stream nodes descend from the initializer.</td></tr>
+<tr><td>Fresh initialization fails at run time</td><td>The initializer failed or returned without a valid current <samp>AcqInfos.mat</samp>. Fix the importer; do not create metadata in PipelineManager or a companion.</td></tr></table>
 <h2>Final checklist</h2>
-<ul><li>Function name, filename, discovery name, and output filenames are unique and consistent.</li><li>Input positions and name-value options match the MATLAB signature.</li><li>RAM/file support describes implemented behavior.</li><li>Semantic types and output modes are accurate.</li><li>Dimensions and UMT metadata describe the returned value.</li><li>No authoritative metadata is edited by an ordinary processing function.</li><li>Direct test, discovery test, and a small PipelineManager run pass.</li></ul>
+<ul><li>Function name, filename, discovery name, and output filenames are unique and consistent.</li><li>Input positions and name-value options match the MATLAB signature.</li><li>RAM/file support describes implemented behavior.</li><li>Semantic types and output modes are accurate.</li><li>Dimensions and UMT metadata describe the returned value.</li><li><samp>freshSaveFolderRole</samp> is changed from <samp>none</samp> only for a true initializer or companion.</li><li>No authoritative metadata is edited by an ordinary processing or companion function.</li><li>Direct test, discovery test, and a small PipelineManager run pass.</li></ul>
 </body></html>

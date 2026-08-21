@@ -1449,12 +1449,36 @@ classdef PipelineManager < handle
             % -------------------------------------------------------------
             legacyFolders = {};
             legacyMessages = {};
+            freshConfigurationFolders = {};
+            freshConfigurationMessages = {};
+            freshFolderFlags = false(1, numel(obj.SaveFolderList));
+            freshPlan = obj.getFreshSaveFolderPlan();
             for f = 1:numel(obj.SaveFolderList)
                 [isLegacyFolder, legacyMessage] = isLegacySchemaFolder(obj.SaveFolderList{f});
                 if isLegacyFolder
-                    legacyFolders{end+1} = obj.SaveFolderList{f}; %#ok<AGROW>
-                    legacyMessages{end+1} = legacyMessage; %#ok<AGROW>
+                    if obj.isFreshSaveFolder(obj.SaveFolderList{f})
+                        if freshPlan.isValid
+                            freshFolderFlags(f) = true;
+                        else
+                            freshConfigurationFolders{end+1} = obj.SaveFolderList{f}; %#ok<AGROW>
+                            freshConfigurationMessages{end+1} = freshPlan.message; %#ok<AGROW>
+                        end
+                    else
+                        legacyFolders{end+1} = obj.SaveFolderList{f}; %#ok<AGROW>
+                        legacyMessages{end+1} = legacyMessage; %#ok<AGROW>
+                    end
                 end
+            end
+
+            if ~isempty(freshConfigurationFolders)
+                detailLines = strings(1, numel(freshConfigurationFolders));
+                for iF = 1:numel(freshConfigurationFolders)
+                    detailLines(iF) = sprintf('  %s\n    %s', ...
+                        freshConfigurationFolders{iF}, freshConfigurationMessages{iF});
+                end
+                error('PipelineManager:executePipeline:FreshSaveFolderNotInitializable', ...
+                    'Pipeline execution blocked for fresh SaveFolder(s):\n%s', ...
+                    strjoin(detailLines, '\n'));
             end
 
             if ~isempty(legacyFolders)
@@ -1654,8 +1678,13 @@ classdef PipelineManager < handle
                         % ---------------------------------------------------------
                         if ~folderWasCancelled
                             try
+                                freshInitializerNodeID = [];
+                                if freshFolderFlags(f)
+                                    freshInitializerNodeID = freshPlan.initializerNodeID;
+                                end
                                 folderWasCancelled = obj.runPipelineOnFolder( ...
-                                    saveFolder, rawFolder, progressFcn, cancelFcn, f, nFolders);
+                                    saveFolder, rawFolder, progressFcn, cancelFcn, f, nFolders, ...
+                                    freshInitializerNodeID);
 
                                 if folderWasCancelled
                                     obj.currentExecutionWasCancelled = true;
@@ -2791,6 +2820,9 @@ classdef PipelineManager < handle
             if ~isfield(info,'outputs');     info.outputs = struct([]);     end
             if ~isfield(info,'parameters');  info.parameters = struct([]);  end
             if ~isfield(info,'notes');       info.notes = {};               end
+            if ~isfield(info,'freshSaveFolderRole')
+                info.freshSaveFolderRole = 'none';
+            end
 
             % -----------------------------
             % Initialize runtime parameter values
@@ -8922,7 +8954,7 @@ classdef PipelineManager < handle
             end
         end
 
-        function wasCancelled = runPipelineOnFolder(obj, saveFolder, rawFolder, progressFcn, cancelFcn, folderIndex, numFolders)
+        function wasCancelled = runPipelineOnFolder(obj, saveFolder, rawFolder, progressFcn, cancelFcn, folderIndex, numFolders, freshInitializerNodeID)
             %RUNPIPELINEONFOLDER Execute the current DAG on a single SaveFolder.
             %
             %   RUNPIPELINEONFOLDER(OBJ, SAVEFOLDER, RAWFOLDER) executes the current
@@ -8970,6 +9002,11 @@ classdef PipelineManager < handle
             if nargin < 7 || isempty(numFolders)
                 numFolders = numel(obj.SaveFolderList);
             end
+            if nargin < 8
+                freshInitializerNodeID = [];
+            end
+
+            freshInitializationPending = ~isempty(freshInitializerNodeID);
 
             % -------------------------------------------------------------
             % Basic checks
@@ -9056,6 +9093,16 @@ classdef PipelineManager < handle
                 if strcmpi(node.kind,'folder')
                     obj.executionTrace(end+1) = nodeID;
                     continue
+                end
+
+                if freshInitializationPending && nodeID ~= freshInitializerNodeID
+                    initializerIdx = obj.getNodeIndexByID(freshInitializerNodeID);
+                    initializerName = obj.nodes(initializerIdx).name;
+                    error('PipelineManager:runPipelineOnFolder:FreshInitializationFailed', ...
+                        ['Fresh SaveFolder initialization did not complete successfully in step "%s". ' ...
+                         'No companion or downstream step will be executed until an acquisition importer ' ...
+                         'successfully creates current AcqInfos.mat metadata.'], ...
+                        char(string(initializerName)));
                 end
 
                 stepCounter = stepCounter + 1;
@@ -9187,6 +9234,17 @@ classdef PipelineManager < handle
 
                 try
                     [consumedKeys, createdFiles] = executeAndRegisterStep(node, saveFolder, rawFolder);
+
+                    if nodeID == freshInitializerNodeID
+                        [metadataStillInvalid, metadataMessage] = isLegacySchemaFolder(saveFolder);
+                        if metadataStillInvalid
+                            error('PipelineManager:runPipelineOnFolder:FreshInitializationFailed', ...
+                                ['Acquisition importer "%s" returned without creating valid current ' ...
+                                 'AcqInfos.mat metadata. %s'], ...
+                                char(string(node.name)), metadataMessage);
+                        end
+                        freshInitializationPending = false;
+                    end
 
                 catch ME
 
@@ -9827,6 +9885,120 @@ classdef PipelineManager < handle
                     obj.decrementConsumers(keys{kk});
                 end
             end
+        end
+
+        function plan = getFreshSaveFolderPlan(obj)
+            %GETFRESHSAVEFOLDERPLAN Validate whether the DAG may initialize an empty folder.
+
+            plan = struct( ...
+                'isValid', false, ...
+                'initializerNodeID', [], ...
+                'message', '');
+
+            if isempty(obj.nodes)
+                plan.message = 'The pipeline is empty.';
+                return
+            end
+
+            streamMask = arrayfun(@(n) isfield(n, 'kind') && strcmpi(n.kind, 'stream'), obj.nodes);
+            streamNodes = obj.nodes(streamMask);
+            initializerIDs = zeros(1, 0);
+            companionIDs = zeros(1, 0);
+
+            for iNode = 1:numel(streamNodes)
+                role = obj.resolveFreshSaveFolderRole(streamNodes(iNode));
+                switch role
+                    case 'acquisition-initializer'
+                        initializerIDs(end+1) = streamNodes(iNode).id; %#ok<AGROW>
+                    case 'acquisition-companion'
+                        companionIDs(end+1) = streamNodes(iNode).id; %#ok<AGROW>
+                end
+            end
+
+            if numel(initializerIDs) ~= 1
+                plan.message = sprintf( ...
+                    ['A fresh SaveFolder requires exactly one root acquisition initializer; ' ...
+                     'the current pipeline declares %d.'], numel(initializerIDs));
+                return
+            end
+
+            initializerID = initializerIDs(1);
+            hasConnections = ~isempty(obj.connections) && ...
+                isfield(obj.connections, 'targetNodeID');
+            if hasConnections && any([obj.connections.targetNodeID] == initializerID)
+                plan.message = 'The acquisition initializer must be a root stream node.';
+                return
+            end
+
+            for iCompanion = 1:numel(companionIDs)
+                if hasConnections && ...
+                        any([obj.connections.targetNodeID] == companionIDs(iCompanion))
+                    plan.message = 'Fresh-folder acquisition companions must be root stream nodes.';
+                    return
+                end
+            end
+
+            for iNode = 1:numel(streamNodes)
+                nodeID = streamNodes(iNode).id;
+                if nodeID == initializerID || ismember(nodeID, companionIDs)
+                    continue
+                end
+
+                upstreamNodes = obj.getUpstreamNodes(nodeID);
+                if isempty(upstreamNodes) || ~any([upstreamNodes.id] == initializerID)
+                    plan.message = sprintf( ...
+                        ['Step "%s" is independent of the acquisition initializer. Every non-companion ' ...
+                         'stream step in a fresh-folder pipeline must descend from that initializer.'], ...
+                        char(string(streamNodes(iNode).name)));
+                    return
+                end
+            end
+
+            plan.isValid = true;
+            plan.initializerNodeID = initializerID;
+            plan.message = '';
+        end
+
+        function role = resolveFreshSaveFolderRole(obj, nodeLocal)
+            %RESOLVEFRESHSAVEFOLDERROLE Resolve and validate a node's declared role.
+
+            role = 'none';
+            candidate = '';
+
+            if isfield(nodeLocal, 'info') && isstruct(nodeLocal.info) && ...
+                    isfield(nodeLocal.info, 'freshSaveFolderRole')
+                candidate = char(string(nodeLocal.info.freshSaveFolderRole));
+            else
+                % Pipelines saved before this contract existed do not carry the
+                % field. Resolve it from the callable's current pipelineInfo.
+                try
+                    currentInfo = obj.getPipelineInfo(obj.getCallableFuncName(nodeLocal));
+                    if isfield(currentInfo, 'freshSaveFolderRole')
+                        candidate = char(string(currentInfo.freshSaveFolderRole));
+                    end
+                catch
+                    candidate = '';
+                end
+            end
+
+            candidate = lower(strtrim(candidate));
+            if any(strcmp(candidate, ...
+                    {'none', 'acquisition-initializer', 'acquisition-companion'}))
+                role = candidate;
+            end
+        end
+
+        function tf = isFreshSaveFolder(~, saveFolder)
+            %ISFRESHSAVEFOLDER True only when the existing folder has no entries.
+
+            entries = dir(saveFolder);
+            if isempty(entries)
+                tf = true;
+                return
+            end
+
+            names = {entries.name};
+            tf = ~any(~ismember(names, {'.', '..'}));
         end
 
         function tf = isSetupExecutionNode(obj, nodeLocal)
@@ -14412,6 +14584,11 @@ classdef PipelineManager < handle
             %           parameters
             %           outputs
             %           notes
+            %           freshSaveFolderRole - 'none',
+            %               'acquisition-initializer', or
+            %               'acquisition-companion'. The latter two roles are
+            %               considered only for root nodes targeting a truly
+            %               empty SaveFolder.
             %
             %   Metadata groups:
             %       info.arguments
@@ -14488,6 +14665,7 @@ classdef PipelineManager < handle
             info.version     = '1.0.0';
             info.description = char(string(description));
             info.supportsPreflight = false;
+            info.freshSaveFolderRole = 'none';
 
             % Legacy analysis functions may use a single positional opts struct instead
             % of regular name-value parameters.
