@@ -20,16 +20,15 @@ function outData = run_Ana_Speckle(SaveFolder, data, varargin)
 %       'SpeckleFileName' - Basename or filename of the speckle input.
 %
 %   Output:
-%       outData         - Standard mode: UMT struct wrapping a Y x X x
-%                         (T-1) array (see Ana_Speckle). Low-RAM mode:
-%                         output filename.
+%       outData         - Standard mode: single Y x X x T blood-flow array.
+%                         Low-RAM mode: full path to the raw Flow.dat output.
 %
 %   Notes:
 %       - The legacy metaData output has been removed. File opening and
 %         metadata resolution are handled through loadMetaData(...).
 
 % Default output for pipeline management.
-default_Output = 'Flow.umt';
+default_Output = 'Flow.dat';
 
 if nargin == 1 && (ischar(SaveFolder) || (isstring(SaveFolder) && isscalar(SaveFolder))) && ...
         strcmpi(strtrim(char(string(SaveFolder))), 'pipelineInfo')
@@ -133,10 +132,11 @@ fprintf('Finished Ana_Speckle.\n');
             'outData', ...
             {'ImageTimeSeries', 'ProcessedData'}, ...
             'data', ...
-            'Blood-flow output from Ana_Speckle: a UMT struct wrapping a Y x X x (T-1) array.', ...
+            'Blood-flow output from Ana_Speckle: a single Y x X x T image time series.', ...
             default_Output, ...
             1, ...
-            'isData', true);
+            'isData', true, ...
+            'saveFileName', default_Output);
     end
 end
 
