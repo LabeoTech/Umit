@@ -9623,13 +9623,29 @@ classdef PipelineManager < handle
 
                 funcName = obj.getCallableFuncName(stepNode);
 
+                outputsLocal = struct([]);
                 if isfield(stepNode.info,'outputs') && ~isempty(stepNode.info.outputs)
-                    nOut = numel(unique({stepNode.info.outputs.name}, 'stable'));
-                else
-                    nOut = 0;
+                    outputsLocal = stepNode.info.outputs;
                 end
 
-                outCell = cell(1, nOut);
+                % Outputs default to ordinary MATLAB return values. A modern
+                % non-DATA file output may instead describe folder-level file
+                % effects that the function creates or modifies by side effect.
+                % Those declarations remain available for runtime reporting but
+                % must not increase the number of values requested from the
+                % callable function.
+                returnsValueMask = true(1, numel(outputsLocal));
+                for iDeclaredOutput = 1:numel(outputsLocal)
+                    if isfield(outputsLocal(iDeclaredOutput), 'returnsValue') && ...
+                            ~isempty(outputsLocal(iDeclaredOutput).returnsValue)
+                        returnsValueMask(iDeclaredOutput) = logical( ...
+                            outputsLocal(iDeclaredOutput).returnsValue);
+                    end
+                end
+
+                returnedOutputIndices = find(returnsValueMask);
+                nOut = numel(returnedOutputIndices);
+                returnedValues = cell(1, nOut);
                 f = str2func(funcName);
 
                 obj.throwIfExecutionCancelled(cancelFcn, progressFcn, 'before function execution', ...
@@ -9640,14 +9656,16 @@ classdef PipelineManager < handle
 
                 if nOut == 0
                     f(posArgs{:}, nvArgs{:});
-                    outCell = {};
                 else
                     if isfield(stepNode.info,'legacyOpts') && stepNode.info.legacyOpts
-                        [outCell{:}] = f(posArgs{:});
+                        [returnedValues{:}] = f(posArgs{:});
                     else
-                        [outCell{:}] = f(posArgs{:}, nvArgs{:});
+                        [returnedValues{:}] = f(posArgs{:}, nvArgs{:});
                     end
                 end
+
+                outCell = cell(1, numel(outputsLocal));
+                outCell(returnedOutputIndices) = returnedValues;
 
                 createdFilesLocal = obj.registerOutputs(stepNode, outCell, saveFolderLocal);
                 appendCurrentOutFiles(createdFilesLocal);
@@ -11540,7 +11558,10 @@ classdef PipelineManager < handle
             %       - outputMode = 'data' -> function returns data in RAM or one
             %                                existing backing filename
             %       - outputMode = 'file' -> function returns filename(s) that already
-            %                                exist on disk
+            %                                exist on disk, unless returnsValue=false
+            %       - returnsValue=false   -> a non-DATA file-effect declaration;
+            %                                defOutfilename names or patterns are
+            %                                resolved after successful execution
             %
             %   For outputMode = 'file':
             %       - The returned value must be text-like (char/string/cellstr)
@@ -11637,7 +11658,7 @@ classdef PipelineManager < handle
             % ---------------------------------------------------------
             % Case B: Standard outputs
             % ---------------------------------------------------------
-            n = min(numel(outputsLocal), numel(outCell));
+            n = numel(outputsLocal);
 
             for iOut = 1:n
 
@@ -11655,6 +11676,11 @@ classdef PipelineManager < handle
 
                 isDataOutputLocal = isfield(outDef,'isData') && ~isempty(outDef.isData) && logical(outDef.isData);
 
+                returnsValueLocal = true;
+                if isfield(outDef, 'returnsValue') && ~isempty(outDef.returnsValue)
+                    returnsValueLocal = logical(outDef.returnsValue);
+                end
+
                 % Non-DATA file outputs are folder-level artifacts. Register them
                 % so setup steps such as getEvents are logged and can contribute
                 % dataHistory entries, but continue to ignore non-DATA non-file
@@ -11665,7 +11691,10 @@ classdef PipelineManager < handle
 
                 outName = char(string(outDef.name));
                 key     = obj.makeKey(nodeIDLocal, outName);
-                val     = outCell{iOut};
+                val     = [];
+                if returnsValueLocal && iOut <= numel(outCell)
+                    val = outCell{iOut};
+                end
 
                 rec = struct( ...
                     'ramValue', [], ...
@@ -11678,7 +11707,12 @@ classdef PipelineManager < handle
                 % =====================================================
                 if strcmpi(outputModeLocal, 'file')
 
-                    fileList = localNormalizeReturnedFileList(val, nodeLocal, outName);
+                    if returnsValueLocal
+                        fileList = localNormalizeReturnedFileList(val, nodeLocal, outName);
+                    else
+                        fileList = localResolveDeclaredFileEffects( ...
+                            folder, outDef, nodeLocal, outName);
+                    end
                     if isempty(fileList)
                         error('PipelineManager:registerOutputs:MissingFileOutput', ...
                             ['Node "%s" output "%s" has outputMode="file" but returned no filename.\n' ...
@@ -11819,6 +11853,49 @@ classdef PipelineManager < handle
 
                 fileListOut = strip(fileListOut(:));
                 fileListOut = fileListOut(strlength(fileListOut) > 0);
+            end
+
+            function fileListOut = localResolveDeclaredFileEffects(folderIn, outDefIn, nodeIn, outNameIn)
+                %LOCALRESOLVEDECLAREDFILEEFFECTS Expand non-returned file declarations.
+
+                if ~isfield(outDefIn, 'defOutfilename') || ...
+                        isempty(outDefIn.defOutfilename)
+                    error('PipelineManager:registerOutputs:MissingFileEffectDeclaration', ...
+                        ['Node "%s" output "%s" has returnsValue=false but does not ' ...
+                         'declare defOutfilename.'], ...
+                        char(string(nodeIn.name)), outNameIn);
+                end
+
+                declared = string(outDefIn.defOutfilename);
+                declared = strip(declared(:));
+                declared = declared(strlength(declared) > 0);
+                if isempty(declared)
+                    error('PipelineManager:registerOutputs:MissingFileEffectDeclaration', ...
+                        ['Node "%s" output "%s" has returnsValue=false but does not ' ...
+                         'declare defOutfilename.'], ...
+                        char(string(nodeIn.name)), outNameIn);
+                end
+
+                fileListOut = strings(0,1);
+                for iDeclared = 1:numel(declared)
+                    token = char(declared(iDeclared));
+                    if contains(token, '*') || contains(token, '?')
+                        matches = dir(fullfile(folderIn, token));
+                        matches = matches(~[matches.isdir]);
+                        if isempty(matches)
+                            error('PipelineManager:registerOutputs:MissingDeclaredFileEffect', ...
+                                ['Node "%s" output "%s" declared file pattern "%s", ' ...
+                                 'but it matched no files after execution.'], ...
+                                char(string(nodeIn.name)), outNameIn, token);
+                        end
+                        fileListOut = [fileListOut; string({matches.name}).']; %#ok<AGROW>
+                    else
+                        [~, folderBoundName] = localResolveReturnedFile(folderIn, token);
+                        fileListOut(end+1,1) = folderBoundName; %#ok<AGROW>
+                    end
+                end
+
+                fileListOut = unique(fileListOut, 'stable');
             end
 
             function [fullPathOut, folderBoundNameOut] = localResolveReturnedFile(folderIn, fileTokenIn)
@@ -14633,8 +14710,7 @@ classdef PipelineManager < handle
             %               name
             %               type
             %               outputMode     - 'data' if the function returns data;
-            %                                'file' if the function returns filename(s)
-            %                                for files it created.
+            %                                'file' for function-owned files.
             %               description
             %               defOutfilename - Default output filename metadata.
             %               position
@@ -14642,6 +14718,9 @@ classdef PipelineManager < handle
             %                                DATA-flow graph.
             %               saveFileName   - PipelineManager-managed save target for
             %                                DATA outputs.
+            %               returnsValue   - False only when a non-DATA file output
+            %                                describes file effects instead of a
+            %                                MATLAB return value.
             %
             %   Notes:
             %       - supportsFile and dataMode are input-only concepts.
@@ -14707,7 +14786,8 @@ classdef PipelineManager < handle
                 'defOutfilename', {}, ...
                 'position', {}, ...
                 'isData', {}, ...
-                'saveFileName', {} );
+                'saveFileName', {}, ...
+                'returnsValue', {} );
 
             info.notes = {};
 
@@ -14929,7 +15009,7 @@ classdef PipelineManager < handle
             %       description, defOutfilename, position)
             %
             %   info = PipelineManager.addOutput(..., 'isData', tf, ...
-            %       'saveFileName', fileName)
+            %       'saveFileName', fileName, 'returnsValue', tf)
             %
             %   Inputs:
             %       info           - pipelineInfo struct created by createPipelineInfo.
@@ -14947,6 +15027,10 @@ classdef PipelineManager < handle
             %       isData         - Logical scalar. Default: true.
             %       saveFileName   - Default PipelineManager-managed save target.
             %                        Default: ''.
+            %       returnsValue   - Whether the callable function returns a MATLAB
+            %                        value for this declaration. Default: true.
+            %                        False is reserved for non-DATA file effects
+            %                        resolved from defOutfilename after execution.
             %
             %   Notes:
             %       - For file-manifest outputs, this method stores ONE logical
@@ -14960,10 +15044,12 @@ classdef PipelineManager < handle
             p = inputParser;
             addParameter(p, 'isData', true, @(x) islogical(x) && isscalar(x));
             addParameter(p, 'saveFileName', '', @(x) ischar(x) || (isstring(x) && isscalar(x)));
+            addParameter(p, 'returnsValue', true, @(x) islogical(x) && isscalar(x));
             parse(p, varargin{:});
 
             isData = p.Results.isData;
             saveFileName = char(string(p.Results.saveFileName));
+            returnsValue = p.Results.returnsValue;
 
             % -------------------------------------------------------------
             % Normalize NAME
@@ -15011,6 +15097,12 @@ classdef PipelineManager < handle
             if ~ismember(outputMode, validOutModes)
                 error('addOutput:InvalidOutputMode', ...
                     'outputMode must be one of: %s', strjoin(validOutModes, ', '));
+            end
+
+            if ~returnsValue && (~strcmp(outputMode, 'file') || isData)
+                error('addOutput:InvalidNonReturningOutput', ...
+                    ['returnsValue=false is valid only for outputMode="file", ' ...
+                     'isData=false declarations.']);
             end
 
             % -------------------------------------------------------------
@@ -15116,7 +15208,8 @@ classdef PipelineManager < handle
                 'defOutfilename', {defOutValue}, ...
                 'position', position, ...
                 'isData', logical(isData), ...
-                'saveFileName', saveFileName);
+                'saveFileName', saveFileName, ...
+                'returnsValue', logical(returnsValue));
 
             if ~isfield(info, 'outputs') || isempty(info.outputs)
                 info.outputs = newOutput;
