@@ -38,10 +38,10 @@ function varargout = run_HemoCompute(SaveFolder, data, varargin)
 %       outFile           - With one requested output, returns a
 %                           {HbOFile,HbRFile} manifest of the names written
 %                           into SaveFolder, in both execution modes.
-%       HbO, HbR          - With two requested outputs, returns whatever
-%                           HemoCompute produced: numeric YXT arrays in
-%                           standard mode, backing filenames in RAM-safe
-%                           mode. This is the form PipelineManager uses.
+%       HbOFile, HbRFile  - With two requested outputs, returns the two
+%                           backing filenames in both execution modes. Load
+%                           those files, or call HemoCompute directly, when
+%                           numeric arrays are required.
 
 % Default outputs for pipeline management.
 default_Output = {'HbO.dat', 'HbR.dat'}; 
@@ -103,7 +103,7 @@ opticalInfo = localResolveOpticalInfo(SaveFolder, illumination, filterSet);
 localWarnUnusedDataInput(data, b_lowRAMmode, opticalInfo);
 
 try
-    [HbO, HbR] = HemoCompute( ...
+    [~, ~] = HemoCompute( ...
         SaveFolder, ...
         SaveFolder, ...
         filterSet, ...
@@ -120,18 +120,11 @@ catch ME
     throw(ME)
 end
 
+writtenOutputs = localConfirmWrittenOutputs(SaveFolder, default_Output);
 if nargout <= 1
-    if b_lowRAMmode
-        % RAM-safe mode: HemoCompute already returns the backing filenames.
-        varargout{1} = {HbO, HbR};
-    else
-        % Standard mode: HemoCompute returns the numeric arrays and writes
-        % them into SaveFolder under the declared names. Confirm the files
-        % before reporting them, instead of returning the literals blindly.
-        varargout{1} = localConfirmWrittenOutputs(SaveFolder, default_Output);
-    end
+    varargout{1} = writtenOutputs;
 elseif nargout == 2
-    varargout = {HbO, HbR};
+    varargout = writtenOutputs;
 else
     error('Umitoolbox:run_HemoCompute:TooManyOutputs', ...
         'run_HemoCompute supports at most two outputs.');
@@ -275,7 +268,7 @@ warning('Umitoolbox:run_HemoCompute:DataInputNotConsumed', ...
 end
 
 function outFiles = localConfirmWrittenOutputs(SaveFolder, expectedFiles)
-%LOCALCONFIRMWRITTENOUTPUTS Verify the standard-mode outputs reached disk.
+%LOCALCONFIRMWRITTENOUTPUTS Verify the declared outputs reached disk.
 
 outFiles = cellstr(string(expectedFiles));
 missing = outFiles(~cellfun(@(f) isfile(fullfile(SaveFolder, f)), outFiles));
