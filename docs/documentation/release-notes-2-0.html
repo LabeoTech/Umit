@@ -79,6 +79,9 @@ reference these functions must be rebuilt.</p>
 <h3>Removed capabilities</h3>
 <ul>
   <li><samp>HemoCompute</samp> no longer accepts four-dimensional <samp>{E,Y,X,T}</samp> input.</li>
+  <li>Two-output <samp>run_HemoCompute</samp> calls now return the backing filenames
+  <samp>HbO.dat</samp> and <samp>HbR.dat</samp> in every RAM mode. Use <samp>loadData</samp> or call
+  the lower-level <samp>HemoCompute</samp> directly when numeric arrays are required.</li>
   <li><samp>SpeckleMapping</samp> no longer accepts numeric-array input.</li>
   <li><samp>apply_aggregate_function</samp> no longer supports <samp>mode</samp>, a list of multiple
   dimensions, or the previous <samp>E</samp> semantics.</li>
@@ -94,7 +97,8 @@ reference these functions must be rebuilt.</p>
 
 <h3>Files and metadata</h3>
 <ul>
-  <li><samp>&lt;base&gt;_corrected.dat</samp> became <samp>fluoHemoCorr.dat</samp>.</li>
+  <li>The <samp>run_HemoCorrection</samp> wrapper writes <samp>hemoCorr_fluo.dat</samp> in every
+  file-returning mode; <samp>fluoHemoCorr.dat</samp> remains an internal legacy-core name.</li>
   <li><samp>tform.mat</samp> became <samp>tformDualCam.mat</samp>.</li>
   <li>Several previous <samp>.dat</samp> plus <samp>.mat</samp> result pairs are now self-describing
   <samp>.umt</samp> files.</li>
