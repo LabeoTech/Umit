@@ -8737,6 +8737,54 @@ classdef PipelineManager < handle
                 return
             end
 
+            % A file-returning Analysis function may already have written the
+            % planned leaf and registerOutputs may already have recorded that
+            % exact permanent file. Do not send those outputs through the disk
+            % collision check again: the file is owned by this execution, not a
+            % foreign pre-existing collision.
+            alreadyPersisted = false(numel(dataOutIdx), 1);
+            for k = 1:numel(dataOutIdx)
+                outName = char(string(node.info.outputs(dataOutIdx(k)).name));
+                key = obj.makeKey(node.id, outName);
+
+                if isempty(obj.dataStore) || ~isa(obj.dataStore, 'containers.Map') || ...
+                        ~obj.dataStore.isKey(key)
+                    continue
+                end
+
+                rec = obj.dataStore(key);
+                hasPermanentFile = isfield(rec, 'fileName') && ...
+                    strlength(strtrim(string(rec.fileName))) > 0 && ...
+                    isfield(rec, 'isTemp') && ~logical(rec.isTemp);
+                if ~hasPermanentFile
+                    continue
+                end
+
+                registeredPath = char(string(rec.fileName));
+                plannedPath = fullfile(saveFolder, char(requested(k)));
+                if ~isfile(registeredPath) || ~isfile(plannedPath)
+                    continue
+                end
+
+                [registeredOK, registeredInfo] = fileattrib(registeredPath);
+                [plannedOK, plannedInfo] = fileattrib(plannedPath);
+                if registeredOK && plannedOK && ...
+                        strcmpi(string(registeredInfo.Name), string(plannedInfo.Name))
+                    alreadyPersisted(k) = true;
+                end
+            end
+
+            if any(alreadyPersisted)
+                savedFiles = requested(alreadyPersisted);
+            end
+
+            dataOutIdx = dataOutIdx(~alreadyPersisted);
+            requested = requested(~alreadyPersisted);
+            if isempty(dataOutIdx)
+                savedFiles = unique(string(savedFiles(:)), 'stable');
+                return
+            end
+
             % Names should already be resolved by getExecutionPlan. This guard is
             % kept as a last line of defense when this method is called outside a
             % normal executePipeline run.
@@ -8753,12 +8801,14 @@ classdef PipelineManager < handle
                 overrideFileNames.(outFld) = char(fixedNames(k));
             end
 
-            savedFiles = obj.saveNodeDataOutputs( ...
+            newlySavedFiles = obj.saveNodeDataOutputs( ...
                 node, ...
                 saveFolder, ...
                 'overrideFileNames', overrideFileNames, ...
                 'skipIfAlreadySaved', false, ...
                 'updateDataHistoryOnMove', true);
+
+            savedFiles = [savedFiles; string(newlySavedFiles(:))];
 
             if ~isempty(savedFiles)
                 savedFiles = unique(string(savedFiles(:)), 'stable');

@@ -31,7 +31,7 @@ function outData = run_HemoCorrection(data, SaveFolder, varargin)
 %
 %   Output:
 %       - standard mode: corrected fluorescence array
-%       - low-RAM mode : corrected fluorescence filename
+%       - low-RAM mode : hemoCorr_fluo.dat
 
 % Default output for pipeline management:
 default_Output = 'hemoCorr_fluo.dat'; 
@@ -129,6 +129,11 @@ switch lower(algorithm)
             'Unknown correction algorithm "%s".', algorithm);
 end
 
+if ischar(outData) || (isstring(outData) && isscalar(outData))
+    outData = localNormalizeFileOutput( ...
+        SaveFolder, outData, default_Output);
+end
+
 fprintf('Finished hemodynamic correction.\n');
 
     function info = localPipelineInfo()
@@ -218,6 +223,32 @@ fprintf('Finished hemodynamic correction.\n');
             1, ...
             'isData', true);
     end
+end
+
+function outFile = localNormalizeFileOutput(SaveFolder, producedFile, canonicalFile)
+%LOCALNORMALIZEFILEOUTPUT Move a core-produced file to the wrapper contract.
+
+producedFile = char(string(producedFile));
+if isfile(producedFile)
+    sourcePath = producedFile;
+else
+    sourcePath = fullfile(SaveFolder, producedFile);
+end
+destinationPath = fullfile(SaveFolder, canonicalFile);
+
+assert(isfile(sourcePath), ...
+    'Umitoolbox:run_HemoCorrection:MissingOutputFile', ...
+    'Hemodynamic correction did not write the reported output file: %s', ...
+    sourcePath);
+
+if ~strcmpi(string(sourcePath), string(destinationPath))
+    [moveOk, moveMsg] = movefile(sourcePath, destinationPath, 'f');
+    assert(moveOk, 'Umitoolbox:run_HemoCorrection:OutputMoveFailed', ...
+        'Failed to move "%s" onto "%s": %s', ...
+        sourcePath, destinationPath, moveMsg);
+end
+
+outFile = canonicalFile;
 end
 
 function refFile = localResolveReferenceFile(SaveFolder, channelTag)
