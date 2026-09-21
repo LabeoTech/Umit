@@ -34,6 +34,7 @@ classdef EventsManager < handle
         eventNameList cell % List of event/condition names.
         baselinePeriod single {mustBePositive} % Trial baseline duration in seconds used for event-based trial splitting.
         selectedEvents logical % Logical event-selection vector with the same size as eventID (true = keep, false = ignore).
+        PurgedEvents logical % Logical event-purge vector with the same size as eventID (true = excluded from trial-boundary/timing computation, not just from output).
         b_isDigital logical = false; % TRUE for digital stimulation when OiS200 is the master trigger source.
         minTrigAmp single {mustBePositive} = .15; % Minimal signal amplitude in volts used when trigThr is 'auto'. Ignored otherwise.
         EventFileName char % Name of the event file containing event information (.csv, .txt, .vpixx, ...).
@@ -261,7 +262,12 @@ classdef EventsManager < handle
             assert(~isempty(obj.state), ...
                 'Failed to set trial interval. No triggers detected yet.');
 
-            tm_on = obj.timestamps(obj.state);
+            if isempty(obj.PurgedEvents) || ~islogical(obj.PurgedEvents) || ...
+                    ~isequal(size(obj.PurgedEvents), size(obj.state))
+                obj.PurgedEvents = false(size(obj.state));
+            end
+
+            tm_on = obj.timestamps(obj.state & ~obj.PurgedEvents);
             assert(~isempty(tm_on), ...
                 'Failed to set baseline period. No trigger onset timestamps available.');
 
@@ -566,6 +572,7 @@ classdef EventsManager < handle
             obj.eventID = [];
             obj.eventNameList = {};
             obj.selectedEvents = [];
+            obj.PurgedEvents = [];
             obj.triggerTrimInfo = struct( ...
                 'nLeadDropped', 0, ...
                 'nTrailDropped', 0, ...
@@ -630,6 +637,7 @@ classdef EventsManager < handle
             if isempty(obj.timestamps)
                 obj.trigThr = trigThr_orig;
                 obj.selectedEvents = [];
+                obj.PurgedEvents = [];
                 return
             end
 
@@ -640,6 +648,7 @@ classdef EventsManager < handle
             obj.eventID = obj.eventID(indx);
 
             obj.selectedEvents = true(size(obj.eventID));
+            obj.PurgedEvents = false(size(obj.eventID));
 
             if obj.b_isDigital
                 eventOrder = obj.AcqInfo.Events_Order(:);
@@ -682,6 +691,7 @@ classdef EventsManager < handle
             end
 
             obj.selectedEvents = true(size(obj.eventID));
+            obj.PurgedEvents = false(size(obj.eventID));
 
             errID = 'Umitoolbox:EventsManager:IncompatibleArraySizes';
             msg = 'IncompatibleArraySizes: eventID, state, and timestamps must have the same length.';
@@ -763,6 +773,7 @@ classdef EventsManager < handle
             %       .repetitionID     - Consecutive repetition indices.
             %       .eventNameList    - {'extSignal'}
             %       .selectedEvents   - Logical array with the same size as eventID.
+            %       .PurgedEvents     - Logical array with the same size as eventID.
             %       .trigThr          - Trigger threshold used for detection.
             %       .trigType         - Trigger type used for detection.
             %       .sr               - Input sampling rate.
@@ -801,6 +812,7 @@ classdef EventsManager < handle
             eventIDOrig = obj.eventID;
             eventNameListOrig = obj.eventNameList;
             selectedEventsOrig = obj.selectedEvents;
+            PurgedEventsOrig = obj.PurgedEvents;
             baselinePeriodOrig = obj.baselinePeriod;
             triggerTrimInfoOrig = obj.triggerTrimInfo;
             bHasExternalSignalOrig = obj.b_hasExternalSignal;
@@ -831,6 +843,7 @@ classdef EventsManager < handle
                     eventID = zeros(0,1,'uint16');
                     repetitionID = zeros(0,1,'uint16');
                     selectedEvents = [];
+                    PurgedEvents = [];
                     baselinePeriod = [];
                 else
                     eventID = ones(numel(timestamps), 1, 'uint16');
@@ -840,6 +853,7 @@ classdef EventsManager < handle
                     repetitionID = repetitionID(1:numel(eventID));
 
                     selectedEvents = true(size(eventID));
+                    PurgedEvents = false(size(eventID));
                     baselinePeriod = [];
                 end
 
@@ -850,6 +864,7 @@ classdef EventsManager < handle
                 out.repetitionID = repetitionID;
                 out.eventNameList = {'extSignal'};
                 out.selectedEvents = selectedEvents;
+                out.PurgedEvents = PurgedEvents;
                 out.trigThr = lastTrigThr;
                 out.trigType = obj.trigType;
                 out.sr = sr;
@@ -864,6 +879,7 @@ classdef EventsManager < handle
                 obj.eventID = out.eventID;
                 obj.eventNameList = out.eventNameList;
                 obj.selectedEvents = out.selectedEvents;
+                obj.PurgedEvents = out.PurgedEvents;
                 obj.trigThr = out.trigThr;
                 obj.triggerTrimInfo = out.triggerTrimInfo;
                 obj.baselinePeriod = out.baselinePeriod;
@@ -920,6 +936,7 @@ classdef EventsManager < handle
                 obj.eventID = eventIDOrig;
                 obj.eventNameList = eventNameListOrig;
                 obj.selectedEvents = selectedEventsOrig;
+                obj.PurgedEvents = PurgedEventsOrig;
                 obj.baselinePeriod = baselinePeriodOrig;
                 obj.triggerTrimInfo = triggerTrimInfoOrig;
                 obj.b_hasExternalSignal = bHasExternalSignalOrig;
@@ -1436,11 +1453,12 @@ classdef EventsManager < handle
             obj.eventID = evID;
             obj.eventNameList = evNames;
             obj.selectedEvents = true(size(obj.eventID));
+            obj.PurgedEvents = false(size(obj.eventID));
 
             status = true;
         end
 
-        function removeCondition(obj, conditionName)
+        function removeCondition(obj, conditionName, varargin)
             %REMOVECONDITION Ignore all repetitions of a condition.
             %
             % This method marks all events belonging to the selected condition as
@@ -1451,11 +1469,27 @@ classdef EventsManager < handle
             %   conditionName : char | string scalar
             %       Name of the condition to ignore. Matching is case-insensitive.
             %
+            % Name-Value Pair:
+            %   'Purge' (scalar logical, default = false):
+            %       When true, the condition is also excluded from trial-boundary/
+            %       timing computation in "getFrameMatrix" (its timestamps no longer
+            %       act as a boundary for a neighboring trial). Use this only for
+            %       events that are not real stimuli (e.g. a device-required
+            %       "baseline" placeholder). When false (default), behavior is
+            %       unchanged: the condition is dropped from analysis output but its
+            %       timing still bounds neighboring trials.
+            %
             % Notes:
             %   - Both ON and OFF transitions of the selected condition are ignored.
             %   - If all conditions become ignored, a warning is raised.
 
-            conditionName = convertStringsToChars(conditionName);
+            p = inputParser;
+            addRequired(p, 'conditionName', @(x) ischar(x) || isStringScalar(x));
+            addParameter(p, 'Purge', false, @(x) islogical(x) && isscalar(x));
+            parse(p, conditionName, varargin{:});
+
+            conditionName = convertStringsToChars(p.Results.conditionName);
+            bPurge = p.Results.Purge;
 
             if ~obj.validateCondition(conditionName)
                 return
@@ -1464,14 +1498,23 @@ classdef EventsManager < handle
             condID = find(strcmpi(conditionName, obj.eventNameList), 1, 'first');
             obj.selectedEvents(obj.eventID == condID) = false;
 
-            fprintf('Condition "%s" will be ignored!\n', obj.eventNameList{condID})
+            if bPurge
+                if isempty(obj.PurgedEvents) || ~islogical(obj.PurgedEvents) || ...
+                        ~isequal(size(obj.PurgedEvents), size(obj.eventID))
+                    obj.PurgedEvents = false(size(obj.eventID));
+                end
+                obj.PurgedEvents(obj.eventID == condID) = true;
+                fprintf('Condition "%s" will be purged and excluded from trial timing!\n', obj.eventNameList{condID})
+            else
+                fprintf('Condition "%s" will be ignored!\n', obj.eventNameList{condID})
+            end
 
             if ~any(obj.selectedEvents)
                 warning('All conditions were ignored. Data splitting by events will be impossible!')
             end
         end
 
-        function removeRepetition(obj, conditionName, repetitionIndex)
+        function removeRepetition(obj, conditionName, repetitionIndex, varargin)
             %REMOVEREPETITION Ignore one or more repetitions from a condition.
             %
             % This method marks selected repetitions from a given condition as ignored
@@ -1483,6 +1526,13 @@ classdef EventsManager < handle
             %   repetitionIndex  : positive integer scalar or vector
             %       Repetition index or indices to ignore.
             %
+            % Name-Value Pair:
+            %   'Purge' (scalar logical, default = false):
+            %       When true, the selected repetitions are also excluded from
+            %       trial-boundary/timing computation in "getFrameMatrix" (see
+            %       "removeCondition" for details). Default false preserves today's
+            %       ignore-only behavior.
+            %
             % Notes:
             %   - Both ON and OFF transitions of each selected repetition are ignored.
             %   - If all repetitions from the selected condition become ignored, a
@@ -1492,6 +1542,11 @@ classdef EventsManager < handle
             validateattributes(repetitionIndex, {'numeric'}, ...
                 {'vector', 'real', 'finite', 'positive', 'integer'}, ...
                 'removeRepetition', 'repetitionIndex');
+
+            p = inputParser;
+            addParameter(p, 'Purge', false, @(x) islogical(x) && isscalar(x));
+            parse(p, varargin{:});
+            bPurge = p.Results.Purge;
 
             repetitionIndex = unique(repetitionIndex(:)', 'stable');
 
@@ -1511,12 +1566,24 @@ classdef EventsManager < handle
 
             obj.selectedEvents(idxCond & idxRep) = false;
 
+            if bPurge
+                if isempty(obj.PurgedEvents) || ~islogical(obj.PurgedEvents) || ...
+                        ~isequal(size(obj.PurgedEvents), size(obj.eventID))
+                    obj.PurgedEvents = false(size(obj.eventID));
+                end
+                obj.PurgedEvents(idxCond & idxRep) = true;
+            end
+
             if isscalar(repetitionIndex)
-                fprintf('Repetition "%d" from condition "%s" will be ignored!\n', ...
-                    repetitionIndex, obj.eventNameList{condID});
+                verb = 'ignored';
+                if bPurge; verb = 'purged and excluded from trial timing'; end
+                fprintf('Repetition "%d" from condition "%s" will be %s!\n', ...
+                    repetitionIndex, obj.eventNameList{condID}, verb);
             else
-                fprintf('Repetitions [%s] from condition "%s" will be ignored!\n', ...
-                    num2str(repetitionIndex), obj.eventNameList{condID});
+                verb = 'ignored';
+                if bPurge; verb = 'purged and excluded from trial timing'; end
+                fprintf('Repetitions [%s] from condition "%s" will be %s!\n', ...
+                    num2str(repetitionIndex), obj.eventNameList{condID}, verb);
             end
 
             if all(~obj.selectedEvents(idxCond))
@@ -1526,19 +1593,21 @@ classdef EventsManager < handle
         end
 
         function clearIgnoredEvents(obj)
-            %CLEARIGNOREDEVENTS Reset selectedEvents to the default include-all state.
+            %CLEARIGNOREDEVENTS Reset selectedEvents and PurgedEvents to the default state.
             %
             % Policy:
-            %   - If eventID is empty, selectedEvents is set to [].
-            %   - Otherwise, selectedEvents is a logical array of TRUE with the same
-            %     size as eventID.
+            %   - If eventID is empty, selectedEvents and PurgedEvents are set to [].
+            %   - Otherwise, selectedEvents is a logical array of TRUE and PurgedEvents
+            %     is a logical array of FALSE, both with the same size as eventID.
 
             if isempty(obj.eventID)
                 obj.selectedEvents = [];
+                obj.PurgedEvents = [];
                 return
             end
 
             obj.selectedEvents = true(size(obj.eventID));
+            obj.PurgedEvents = false(size(obj.eventID));
             fprintf('Condition and repetition lists successfully reset!\n');
         end
 
@@ -1585,6 +1654,7 @@ classdef EventsManager < handle
             baselinePeriod = obj.baselinePeriod; %#ok<NASGU>
             trigChanName = obj.trigChanName; %#ok<NASGU>
             selectedEvents = obj.selectedEvents; %#ok<NASGU>
+            PurgedEvents = obj.PurgedEvents; %#ok<NASGU>
             EventFileName = obj.EventFileName; %#ok<NASGU>
             EventFileParseMethod = obj.EventFileParseMethod; %#ok<NASGU>
             b_hasExternalSignal = obj.b_hasExternalSignal; %#ok<NASGU>
@@ -1602,6 +1672,7 @@ classdef EventsManager < handle
                 'baselinePeriod', ...
                 'trigChanName', ...
                 'selectedEvents', ...
+                'PurgedEvents', ...
                 'EventFileName', ...
                 'EventFileParseMethod', ...
                 'b_hasExternalSignal');
@@ -1625,6 +1696,8 @@ classdef EventsManager < handle
             %   - Metadata-aware fields are initialized before loading trigChanName.
             %   - External-signal events can be loaded without acquisition metadata.
             %   - selectedEvents is normalized after loading.
+            %   - PurgedEvents is normalized after loading; older files without it
+            %     default to all FALSE (nothing purged) rather than erroring.
 
             if nargin < 2 || isempty(Folder)
                 if isfile(fullfile(obj.SaveFolder, 'events.mat'))
@@ -1658,6 +1731,7 @@ classdef EventsManager < handle
                 'eventNameList', ...
                 'baselinePeriod', ...
                 'selectedEvents', ...
+                'PurgedEvents', ...
                 'EventFileName', ...
                 'EventFileParseMethod'};
 
@@ -1717,6 +1791,23 @@ classdef EventsManager < handle
                 end
             end
 
+            % ---------------------------------------------------------------------
+            % Enforce PurgedEvents policy
+            % ---------------------------------------------------------------------
+            if isempty(obj.eventID)
+                obj.PurgedEvents = [];
+            else
+                if isempty(obj.PurgedEvents) || ...
+                        ~islogical(obj.PurgedEvents) || ...
+                        ~isequal(size(obj.PurgedEvents), size(obj.eventID))
+                    % Missing only because the file predates PurgedEvents (or is
+                    % otherwise invalid); default to "nothing purged", not a warning.
+                    obj.PurgedEvents = false(size(obj.eventID));
+                else
+                    obj.PurgedEvents = logical(obj.PurgedEvents);
+                end
+            end
+
             % Rebuild baseline only for metadata-aware mode.
             if isempty(obj.baselinePeriod) && ~obj.b_hasExternalSignal && ~isempty(obj.timestamps)
                 obj.setBaselinePeriod;
@@ -1749,6 +1840,9 @@ classdef EventsManager < handle
             %   - For a single-trigger acquisition, the trial extends from the computed
             %     start frame to the end of the dataset.
             %   - baselinePeriod must be defined before trial indices are built.
+            %   - Purged events (see "removeCondition"/"removeRepetition", 'Purge' option)
+            %     are excluded from the onset sequence entirely, so they never truncate
+            %     the trial length of a neighboring, non-purged event.
 
             p = inputParser();
             addRequired(p, 'obj');
@@ -1776,8 +1870,14 @@ classdef EventsManager < handle
                 return
             end
 
+            if isempty(obj.PurgedEvents) || ~islogical(obj.PurgedEvents) || ...
+                    ~isequal(size(obj.PurgedEvents), size(obj.eventID))
+                obj.PurgedEvents = false(size(obj.eventID));
+            end
+            onsetMask = obj.state & ~obj.PurgedEvents;
+
             evOnsetFrame = round(obj.baselinePeriod * obj.AcqInfo.FrameRateHz);
-            frOn = ceil(obj.timestamps(obj.state) * obj.AcqInfo.FrameRateHz);
+            frOn = ceil(obj.timestamps(onsetMask) * obj.AcqInfo.FrameRateHz);
             frStart = frOn - evOnsetFrame + 1;
 
             if numel(frOn) >= 2
@@ -1787,7 +1887,7 @@ classdef EventsManager < handle
             end
 
             trialLen = max(trialLen, 1);
-            frMat = nan(sum(obj.state), max(trialLen));
+            frMat = nan(numel(frOn), max(trialLen));
 
             for ii = 1:numel(frStart)
                 frVec = frStart(ii):frStart(ii) + trialLen(ii) - 1;
@@ -1876,6 +1976,7 @@ classdef EventsManager < handle
             %           - FrameRateHz
             %           - eventID        (ON events only)
             %           - selectedEvents (ON events only)
+            %           - PurgedEvents   (ON events only)
 
             if isempty(obj.eventID)
                 obj.selectedEvents = [];
@@ -1887,6 +1988,14 @@ classdef EventsManager < handle
                 obj.selectedEvents = true(size(obj.eventID));
             end
 
+            if isempty(obj.eventID)
+                obj.PurgedEvents = [];
+            elseif isempty(obj.PurgedEvents) || ...
+                    ~islogical(obj.PurgedEvents) || ...
+                    ~isequal(size(obj.PurgedEvents), size(obj.eventID))
+                obj.PurgedEvents = false(size(obj.eventID));
+            end
+
             fieldsToExport = {'eventNameList','baselinePeriod'};
             evInfo = struct();
             for ii = 1:length(fieldsToExport)
@@ -1896,6 +2005,7 @@ classdef EventsManager < handle
             evInfo.FrameRateHz = obj.AcqInfo.FrameRateHz;
             evInfo.eventID = obj.eventID(obj.state);
             evInfo.selectedEvents = obj.selectedEvents(obj.state);
+            evInfo.PurgedEvents = obj.PurgedEvents(obj.state);
         end
 
         function [tmstmp, state] = getConditionTimestamps(obj, conditionName, varargin)
@@ -1998,6 +2108,9 @@ classdef EventsManager < handle
             %   Notes:
             %       - Filtering is performed on ON events only.
             %       - Ignored events are excluded automatically.
+            %       - Purged events are removed from the ON-event onset space entirely
+            %         (evIdx is indexed against ON events that are not purged), so its
+            %         length matches "getFrameMatrix"'s purge-aware onset sequence.
             %       - Repetition filtering is validated against the currently selected
             %         condition subset.
             %       - eventNameList is generated from obj.eventNameList using the
@@ -2026,6 +2139,13 @@ classdef EventsManager < handle
                     'Resetting it to all TRUE with the same size as eventID.']);
                 obj.selectedEvents = true(size(obj.eventID));
             end
+
+            if isempty(obj.PurgedEvents) || ...
+                    ~islogical(obj.PurgedEvents) || ...
+                    ~isequal(size(obj.PurgedEvents), size(obj.eventID))
+                obj.PurgedEvents = false(size(obj.eventID));
+            end
+            onsetMask = obj.state & ~obj.PurgedEvents;
 
             if isempty(conditionName)
                 condID = unique(obj.eventID(obj.state), 'stable')';
@@ -2075,7 +2195,7 @@ classdef EventsManager < handle
 
             conditionIDlist = obj.eventID(evIdxFull);
             repetitionList = obj.repetitionID(evIdxFull);
-            evIdx = evIdxFull(obj.state);
+            evIdx = evIdxFull(onsetMask);
 
             % Return event names with the same size/order as conditionIDlist.
             if isempty(conditionIDlist)
