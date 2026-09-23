@@ -476,20 +476,26 @@ classdef EventsManager < handle
             %
             % Notes:
             %   - Repetitions are counted independently for each condition.
-            %   - The output is duplicated for ON/OFF transitions.
+            %   - Each OFF transition inherits its own condition's current repetition
+            %     count, matched by eventID rather than by array position, so two
+            %     conditions whose durations tile continuous time with no gap (one
+            %     condition's ON registering before another condition's own OFF) are
+            %     still labeled correctly.
             %   - This getter preserves the current assumption that condition IDs are
             %     contiguous from 1 to numel(eventNameList).
 
             out = [];
             if isempty(obj.eventID); return; end
 
-            IDlist = obj.eventID(obj.state);
-            out = zeros(size(IDlist), class(IDlist));
-            for ii = 1:length(obj.eventNameList)
-                idx = IDlist == ii;
-                out(idx) = 1:sum(idx);
+            out = zeros(size(obj.eventID), class(obj.eventID));
+            counter = zeros(1, length(obj.eventNameList), class(obj.eventID));
+            for ii = 1:numel(obj.eventID)
+                condID = obj.eventID(ii);
+                if obj.state(ii)
+                    counter(condID) = counter(condID) + 1;
+                end
+                out(ii) = counter(condID);
             end
-            out = repelem(out, 2, 1);
         end
 
         function getTriggers(obj, varargin)
