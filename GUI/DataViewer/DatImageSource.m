@@ -4,17 +4,20 @@ classdef DatImageSource < handle
 %   src = DatImageSource(filePath)
 %   src = DatImageSource(filePath, Name, Value)
 %
-%   This class provides a DataViewer-oriented access layer for legacy/raw
-%   .dat files that are stored as single-precision MATLAB-order [Y,X,T]
-%   binary arrays. It intentionally avoids MEMMAPFILE. Full frames and
-%   temporal-cache blocks are read with explicit FSEEK/FREAD calls.
+%   This class provides a DataViewer-oriented access layer for .dat files
+%   that hold single-precision MATLAB-order [Y,X,T] arrays: headered files,
+%   legacy sidecar files, and AcqInfos-bound files. Metadata come from
+%   loadMetaData once, in the constructor. Full frames and temporal-cache
+%   blocks are read through spatialSlabIO, reopening the file for each read
+%   with the already resolved Info, so the file is never held open between
+%   reads.
 %
 %   Supported layout:
-%       dim_names = {'Y','X','T'}
+%       dimNames = {'Y','X','T'}
 %
 %   Unsupported layout:
 %       Any .dat file with an event dimension, for example
-%       dim_names = {'Y','X','T','E'}. Event-split image data should be
+%       dimNames = {'Y','X','T','E'}. Event-split image data should be
 %       stored and loaded as a .umt image structure.
 %
 %   Name-Value options:
@@ -146,17 +149,15 @@ classdef DatImageSource < handle
             obj.Info = loadMetaData(obj.FilePath);
             obj.validateContinuousDatLayout(obj.Info);
 
-            obj.Ny = double(obj.Info.Height);
-            obj.Nx = double(obj.Info.Width);
-            obj.Nt = double(obj.Info.Length);
+            obj.Ny = datAxisSize(obj.Info, 'Y');
+            obj.Nx = datAxisSize(obj.Info, 'X');
+            obj.Nt = datAxisSize(obj.Info, 'T');
 
-            obj.Precision = char(string(obj.Info.Datatype));
+            obj.Precision = char(string(obj.Info.dataClass));
             obj.BytesPerSample = obj.getByteSize(obj.Precision);
 
-            if isfield(obj.Info, 'FrameRateHz') && ~isempty(obj.Info.FrameRateHz)
-                obj.FrameRateHz = double(obj.Info.FrameRateHz);
-            elseif isfield(obj.Info, 'Freq') && ~isempty(obj.Info.Freq)
-                obj.FrameRateHz = double(obj.Info.Freq);
+            if ~isempty(obj.Info.frameRateHz)
+                obj.FrameRateHz = double(obj.Info.frameRateHz);
             end
 
             obj.validateFileSize();
@@ -209,23 +210,10 @@ classdef DatImageSource < handle
                 return
             end
 
-            fid = fopen(obj.FilePath, 'r');
-            if fid < 0
-                error('DatImageSource:FileOpenFailed', ...
-                    'Could not open file: "%s".', obj.FilePath);
-            end
-            cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
+            reader = obj.openReader();
+            cleanupObj = onCleanup(@() spatialSlabIO('close', reader)); %#ok<NASGU>
 
-            offset = obj.frameOffsetBytes(tIdx);
-            obj.safeFseek(fid, offset, ...
-                sprintf('Failed to seek to frame %d.', tIdx));
-
-            frame = fread(fid, [obj.Ny, obj.Nx], ['*' obj.Precision]);
-
-            if numel(frame) ~= obj.Ny * obj.Nx
-                error('DatImageSource:UnexpectedEOF', ...
-                    'Unexpected end of file while reading frame %d.', tIdx);
-            end
+            frame = spatialSlabIO('read', reader, 1:obj.Nx, tIdx);
         end
 
         function block = getFrameBlock(obj, tIdx, yRange, xRange)
@@ -252,29 +240,10 @@ classdef DatImageSource < handle
                 return
             end
 
-            fid = fopen(obj.FilePath, 'r');
-            if fid < 0
-                error('DatImageSource:FileOpenFailed', ...
-                    'Could not open file: "%s".', obj.FilePath);
-            end
-            cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
+            reader = obj.openReader();
+            cleanupObj = onCleanup(@() spatialSlabIO('close', reader)); %#ok<NASGU>
 
-            nX = numel(xRange);
-            x0 = xRange(1);
-
-            offset = obj.frameOffsetBytes(tIdx) + ...
-                double(x0 - 1) * obj.Ny * obj.BytesPerSample;
-
-            obj.safeFseek(fid, offset, ...
-                sprintf('Failed to seek to frame %d, x=%d.', tIdx, x0));
-
-            slab = fread(fid, [obj.Ny, nX], ['*' obj.Precision]);
-
-            if numel(slab) ~= obj.Ny * nX
-                error('DatImageSource:UnexpectedEOF', ...
-                    'Unexpected end of file while reading frame block.');
-            end
-
+            slab = spatialSlabIO('read', reader, xRange, tIdx);
             block = slab(yRange, :);
         end
 
@@ -689,12 +658,8 @@ classdef DatImageSource < handle
             nROI = size(maskStack, 3);
             nPix = obj.Ny * obj.Nx;
 
-            fid = fopen(obj.FilePath, 'r');
-            if fid < 0
-                error('DatImageSource:FileOpenFailed', ...
-                    'Could not open file: "%s".', obj.FilePath);
-            end
-            cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
+            reader = obj.openReader();
+            cleanupObj = onCleanup(@() spatialSlabIO('close', reader)); %#ok<NASGU>
 
             if bEventMatrix
                 nTrials = size(frameIdx, 1);
@@ -716,7 +681,7 @@ classdef DatImageSource < handle
                         chunkPos = validPos(firstPos:lastPos);
                         chunkFrames = trialFrames(chunkPos);
 
-                        frameBlock = obj.readFullFrameListFromOpenFile(fid, chunkFrames);
+                        frameBlock = obj.readFullFrameList(reader, chunkFrames);
                         frameBlock2D = reshape(frameBlock, nPix, numel(chunkFrames));
                         traceChunk = roiWeights * double(frameBlock2D);
                         traceChunk(emptyRows, :) = NaN;
@@ -740,7 +705,7 @@ classdef DatImageSource < handle
                     chunkPos = validPos(firstPos:lastPos);
                     chunkFrames = frameIdx(chunkPos);
 
-                    frameBlock = obj.readFullFrameListFromOpenFile(fid, chunkFrames);
+                    frameBlock = obj.readFullFrameList(reader, chunkFrames);
                     frameBlock2D = reshape(frameBlock, nPix, numel(chunkFrames));
                     traceChunk = roiWeights * double(frameBlock2D);
                     traceChunk(emptyRows, :) = NaN;
@@ -810,8 +775,11 @@ classdef DatImageSource < handle
             framesPerChunk = max(1, ceil(nFramesRequested ./ nChunks));
         end
 
-        function frameBlock = readFullFrameListFromOpenFile(obj, fid, frameList)
-            %READFULLFRAMELISTFROMOPENFILE Read full frames from an open file.
+        function frameBlock = readFullFrameList(obj, reader, frameList)
+            %READFULLFRAMELIST Read full frames through an open spatialSlabIO reader.
+            %
+            %   Frames are returned in the order given; repeated frame indices
+            %   are read once and copied.
 
             frameList = double(frameList(:).');
 
@@ -825,60 +793,35 @@ classdef DatImageSource < handle
                     'Frame list contains invalid frame indices.');
             end
 
-            if numel(frameList) == 1 || all(diff(frameList) == 1)
-                frameBlock = obj.readFullFrameChunkFromOpenFile(fid, frameList(1), numel(frameList));
-                return
+            obj.validateFrameIndex(min(frameList));
+            obj.validateFrameIndex(max(frameList));
+
+            [uniqueFrames, ~, whichFrame] = unique(frameList, 'stable');
+            frameBlock = spatialSlabIO('read', reader, 1:obj.Nx, uniqueFrames);
+            if numel(uniqueFrames) ~= numel(frameList)
+                frameBlock = frameBlock(:, :, whichFrame);
             end
-
-            frameBlock = zeros(obj.Ny, obj.Nx, numel(frameList), obj.Precision);
-
-            for iFrame = 1:numel(frameList)
-                frameBlock(:, :, iFrame) = obj.readFullFrameChunkFromOpenFile(fid, frameList(iFrame), 1);
-            end
-        end
-
-        function frameBlock = readFullFrameChunkFromOpenFile(obj, fid, startFrame, nFrames)
-            %READFULLFRAMECHUNKFROMOPENFILE Read consecutive full frames from an open file.
-
-            startFrame = double(startFrame);
-            nFrames = double(nFrames);
-
-            obj.validateFrameIndex(startFrame);
-            obj.validateFrameIndex(startFrame + nFrames - 1);
-
-            offset = obj.frameOffsetBytes(startFrame);
-            obj.safeFseek(fid, offset, ...
-                sprintf('Failed to seek to frame %d.', startFrame));
-
-            nElements = obj.Ny * obj.Nx * nFrames;
-            [raw, count] = fread(fid, nElements, ['*' obj.Precision]);
-
-            if count ~= nElements
-                error('DatImageSource:UnexpectedEOF', ...
-                    'Unexpected end of file while reading full-frame chunk.');
-            end
-
-            frameBlock = reshape(raw, obj.Ny, obj.Nx, nFrames);
         end
 
         function validateContinuousDatLayout(obj, Info) %#ok<INUSL>
-            %VALIDATECONTINUOUSDATLAYOUT Reject non-YXT .dat files.
+            %VALIDATECONTINUOUSDATLAYOUT Reject non-YXT or non-single .dat files.
             %
-            %   This method deliberately fails fast for legacy event-split
-            %   .dat files. Those files should be converted to .umt image
-            %   structures before being opened in the viewer.
+            %   Uses the .dat Info schema from loadMetaData. This method
+            %   deliberately fails fast for event-split or other non-YXT
+            %   files and for data classes other than single; those are not
+            %   supported by the viewer backend yet.
 
-            if ~isfield(Info, 'FileType') || ~strcmpi(char(string(Info.FileType)), '.dat')
+            if ~isfield(Info, 'format') || ~isfield(Info, 'filePath')
                 error('DatImageSource:InvalidFileType', ...
                     'DatImageSource can only open .dat files.');
             end
 
-            if ~isfield(Info, 'dim_names') || isempty(Info.dim_names)
+            if ~isfield(Info, 'dimNames') || isempty(Info.dimNames)
                 error('DatImageSource:MissingDimNames', ...
-                    '.dat metadata must contain dim_names.');
+                    '.dat metadata must contain dimNames.');
             end
 
-            dimNames = upper(cellstr(string(Info.dim_names(:).')));
+            dimNames = upper(cellstr(string(Info.dimNames(:).')));
             expected = {'Y', 'X', 'T'};
 
             if any(strcmp(dimNames, 'E'))
@@ -893,76 +836,56 @@ classdef DatImageSource < handle
             if numel(dimNames) ~= 3 || ~all(strcmp(dimNames, expected))
                 error('DatImageSource:UnsupportedDatLayout', ...
                     ['Unsupported .dat layout: {%s}. DatImageSource only ' ...
-                     'supports continuous files with dim_names={''Y'',''X'',''T''}.'], ...
+                     'supports continuous files with dimNames={''Y'',''X'',''T''}.'], ...
                     strjoin(dimNames, ', '));
             end
 
-            if ~isfield(Info, 'Datatype') || isempty(Info.Datatype)
+            if ~isfield(Info, 'dataClass') || isempty(Info.dataClass)
                 error('DatImageSource:MissingDatatype', ...
-                    '.dat metadata must contain Datatype.');
+                    '.dat metadata must contain dataClass.');
             end
 
-            if ~strcmpi(char(string(Info.Datatype)), 'single')
+            if ~strcmpi(char(string(Info.dataClass)), 'single')
                 error('DatImageSource:UnsupportedDatatype', ...
                     'Only single-precision .dat files are currently supported.');
             end
 
-            if ~isfield(Info, 'Height') || ~isfield(Info, 'Width') || ...
-                    ~isfield(Info, 'Length')
+            if ~isfield(Info, 'dimSizes') || numel(Info.dimSizes) ~= 3
                 error('DatImageSource:MissingCoreMetadata', ...
-                    '.dat metadata must contain Height, Width, and Length.');
+                    '.dat metadata must contain the sizes of Y, X, and T.');
             end
 
-            validateattributes(double(Info.Height), {'numeric'}, ...
-                {'scalar', 'real', 'finite', 'positive', 'integer'}, ...
-                'DatImageSource', 'Height');
-            validateattributes(double(Info.Width), {'numeric'}, ...
-                {'scalar', 'real', 'finite', 'positive', 'integer'}, ...
-                'DatImageSource', 'Width');
-            validateattributes(double(Info.Length), {'numeric'}, ...
-                {'scalar', 'real', 'finite', 'positive', 'integer'}, ...
-                'DatImageSource', 'Length');
-
-            if isfield(Info, 'datSize') && ~isempty(Info.datSize)
-                datSize = double(Info.datSize(:).');
-                expectedYX = [double(Info.Height), double(Info.Width)];
-                expectedYXT = [double(Info.Height), double(Info.Width), double(Info.Length)];
-
-                if numel(datSize) == 2
-                    if ~isequal(datSize, expectedYX)
-                        error('DatImageSource:InvalidDatSize', ...
-                            'datSize is incompatible with Height and Width.');
-                    end
-                elseif numel(datSize) == 3
-                    if ~isequal(datSize, expectedYXT)
-                        error('DatImageSource:InvalidDatSize', ...
-                            'datSize is incompatible with Height, Width, and Length.');
-                    end
-                else
-                    error('DatImageSource:InvalidDatSize', ...
-                        ['Continuous .dat files must have datSize=[Y X] or ' ...
-                         'datSize=[Y X T].']);
-                end
+            sizeNames = {'Height', 'Width', 'Length'};
+            for k = 1:3
+                validateattributes(double(Info.dimSizes(k)), {'numeric'}, ...
+                    {'scalar', 'real', 'finite', 'positive', 'integer'}, ...
+                    'DatImageSource', sizeNames{k});
             end
         end
 
         function validateFileSize(obj)
-            %VALIDATEFILESIZE Ensure file bytes match continuous YXT layout.
+            %VALIDATEFILESIZE Ensure the file holds the whole [Y,X,T] array.
+            %
+            %   The header of a headered file (Info.dataOffset bytes) is not
+            %   counted as data.
 
             fileInfo = dir(obj.FilePath);
 
-            expectedBytes = obj.Ny * obj.Nx * obj.Nt * obj.BytesPerSample;
+            dataOffset = double(obj.Info.dataOffset);
+            expectedBytes = dataOffset + obj.Ny * obj.Nx * obj.Nt * obj.BytesPerSample;
 
-            if fileInfo.bytes ~= expectedBytes
+            if fileInfo.bytes < expectedBytes
                 error('DatImageSource:FileSizeMismatch', ...
                     ['File size mismatch for "%s". Expected %.0f bytes for ' ...
-                     '[Y,X,T]=[%d,%d,%d] with precision "%s", found %.0f bytes.'], ...
+                     '[Y,X,T]=[%d,%d,%d] with precision "%s" after a %d-byte ' ...
+                     'header, found %.0f bytes.'], ...
                     obj.FilePath, ...
                     expectedBytes, ...
                     obj.Ny, ...
                     obj.Nx, ...
                     obj.Nt, ...
                     obj.Precision, ...
+                    dataOffset, ...
                     fileInfo.bytes);
             end
         end
@@ -1077,8 +1000,10 @@ classdef DatImageSource < handle
         function cache = readTemporalBlock(obj, yRange, xRange)
             %READTEMPORALBLOCK Read [Ycache,Xcache,T] from the .dat file.
             %
-            %   This reads one contiguous X slab per frame and immediately
-            %   crops Y, avoiding an intermediate [fullY,Xcache,T] array.
+            %   Reads the cached X columns in chunks of consecutive frames
+            %   through spatialSlabIO and crops Y per chunk, so peak memory
+            %   stays close to the cache size instead of holding a
+            %   full-height [Ny,Xcache,T] copy.
 
             yRange = obj.validateContiguousIndexRange(yRange, obj.Ny, 'Y');
             xRange = obj.validateContiguousIndexRange(xRange, obj.Nx, 'X');
@@ -1088,32 +1013,16 @@ classdef DatImageSource < handle
 
             cache = zeros(nY, nX, obj.Nt, obj.Precision);
 
-            fid = fopen(obj.FilePath, 'r');
-            if fid < 0
-                error('DatImageSource:FileOpenFailed', ...
-                    'Could not open file: "%s".', obj.FilePath);
-            end
-            cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
+            reader = obj.openReader();
+            cleanupObj = onCleanup(@() spatialSlabIO('close', reader)); %#ok<NASGU>
 
-            x0 = xRange(1);
+            chunkBytes = 64 * 1024^2;
+            framesPerChunk = max(1, floor(chunkBytes / (obj.Ny * nX * obj.BytesPerSample)));
 
-            for tIdx = 1:obj.Nt
-                offset = obj.frameOffsetBytes(tIdx) + ...
-                    double(x0 - 1) * obj.Ny * obj.BytesPerSample;
-
-                obj.safeFseek(fid, offset, ...
-                    sprintf('Failed to seek to frame %d, x=%d.', tIdx, x0));
-
-                slab = fread(fid, [obj.Ny, nX], ['*' obj.Precision]);
-
-                if numel(slab) ~= obj.Ny * nX
-                    error('DatImageSource:UnexpectedEOF', ...
-                        ['Unexpected end of file while reading temporal cache ' ...
-                         'at frame %d.'], ...
-                        tIdx);
-                end
-
-                cache(:, :, tIdx) = slab(yRange, :);
+            for t1 = 1:framesPerChunk:obj.Nt
+                t2 = min(t1 + framesPerChunk - 1, obj.Nt);
+                slab = spatialSlabIO('read', reader, xRange, t1:t2);
+                cache(:, :, t1:t2) = slab(yRange, :, :);
             end
         end
 
@@ -1137,23 +1046,13 @@ classdef DatImageSource < handle
                 xRange(end) <= obj.CacheXRange(end);
         end
 
-        function offset = frameOffsetBytes(obj, tIdx)
-            %FRAMEOFFSETBYTES Return byte offset for one frame.
+        function reader = openReader(obj)
+            %OPENREADER Open a spatialSlabIO reader with the resolved Info.
+            %
+            %   The caller closes it (typically with onCleanup). Reusing
+            %   obj.Info avoids calling loadMetaData on every read.
 
-            offset = double(tIdx - 1) * ...
-                double(obj.Ny) * ...
-                double(obj.Nx) * ...
-                double(obj.BytesPerSample);
-        end
-
-        function safeFseek(obj, fid, offset, failMessage) %#ok<INUSL>
-            %SAFEFSEEK Execute FSEEK and error on failure.
-
-            status = fseek(fid, offset, 'bof');
-
-            if status ~= 0
-                error('DatImageSource:FseekFailed', '%s', failMessage);
-            end
+            reader = spatialSlabIO('open', obj.FilePath, 'Info', obj.Info);
         end
 
         function bytes = getByteSize(obj, precision) %#ok<INUSL>
