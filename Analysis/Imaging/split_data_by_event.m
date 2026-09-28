@@ -147,20 +147,17 @@ if ischar(data) || (isstring(data) && isscalar(data))
 
     switch ext
         case '.dat'
-            loaded = loadData(inPath);
+            [loaded, datInfo] = loadData(inPath);
             assert(isnumeric(loaded) && ndims(loaded) == 3, ...
                 'Umitoolbox:split_data_by_event:invalidDatInput', ...
                 'Raw .dat input must resolve to continuous YXT data.');
             src.dataYXT = single(loaded);
 
-            md = load(fullfile(SaveFolder,'AcqInfos.mat'),'AcqInfoStream');
-            md = md.AcqInfoStream;
-            if isstruct(md)
-                if isfield(md, 'FrameRateHz') && ~isempty(md.FrameRateHz)
-                    src.frameRateHz = double(md.FrameRateHz);
-                elseif isfield(md, 'Freq') && ~isempty(md.Freq)
-                    src.frameRateHz = double(md.Freq);
-                end
+            % The file's own frame rate (header, or its channel timeline for
+            % headerless files); left empty when unknown.
+            if isfield(datInfo, 'frameRateHz') && ~isempty(datInfo.frameRateHz) && ...
+                    ~isnan(datInfo.frameRateHz)
+                src.frameRateHz = double(datInfo.frameRateHz);
             end
             return
 

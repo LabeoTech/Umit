@@ -40,6 +40,15 @@ function outData = funcTemplate(data, SaveFolder, varargin)
 %
 %       dataFile = fullfile(SaveFolder, dataFileName);
 %       dataInfo = loadMetaData(dataFile);
+%       nFrames  = datAxisSize(dataInfo, 'T');   % 0 when the file has no T axis
+%
+%   For .dat files, read only the .dat Info schema fields: dimNames,
+%   dimSizes, dataClass, frameRateHz, exposureMsec, dataOffset, format,
+%   filePath, channelName, writeComplete. Use datAxisSize for single axis
+%   sizes. The older names (Height, Width, Length, datLength, datSize,
+%   dim_names, Datatype, Freq, FrameRateHz, ...) are deprecated and will be
+%   removed. To stream parts of a large .dat file, use
+%   spatialSlabIO('open'/'read'/'close') instead of reading the file.
 %
 %   Use the file associated with the data being processed; do not select an
 %   arbitrary file from SaveFolder. Do not edit AcqInfos.mat or another
