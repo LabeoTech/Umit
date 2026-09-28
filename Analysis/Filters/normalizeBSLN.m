@@ -477,14 +477,12 @@ function [outVal, outDimNames, labels, eventInfo] = normalizeBSLN_chunkedDatMode
 labels = struct();
 eventInfo = struct();
 
-[Ny, Nx, Nt, freqHz] = getRawDatInfo(SaveFolder, inFile);
-
-fidIn = fopen(inFile, 'r');
-if fidIn == -1
-    error('normalizeBSLN:FileOpenFailed', ...
-        'Failed to open "%s".', inFile);
-end
-cleanObj = onCleanup(@() safeFclose(fidIn));
+slabIn = spatialSlabIO('open', inFile);
+cleanObj = onCleanup(@() spatialSlabIO('close', slabIn));
+Ny = slabIn.Ny;
+Nx = slabIn.Nx;
+Nt = datAxisSize(slabIn.Info, 'T');
+freqHz = slabIn.Info.frameRateHz;
 
 % Conservative fixed chunk-size budget (not derived from calculateMaxChunkSize's
 % dynamic available-RAM estimate, to keep this path's chunk sizing predictable).
@@ -504,7 +502,7 @@ switch lower(normalizationMode)
             xEnd = min(Nx, xStart + xPerSlab - 1);
             xIdx = xStart:xEnd;
 
-            slab = spatialSlabIO('read', fidIn, Ny, Nx, Nt, xIdx, 'single');
+            slab = single(spatialSlabIO('read', slabIn, xIdx));
 
             bsln = median(slab(:,:,1:nBaseFrames), 3, 'omitnan');
             bsln(bsln == 0) = 1;
@@ -541,7 +539,7 @@ switch lower(normalizationMode)
             xEnd = min(Nx, xStart + xPerSlab - 1);
             xIdx = xStart:xEnd;
 
-            slabData = spatialSlabIO('read', fidIn, Ny, Nx, Nt, xIdx, 'single');
+            slabData = single(spatialSlabIO('read', slabIn, xIdx));
 
             for iTrial = 1:nTrials
                 validMask = ~isnan(frMat(iTrial, :));

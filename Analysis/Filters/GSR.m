@@ -80,11 +80,11 @@ if bLowRAM
     dataFile = localResolveDataFile(char(string(dataIn)), SaveFolder);
     metaData = loadMetaData(dataFile);
 
-    assert(strcmpi(metaData.Datatype, 'single'), ...
+    assert(strcmpi(metaData.dataClass, 'single'), ...
         'Umitoolbox:GSR:InvalidInput', ...
         'GSR currently supports only single-precision .dat inputs.');
 
-    frameSize = metaData.datSize;
+    frameSize = [datAxisSize(metaData, 'Y'), datAxisSize(metaData, 'X')];
 else
     dataFile = '';
     metaData = struct();
@@ -316,12 +316,13 @@ function outFileName = GSR_lowRAMmode(dataFile, SaveFolder, metaData, logical_ma
 % -------------------------------------------------------------------------
 % Estimate data size and chunking
 % -------------------------------------------------------------------------
-dataBytes = prod([metaData.datSize, metaData.datLength, 4]);
-nChunks = calculateMaxChunkSize(dataBytes, 3, .1);
+Ny = datAxisSize(metaData, 'Y');
+Nx = datAxisSize(metaData, 'X');
+Nt = datAxisSize(metaData, 'T');
+dataClass = metaData.dataClass;
 
-Ny = metaData.datSize(1);
-Nx = metaData.datSize(2);
-Nt = metaData.datLength;
+dataBytes = Ny * Nx * Nt * 4;
+nChunks = calculateMaxChunkSize(dataBytes, 3, .1);
 
 chunkSizePixels = ceil(Nx / nChunks);
 nChunks = ceil(Nx / chunkSizePixels);
@@ -329,13 +330,11 @@ nChunks = ceil(Nx / chunkSizePixels);
 % -------------------------------------------------------------------------
 % File handles
 % -------------------------------------------------------------------------
-fid_in = fopen(dataFile, 'r');
-assert(fid_in ~= -1, 'Umitoolbox:GSR:FileOpenError', ...
-    'Could not open input file "%s".', dataFile);
-c_in = onCleanup(@() safeFclose(fid_in));
+slabIn = spatialSlabIO('open', dataFile, 'Info', metaData);
+c_in = onCleanup(@() spatialSlabIO('close', slabIn));
 
 outFileName = fullfile(SaveFolder, 'GSR.dat');
-preallocateDatFile(outFileName, [Ny, Nx, Nt], metaData.Datatype);
+preallocateDatFile(outFileName, [Ny, Nx, Nt], dataClass);
 
 fid_out = fopen(outFileName, 'r+');
 assert(fid_out ~= -1, 'Umitoolbox:GSR:FileOpenError', ...
@@ -365,7 +364,7 @@ for ii = 1:nChunks
     idxX    = pxStart:pxEnd;
 
     % Read slab
-    slab = spatialSlabIO('read', fid_in, Ny, Nx, Nt, idxX, metaData.Datatype);
+    slab = spatialSlabIO('read', slabIn, idxX);
 
     % Accumulate global mean from original data
     dataSum   = dataSum + sum(double(slab(:)), 'omitnan');
@@ -434,7 +433,7 @@ for ii = 1:nChunks
     idxX    = pxStart:pxEnd;
 
     % Read slab
-    slab = spatialSlabIO('read', fid_in, Ny, Nx, Nt, idxX, metaData.Datatype);
+    slab = spatialSlabIO('read', slabIn, idxX);
 
     % Identify invalid traces from first frame only
     idx_invalid_trace = isnan(slab(:,:,1));
@@ -459,7 +458,7 @@ for ii = 1:nChunks
 
     % Reshape back and write corrected slab
     slab = reshape(slab, slabSz);
-    spatialSlabIO('write', fid_out, Ny, Nx, Nt, idxX, metaData.Datatype, slab);
+    spatialSlabIO('write', fid_out, Ny, Nx, Nt, idxX, dataClass, slab);
 
     clear slab A idx_invalid_trace
 end

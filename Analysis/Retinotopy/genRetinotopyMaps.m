@@ -96,7 +96,7 @@ else
         'Umitoolbox:genRetinotopyMaps:WrongInput', ...
         'Only numeric YXT input or raw .dat input are supported.');
 
-    metaData = loadMetaData(dataFile);
+    metaData = iInternalMetaFromInfo(loadMetaData(dataFile));
     dataIn = dataFile;
 end
 
@@ -295,8 +295,8 @@ else
 end
 
 w = waitbar(0,'Calculating FFT (Low RAM usage) ...','Name','genRetinotopyMaps');
-fidIn = fopen(datFile,'r');
-cIn = onCleanup(@() safeFclose(fidIn));
+slabIn = spatialSlabIO('open', datFile, 'Info', metaData);
+cIn = onCleanup(@() spatialSlabIO('close', slabIn));
 
 for ind = 1:numel(evntInfo.eventNameList)
     waitbar((ind-1)/numel(evntInfo.eventNameList), w, ...
@@ -342,20 +342,14 @@ for ind = 1:numel(evntInfo.eventNameList)
                     ['Could not fit the average-movie baseline and trial windows ' ...
                      'within the recording for trial %d of direction %d.'], ii, ind);
 
-                baselineData = zeros(nY, numel(xIdx), bsln_len, 'single');
-                for f = 1:bsln_len
-                    baselineData(:,:,f) = iReadFrameXSlab( ...
-                        fidIn, nY, nX, tStart + f - 1, xIdx);
-                end
+                baselineData = iReadFramesXSlab(slabIn, tStart:(tStart + bsln_len - 1), xIdx);
                 baseline = median(baselineData, 3, 'omitnan');
                 avgSlab(:,:,1:bsln_len) = avgSlab(:,:,1:bsln_len) + ...
                     (baselineData - baseline);
 
-                for f = (bsln_len + 1):total_len
-                    frameSlab = iReadFrameXSlab( ...
-                        fidIn, nY, nX, tStart + f - 1, xIdx);
-                    avgSlab(:,:,f) = avgSlab(:,:,f) + (frameSlab - baseline);
-                end
+                trialData = iReadFramesXSlab(slabIn, (tStart + bsln_len):tEnd, xIdx);
+                avgSlab(:,:,(bsln_len + 1):total_len) = ...
+                    avgSlab(:,:,(bsln_len + 1):total_len) + (trialData - baseline);
             end
 
             avgSlab = avgSlab / length(indxOn);
@@ -385,7 +379,7 @@ for ind = 1:numel(evntInfo.eventNameList)
             xEnd   = min(xStart + chunkX - 1, nX);
             xIdx   = xStart:xEnd;
 
-            slabData = spatialSlabIO('read', fidIn, nY, nX, nT, xIdx, 'single');
+            slabData = single(spatialSlabIO('read', slabIn, xIdx));
             slabData = slabData(:,:,frOn);
 
             fSlab = fft(slabData,[],3);
@@ -404,27 +398,25 @@ close(w);
 mapStruct = buildMaps(ampMaps, phiMaps, metaData, opts, evntInfo);
 end
 
-function frameSlab = iReadFrameXSlab(fid, nY, nX, frameIdx, xIdx)
-%IREADFRAMEXSLAB Read contiguous X columns from one DAT frame.
+function frames = iReadFramesXSlab(slabIn, frameIdx, xIdx)
+%IREADFRAMESXSLAB Read X columns of consecutive frames through spatialSlabIO.
 
-bytesPerElement = getByteSize('single');
-offsetElements = (double(frameIdx) - 1) * double(nY) * double(nX) + ...
-    (double(xIdx(1)) - 1) * double(nY);
-status = fseek(fid, offsetElements * bytesPerElement, 'bof');
-if status ~= 0
-    error('Umitoolbox:genRetinotopyMaps:FileReadFailed', ...
-        'Could not seek to frame %d, X column %d.', frameIdx, xIdx(1));
+frames = single(spatialSlabIO('read', slabIn, xIdx, frameIdx));
+frames = reshape(frames, size(frames, 1), numel(xIdx), numel(frameIdx));
 end
 
-nElements = double(nY) * numel(xIdx);
-raw = fread(fid, nElements, '*single');
-if numel(raw) ~= nElements
-    error('Umitoolbox:genRetinotopyMaps:FileReadFailed', ...
-        ['Could not read the requested DAT slab at frame %d ' ...
-         '(expected %d elements, read %d).'], ...
-        frameIdx, nElements, numel(raw));
-end
-frameSlab = reshape(raw, nY, numel(xIdx));
+function metaData = iInternalMetaFromInfo(metaData)
+%IINTERNALMETAFROMINFO Add this function's internal fields to loadMetaData output.
+%
+% dim_names, datSize = [Y X], datLength, and Freq are the fields used
+% throughout this function (the same model iResolveRepresentativeMeta
+% builds for numeric input). They are derived from the .dat Info schema
+% only; the schema fields are kept for spatialSlabIO('open', ..., 'Info').
+
+metaData.dim_names = metaData.dimNames;
+metaData.datSize = [datAxisSize(metaData, 'Y'), datAxisSize(metaData, 'X')];
+metaData.datLength = datAxisSize(metaData, 'T');
+metaData.Freq = double(metaData.frameRateHz);
 end
 
 %% ==================== BUILD MAPS ====================

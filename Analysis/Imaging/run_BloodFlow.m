@@ -251,19 +251,14 @@ function outFile = localRunRAMSafe(datFile, mdIn, SaveFolder, default_Output, ..
     sType, kernelSize, exposureSec, bNormalize)
 %LOCALRUNRAMSAFE Chunked, file-backed blood-flow computation.
 
-assert(isfield(mdIn, 'Height') && isfield(mdIn, 'Width') && isfield(mdIn, 'Length'), ...
+assert(isfield(mdIn, 'dimNames') && isfield(mdIn, 'dimSizes') && ...
+    datAxisSize(mdIn, 'T') > 0, ...
     'Umitoolbox:run_BloodFlow:InvalidMetadata', ...
-    'Could not resolve Height/Width/Length from "%s".', datFile);
+    'Could not resolve the Y, X, and T sizes of "%s".', datFile);
 
-Ny = double(mdIn.Height);
-Nx = double(mdIn.Width);
-Nt = double(mdIn.Length);
-
-if isfield(mdIn, 'Datatype') && ~isempty(mdIn.Datatype)
-    dataType = char(string(mdIn.Datatype));
-else
-    dataType = 'single';
-end
+Ny = datAxisSize(mdIn, 'Y');
+Nx = datAxisSize(mdIn, 'X');
+Nt = datAxisSize(mdIn, 'T');
 
 % Compute through a fixed-name scratch file, then move it onto the declared
 % output so re-runs overwrite the same file.
@@ -272,17 +267,14 @@ outFile = fullfile(SaveFolder, default_Output);
 scratchFile = fullfile(SaveFolder, [baseName '_compute.dat']);
 preallocateDatFile(scratchFile, [Ny, Nx, Nt], 'single');
 
-fidIn = fopen(datFile, 'r');
-assert(fidIn ~= -1, 'Umitoolbox:run_BloodFlow:FileOpenFailed', ...
-    'Could not open "%s" for reading.', datFile);
-cIn = onCleanup(@() safeFclose(fidIn));
+slabIn = spatialSlabIO('open', datFile, 'Info', mdIn);
+cIn = onCleanup(@() spatialSlabIO('close', slabIn));
 
 fidOut = fopen(scratchFile, 'r+');
 assert(fidOut ~= -1, 'Umitoolbox:run_BloodFlow:FileOpenFailed', ...
     'Could not open "%s" for writing.', scratchFile);
 cOut = onCleanup(@() safeFclose(fidOut));
 
-inBytesPerFrame = Ny * Nx * getByteSize(dataType);
 outBytesPerFrame = Ny * Nx * getByteSize('single');
 totalBytes = Ny * Nx * Nt * getByteSize('single');
 
@@ -299,8 +291,7 @@ switch sType
         lastPct = -1;
         fprintf('0%% ');
         for c = 1:nChunks
-            [slab, ~] = localReadFrames(fidIn, c, chunkT, Nt, Ny, Nx, ...
-                inBytesPerFrame, dataType);
+            [slab, ~] = localReadInputFrames(slabIn, c, chunkT, Nt);
             sumData = sumData + sum(slab, 3, 'omitnan');
             countData = countData + sum(~isnan(slab), 3);
             lastPct = localPrintProgress(c, nChunks, lastPct);
@@ -320,8 +311,7 @@ switch sType
         lastPct = -1;
         fprintf('0%% ');
         for c = 1:nChunks
-            [slab, tStart] = localReadFrames(fidIn, c, chunkT, Nt, Ny, Nx, ...
-                inBytesPerFrame, dataType);
+            [slab, tStart] = localReadInputFrames(slabIn, c, chunkT, Nt);
             slab = localSpeckleContrast(slab, meanData, 'spatial', kernelSize);
             slab = localFlowFromContrast(slab, exposureSec);
             if bNormalize
@@ -367,7 +357,7 @@ switch sType
             xEnd = min(xStart + chunkX - 1, Nx);
             xIdx = xStart:xEnd;
 
-            slab = double(spatialSlabIO('read', fidIn, Ny, Nx, Nt, xIdx, dataType));
+            slab = double(spatialSlabIO('read', slabIn, xIdx));
             slab = localSpeckleContrast(slab, mean(slab, 3, 'omitnan'), 'temporal', kernelSize);
             slab = localFlowFromContrast(slab, exposureSec);
             if bNormalize
@@ -388,8 +378,22 @@ assert(moveOk, 'Umitoolbox:run_BloodFlow:OutputMoveFailed', ...
 
 end
 
+function [slab, tStart] = localReadInputFrames(slabIn, c, chunkT, Nt)
+%LOCALREADINPUTFRAMES Read one temporal chunk of input frames as double.
+
+tStart = (c-1) * chunkT + 1;
+tEnd = min(tStart + chunkT - 1, Nt);
+slab = double(spatialSlabIO('read', slabIn, 1:slabIn.Nx, tStart:tEnd));
+slab = reshape(slab, slabIn.Ny, slabIn.Nx, tEnd - tStart + 1);
+
+end
+
 function [slab, tStart] = localReadFrames(fid, c, chunkT, Nt, Ny, Nx, bytesPerFrame, dataType)
-%LOCALREADFRAMES Read one temporal chunk of frames as double.
+%LOCALREADFRAMES Read one temporal chunk of this function's own scratch output.
+%
+% Only used on the headerless scratch file this function writes (write
+% side, redone with the writers in .dat header Phase 4). Input files are
+% read with localReadInputFrames.
 
 tStart = (c-1) * chunkT + 1;
 tEnd = min(tStart + chunkT - 1, Nt);
@@ -446,10 +450,10 @@ exposureMsec = localNumericExposure(exposureOpt);
 if ~isempty(exposureMsec)
     return
 end
-if isfield(mdIn, 'ExposureSpeckleMsec') && ~isempty(mdIn.ExposureSpeckleMsec)
-    exposureMsec = double(mdIn.ExposureSpeckleMsec);
-elseif isfield(mdIn, 'ExposureMsec') && ~isempty(mdIn.ExposureMsec)
-    exposureMsec = double(mdIn.ExposureMsec);
+% exposureMsec is the file's own exposure (the speckle exposure for
+% speckle data); NaN when unknown.
+if isfield(mdIn, 'exposureMsec') && ~isempty(mdIn.exposureMsec) && ~isnan(mdIn.exposureMsec)
+    exposureMsec = double(mdIn.exposureMsec);
 end
 
 assert(~isempty(exposureMsec) && isscalar(exposureMsec) && ...

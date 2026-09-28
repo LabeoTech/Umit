@@ -101,8 +101,8 @@ switch ext
         if isDatWithHeader(fileName)
             [Info, deprecatedFields] = iLoadHeaderedDatMetaData(fileName, folderPath);
         else
-            deprecatedFields = iLoadDatMetaData(fileName, folderPath, baseName);
-            Info = iDatSchemaFromResolved(deprecatedFields);
+            [deprecatedFields, ownExposureMsec] = iLoadDatMetaData(fileName, folderPath, baseName);
+            Info = iDatSchemaFromResolved(deprecatedFields, ownExposureMsec);
         end
         Info = iAppendDeprecatedDatFields(Info, deprecatedFields);
 
@@ -171,8 +171,11 @@ deprecatedFields.MetadataSource = 'header';
 
 end
 
-function Info = iDatSchemaFromResolved(resolved)
+function Info = iDatSchemaFromResolved(resolved, ownExposureMsec)
 %IDATSCHEMAFROMRESOLVED Build the .dat Info schema from resolved headerless metadata.
+%
+% ownExposureMsec is this file's own exposure, resolved by iLoadDatMetaData
+% (NaN when unknown).
 
 Info = struct();
 Info.filePath = resolved.datFile;
@@ -195,11 +198,7 @@ else
 end
 
 Info.frameRateHz = double(resolved.FrameRateHz);
-if isfield(resolved, 'ExposureMsec') && ~isempty(resolved.ExposureMsec)
-    Info.exposureMsec = double(resolved.ExposureMsec);
-else
-    Info.exposureMsec = NaN;
-end
+Info.exposureMsec = double(ownExposureMsec);
 Info.channelName = '';
 Info.writeComplete = true;
 
@@ -224,8 +223,12 @@ end
 % =========================================================================
 % Local helpers
 % =========================================================================
-function Info = iLoadDatMetaData(fileName, folderPath, baseName)
+function [Info, ownExposureMsec] = iLoadDatMetaData(fileName, folderPath, baseName)
 %ILOADDATMETADATA Build flat metadata for a .dat file.
+%
+% ownExposureMsec is the exposure of this file itself: the speckle exposure
+% when there is file-specific evidence that the file holds speckle data,
+% otherwise the general exposure; NaN when unknown.
 
 acqInfo = iLoadAcqInfo(folderPath);
 legacyInfo = iLoadLegacySidecar(folderPath, baseName);
@@ -403,9 +406,33 @@ end
 
 % Keep only metadata that directly describes this .dat file.
 importedEntry = iFindImportedChannelForInfo(acqInfo, fileName, actualLength);
+isOwnSpeckle = iIsOwnSpeckleFile(fileName, importedEntry, legacyInfo);
 Info = iFinalizeDatInfo(Info, acqInfo, fileName, folderPath, actualLength, ...
     importedEntry, hasLegacySidecar);
 
+if isOwnSpeckle && isfield(Info, 'ExposureSpeckleMsec') && ~isempty(Info.ExposureSpeckleMsec)
+    ownExposureMsec = double(Info.ExposureSpeckleMsec);
+elseif isfield(Info, 'ExposureMsec') && ~isempty(Info.ExposureMsec)
+    ownExposureMsec = double(Info.ExposureMsec);
+else
+    ownExposureMsec = NaN;
+end
+
+end
+
+function tf = iIsOwnSpeckleFile(fileName, importedEntry, legacyInfo)
+%IISOWNSPECKLEFILE File-specific evidence that this .dat holds speckle data.
+%
+% Unlike iIsSpeckleDataFile (which also accepts folder-level AcqInfos.mat
+% fields and so flags every file of an acquisition that has a speckle
+% channel), only the file's name, its own ImportedChannels entry, and its
+% own legacy sidecar count here.
+
+[~, fileBase] = fileparts(fileName);
+tf = iContainsSpeckleText(fileBase) || ...
+    iContainsSpeckleText(importedEntry) || ...
+    iHasNonEmptyField(importedEntry, 'ExposureSpeckleMsec') || ...
+    iHasNonEmptyField(legacyInfo, 'ExposureSpeckleMsec');
 end
 
 function tf = iIsLegacyEventSplitDatSize(Info)

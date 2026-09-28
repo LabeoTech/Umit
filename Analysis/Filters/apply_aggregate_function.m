@@ -453,24 +453,20 @@ labels = struct();
 eventInfo = struct();
 
 meta = loadMetaData(dataFile);
-if ~isfield(meta, 'Height') || ~isfield(meta, 'Width') || ~isfield(meta, 'datLength')
+if ~isfield(meta, 'dimNames') || ~isfield(meta, 'dimSizes')
     error('apply_aggregate_function:InvalidMetaData', ...
-        'loadMetaData did not return Height, Width, and datLength for "%s".', dataFile);
+        'loadMetaData did not return dimNames and dimSizes for "%s".', dataFile);
 end
 
-nY = double(meta.Height);
-nX = double(meta.Width);
-nT = double(meta.datLength);
+nY = datAxisSize(meta, 'Y');
+nX = datAxisSize(meta, 'X');
+nT = datAxisSize(meta, 'T');
 
 % Conservative fixed chunk-size budget (not derived from calculateMaxChunkSize's
 % dynamic available-RAM estimate, to keep this path's chunk sizing predictable).
 targetBytes = 128 * 1024 * 1024; % 128 MB
-fid = fopen(dataFile, 'r');
-if fid == -1
-    error('apply_aggregate_function:FileOpenFailed', ...
-        'Failed to open "%s".', dataFile);
-end
-cleanObj = onCleanup(@() safeFclose(fid));
+slabIn = spatialSlabIO('open', dataFile, 'Info', meta);
+cleanObj = onCleanup(@() spatialSlabIO('close', slabIn));
 
 switch dimName
 
@@ -486,7 +482,7 @@ switch dimName
             xEnd = min(nX, xStart + xPerSlab - 1);
             xIdx = xStart:xEnd;
 
-            slab = spatialSlabIO('read', fid, nY, nX, nT, xIdx, 'single');
+            slab = single(spatialSlabIO('read', slabIn, xIdx));
             slabP = permute(slab, [3 1 2]);
             slabP = reshape(slabP, nT, []);
             aggFlat = iCalcAgg(slabP, aggFcn);
@@ -530,7 +526,7 @@ switch dimName
             xEnd = min(nX, xStart + xPerSlab - 1);
             xIdx = xStart:xEnd;
 
-            slabData = spatialSlabIO('read', fid, nY, nX, nT, xIdx, 'single');
+            slabData = single(spatialSlabIO('read', slabIn, xIdx));
 
             for iCond = 1:nCond
                 rowIdx = find(conditionIDlist(:) == condIDs(iCond));
