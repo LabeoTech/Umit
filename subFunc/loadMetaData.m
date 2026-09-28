@@ -214,7 +214,8 @@ function Info = iAppendDeprecatedDatFields(Info, deprecatedFields)
 % MetadataSource, and the AcqInfos-derived CamIdx, MultiCam,
 % TimelineSource, TimelineSourceIndex, ExposureSpeckleMsec) are added to
 % the returned Info. Kept only while existing callers move to the schema
-% fields; remove this function at the end of .dat header Phase 3.
+% fields; remove this function in the .dat header GUI phase, once no .m
+% or .mlapp code reads the old names.
 
 Info = iAppendMissingFields(Info, deprecatedFields);
 
