@@ -275,9 +275,9 @@ end
 
 function outData = iRunChunkedDat(src, baselineMeasure, responseMeasure, timeWindowSec, SaveFolder)
 Info = src.Info;
-Ny = double(Info.Height);
-Nx = double(Info.Width);
-Nt = double(Info.datLength);
+Ny = datAxisSize(Info, 'Y');
+Nx = datAxisSize(Info, 'X');
+Nt = datAxisSize(Info, 'T');
 
 ev = EventsManager(SaveFolder);
 [frMat, conditionIDlist] = ev.getFrameMatrix(Nt);
@@ -295,12 +295,8 @@ eventIDs = unique(conditionIDlist(:), 'stable');
 nEvents = numel(eventIDs);
 ampMap = zeros(Ny, Nx, nEvents, 'single');
 
-fid = fopen(src.fileName, 'r');
-if fid == -1
-    error('Umitoolbox:genAmplitudeMaps:fileOpenFailed', ...
-        'Could not open file "%s".', src.fileName);
-end
-cleanupFid = onCleanup(@() safeFclose(fid));
+slabIn = spatialSlabIO('open', src.fileName, 'Info', Info);
+cleanupFid = onCleanup(@() spatialSlabIO('close', slabIn));
 
 bytesPerElement = getByteSize('single');
 trialCounts = arrayfun(@(eventID) sum(conditionIDlist == eventID), eventIDs);
@@ -330,7 +326,7 @@ for iEv = 1:nEvents
             for iB = 1:numel(baselineFrames)
                 fr = thisFrames(baselineFrames(iB));
                 if ~isnan(fr) && fr >= 1 && fr <= Nt
-                    baselineVals(:,:,iB,iTrial) = iReadFrameSlab(fid, Ny, Nx, double(fr), xIdx);
+                    baselineVals(:,:,iB,iTrial) = iReadFrameSlab(slabIn, double(fr), xIdx);
                 else
                     baselineVals(:,:,iB,iTrial) = NaN;
                 end
@@ -338,7 +334,7 @@ for iEv = 1:nEvents
             for iR = 1:numel(responseFrames)
                 fr = thisFrames(responseFrames(iR));
                 if ~isnan(fr) && fr >= 1 && fr <= Nt
-                    responseVals(:,:,iR,iTrial) = iReadFrameSlab(fid, Ny, Nx, double(fr), xIdx);
+                    responseVals(:,:,iR,iTrial) = iReadFrameSlab(slabIn, double(fr), xIdx);
                 else
                     responseVals(:,:,iR,iTrial) = NaN;
                 end
@@ -513,23 +509,10 @@ end
 out = single(out);
 end
 
-function slab = iReadFrameSlab(fid, Ny, Nx, frameIdx, xIdx)
-%IREADFRAMESLAB Read one frame's contiguous X-slab in a single fread.
-%
-% xIdx must be a contiguous ascending column range (as built by the
-% caller's xStart:xEnd chunking), so the whole [Ny x numel(xIdx)] slab is
-% one contiguous block on disk.
+function slab = iReadFrameSlab(slabIn, frameIdx, xIdx)
+%IREADFRAMESLAB Read one frame's X-slab through an open spatialSlabIO reader.
 
-bytesPerElement = getByteSize('single');
-nCols = numel(xIdx);
-offset = ((frameIdx - 1) * Ny * Nx + (xIdx(1) - 1) * Ny) * bytesPerElement;
-fseek(fid, offset, 'bof');
-tmp = fread(fid, Ny * nCols, '*single');
-if numel(tmp) ~= Ny * nCols
-    error('Umitoolbox:genAmplitudeMaps:fileReadFailed', ...
-        'Unexpected end of file while reading frame %d.', frameIdx);
-end
-slab = reshape(tmp, Ny, nCols);
+slab = single(spatialSlabIO('read', slabIn, xIdx, frameIdx));
 end
 
 function outData = iBuildOutputUMT(ampMap, eventInfoOut, baselineMeasure, responseMeasure, timeWindowSec)

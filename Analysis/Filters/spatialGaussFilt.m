@@ -304,7 +304,11 @@ end
 function outFile = iSpatialGaussDatFile(inFile, SaveFolder, sigma, defaultOutput)
 %ISPATIALGAUSSDATFILE Apply spatial filtering to a raw YXT .dat file.
 
-[Ny, Nx, Nt] = getRawDatInfo(SaveFolder, inFile);
+slabIn = spatialSlabIO('open', inFile);
+cIn = onCleanup(@() spatialSlabIO('close', slabIn));
+Ny = slabIn.Ny;
+Nx = slabIn.Nx;
+Nt = datAxisSize(slabIn.Info, 'T');
 
 % Write through a scratch file so the declared pipeline output only appears
 % once the run has completed, and so the input can safely be the file the
@@ -320,11 +324,6 @@ nChunks = calculateMaxChunkSize(totalBytes, 2, 0.1);
 chunkFrames = ceil(Nt / nChunks);
 nChunks = ceil(Nt / chunkFrames);
 
-fidIn  = fopen(inFile, 'r');
-assert(fidIn ~= -1, 'spatialGaussFilt:OpenInputFailed', ...
-    'Failed to open input file "%s".', inFile);
-cIn = onCleanup(@() safeFclose(fidIn));
-
 fidOut = fopen(tmpFile, 'r+');
 assert(fidOut ~= -1, 'spatialGaussFilt:OpenOutputFailed', ...
     'Failed to open output file "%s".', tmpFile);
@@ -333,11 +332,8 @@ cOut = onCleanup(@() safeFclose(fidOut));
 for c = 1:nChunks
     tStart = (c-1) * chunkFrames + 1;
     tEnd   = min(tStart + chunkFrames - 1, Nt);
-    nThisChunk = tEnd - tStart + 1;
 
-    fseek(fidIn, (tStart-1) * frameBytes, 'bof');
-    slab = fread(fidIn, [Nx*Ny, nThisChunk], '*single');
-    slab = reshape(slab, Ny, Nx, nThisChunk);
+    slab = single(spatialSlabIO('read', slabIn, 1:Nx, tStart:tEnd));
 
     % NaN masking is per chunk (per frame), not collapsed across the whole
     % file, so the result does not depend on chunk boundaries.
@@ -352,7 +348,7 @@ for c = 1:nChunks
     fwrite(fidOut, slab, 'single');
 end
 
-clear cIn cOut; % close fidIn/fidOut via safeFclose before the move below
+clear cIn cOut; % close the input reader and fidOut before the move below
 
 [moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
 assert(moveOk, 'spatialGaussFilt:OutputMoveFailed', ...

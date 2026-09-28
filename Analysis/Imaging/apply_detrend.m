@@ -331,8 +331,8 @@ baselineSec = [];
 if nargin > 2 && ~isempty(dataFile)
     try
         meta = loadMetaData(dataFile);
-        if isfield(meta, 'Freq') && ~isempty(meta.Freq)
-            freqHz = double(meta.Freq);
+        if isfield(meta, 'frameRateHz') && ~isempty(meta.frameRateHz) && ~isnan(meta.frameRateHz)
+            freqHz = double(meta.frameRateHz);
         end
     catch ME
         warning('apply_detrend:FrameRateFromFileFailed', ...
@@ -392,7 +392,11 @@ end
 function outFile = iApplyDetrendDatFile(inFile, SaveFolder, defaultOutput)
 %IAPPLYDETRENDDATFILE Apply detrending to a raw continuous YXT .dat file.
 
-[Ny, Nx, Nt] = getRawDatInfo(SaveFolder, inFile);
+slabIn = spatialSlabIO('open', inFile);
+cIn = onCleanup(@() spatialSlabIO('close', slabIn));
+Ny = slabIn.Ny;
+Nx = slabIn.Nx;
+Nt = datAxisSize(slabIn.Info, 'T');
 frames = iGetDetrendFrameCount(SaveFolder, Nt, inFile);
 
 % Write through a scratch file so the declared pipeline output only appears
@@ -402,11 +406,6 @@ outFile = fullfile(SaveFolder, defaultOutput);
 [~, defOutFilename, ext] = fileparts(defaultOutput);
 tmpFile = fullfile(SaveFolder, [defOutFilename, '_writing', ext]);
 preallocateDatFile(tmpFile, [Ny, Nx, Nt], 'single');
-
-fidIn = fopen(inFile, 'r');
-assert(fidIn ~= -1, 'apply_detrend:OpenInputFailed', ...
-    'Failed to open input file "%s".', inFile);
-cIn = onCleanup(@() safeFclose(fidIn));
 
 fidOut = fopen(tmpFile, 'r+');
 assert(fidOut ~= -1, 'apply_detrend:OpenOutputFailed', ...
@@ -423,7 +422,7 @@ for c = 1:nChunks
     xIdx   = xStart:xEnd;
 
     fprintf('Chunk %i/%i [Reading file ...]\n', c, nChunks)
-    slab = spatialSlabIO('read', fidIn, Ny, Nx, Nt, xIdx, 'single');
+    slab = single(spatialSlabIO('read', slabIn, xIdx));
 
     fprintf('Chunk %i/%i [Detrending data ...]\n', c, nChunks)
     slab = reshape(slab, Ny * numel(xIdx), Nt);
@@ -435,7 +434,7 @@ for c = 1:nChunks
     fprintf('Chunk %i/%i [Completed]\n', c, nChunks)
 end
 
-clear cIn cOut; % close fidIn/fidOut via safeFclose before the move below
+clear cIn cOut; % close the input reader and fidOut before the move below
 
 [moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
 assert(moveOk, 'apply_detrend:OutputMoveFailed', ...

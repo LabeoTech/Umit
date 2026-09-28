@@ -311,7 +311,7 @@ fData = (fData .* mData) + mData;
 outData = reshape(fData, datSize);
 end
 
-function outFile = localRatiometricLowRAM(SaveFolder, fluoFile, fluoMeta, refFile, defaultOutput)
+function outFile = localRatiometricLowRAM(SaveFolder, ~, fluoMeta, refFile, defaultOutput)
 %LOCALRATIOMETRICLOWRAM Ratiometric correction in low-RAM mode.
 
 % Write through a scratch file, then move it onto the declared output.
@@ -329,17 +329,12 @@ Ny = fluoMeta.datSize(1);
 Nx = fluoMeta.datSize(2);
 Nt = fluoMeta.datLength;
 
-fidFluo = fopen(fullfile(SaveFolder, fluoFile), 'r');
-assert(fidFluo ~= -1, ...
-    'Umitoolbox:run_HemoCorrection:FileOpenError', ...
-    'Could not open fluorescence file "%s".', fluoFile);
-cFluo = onCleanup(@() safeFclose(fidFluo)); 
+% Read each input through the file its metadata were resolved from.
+slabFluo = spatialSlabIO('open', fluoMeta.filePath, 'Info', fluoMeta);
+cFluo = onCleanup(@() spatialSlabIO('close', slabFluo)); 
 
-fidRef = fopen(refPath, 'r');
-assert(fidRef ~= -1, ...
-    'Umitoolbox:run_HemoCorrection:FileOpenError', ...
-    'Could not open reference file "%s".', refFile);
-cRef = onCleanup(@() safeFclose(fidRef)); 
+slabRef = spatialSlabIO('open', refMeta.filePath, 'Info', refMeta);
+cRef = onCleanup(@() spatialSlabIO('close', slabRef)); 
 
 preallocateDatFile(tmpFile, [Ny, Nx, Nt], fluoMeta.Datatype);
 
@@ -361,8 +356,8 @@ for ii = 1:nChunks
     xIdx   = xStart:xEnd;
 
     % Read slabs using each file's own temporal length.
-    fSlab = spatialSlabIO('read', fidFluo, Ny, Nx, fluoMeta.datLength, xIdx, fluoMeta.Datatype);
-    rSlab = spatialSlabIO('read', fidRef,  Ny, Nx, refMeta.datLength, xIdx, refMeta.Datatype);
+    fSlab = spatialSlabIO('read', slabFluo, xIdx);
+    rSlab = spatialSlabIO('read', slabRef, xIdx);
     rSlab = localResampleReferenceToFluoTimeline(rSlab, refMeta, fluoMeta);
 
     assert(all(size(fSlab) == size(rSlab)), ...
@@ -396,8 +391,8 @@ end
 % Close every handle before the move: on Windows an open handle blocks it,
 % and the input may be the file the declared output overwrites.
 fclose(fidOut);
-fclose(fidFluo);
-fclose(fidRef);
+spatialSlabIO('close', slabFluo);
+spatialSlabIO('close', slabRef);
 
 [moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
 assert(moveOk, 'Umitoolbox:run_HemoCorrection:OutputMoveFailed', ...
@@ -485,39 +480,20 @@ meta.dim_names = {'Y','X','T'};
 end
 
 function meta = localNormalizeDatMeta(meta)
-%LOCALNORMALIZEDATMETA Ensure loadMetaData output has expected fields.
+%LOCALNORMALIZEDATMETA Add this function's internal size fields to loadMetaData output.
+%
+% The internal fields (datSize = [Y X], datLength, Freq, Datatype, Height,
+% Width) are derived from the .dat Info schema only. The schema fields are
+% kept so the struct can be passed to spatialSlabIO('open', ..., 'Info', meta).
 
-if ~isfield(meta, 'datSize') || isempty(meta.datSize)
-    meta.datSize = [double(meta.Height), double(meta.Width)];
-else
-    meta.datSize = double(meta.datSize(:).');
-end
-
-if ~isfield(meta, 'datLength') || isempty(meta.datLength)
-    meta.datLength = double(meta.Length);
-else
-    meta.datLength = double(meta.datLength);
-end
-
-if ~isfield(meta, 'Freq') || isempty(meta.Freq)
-    meta.Freq = double(meta.FrameRateHz);
-else
-    meta.Freq = double(meta.Freq);
-end
-
-if ~isfield(meta, 'Datatype') || isempty(meta.Datatype)
-    meta.Datatype = 'single';
-else
-    meta.Datatype = char(string(meta.Datatype));
-end
-
-if ~isfield(meta, 'Height') || isempty(meta.Height)
-    meta.Height = meta.datSize(1);
-end
-
-if ~isfield(meta, 'Width') || isempty(meta.Width)
-    meta.Width = meta.datSize(2);
-end
+ny = datAxisSize(meta, 'Y');
+nx = datAxisSize(meta, 'X');
+meta.datSize = [ny, nx];
+meta.datLength = datAxisSize(meta, 'T');
+meta.Freq = double(meta.frameRateHz);
+meta.Datatype = char(string(meta.dataClass));
+meta.Height = ny;
+meta.Width = nx;
 end
 
 function localValidateSpatialMatch(refMeta, fluoMeta, refFile)

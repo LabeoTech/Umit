@@ -219,7 +219,11 @@ end
 function outFile = iZscoreDatFile(inFile, SaveFolder)
 %IZSCOREDATFILE Apply z-score normalization to a raw YXT .dat file.
 
-[Ny, Nx, Nt] = getRawDatInfo(SaveFolder, inFile);
+slabIn = spatialSlabIO('open', inFile);
+cIn = onCleanup(@() spatialSlabIO('close', slabIn));
+Ny = slabIn.Ny;
+Nx = slabIn.Nx;
+Nt = datAxisSize(slabIn.Info, 'T');
 
 % Write through a scratch file so the declared pipeline output only
 % appears once the run has completed, and so the input can safely be the
@@ -227,11 +231,6 @@ function outFile = iZscoreDatFile(inFile, SaveFolder)
 outFile = fullfile(SaveFolder, 'normZ.dat');
 tmpFile = fullfile(SaveFolder, 'normZ_writing.dat');
 preallocateDatFile(tmpFile, [Ny, Nx, Nt], 'single');
-
-fidIn  = fopen(inFile,  'r');
-assert(fidIn ~= -1, 'normalizeZScore:OpenInputFailed', ...
-    'Failed to open input file "%s".', inFile);
-cIn = onCleanup(@() safeFclose(fidIn));
 
 fidOut = fopen(tmpFile, 'r+');
 assert(fidOut ~= -1, 'normalizeZScore:OpenOutputFailed', ...
@@ -248,7 +247,7 @@ for c = 1:nChunks
     xEnd   = min(xStart + chunkX - 1, Nx);
     xIdx   = xStart:xEnd;
 
-    slab = spatialSlabIO('read', fidIn, Ny, Nx, Nt, xIdx, 'single');
+    slab = single(spatialSlabIO('read', slabIn, xIdx));
 
     slab2D = reshape(slab, [], Nt);
 
@@ -262,7 +261,7 @@ for c = 1:nChunks
     spatialSlabIO('write', fidOut, Ny, Nx, Nt, xIdx, 'single', slab);
 end
 
-clear cIn cOut; % close fidIn/fidOut via safeFclose before the move below
+clear cIn cOut; % close the input reader and fidOut before the move below
 
 [moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
 assert(moveOk, 'normalizeZScore:OutputMoveFailed', ...
