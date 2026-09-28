@@ -12,8 +12,12 @@ function [outFile, Info] = loadData(fileName)
 %       Info     - Unified metadata structure from loadMetaData.
 %
 %   Notes:
-%       - .dat files are assumed to be single precision.
 %       - .dat metadata are resolved through loadMetaData.
+%       - Headered .dat files are read from their data offset in the class
+%         stored in the header and reshaped to Info.dimSizes.
+%       - Headerless .dat files (legacy sidecar or AcqInfos-bound) are
+%         read as single precision from byte 0 and reshaped to
+%         Y x X x frames.
 %       - .umt files are MAT-files with a custom extension.
 
 p = inputParser;
@@ -69,9 +73,26 @@ if fid == -1
 end
 cleanupObj = onCleanup(@() safeFclose(fid)); %#ok<NASGU>
 
+if strcmp(Info.format, 'header')
+    % Self-describing file: read exactly the described array, in its stored
+    % class, starting after the header.
+    nValues = prod(Info.dimSizes);
+    fseek(fid, Info.dataOffset, 'bof');
+    data = fread(fid, nValues, ['*' Info.dataClass], 0, 'ieee-le');
+    if numel(data) ~= nValues
+        error('Umitoolbox:loadData:invalidFileLength', ...
+            'File "%s" holds %d of the %d values its header describes.', ...
+            fileName, numel(data), nValues);
+    end
+    data = reshape(data, Info.dimSizes);
+    return
+end
+
+% Headerless files (legacy sidecar or AcqInfos-bound): single precision
+% from byte 0, reshaped to Y x X x frames.
 data = fread(fid, inf, '*single');
 
-frameSize = double(Info.Height) * double(Info.Width);
+frameSize = datAxisSize(Info, 'Y') * datAxisSize(Info, 'X');
 if frameSize <= 0 || mod(frameSize, 1) ~= 0
     error('Umitoolbox:loadData:invalidFrameSize', ...
         'Invalid frame dimensions in metadata.');
@@ -86,5 +107,5 @@ nFrames = numel(data) / frameSize;
 
 % Use the actual on-disk temporal length. loadMetaData already derives
 % datLength from file size, but recompute here to keep loading strict.
-data = reshape(data, Info.Height, Info.Width, nFrames);
+data = reshape(data, datAxisSize(Info, 'Y'), datAxisSize(Info, 'X'), nFrames);
 end
