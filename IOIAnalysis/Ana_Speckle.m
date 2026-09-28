@@ -84,7 +84,7 @@ end
 
 Iptr = loadMetaData(datFile);
 
-requiredFields = {'Height','Width','datLength','Freq','ExposureSpeckleMsec'};
+requiredFields = {'dimNames','dimSizes','frameRateHz','exposureMsec'};
 for iField = 1:numel(requiredFields)
     assert(isfield(Iptr, requiredFields{iField}) && ~isempty(Iptr.(requiredFields{iField})), ...
         'Ana_Speckle:MissingMetaData', ...
@@ -92,11 +92,11 @@ for iField = 1:numel(requiredFields)
         requiredFields{iField}, datFile);
 end
 
-ny = double(Iptr.Height);
-nx = double(Iptr.Width);
-nt = double(Iptr.datLength);
-tFreq = double(Iptr.Freq);
-speckle_int_time = double(Iptr.ExposureSpeckleMsec) / 1000;
+ny = datAxisSize(Iptr, 'Y');
+nx = datAxisSize(Iptr, 'X');
+nt = datAxisSize(Iptr, 'T');
+tFreq = double(Iptr.frameRateHz);
+speckle_int_time = double(Iptr.exposureMsec) / 1000;
 
 OPTIONS.GPU = 0;
 OPTIONS.Power2Flag = 0;
@@ -113,7 +113,7 @@ outMeta.Height = ny;
 outMeta.Width = nx;
 outMeta.Length = nt;
 outMeta.FrameRateHz = tFreq;
-outMeta.ExposureSpeckleMsec = double(Iptr.ExposureSpeckleMsec);
+outMeta.ExposureSpeckleMsec = double(Iptr.exposureMsec);
 
 assert(nt >= 2, 'Ana_Speckle:InvalidInputLength', ...
     'Speckle input must contain at least 2 frames.');
@@ -134,10 +134,8 @@ if bRAMsafe
 
     preallocateDatFile(computeScratchFile, [ny, nx, nt], 'single');
 
-    fidIn  = fopen(datFile, 'r');
-    assert(fidIn ~= -1, 'Ana_Speckle:OpenInputFailed', ...
-        'Could not open input file "%s".', datFile);
-    cIn = onCleanup(@() safeFclose(fidIn));
+    slabIn = spatialSlabIO('open', datFile, 'Info', Iptr);
+    cIn = onCleanup(@() spatialSlabIO('close', slabIn));
 
     fidOut = fopen(computeScratchFile, 'r+');
     assert(fidOut ~= -1, 'Ana_Speckle:OpenOutputFailed', ...
@@ -151,8 +149,7 @@ if bRAMsafe
     frameBytes = ny * nx * getByteSize('single');
 
     for t = 1:nt
-        fseek(fidIn, (t-1) * frameBytes, 'bof');
-        frame = fread(fidIn, ny * nx, '*single');
+        frame = single(spatialSlabIO('read', slabIn, 1:nx, t));
         frame = reshape(frame, ny, nx);
         MeanMap = MeanMap + frame;
 
@@ -170,8 +167,7 @@ if bRAMsafe
     speckle_window = fspecial('disk', 2) > 0;
 
     for t = 1:nt
-        fseek(fidIn, (t-1) * frameBytes, 'bof');
-        frameNext = fread(fidIn, ny * nx, '*single');
+        frameNext = single(spatialSlabIO('read', slabIn, 1:nx, t));
         frameNext = reshape(frameNext, ny, nx);
         frameNext = frameNext ./ MeanMap;
 
@@ -238,7 +234,7 @@ if bRAMsafe
         end
     end
 
-    clear cIn cOut; % close fidIn/fidOut before replacing the declared output
+    clear cIn cOut; % close slabIn/fidOut before replacing the declared output
 
     [moveOk, moveMsg] = movefile(computeScratchFile, outFile, 'f');
     assert(moveOk, 'Ana_Speckle:OutputMoveFailed', ...
@@ -257,12 +253,7 @@ end
 %% ------------------------------------------------------------------------
 % Standard mode
 % -------------------------------------------------------------------------
-fid = fopen(datFile, 'r');
-assert(fid ~= -1, 'Ana_Speckle:OpenInputFailed', ...
-    'Could not open input file "%s".', datFile);
-cStd = onCleanup(@() safeFclose(fid));
-
-dat = fread(fid, inf, '*single');
+dat = single(loadData(datFile));
 dat = reshape(dat, ny, nx, nt);
 MeanMap = mean(dat, 3);
 

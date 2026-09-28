@@ -148,7 +148,8 @@ if useRigOptics
 end
 
 channelInfo = cell(1, 3);
-fidList = zeros(1, 3);
+slabList = cell(1, 3);
+hasChannel = false(1, 3);
 cleanupList = cell(1, 3);
 
 for ii = find(selectedChannels)
@@ -158,26 +159,24 @@ for ii = find(selectedChannels)
 
     channelInfo{ii} = loadMetaData(channelFiles{ii});
 
-    assert(isfield(channelInfo{ii}, 'Height') && isfield(channelInfo{ii}, 'Width') && ...
-            isfield(channelInfo{ii}, 'Length') && isfield(channelInfo{ii}, 'FrameRateHz'), ...
+    assert(isfield(channelInfo{ii}, 'dimNames') && isfield(channelInfo{ii}, 'dimSizes') && ...
+            datAxisSize(channelInfo{ii}, 'T') > 0 && isfield(channelInfo{ii}, 'frameRateHz'), ...
         'Umitoolbox:HemoCompute:InvalidChannelMetadata', ...
-        'Metadata for "%s" must contain Height, Width, Length, and FrameRateHz.', ...
+        'Metadata for "%s" must describe the Y, X, and T sizes and the frame rate.', ...
         channelFiles{ii});
 
-    fidList(ii) = fopen(channelFiles{ii}, 'r');
-    assert(fidList(ii) ~= -1, ...
-        'Umitoolbox:HemoCompute:FileOpenError', ...
-        'Could not open channel file "%s".', channelFiles{ii});
-    thisFid = fidList(ii);
-    cleanupList{ii} = onCleanup(@() safeFclose(thisFid)); 
+    slabList{ii} = spatialSlabIO('open', channelFiles{ii}, 'Info', channelInfo{ii});
+    hasChannel(ii) = true;
+    thisSlab = slabList{ii};
+    cleanupList{ii} = onCleanup(@() spatialSlabIO('close', thisSlab)); 
 end
 
 idxSelected = find(selectedChannels);
 nativeFreq = nan(1,3);
 nativeLength = nan(1,3);
 for ii = idxSelected
-    nativeFreq(ii) = double(channelInfo{ii}.FrameRateHz);
-    nativeLength(ii) = double(channelInfo{ii}.Length);
+    nativeFreq(ii) = double(channelInfo{ii}.frameRateHz);
+    nativeLength(ii) = double(datAxisSize(channelInfo{ii}, 'T'));
 end
 
 % Assert that all selected channels span the same recording duration before
@@ -209,15 +208,15 @@ idxTargetCandidates = idxSelected(abs(nativeFreq(idxSelected) - targetFreq) <= f
 [~, idxMinLength] = min(nativeLength(idxTargetCandidates));
 idxTarget = idxTargetCandidates(idxMinLength);
 
-Ny = double(channelInfo{idxTarget}.Height);
-Nx = double(channelInfo{idxTarget}.Width);
-Nt = double(channelInfo{idxTarget}.Length);
-Freq = double(channelInfo{idxTarget}.FrameRateHz);
-Datatype = char(string(channelInfo{idxTarget}.Datatype)); %#ok<NASGU>
+Ny = double(datAxisSize(channelInfo{idxTarget}, 'Y'));
+Nx = double(datAxisSize(channelInfo{idxTarget}, 'X'));
+Nt = double(datAxisSize(channelInfo{idxTarget}, 'T'));
+Freq = double(channelInfo{idxTarget}.frameRateHz);
+Datatype = char(string(channelInfo{idxTarget}.dataClass)); %#ok<NASGU>
 
 for ii = idxSelected
-    assert(isequal(double(channelInfo{ii}.Height), Ny) && ...
-           isequal(double(channelInfo{ii}.Width), Nx), ...
+    assert(isequal(double(datAxisSize(channelInfo{ii}, 'Y')), Ny) && ...
+           isequal(double(datAxisSize(channelInfo{ii}, 'X')), Nx), ...
         'Umitoolbox:HemoCompute:SpatialMismatch', ...
         'All selected channels must have matching spatial dimensions.');
 end
@@ -231,19 +230,16 @@ indxNorm = [-2 -2 -2];
 
 fprintf('Checking channel data...\n');
 for ii = idxSelected
-    thisFid = fidList(ii);
     thisInfo = channelInfo{ii};
-    thisNt = double(thisInfo.Length);
-    bytesPerFrame = double(thisInfo.Height) * double(thisInfo.Width) * getByteSize(thisInfo.Datatype);
+    thisNt = double(datAxisSize(thisInfo, 'T'));
 
     % Sample 10 frames from the native channel timeline.
     frIdx = unique(floor(linspace(1, thisNt, 10)));
     frIdx(frIdx < 1) = [];
-    tmp = zeros(double(thisInfo.Height), double(thisInfo.Width), 'single');
+    tmp = zeros(double(datAxisSize(thisInfo, 'Y')), double(datAxisSize(thisInfo, 'X')), 'single');
 
     for jj = 1:numel(frIdx)
-        fseek(thisFid, (frIdx(jj) - 1) * bytesPerFrame, 'bof');
-        frame = fread(thisFid, [double(thisInfo.Height), double(thisInfo.Width)], '*single');
+        frame = single(spatialSlabIO('read', slabList{ii}, 1:datAxisSize(thisInfo, 'X'), frIdx(jj)));
         tmp = tmp + frame;
     end
 
@@ -352,27 +348,24 @@ if b_normalize
         xEnd   = min(xStart + chunkX - 1, NbPix(2));
         xIdx   = xStart:xEnd;
 
-        if fidList(1)
-            Red = spatialSlabIO('read', fidList(1), NbPix(1), NbPix(2), ...
-                channelInfo{1}.Length, xIdx, channelInfo{1}.Datatype);
+        if hasChannel(1)
+            Red = spatialSlabIO('read', slabList{1}, xIdx);
             Red = iResampleChannelToLowestFrequency(Red, channelInfo{1}, Nt, Freq);
             Red = reshape(Red, [], Nt);
             Red = single(filtfilt(lpass_high.sosMatrix, lpass_high.ScaleValues, double(Red)'))';
             globalMinRed = min(globalMinRed, min(Red(:)));
         end
 
-        if fidList(2)
-            Green = spatialSlabIO('read', fidList(2), NbPix(1), NbPix(2), ...
-                channelInfo{2}.Length, xIdx, channelInfo{2}.Datatype);
+        if hasChannel(2)
+            Green = spatialSlabIO('read', slabList{2}, xIdx);
             Green = iResampleChannelToLowestFrequency(Green, channelInfo{2}, Nt, Freq);
             Green = reshape(Green, [], Nt);
             Green = single(filtfilt(lpass_high.sosMatrix, lpass_high.ScaleValues, double(Green)'))';
             globalMinGreen = min(globalMinGreen, min(Green(:)));
         end
 
-        if fidList(3)
-            Yel = spatialSlabIO('read', fidList(3), NbPix(1), NbPix(2), ...
-                channelInfo{3}.Length, xIdx, channelInfo{3}.Datatype);
+        if hasChannel(3)
+            Yel = spatialSlabIO('read', slabList{3}, xIdx);
             Yel = iResampleChannelToLowestFrequency(Yel, channelInfo{3}, Nt, Freq);
             Yel = reshape(Yel, [], Nt);
             Yel = single(filtfilt(lpass_high.sosMatrix, lpass_high.ScaleValues, double(Yel)'))';
@@ -394,10 +387,9 @@ for indP = 1:nChunks
         drawnow()
     end
 
-    if fidList(1)
+    if hasChannel(1)
         waitbar(indP/nChunks, h, 'Red channel [Reading file...]')
-        Red = spatialSlabIO('read', fidList(1), NbPix(1), NbPix(2), ...
-            channelInfo{1}.Length, xIdx, channelInfo{1}.Datatype);
+        Red = spatialSlabIO('read', slabList{1}, xIdx);
         Red = iResampleChannelToLowestFrequency(Red, channelInfo{1}, Nt, Freq);
         Red = reshape(Red, [], Nt);
 
@@ -415,10 +407,9 @@ for indP = 1:nChunks
         Red = -log(Red);
     end
 
-    if fidList(2)
+    if hasChannel(2)
         waitbar(indP/nChunks, h, 'Green channel [Reading file...]')
-        Green = spatialSlabIO('read', fidList(2), NbPix(1), NbPix(2), ...
-            channelInfo{2}.Length, xIdx, channelInfo{2}.Datatype);
+        Green = spatialSlabIO('read', slabList{2}, xIdx);
         Green = iResampleChannelToLowestFrequency(Green, channelInfo{2}, Nt, Freq);
         Green = reshape(Green, [], Nt);
 
@@ -436,10 +427,9 @@ for indP = 1:nChunks
         Green = -log(Green);
     end
 
-    if fidList(3)
+    if hasChannel(3)
         waitbar(indP/nChunks, h, 'Yellow channel [Reading file...]')
-        Yel = spatialSlabIO('read', fidList(3), NbPix(1), NbPix(2), ...
-            channelInfo{3}.Length, xIdx, channelInfo{3}.Datatype);
+        Yel = spatialSlabIO('read', slabList{3}, xIdx);
         Yel = iResampleChannelToLowestFrequency(Yel, channelInfo{3}, Nt, Freq);
         Yel = reshape(Yel, [], Nt);
 
@@ -460,15 +450,15 @@ for indP = 1:nChunks
 
     waitbar(indP/nChunks, h, 'Computing [HbO] and [HbR]...')
 
-    if fidList(1) * fidList(2) * fidList(3) > 0
+    if hasChannel(1) * hasChannel(2) * hasChannel(3) > 0
         Ainv = pinv(A);
         Hbs = Ainv * ([Red(:), Green(:), Yel(:)]') .* 1e6;
         clear Red Green Yel
-    elseif fidList(1) * fidList(2) > 0
+    elseif hasChannel(1) * hasChannel(2) > 0
         Ainv = pinv(A(1:2,:));
         Hbs = Ainv * ([Red(:), Green(:)]') .* 1e6;
         clear Red Green
-    elseif fidList(2) * fidList(3) > 0
+    elseif hasChannel(2) * hasChannel(3) > 0
         Ainv = pinv(A(2:3,:));
         Hbs = Ainv * ([Green(:), Yel(:)]') .* 1e6;
         clear Green Yel
@@ -724,8 +714,8 @@ function data = iResampleChannelToLowestFrequency(data, sourceMeta, targetNt, ta
 %   is applied without anti-aliasing. Lower-frequency sources are not
 %   upsampled.
 
-sourceNt = double(sourceMeta.Length);
-sourceFreq = double(sourceMeta.FrameRateHz);
+sourceNt = double(datAxisSize(sourceMeta, 'T'));
+sourceFreq = double(sourceMeta.frameRateHz);
 
 if sourceNt == targetNt
     data = single(data);
