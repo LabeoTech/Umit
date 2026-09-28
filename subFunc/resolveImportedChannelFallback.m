@@ -329,9 +329,9 @@ hasSidecar = isfile(fullfile(folderPath, [baseName '.mat'])) || ...
 
 if hasSidecar
     info = loadMetaData(datPath);
-    if strcmp(info.MetadataSource, 'legacy_sidecar')
-        length = double(info.Length);
-        frameRateHz = double(info.FrameRateHz);
+    if strcmp(info.format, 'legacySidecar')
+        length = datAxisSize(info, 'T');
+        frameRateHz = double(info.frameRateHz);
         return
     end
 end
