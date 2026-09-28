@@ -64,20 +64,15 @@ assert(isfile(datFile), ...
 
 mdIn = loadMetaData(datFile);
 
-% Resolve modern metadata fields.
-assert(isfield(mdIn, 'Height') && isfield(mdIn, 'Width') && isfield(mdIn, 'Length'), ...
+% Resolve sizes and class from the .dat Info schema.
+assert(isfield(mdIn, 'dimNames') && isfield(mdIn, 'dimSizes') && datAxisSize(mdIn, 'T') > 0, ...
     'Umitoolbox:SpeckleMapping:InvalidMetadata', ...
-    'Could not resolve Height/Width/Length from "%s".', datFile);
+    'Could not resolve the Y, X, and T sizes of "%s".', datFile);
 
-Ny = double(mdIn.Height);
-Nx = double(mdIn.Width);
-Nt = double(mdIn.Length);
-
-if isfield(mdIn, 'Datatype') && ~isempty(mdIn.Datatype)
-    dataType = char(string(mdIn.Datatype));
-else
-    dataType = 'single';
-end
+Ny = datAxisSize(mdIn, 'Y');
+Nx = datAxisSize(mdIn, 'X');
+Nt = datAxisSize(mdIn, 'T');
+dataType = char(string(mdIn.dataClass));
 
 assert(strcmpi(dataType, 'single'), ...
     'Umitoolbox:SpeckleMapping:UnsupportedDatatype', ...
@@ -91,16 +86,12 @@ if bRAMSafeMode
     mData = zeros(Ny, Nx, 'single');
     countData = zeros(Ny, Nx, 'single');
 
-    fidIn = fopen(datFile, 'r');
-    assert(fidIn ~= -1, ...
-        'Umitoolbox:SpeckleMapping:FileOpenFailed', ...
-        'Could not open "%s" for reading.', datFile);
-    cIn = onCleanup(@() safeFclose(fidIn)); %#ok<NASGU>
+    slabIn = spatialSlabIO('open', datFile, 'Info', mdIn);
+    cIn = onCleanup(@() spatialSlabIO('close', slabIn));
 
     % Pass 1: temporal mean
     disp('Pass 1/2 - Calculating temporal mean...')
 
-    bytesPerFrame = Ny * Nx * getByteSize(dataType);
     totalBytes = Nx * Ny * Nt * getByteSize(dataType);
 
     nChunks = calculateMaxChunkSize(totalBytes, 1, .1);
@@ -115,8 +106,7 @@ if bRAMSafeMode
         tEnd    = min(tStart + chunkT - 1, Nt);
         nFrames = tEnd - tStart + 1;
 
-        fseek(fidIn, (tStart-1) * bytesPerFrame, 'bof');
-        slab = fread(fidIn, Ny * Nx * nFrames, ['*' dataType]);
+        slab = spatialSlabIO('read', slabIn, 1:Nx, tStart:tEnd);
         slab = reshape(slab, Ny, Nx, nFrames);
 
         % Use omitnan during accumulation.
@@ -153,8 +143,7 @@ if bRAMSafeMode
                 tEnd    = min(tStart + chunkT - 1, Nt);
                 nFrames = tEnd - tStart + 1;
 
-                fseek(fidIn, (tStart-1) * bytesPerFrame, 'bof');
-                frameBlock = fread(fidIn, Ny * Nx * nFrames, ['*' dataType]);
+                frameBlock = spatialSlabIO('read', slabIn, 1:Nx, tStart:tEnd);
                 frameBlock = reshape(frameBlock, Ny, Nx, nFrames);
 
                 frameBlock = frameBlock ./ mData;
@@ -189,7 +178,7 @@ if bRAMSafeMode
                 xEnd   = min(xStart + chunkX - 1, Nx);
                 xIdx   = xStart:xEnd;
 
-                slab = spatialSlabIO('read', fidIn, Ny, Nx, Nt, xIdx, dataType);
+                slab = spatialSlabIO('read', slabIn, xIdx);
                 slab = slab ./ mean(slab, 3, 'omitnan');
                 slab = stdfilt(slab, Kernel);
                 frameOut(:, xIdx) = mean(slab, 3, 'omitnan');
@@ -218,13 +207,7 @@ else
     % ---------------------------------------------------------------------
     % STANDARD MODE
     % ---------------------------------------------------------------------
-    fid = fopen(datFile, 'r');
-    assert(fid ~= -1, ...
-        'Umitoolbox:SpeckleMapping:FileOpenFailed', ...
-        'Could not open "%s" for reading.', datFile);
-    c = onCleanup(@() safeFclose(fid)); %#ok<NASGU>
-
-    dat = fread(fid, inf, '*single');
+    dat = single(loadData(datFile));
     dat = reshape(dat, Ny, Nx, Nt);
     dat = dat ./ mean(dat, 3, 'omitnan');
 

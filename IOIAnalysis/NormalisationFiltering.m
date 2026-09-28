@@ -33,11 +33,9 @@ function varargout = NormalisationFiltering(FolderData, FileData, lowFreq, ...
 %   saveFilename - Output filename in file mode
 %
 % Notes:
-%   - File mode uses loadMetaData(...) to retrieve compatibility metadata.
-%   - If dim_names are missing:
-%         * non-event data assume legacy order {'Y','X','T'}
-%         * event data assume legacy order {'E','Y','X','T'}
-%     and a warning is raised.
+%   - File mode takes the axes, sizes, class, and frame rate from the
+%     .dat Info schema returned by loadMetaData(...), and reads the input
+%     through loadData (event data) or spatialSlabIO (Y,X,T data).
 %   - Non-event file data are expected to be stored as Y,X,T on disk.
 %   - The core filtering algorithm is unchanged.
 
@@ -102,7 +100,7 @@ if isempty(Freq)
 
     if ~isempty(datFiles)
         meta = loadMetaData(fullfile(FolderData, datFiles(1).name));
-        Freq = meta.Freq;
+        Freq = meta.frameRateHz;
     elseif ~isempty(umtFiles)
         meta = loadMetaData(fullfile(FolderData, umtFiles(1).name));
         Freq = meta.Freq;
@@ -211,51 +209,21 @@ end
 % -------------------------------------------------------------------------
 fMetaData = loadMetaData(inFile);
 
-if ~isfield(fMetaData, 'datSize') || ~isfield(fMetaData, 'datLength') || ...
-        ~isfield(fMetaData, 'Datatype')
+if ~isfield(fMetaData, 'dimNames') || ~isfield(fMetaData, 'dimSizes') || ...
+        ~isfield(fMetaData, 'dataClass')
     error('NormalisationFiltering:InvalidMetaData', ...
         ['loadMetaData("%s") did not return the required fields: ' ...
-         'datSize, datLength, Datatype.'], ...
+         'dimNames, dimSizes, dataClass.'], ...
         inFile);
 end
 
-storedSize = [fMetaData.datSize fMetaData.datLength];
-dataType = char(string(fMetaData.Datatype));
+dimNames = cellstr(string(fMetaData.dimNames));
+storedSize = double(fMetaData.dimSizes);
+dataType = char(string(fMetaData.dataClass));
 
-if isfield(fMetaData, 'dim_names') && ~isempty(fMetaData.dim_names)
-    dimNames = cellstr(string(fMetaData.dim_names));
-else
-    if numel(storedSize) == 4
-        dimNames = {'E','Y','X','T'};
-    elseif numel(storedSize) == 3
-        dimNames = {'Y','X','T'};
-    else
-        error('NormalisationFiltering:MissingDimNames', ...
-            'Failed to infer dim_names for "%s".', inFile);
-    end
-    warning('NormalisationFiltering:MissingDimNames', ...
-        ['Metadata field dim_names was missing for "%s". ' ...
-         'Assuming legacy order {%s}.'], ...
-        inFile, strjoin(dimNames, ','));
-end
-
-if numel(dimNames) ~= numel(storedSize)
-    if numel(storedSize) == 4
-        dimNames = {'E','Y','X','T'};
-    elseif numel(storedSize) == 3
-        dimNames = {'Y','X','T'};
-    else
-        error('NormalisationFiltering:InvalidDimNames', ...
-            'dim_names length does not match stored data size for "%s".', inFile);
-    end
-    warning('NormalisationFiltering:InvalidDimNames', ...
-        ['Metadata dim_names length did not match stored size for "%s". ' ...
-         'Assuming legacy order {%s}.'], ...
-        inFile, strjoin(dimNames, ','));
-end
-
-if isfield(fMetaData, 'Freq') && ~isempty(fMetaData.Freq)
-    Freq = fMetaData.Freq;
+if isfield(fMetaData, 'frameRateHz') && ~isempty(fMetaData.frameRateHz) && ...
+        ~isnan(fMetaData.frameRateHz)
+    Freq = fMetaData.frameRateHz;
 elseif ~isempty(freqOverride)
     Freq = freqOverride;
 else
@@ -294,11 +262,6 @@ end
 % Preallocate output file
 % -------------------------------------------------------------------------
 preallocateDatFile(outDat, storedSize, dataType);
-
-fidIn  = fopen(inFile, 'r');
-assert(fidIn ~= -1, 'NormalisationFiltering:OpenInputFailed', ...
-    'Failed to open input file "%s".', inFile);
-cIn = onCleanup(@() safeFclose(fidIn));
 
 fidOut = fopen(outDat, 'r+');
 assert(fidOut ~= -1, 'NormalisationFiltering:OpenOutputFailed', ...
@@ -348,12 +311,7 @@ if hasEvents
         'NormalisationFiltering:InvalidDimNames', ...
         'Event data must define Y, X, T, and E dimensions.');
 
-    nElem = prod(storedSize);
-    raw = fread(fidIn, nElem, ['*' dataType]);
-    assert(numel(raw) == nElem, 'NormalisationFiltering:UnexpectedEOF', ...
-        'Unexpected end of file while reading "%s".', inFile);
-
-    storedData = reshape(raw, storedSize);
+    storedData = reshape(loadData(inFile), storedSize);
     permToYXTE = [idxY idxX idxT idxE];
     dataYXTE = permute(storedData, permToYXTE);
 
@@ -421,6 +379,9 @@ else
     Nx = storedSize(2);
     Nt = storedSize(3);
 
+    slabIn = spatialSlabIO('open', inFile, 'Info', fMetaData);
+    cIn = onCleanup(@() spatialSlabIO('close', slabIn));
+
     if bExpFit
         nChunks = calculateMaxChunkSize(prod(storedSize) * getByteSize(dataType), 2, .3);
     else
@@ -447,7 +408,7 @@ else
             xEnd   = min(xStart + chunkX - 1, Nx);
             xIdx   = xStart:xEnd;
 
-            slab = spatialSlabIO('read', fidIn, Ny, Nx, Nt, xIdx, dataType);
+            slab = spatialSlabIO('read', slabIn, xIdx);
             slab = reshape(double(slab), [], Nt);
             isValidS = ~isnan(slab);
             slab(~isValidS) = 0;
@@ -470,7 +431,7 @@ else
         xIdx   = xStart:xEnd;
 
         fprintf('Chunk #%i [Reading data from file...]\n', c)
-        slab = spatialSlabIO('read', fidIn, Ny, Nx, Nt, xIdx, dataType);
+        slab = spatialSlabIO('read', slabIn, xIdx);
 
         % F-14: mask NaNs before filtering and restore them afterward, the
         % same policy iFilterArray applies for in-RAM inputs
@@ -528,9 +489,9 @@ else
         fprintf('Chunk #%i [Completed]\n', c)
         clear slab
     end
+    spatialSlabIO('close', slabIn);
 end
 
-fclose(fidIn);
 fclose(fidOut);
 
 if bReturn

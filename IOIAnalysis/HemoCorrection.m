@@ -288,13 +288,11 @@ chunkSizePixels = ceil(Nx / nChunks);
 nChunks = ceil(Nx / chunkSizePixels);
 
 if nChunks > 1
-    fid = {};
+    refSlab = cell(1, numChannels);
     for ii = 1:numChannels
-        fid{ii} = fopen(colorList{ii}, 'r'); %#ok<AGROW>
-        assert(fid{ii} ~= -1, ...
-            'Umitoolbox:HemoCorrection:FileOpenFailed', ...
-            'Could not open hemodynamic reference file "%s".', colorList{ii});
+        refSlab{ii} = spatialSlabIO('open', colorList{ii}, 'Info', cMetaData{ii});
     end
+    c_ref = onCleanup(@() cellfun(@(r) spatialSlabIO('close', r), refSlab));
 end
 
 spatSigma = 1;
@@ -332,8 +330,7 @@ for ii = 1:nChunks
         if nChunks == 1
             tmp = loadData(colorList{kk});
         else
-            tmp = spatialSlabIO('read', fid{kk}, Ny, Nx, cMetaData{kk}.datLength, ...
-                idxPixels_with_pad, cMetaData{kk}.Datatype);
+            tmp = spatialSlabIO('read', refSlab{kk}, idxPixels_with_pad);
         end
 
         tmp = iResampleHemoToFluoTimeline(tmp, cMetaData{kk}, fMetaData, LPcutoffFreq);
@@ -375,9 +372,9 @@ end
 
 close(h);
 
-if exist('fid', 'var')
-    for kk = 1:numel(fid)
-        fclose(fid{kk});
+if exist('refSlab', 'var')
+    for kk = 1:numel(refSlab)
+        spatialSlabIO('close', refSlab{kk});
     end
 end
 
@@ -389,24 +386,18 @@ end
 function outFilename = HemoCorrection_lowRAMmode(outFilename, fluoFile, fMetaData, colorList, LPcutoffFreq)
 %HEMOCORRECTION_LOWRAMMODE Disk-streamed hemodynamic correction.
 
-f_fid = fopen(fluoFile, 'r');
-assert(f_fid ~= -1, ...
-    'Umitoolbox:HemoCorrection:FileOpenFailed', ...
-    'Could not open fluorescence file "%s".', fluoFile);
-c_f = onCleanup(@() safeFclose(f_fid)); 
+fluoSlab = spatialSlabIO('open', fluoFile, 'Info', fMetaData);
+c_f = onCleanup(@() spatialSlabIO('close', fluoSlab)); 
 
 numChannels = numel(colorList);
-h_fid = cell(1, numChannels);
+refSlab = cell(1, numChannels);
 c_r = cell(1, numChannels);
 cMetaData = cell(1, numChannels);
 maxNt = fMetaData.datLength;
 for k = 1:numChannels
-    h_fid{k} = fopen(colorList{k}, 'r');
-    assert(h_fid{k} ~= -1, ...
-        'Umitoolbox:HemoCorrection:FileOpenFailed', ...
-        'Could not open hemodynamic reference file "%s".', colorList{k});
-    c_r{k} = onCleanup(@() safeFclose(h_fid{k})); 
     cMetaData{k} = iNormalizeDatMeta(loadMetaData(colorList{k}));
+    refSlab{k} = spatialSlabIO('open', colorList{k}, 'Info', cMetaData{k});
+    c_r{k} = onCleanup(@() spatialSlabIO('close', refSlab{k})); 
     iValidateSpatialMatch(cMetaData{k}, fMetaData, colorList{k});
     maxNt = max(maxNt, cMetaData{k}.datLength);
 end
@@ -473,7 +464,7 @@ for ii = 1:nChunks
     HemoData = zeros(numChannels, Np, Nt, 'single');
 
     waitbar(.99, h, 'Reading fluo channel...'); drawnow()
-    fData = spatialSlabIO('read', f_fid, Ny, Nx, Nt, idxPixels, fMetaData.Datatype);
+    fData = spatialSlabIO('read', fluoSlab, idxPixels);
 
     waitbar(.99, h, 'Normalizing fluo channel...'); drawnow()
     f_slabSz = size(fData);
@@ -485,8 +476,7 @@ for ii = 1:nChunks
         [~, colorName, ext] = fileparts(colorList{kk});
         waitbar(.99, h, ['Reading file [' colorName ext ']']); drawnow()
 
-        tmp = spatialSlabIO('read', h_fid{kk}, Ny, Nx, cMetaData{kk}.datLength, ...
-            idxPixels_with_pad, cMetaData{kk}.Datatype);
+        tmp = spatialSlabIO('read', refSlab{kk}, idxPixels_with_pad);
 
         waitbar(.99, h, ['Resampling hemodynamic file [' colorName ext ']']); drawnow()
         tmp = iResampleHemoToFluoTimeline(tmp, cMetaData{kk}, fMetaData, LPcutoffFreq);
@@ -536,10 +526,10 @@ end
 
 close(h);
 
-fclose(f_fid);
+spatialSlabIO('close', fluoSlab);
 fclose(fid_out);
-for kk = 1:numel(h_fid)
-    fclose(h_fid{kk});
+for kk = 1:numel(refSlab)
+    spatialSlabIO('close', refSlab{kk});
 end
 end
 
@@ -615,39 +605,20 @@ end
 
 
 function meta = iNormalizeDatMeta(meta)
-%INORMALIZEDATMETA Ensure loadMetaData output has legacy-compatible fields.
+%INORMALIZEDATMETA Add this function's internal size fields to loadMetaData output.
+%
+% The internal fields (datSize = [Y X], datLength, Freq, Datatype, Height,
+% Width) are derived from the .dat Info schema only. The schema fields are
+% kept so the struct can be passed to spatialSlabIO('open', ..., 'Info', meta).
 
-if ~isfield(meta, 'datSize') || isempty(meta.datSize)
-    meta.datSize = [double(meta.Height), double(meta.Width)];
-else
-    meta.datSize = double(meta.datSize(:).');
-end
-
-if ~isfield(meta, 'datLength') || isempty(meta.datLength)
-    meta.datLength = double(meta.Length);
-else
-    meta.datLength = double(meta.datLength);
-end
-
-if ~isfield(meta, 'Freq') || isempty(meta.Freq)
-    meta.Freq = double(meta.FrameRateHz);
-else
-    meta.Freq = double(meta.Freq);
-end
-
-if ~isfield(meta, 'Datatype') || isempty(meta.Datatype)
-    meta.Datatype = 'single';
-else
-    meta.Datatype = char(string(meta.Datatype));
-end
-
-if ~isfield(meta, 'Height') || isempty(meta.Height)
-    meta.Height = meta.datSize(1);
-end
-
-if ~isfield(meta, 'Width') || isempty(meta.Width)
-    meta.Width = meta.datSize(2);
-end
+ny = datAxisSize(meta, 'Y');
+nx = datAxisSize(meta, 'X');
+meta.datSize = [ny, nx];
+meta.datLength = datAxisSize(meta, 'T');
+meta.Freq = double(meta.frameRateHz);
+meta.Datatype = char(string(meta.dataClass));
+meta.Height = ny;
+meta.Width = nx;
 end
 
 
