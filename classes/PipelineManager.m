@@ -3362,8 +3362,12 @@ classdef PipelineManager < handle
             appendLine('    md = [];');
             appendLine('');
             appendLine('    if nargin >= 1 && ~isempty(primaryDataPath)');
-            appendLine('        md = loadData(primaryDataPath, ''InfoOnly'', true);');
-            appendLine('        return');
+            appendLine('        try');
+            appendLine('            md = loadMetaData(primaryDataPath);');
+            appendLine('            return');
+            appendLine('        catch');
+            appendLine('            % Fall back to AcqInfos.mat below.');
+            appendLine('        end');
             appendLine('    end');
             appendLine('');
             appendLine('    infoFile = fullfile(saveFolder, ''AcqInfos.mat'');');
@@ -12473,10 +12477,13 @@ classdef PipelineManager < handle
             %
             %   Resolution policy:
             %       1) If the primary DATA input can be traced to a concrete .dat file,
-            %          call loadData(filePath,'InfoOnly',true). This preserves the
-            %          retrocompatibility behavior for old .dat + .mat sidecar formats.
-            %       2) Otherwise, fall back to <saveFolder>/AcqInfos.mat, which is the
-            %          metadata source for the new standard format.
+            %          return loadMetaData(filePath): the file's own metadata (.dat
+            %          Info schema, plus the deprecated names such as datSize,
+            %          datLength, Freq, dim_names, Datatype that older functions
+            %          expect). Works for headered, legacy sidecar, and
+            %          AcqInfos-bound files.
+            %       2) Otherwise, or if loadMetaData fails, fall back to
+            %          <saveFolder>/AcqInfos.mat.
             %
             %   Notes:
             %       - This is intended only for legacy/custom functions that still use
@@ -12519,15 +12526,15 @@ classdef PipelineManager < handle
             end
 
             % -------------------------------------------------------------
-            % 2) If a concrete .dat file is available, use loadData(...,InfoOnly)
-            %    so retrocompatibility sidecar logic is reused.
+            % 2) If a concrete .dat file is available, return its own
+            %    metadata from loadMetaData.
             % -------------------------------------------------------------
             if ~isempty(dataFilePath)
                 [~, ~, ext] = fileparts(dataFilePath);
 
                 if strcmpi(ext, '.dat')
                     try
-                        [~, md] = loadData(dataFilePath, 'InfoOnly', true);
+                        md = loadMetaData(dataFilePath);
                         obj.metaData = md;
                         return
                     catch

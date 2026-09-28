@@ -535,11 +535,19 @@ function freqHz = iGetFrameRateHz(SaveFolder, dataFile)
 
 if nargin >= 2 && ~isempty(dataFile)
     meta = loadMetaData(dataFile);
-    if ~isfield(meta, 'Freq') || isempty(meta.Freq)
-        error('normalizeLPF:MissingFrameRate', ...
-            'loadMetaData did not return Freq for "%s".', dataFile);
+    if isfield(meta, 'frameRateHz')
+        % .dat files: the .dat Info schema.
+        freqHz = double(meta.frameRateHz);
+    elseif isfield(meta, 'Freq')
+        % .umt files keep their own Info field names.
+        freqHz = double(meta.Freq);
+    else
+        freqHz = [];
     end
-    freqHz = double(meta.Freq);
+    if isempty(freqHz) || isnan(freqHz)
+        error('normalizeLPF:MissingFrameRate', ...
+            'loadMetaData did not return a frame rate for "%s".', dataFile);
+    end
     return
 end
 
