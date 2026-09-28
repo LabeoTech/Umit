@@ -28,6 +28,27 @@ function varargout = spatialSlabIO(mode, varargin)
 %
 %   'close' closes the file; closing twice is harmless.
 %
+% Handle-based writes (streamed outputs):
+%
+%   h = SPATIALSLABIO('create', filename, hdr)
+%       SPATIALSLABIO('write', h, xIdx, slab)
+%       SPATIALSLABIO('write', h, xIdx, slab, frameIdx)
+%       SPATIALSLABIO('finalize', h)
+%
+%   'create' writes a version-1 header from HDR (the encodeDatHeader
+%   fields: dataClass, frameRateHz, exposureMsec, channelName, dimNames,
+%   dimSizes) with the write-complete flag at 0 and extends the file to its
+%   final size without writing zeros. The handle has the same fields as an
+%   'open' handle and also supports 'read'.
+%
+%   'write' mirrors 'read': SLAB is [Ny, numel(xIdx), trailingSizes] (all
+%   frames) or [Ny, numel(xIdx), numel(frameIdx)]. Values are cast to the
+%   file's class. One fwrite per run of contiguous columns and consecutive
+%   frames, using the skip argument (Phase 3a benchmark, strategy W4).
+%
+%   'finalize' sets the write-complete flag and closes the file. 'close' on
+%   a created handle leaves the file marked incomplete.
+%
 %   Reads use one fread per run of contiguous columns and consecutive
 %   frames, with the fread skip argument jumping over the rest of each
 %   frame (chosen from the Phase 3a slab I/O benchmark).
@@ -64,15 +85,25 @@ if (ischar(mode) || (isstring(mode) && isscalar(mode))) && strcmpi(mode, 'open')
     return
 end
 
+if (ischar(mode) || (isstring(mode) && isscalar(mode))) && strcmpi(mode, 'create')
+    varargout{1} = iCreate(varargin{:});
+    return
+end
+
 if ~isempty(varargin) && isstruct(varargin{1})
     switch lower(char(mode))
         case 'read'
             varargout{1} = iHandleRead(varargin{:});
+        case 'write'
+            iHandleWrite(varargin{:});
+        case 'finalize'
+            iFinalize(varargin{:});
         case 'close'
             iClose(varargin{:});
         otherwise
             error('Umitoolbox:spatialSlabIO:invalidInput', ...
-                'Unknown mode "%s" for a spatialSlabIO handle. Use ''read'' or ''close''.', char(mode));
+                ['Unknown mode "%s" for a spatialSlabIO handle. Use ''read'', ' ...
+                 '''write'', ''finalize'', or ''close''.'], char(mode));
     end
     return
 end
@@ -124,6 +155,11 @@ if fid < 0
     error('Umitoolbox:spatialSlabIO:openFailed', 'Cannot open file for reading: %s', Info.filePath);
 end
 
+h = iMakeHandle(fid, Info, false, struct());
+end
+
+function h = iMakeHandle(fid, Info, writable, headerDescription)
+% Common handle fields for 'open' and 'create'.
 h = struct();
 h.fid = fid;
 h.filePath = fopen(fid);
@@ -138,6 +174,166 @@ h.nFrames = prod(h.trailingSizes);
 h.dataClass = Info.dataClass;
 h.bytesPerValue = getByteSize(Info.dataClass);
 h.dataOffset = Info.dataOffset;
+h.writable = writable;
+h.headerDescription = headerDescription;
+end
+
+% =========================================================================
+% Handle-based writes
+% =========================================================================
+function h = iCreate(filename, hdr)
+if nargin ~= 2 || ~(ischar(filename) || (isstring(filename) && isscalar(filename))) || ...
+        ~isstruct(hdr) || ~isscalar(hdr)
+    error('Umitoolbox:spatialSlabIO:invalidInput', ...
+        '''create'' needs a file name and a header description struct.');
+end
+filename = char(filename);
+if isempty(fileparts(filename))
+    filename = fullfile(pwd, filename);
+end
+
+% Validate and encode before touching the file: an invalid header creates nothing.
+hdr.writeComplete = false;
+headerBytes = encodeDatHeader(hdr);
+described = decodeDatHeader(headerBytes);
+if numel(described.dimNames) < 2 || ~isequal(described.dimNames(1:2), {'Y', 'X'})
+    error('Umitoolbox:spatialSlabIO:unsupportedLayout', ...
+        'spatialSlabIO creates files whose first two axes are Y, X; got {%s}.', ...
+        strjoin(described.dimNames, ','));
+end
+totalBytes = described.dataOffset + described.expectedDataBytes;
+
+fid = fopen(filename, 'w', 'ieee-le');
+if fid < 0
+    error('Umitoolbox:spatialSlabIO:openFailed', 'Cannot create file: %s', filename);
+end
+fwrite(fid, headerBytes, 'uint8');
+fclose(fid);
+iExtendFile(filename, totalBytes);
+
+% Describe the file exactly as loadMetaData does (it is not complete yet).
+warningState = warning('off', 'Umitoolbox:loadMetaData:incompleteFile');
+restoreWarning = onCleanup(@() warning(warningState));
+Info = loadMetaData(filename);
+clear restoreWarning
+
+fid = fopen(filename, 'r+', 'ieee-le');
+if fid < 0
+    error('Umitoolbox:spatialSlabIO:openFailed', 'Cannot open file for writing: %s', filename);
+end
+description = struct('dataClass', described.dataClass, 'frameRateHz', described.frameRateHz, ...
+    'exposureMsec', described.exposureMsec, 'channelName', described.channelName, ...
+    'dimNames', {described.dimNames}, 'dimSizes', described.dimSizes);
+h = iMakeHandle(fid, Info, true, description);
+end
+
+function iExtendFile(filename, totalBytes)
+% Grow the file to totalBytes without writing the data bytes.
+info = dir(filename);
+if info.bytes >= totalBytes
+    return
+end
+try
+    raf = java.io.RandomAccessFile(filename, 'rw');
+    raf.setLength(totalBytes);
+    raf.close();
+catch
+    % Without Java: zero-fill the remainder in chunks.
+    fid = fopen(filename, 'a');
+    cleanupObj = onCleanup(@() fclose(fid));
+    remaining = totalBytes - info.bytes;
+    chunk = 64 * 1024^2;
+    while remaining > 0
+        n = min(chunk, remaining);
+        fwrite(fid, zeros(n, 1, 'uint8'), 'uint8');
+        remaining = remaining - n;
+    end
+    clear cleanupObj
+end
+end
+
+function iHandleWrite(h, xIdx, slab, frameIdx)
+iAssertOpenHandle(h);
+iAssertWritable(h);
+if nargin < 3
+    error('Umitoolbox:spatialSlabIO:invalidInput', '''write'' needs column indices and a slab.');
+end
+xIdx = iCheckIndices(xIdx, h.Nx, 'xIdx');
+if nargin < 4
+    frameIdx = 1:h.nFrames;
+else
+    frameIdx = iCheckIndices(frameIdx, h.nFrames, 'frameIdx');
+end
+
+Ny = h.Ny;
+nX = numel(xIdx);
+nF = numel(frameIdx);
+if ~isnumeric(slab) && ~islogical(slab)
+    error('Umitoolbox:spatialSlabIO:invalidInput', 'The slab must be numeric.');
+end
+if size(slab, 1) ~= Ny || size(slab, 2) ~= nX || numel(slab) ~= Ny * nX * nF
+    error('Umitoolbox:spatialSlabIO:invalidInput', ...
+        'The slab must have %d rows, %d columns, and %d frames.', Ny, nX, nF);
+end
+slab = reshape(cast(slab, h.dataClass), Ny, nX, nF);
+
+frameBytes = h.Ny * h.Nx * h.bytesPerValue;
+[colStart, colLen, colPos] = iRuns(xIdx);
+[frmStart, frmLen, frmPos] = iRuns(frameIdx);
+singleRun = isscalar(colStart) && isscalar(frmStart);
+
+for c = 1:numel(colStart)
+    nCols = colLen(c);
+    skipBytes = (h.Nx - nCols) * Ny * h.bytesPerValue;
+    blockPrecision = sprintf('%d*%s', Ny * nCols, h.dataClass);
+    for f = 1:numel(frmStart)
+        if singleRun
+            block = slab;   % avoid copying the whole slab
+        else
+            block = slab(:, colPos{c}, frmPos{f});
+        end
+        offset = h.dataOffset + (frmStart(f) - 1) * frameBytes + ...
+            (colStart(c) - 1) * Ny * h.bytesPerValue;
+        if fseek(h.fid, offset, 'bof') ~= 0
+            error('Umitoolbox:spatialSlabIO:writeFailed', 'Seek failed in %s.', h.filePath);
+        end
+        if skipBytes == 0
+            written = fwrite(h.fid, block, h.dataClass);
+        else
+            % fwrite applies the skip before each block: write the first
+            % frame's block, then the rest landing on the same columns.
+            written = fwrite(h.fid, block(:, :, 1), h.dataClass);
+            if frmLen(f) > 1
+                written = written + fwrite(h.fid, block(:, :, 2:end), blockPrecision, skipBytes);
+            end
+        end
+        if written ~= numel(block)
+            error('Umitoolbox:spatialSlabIO:writeFailed', ...
+                'Wrote %d of %d values to %s.', written, numel(block), h.filePath);
+        end
+    end
+end
+end
+
+function iFinalize(h)
+iAssertOpenHandle(h);
+iAssertWritable(h);
+description = h.headerDescription;
+description.writeComplete = true;
+headerBytes = encodeDatHeader(description);
+if fseek(h.fid, 0, 'bof') ~= 0
+    error('Umitoolbox:spatialSlabIO:writeFailed', 'Seek failed in %s.', h.filePath);
+end
+fwrite(h.fid, headerBytes, 'uint8');
+fclose(h.fid);
+end
+
+function iAssertWritable(h)
+if ~isfield(h, 'writable') || ~h.writable
+    error('Umitoolbox:spatialSlabIO:invalidInput', ...
+        'The handle for "%s" is read-only; write with a handle from spatialSlabIO(''create'', ...).', ...
+        h.filePath);
+end
 end
 
 function Info = iCheckResolvedInfo(Info, filename)
