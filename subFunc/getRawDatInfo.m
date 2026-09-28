@@ -14,9 +14,9 @@ end
 
 meta = loadMetaData(inFile);
 
-requiredFields = {'Height', 'Width', 'datLength'};
+requiredFields = {'dimNames', 'dimSizes'};
 if nargout > 3
-    requiredFields{end+1} = 'Freq';
+    requiredFields{end+1} = 'frameRateHz';
 end
 
 if ~all(isfield(meta, requiredFields))
@@ -24,10 +24,10 @@ if ~all(isfield(meta, requiredFields))
         'loadMetaData did not return %s for "%s".', strjoin(requiredFields, ', '), inFile);
 end
 
-Ny = double(meta.Height);
-Nx = double(meta.Width);
-Nt = double(meta.datLength);
+Ny = datAxisSize(meta, 'Y');
+Nx = datAxisSize(meta, 'X');
+Nt = datAxisSize(meta, 'T');
 if nargout > 3
-    freqHz = double(meta.Freq);
+    freqHz = double(meta.frameRateHz);
 end
 end

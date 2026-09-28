@@ -88,9 +88,10 @@ else
 end
 
 % Get data size from the first channel.
-datInfo = mapDat(fullfile(DataFolder, Cam1List{1}));
-cam1Img = zeros([length(Cam1List), size(datInfo.Data.data,1), size(datInfo.Data.data,2)], 'single');
-cam2Img = zeros([length(Cam2List), size(datInfo.Data.data,1), size(datInfo.Data.data,2)], 'single');
+datInfo = loadMetaData(fullfile(DataFolder, Cam1List{1}));
+frameSize = [datAxisSize(datInfo, 'Y'), datAxisSize(datInfo, 'X')];
+cam1Img = zeros([length(Cam1List), frameSize], 'single');
+cam2Img = zeros([length(Cam2List), frameSize], 'single');
 clear datInfo
 
 % Create a combined image from each camera to be used in the coregistration:

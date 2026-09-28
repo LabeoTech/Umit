@@ -4,6 +4,7 @@ function varargout = spatialSlabIO(mode, varargin)
 % Handle-based reads (use these in new code):
 %
 %   h    = SPATIALSLABIO('open', filename)
+%   h    = SPATIALSLABIO('open', filename, 'Info', Info)
 %   slab = SPATIALSLABIO('read', h, xIdx)
 %   slab = SPATIALSLABIO('read', h, xIdx, frameIdx)
 %          SPATIALSLABIO('close', h)
@@ -14,6 +15,9 @@ function varargout = spatialSlabIO(mode, varargin)
 %   The handle h is a struct with fields fid, filePath, Info, Ny, Nx,
 %   trailingSizes (Info.dimSizes(3:end), 1 for a Y-X file), nFrames
 %   (prod(trailingSizes)), dataClass, bytesPerValue, dataOffset.
+%   With 'Info', open reuses an Info that loadMetaData already returned for
+%   this same file (checked by path) instead of calling loadMetaData
+%   again; use it when a file is reopened for many small reads.
 %
 %   'read' returns all Y for the columns xIdx, in the stored class:
 %     - without frameIdx: all frames, size [Ny, numel(xIdx), trailingSizes];
@@ -89,12 +93,20 @@ end
 % =========================================================================
 % Handle-based reads
 % =========================================================================
-function h = iOpen(filename)
-if nargin ~= 1 || ~(ischar(filename) || (isstring(filename) && isscalar(filename)))
-    error('Umitoolbox:spatialSlabIO:invalidInput', '''open'' needs one file name.');
+function h = iOpen(filename, varargin)
+if nargin < 1 || ~(ischar(filename) || (isstring(filename) && isscalar(filename)))
+    error('Umitoolbox:spatialSlabIO:invalidInput', '''open'' needs a file name.');
 end
 filename = char(filename);
-Info = loadMetaData(filename);
+if isempty(varargin)
+    Info = loadMetaData(filename);
+elseif numel(varargin) == 2 && (ischar(varargin{1}) || isstring(varargin{1})) && ...
+        strcmpi(varargin{1}, 'Info')
+    Info = iCheckResolvedInfo(varargin{2}, filename);
+else
+    error('Umitoolbox:spatialSlabIO:invalidInput', ...
+        '''open'' accepts only the name-value option ''Info''.');
+end
 
 if numel(Info.dimNames) < 2 || ~isequal(Info.dimNames(1:2), {'Y', 'X'})
     error('Umitoolbox:spatialSlabIO:unsupportedLayout', ...
@@ -126,6 +138,31 @@ h.nFrames = prod(h.trailingSizes);
 h.dataClass = Info.dataClass;
 h.bytesPerValue = getByteSize(Info.dataClass);
 h.dataOffset = Info.dataOffset;
+end
+
+function Info = iCheckResolvedInfo(Info, filename)
+% Accept an Info already returned by loadMetaData for this same file.
+schemaFields = {'filePath', 'format', 'dataOffset', 'dataClass', 'dimNames', 'dimSizes'};
+if ~isstruct(Info) || ~isscalar(Info) || ~all(isfield(Info, schemaFields))
+    error('Umitoolbox:spatialSlabIO:invalidInput', ...
+        'Info must be the loadMetaData output for the file (missing .dat schema fields).');
+end
+if ~strcmp(iCanonicalPath(Info.filePath), iCanonicalPath(filename))
+    error('Umitoolbox:spatialSlabIO:invalidInput', ...
+        'Info describes "%s", not "%s".', Info.filePath, filename);
+end
+end
+
+function p = iCanonicalPath(p)
+p = char(p);
+if isempty(fileparts(p))
+    p = fullfile(pwd, p);
+end
+try
+    p = char(java.io.File(p).getCanonicalPath());
+catch
+    % Without Java, compare the absolute paths as given.
+end
 end
 
 function slab = iHandleRead(h, xIdx, frameIdx)
