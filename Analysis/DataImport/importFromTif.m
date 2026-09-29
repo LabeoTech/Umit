@@ -274,14 +274,17 @@ for ii = 1:numel(tif_metadata.Tiffiles)
     datFileName = [channelTag '.dat'];
     datFilePath = fullfile(SaveFolder, datFileName);
 
-    fid = fopen(datFilePath, 'w');
-    assert(fid ~= -1, 'Failed to create data file "%s".', datFilePath);
-    c = onCleanup(@() safeFclose(fid));
-
-    nWritten = fwrite(fid, data, 'single');
-    assert(nWritten == numel(data), ...
-        'Failed to write all data to "%s". Expected %d elements, wrote %d.', ...
-        datFilePath, numel(data), nWritten);
+    % Headered channel file with the entry's own rate, exposure, and tag.
+    % Sizes are explicit so a single-frame sequence is still Y-X-T.
+    hdr = datHeaderFromInfo(struct('dataClass', 'single', ...
+        'dimNames', {{'Y', 'X', 'T'}}, ...
+        'dimSizes', [size(data, 1), size(data, 2), size(data, 3)], ...
+        'frameRateHz', frameRateHz, 'exposureMsec', double(tifEntry.ExposureMsec)), ...
+        channelTag);
+    slabOut = spatialSlabIO('create', datFilePath, hdr);
+    c = onCleanup(@() spatialSlabIO('close', slabOut));
+    spatialSlabIO('write', slabOut, 1:size(data, 2), data);
+    spatialSlabIO('finalize', slabOut);
 
     clear c
 

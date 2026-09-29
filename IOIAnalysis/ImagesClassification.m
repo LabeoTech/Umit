@@ -327,7 +327,13 @@ end
             'CamIdx', [], ...
             'RepeatCount', []), ...
             1, length(OutputGroups));
-        fid = zeros(1, length(OutputGroups));
+        % Headered channel files grow as chunks are sorted: each is created
+        % (growable) at its first chunk and finalized after the length checks.
+        slabs = cell(1, length(OutputGroups));
+        % The map is a handle object, so the cleanup sees files created
+        % later; on an error the started files stay marked incomplete.
+        openSlabs = containers.Map('KeyType', 'double', 'ValueType', 'any');
+        cleanupSlabs = onCleanup(@() iCloseSlabs(openSlabs));
 
         for indG = 1:length(OutputGroups)
             dTag = OutputGroups(indG).dTag;
@@ -344,7 +350,6 @@ end
             if exist([SaveFolder dTag], 'file')
                 delete([SaveFolder dTag]);
             end
-            fid(indG) = fopen([SaveFolder dTag], 'w');
         end
 
         ImBinBuffer = cell(1, length(OutputGroups));
@@ -502,7 +507,13 @@ end
                     nFramesToWrite = (targetBaseLen - currentBaseLen) * ...
                         OutputGroups(indG).RepeatCount;
                     if nFramesToWrite > 0
-                        fwrite(fid(indG), ImWriteBuffer{indG}(:,:,1:nFramesToWrite), 'single');
+                        block = ImWriteBuffer{indG}(:,:,1:nFramesToWrite);
+                        if isempty(slabs{indG})
+                            slabs{indG} = createChannelFile(indG, size(block, 1), size(block, 2));
+                            openSlabs(indG) = slabs{indG};
+                        end
+                        slabs{indG} = spatialSlabIO('append', slabs{indG}, block);
+                        clear block
 
                         if nFramesToWrite < size(ImWriteBuffer{indG},3)
                             ImWriteBuffer{indG} = ImWriteBuffer{indG}(:,:,nFramesToWrite+1:end);
@@ -535,7 +546,26 @@ end
             'Expected datLength/RepeatCount to be equal for all output channels.']);
 
         for indG = 1:length(OutputGroups)
-            fclose(fid(indG));
+            if isempty(slabs{indG})
+                error('Umitoolbox:ImagesClassification:NoFramesWritten', ...
+                    'No frames were sorted into "%s".', OutputGroups(indG).dTag);
+            end
+        end
+        for indG = 1:length(OutputGroups)
+            spatialSlabIO('finalize', slabs{indG});
+        end
+        clear cleanupSlabs
+
+        function h = createChannelFile(indGroup, nY, nX)
+            % Growable Y-X-T single file carrying the channel's own rate,
+            % exposure, and tag.
+            hdr = datHeaderFromInfo(struct('dataClass', 'single', ...
+                'dimNames', {{'Y', 'X', 'T'}}, 'dimSizes', [nY, nX, 1], ...
+                'frameRateHz', channelInfoOut(indGroup).FrameRateHz, ...
+                'exposureMsec', channelInfoOut(indGroup).ExposureMsec), ...
+                OutputGroups(indGroup).Tag);
+            h = spatialSlabIO('create', [SaveFolder OutputGroups(indGroup).dTag], hdr, ...
+                'Growable', true);
         end
     end
 
@@ -545,6 +575,14 @@ end
         Pos = rectH.Position;
         delete(src)
     end
+end
+
+function iCloseSlabs(openSlabs)
+%ICLOSESLABS Close channel files that are still open (closing twice is harmless).
+handles = values(openSlabs);
+for k = 1:numel(handles)
+    spatialSlabIO('close', handles{k});
+end
 end
 
 function exposure = localResolveExposure(AcqInfoStream, colorName)
