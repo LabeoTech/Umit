@@ -95,18 +95,6 @@ assert(~isempty(datList), ...
     'Umitoolbox:applyRegistrationTformOnFolder:NoDatFiles', ...
     'No .dat files were found in "%s".', SaveFolder);
 
-% Headered .dat files are not supported here yet: this function reads
-% and rewrites .dat bytes from offset 0, which would corrupt them.
-% Refuse before any file is opened or changed.
-for iGuard = 1:numel(datList)
-    guardPath = fullfile(SaveFolder, datList(iGuard).name);
-    if isfile(guardPath) && isDatWithHeader(guardPath)
-        error('Umitoolbox:applyRegistrationTformOnFolder:headeredInputUnsupported', ...
-            ['"%s" has a header. applyRegistrationTformOnFolder does not yet support ' ...
-             'headered .dat files; no file was changed.'], guardPath);
-    end
-end
-
 % Validate every target before touching any of them, and before prompting.
 % This operation is destructive, so it must be all-or-nothing: gating inside
 % the rewrite loop would abort partway, leaving some files transformed,
@@ -151,44 +139,37 @@ for iFile = 1:numel(datPlan)
     ny = datPlan(iFile).ny;
     nx = datPlan(iFile).nx;
     nt = datPlan(iFile).nt;
-    datatype = datPlan(iFile).datatype;
     Rfixed = imref2d([ny nx]);
-    bytesPerElem = getByteSize(datatype);
 
-    fidIn = fopen(datPath, 'r');
-    assert(fidIn ~= -1, ...
-        'Umitoolbox:applyRegistrationTformOnFolder:FileOpenFailed', ...
-        'Could not open "%s" for reading.', datPath);
-    cIn = onCleanup(@() safeFclose(fidIn));
-
+    % The registered file is headered with the input's class, sizes, rate,
+    % and exposure, and its own name.
     tmpPath = fullfile(SaveFolder, [fileName '.tmp']);
-    fidOut = fopen(tmpPath, 'w');
-    assert(fidOut ~= -1, ...
-        'Umitoolbox:applyRegistrationTformOnFolder:FileOpenFailed', ...
-        'Could not open temporary output file "%s".', tmpPath);
-    cOut = onCleanup(@() safeFclose(fidOut));
+    [~, channelName] = fileparts(fileName);
+    try
+        slabIn = spatialSlabIO('open', datPath, 'Info', datPlan(iFile).info);
+        cIn = onCleanup(@() spatialSlabIO('close', slabIn));
+        slabOut = spatialSlabIO('create', tmpPath, ...
+            datHeaderFromInfo(datPlan(iFile).info, channelName));
+        cOut = onCleanup(@() spatialSlabIO('close', slabOut));
 
-    fseek(fidIn, 0, 'bof');
-    firstFrame = fread(fidIn, ny * nx, ['*' datatype]);
-    assert(numel(firstFrame) == ny * nx, ...
-        'Umitoolbox:applyRegistrationTformOnFolder:InvalidDatFile', ...
-        'Could not read the first frame from "%s".', datPath);
-    firstFrame = reshape(firstFrame, ny, nx);
-    nanMask = isnan(firstFrame);
-    nanMaskWarped = imwarp(nanMask, tform, 'nearest', 'OutputView', Rfixed);
+        firstFrame = reshape(spatialSlabIO('read', slabIn, 1:nx, 1), ny, nx);
+        nanMask = isnan(firstFrame);
+        nanMaskWarped = imwarp(nanMask, tform, 'nearest', 'OutputView', Rfixed);
 
-    for t = 1:nt
-        fseek(fidIn, (t-1) * ny * nx * bytesPerElem, 'bof');
-        frame = fread(fidIn, ny * nx, ['*' datatype]);
-        assert(numel(frame) == ny * nx, ...
-            'Umitoolbox:applyRegistrationTformOnFolder:InvalidDatFile', ...
-            'Could not read frame %d from "%s".', t, datPath);
-
-        frame = reshape(frame, ny, nx);
-        frame(nanMask) = 0;
-        frame = imwarp(frame, tform, 'nearest', 'OutputView', Rfixed);
-        frame(nanMaskWarped) = NaN;
-        fwrite(fidOut, frame, datatype);
+        for t = 1:nt
+            frame = reshape(spatialSlabIO('read', slabIn, 1:nx, t), ny, nx);
+            frame(nanMask) = 0;
+            frame = imwarp(frame, tform, 'nearest', 'OutputView', Rfixed);
+            frame(nanMaskWarped) = NaN;
+            spatialSlabIO('write', slabOut, 1:nx, frame, t);
+        end
+        spatialSlabIO('finalize', slabOut);
+    catch ME
+        clear cIn cOut
+        if isfile(tmpPath)
+            delete(tmpPath);
+        end
+        rethrow(ME);
     end
 
     clear cIn cOut
@@ -225,33 +206,25 @@ function datPlan = iPreflightDatFiles(datList, SaveFolder, DataParams)
 refSizeYX = iResolveReferenceSizeYX(DataParams);
 
 datPlan = struct('name', {}, 'path', {}, 'ny', {}, 'nx', {}, 'nt', {}, ...
-    'datatype', {});
+    'info', {});
 
 for iFile = 1:numel(datList)
     fileName = datList(iFile).name;
     datPath = fullfile(SaveFolder, fileName);
     md = loadMetaData(datPath);
 
-    if ~isfield(md, 'Height') || ~isfield(md, 'Width') || ~isfield(md, 'datLength')
+    if ~all(isfield(md, {'dimNames', 'dimSizes', 'dataClass'}))
         error('Umitoolbox:applyRegistrationTformOnFolder:InvalidMetadata', ...
-            'Could not resolve Height/Width/datLength for "%s".', datPath);
+            'Could not resolve the axes, sizes, and class of "%s".', datPath);
     end
 
-    % Datatype is not gated here: loadMetaData already refuses any .dat that
-    % is not single precision. It is still read from the metadata rather than
-    % hardcoded, so the read/write calls below stay correct by construction
-    % if that invariant is ever relaxed.
-    datatype = 'single';
-    if isfield(md, 'Datatype') && ~isempty(md.Datatype)
-        datatype = char(string(md.Datatype));
-    end
+    % The file's own class is kept: reads return it and the output header
+    % stores it (datHeaderFromInfo), so nothing here assumes single.
 
-    % Layout gate. Event-split .dat is unsupported legacy on this path; its
-    % frame count is not md.datLength, so it would be rewritten incorrectly.
-    dimNames = {'Y','X','T'};
-    if isfield(md, 'dim_names') && ~isempty(md.dim_names)
-        dimNames = cellstr(string(md.dim_names));
-    end
+    % Layout gate. Event-split .dat is unsupported on this path: frames are
+    % indexed along T only, so other trailing axes would be rewritten
+    % incorrectly.
+    dimNames = cellstr(string(md.dimNames));
     if ~isequal(dimNames(:).', {'Y','X','T'})
         error('Umitoolbox:applyRegistrationTformOnFolder:UnsupportedLayout', ...
             ['File "%s" has dimensions {%s}. Folder registration only ' ...
@@ -260,8 +233,8 @@ for iFile = 1:numel(datList)
             fileName, strjoin(dimNames(:).', ','));
     end
 
-    ny = double(md.Height);
-    nx = double(md.Width);
+    ny = datAxisSize(md, 'Y');
+    nx = datAxisSize(md, 'X');
 
     % Size gate. createRegistrationTform resizes the moving image to the
     % reference before estimating, so the stored transform is expressed in
@@ -280,8 +253,8 @@ for iFile = 1:numel(datList)
         'path', datPath, ...
         'ny', ny, ...
         'nx', nx, ...
-        'nt', double(md.datLength), ...
-        'datatype', datatype); %#ok<AGROW>
+        'nt', datAxisSize(md, 'T'), ...
+        'info', md); %#ok<AGROW>
 end
 
 end

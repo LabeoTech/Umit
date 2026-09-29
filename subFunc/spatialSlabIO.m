@@ -247,23 +247,26 @@ fwrite(fid, headerBytes, 'uint8');
 fclose(fid);
 iExtendFile(filename, totalBytes);
 
-% Describe the file exactly as loadMetaData does (it is not complete yet).
-% A disabled warning still sets lastwarn: restore the caller's.
-[lastMsg, lastId] = lastwarn();
-warningState = warning('off', 'Umitoolbox:loadMetaData:incompleteFile');
-restoreWarning = onCleanup(@() warning(warningState));
-Info = loadMetaData(filename);
-clear restoreWarning
-lastwarn(lastMsg, lastId);
-
 fid = fopen(filename, 'r+', 'ieee-le');
 if fid < 0
     error('Umitoolbox:spatialSlabIO:openFailed', 'Cannot open file for writing: %s', filename);
 end
+% The new file is described from the header just written, so any file
+% name works (for example a scratch "<name>.dat.tmp").
+[Info, description] = iDescribeCreated(fid, described);
+h = iMakeHandle(fid, Info, true, description);
+end
+
+function [Info, description] = iDescribeCreated(fid, described)
+% Info (schema fields) and header description of a file being written.
+Info = struct('filePath', fopen(fid), 'format', 'header', ...
+    'dataOffset', described.dataOffset, 'dataClass', described.dataClass, ...
+    'dimNames', {described.dimNames}, 'dimSizes', described.dimSizes, ...
+    'frameRateHz', described.frameRateHz, 'exposureMsec', described.exposureMsec, ...
+    'channelName', described.channelName, 'writeComplete', false);
 description = struct('dataClass', described.dataClass, 'frameRateHz', described.frameRateHz, ...
     'exposureMsec', described.exposureMsec, 'channelName', described.channelName, ...
     'dimNames', {described.dimNames}, 'dimSizes', described.dimSizes);
-h = iMakeHandle(fid, Info, true, description);
 end
 
 function iExtendFile(filename, totalBytes)
@@ -398,15 +401,7 @@ if fid < 0
 end
 fwrite(fid, headerBytes, 'uint8');
 
-% The file has no data yet, so it is described from its header alone.
-Info = struct('filePath', fopen(fid), 'format', 'header', ...
-    'dataOffset', described.dataOffset, 'dataClass', described.dataClass, ...
-    'dimNames', {described.dimNames}, 'dimSizes', described.dimSizes, ...
-    'frameRateHz', described.frameRateHz, 'exposureMsec', described.exposureMsec, ...
-    'channelName', described.channelName, 'writeComplete', false);
-description = struct('dataClass', described.dataClass, 'frameRateHz', described.frameRateHz, ...
-    'exposureMsec', described.exposureMsec, 'channelName', described.channelName, ...
-    'dimNames', {described.dimNames}, 'dimSizes', described.dimSizes);
+[Info, description] = iDescribeCreated(fid, described);
 h = iMakeHandle(fid, Info, true, description);
 h.growable = true;
 h.framesWritten = 0;

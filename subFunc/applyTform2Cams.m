@@ -135,18 +135,6 @@ rot_diff = 90 * double(AcqInfo.Rotation) - 90 * double(tformInfo.Rotation);
 tform = updateTForm(tform, tformInfo, AcqInfo, frameSizeYX, rot_diff);
 RA = imref2d(frameSizeYX);
 
-% Headered .dat files are not supported here yet: this function reads
-% and rewrites .dat bytes from offset 0, which would corrupt them.
-% Refuse before any file is opened or changed.
-for iGuard = 1:numel(Cam2List)
-    guardPath = fullfile(DataFolder, Cam2List{iGuard});
-    if isfile(guardPath) && isDatWithHeader(guardPath)
-        error('Umitoolbox:applyTform2Cams:headeredInputUnsupported', ...
-            ['"%s" has a header. applyTform2Cams does not yet support ' ...
-             'headered .dat files; no file was changed.'], guardPath);
-    end
-end
-
 % Apply tform to data from Camera 2:
 for ii = 1:length(Cam2List)
     fprintf('----------------------------------\n')
@@ -161,20 +149,36 @@ for ii = 1:length(Cam2List)
     fprintf('\t- Loading metadata...\n')
     md = loadMetaData(datPath);
 
-    if ~isfield(md, 'Height') || ~isfield(md, 'Width') || ~isfield(md, 'Length')
-        warnmsg = sprintf('Could not resolve Height/Width/Length for "%s".', datPath);
+    if ~isfield(md, 'dimNames') || ~isfield(md, 'dimSizes') || datAxisSize(md, 'T') == 0
+        warnmsg = sprintf('Could not resolve the Y, X, and T sizes of "%s".', datPath);
         return
     end
+    if ~strcmp(md.dataClass, 'single')
+        error('Umitoolbox:applyTform2Cams:unsupportedDataClass', ...
+            'applyTform2Cams supports single-precision .dat files; "%s" stores %s.', ...
+            datPath, md.dataClass);
+    end
 
-    ny = double(md.Height);
-    nx = double(md.Width);
-    nt = double(md.Length);
+    ny = datAxisSize(md, 'Y');
+    nx = datAxisSize(md, 'X');
+    nt = datAxisSize(md, 'T');
 
     if ny ~= frameSizeYX(1) || nx ~= frameSizeYX(2)
         warnmsg = sprintf(['File "%s" has frame size [%d %d], which does not match ' ...
             'AcqInfos.mat frame size [%d %d].'], Cam2List{ii}, ny, nx, frameSizeYX(1), frameSizeYX(2));
         return
     end
+
+    % Write to a temporary headered file and replace the original only
+    % after a fully successful write, so the only copy of the data is never
+    % truncated. The header keeps the input's class, sizes, rate, exposure,
+    % and name.
+    tmpPath = [datPath '.tmp'];
+    if isfile(tmpPath)
+        delete(tmpPath);
+    end
+    [~, channelName] = fileparts(datPath);
+    outHeader = datHeaderFromInfo(md, channelName);
 
     if ~bRAMSafeMode
         % Standard mode
@@ -183,92 +187,44 @@ for ii = 1:length(Cam2List)
         fprintf('\t- Applying geometric transformation...\n')
         dat = imwarp(dat, RA, tform, 'nearest', 'OutputView', RA, 'FillValues', 0);
 
-        % Write to a temporary file and replace the original only after a
-        % fully successful write. Opening datPath directly with 'w' would
-        % truncate it immediately, destroying the only copy of the data if
-        % the write subsequently failed for any reason.
         fprintf('\t- Writing transformed data to a temporary file...\n')
-        tmpPath = [datPath '.tmp'];
-        if isfile(tmpPath)
-            delete(tmpPath);
+        try
+            slabOut = spatialSlabIO('create', tmpPath, outHeader);
+            cleanupOut = onCleanup(@() spatialSlabIO('close', slabOut));
+            spatialSlabIO('write', slabOut, 1:nx, dat);
+            spatialSlabIO('finalize', slabOut);
+            clear cleanupOut
+        catch ME
+            clear cleanupOut
+            iDeleteIfExists(tmpPath);
+            rethrow(ME);
         end
-
-        fid = fopen(tmpPath, 'w');
-        if fid == -1
-            warnmsg = sprintf('Could not open temporary file "%s" for writing.', tmpPath);
-            return
-        end
-        cleanupFid = onCleanup(@() safeFclose(fid));
-
-        nWritten = fwrite(fid, dat, 'single');
-        clear cleanupFid % triggers fclose(fid) now, before movefile
-
-        if nWritten ~= numel(dat)
-            if isfile(tmpPath)
-                delete(tmpPath);
-            end
-            warnmsg = sprintf(['Failed to write all data to temporary file for "%s" ' ...
-                '(%d/%d elements written). Original file was not modified.'], ...
-                datPath, nWritten, numel(dat));
-            return
-        end
-
-        fprintf('\t- Replacing original .DAT file...\n')
-        delete(datPath);
-        movefile(tmpPath, datPath, 'f');
     else
         % RAM-safe mode
         fprintf('\t- Applying geometric transformation in RAM-safe mode...\n')
-        tmpPath = [datPath '.tmp'];
+        try
+            slabIn = spatialSlabIO('open', datPath, 'Info', md);
+            cleanupIn = onCleanup(@() spatialSlabIO('close', slabIn));
+            slabOut = spatialSlabIO('create', tmpPath, outHeader);
+            cleanupOut = onCleanup(@() spatialSlabIO('close', slabOut));
 
-        fidIn = fopen(datPath, 'r');
-
-        if fidIn == -1
-            warnmsg = sprintf('Could not open "%s" for reading.', datPath);
-            return
-        end
-
-        fidOut = fopen(tmpPath, 'w');
-        if fidOut == -1
-            fclose(fidIn);
-            warnmsg = sprintf('Could not open temporary file "%s" for writing.', tmpPath);
-            return
-        end
-
-        cleanupIn = onCleanup(@() safeFclose(fidIn));
-        cleanupOut = onCleanup(@() safeFclose(fidOut));
-
-        bytesPerFrame = ny * nx * 4; % single precision
-
-        for t = 1:nt
-            fseek(fidIn, (t-1) * bytesPerFrame, 'bof');
-            frame = fread(fidIn, ny * nx, '*single');
-            if numel(frame) ~= ny * nx
-                warnmsg = sprintf('Could not read frame %d from "%s".', t, datPath);
-                if isfile(tmpPath)
-                    delete(tmpPath);
-                end
-                return
+            for t = 1:nt
+                frame = reshape(spatialSlabIO('read', slabIn, 1:nx, t), ny, nx);
+                frame = imwarp(frame, RA, tform, 'nearest', 'OutputView', RA, 'FillValues', 0);
+                spatialSlabIO('write', slabOut, 1:nx, frame, t);
             end
-            frame = reshape(frame, ny, nx);
-            frame = imwarp(frame, RA, tform, 'nearest', 'OutputView', RA, 'FillValues', 0);
-            nWritten = fwrite(fidOut, frame, 'single');
-            if nWritten ~= numel(frame)
-                warnmsg = sprintf(['Failed to write frame %d to temporary file for "%s" ' ...
-                    '(%d/%d elements written). Original file was not modified.'], ...
-                    t, datPath, nWritten, numel(frame));
-                clear cleanupIn cleanupOut
-                if isfile(tmpPath)
-                    delete(tmpPath);
-                end
-                return
-            end
+            spatialSlabIO('finalize', slabOut);
+            clear cleanupIn cleanupOut
+        catch ME
+            clear cleanupIn cleanupOut
+            iDeleteIfExists(tmpPath);
+            rethrow(ME);
         end
-
-        clear cleanupIn cleanupOut
-        delete(datPath);
-        movefile(tmpPath, datPath, 'f');
     end
+
+    fprintf('\t- Replacing original .DAT file...\n')
+    delete(datPath);
+    movefile(tmpPath, datPath, 'f');
 
     fprintf('Done.\n')
     fprintf('----------------------------------\n')
@@ -281,6 +237,12 @@ save(fullfile(DataFolder, 'tformDualCam.mat'), 'tform');
 end
 
 % Local function
+
+function iDeleteIfExists(filePath)
+if isfile(filePath)
+    delete(filePath);
+end
+end
 
 function newtform = updateTForm(tform, tf_info, acqInfo, frameSizeYX, ang)
 %UPDATETFORM Update a geometric transformation to account for processed geometry.

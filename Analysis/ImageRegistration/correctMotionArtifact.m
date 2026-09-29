@@ -108,33 +108,19 @@ assert(~isempty(datList), ...
     'Umitoolbox:correctMotionArtifact:NoDatFiles', ...
     'No .dat files were found in "%s".', SaveFolder);
 
-% Headered .dat files are not supported here yet: this function reads
-% and rewrites .dat bytes from offset 0, which would corrupt them.
-% Refuse before any file is opened or changed.
-for iGuard = 1:numel(datList)
-    guardPath = fullfile(SaveFolder, datList(iGuard).name);
-    if isfile(guardPath) && isDatWithHeader(guardPath)
-        error('Umitoolbox:correctMotionArtifact:headeredInputUnsupported', ...
-            ['"%s" has a header. correctMotionArtifact does not yet support ' ...
-             'headered .dat files; no file was changed.'], guardPath);
-    end
-end
-
 % Validate every target before estimating or applying any shift: this
 % operation writes multiple files from a single set of per-frame shifts, so
 % a size/layout mismatch discovered partway through would leave some
 % channels corrected and others not.
 [datPlan, refIdx] = iPreflightDatFiles(datList, SaveFolder, refFileName);
 
-ny = datPlan(refIdx).ny;
-nx = datPlan(refIdx).nx;
 nt = datPlan(refIdx).nt;
 if nt < 2
     error('Umitoolbox:correctMotionArtifact:TooFewFrames', ...
         'Reference file "%s" must contain at least 2 frames.', refFileName);
 end
 
-outData = iEstimateShifts(datPlan(refIdx).path, ny, nx, nt, usfac);
+outData = iEstimateShifts(datPlan(refIdx), nt, usfac);
 
 outFiles = cell(numel(datPlan), 1);
 for iFile = 1:numel(datPlan)
@@ -157,22 +143,19 @@ function [datPlan, refIdx] = iPreflightDatFiles(datList, SaveFolder, refFileName
 % and use continuous Y-X-T layout: a per-frame shift vector is only valid
 % when frame index t means the same acquisition instant in every file.
 
-datPlan = struct('name', {}, 'path', {}, 'ny', {}, 'nx', {}, 'nt', {});
+datPlan = struct('name', {}, 'path', {}, 'ny', {}, 'nx', {}, 'nt', {}, 'info', {});
 
 for iFile = 1:numel(datList)
     fileName = datList(iFile).name;
     datPath = fullfile(SaveFolder, fileName);
     md = loadMetaData(datPath);
 
-    if ~all(isfield(md, {'Height','Width','datLength'}))
+    if ~all(isfield(md, {'dimNames','dimSizes','dataClass'}))
         error('Umitoolbox:correctMotionArtifact:InvalidMetadata', ...
-            'Could not resolve Height/Width/datLength for "%s".', datPath);
+            'Could not resolve the axes, sizes, and class of "%s".', datPath);
     end
 
-    dimNames = {'Y','X','T'};
-    if isfield(md, 'dim_names') && ~isempty(md.dim_names)
-        dimNames = cellstr(string(md.dim_names));
-    end
+    dimNames = cellstr(string(md.dimNames));
     if ~isequal(dimNames(:).', {'Y','X','T'})
         error('Umitoolbox:correctMotionArtifact:UnsupportedLayout', ...
             ['File "%s" has dimensions {%s}. Motion correction only ' ...
@@ -180,10 +163,16 @@ for iFile = 1:numel(datList)
             fileName, strjoin(dimNames(:).', ','));
     end
 
+    if ~strcmp(md.dataClass, 'single')
+        error('Umitoolbox:correctMotionArtifact:unsupportedDataClass', ...
+            'Motion correction supports single-precision .dat files; "%s" stores %s.', ...
+            fileName, md.dataClass);
+    end
+
     datPlan(end+1) = struct( ...
         'name', fileName, 'path', datPath, ...
-        'ny', double(md.Height), 'nx', double(md.Width), ...
-        'nt', double(md.datLength)); %#ok<AGROW>
+        'ny', datAxisSize(md, 'Y'), 'nx', datAxisSize(md, 'X'), ...
+        'nt', datAxisSize(md, 'T'), 'info', md); %#ok<AGROW>
 end
 
 refIdx = find(strcmp({datPlan.name}, refFileName), 1);
@@ -211,37 +200,28 @@ end
 % =========================================================================
 % Local helper: estimate per-frame shifts against frame 1
 % =========================================================================
-function shifts = iEstimateShifts(refPath, ny, nx, nt, usfac)
+function shifts = iEstimateShifts(refEntry, nt, usfac)
 %IESTIMATESHIFTS Estimate per-frame DFTREGISTRATION shifts against frame 1.
 
-frameBytes = ny * nx * getByteSize('single');
+slabIn = spatialSlabIO('open', refEntry.path, 'Info', refEntry.info);
+c = onCleanup(@() spatialSlabIO('close', slabIn));
 
-fid = fopen(refPath, 'r');
-assert(fid ~= -1, 'Umitoolbox:correctMotionArtifact:FileOpenFailed', ...
-    'Could not open "%s" for reading.', refPath);
-c = onCleanup(@() safeFclose(fid));
-
-frame1 = iReadFrame(fid, 0, ny, nx, frameBytes, refPath, 1);
+frame1 = iReadFrame(slabIn, refEntry, 1);
 refFFT = fft2(double(frame1));
 
 shifts = zeros(nt, 2);
 for t = 2:nt
-    frame = iReadFrame(fid, t-1, ny, nx, frameBytes, refPath, t);
+    frame = iReadFrame(slabIn, refEntry, t);
     regOutput = dftregistration(refFFT, fft2(double(frame)), usfac);
     shifts(t, :) = regOutput(3:4);
 end
 
 end
 
-function frame = iReadFrame(fid, frameIdx0, ny, nx, frameBytes, filePath, frameNum)
-%IREADFRAME Read one Y-by-X frame (0-based frameIdx0) as single precision.
+function frame = iReadFrame(slabIn, entry, t)
+%IREADFRAME Read frame t (1-based) as a Y-by-X single array.
 
-fseek(fid, frameIdx0 * frameBytes, 'bof');
-raw = fread(fid, ny * nx, '*single');
-assert(numel(raw) == ny * nx, ...
-    'Umitoolbox:correctMotionArtifact:InvalidDatFile', ...
-    'Could not read frame %d from "%s".', frameNum, filePath);
-frame = reshape(raw, ny, nx);
+frame = reshape(spatialSlabIO('read', slabIn, 1:entry.nx, t), entry.ny, entry.nx);
 
 end
 
@@ -251,11 +231,8 @@ end
 function outPath = iApplyShiftsToFile(planEntry, shifts, overwrite)
 %IAPPLYSHIFTSTOFILE Apply the estimated per-frame shifts to one .dat file.
 
-ny = planEntry.ny;
-nx = planEntry.nx;
 nt = planEntry.nt;
 srcPath = planEntry.path;
-frameBytes = ny * nx * getByteSize('single');
 
 if overwrite
     destPath = srcPath;
@@ -267,34 +244,35 @@ end
 [destFolder, destStem, destExt] = fileparts(destPath);
 tmpPath = fullfile(destFolder, [destStem '_writing' destExt]);
 
-fidIn = fopen(srcPath, 'r');
-assert(fidIn ~= -1, 'Umitoolbox:correctMotionArtifact:FileOpenFailed', ...
-    'Could not open "%s" for reading.', srcPath);
-cIn = onCleanup(@() safeFclose(fidIn));
+% The corrected file is headered with the input's class, sizes, rate, and
+% exposure, and the name of the file it is installed as.
+try
+    slabIn = spatialSlabIO('open', srcPath, 'Info', planEntry.info);
+    cIn = onCleanup(@() spatialSlabIO('close', slabIn));
+    slabOut = spatialSlabIO('create', tmpPath, datHeaderFromInfo(planEntry.info, destStem));
+    cOut = onCleanup(@() spatialSlabIO('close', slabOut));
 
-fidOut = fopen(tmpPath, 'w');
-assert(fidOut ~= -1, 'Umitoolbox:correctMotionArtifact:FileOpenFailed', ...
-    'Could not open temporary output file "%s".', tmpPath);
-cOut = onCleanup(@() safeFclose(fidOut));
+    for t = 1:nt
+        frame = iReadFrame(slabIn, planEntry, t);
 
-for t = 1:nt
-    fseek(fidIn, (t-1) * frameBytes, 'bof');
-    raw = fread(fidIn, ny * nx, '*single');
-    assert(numel(raw) == ny * nx, ...
-        'Umitoolbox:correctMotionArtifact:InvalidDatFile', ...
-        'Could not read frame %d from "%s".', t, srcPath);
-    frame = reshape(raw, ny, nx);
+        rowShift = shifts(t, 1);
+        colShift = shifts(t, 2);
+        if rowShift ~= 0 || colShift ~= 0
+            frame = imtranslate(frame, [colShift, rowShift], 'cubic', 'FillValues', 0);
+        end
 
-    rowShift = shifts(t, 1);
-    colShift = shifts(t, 2);
-    if rowShift ~= 0 || colShift ~= 0
-        frame = imtranslate(frame, [colShift, rowShift], 'cubic', 'FillValues', 0);
+        spatialSlabIO('write', slabOut, 1:planEntry.nx, frame, t);
     end
-
-    fwrite(fidOut, frame, 'single');
+    spatialSlabIO('finalize', slabOut);
+catch ME
+    clear cIn cOut
+    if isfile(tmpPath)
+        delete(tmpPath);
+    end
+    rethrow(ME);
 end
 
-clear cIn cOut % close both fids via safeFclose before the file move below
+clear cIn cOut % close both handles before the file move below
 
 if overwrite
     iReplaceFileSafely(tmpPath, destPath);
