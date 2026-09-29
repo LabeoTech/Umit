@@ -3154,6 +3154,19 @@ classdef PipelineManager < handle
                 appendLine(sprintf('    fprintf(''Running: %s\\n'');', char(string(nodeLocal.name))));
                 appendLine(callLine);
 
+                % Source Info of the primary input, updated by a metaData
+                % output; data-mode outputs carry it as <var>_info.
+                stepInfoVar = sprintf('step_%03d_sourceInfo', nodeLocal.id);
+                metaUpdateExpr = '[]';
+                for iOut = 1:numel(outputsLocal)
+                    if strcmpi(char(string(outputsLocal(iOut).name)), 'metaData')
+                        metaUpdateExpr = outVarList{iOut};
+                        break
+                    end
+                end
+                appendLine(sprintf('    %s = localMergeSourceInfo(%s, %s);', ...
+                    stepInfoVar, buildPrimarySourceInfoExpr(nodeLocal), metaUpdateExpr));
+
                 % Post-call save / file materialization
                 for iOut = 1:numel(outputsLocal)
 
@@ -3174,7 +3187,7 @@ classdef PipelineManager < handle
 
                         if ~isempty(req.files)
                             targetExpr = buildTargetPathCellExpr(req.files);
-                            appendLine(sprintf('    localMaterializeOutputFiles(%s, %s);', outVar, targetExpr));
+                            appendLine(sprintf('    localMaterializeOutputFiles(%s, %s, %s);', outVar, targetExpr, stepInfoVar));
 
                             for iReq = 1:numel(req.files)
                                 if req.isTemp(iReq)
@@ -3185,12 +3198,14 @@ classdef PipelineManager < handle
 
                         % Data-mode output: explicit save target only
                     else
+                        appendLine(sprintf('    %s_info = %s;', outVar, stepInfoVar));
+
                         saveFileNameRowsLocal = obj.normalizeOutputSaveFileNameList(outDef);
 
                         for iSaveLocal = 1:numel(saveFileNameRowsLocal)
                             saveFileNameLocal = char(saveFileNameRowsLocal(iSaveLocal));
-                            appendLine(sprintf('    saveData(fullfile(SaveFolder, %s), %s);', ...
-                                matlabLiteral(saveFileNameLocal), outVar));
+                            appendLine(sprintf('    saveData(fullfile(SaveFolder, %s), %s, ''Info'', %s_info);', ...
+                                matlabLiteral(saveFileNameLocal), outVar, outVar));
                         end
                     end
                 end
@@ -3221,7 +3236,7 @@ classdef PipelineManager < handle
             % ---------------------------------------------------------------------
             % Local helper functions inside generated script
             % ---------------------------------------------------------------------
-            appendLine('function localMaterializeOutputFiles(outValue, targetPaths)');
+            appendLine('function localMaterializeOutputFiles(outValue, targetPaths, sourceInfo)');
             appendLine('%LOCALMATERIALIZEOUTPUTFILES Ensure required output files exist on disk.');
             appendLine('    targetPaths = string(targetPaths(:));');
             appendLine('    if isempty(targetPaths)');
@@ -3261,7 +3276,7 @@ classdef PipelineManager < handle
             appendLine('        if ~isempty(dstFolder) && ~isfolder(dstFolder)');
             appendLine('            mkdir(dstFolder);');
             appendLine('        end');
-            appendLine('        saveData(dstPath, outValue);');
+            appendLine('        saveData(dstPath, outValue, ''Info'', sourceInfo);');
             appendLine('    end');
             appendLine('end');
             appendLine('');
@@ -3353,6 +3368,46 @@ classdef PipelineManager < handle
             appendLine('    [folderPart, namePart, extPart] = fileparts(absPath);');
             appendLine('    if isempty(folderPart)');
             appendLine('        absPath = fullfile(pwd, [namePart extPart]);');
+            appendLine('    end');
+            appendLine('end');
+            appendLine('');
+
+            appendLine('function info = localSourceInfo(filePath)');
+            appendLine('%LOCALSOURCEINFO Frame rate and exposure of a .dat file, or [].');
+            appendLine('    info = [];');
+            appendLine('    [~, ~, ext] = fileparts(filePath);');
+            appendLine('    if ~strcmpi(ext, ''.dat'') || ~isfile(filePath)');
+            appendLine('        return');
+            appendLine('    end');
+            appendLine('    try');
+            appendLine('        info = localMergeSourceInfo([], loadMetaData(filePath));');
+            appendLine('    catch');
+            appendLine('        info = [];');
+            appendLine('    end');
+            appendLine('end');
+            appendLine('');
+
+            appendLine('function info = localMergeSourceInfo(info, update)');
+            appendLine('%LOCALMERGESOURCEINFO Apply valid frameRateHz/exposureMsec fields of UPDATE.');
+            appendLine('    if isempty(info) || ~isstruct(info)');
+            appendLine('        info = struct(''frameRateHz'', NaN, ''exposureMsec'', NaN);');
+            appendLine('    end');
+            appendLine('    if isstruct(update) && isscalar(update)');
+            appendLine('        if isfield(update, ''frameRateHz'')');
+            appendLine('            value = update.frameRateHz;');
+            appendLine('            if isnumeric(value) && isscalar(value) && isreal(value) && isfinite(value) && value > 0');
+            appendLine('                info.frameRateHz = double(value);');
+            appendLine('            end');
+            appendLine('        end');
+            appendLine('        if isfield(update, ''exposureMsec'')');
+            appendLine('            value = update.exposureMsec;');
+            appendLine('            if isnumeric(value) && isscalar(value) && isreal(value)');
+            appendLine('                info.exposureMsec = double(value);');
+            appendLine('            end');
+            appendLine('        end');
+            appendLine('    end');
+            appendLine('    if isnan(info.frameRateHz) && isnan(info.exposureMsec)');
+            appendLine('        info = [];');
             appendLine('    end');
             appendLine('end');
             appendLine('');
@@ -3664,6 +3719,25 @@ classdef PipelineManager < handle
                             'callType', 'namevalue', ...
                             'isData', false);
                     end
+                end
+            end
+
+            function exprLocal = buildPrimarySourceInfoExpr(nodeLocal)
+                %BUILDPRIMARYSOURCEINFOEXPR Script expression of the primary input's source Info.
+                exprLocal = '[]';
+                if ~isfield(nodeLocal.info,'inputs') || isempty(nodeLocal.info.inputs)
+                    return
+                end
+                dataInputsLocal = nodeLocal.info.inputs(arrayfun(@(x) isfield(x,'isData') && x.isData, nodeLocal.info.inputs));
+                if isempty(dataInputsLocal)
+                    return
+                end
+                [valueExprPrimary, fileExprPrimary] = buildDataInputExpression( ...
+                    nodeLocal, char(string(dataInputsLocal(1).name)));
+                if ~isempty(fileExprPrimary)
+                    exprLocal = sprintf('localSourceInfo(%s)', fileExprPrimary);
+                elseif isvarname(valueExprPrimary)
+                    exprLocal = [valueExprPrimary '_info'];
                 end
             end
 
@@ -9602,7 +9676,8 @@ classdef PipelineManager < handle
                         'ramValue', [], ...
                         'fileName', string(fPath), ...
                         'isTemp',   false, ...
-                        'remainingConsumers', obj.getConsumerCount(key) );
+                        'remainingConsumers', obj.getConsumerCount(key), ...
+                        'sourceInfo', [] );
                 end
 
                 preFlds = fieldnames(stepNode.runtime.preloadedData);
@@ -9649,6 +9724,10 @@ classdef PipelineManager < handle
 
             function [consumedKeysLocal, createdFilesLocal] = executeAndRegisterStep(stepNode, saveFolderLocal, rawFolderLocal)
                 %EXECUTEANDREGISTERSTEP Resolve inputs, run the function, and register outputs.
+
+                % Source Info of the primary input, resolved before argument
+                % resolution can spill or release upstream records.
+                stepSourceInfo = obj.resolveStepSourceInfo(stepNode, saveFolderLocal);
 
                 [posArgs, nvArgs, consumedKeysLocal] = obj.resolveAndBuildArguments( ...
                     stepNode, saveFolderLocal, rawFolderLocal, cancelFcn, progressFcn);
@@ -9699,7 +9778,7 @@ classdef PipelineManager < handle
                 outCell = cell(1, numel(outputsLocal));
                 outCell(returnedOutputIndices) = returnedValues;
 
-                createdFilesLocal = obj.registerOutputs(stepNode, outCell, saveFolderLocal);
+                createdFilesLocal = obj.registerOutputs(stepNode, outCell, saveFolderLocal, stepSourceInfo);
                 appendCurrentOutFiles(createdFilesLocal);
 
                 savedFiles = obj.saveNodeDataOutputs(stepNode, saveFolderLocal);
@@ -10829,12 +10908,14 @@ classdef PipelineManager < handle
 
                         if ~isempty(dstSaveName)
                             dstPath = fullfile(saveFolder, dstSaveName);
-                            saveData(dstPath, rec.ramValue);
+                            srcInfoArgs = obj.sourceInfoArgs(rec);
+                            saveData(dstPath, rec.ramValue, srcInfoArgs{:});
 
                             rec.fileName = string(dstPath);
                             rec.isTemp   = false;
                         else
-                            tmpFile = obj.writeTempData(rec.ramValue, saveFolder, srcNodeID, portName);
+                            tmpFile = obj.writeTempData(rec.ramValue, saveFolder, srcNodeID, portName, ...
+                                obj.recordSourceInfo(rec));
                             rec.fileName = string(tmpFile);
                             rec.isTemp   = true;
                         end
@@ -11553,7 +11634,8 @@ classdef PipelineManager < handle
                         'stepTag', dstNode.name, ...
                         'functionName', obj.getCallableFuncName(dstNode), ...
                         'message', sprintf('Stop requested before preparing file input "%s".', char(string(dstInputName))));
-                    tmp = obj.writeTempData(rec.ramValue, saveFolder, connLocal.sourceNodeID, char(string(connLocal.sourceOutputName)));
+                    tmp = obj.writeTempData(rec.ramValue, saveFolder, connLocal.sourceNodeID, ...
+                        char(string(connLocal.sourceOutputName)), obj.recordSourceInfo(rec));
                     rec.fileName = string(tmp);
                     rec.isTemp   = true;
                     obj.dataStore(keyUsed) = rec;
@@ -11589,17 +11671,25 @@ classdef PipelineManager < handle
             end
         end
 
-        function createdFiles = registerOutputs(obj, nodeLocal, outCell, folder)
+        function createdFiles = registerOutputs(obj, nodeLocal, outCell, folder, stepSourceInfo)
             %REGISTEROUTPUTS Register outputs in obj.dataStore and return created filenames.
             %
             %   CREATEDFILES = REGISTEROUTPUTS(OBJ, NODELOCAL, OUTCELL, FOLDER)
+            %   CREATEDFILES = REGISTEROUTPUTS(OBJ, NODELOCAL, OUTCELL, FOLDER, STEPSOURCEINFO)
             %   registers pipeline-relevant outputs produced by NODELOCAL.
             %
-            %   Compatibility policy for metaData:
-            %       - Outputs named "metaData" are ignored.
-            %       - A warning is raised once per call when such outputs are present.
-            %       - Ignored metaData outputs are not stored in dataStore, not treated
-            %         as created files, and do not participate in manager-side saving.
+            %   Source Info (.dat header fields of manager-saved outputs):
+            %       - STEPSOURCEINFO is the source Info of the step's primary
+            %         input (see resolveStepSourceInfo), or [].
+            %       - An output named "metaData" that is a struct updates its
+            %         frameRateHz and exposureMsec (see mergeSourceInfo); any
+            %         other value is ignored.
+            %       - RAM-backed and temp-spilled DATA outputs carry the result
+            %         as rec.sourceInfo. Outputs the function wrote to files
+            %         itself carry [] (such files describe themselves).
+            %       - metaData outputs are not stored in dataStore, not treated
+            %         as created files, and do not participate in manager-side
+            %         saving.
             %
             %   Legacy outFile behavior:
             %       - If the node is legacy and has an "outFile" output, the concrete
@@ -11636,15 +11726,16 @@ classdef PipelineManager < handle
             nodeIDLocal  = nodeLocal.id;
             outputsLocal = nodeLocal.info.outputs;
 
+            if nargin < 5
+                stepSourceInfo = [];
+            end
+
             % ---------------------------------------------------------
-            % Compatibility: ignore metaData outputs with warning
+            % metaData outputs update the propagated source Info
             % ---------------------------------------------------------
-            metaMask = strcmpi({outputsLocal.name}, 'metaData');
-            if any(metaMask)
-                warning('PipelineManager:registerOutputs:IgnoredMetaDataOutput', ...
-                    ['Output "metaData" from node "%s" is ignored by PipelineManager ' ...
-                    'for backward compatibility.'], ...
-                    char(string(nodeLocal.name)));
+            metaIdx = find(strcmpi({outputsLocal.name}, 'metaData'), 1, 'first');
+            if ~isempty(metaIdx) && metaIdx <= numel(outCell)
+                stepSourceInfo = obj.mergeSourceInfo(stepSourceInfo, outCell{metaIdx});
             end
 
             % ---------------------------------------------------------
@@ -11692,7 +11783,8 @@ classdef PipelineManager < handle
                             'ramValue', [], ...
                             'fileName', string(fullFn), ...
                             'isTemp', false, ...
-                            'remainingConsumers', 0);
+                            'remainingConsumers', 0, ...
+                            'sourceInfo', []);
 
                         % Legacy compatibility: key by filename
                         keyCompat = obj.makeKey(nodeIDLocal, char(folderBoundName));
@@ -11761,7 +11853,8 @@ classdef PipelineManager < handle
                     'ramValue', [], ...
                     'fileName', "", ...
                     'isTemp',   false, ...
-                    'remainingConsumers', obj.getConsumerCount(key) );
+                    'remainingConsumers', obj.getConsumerCount(key), ...
+                    'sourceInfo', [] );
 
                 % =====================================================
                 % Modern file-producing outputs
@@ -11804,7 +11897,8 @@ classdef PipelineManager < handle
                             'ramValue', [], ...
                             'fileName', string(fullFn), ...
                             'isTemp',   false, ...
-                            'remainingConsumers', 0);
+                            'remainingConsumers', 0, ...
+                            'sourceInfo', []);
 
                         obj.dataStore(keyCompat) = recCompat;
                         createdFiles(end+1,1) = folderBoundName; %#ok<AGROW>
@@ -11844,8 +11938,9 @@ classdef PipelineManager < handle
                 % =====================================================
                 if strcmpi(obj.ramMode,'ramsafe')
 
+                    rec.sourceInfo = stepSourceInfo;
                     if isnumeric(val) || islogical(val)
-                        tmpFile = obj.writeTempData(val, folder, nodeIDLocal, outName);
+                        tmpFile = obj.writeTempData(val, folder, nodeIDLocal, outName, stepSourceInfo);
                         rec.ramValue = [];
                         rec.fileName = string(tmpFile);
                         rec.isTemp   = true;
@@ -11862,12 +11957,13 @@ classdef PipelineManager < handle
                 end
 
                 % Auto mode
+                rec.sourceInfo = stepSourceInfo;
                 if isnumeric(val) || islogical(val)
 
                     rec.ramValue = val;
 
                     if obj.getConsumerCount(key) >= 2
-                        tmpFile = obj.writeTempData(val, folder, nodeIDLocal, outName);
+                        tmpFile = obj.writeTempData(val, folder, nodeIDLocal, outName, stepSourceInfo);
                         rec.fileName = string(tmpFile);
                         rec.isTemp   = true;
 
@@ -12014,10 +12110,138 @@ classdef PipelineManager < handle
             end
         end
 
-        function tmpFile = writeTempData(obj, dataVal, folder, nodeIDLocal, outName)
+        function info = resolveStepSourceInfo(obj, node, saveFolder)
+            %RESOLVESTEPSOURCEINFO Source Info of a step's primary DATA input.
+            %
+            %   INFO = RESOLVESTEPSOURCEINFO(OBJ, NODE, SAVEFOLDER) returns the
+            %   frameRateHz and exposureMsec that manager-saved outputs of NODE
+            %   inherit, or [] when no source is known. The primary input is the
+            %   first DATA input (as in getMetaData). In order:
+            %       1) the connection's selectedFile, when it is a .dat file;
+            %       2) the upstream record's sourceInfo, when non-empty;
+            %       3) the upstream record's file, when it is a .dat file;
+            %       4) resolveDataInputSource (folder and proxy sources).
+            %   A .dat file is described by loadMetaData. Failures give [].
+
+            info = [];
+            if ~isfield(node, 'info') || ~isfield(node.info, 'inputs') || isempty(node.info.inputs)
+                return
+            end
+            dataInputs = node.info.inputs(arrayfun(@(x) isfield(x, 'isData') && ...
+                ~isempty(x.isData) && logical(x.isData), node.info.inputs));
+            if isempty(dataInputs)
+                return
+            end
+            inName = char(string(dataInputs(1).name));
+
+            try
+                connIdx = [];
+                if ~isempty(obj.connections)
+                    connIdx = find([obj.connections.targetNodeID] == node.id & ...
+                        strcmpi({obj.connections.targetInputName}, inName), 1, 'first');
+                end
+
+                if ~isempty(connIdx)
+                    conn = obj.connections(connIdx);
+
+                    if isfield(conn, 'selectedFile') && ~isempty(conn.selectedFile)
+                        info = localInfoFromFile(fullfile(saveFolder, char(string(conn.selectedFile))));
+                        return
+                    end
+
+                    key = obj.makeKey(conn.sourceNodeID, conn.sourceOutputName);
+                    if isa(obj.dataStore, 'containers.Map') && obj.dataStore.isKey(key)
+                        rec = obj.dataStore(key);
+                        info = obj.recordSourceInfo(rec);
+                        if ~isempty(info)
+                            return
+                        end
+                        if isfield(rec, 'fileName') && strlength(string(rec.fileName)) > 0
+                            info = localInfoFromFile(char(string(rec.fileName)));
+                            if ~isempty(info)
+                                return
+                            end
+                        end
+                    end
+                end
+
+                [~, resolvedFile, ~] = obj.resolveDataInputSource(node, inName);
+                if ~isempty(resolvedFile)
+                    info = localInfoFromFile(fullfile(saveFolder, char(string(resolvedFile))));
+                end
+            catch
+                info = [];
+            end
+
+            function infoLocal = localInfoFromFile(filePath)
+                infoLocal = [];
+                [~, ~, extLocal] = fileparts(filePath);
+                if ~strcmpi(extLocal, '.dat') || ~isfile(filePath)
+                    return
+                end
+                md = loadMetaData(filePath);
+                infoLocal = obj.mergeSourceInfo([], md);
+            end
+        end
+
+        function info = mergeSourceInfo(~, info, update)
+            %MERGESOURCEINFO Apply valid frameRateHz/exposureMsec fields of UPDATE.
+            %
+            %   INFO = MERGESOURCEINFO(OBJ, INFO, UPDATE) returns a struct with
+            %   fields frameRateHz and exposureMsec. Fields of UPDATE (a struct,
+            %   for example a step's metaData output or a loadMetaData result)
+            %   replace those of INFO when valid: frameRateHz finite and > 0,
+            %   exposureMsec a real numeric scalar. Other fields and non-struct
+            %   values of UPDATE are ignored. Returns [] if neither field is set.
+
+            if isempty(info) || ~isstruct(info)
+                info = struct('frameRateHz', NaN, 'exposureMsec', NaN);
+            end
+            if isstruct(update) && isscalar(update)
+                if isfield(update, 'frameRateHz')
+                    value = update.frameRateHz;
+                    if isnumeric(value) && isscalar(value) && isreal(value) && ...
+                            isfinite(value) && value > 0
+                        info.frameRateHz = double(value);
+                    end
+                end
+                if isfield(update, 'exposureMsec')
+                    value = update.exposureMsec;
+                    if isnumeric(value) && isscalar(value) && isreal(value)
+                        info.exposureMsec = double(value);
+                    end
+                end
+            end
+            if isnan(info.frameRateHz) && isnan(info.exposureMsec)
+                info = [];
+            end
+        end
+
+        function info = recordSourceInfo(~, rec)
+            %RECORDSOURCEINFO A dataStore record's sourceInfo, or [].
+            info = [];
+            if isstruct(rec) && isfield(rec, 'sourceInfo')
+                info = rec.sourceInfo;
+            end
+        end
+
+        function args = sourceInfoArgs(obj, rec)
+            %SOURCEINFOARGS saveData Name-Value arguments for a record's source Info.
+            args = {};
+            info = obj.recordSourceInfo(rec);
+            if ~isempty(info)
+                args = {'Info', info};
+            end
+        end
+
+        function tmpFile = writeTempData(obj, dataVal, folder, nodeIDLocal, outName, sourceInfo)
             %WRITETEMPDATA Write temporary DATA output and return its full saved path.
             %
             %   tmpFile = writeTempData(obj, dataVal, folder, nodeIDLocal, outName)
+            %   tmpFile = writeTempData(..., sourceInfo)
+            %
+            %   sourceInfo (optional) is the record's source Info; saveData
+            %   takes the header frame rate and exposure from it.
             %
             %   Behavior:
             %       - Validates that the requested output exists on the step
@@ -12048,6 +12272,17 @@ classdef PipelineManager < handle
                 end
             end
 
+            % The header channelName is the name of the save target the
+            % temporary file may be promoted to (else the temporary name).
+            channelNameArgs = {};
+            if bFoundOutput
+                saveRows = obj.normalizeOutputSaveFileNameList(node.info.outputs(iOut));
+                if ~isempty(saveRows)
+                    [~, targetBase] = fileparts(char(saveRows(1)));
+                    channelNameArgs = {'ChannelName', targetBase};
+                end
+            end
+
             if ~bFoundOutput
                 error('PipelineManager:writeTempData:OutputNotFound', ...
                     'Could not find output definition "%s" for step %d.', ...
@@ -12067,7 +12302,14 @@ classdef PipelineManager < handle
             tmpBasePath = fullfile(folder, sprintf('%s%s_%s_%s', ...
                 obj.tempOutputPrefix, stamp, nodeTag, outTag));
 
-            savedPath = saveData(tmpBasePath, dataVal);
+            if nargin < 6
+                sourceInfo = [];
+            end
+            srcInfoArgs = {};
+            if ~isempty(sourceInfo)
+                srcInfoArgs = {'Info', sourceInfo};
+            end
+            savedPath = saveData(tmpBasePath, dataVal, srcInfoArgs{:}, channelNameArgs{:});
             savedPath = char(string(savedPath));
 
             % Normalize to full path if saveData returned only a filename
@@ -12380,7 +12622,8 @@ classdef PipelineManager < handle
                 % ---------------------------------------------------------
                 if hasRamValue
 
-                    savedPath = saveData(dstPath, rec.ramValue);
+                    srcInfoArgs = obj.sourceInfoArgs(rec);
+                    savedPath = saveData(dstPath, rec.ramValue, srcInfoArgs{:});
                     savedPath = char(string(savedPath));
 
                     if ~isfile(savedPath)

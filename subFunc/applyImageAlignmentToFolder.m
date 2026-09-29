@@ -128,6 +128,20 @@ if isempty(datFiles) && isempty(umtFiles)
         'No .dat or .umt image files were found in target folder.');
 end
 
+if opts.transformDat
+    % Headered .dat files are not supported here yet: this function reads
+    % and rewrites .dat bytes from offset 0, which would corrupt them.
+    % Refuse before any file is opened or changed.
+    for iGuard = 1:numel(datFiles)
+        guardPath = fullfile(targetFolder, datFiles(iGuard).name);
+        if isfile(guardPath) && isDatWithHeader(guardPath)
+            error('Umitoolbox:applyImageAlignmentToFolder:headeredInputUnsupported', ...
+                ['"%s" has a header. applyImageAlignmentToFolder does not yet support ' ...
+                 'headered .dat files; no file was changed.'], guardPath);
+        end
+    end
+end
+
 % Build the complete plan before backup or mutation. This keeps temporary
 % files generated during execution out of the operation list.
 iPreflightDataParams(DataParams, oldSizeYX);

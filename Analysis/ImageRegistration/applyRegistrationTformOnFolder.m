@@ -95,6 +95,18 @@ assert(~isempty(datList), ...
     'Umitoolbox:applyRegistrationTformOnFolder:NoDatFiles', ...
     'No .dat files were found in "%s".', SaveFolder);
 
+% Headered .dat files are not supported here yet: this function reads
+% and rewrites .dat bytes from offset 0, which would corrupt them.
+% Refuse before any file is opened or changed.
+for iGuard = 1:numel(datList)
+    guardPath = fullfile(SaveFolder, datList(iGuard).name);
+    if isfile(guardPath) && isDatWithHeader(guardPath)
+        error('Umitoolbox:applyRegistrationTformOnFolder:headeredInputUnsupported', ...
+            ['"%s" has a header. applyRegistrationTformOnFolder does not yet support ' ...
+             'headered .dat files; no file was changed.'], guardPath);
+    end
+end
+
 % Validate every target before touching any of them, and before prompting.
 % This operation is destructive, so it must be all-or-nothing: gating inside
 % the rewrite loop would abort partway, leaving some files transformed,
