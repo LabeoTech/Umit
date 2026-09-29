@@ -12,7 +12,10 @@ function outFiles = funcTemplateAcquisitionInitializer(RawFolder, SaveFolder)
 %   PipelineManager discovery contract.
 %
 % Files Created
-%   funcTemplateImported.dat - Imported Y-X-T image data.
+%   funcTemplateImported.dat - Imported Y-X-T image data, written with
+%                              saveData(..., 'FrameRateHz', rate, 'Info',
+%                              struct('exposureMsec', exposure)) so the
+%                              file carries its own .dat header.
 %   AcqInfos.mat             - Current acquisition metadata owned by this
 %                              importer, including ImportedChannels.
 %
@@ -67,7 +70,7 @@ localValidateAcquisition(imageData, AcqInfoStream);
 
 % EDIT: Import the real raw data before publishing its metadata.
 dataPath = fullfile(SaveFolder, defaultOutput{1});
-localWriteImageData(dataPath, imageData);
+localWriteImageData(dataPath, imageData, AcqInfoStream);
 
 % Importers own AcqInfos.mat. Build ImportedChannels from the raw facts;
 % do not ask PipelineManager or a companion function to synthesize it.
@@ -187,20 +190,19 @@ if ~isequal(double(size(imageData)), expectedSize) || ...
 end
 end
 
-function localWriteImageData(dataPath, imageData)
+function localWriteImageData(dataPath, imageData, AcqInfoStream)
 %LOCALWRITEIMAGEDATA Write the imported stream before publishing metadata.
+%
+% Imported .dat files are written with saveData, which adds the
+% self-describing header. Pass the stream's own frame rate ('FrameRateHz')
+% and exposure ('Info' with exposureMsec) so the file does not depend on
+% AcqInfos.mat to be read. AcqInfos.mat itself is written by the caller.
 
-fid = fopen(dataPath, 'w', 'ieee-le');
-if fid == -1
-    error('Umitoolbox:funcTemplateAcquisitionInitializer:FileOpenFailed', ...
-        'Could not create imported data file "%s".', dataPath);
+exposureMsec = NaN;
+if isfield(AcqInfoStream, 'ExposureMsec') && ~isempty(AcqInfoStream.ExposureMsec)
+    exposureMsec = double(AcqInfoStream.ExposureMsec);
 end
-fileCleanup = onCleanup(@() safeFclose(fid));
-numWritten = fwrite(fid, imageData, 'single');
-if numWritten ~= numel(imageData)
-    error('Umitoolbox:funcTemplateAcquisitionInitializer:FileWriteFailed', ...
-        'Could not write all image samples to "%s".', dataPath);
-end
-fclose(fid);
-clear fileCleanup
+saveData(dataPath, imageData, ...
+    'FrameRateHz', double(AcqInfoStream.FrameRateHz), ...
+    'Info', struct('exposureMsec', exposureMsec));
 end

@@ -49,6 +49,24 @@ function varargout = spatialSlabIO(mode, varargin)
 %   'finalize' sets the write-complete flag and closes the file. 'close' on
 %   a created handle leaves the file marked incomplete.
 %
+% Growable files (outputs whose length is only known at the end):
+%
+%   h = SPATIALSLABIO('create', filename, hdr, 'Growable', true)
+%   h = SPATIALSLABIO('append', h, block)
+%       SPATIALSLABIO('finalize', h)
+%
+%   A growable file has exactly three axes, Y and X first, and grows along
+%   the last one. hdr.dimSizes(end) is ignored: the file starts with no
+%   frames and no data bytes (its header size is 1 with the write-complete
+%   flag clear; 0 would mean the axis is absent). 'append' writes BLOCK
+%   ([Ny, Nx, nF], or [Ny, Nx] for one frame) after the last frame with one
+%   fwrite, cast to the file's class, then rewrites the header with the
+%   frames written so far and the flag still clear, so an interrupted
+%   write leaves a readable, incomplete file. It returns the updated
+%   handle (h.framesWritten). 'finalize' needs at least one frame and sets
+%   the flag; 'close' leaves the file incomplete. 'read' and 'write' are
+%   not available on growable handles, and 'append' only on them.
+%
 %   Reads use one fread per run of contiguous columns and consecutive
 %   frames, with the fread skip argument jumping over the rest of each
 %   frame (chosen from the Phase 3a slab I/O benchmark).
@@ -96,6 +114,8 @@ if ~isempty(varargin) && isstruct(varargin{1})
             varargout{1} = iHandleRead(varargin{:});
         case 'write'
             iHandleWrite(varargin{:});
+        case 'append'
+            varargout{1} = iAppend(varargin{:});
         case 'finalize'
             iFinalize(varargin{:});
         case 'close'
@@ -103,7 +123,7 @@ if ~isempty(varargin) && isstruct(varargin{1})
         otherwise
             error('Umitoolbox:spatialSlabIO:invalidInput', ...
                 ['Unknown mode "%s" for a spatialSlabIO handle. Use ''read'', ' ...
-                 '''write'', ''finalize'', or ''close''.'], char(mode));
+                 '''write'', ''append'', ''finalize'', or ''close''.'], char(mode));
     end
     return
 end
@@ -176,20 +196,36 @@ h.bytesPerValue = getByteSize(Info.dataClass);
 h.dataOffset = Info.dataOffset;
 h.writable = writable;
 h.headerDescription = headerDescription;
+h.growable = false;
+h.framesWritten = 0;
 end
 
 % =========================================================================
 % Handle-based writes
 % =========================================================================
-function h = iCreate(filename, hdr)
-if nargin ~= 2 || ~(ischar(filename) || (isstring(filename) && isscalar(filename))) || ...
+function h = iCreate(filename, hdr, varargin)
+if nargin < 2 || ~(ischar(filename) || (isstring(filename) && isscalar(filename))) || ...
         ~isstruct(hdr) || ~isscalar(hdr)
     error('Umitoolbox:spatialSlabIO:invalidInput', ...
         '''create'' needs a file name and a header description struct.');
 end
+growable = false;
+if ~isempty(varargin)
+    if numel(varargin) == 2 && (ischar(varargin{1}) || isstring(varargin{1})) && ...
+            strcmpi(varargin{1}, 'Growable') && islogical(varargin{2}) && isscalar(varargin{2})
+        growable = varargin{2};
+    else
+        error('Umitoolbox:spatialSlabIO:invalidInput', ...
+            '''create'' accepts only the name-value option ''Growable'' (logical scalar).');
+    end
+end
 filename = char(filename);
 if isempty(fileparts(filename))
     filename = fullfile(pwd, filename);
+end
+if growable
+    h = iCreateGrowable(filename, hdr);
+    return
 end
 
 % Validate and encode before touching the file: an invalid header creates nothing.
@@ -258,6 +294,7 @@ end
 function iHandleWrite(h, xIdx, slab, frameIdx)
 iAssertOpenHandle(h);
 iAssertWritable(h);
+iAssertNotGrowable(h, 'write');
 if nargin < 3
     error('Umitoolbox:spatialSlabIO:invalidInput', '''write'' needs column indices and a slab.');
 end
@@ -322,6 +359,13 @@ function iFinalize(h)
 iAssertOpenHandle(h);
 iAssertWritable(h);
 description = h.headerDescription;
+if isfield(h, 'growable') && h.growable
+    if h.framesWritten < 1
+        error('Umitoolbox:spatialSlabIO:invalidInput', ...
+            'Cannot finalize "%s": no frames were appended.', h.filePath);
+    end
+    description.dimSizes(end) = h.framesWritten;
+end
 description.writeComplete = true;
 headerBytes = encodeDatHeader(description);
 if fseek(h.fid, 0, 'bof') ~= 0
@@ -329,6 +373,85 @@ if fseek(h.fid, 0, 'bof') ~= 0
 end
 fwrite(h.fid, headerBytes, 'uint8');
 fclose(h.fid);
+end
+
+function h = iCreateGrowable(filename, hdr)
+% Growable file: header only, last-axis size 1 and write-complete clear.
+if ~isfield(hdr, 'dimNames') || ~isfield(hdr, 'dimSizes') || ...
+        numel(hdr.dimNames) ~= 3 || numel(hdr.dimSizes) ~= 3
+    error('Umitoolbox:spatialSlabIO:unsupportedLayout', ...
+        'A growable file must have exactly three axes (Y, X, and the axis it grows along).');
+end
+hdr.dimSizes(end) = 1;
+hdr.writeComplete = false;
+headerBytes = encodeDatHeader(hdr);
+described = decodeDatHeader(headerBytes);
+if ~isequal(described.dimNames(1:2), {'Y', 'X'})
+    error('Umitoolbox:spatialSlabIO:unsupportedLayout', ...
+        'spatialSlabIO creates files whose first two axes are Y, X; got {%s}.', ...
+        strjoin(described.dimNames, ','));
+end
+
+fid = fopen(filename, 'w+', 'ieee-le');
+if fid < 0
+    error('Umitoolbox:spatialSlabIO:openFailed', 'Cannot create file: %s', filename);
+end
+fwrite(fid, headerBytes, 'uint8');
+
+% The file has no data yet, so it is described from its header alone.
+Info = struct('filePath', fopen(fid), 'format', 'header', ...
+    'dataOffset', described.dataOffset, 'dataClass', described.dataClass, ...
+    'dimNames', {described.dimNames}, 'dimSizes', described.dimSizes, ...
+    'frameRateHz', described.frameRateHz, 'exposureMsec', described.exposureMsec, ...
+    'channelName', described.channelName, 'writeComplete', false);
+description = struct('dataClass', described.dataClass, 'frameRateHz', described.frameRateHz, ...
+    'exposureMsec', described.exposureMsec, 'channelName', described.channelName, ...
+    'dimNames', {described.dimNames}, 'dimSizes', described.dimSizes);
+h = iMakeHandle(fid, Info, true, description);
+h.growable = true;
+h.framesWritten = 0;
+end
+
+function h = iAppend(h, block)
+iAssertOpenHandle(h);
+iAssertWritable(h);
+if ~isfield(h, 'growable') || ~h.growable
+    error('Umitoolbox:spatialSlabIO:invalidInput', ...
+        '''append'' needs a handle from spatialSlabIO(''create'', ..., ''Growable'', true).');
+end
+if nargin < 2 || ~(isnumeric(block) || islogical(block)) || ndims(block) > 3 || ...
+        size(block, 1) ~= h.Ny || size(block, 2) ~= h.Nx || isempty(block)
+    error('Umitoolbox:spatialSlabIO:invalidInput', ...
+        'The block must be numeric with %d rows and %d columns ([Ny, Nx, nF] or [Ny, Nx]).', ...
+        h.Ny, h.Nx);
+end
+nF = size(block, 3);
+frameBytes = h.Ny * h.Nx * h.bytesPerValue;
+if fseek(h.fid, h.dataOffset + h.framesWritten * frameBytes, 'bof') ~= 0
+    error('Umitoolbox:spatialSlabIO:writeFailed', 'Seek failed in %s.', h.filePath);
+end
+written = fwrite(h.fid, cast(block, h.dataClass), h.dataClass);
+if written ~= numel(block)
+    error('Umitoolbox:spatialSlabIO:writeFailed', ...
+        'Wrote %d of %d values to %s.', written, numel(block), h.filePath);
+end
+h.framesWritten = h.framesWritten + nF;
+
+% Record the frames written so far; the file stays marked incomplete.
+description = h.headerDescription;
+description.dimSizes(end) = h.framesWritten;
+description.writeComplete = false;
+if fseek(h.fid, 0, 'bof') ~= 0
+    error('Umitoolbox:spatialSlabIO:writeFailed', 'Seek failed in %s.', h.filePath);
+end
+fwrite(h.fid, encodeDatHeader(description), 'uint8');
+end
+
+function iAssertNotGrowable(h, mode)
+if isfield(h, 'growable') && h.growable
+    error('Umitoolbox:spatialSlabIO:invalidInput', ...
+        '''%s'' is not available on a growable handle; use ''append''.', mode);
+end
 end
 
 function iAssertWritable(h)
@@ -366,6 +489,7 @@ end
 
 function slab = iHandleRead(h, xIdx, frameIdx)
 iAssertOpenHandle(h);
+iAssertNotGrowable(h, 'read');
 if nargin < 2
     error('Umitoolbox:spatialSlabIO:invalidInput', '''read'' needs column indices xIdx.');
 end
