@@ -135,6 +135,18 @@ rot_diff = 90 * double(AcqInfo.Rotation) - 90 * double(tformInfo.Rotation);
 tform = updateTForm(tform, tformInfo, AcqInfo, frameSizeYX, rot_diff);
 RA = imref2d(frameSizeYX);
 
+% Headered .dat files are not supported here yet: this function reads
+% and rewrites .dat bytes from offset 0, which would corrupt them.
+% Refuse before any file is opened or changed.
+for iGuard = 1:numel(Cam2List)
+    guardPath = fullfile(DataFolder, Cam2List{iGuard});
+    if isfile(guardPath) && isDatWithHeader(guardPath)
+        error('Umitoolbox:applyTform2Cams:headeredInputUnsupported', ...
+            ['"%s" has a header. applyTform2Cams does not yet support ' ...
+             'headered .dat files; no file was changed.'], guardPath);
+    end
+end
+
 % Apply tform to data from Camera 2:
 for ii = 1:length(Cam2List)
     fprintf('----------------------------------\n')

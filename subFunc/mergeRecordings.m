@@ -80,6 +80,18 @@ elseif ~all(idx)
     % Update folderList:
     folderList = folderList(idx);
 end
+% Headered .dat files are not supported here yet: this function reads
+% and rewrites .dat bytes from offset 0, which would corrupt them.
+% Refuse before any file is opened or changed.
+for iGuard = 1:numel(folderList)
+    guardPath = fullfile(folderList{iGuard}, filename);
+    if isfile(guardPath) && isDatWithHeader(guardPath)
+        error('Umitoolbox:mergeRecordings:headeredInputUnsupported', ...
+            ['"%s" has a header. mergeRecordings does not yet support ' ...
+             'headered .dat files; no file was changed.'], guardPath);
+    end
+end
+
 % Get full path for input data and meta data files:
 metaDatNames = fullfile(folderList, metaData_filename);
 datNames = fullfile(folderList, filename);
