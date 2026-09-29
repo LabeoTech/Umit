@@ -578,15 +578,11 @@ end
 function fMetaData = iResolveNumericYXTMetadata(data, AcqInfoStream)
 %IRESOLVENUMERICYXTMETADATA Build file-like metadata for numeric YXT input.
 
-assert(isfield(AcqInfoStream, 'Height') && isfield(AcqInfoStream, 'Width'), ...
-    'Umitoolbox:HemoCorrection:InvalidAcqInfos', ...
-    'AcqInfoStream must contain Height and Width.');
-
-height = double(AcqInfoStream.Height);
-width = double(AcqInfoStream.Width);
-assert(isequal([size(data,1), size(data,2)], [height, width]), ...
-    'Umitoolbox:HemoCorrection:InvalidNumericInput', ...
-    'Numeric fluorescence input does not match AcqInfos.mat Height/Width.');
+% Y and X come from the array itself: AcqInfos.mat Height/Width is the raw
+% acquisition size and no longer matches aligned data. The reference
+% channels are checked against this size (iValidateSpatialMatch).
+height = double(size(data, 1));
+width = double(size(data, 2));
 
 timelineInfo = resolveDatTimeline(size(data,3), AcqInfoStream);
 

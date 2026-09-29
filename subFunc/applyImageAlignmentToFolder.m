@@ -17,8 +17,9 @@ function report = applyImageAlignmentToFolder(targetFolder, finalTform, opts)
 %       5) Transform current-format .roi files and force transformed ROIs to
 %          polygon geometry.
 %       6) Update DataParams.mat.
-%       7) Update AcqInfos.mat.
-%       8) Save manualAlignmentReport_<datetime>.mat.
+%       7) Save manualAlignmentReport_<datetime>.mat.
+%       AcqInfos.mat is not rewritten: every aligned .dat is headered and
+%       describes its new frame size itself.
 %
 %   Transform convention:
 %       finalTform maps the current raw moving-data coordinate space into
@@ -49,9 +50,12 @@ function report = applyImageAlignmentToFolder(targetFolder, finalTform, opts)
 %       report - Compact operation report.
 %
 %   Notes:
-%       This function expects .dat files to be raw single-precision image
-%       time series with dimensions [Y X T]. The frame count is inferred from
-%       file size and validated before any file is modified.
+%       .dat files must be Y-X-T image time series (headered or headerless)
+%       sharing one frame size; loadMetaData describes each one before any
+%       file is modified. Each aligned file is written with a header: the
+%       new frame size, and the input's class, frame rate, exposure, and
+%       name. The old frame size is the .dat files' own size, else
+%       DataParams.view.imageSizeYX, else AcqInfos.mat Height/Width.
 %
 %       genBackupFolder intentionally ignores raw acquisition files such as
 %       .bin and .tif. This function therefore creates a managed-folder
@@ -106,9 +110,12 @@ report = iInitializeReport( ...
     createdOn);
 
 [DataParams, dataParamsPath] = iLoadDataParams(targetFolder);
-[AcqInfoStream, acqInfosPath, acqInfosStruct] = iLoadAcqInfos(targetFolder);
+AcqInfoStream = iLoadAcqInfos(targetFolder);
 
-oldSizeYX = iResolveOldSizeYX(AcqInfoStream, DataParams, targetFolder);
+datFiles = dir(fullfile(targetFolder, '*.dat'));
+datInfos = iDescribeDatFiles(datFiles, opts.transformDat);
+
+oldSizeYX = iResolveOldSizeYX(AcqInfoStream, DataParams, datFiles, datInfos);
 report.oldSizeYX = oldSizeYX;
 
 scaleInfo = iGetSimilarityScaleInfo(finalTform);
@@ -119,7 +126,6 @@ if ~scaleInfo.isSimilarity
 end
 report.scaleInfo = scaleInfo;
 
-datFiles = dir(fullfile(targetFolder, '*.dat'));
 umtFiles = dir(fullfile(targetFolder, '*.umt'));
 roiFiles = dir(fullfile(targetFolder, '*.roi'));
 
@@ -128,25 +134,11 @@ if isempty(datFiles) && isempty(umtFiles)
         'No .dat or .umt image files were found in target folder.');
 end
 
-if opts.transformDat
-    % Headered .dat files are not supported here yet: this function reads
-    % and rewrites .dat bytes from offset 0, which would corrupt them.
-    % Refuse before any file is opened or changed.
-    for iGuard = 1:numel(datFiles)
-        guardPath = fullfile(targetFolder, datFiles(iGuard).name);
-        if isfile(guardPath) && isDatWithHeader(guardPath)
-            error('Umitoolbox:applyImageAlignmentToFolder:headeredInputUnsupported', ...
-                ['"%s" has a header. applyImageAlignmentToFolder does not yet support ' ...
-                 'headered .dat files; no file was changed.'], guardPath);
-        end
-    end
-end
-
 % Build the complete plan before backup or mutation. This keeps temporary
 % files generated during execution out of the operation list.
 iPreflightDataParams(DataParams, oldSizeYX);
 
-datPlan = iPreflightDatFiles(datFiles, oldSizeYX, opts.transformDat);
+datPlan = iPreflightDatFiles(datFiles, datInfos, oldSizeYX, opts.transformDat);
 [umtPlan, umtWarnings] = iPreflightUmtFiles(umtFiles, opts.transformUmt);
 [roiPlan, roiWarnings] = iPreflightRoiFiles(roiFiles, opts.transformRoi);
 
@@ -235,15 +227,6 @@ try
     report.metadataFilesUpdated(end+1,1) = "DataParams.mat";
     completed.metadataFiles(end+1,1) = "DataParams.mat";
 
-    % Update AcqInfos after all file transforms succeed.
-    AcqInfoStream.Height = newSizeYX(1);
-    AcqInfoStream.Width = newSizeYX(2);
-    acqInfosStruct.AcqInfoStream = AcqInfoStream;
-    save(acqInfosPath, '-struct', 'acqInfosStruct');
-
-    report.metadataFilesUpdated(end+1,1) = "AcqInfos.mat";
-    completed.metadataFiles(end+1,1) = "AcqInfos.mat";
-
     report.finishedOn = datetime('now');
     reportPath = fullfile(targetFolder, ['manualAlignmentReport_' dateTag '.mat']);
     report.reportPath = reportPath;
@@ -327,7 +310,7 @@ end
 DataParams = S.DataParams;
 end
 
-function [AcqInfoStream, acqInfosPath, S] = iLoadAcqInfos(targetFolder)
+function AcqInfoStream = iLoadAcqInfos(targetFolder)
 %ILOADACQINFOS Load required AcqInfos.mat.
 
 acqInfosPath = fullfile(targetFolder, 'AcqInfos.mat');
@@ -390,15 +373,32 @@ transformedMask = imwarp(single(oldMask), finalTform, ...
     'FillValues', single(0)) > 0.5;
 end
 
-function datPlan = iPreflightDatFiles(datFiles, oldSizeYX, doTransform)
-%IPREFLIGHTDATFILES Validate DAT file size and infer frame count.
+function datInfos = iDescribeDatFiles(datFiles, doTransform)
+%IDESCRIBEDATFILES loadMetaData of every .dat that will be transformed.
+
+datInfos = cell(1, numel(datFiles));
+if ~doTransform
+    return
+end
+for iFile = 1:numel(datFiles)
+    datPath = fullfile(datFiles(iFile).folder, datFiles(iFile).name);
+    if ~isfile(datPath)
+        error('ImageAlignmentTool:MissingDatFile', ...
+            'DAT file disappeared during preflight: %s', datPath);
+    end
+    datInfos{iFile} = loadMetaData(datPath);
+end
+end
+
+function datPlan = iPreflightDatFiles(datFiles, datInfos, oldSizeYX, doTransform)
+%IPREFLIGHTDATFILES Validate every .dat layout and size before any change.
 
 datPlan = struct( ...
     'Name', {}, ...
     'Path', {}, ...
     'OldSizeYX', {}, ...
     'NFrames', {}, ...
-    'FileBytes', {});
+    'Info', {});
 
 if ~doTransform
     return
@@ -406,29 +406,27 @@ end
 
 for iFile = 1:numel(datFiles)
     datPath = fullfile(datFiles(iFile).folder, datFiles(iFile).name);
-    info = dir(datPath);
+    info = datInfos{iFile};
 
-    if isempty(info)
-        error('ImageAlignmentTool:MissingDatFile', ...
-            'DAT file disappeared during preflight: %s', datPath);
+    if ~isequal(cellstr(string(info.dimNames)), {'Y', 'X', 'T'})
+        error('ImageAlignmentTool:UnsupportedLayout', ...
+            ['DAT file "%s" has dimensions {%s}. Alignment supports Y-X-T ' ...
+             'image time series only.'], ...
+            datFiles(iFile).name, strjoin(cellstr(string(info.dimNames)), ','));
     end
 
-    bytesPerFrame = prod(oldSizeYX) * 4; % single precision
-    fileBytes = info.bytes;
-
-    if bytesPerFrame <= 0 || mod(fileBytes, bytesPerFrame) ~= 0
+    fileSizeYX = [datAxisSize(info, 'Y'), datAxisSize(info, 'X')];
+    if ~isequal(fileSizeYX, oldSizeYX)
         error('ImageAlignmentTool:InvalidDatFileSize', ...
-            ['DAT file "%s" is incompatible with expected [Y X T] single layout. ' ...
-             'File bytes: %d. Expected bytes per frame: %d.'], ...
-            datFiles(iFile).name, fileBytes, bytesPerFrame);
+            ['DAT file "%s" has frames of %d x %d, but the folder''s image ' ...
+             'size is %d x %d.'], ...
+            datFiles(iFile).name, fileSizeYX(1), fileSizeYX(2), oldSizeYX(1), oldSizeYX(2));
     end
 
-    nFrames = fileBytes / bytesPerFrame;
-
-    if nFrames < 1 || mod(nFrames, 1) ~= 0
+    nFrames = datAxisSize(info, 'T');
+    if nFrames < 1
         error('ImageAlignmentTool:InvalidDatFrameCount', ...
-            'DAT file "%s" has invalid frame count inferred from file size.', ...
-            datFiles(iFile).name);
+            'DAT file "%s" has no frames.', datFiles(iFile).name);
     end
 
     datPlan(end+1) = struct( ... %#ok<AGROW>
@@ -436,7 +434,7 @@ for iFile = 1:numel(datFiles)
         'Path', datPath, ...
         'OldSizeYX', oldSizeYX, ...
         'NFrames', nFrames, ...
-        'FileBytes', fileBytes);
+        'Info', info);
 end
 end
 
@@ -614,61 +612,47 @@ end
 % =========================================================================
 
 function iTransformDatFile(plan, tform, referenceView)
-%ITRANSFORMDATFILE Transform one .dat file with RAM-safe direct binary I/O.
+%ITRANSFORMDATFILE Transform one .dat file frame by frame through spatialSlabIO.
+%
+% The aligned file is headered: the reference frame size, and the input's
+% class, frame rate, exposure, and name. Frames stay in the input's class
+% through imwarp.
 
 datPath = plan.Path;
 oldSizeYX = plan.OldSizeYX;
 nFrames = plan.NFrames;
+newSizeYX = referenceView.ImageSize;
+dataClass = plan.Info.dataClass;
 
 tmpPath = iMakeTempSiblingPath(datPath);
-
-fidIn = fopen(datPath, 'r');
-if fidIn < 0
-    error('ImageAlignmentTool:CouldNotOpenDatInput', ...
-        'Could not open DAT input file: %s', datPath);
-end
-cleanupIn = onCleanup(@() safeFclose(fidIn));
-
-fidOut = fopen(tmpPath, 'w');
-if fidOut < 0
-    error('ImageAlignmentTool:CouldNotOpenDatOutput', ...
-        'Could not open temporary DAT output file: %s', tmpPath);
-end
-cleanupOut = onCleanup(@() safeFclose(fidOut));
+[~, channelName] = fileparts(datPath);
+outHeader = datHeaderFromInfo(plan.Info, channelName, ...
+    'dimSizes', [newSizeYX(1), newSizeYX(2), nFrames]);
 
 try
-    for iFrame = 1:nFrames
-        frame = fread(fidIn, oldSizeYX, 'single=>single');
+    slabIn = spatialSlabIO('open', datPath, 'Info', plan.Info);
+    cleanupIn = onCleanup(@() spatialSlabIO('close', slabIn));
+    slabOut = spatialSlabIO('create', tmpPath, outHeader);
+    cleanupOut = onCleanup(@() spatialSlabIO('close', slabOut));
 
-        if ~isequal(size(frame), oldSizeYX)
-            error('ImageAlignmentTool:UnexpectedDatReadSize', ...
-                'Unexpected read size in DAT file "%s" at frame %d.', ...
-                datPath, iFrame);
-        end
+    for iFrame = 1:nFrames
+        frame = reshape(spatialSlabIO('read', slabIn, 1:oldSizeYX(2), iFrame), oldSizeYX);
 
         outFrame = imwarp(frame, tform, ...
             'OutputView', referenceView, ...
             'InterpolationMethod', 'linear', ...
-            'FillValues', single(0));
+            'FillValues', cast(0, dataClass));
 
-        nWritten = fwrite(fidOut, single(outFrame), 'single');
-
-        if nWritten ~= numel(outFrame)
-            error('ImageAlignmentTool:DatWriteFailed', ...
-                'Could not write full transformed frame %d to "%s".', ...
-                iFrame, tmpPath);
-        end
+        spatialSlabIO('write', slabOut, 1:newSizeYX(2), outFrame, iFrame);
     end
 
-    safeFclose(fidIn);
-    safeFclose(fidOut);
+    spatialSlabIO('finalize', slabOut);
     clear cleanupIn cleanupOut
 
     movefile(tmpPath, datPath, 'f');
 
 catch ME
-    safeFclose(fidIn);
-    safeFclose(fidOut);
+    clear cleanupIn cleanupOut
 
     if isfile(tmpPath)
         delete(tmpPath);
@@ -1352,8 +1336,36 @@ scaleInfo.isSimilarity = isUniformScale && hasNoShear && isfinite(scale) && scal
 scaleInfo.rotationDeg = rotationDeg;
 end
 
-function oldSizeYX = iResolveOldSizeYX(AcqInfoStream, DataParams, targetFolder)
+function oldSizeYX = iResolveOldSizeYX(AcqInfoStream, DataParams, datFiles, datInfos)
 %IRESOLVEOLDSIZEYX Resolve old [Y X] image size before alignment.
+%
+% The .dat files' own frame size comes first (they must all share it),
+% then DataParams.view.imageSizeYX, then AcqInfos.mat Height/Width.
+% AcqInfos.mat keeps the raw acquisition size after an alignment, so it is
+% only the last fallback.
+
+described = ~cellfun(@isempty, datInfos);
+if any(described)
+    sizes = cellfun(@(info) [datAxisSize(info, 'Y'), datAxisSize(info, 'X')], ...
+        datInfos(described), 'UniformOutput', false);
+    sizes = vertcat(sizes{:});
+    if size(unique(sizes, 'rows'), 1) > 1
+        names = {datFiles(described).name};
+        error('ImageAlignmentTool:InconsistentDatSizes', ...
+            ['The .dat files in the folder have different frame sizes (%s). ' ...
+             'No file was changed.'], ...
+            strjoin(cellfun(@(n, k) sprintf('%s: %d x %d', n, sizes(k, 1), sizes(k, 2)), ...
+            names, num2cell(1:numel(names)), 'UniformOutput', false), '; '));
+    end
+    oldSizeYX = sizes(1, :);
+    return
+end
+
+if isstruct(DataParams) && isfield(DataParams, 'view') && ...
+        isfield(DataParams.view, 'imageSizeYX') && ~isempty(DataParams.view.imageSizeYX)
+    oldSizeYX = double(DataParams.view.imageSizeYX(:).');
+    return
+end
 
 if isstruct(AcqInfoStream) && ...
         isfield(AcqInfoStream, 'Height') && isfield(AcqInfoStream, 'Width')
@@ -1361,21 +1373,9 @@ if isstruct(AcqInfoStream) && ...
     return
 end
 
-if isstruct(DataParams) && isfield(DataParams, 'view') && ...
-        isfield(DataParams.view, 'imageSizeYX')
-    oldSizeYX = double(DataParams.view.imageSizeYX(:).');
-    return
-end
-
-datFiles = dir(fullfile(targetFolder, '*.dat'));
-if isempty(datFiles)
-    error('ImageAlignmentTool:CouldNotResolveOldSize', ...
-        'Could not resolve old image size from AcqInfos, DataParams, or DAT files.');
-end
-
 error('ImageAlignmentTool:CouldNotResolveOldSize', ...
-    ['Could not resolve old image size. AcqInfoStream.Height/Width or ' ...
-     'DataParams.view.imageSizeYX is required.']);
+    ['Could not resolve old image size from the .dat files, ' ...
+     'DataParams.view.imageSizeYX, or AcqInfos.mat Height/Width.']);
 end
 
 function tmpPath = iMakeTempSiblingPath(filePath)
