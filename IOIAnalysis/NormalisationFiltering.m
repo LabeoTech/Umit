@@ -259,14 +259,11 @@ else
 end
 
 % -------------------------------------------------------------------------
-% Preallocate output file
+% Create the headered output file (the input's axes, class, and rate)
 % -------------------------------------------------------------------------
-preallocateDatFile(outDat, storedSize, dataType);
-
-fidOut = fopen(outDat, 'r+');
-assert(fidOut ~= -1, 'NormalisationFiltering:OpenOutputFailed', ...
-    'Failed to open output file "%s".', outDat);
-cOut = onCleanup(@() safeFclose(fidOut));
+[~, outName] = fileparts(outDat);
+slabOut = spatialSlabIO('create', outDat, datHeaderFromInfo(fMetaData, outName));
+cOut = onCleanup(@() spatialSlabIO('close', slabOut));
 
 % ---------------- Filter design ----------------
 if lowFreq > 0
@@ -362,7 +359,7 @@ if hasEvents
     end
 
     storedOut = ipermute(dataYXTE, permToYXTE);
-    fwrite(fidOut, storedOut, dataType);
+    spatialSlabIO('write', slabOut, 1:slabOut.Nx, storedOut);
 
 %% =========================================================
 % NO EVENTS: Y,X,T only
@@ -485,21 +482,17 @@ else
         end
 
         fprintf('\nChunk #%i [Writing to file...]\n', c)
-        spatialSlabIO('write', fidOut, Ny, Nx, Nt, xIdx, dataType, slab);
+        spatialSlabIO('write', slabOut, xIdx, slab);
         fprintf('Chunk #%i [Completed]\n', c)
         clear slab
     end
     spatialSlabIO('close', slabIn);
 end
 
-fclose(fidOut);
+spatialSlabIO('finalize', slabOut);
 
 if bReturn
-    fid = fopen(outDat, 'r');
-    assert(fid ~= -1, 'NormalisationFiltering:OpenReturnFileFailed', ...
-        'Failed to reopen output file "%s".', outDat);
-    OutData = fread(fid, inf, ['*' dataType]);
-    fclose(fid);
+    OutData = loadData(outDat);
     OutData = reshape(OutData, storedSize);
 
     if exist(outDat, 'file')

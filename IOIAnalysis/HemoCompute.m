@@ -214,6 +214,15 @@ Nt = double(datAxisSize(channelInfo{idxTarget}, 'T'));
 Freq = double(channelInfo{idxTarget}.frameRateHz);
 Datatype = char(string(channelInfo{idxTarget}.dataClass)); %#ok<NASGU>
 
+% Header exposure of HbO/HbR: the selected channels' common exposure, or
+% NaN when they differ (the outputs combine the channels).
+selectedExposures = cellfun(@(c) double(c.exposureMsec), channelInfo(idxSelected));
+if all(arrayfun(@(e) isequaln(e, selectedExposures(1)), selectedExposures))
+    outExposureMsec = selectedExposures(1);
+else
+    outExposureMsec = NaN;
+end
+
 for ii = idxSelected
     assert(isequal(double(datAxisSize(channelInfo{ii}, 'Y')), Ny) && ...
            isequal(double(datAxisSize(channelInfo{ii}, 'X')), Nx), ...
@@ -325,13 +334,16 @@ else
     hboPath = fullfile(SaveFolder, [hboBaseName '_writing' hboExt]);
     hbrPath = fullfile(SaveFolder, [hbrBaseName '_writing' hbrExt]);
 
-    preallocateDatFile(hboPath, [Ny, Nx, Nt], 'single');
-    fid_hbo = fopen(hboPath, 'r+');
-    c_hbo = onCleanup(@() safeFclose(fid_hbo)); 
+    % Outputs are on the target timeline (lowest-frequency channel).
+    outHeaderArgs = {'dataClass', 'single', 'dimNames', {'Y', 'X', 'T'}, ...
+        'dimSizes', [Ny, Nx, Nt], 'frameRateHz', Freq, 'exposureMsec', outExposureMsec};
+    slab_hbo = spatialSlabIO('create', hboPath, ...
+        datHeaderFromInfo(channelInfo{idxTarget}, hboBaseName, outHeaderArgs{:}));
+    c_hbo = onCleanup(@() spatialSlabIO('close', slab_hbo));
 
-    preallocateDatFile(hbrPath, [Ny, Nx, Nt], 'single');
-    fid_hbr = fopen(hbrPath, 'r+');
-    c_hbr = onCleanup(@() safeFclose(fid_hbr)); 
+    slab_hbr = spatialSlabIO('create', hbrPath, ...
+        datHeaderFromInfo(channelInfo{idxTarget}, hbrBaseName, outHeaderArgs{:}));
+    c_hbr = onCleanup(@() spatialSlabIO('close', slab_hbr));
 end
 
 % Clamp-floor pre-pass. min(Red/Green/Yel(:)) must be a whole-image
@@ -476,16 +488,16 @@ for indP = 1:nChunks
         HbR(:,xIdx,:) = squeeze(Hbs(2,:,:,:));
     else
         waitbar(indP/nChunks, h, 'Writing to files...')
-        spatialSlabIO('write', fid_hbo, NbPix(1), NbPix(2), Nt, xIdx, 'single', squeeze(Hbs(1,:,:,:)));
-        spatialSlabIO('write', fid_hbr, NbPix(1), NbPix(2), Nt, xIdx, 'single', squeeze(Hbs(2,:,:,:)));
+        spatialSlabIO('write', slab_hbo, xIdx, reshape(Hbs(1,:,:,:), NbPix(1), numel(xIdx), []));
+        spatialSlabIO('write', slab_hbr, xIdx, reshape(Hbs(2,:,:,:), NbPix(1), numel(xIdx), []));
     end
 end
 
 close(h);
 
 if b_RAMsafeMode
-    fclose(fid_hbr);
-    fclose(fid_hbo);
+    spatialSlabIO('finalize', slab_hbr);
+    spatialSlabIO('finalize', slab_hbo);
 
     [moveOk, moveMsg] = movefile(hboPath, hboOutPath, 'f');
     assert(moveOk, 'Umitoolbox:HemoCompute:OutputMoveFailed', ...
@@ -511,8 +523,9 @@ if bSave
         delete(hbrPath);
     end
 
-    saveData(hboPath, single(HbO));
-    saveData(hbrPath, single(HbR));
+    outInfo = struct('exposureMsec', outExposureMsec);
+    saveData(hboPath, single(HbO), 'FrameRateHz', Freq, 'Info', outInfo);
+    saveData(hbrPath, single(HbR), 'FrameRateHz', Freq, 'Info', outInfo);
 end
 
     function info = localPipelineInfo()

@@ -5,6 +5,12 @@ function varargout = Ana_Speckle(SaveFolder, bNormalize, varargin)
 %   data = Ana_Speckle(SaveFolder, bNormalize)
 %   [data, metaData] = Ana_Speckle(SaveFolder, bNormalize, ...)
 %
+%   metaData describes the Flow.dat output: in RAM-safe mode it is
+%   loadMetaData of the written file; in standard mode (no file written)
+%   it holds the .dat Info schema fields the file would have (filePath,
+%   format, dataOffset, dataClass, dimNames, dimSizes, frameRateHz,
+%   exposureMsec, channelName, writeComplete).
+%
 %   This function computes blood-flow maps from laser speckle data using
 %   the existing algorithm:
 %       1) always-on removal of static structure: each frame is divided by
@@ -46,8 +52,8 @@ function varargout = Ana_Speckle(SaveFolder, bNormalize, varargin)
 %         .dat timeline contract.
 %       - Raw .dat length is resolved through loadMetaData, which infers
 %         datLength from the actual file size.
-%       - ExposureSpeckleMsec is read from the metadata returned by
-%         loadMetaData(...).
+%       - The speckle exposure is the input file's own exposure
+%         (exposureMsec of loadMetaData(...)).
 
 % Default output for pipeline management.
 default_Output = 'Flow.dat';
@@ -102,18 +108,10 @@ OPTIONS.GPU = 0;
 OPTIONS.Power2Flag = 0;
 OPTIONS.Brep = 0;
 
-outMeta = struct();
-outMeta.datFile = fullfile(SaveFolder, default_Output);
-outMeta.datSize = [ny, nx];
-outMeta.datLength = nt;
-outMeta.Freq = tFreq;
-outMeta.Datatype = 'single';
-outMeta.dim_names = {'Y','X','T'};
-outMeta.Height = ny;
-outMeta.Width = nx;
-outMeta.Length = nt;
-outMeta.FrameRateHz = tFreq;
-outMeta.ExposureSpeckleMsec = double(Iptr.exposureMsec);
+% Header of the Flow.dat output: the input's axes, sizes, rate, and
+% exposure, stored as single.
+[~, outBaseName] = fileparts(default_Output);
+outHeader = datHeaderFromInfo(Iptr, outBaseName, 'dataClass', 'single');
 
 assert(nt >= 2, 'Ana_Speckle:InvalidInputLength', ...
     'Speckle input must contain at least 2 frames.');
@@ -128,25 +126,18 @@ if bRAMsafe
     % pipeline re-run write to a different file and leave the stale original
     % in place.
     outFile = fullfile(SaveFolder, default_Output);
-    [~, baseName] = fileparts(default_Output);
-    computeScratchFile = fullfile(SaveFolder, [baseName '_compute.dat']);
-    outMeta.datFile = outFile;
-
-    preallocateDatFile(computeScratchFile, [ny, nx, nt], 'single');
+    computeScratchFile = fullfile(SaveFolder, [outBaseName '_compute.dat']);
 
     slabIn = spatialSlabIO('open', datFile, 'Info', Iptr);
     cIn = onCleanup(@() spatialSlabIO('close', slabIn));
 
-    fidOut = fopen(computeScratchFile, 'r+');
-    assert(fidOut ~= -1, 'Ana_Speckle:OpenOutputFailed', ...
-        'Could not open output file "%s".', computeScratchFile);
-    cOut = onCleanup(@() safeFclose(fidOut));
+    slabOut = spatialSlabIO('create', computeScratchFile, outHeader);
+    cOut = onCleanup(@() spatialSlabIO('close', slabOut));
 
     % Pass 1: temporal mean
     fprintf('PASS 1/3: Calculating temporal mean\n');
     MeanMap = zeros(ny, nx, 'single');
     lastPct = -1;
-    frameBytes = ny * nx * getByteSize('single');
 
     for t = 1:nt
         frame = single(spatialSlabIO('read', slabIn, 1:nx, t));
@@ -176,8 +167,7 @@ if bRAMsafe
         contrast   = std_laser ./ mean_laser;
         flow       = single(private_flow_from_contrast(contrast, speckle_int_time));
 
-        fseek(fidOut, (t-1) * frameBytes, 'bof');
-        fwrite(fidOut, flow, 'single');
+        spatialSlabIO('write', slabOut, 1:nx, flow, t);
 
         pct = floor(100 * t / nt);
         if pct ~= lastPct && mod(pct, 10) == 0
@@ -200,9 +190,9 @@ if bRAMsafe
         xEnd   = min(xStart + chunkX - 1, nx);
         xIdx   = xStart:xEnd;
 
-        slab = spatialSlabIO('read', fidOut, ny, nx, nt, xIdx, 'single');
+        slab = spatialSlabIO('read', slabOut, xIdx);
         slab = medfilt1(slab, fW, [], 3, 'truncate');
-        spatialSlabIO('write', fidOut, ny, nx, nt, xIdx, 'single', slab);
+        spatialSlabIO('write', slabOut, xIdx, slab);
 
         pct = floor(100 * c / nChunks);
         if pct ~= lastPct
@@ -222,9 +212,9 @@ if bRAMsafe
             xEnd   = min(xStart + chunkX - 1, nx);
             xIdx   = xStart:xEnd;
 
-            slab = spatialSlabIO('read', fidOut, ny, nx, nt, xIdx, 'single');
+            slab = spatialSlabIO('read', slabOut, xIdx);
             slab = slab ./ mean(slab, 3);
-            spatialSlabIO('write', fidOut, ny, nx, nt, xIdx, 'single', slab);
+            spatialSlabIO('write', slabOut, xIdx, slab);
 
             pct = floor(100 * c / nChunks);
             if pct ~= lastPct
@@ -234,7 +224,8 @@ if bRAMsafe
         end
     end
 
-    clear cIn cOut; % close slabIn/fidOut before replacing the declared output
+    spatialSlabIO('finalize', slabOut);
+    clear cIn cOut; % close both handles before replacing the declared output
 
     [moveOk, moveMsg] = movefile(computeScratchFile, outFile, 'f');
     assert(moveOk, 'Ana_Speckle:OutputMoveFailed', ...
@@ -243,7 +234,7 @@ if bRAMsafe
     if nargout > 0
         varargout{1} = outFile;
         if nargout > 1
-            varargout{2} = outMeta;
+            varargout{2} = loadMetaData(outFile);
         end
     end
     fprintf('\nDone!\n');
@@ -283,16 +274,16 @@ if bNormalize
     datOut = datOut ./ mean(datOut, 3);
 end
 
-outMeta.datFile = fullfile(SaveFolder, default_Output);
+outFile = fullfile(SaveFolder, default_Output);
 
 if nargout > 0
     varargout{1} = datOut;
     if nargout > 1
-        varargout{2} = outMeta;
+        varargout{2} = iPlannedInfo(outFile, outHeader);
     end
 else
     fprintf('Saving data to file: "%s"...\n', default_Output);
-    saveData(outMeta.datFile, datOut);
+    saveData(outFile, datOut, 'Info', Iptr);
 end
 
 fprintf('Done!\n');
@@ -373,4 +364,15 @@ K  = ((Tau2/(2*T)).*(1-exp(-2*T*ones(size(Tau2))./Tau2))).^(1/2);
 Tau2=[Tau2(1) Tau2 Tau2(end)];
 K=[0 K 1e30];
 speed=1./interp1(K,Tau2,contrast);
+end
+
+function Info = iPlannedInfo(filePath, hdr)
+%IPLANNEDINFO .dat Info schema of a headered file that was not written.
+[~, codes] = datHeaderSchema(1);
+Info = struct('filePath', filePath, 'format', 'header', ...
+    'dataOffset', double(codes.constants.headerLength), ...
+    'dataClass', hdr.dataClass, 'dimNames', {hdr.dimNames}, ...
+    'dimSizes', hdr.dimSizes, 'frameRateHz', hdr.frameRateHz, ...
+    'exposureMsec', hdr.exposureMsec, 'channelName', hdr.channelName, ...
+    'writeComplete', true);
 end
