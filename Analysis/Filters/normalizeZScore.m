@@ -230,12 +230,9 @@ Nt = datAxisSize(slabIn.Info, 'T');
 % file that the declared output would overwrite (a pipeline re-run).
 outFile = fullfile(SaveFolder, 'normZ.dat');
 tmpFile = fullfile(SaveFolder, 'normZ_writing.dat');
-preallocateDatFile(tmpFile, [Ny, Nx, Nt], 'single');
-
-fidOut = fopen(tmpFile, 'r+');
-assert(fidOut ~= -1, 'normalizeZScore:OpenOutputFailed', ...
-    'Failed to open output file "%s".', tmpFile);
-cOut = onCleanup(@() safeFclose(fidOut));
+slabOut = spatialSlabIO('create', tmpFile, ...
+    datHeaderFromInfo(slabIn.Info, 'normZ', 'dataClass', 'single'));
+cOut = onCleanup(@() spatialSlabIO('close', slabOut));
 
 totalBytes = Ny * Nx * Nt * getByteSize('single');
 nChunks = calculateMaxChunkSize(totalBytes, 2);
@@ -258,10 +255,11 @@ for c = 1:nChunks
     slab2D = (slab2D - mu) ./ sig;
     slab = reshape(single(slab2D), size(slab));
 
-    spatialSlabIO('write', fidOut, Ny, Nx, Nt, xIdx, 'single', slab);
+    spatialSlabIO('write', slabOut, xIdx, slab);
 end
 
-clear cIn cOut; % close the input reader and fidOut before the move below
+spatialSlabIO('finalize', slabOut);
+clear cIn cOut; % close the input reader before the move below
 
 [moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
 assert(moveOk, 'normalizeZScore:OutputMoveFailed', ...

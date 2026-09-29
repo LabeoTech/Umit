@@ -319,7 +319,6 @@ function outFileName = GSR_lowRAMmode(dataFile, SaveFolder, metaData, logical_ma
 Ny = datAxisSize(metaData, 'Y');
 Nx = datAxisSize(metaData, 'X');
 Nt = datAxisSize(metaData, 'T');
-dataClass = metaData.dataClass;
 
 dataBytes = Ny * Nx * Nt * 4;
 nChunks = calculateMaxChunkSize(dataBytes, 3, .1);
@@ -334,12 +333,8 @@ slabIn = spatialSlabIO('open', dataFile, 'Info', metaData);
 c_in = onCleanup(@() spatialSlabIO('close', slabIn));
 
 outFileName = fullfile(SaveFolder, 'GSR.dat');
-preallocateDatFile(outFileName, [Ny, Nx, Nt], dataClass);
-
-fid_out = fopen(outFileName, 'r+');
-assert(fid_out ~= -1, 'Umitoolbox:GSR:FileOpenError', ...
-    'Could not open output file "%s".', outFileName);
-c_out = onCleanup(@() safeFclose(fid_out));
+slabOut = spatialSlabIO('create', outFileName, datHeaderFromInfo(metaData, 'GSR'));
+c_out = onCleanup(@() spatialSlabIO('close', slabOut));
 
 % -------------------------------------------------------------------------
 % Prepare accumulators
@@ -458,10 +453,12 @@ for ii = 1:nChunks
 
     % Reshape back and write corrected slab
     slab = reshape(slab, slabSz);
-    spatialSlabIO('write', fid_out, Ny, Nx, Nt, idxX, dataClass, slab);
+    spatialSlabIO('write', slabOut, idxX, slab);
 
     clear slab A idx_invalid_trace
 end
+
+spatialSlabIO('finalize', slabOut);
 
 if isgraphics(h)
     close(h);

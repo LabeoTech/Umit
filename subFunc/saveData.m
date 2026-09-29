@@ -128,12 +128,13 @@ end
 
 [frameRateHz, exposureMsec] = iResolveRateAndExposure(opts, acqInfoFile, filePath, size(data, 3));
 
-hdr = struct('dataClass', 'single', ...
-    'frameRateHz', frameRateHz, ...
-    'exposureMsec', exposureMsec, ...
-    'channelName', iChannelName(fileName, opts.ChannelName), ...
-    'dimNames', {{'Y', 'X', 'T'}}, ...
-    'dimSizes', size(data));
+channelName = fileName;
+if strlength(string(opts.ChannelName)) > 0
+    channelName = char(opts.ChannelName);
+end
+hdr = datHeaderFromInfo(struct('dataClass', 'single', 'dimNames', {{'Y', 'X', 'T'}}, ...
+    'dimSizes', size(data), 'frameRateHz', frameRateHz, 'exposureMsec', exposureMsec), ...
+    channelName);
 
 disp('Writing data to .DAT file ...');
 
@@ -142,11 +143,7 @@ if opts.Append && isfile(filePath)
     return
 end
 
-% 'create' describes the not-yet-complete file with its incompleteFile
-% warning disabled, which still sets lastwarn: restore the caller's.
-[lastMsg, lastId] = lastwarn();
 h = spatialSlabIO('create', filePath, hdr);
-lastwarn(lastMsg, lastId);
 cleanupObj = onCleanup(@() spatialSlabIO('close', h));
 spatialSlabIO('write', h, 1:size(data, 2), data);
 spatialSlabIO('finalize', h);
@@ -296,17 +293,6 @@ if isstruct(Info) && isscalar(Info) && isfield(Info, 'exposureMsec')
         exposure = double(value);
     end
 end
-end
-
-function name = iChannelName(fileBase, override)
-%ICHANNELNAME Header channel name: printable ASCII, field length.
-[~, codes] = datHeaderSchema(1);
-name = char(fileBase);
-if strlength(string(override)) > 0
-    name = char(override);
-end
-name(name < 32 | name > 126) = '_';
-name = name(1:min(end, codes.constants.channelNameMaxChars));
 end
 
 function save2umt(filePath, data)

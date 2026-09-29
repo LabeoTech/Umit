@@ -316,18 +316,15 @@ Nt = datAxisSize(slabIn.Info, 'T');
 outFile = fullfile(SaveFolder, defaultOutput);
 [~, outStem, outExt] = fileparts(defaultOutput);
 tmpFile = fullfile(SaveFolder, [outStem, '_writing', outExt]);
-preallocateDatFile(tmpFile, [Ny, Nx, Nt], 'single');
+slabOut = spatialSlabIO('create', tmpFile, ...
+    datHeaderFromInfo(slabIn.Info, outStem, 'dataClass', 'single'));
+cOut = onCleanup(@() spatialSlabIO('close', slabOut));
 
 frameBytes = Ny * Nx * getByteSize('single');
 totalBytes = frameBytes * Nt;
 nChunks = calculateMaxChunkSize(totalBytes, 2, 0.1);
 chunkFrames = ceil(Nt / nChunks);
 nChunks = ceil(Nt / chunkFrames);
-
-fidOut = fopen(tmpFile, 'r+');
-assert(fidOut ~= -1, 'spatialGaussFilt:OpenOutputFailed', ...
-    'Failed to open output file "%s".', tmpFile);
-cOut = onCleanup(@() safeFclose(fidOut));
 
 for c = 1:nChunks
     tStart = (c-1) * chunkFrames + 1;
@@ -344,11 +341,11 @@ for c = 1:nChunks
         slab = imgaussfilt(slab, sigma, 'FilterDomain', 'spatial');
     end
 
-    fseek(fidOut, (tStart-1) * frameBytes, 'bof');
-    fwrite(fidOut, slab, 'single');
+    spatialSlabIO('write', slabOut, 1:Nx, slab, tStart:tEnd);
 end
 
-clear cIn cOut; % close the input reader and fidOut before the move below
+spatialSlabIO('finalize', slabOut);
+clear cIn cOut; % close the input reader before the move below
 
 [moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
 assert(moveOk, 'spatialGaussFilt:OutputMoveFailed', ...

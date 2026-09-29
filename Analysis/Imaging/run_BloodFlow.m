@@ -265,17 +265,14 @@ Nt = datAxisSize(mdIn, 'T');
 outFile = fullfile(SaveFolder, default_Output);
 [~, baseName] = fileparts(default_Output);
 scratchFile = fullfile(SaveFolder, [baseName '_compute.dat']);
-preallocateDatFile(scratchFile, [Ny, Nx, Nt], 'single');
 
 slabIn = spatialSlabIO('open', datFile, 'Info', mdIn);
 cIn = onCleanup(@() spatialSlabIO('close', slabIn));
 
-fidOut = fopen(scratchFile, 'r+');
-assert(fidOut ~= -1, 'Umitoolbox:run_BloodFlow:FileOpenFailed', ...
-    'Could not open "%s" for writing.', scratchFile);
-cOut = onCleanup(@() safeFclose(fidOut));
+slabOut = spatialSlabIO('create', scratchFile, ...
+    datHeaderFromInfo(mdIn, baseName, 'dataClass', 'single'));
+cOut = onCleanup(@() spatialSlabIO('close', slabOut));
 
-outBytesPerFrame = Ny * Nx * getByteSize('single');
 totalBytes = Ny * Nx * Nt * getByteSize('single');
 
 switch sType
@@ -319,8 +316,7 @@ switch sType
                 countFlow = countFlow + sum(~isnan(slab), 3);
             end
 
-            fseek(fidOut, (tStart-1) * outBytesPerFrame, 'bof');
-            fwrite(fidOut, slab, 'single');
+            spatialSlabIO('write', slabOut, 1:Nx, slab, tStart:tStart + size(slab, 3) - 1);
             lastPct = localPrintProgress(c, nChunks, lastPct);
         end
 
@@ -333,12 +329,10 @@ switch sType
             lastPct = -1;
             fprintf('0%% ');
             for c = 1:nChunks
-                [slab, tStart] = localReadFrames(fidOut, c, chunkT, Nt, Ny, Nx, ...
-                    outBytesPerFrame, 'single');
+                [slab, tStart] = localReadInputFrames(slabOut, c, chunkT, Nt);
                 slab = single(slab ./ meanFlow);
 
-                fseek(fidOut, (tStart-1) * outBytesPerFrame, 'bof');
-                fwrite(fidOut, slab, 'single');
+                spatialSlabIO('write', slabOut, 1:Nx, slab, tStart:tStart + size(slab, 3) - 1);
                 lastPct = localPrintProgress(c, nChunks, lastPct);
             end
         end
@@ -364,12 +358,13 @@ switch sType
                 % The slab holds the full time course of its pixels.
                 slab = localNormalizeByTemporalMean(slab);
             end
-            spatialSlabIO('write', fidOut, Ny, Nx, Nt, xIdx, 'single', slab);
+            spatialSlabIO('write', slabOut, xIdx, slab);
             lastPct = localPrintProgress(c, nChunks, lastPct);
         end
 end
 fprintf('\n');
 
+spatialSlabIO('finalize', slabOut);
 clear cIn cOut % close both files before replacing the declared output
 
 [moveOk, moveMsg] = movefile(scratchFile, outFile, 'f');
@@ -379,29 +374,15 @@ assert(moveOk, 'Umitoolbox:run_BloodFlow:OutputMoveFailed', ...
 end
 
 function [slab, tStart] = localReadInputFrames(slabIn, c, chunkT, Nt)
-%LOCALREADINPUTFRAMES Read one temporal chunk of input frames as double.
+%LOCALREADINPUTFRAMES Read one temporal chunk of frames as double.
+%
+% Used on the input and, through its create handle, on this function's
+% own scratch output.
 
 tStart = (c-1) * chunkT + 1;
 tEnd = min(tStart + chunkT - 1, Nt);
 slab = double(spatialSlabIO('read', slabIn, 1:slabIn.Nx, tStart:tEnd));
 slab = reshape(slab, slabIn.Ny, slabIn.Nx, tEnd - tStart + 1);
-
-end
-
-function [slab, tStart] = localReadFrames(fid, c, chunkT, Nt, Ny, Nx, bytesPerFrame, dataType)
-%LOCALREADFRAMES Read one temporal chunk of this function's own scratch output.
-%
-% Only used on the headerless scratch file this function writes (write
-% side, redone with the writers in .dat header Phase 4). Input files are
-% read with localReadInputFrames.
-
-tStart = (c-1) * chunkT + 1;
-tEnd = min(tStart + chunkT - 1, Nt);
-nFrames = tEnd - tStart + 1;
-
-fseek(fid, (tStart-1) * bytesPerFrame, 'bof');
-slab = fread(fid, Ny * Nx * nFrames, ['*' dataType]);
-slab = reshape(double(slab), Ny, Nx, nFrames);
 
 end
 
