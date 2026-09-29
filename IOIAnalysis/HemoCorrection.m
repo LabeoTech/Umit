@@ -155,7 +155,7 @@ if ischar(data) || (isstring(data) && isscalar(data))
     [~, baseName, ext] = fileparts(default_Output);
     tmpPath = fullfile(SaveFolder, [baseName '_writing' ext]);
 
-    HemoCorrection_lowRAMmode(tmpPath, fileData, fMetaData, resolvedFiles, lowPassFreq);
+    HemoCorrection_lowRAMmode(tmpPath, baseName, fileData, fMetaData, resolvedFiles, lowPassFreq);
 
     [moveOk, moveMsg] = movefile(tmpPath, outPath, 'f');
     assert(moveOk, 'Umitoolbox:HemoCorrection:OutputMoveFailed', ...
@@ -383,8 +383,11 @@ fData = reshape(fData, fMetaData.datSize(1), fMetaData.datSize(2), []);
 end
 
 
-function outFilename = HemoCorrection_lowRAMmode(outFilename, fluoFile, fMetaData, colorList, LPcutoffFreq)
+function outFilename = HemoCorrection_lowRAMmode(outFilename, outBaseName, fluoFile, fMetaData, colorList, LPcutoffFreq)
 %HEMOCORRECTION_LOWRAMMODE Disk-streamed hemodynamic correction.
+%
+% OUTFILENAME is the scratch file written here; OUTBASENAME is the name of
+% the declared output it is moved onto (the header channelName).
 
 fluoSlab = spatialSlabIO('open', fluoFile, 'Info', fMetaData);
 c_f = onCleanup(@() spatialSlabIO('close', fluoSlab)); 
@@ -439,12 +442,8 @@ nChunks = ceil(Nx / chunkSizePixels);
 spatSigma = 1;
 pad = ceil(3 * spatSigma);
 
-preallocateDatFile(outFilename, [Ny, Nx, Nt], fMetaData.Datatype);
-fid_out = fopen(outFilename, 'r+');
-assert(fid_out ~= -1, ...
-    'Umitoolbox:HemoCorrection:FileOpenFailed', ...
-    'Could not create output file "%s".', outFilename);
-c_out = onCleanup(@() safeFclose(fid_out)); 
+slabOut = spatialSlabIO('create', outFilename, datHeaderFromInfo(fMetaData, outBaseName));
+c_out = onCleanup(@() spatialSlabIO('close', slabOut)); 
 
 h = waitbar(0, 'Fitting Hemodynamics...');
 h_out = onCleanup(@() delete(h)); 
@@ -520,14 +519,14 @@ for ii = 1:nChunks
     fData = reshape(fData, f_slabSz);
 
     waitbar(0.99, h, 'Writing corrected fluo to file...'); drawnow()
-    spatialSlabIO('write', fid_out, Ny, Nx, Nt, idxPixels, fMetaData.Datatype, fData);
+    spatialSlabIO('write', slabOut, idxPixels, fData);
     clear fData
 end
 
 close(h);
 
 spatialSlabIO('close', fluoSlab);
-fclose(fid_out);
+spatialSlabIO('finalize', slabOut);
 for kk = 1:numel(refSlab)
     spatialSlabIO('close', refSlab{kk});
 end
