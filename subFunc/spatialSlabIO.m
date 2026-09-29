@@ -212,10 +212,13 @@ fclose(fid);
 iExtendFile(filename, totalBytes);
 
 % Describe the file exactly as loadMetaData does (it is not complete yet).
+% A disabled warning still sets lastwarn: restore the caller's.
+[lastMsg, lastId] = lastwarn();
 warningState = warning('off', 'Umitoolbox:loadMetaData:incompleteFile');
 restoreWarning = onCleanup(@() warning(warningState));
 Info = loadMetaData(filename);
 clear restoreWarning
+lastwarn(lastMsg, lastId);
 
 fid = fopen(filename, 'r+', 'ieee-le');
 if fid < 0

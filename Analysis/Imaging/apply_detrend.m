@@ -405,12 +405,9 @@ frames = iGetDetrendFrameCount(SaveFolder, Nt, inFile);
 outFile = fullfile(SaveFolder, defaultOutput);
 [~, defOutFilename, ext] = fileparts(defaultOutput);
 tmpFile = fullfile(SaveFolder, [defOutFilename, '_writing', ext]);
-preallocateDatFile(tmpFile, [Ny, Nx, Nt], 'single');
-
-fidOut = fopen(tmpFile, 'r+');
-assert(fidOut ~= -1, 'apply_detrend:OpenOutputFailed', ...
-    'Failed to open output file "%s".', tmpFile);
-cOut = onCleanup(@() safeFclose(fidOut));
+slabOut = spatialSlabIO('create', tmpFile, ...
+    datHeaderFromInfo(slabIn.Info, defOutFilename, 'dataClass', 'single'));
+cOut = onCleanup(@() spatialSlabIO('close', slabOut));
 
 nChunks = calculateMaxChunkSize(Nx * Ny * Nt * 4, 2, 0.3);
 chunkX = ceil(Nx / nChunks);
@@ -430,11 +427,12 @@ for c = 1:nChunks
     slab = reshape(slab, Ny, numel(xIdx), Nt);
 
     fprintf('Chunk %i/%i [Writing to file ...]\n', c, nChunks)
-    spatialSlabIO('write', fidOut, Ny, Nx, Nt, xIdx, 'single', slab);
+    spatialSlabIO('write', slabOut, xIdx, slab);
     fprintf('Chunk %i/%i [Completed]\n', c, nChunks)
 end
 
-clear cIn cOut; % close the input reader and fidOut before the move below
+spatialSlabIO('finalize', slabOut);
+clear cIn cOut; % close the input reader before the move below
 
 [moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
 assert(moveOk, 'apply_detrend:OutputMoveFailed', ...

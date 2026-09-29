@@ -325,7 +325,6 @@ refPath = fullfile(SaveFolder, refFile);
 refMeta = localNormalizeDatMeta(loadMetaData(refPath));
 localValidateSpatialMatch(refMeta, fluoMeta, refFile);
 
-Ny = fluoMeta.datSize(1);
 Nx = fluoMeta.datSize(2);
 Nt = fluoMeta.datLength;
 
@@ -336,13 +335,8 @@ cFluo = onCleanup(@() spatialSlabIO('close', slabFluo));
 slabRef = spatialSlabIO('open', refMeta.filePath, 'Info', refMeta);
 cRef = onCleanup(@() spatialSlabIO('close', slabRef)); 
 
-preallocateDatFile(tmpFile, [Ny, Nx, Nt], fluoMeta.Datatype);
-
-fidOut = fopen(tmpFile, 'r+');
-assert(fidOut ~= -1, ...
-    'Umitoolbox:run_HemoCorrection:FileOpenError', ...
-    'Could not create output file "%s".', tmpFile);
-cOut = onCleanup(@() safeFclose(fidOut)); 
+slabOut = spatialSlabIO('create', tmpFile, datHeaderFromInfo(fluoMeta, outBaseName));
+cOut = onCleanup(@() spatialSlabIO('close', slabOut)); 
 
 % Chunk along X to control RAM.
 dataBytes = prod([fluoMeta.datSize, max(fluoMeta.datLength, refMeta.datLength), getByteSize(fluoMeta.Datatype)]);
@@ -385,12 +379,12 @@ for ii = 1:nChunks
 
     % Write corrected slab.
     fSlab = reshape(fSlab, slabSz);
-    spatialSlabIO('write', fidOut, Ny, Nx, Nt, xIdx, fluoMeta.Datatype, fSlab);
+    spatialSlabIO('write', slabOut, xIdx, fSlab);
 end
 
 % Close every handle before the move: on Windows an open handle blocks it,
 % and the input may be the file the declared output overwrites.
-fclose(fidOut);
+spatialSlabIO('finalize', slabOut);
 spatialSlabIO('close', slabFluo);
 spatialSlabIO('close', slabRef);
 
