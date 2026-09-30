@@ -1,8 +1,13 @@
 function mergeRecordings(SaveFilename,folderList,filename,varargin)
-% MERGERECORDINGS concatenates Image time series (Y,X,T) obtained with a
-% LabeoTech Optical Imaging system. The data is stored in a .dat file ("filename")
-% located across the folders listed in "folderList". An "events.mat" file
-% will be created for the merged data.
+% MERGERECORDINGS concatenates image time series (Y,X,T) along T. The data
+% is stored in a .dat file ("filename") located across the folders listed in
+% "folderList". An "events.mat" file will be created for the merged data.
+%
+% Each input is described with loadMetaData (headered or legacy .dat), must
+% have axes {Y,X,T}, and must share Y/X, class, frame rate, and exposure
+% with the others (error Umitoolbox:mergeRecordings:incompatibleInputs
+% otherwise). The merged file is written with the self-describing .dat
+% header; no metadata .mat file is written next to it.
 % Inputs:
 %   SaveFilename(char): full path of the ".dat" file with the merged data.
 %   folderList (cell): array of full paths of the folders containing the
@@ -62,7 +67,6 @@ if isempty(SaveFolder)
     SaveFilename = fullfile(SaveFolder,SaveFilename);
 end
 
-metaData_filename = strrep(filename, '.dat', '.mat');
 % Check if merge_order contains all the indices of folderList:
 assert(isequal(sort(merge_order),1:length(folderList)),'umIToolbox:mergeRecordings:MissingInput',...
     'The merge order list is incompatible with the list of folders');
@@ -80,85 +84,62 @@ elseif ~all(idx)
     % Update folderList:
     folderList = folderList(idx);
 end
-% Headered .dat files are not supported here yet: this function reads
-% and rewrites .dat bytes from offset 0, which would corrupt them.
-% Refuse before any file is opened or changed.
-for iGuard = 1:numel(folderList)
-    guardPath = fullfile(folderList{iGuard}, filename);
-    if isfile(guardPath) && isDatWithHeader(guardPath)
-        error('Umitoolbox:mergeRecordings:headeredInputUnsupported', ...
-            ['"%s" has a header. mergeRecordings does not yet support ' ...
-             'headered .dat files; no file was changed.'], guardPath);
-    end
-end
-
-% Get full path for input data and meta data files:
-metaDatNames = fullfile(folderList, metaData_filename);
+% Get full path for input data files:
 datNames = fullfile(folderList, filename);
-% Check if the associated .mat file exists in the folder:
-assert(all(cellfun(@(x) isfile(x), metaDatNames)), 'umIToolbox:mergeRecordings:MissingInput',...
-    'One or more associated .mat file are missing!')
+% Describe every input with its own metadata (headered or legacy .dat):
+mD = cellfun(@loadMetaData, datNames, 'UniformOutput', false);
 % Check if the input files are image time series with dimensions {Y,X,T}:
-idxDim = false(size(datNames));
-idxSz = idxDim;
-refSz = load(metaDatNames{1}, 'datSize');
-mD = cell(1,length(datNames));
-for ii = 1:length(datNames)
-    mD{ii} = matfile(metaDatNames{ii});
-    idxDim(ii) = all(ismember(mD{ii}.dim_names, {'Y','X','T'}));
-    idxSz(ii) = isequaln(mD{ii}.datSize,refSz.datSize);
-end
+idxDim = cellfun(@(md) isequal(cellstr(string(md.dimNames)), {'Y','X','T'}), mD);
 assert(all(idxDim), 'umIToolbox:mergeRecordings:WrongInput',...
     'This function accepts only image time series with dimensions {"Y", "X","T"}!');
-% Check if all data have the same Y,X dimensions sizes:
-assert(all(idxSz), 'umIToolbox:mergeRecordings:WrongInput','All input files must have the same Y,X sizes!');
-% Check if input data is valid (i.e. if it is from LabeoTech)
-reqFields = {'Freq', 'datName', 'datLength', 'FirstDim', 'dim_names','Datatype', 'datSize'};
-assert(all(cellfun(@(x) all(ismember(reqFields, fieldnames(matfile(x)))), metaDatNames)),...
-    'umIToolbox:mergeRecordings:WrongInput', 'Input data must be generated from LabeoTech Imaging systems');
+% Check that all inputs can be concatenated in time:
+iAssertCompatibleInputs(mD, datNames);
+nFrames = cellfun(@(md) datAxisSize(md, 'T'), mD);
+frameRateHz = double(mD{1}.frameRateHz);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Data merge:
-% Open new .mat (meta data) file:
-mOut = struct();
-% Get required fields meta data from the first file:
-mOut.Freq = mD{1}.Freq;
-mOut.datName = mD{1}.datName;
-mOut.FirstDim = mD{1}.FirstDim;
-mOut.dim_names = mD{1}.dim_names;
-mOut.datFile = SaveFilename;
-mOut.Datatype = mD{1}.Datatype;
-mOut.datLength = [];
-mOut.datSize = mD{1}.datSize;
-
 Stim_trialNames = [];
 evFileList = cell(size(folderList));
 
 w = waitbar(0,'Merging data...', 'Name', ['Merging ' filename], 'WindowStyle','modal');
 w.Resize = 'on';
 w.Children.Title.Interpreter = 'none';
-% Open new .dat file:
-fidOut = fopen(SaveFilename,'w');
-% Concatenate data in time domain:
-for ii = 1:length(datNames)
-    waitbar(ii/length(datNames),w);    
-    % Merge data:
-    w.Children.Title.String = {datNames{ii} ; ['[' num2str(ii) '/' num2str(length(datNames)) ' Reading data...]']};drawnow;
-    fidIn = fopen(datNames{ii},'r');
-    data = fread(fidIn,inf,['*' mD{ii}.Datatype]);
-    w.Children.Title.String = {datNames{ii}; ['[' num2str(ii) '/' num2str(length(datNames)) ' Merging data...]']};drawnow;
-    fwrite(fidOut,data, mD{ii}.Datatype);
-    fclose(fidIn);    
-    % Check if an "events.mat" file exists:
-    if isfile(fullfile(folderList{ii},'events.mat'))
-        evFileList{ii} = matfile(fullfile(folderList{ii},'events.mat'));
+% Create the merged .dat file (headered: the inputs' common class, frame
+% rate, and exposure; the summed length; the output's own name):
+[~, outName] = fileparts(SaveFilename);
+outHeader = datHeaderFromInfo(mD{1}, outName, ...
+    'dimSizes', [datAxisSize(mD{1}, 'Y'), datAxisSize(mD{1}, 'X'), sum(nFrames)]);
+try
+    slabOut = spatialSlabIO('create', SaveFilename, outHeader);
+    cleanupOut = onCleanup(@() spatialSlabIO('close', slabOut));
+    % Concatenate data in time domain:
+    for ii = 1:length(datNames)
+        waitbar(ii/length(datNames),w);
+        % Merge data:
+        w.Children.Title.String = {datNames{ii} ; ['[' num2str(ii) '/' num2str(length(datNames)) ' Reading data...]']};drawnow;
+        data = loadData(datNames{ii});
+        w.Children.Title.String = {datNames{ii}; ['[' num2str(ii) '/' num2str(length(datNames)) ' Merging data...]']};drawnow;
+        t0 = sum(nFrames(1:ii-1));
+        spatialSlabIO('write', slabOut, 1:slabOut.Nx, data, t0 + (1:nFrames(ii)));
+        clear data
+        % Check if an "events.mat" file exists:
+        if isfile(fullfile(folderList{ii},'events.mat'))
+            evFileList{ii} = matfile(fullfile(folderList{ii},'events.mat'));
+        end
+        % Populate "Stim_trialNames":
+        SubStim = ii*(ones(1,nFrames(ii))); SubStim([1,end]) = 0; % Use the first/last frame to mark the onset and offset of the Trial.
+        Stim_trialNames = [Stim_trialNames, SubStim]; %#ok<AGROW>
     end
-    % Update meta data:
-    mOut.datLength = sum([mOut.datLength, mD{ii}.datLength]); % Update data length
-    % Populate "Stim_trialNames":
-    SubStim = ii*(ones(1,mD{ii}.datLength)); SubStim([1,end]) = 0; % Use the first/last frame to mark the onset and offset of the Trial.
-    Stim_trialNames = [Stim_trialNames, SubStim];    
+    spatialSlabIO('finalize', slabOut);
+    clear cleanupOut
+catch ME
+    clear cleanupOut
+    close(w)
+    if isfile(SaveFilename)
+        delete(SaveFilename);
+    end
+    rethrow(ME);
 end
-fclose(fidOut);
 w.Children.Title.String = 'Creating "events.mat" file...';pause(1);
 % Create "events.mat" file:
 if all(~cellfun(@isempty,evFileList)) && ~b_IgnoreEvents
@@ -172,13 +153,13 @@ if all(~cellfun(@isempty,evFileList)) && ~b_IgnoreEvents
     eventID = {};
     timestamps = [];
     state = [];
-    eventNameList = {};  
+    eventNameList = {};
     datLen = zeros(size(datNames));
-    for ii = 1:length(metaDatNames)
+    for ii = 1:length(datNames)
         eventID{ii} = evFileList{ii}.eventID;
         state = [state; evFileList{ii}.state];
         eventNameList{ii,1} = evFileList{ii}.eventNameList;
-        datLen(ii) = mD{ii}.datLength/mD{ii}.Freq;
+        datLen(ii) = nFrames(ii)/frameRateHz;
         % Shift timestamps:
         timestamps = [timestamps; evFileList{ii}.timestamps + sum(datLen) - datLen(1)];
     end
@@ -189,7 +170,7 @@ if all(~cellfun(@isempty,evFileList)) && ~b_IgnoreEvents
         allEventNameList = unique([eventNameList{:}],'stable');
         allEventNames = {};
         for ii = 1:length(eventNameList)
-            allEventNames = [allEventNames; arrayfun(@(x) eventNameList{ii}(x), eventID{ii})];            
+            allEventNames = [allEventNames; arrayfun(@(x) eventNameList{ii}(x), eventID{ii})];
         end
         [~,allEventID] = cellfun(@(x) ismember(x,allEventNameList),allEventNames);
     else
@@ -198,11 +179,11 @@ if all(~cellfun(@isempty,evFileList)) && ~b_IgnoreEvents
             allEventID = [allEventID; repmat(ii, numel(eventID{ii}),1)];
         end
         allEventNameList = trialNames;
-    end   
-    allEventID = uint16(allEventID);    
+    end
+    allEventID = uint16(allEventID);
 else
     % Create new "events.mat" file using timestamps "Stim_trialNames".
-    [allEventID, state, timestamps] = getEventFromStim(Stim_trialNames,mOut.Freq);
+    [allEventID, state, timestamps] = getEventFromStim(Stim_trialNames,frameRateHz);
     if isempty(trialNames)
         allEventNameList = arrayfun(@num2str,unique(allEventID),'UniformOutput',false);
     else
@@ -215,17 +196,26 @@ saveEventsFile(SaveFolder,allEventID,timestamps,state,allEventNameList)
 % Copy AcqInfo file from one of the original files to get some experiment info. This is used by some IOI_ana functions.
 copyfile(fullfile(folderList{end}, 'AcqInfos.mat'), fullfile(SaveFolder,'AcqInfos.mat'));
 close(w)
-% Add data history to meta data file with info of this function:
-myInfo = dir([mfilename('fullpath') '.m']);
-opts = struct;
-% opts.sourceFile = filename;
-opts.sourceFolderList = folderList;
-opts.merge_order = merge_order;
-dH = genDataHistory(myInfo, opts, {filename},SaveFilename);
-mOut.dataHistory = dH;
-% Save meta data to file:
-save(strrep(SaveFilename, '.dat', '.mat'), '-struct', 'mOut');
+% The merged .dat is headered, so no metadata .mat file is written.
 disp('Done')
+end
+
+function iAssertCompatibleInputs(mD, datNames)
+%IASSERTCOMPATIBLEINPUTS Inputs must share Y/X, class, frame rate, and exposure.
+props = {'frame size (Y, X)', @(md) [datAxisSize(md, 'Y'), datAxisSize(md, 'X')]; ...
+    'data class', @(md) char(md.dataClass); ...
+    'frame rate', @(md) double(md.frameRateHz); ...
+    'exposure', @(md) double(md.exposureMsec)};
+for iProp = 1:size(props, 1)
+    ref = props{iProp, 2}(mD{1});
+    for ii = 2:numel(mD)
+        if ~isequaln(props{iProp, 2}(mD{ii}), ref)
+            error('Umitoolbox:mergeRecordings:incompatibleInputs', ...
+                'Cannot merge "%s" with "%s": the %s differs.', ...
+                datNames{ii}, datNames{1}, props{iProp, 1});
+        end
+    end
+end
 end
 
 function [ID,state,timestamps] = getEventFromStim(data, FrameRateHz)
