@@ -9,9 +9,12 @@ function [resolvedAcqInfo, report] = resolveImportedChannelFallback( ...
 %   field is absent. Explicit ImportedChannels metadata is authoritative and
 %   is returned without normalization or replacement. For older classified
 %   acquisitions, the fallback resolves the red, green, and yellow channel
-%   conventions from, in precedence order: per-channel legacy .mat timing,
-%   legacy IlluminationN declarations, and canonical channel filenames.
-%   The .dat file size remains authoritative for each inferred Length.
+%   conventions from, in precedence order: per-channel file timing (the
+%   .dat header or legacy sidecar .mat), legacy IlluminationN
+%   declarations, and canonical channel filenames. Each channel file is
+%   described with loadMetaData, which is authoritative for its Length.
+%   Headerless files without a legacy sidecar are not supported and raise
+%   Umitoolbox:loadMetaData:acqInfosBoundUnsupported.
 %
 %   This helper never writes AcqInfos.mat or any sidecar metadata. When
 %   RequiredChannels is supplied, incomplete or conflicting evidence raises
@@ -175,17 +178,18 @@ if ~isfile(datPath)
     return
 end
 
-[length, sidecarFreq] = iResolveLegacyDatMetadata(datPath, acqInfo);
-if ~isempty(sidecarFreq)
-    frameRateHz = sidecarFreq;
+[length, fileFreq] = iResolveDatMetadata(datPath);
+if ~isempty(fileFreq)
+    frameRateHz = fileFreq;
 elseif ~isempty(legacyFreq)
     frameRateHz = legacyFreq;
 elseif isfield(acqInfo, 'FrameRateHz') && ~isempty(acqInfo.FrameRateHz)
     frameRateHz = double(acqInfo.FrameRateHz);
 else
     error('Umitoolbox:resolveImportedChannelFallback:missingFrameRate', ...
-        ['Cannot infer FrameRateHz for "%s". Provide a legacy channel ' ...
-         'sidecar, IlluminationN.FrameRateHz, or AcqInfoStream.FrameRateHz.'], datFile);
+        ['Cannot infer FrameRateHz for "%s". Provide a headered channel file, ' ...
+         'a legacy channel sidecar, IlluminationN.FrameRateHz, or ' ...
+         'AcqInfoStream.FrameRateHz.'], datFile);
 end
 
 validateattributes(frameRateHz, {'numeric'}, ...
@@ -273,71 +277,15 @@ camIdx = 1;
 
 end
 
-function length = iInferDatLength(datPath, acqInfo)
+function [length, frameRateHz] = iResolveDatMetadata(datPath)
+%IRESOLVEDATMETADATA Length and frame rate of a headered or legacy sidecar channel file.
 
-if ~isfield(acqInfo, 'Height') || ~isfield(acqInfo, 'Width')
-    error('Umitoolbox:resolveImportedChannelFallback:missingFrameSize', ...
-        'AcqInfoStream must contain Height and Width to infer .dat channel lengths.');
-end
-height = double(acqInfo.Height);
-width = double(acqInfo.Width);
-validateattributes(height, {'numeric'}, {'scalar', 'real', 'finite', 'positive', 'integer'});
-validateattributes(width, {'numeric'}, {'scalar', 'real', 'finite', 'positive', 'integer'});
-
-datatype = 'single';
-if isfield(acqInfo, 'Datatype') && ~isempty(acqInfo.Datatype)
-    datatype = char(string(acqInfo.Datatype));
-end
-bytes = iBytesPerElement(datatype);
-fileInfo = dir(datPath);
-frameBytes = height * width * bytes;
-if mod(fileInfo.bytes, frameBytes) ~= 0
-    error('Umitoolbox:resolveImportedChannelFallback:invalidFileLength', ...
-        'File size for "%s" is incompatible with AcqInfoStream frame dimensions.', datPath);
-end
-length = fileInfo.bytes / frameBytes;
-if length < 1
-    error('Umitoolbox:resolveImportedChannelFallback:emptyChannelFile', ...
-        'Channel file "%s" does not contain any complete frames.', datPath);
-end
-
-if ~isfield(acqInfo, 'Length') || isempty(acqInfo.Length)
-    error('Umitoolbox:resolveImportedChannelFallback:missingExpectedLength', ...
-        ['Cannot safely infer the frame geometry for legacy channel "%s" without ' ...
-         'a per-channel metadata sidecar or AcqInfoStream.Length.'], datPath);
-end
-
-expectedLength = double(acqInfo.Length);
-validateattributes(expectedLength, {'numeric'}, ...
-    {'scalar', 'real', 'finite', 'positive', 'integer'});
-if length ~= expectedLength
-    error('Umitoolbox:resolveImportedChannelFallback:ambiguousLegacyGeometry', ...
-        ['The frame count inferred for legacy channel "%s" from AcqInfoStream ' ...
-         'Height/Width is %g, but AcqInfoStream.Length is %g. The acquisition ' ...
-         'may have been spatially binned or cropped. Restore its per-channel ' ...
-         'metadata sidecar or reprocess it from raw data.'], ...
-        datPath, length, expectedLength);
-end
-
-end
-
-function [length, frameRateHz] = iResolveLegacyDatMetadata(datPath, acqInfo)
-
-[folderPath, baseName] = fileparts(datPath);
-hasSidecar = isfile(fullfile(folderPath, [baseName '.mat'])) || ...
-    isfile(fullfile(folderPath, [baseName '_info.mat']));
-
-if hasSidecar
-    info = loadMetaData(datPath);
-    if strcmp(info.format, 'legacySidecar')
-        length = datAxisSize(info, 'T');
-        frameRateHz = double(info.frameRateHz);
-        return
-    end
-end
-
-length = iInferDatLength(datPath, acqInfo);
+info = loadMetaData(datPath);
+length = datAxisSize(info, 'T');
 frameRateHz = [];
+if isfinite(info.frameRateHz)
+    frameRateHz = double(info.frameRateHz);
+end
 
 end
 
@@ -380,28 +328,6 @@ elseif contains(name, 'yellow') || contains(name, 'amber')
 else
     error('Umitoolbox:resolveImportedChannelFallback:unsupportedChannel', ...
         'Only red, green, yellow, and amber legacy channel names are supported.');
-end
-
-end
-
-function nBytes = iBytesPerElement(datatype)
-
-switch lower(char(string(datatype)))
-    case {'single', 'float32'}
-        nBytes = 4;
-    case {'double', 'float64'}
-        nBytes = 8;
-    case {'uint8', 'int8', 'logical'}
-        nBytes = 1;
-    case {'uint16', 'int16'}
-        nBytes = 2;
-    case {'uint32', 'int32'}
-        nBytes = 4;
-    case {'uint64', 'int64'}
-        nBytes = 8;
-    otherwise
-        error('Umitoolbox:resolveImportedChannelFallback:unsupportedDatatype', ...
-            'Unsupported AcqInfoStream.Datatype: "%s".', char(string(datatype)));
 end
 
 end

@@ -1,13 +1,13 @@
 function timelineInfo = resolveDatTimeline(fileOrLength, AcqInfoStream, varargin)
-%RESOLVEDATTIMELINE Resolve a .dat temporal length against AcqInfos metadata.
+%RESOLVEDATTIMELINE Resolve a temporal length against AcqInfos metadata.
 %
-%   timelineInfo = resolveDatTimeline(datFile, AcqInfoStream)
 %   timelineInfo = resolveDatTimeline(T, AcqInfoStream)
 %   timelineInfo = resolveDatTimeline(T, AcqInfoStream, 'DatFile', datFile)
 %
-%   A .dat file is valid only when its temporal length matches
-%   one known imported/base timeline described by AcqInfos.mat. This helper
-%   validates that rule and returns the resolved frame rate.
+%   Matches a temporal length T against the imported/base timelines
+%   described by AcqInfos.mat and returns the resolved frame rate. Used for
+%   data without a file source (in-memory arrays); .dat files describe
+%   their own frame rate (see loadMetaData).
 %
 %   Resolution order:
 %       1) Exact DatFile match in AcqInfoStream.ImportedChannels
@@ -15,14 +15,13 @@ function timelineInfo = resolveDatTimeline(fileOrLength, AcqInfoStream, varargin
 %       3) Error when no match or ambiguous conflicting frame rates
 %
 %   Input fileOrLength:
-%       - .dat file path: T is inferred from file size using top-level
-%         Height/Width and Datatype, defaulting to single precision.
-%       - Numeric scalar: interpreted directly as T.
+%       - Numeric scalar T. (Passing a .dat file path, which inferred T
+%         from AcqInfos.mat Height/Width, is no longer supported.)
 
 p = inputParser;
 p.FunctionName = 'resolveDatTimeline';
 
-addRequired(p, 'fileOrLength', @(x) (isnumeric(x) && isscalar(x)) || ischar(x) || isstring(x));
+addRequired(p, 'fileOrLength', @(x) isnumeric(x) && isscalar(x));
 addRequired(p, 'AcqInfoStream', @(x) isstruct(x) && isscalar(x));
 addParameter(p, 'DatFile', '', @(x) ischar(x) || isstring(x));
 addParameter(p, 'ThrowError', true, @(x) islogical(x) && isscalar(x));
@@ -33,15 +32,7 @@ throwError = p.Results.ThrowError;
 datFile = char(string(p.Results.DatFile));
 
 try
-    if isnumeric(fileOrLength)
-        actualLength = double(fileOrLength);
-    else
-        filePath = char(string(fileOrLength));
-        if isempty(datFile)
-            datFile = filePath;
-        end
-        actualLength = iInferDatLengthFromFile(filePath, AcqInfoStream);
-    end
+    actualLength = double(fileOrLength);
 
     validateattributes(actualLength, {'numeric'}, ...
         {'scalar', 'real', 'finite', 'positive', 'integer'}, ...
@@ -53,16 +44,6 @@ try
             datExt = '.dat';
         end
         datFile = [datBase, datExt];
-    end
-
-    % Older classified SaveFolders may predate ImportedChannels. Resolve
-    % those records in memory from legacy evidence before matching timelines.
-    if ~isfield(AcqInfoStream, 'ImportedChannels') && ~isnumeric(fileOrLength)
-        [folderPath, ~, ~] = fileparts(char(string(fileOrLength)));
-        if isempty(folderPath)
-            folderPath = pwd;
-        end
-        [AcqInfoStream, ~] = resolveImportedChannelFallback(AcqInfoStream, folderPath);
     end
 
     importedChannels = iGetImportedChannels(AcqInfoStream);
@@ -136,47 +117,6 @@ end
 % =========================================================================
 % Local helpers
 % =========================================================================
-function actualLength = iInferDatLengthFromFile(filePath, AcqInfoStream)
-%IINFERDATLENGTHFROMFILE Infer T from file size and AcqInfoStream Y/X.
-
-if ~isfile(filePath)
-    error('Umitoolbox:resolveDatTimeline:fileNotFound', ...
-        'File not found: "%s".', filePath);
-end
-
-if ~isfield(AcqInfoStream, 'Height') || ~isfield(AcqInfoStream, 'Width')
-    error('Umitoolbox:resolveDatTimeline:missingFrameSize', ...
-        'AcqInfoStream must contain Height and Width to infer .dat length.');
-end
-
-height = double(AcqInfoStream.Height);
-width = double(AcqInfoStream.Width);
-validateattributes(height, {'numeric'}, ...
-    {'scalar', 'real', 'finite', 'positive', 'integer'}, ...
-    'resolveDatTimeline', 'Height');
-validateattributes(width, {'numeric'}, ...
-    {'scalar', 'real', 'finite', 'positive', 'integer'}, ...
-    'resolveDatTimeline', 'Width');
-
-if isfield(AcqInfoStream, 'Datatype') && ~isempty(AcqInfoStream.Datatype)
-    datatype = char(string(AcqInfoStream.Datatype));
-else
-    datatype = 'single';
-end
-
-bytesPerElement = iGetByteSize(datatype);
-fileInfo = dir(filePath);
-frameBytes = height * width * bytesPerElement;
-
-if mod(fileInfo.bytes, frameBytes) ~= 0
-    error('Umitoolbox:resolveDatTimeline:invalidFileLength', ...
-        'File size is incompatible with AcqInfoStream Height/Width/Datatype.');
-end
-
-actualLength = fileInfo.bytes / frameBytes;
-
-end
-
 function importedChannels = iGetImportedChannels(AcqInfoStream)
 %IGETIMPORTEDCHANNELS Return normalized ImportedChannels entries.
 
@@ -254,28 +194,5 @@ timelineInfo.Freq = double(freq);
 timelineInfo.SourceType = sourceType;
 timelineInfo.SourceIndex = sourceIndex;
 timelineInfo.DatFile = datFile;
-
-end
-
-function nBytes = iGetByteSize(datatype)
-%IGETBYTESIZE Return byte size for supported numeric datatypes.
-
-switch lower(char(string(datatype)))
-    case {'single', 'float32'}
-        nBytes = 4;
-    case {'double', 'float64'}
-        nBytes = 8;
-    case {'uint8', 'int8', 'logical'}
-        nBytes = 1;
-    case {'uint16', 'int16'}
-        nBytes = 2;
-    case {'uint32', 'int32'}
-        nBytes = 4;
-    case {'uint64', 'int64'}
-        nBytes = 8;
-    otherwise
-        error('Umitoolbox:resolveDatTimeline:unsupportedDatatype', ...
-            'Unsupported datatype: "%s".', char(string(datatype)));
-end
 
 end

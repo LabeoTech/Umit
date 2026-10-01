@@ -12723,8 +12723,8 @@ classdef PipelineManager < handle
             %          return loadMetaData(filePath): the file's own metadata (.dat
             %          Info schema, plus the deprecated names such as datSize,
             %          datLength, Freq, dim_names, Datatype that older functions
-            %          expect). Works for headered, legacy sidecar, and
-            %          AcqInfos-bound files.
+            %          expect). Works for headered and legacy sidecar
+            %          files.
             %       2) Otherwise, or if loadMetaData fails, fall back to
             %          <saveFolder>/AcqInfos.mat.
             %

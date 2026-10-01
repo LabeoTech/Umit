@@ -6,8 +6,8 @@ function [mmFile, mmFileInfo]= mapDat(DatFileName)
 % MMFILE: memmapfile containing the mapped data in field "data", with the
 % shape Info.dimSizes and the class Info.dataClass.
 % MMFILEINFO (optional): .dat metadata from loadMetaData. The data offset,
-% class, and shape of every readable .dat kind (headered, legacy sidecar,
-% AcqInfos-bound) come from there.
+% class, and shape of every readable .dat kind (headered, legacy sidecar)
+% come from there.
 
 % Arguments validation
 p = inputParser;
