@@ -15,9 +15,9 @@ function [outFile, Info] = loadData(fileName)
 %       - .dat metadata are resolved through loadMetaData.
 %       - Headered .dat files are read from their data offset in the class
 %         stored in the header and reshaped to Info.dimSizes.
-%       - Headerless .dat files (legacy sidecar or AcqInfos-bound) are
-%         read as single precision from byte 0 and reshaped to
-%         Y x X x frames.
+%       - Legacy sidecar .dat files (headerless) are read as single
+%         precision from byte 0 and reshaped to Y x X x frames.
+%         Headerless files without a sidecar are rejected by loadMetaData.
 %       - .umt files are MAT-files with a custom extension.
 
 p = inputParser;
@@ -88,7 +88,7 @@ if strcmp(Info.format, 'header')
     return
 end
 
-% Headerless files (legacy sidecar or AcqInfos-bound): single precision
+% Headerless legacy sidecar files: single precision
 % from byte 0, reshaped to Y x X x frames.
 data = fread(fid, inf, '*single');
 

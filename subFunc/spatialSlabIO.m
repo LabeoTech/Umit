@@ -10,8 +10,8 @@ function varargout = spatialSlabIO(mode, varargin)
 %          SPATIALSLABIO('close', h)
 %
 %   'open' takes the file layout (data offset, class, shape) from
-%   loadMetaData and opens the file for reading; it works for headered,
-%   legacy sidecar, and AcqInfos-bound files whose first two axes are Y, X.
+%   loadMetaData and opens the file for reading; it works for headered
+%   and legacy sidecar files whose first two axes are Y, X.
 %   The handle h is a struct with fields fid, filePath, Info, Ny, Nx,
 %   trailingSizes (Info.dimSizes(3:end), 1 for a Y-X file), nFrames
 %   (prod(trailingSizes)), dataClass, bytesPerValue, dataOffset.

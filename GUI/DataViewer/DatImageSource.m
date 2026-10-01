@@ -5,8 +5,8 @@ classdef DatImageSource < handle
 %   src = DatImageSource(filePath, Name, Value)
 %
 %   This class provides a DataViewer-oriented access layer for .dat files
-%   that hold single-precision MATLAB-order [Y,X,T] arrays: headered files,
-%   legacy sidecar files, and AcqInfos-bound files. Metadata come from
+%   that hold single-precision MATLAB-order [Y,X,T] arrays: headered files
+%   and legacy sidecar files. Metadata come from
 %   loadMetaData once, in the constructor. Full frames and temporal-cache
 %   blocks are read through spatialSlabIO, reopening the file for each read
 %   with the already resolved Info, so the file is never held open between

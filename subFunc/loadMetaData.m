@@ -14,13 +14,16 @@ function Info = loadMetaData(fileName)
 %          Described from the header alone; AcqInfos.mat and sidecars in
 %          the folder are ignored.
 %       2) Legacy .dat files with sidecar metadata (.mat or _info.mat).
-%       3) Transitional headerless .dat files described only by the
-%          folder-global AcqInfos.mat (to be removed; not legacy).
-%       4) .umt files with embedded metadata and/or AcqInfos.mat
+%       3) .umt files with embedded metadata and/or AcqInfos.mat
+%
+%   Headerless .dat files without a legacy sidecar (formerly described
+%   only by the folder-global AcqInfos.mat) are no longer supported and
+%   raise Umitoolbox:loadMetaData:acqInfosBoundUnsupported: re-import the
+%   raw data to obtain headered files.
 %
 %   .dat Info schema (all .dat kinds):
 %       filePath      - Full path of the .dat file
-%       format        - 'header', 'legacySidecar', or 'acqInfos'
+%       format        - 'header' or 'legacySidecar'
 %       dataOffset    - Byte offset of the data (512 or 0)
 %       dataClass     - MATLAB class of the stored values
 %       dimNames      - Axis names in memory order, e.g. {'Y','X','T'}
@@ -34,8 +37,8 @@ function Info = loadMetaData(fileName)
 %   Deprecated .dat fields: Height, Width, Length, datLength, datSize,
 %   dim_names, Datatype, Freq, FrameRateHz, ExposureMsec, datFile,
 %   folderPath, FileType, datName, FirstDim, MetadataSource, and (for
-%   headerless files) CamIdx, MultiCam, TimelineSource,
-%   TimelineSourceIndex, ExposureSpeckleMsec are still returned for
+%   legacy sidecar files) CamIdx, MultiCam, ExposureSpeckleMsec are
+%   still returned for
 %   existing callers and will be removed. New code must use the schema.
 %
 %   For headered files whose write-complete flag is not set, a warning
@@ -47,8 +50,8 @@ function Info = loadMetaData(fileName)
 %         fields are copied first and take precedence.
 %       - Fields from AcqInfoStream are then appended only when they are
 %         missing from the legacy metadata.
-%       - If no valid legacy metadata is found, the output is built from
-%         AcqInfoStream and legacy-compatible fields are derived from it.
+%       - If no valid legacy metadata is found, the file is rejected
+%         (acqInfosBoundUnsupported).
 %       - All .dat files are assumed to be single precision unless a
 %         legacy metadata file already defines Datatype.
 %
@@ -59,10 +62,9 @@ function Info = loadMetaData(fileName)
 %         copied to Info.
 %       - For .dat files, legacy-compatible fields such as dim_names,
 %         datSize, datLength, Freq, and Datatype are always provided.
-%       - For .dat files, Height and Width are strict metadata. The
-%         temporal length is inferred from actual file size and, for
-%         AcqInfos-driven data without legacy sidecars, must match one
-%         imported/base timeline described by AcqInfos.mat.
+%       - For legacy sidecar .dat files, Height and Width are strict
+%         metadata and the temporal length is inferred from actual file
+%         size.
 %       - Valid legacy event-split .dat metadata are preserved and are not
 %         collapsed to continuous YXT.
 %       - For .umt files, embedded metadata is optional. When missing, core
@@ -172,18 +174,14 @@ deprecatedFields.MetadataSource = 'header';
 end
 
 function Info = iDatSchemaFromResolved(resolved, ownExposureMsec)
-%IDATSCHEMAFROMRESOLVED Build the .dat Info schema from resolved headerless metadata.
+%IDATSCHEMAFROMRESOLVED Build the .dat Info schema from resolved legacy sidecar metadata.
 %
 % ownExposureMsec is this file's own exposure, resolved by iLoadDatMetaData
 % (NaN when unknown).
 
 Info = struct();
 Info.filePath = resolved.datFile;
-if strcmp(resolved.MetadataSource, 'legacy_sidecar')
-    Info.format = 'legacySidecar';
-else
-    Info.format = 'acqInfos';
-end
+Info.format = 'legacySidecar';
 Info.dataOffset = 0;
 Info.dataClass = resolved.Datatype;
 Info.dimNames = resolved.dim_names;
@@ -211,7 +209,7 @@ function Info = iAppendDeprecatedDatFields(Info, deprecatedFields)
 % Length, datLength, datSize, dim_names, Datatype, Freq, FrameRateHz,
 % ExposureMsec, datFile, folderPath, FileType, datName, FirstDim,
 % MetadataSource, and the AcqInfos-derived CamIdx, MultiCam,
-% TimelineSource, TimelineSourceIndex, ExposureSpeckleMsec) are added to
+% ExposureSpeckleMsec) are added to
 % the returned Info. Kept only while existing callers move to the schema
 % fields; remove this function in the .dat header GUI phase, once no .m
 % or .mlapp code reads the old names.
@@ -224,43 +222,47 @@ end
 % Local helpers
 % =========================================================================
 function [Info, ownExposureMsec] = iLoadDatMetaData(fileName, folderPath, baseName)
-%ILOADDATMETADATA Build flat metadata for a .dat file.
+%ILOADDATMETADATA Build flat metadata for a headerless legacy sidecar .dat file.
 %
 % ownExposureMsec is the exposure of this file itself: the speckle exposure
 % when there is file-specific evidence that the file holds speckle data,
 % otherwise the general exposure; NaN when unknown.
 
-acqInfo = iLoadAcqInfo(folderPath);
 legacyInfo = iLoadLegacySidecar(folderPath, baseName);
-hasLegacySidecar = ~isempty(fieldnames(legacyInfo));
+if isempty(fieldnames(legacyInfo))
+    % Headerless without a sidecar: described only by AcqInfos.mat
+    % (dev-era imports made before the headered importers). Unsupported.
+    error('Umitoolbox:loadMetaData:acqInfosBoundUnsupported', ...
+        ['"%s" has no header and no legacy metadata .mat file, so it can no ' ...
+         'longer be read. Files of this kind were described only by ' ...
+         'AcqInfos.mat and are not supported anymore. Re-import the raw data ' ...
+         'with the umIToolbox/DataViewer importer, which writes headered .dat files.'], ...
+        fileName);
+end
+acqInfo = iLoadAcqInfo(folderPath);
 
-if hasLegacySidecar
-    % Legacy metadata takes precedence. Append only missing fields from
-    % AcqInfoStream to preserve source-specific semantics.
-    Info = legacyInfo;
+% Legacy metadata takes precedence. Append only missing fields from
+% AcqInfoStream to preserve source-specific semantics.
+Info = legacyInfo;
 
-    % A sidecar without dim_names describes a Y-X-T file. Default it before
-    % merging AcqInfos.mat so the refresh below takes Height, Width,
-    % Length, and FrameRateHz from the sidecar, which has precedence.
-    if (~isfield(Info, 'dim_names') || isempty(Info.dim_names)) && ...
-            isfield(Info, 'datSize') && isfield(Info, 'datLength') && ...
-            numel(Info.datSize) + numel(Info.datLength) == 3
-        Info.dim_names = {'Y', 'X', 'T'};
-    end
+% A sidecar without dim_names describes a Y-X-T file. Default it before
+% merging AcqInfos.mat so the refresh below takes Height, Width,
+% Length, and FrameRateHz from the sidecar, which has precedence.
+if (~isfield(Info, 'dim_names') || isempty(Info.dim_names)) && ...
+        isfield(Info, 'datSize') && isfield(Info, 'datLength') && ...
+        numel(Info.datSize) + numel(Info.datLength) == 3
+    Info.dim_names = {'Y', 'X', 'T'};
+end
 
-    Info = iAppendMissingFields(Info, acqInfo);
+Info = iAppendMissingFields(Info, acqInfo);
 
-    % Refresh forward-compatible core fields from the legacy payload.
-    [Info, updatedFields] = iUpdateLegacyCoreFieldsForForwardCompatibility(Info);
+% Refresh forward-compatible core fields from the legacy payload.
+[Info, updatedFields] = iUpdateLegacyCoreFieldsForForwardCompatibility(Info);
 
-    if ~isempty(updatedFields)
-        fprintf(['loadMetaData: Updated legacy metadata field(s) for ' ...
-            'forward compatibility in "%s": %s\n'], ...
-            fileName, strjoin(updatedFields, ', '));
-    end
-else
-    % Current metadata model: build from AcqInfoStream and derive legacy-compatible fields.
-    Info = acqInfo;
+if ~isempty(updatedFields)
+    fprintf(['loadMetaData: Updated legacy metadata field(s) for ' ...
+        'forward compatibility in "%s": %s\n'], ...
+        fileName, strjoin(updatedFields, ', '));
 end
 
 % -------------------------------------------------------------------------
@@ -341,9 +343,7 @@ validateattributes(Width, {'numeric'}, ...
     'loadMetaData', 'Width');
 
 % Always infer datLength from the actual file size. This keeps loading
-% strict on file integrity. For AcqInfos-driven .dat files without
-% legacy sidecars, the inferred temporal length must also match one known
-% imported/base timeline. Legacy sidecar metadata are preserved for
+% strict on file integrity. Legacy sidecar metadata are preserved for
 % backwards compatibility, including legacy event-split dimensionality.
 fileInfo = dir(fileName);
 bytesPerElement = getByteSize('single');
@@ -387,17 +387,6 @@ actualLength = fileInfo.bytes / (nonTProd * bytesPerElement);
 Info.datLength = actualLength;
 Info.Length = actualLength;
 
-% Current data-format rule: AcqInfos-driven .dat files are valid only when their
-% inferred T matches one known imported/base timeline. Legacy sidecar files
-% are kept backwards-compatible and are not constrained by ImportedChannels.
-if ~hasLegacySidecar
-    timelineInfo = resolveDatTimeline(actualLength, acqInfo, 'DatFile', fileName);
-    Info.FrameRateHz = timelineInfo.FrameRateHz;
-    Info.Freq = timelineInfo.Freq;
-    Info.TimelineSource = timelineInfo.SourceType;
-    Info.TimelineSourceIndex = timelineInfo.SourceIndex;
-end
-
 % If datSize explicitly includes T, keep the multi-dimensional layout but
 % update the T slot to the actual on-disk length.
 if isfield(Info, 'datSize') && ~isempty(Info.datSize) && numel(Info.datSize) == numel(Info.dim_names)
@@ -408,7 +397,7 @@ end
 importedEntry = iFindImportedChannelForInfo(acqInfo, fileName, actualLength);
 isOwnSpeckle = iIsOwnSpeckleFile(fileName, importedEntry, legacyInfo);
 Info = iFinalizeDatInfo(Info, acqInfo, fileName, folderPath, actualLength, ...
-    importedEntry, hasLegacySidecar);
+    importedEntry);
 
 if isOwnSpeckle && isfield(Info, 'ExposureSpeckleMsec') && ~isempty(Info.ExposureSpeckleMsec)
     ownExposureMsec = double(Info.ExposureSpeckleMsec);
@@ -709,7 +698,7 @@ end
 
 end
 
-function Info = iFinalizeDatInfo(rawInfo, acqInfo, fileName, folderPath, actualLength, importedEntry, hasLegacySidecar)
+function Info = iFinalizeDatInfo(rawInfo, acqInfo, fileName, folderPath, actualLength, importedEntry)
 %IFINALIZEDATINFO Keep only file-facing metadata fields for .dat files.
 
 Info = struct();
@@ -801,19 +790,7 @@ if isfield(rawInfo, 'MultiCam') && ~isempty(rawInfo.MultiCam)
     Info.MultiCam = rawInfo.MultiCam;
 end
 
-if hasLegacySidecar
-    Info.MetadataSource = 'legacy_sidecar';
-else
-    Info.MetadataSource = 'AcqInfos.mat';
-end
-
-if isfield(rawInfo, 'TimelineSource') && ~isempty(rawInfo.TimelineSource)
-    Info.TimelineSource = rawInfo.TimelineSource;
-end
-
-if isfield(rawInfo, 'TimelineSourceIndex') && ~isempty(rawInfo.TimelineSourceIndex)
-    Info.TimelineSourceIndex = rawInfo.TimelineSourceIndex;
-end
+Info.MetadataSource = 'legacy_sidecar';
 
 end
 
