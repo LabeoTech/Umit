@@ -13,7 +13,8 @@ function outFiles = funcTemplateAcquisitionInitializer(RawFolder, SaveFolder)
 %
 % Files Created
 %   funcTemplateImported.dat - Imported Y-X-T image data, written with
-%                              saveData(..., 'FrameRateHz', rate, 'Info',
+%                              saveData(..., 'DimNames', {'Y','X','T'},
+%                              'FrameRateHz', rate, 'Info',
 %                              struct('exposureMsec', exposure)) so the
 %                              file carries its own .dat header.
 %   AcqInfos.mat             - Current acquisition metadata owned by this
@@ -203,6 +204,7 @@ if isfield(AcqInfoStream, 'ExposureMsec') && ~isempty(AcqInfoStream.ExposureMsec
     exposureMsec = double(AcqInfoStream.ExposureMsec);
 end
 saveData(dataPath, imageData, ...
+    'DimNames', {'Y', 'X', 'T'}, ...
     'FrameRateHz', double(AcqInfoStream.FrameRateHz), ...
     'Info', struct('exposureMsec', exposureMsec));
 end

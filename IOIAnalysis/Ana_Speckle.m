@@ -283,7 +283,7 @@ if nargout > 0
     end
 else
     fprintf('Saving data to file: "%s"...\n', default_Output);
-    saveData(outFile, datOut, 'Info', Iptr);
+    saveData(outFile, datOut, 'Info', Iptr, 'DimNames', {'Y', 'X', 'T'});
 end
 
 fprintf('Done!\n');

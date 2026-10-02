@@ -524,8 +524,8 @@ if bSave
     end
 
     outInfo = struct('exposureMsec', outExposureMsec);
-    saveData(hboPath, single(HbO), 'FrameRateHz', Freq, 'Info', outInfo);
-    saveData(hbrPath, single(HbR), 'FrameRateHz', Freq, 'Info', outInfo);
+    saveData(hboPath, single(HbO), 'FrameRateHz', Freq, 'Info', outInfo, 'DimNames', {'Y', 'X', 'T'});
+    saveData(hbrPath, single(HbR), 'FrameRateHz', Freq, 'Info', outInfo, 'DimNames', {'Y', 'X', 'T'});
 end
 
     function info = localPipelineInfo()

@@ -3187,7 +3187,8 @@ classdef PipelineManager < handle
 
                         if ~isempty(req.files)
                             targetExpr = buildTargetPathCellExpr(req.files);
-                            appendLine(sprintf('    localMaterializeOutputFiles(%s, %s, %s);', outVar, targetExpr, stepInfoVar));
+                            appendLine(sprintf('    localMaterializeOutputFiles(%s, %s, %s, %s);', outVar, targetExpr, ...
+                                stepInfoVar, matlabLiteral(obj.declaredOutputType(nodeLocal.id, outNameLocal))));
 
                             for iReq = 1:numel(req.files)
                                 if req.isTemp(iReq)
@@ -3204,8 +3205,11 @@ classdef PipelineManager < handle
 
                         for iSaveLocal = 1:numel(saveFileNameRowsLocal)
                             saveFileNameLocal = char(saveFileNameRowsLocal(iSaveLocal));
-                            appendLine(sprintf('    saveData(fullfile(SaveFolder, %s), %s, ''Info'', %s_info);', ...
-                                matlabLiteral(saveFileNameLocal), outVar, outVar));
+                            appendLine(sprintf('    [saveArgs, %s_info] = localSaveArgs(%s, %s_info, %s);', ...
+                                outVar, outVar, outVar, ...
+                                matlabLiteral(obj.declaredOutputType(nodeLocal.id, outNameLocal))));
+                            appendLine(sprintf('    saveData(fullfile(SaveFolder, %s), %s, saveArgs{:});', ...
+                                matlabLiteral(saveFileNameLocal), outVar));
                         end
                     end
                 end
@@ -3236,7 +3240,7 @@ classdef PipelineManager < handle
             % ---------------------------------------------------------------------
             % Local helper functions inside generated script
             % ---------------------------------------------------------------------
-            appendLine('function localMaterializeOutputFiles(outValue, targetPaths, sourceInfo)');
+            appendLine('function localMaterializeOutputFiles(outValue, targetPaths, sourceInfo, declaredType)');
             appendLine('%LOCALMATERIALIZEOUTPUTFILES Ensure required output files exist on disk.');
             appendLine('    targetPaths = string(targetPaths(:));');
             appendLine('    if isempty(targetPaths)');
@@ -3276,7 +3280,22 @@ classdef PipelineManager < handle
             appendLine('        if ~isempty(dstFolder) && ~isfolder(dstFolder)');
             appendLine('            mkdir(dstFolder);');
             appendLine('        end');
-            appendLine('        saveData(dstPath, outValue, ''Info'', sourceInfo);');
+            appendLine('        saveArgs = localSaveArgs(outValue, sourceInfo, declaredType);');
+            appendLine('        saveData(dstPath, outValue, saveArgs{:});');
+            appendLine('    end');
+            appendLine('end');
+            appendLine('');
+
+            appendLine('function [args, info] = localSaveArgs(value, info, declaredType)');
+            appendLine('%LOCALSAVEARGS saveData arguments (Info, DimNames) as PipelineManager resolves them.');
+            appendLine('    args = {};');
+            appendLine('    if ~isempty(info)');
+            appendLine('        args = {''Info'', info};');
+            appendLine('    end');
+            appendLine('    if isnumeric(value) || islogical(value)');
+            appendLine('        names = PipelineManager.resolveDimNames(value, info, declaredType);');
+            appendLine('        args = [args, {''DimNames'', names}];');
+            appendLine('        info = localMergeSourceInfo(info, struct(''dimNames'', {names}));');
             appendLine('    end');
             appendLine('end');
             appendLine('');
@@ -3373,7 +3392,7 @@ classdef PipelineManager < handle
             appendLine('');
 
             appendLine('function info = localSourceInfo(filePath)');
-            appendLine('%LOCALSOURCEINFO Frame rate and exposure of a .dat file, or [].');
+            appendLine('%LOCALSOURCEINFO Frame rate, exposure, and axes of a .dat file, or [].');
             appendLine('    info = [];');
             appendLine('    [~, ~, ext] = fileparts(filePath);');
             appendLine('    if ~strcmpi(ext, ''.dat'') || ~isfile(filePath)');
@@ -3388,11 +3407,17 @@ classdef PipelineManager < handle
             appendLine('');
 
             appendLine('function info = localMergeSourceInfo(info, update)');
-            appendLine('%LOCALMERGESOURCEINFO Apply valid frameRateHz/exposureMsec fields of UPDATE.');
+            appendLine('%LOCALMERGESOURCEINFO Apply valid frameRateHz/exposureMsec/dimNames fields of UPDATE.');
             appendLine('    if isempty(info) || ~isstruct(info)');
-            appendLine('        info = struct(''frameRateHz'', NaN, ''exposureMsec'', NaN);');
+            appendLine('        info = struct(''frameRateHz'', NaN, ''exposureMsec'', NaN, ''dimNames'', {{}});');
+            appendLine('    end');
+            appendLine('    if ~isfield(info, ''dimNames'')');
+            appendLine('        info.dimNames = {};');
             appendLine('    end');
             appendLine('    if isstruct(update) && isscalar(update)');
+            appendLine('        if isfield(update, ''dimNames'') && PipelineManager.isValidDatLayout(update.dimNames)');
+            appendLine('            info.dimNames = cellstr(string(update.dimNames(:).''));');
+            appendLine('        end');
             appendLine('        if isfield(update, ''frameRateHz'')');
             appendLine('            value = update.frameRateHz;');
             appendLine('            if isnumeric(value) && isscalar(value) && isreal(value) && isfinite(value) && value > 0');
@@ -3406,7 +3431,7 @@ classdef PipelineManager < handle
             appendLine('            end');
             appendLine('        end');
             appendLine('    end');
-            appendLine('    if isnan(info.frameRateHz) && isnan(info.exposureMsec)');
+            appendLine('    if isnan(info.frameRateHz) && isnan(info.exposureMsec) && isempty(info.dimNames)');
             appendLine('        info = [];');
             appendLine('    end');
             appendLine('end');
@@ -10908,14 +10933,18 @@ classdef PipelineManager < handle
 
                         if ~isempty(dstSaveName)
                             dstPath = fullfile(saveFolder, dstSaveName);
-                            srcInfoArgs = obj.sourceInfoArgs(rec);
-                            saveData(dstPath, rec.ramValue, srcInfoArgs{:});
+                            saveArgs = obj.saveDataArgs(rec.ramValue, ...
+                                obj.recordSourceInfo(rec), srcNodeID, portName);
+                            savedName = saveData(dstPath, rec.ramValue, saveArgs{:});
+                            rec.sourceInfo = obj.savedFileSourceInfo(obj.recordSourceInfo(rec), ...
+                                fullfile(fileparts(dstPath), char(string(savedName))));
 
                             rec.fileName = string(dstPath);
                             rec.isTemp   = false;
                         else
                             tmpFile = obj.writeTempData(rec.ramValue, saveFolder, srcNodeID, portName, ...
                                 obj.recordSourceInfo(rec));
+                            rec.sourceInfo = obj.savedFileSourceInfo(obj.recordSourceInfo(rec), tmpFile);
                             rec.fileName = string(tmpFile);
                             rec.isTemp   = true;
                         end
@@ -11941,6 +11970,7 @@ classdef PipelineManager < handle
                     rec.sourceInfo = stepSourceInfo;
                     if isnumeric(val) || islogical(val)
                         tmpFile = obj.writeTempData(val, folder, nodeIDLocal, outName, stepSourceInfo);
+                        rec.sourceInfo = obj.savedFileSourceInfo(rec.sourceInfo, tmpFile);
                         rec.ramValue = [];
                         rec.fileName = string(tmpFile);
                         rec.isTemp   = true;
@@ -11964,6 +11994,7 @@ classdef PipelineManager < handle
 
                     if obj.getConsumerCount(key) >= 2
                         tmpFile = obj.writeTempData(val, folder, nodeIDLocal, outName, stepSourceInfo);
+                        rec.sourceInfo = obj.savedFileSourceInfo(rec.sourceInfo, tmpFile);
                         rec.fileName = string(tmpFile);
                         rec.isTemp   = true;
 
@@ -12114,8 +12145,8 @@ classdef PipelineManager < handle
             %RESOLVESTEPSOURCEINFO Source Info of a step's primary DATA input.
             %
             %   INFO = RESOLVESTEPSOURCEINFO(OBJ, NODE, SAVEFOLDER) returns the
-            %   frameRateHz and exposureMsec that manager-saved outputs of NODE
-            %   inherit, or [] when no source is known. The primary input is the
+            %   frameRateHz, exposureMsec, and dimNames that manager-saved
+            %   outputs of NODE inherit, or [] when no source is known. The primary input is the
             %   first DATA input (as in getMetaData). In order:
             %       1) the connection's selectedFile, when it is a .dat file;
             %       2) the upstream record's sourceInfo, when non-empty;
@@ -12185,19 +12216,28 @@ classdef PipelineManager < handle
         end
 
         function info = mergeSourceInfo(~, info, update)
-            %MERGESOURCEINFO Apply valid frameRateHz/exposureMsec fields of UPDATE.
+            %MERGESOURCEINFO Apply valid frameRateHz/exposureMsec/dimNames fields of UPDATE.
             %
             %   INFO = MERGESOURCEINFO(OBJ, INFO, UPDATE) returns a struct with
-            %   fields frameRateHz and exposureMsec. Fields of UPDATE (a struct,
-            %   for example a step's metaData output or a loadMetaData result)
-            %   replace those of INFO when valid: frameRateHz finite and > 0,
-            %   exposureMsec a real numeric scalar. Other fields and non-struct
-            %   values of UPDATE are ignored. Returns [] if neither field is set.
+            %   fields frameRateHz, exposureMsec, and dimNames. Fields of UPDATE
+            %   (a struct, for example a step's metaData output or a
+            %   loadMetaData result) replace those of INFO when valid:
+            %   frameRateHz finite and > 0, exposureMsec a real numeric scalar,
+            %   dimNames a valid .dat layout (see isValidDatLayout). Other
+            %   fields and non-struct values of UPDATE are ignored. Returns []
+            %   if no field is set.
 
             if isempty(info) || ~isstruct(info)
-                info = struct('frameRateHz', NaN, 'exposureMsec', NaN);
+                info = struct('frameRateHz', NaN, 'exposureMsec', NaN, 'dimNames', {{}});
+            end
+            if ~isfield(info, 'dimNames')
+                info.dimNames = {};
             end
             if isstruct(update) && isscalar(update)
+                if isfield(update, 'dimNames') && ...
+                        PipelineManager.isValidDatLayout(update.dimNames)
+                    info.dimNames = cellstr(string(update.dimNames(:).'));
+                end
                 if isfield(update, 'frameRateHz')
                     value = update.frameRateHz;
                     if isnumeric(value) && isscalar(value) && isreal(value) && ...
@@ -12212,8 +12252,76 @@ classdef PipelineManager < handle
                     end
                 end
             end
-            if isnan(info.frameRateHz) && isnan(info.exposureMsec)
+            if isnan(info.frameRateHz) && isnan(info.exposureMsec) && isempty(info.dimNames)
                 info = [];
+            end
+        end
+
+        function args = saveDataArgs(obj, value, sourceInfo, nodeID, outName)
+            %SAVEDATAARGS saveData Name-Value arguments for a manager-saved value.
+            %
+            %   ARGS = SAVEDATAARGS(OBJ, VALUE, SOURCEINFO, NODEID, OUTNAME)
+            %   returns {'Info', SOURCEINFO} (when non-empty) and, for numeric
+            %   VALUE, {'DimNames', names} resolved by resolveDimNames from
+            %   SOURCEINFO and the declared type of output OUTNAME of step
+            %   NODEID.
+
+            args = {};
+            if ~isempty(sourceInfo)
+                args = {'Info', sourceInfo};
+            end
+            if isnumeric(value) || islogical(value)
+                declaredType = obj.declaredOutputType(nodeID, outName);
+                try
+                    names = PipelineManager.resolveDimNames(value, sourceInfo, declaredType);
+                catch ME
+                    error('Umitoolbox:PipelineManager:unresolvedDimNames', ...
+                        'Cannot save output "%s" of step %d: %s', ...
+                        char(string(outName)), nodeID, ME.message);
+                end
+                args = [args, {'DimNames', names}];
+            end
+        end
+
+        function declaredType = declaredOutputType(obj, nodeID, outName)
+            %DECLAREDOUTPUTTYPE 'Image', 'ImageTimeSeries', or '' for a step output.
+            %
+            %   An output declared with only one of 'Image' and
+            %   'ImageTimeSeries' among its types gives that type; any other
+            %   declaration (both, neither, unknown step or output) gives ''.
+
+            declaredType = '';
+            try
+                node = obj.nodes(obj.getNodeIndexByID(nodeID));
+                outDefs = node.info.outputs;
+                idx = find(strcmpi(cellfun(@(x) char(string(x)), {outDefs.name}, ...
+                    'UniformOutput', false), char(string(outName))), 1, 'first');
+                if isempty(idx) || ~isfield(outDefs(idx), 'type') || isempty(outDefs(idx).type)
+                    return
+                end
+                types = cellstr(string(outDefs(idx).type(:)));
+                hasImage = any(strcmpi(types, 'Image'));
+                hasSeries = any(strcmpi(types, 'ImageTimeSeries'));
+                if hasImage && ~hasSeries
+                    declaredType = 'Image';
+                elseif hasSeries && ~hasImage
+                    declaredType = 'ImageTimeSeries';
+                end
+            catch
+                declaredType = '';
+            end
+        end
+
+        function info = savedFileSourceInfo(obj, info, savedPath)
+            %SAVEDFILESOURCEINFO Source Info updated with a saved file's dimNames.
+            [~, ~, extLocal] = fileparts(char(string(savedPath)));
+            if ~strcmpi(extLocal, '.dat') || ~isfile(savedPath)
+                return
+            end
+            try
+                md = loadMetaData(char(string(savedPath)));
+                info = obj.mergeSourceInfo(info, struct('dimNames', {md.dimNames}));
+            catch
             end
         end
 
@@ -12225,15 +12333,6 @@ classdef PipelineManager < handle
             end
         end
 
-        function args = sourceInfoArgs(obj, rec)
-            %SOURCEINFOARGS saveData Name-Value arguments for a record's source Info.
-            args = {};
-            info = obj.recordSourceInfo(rec);
-            if ~isempty(info)
-                args = {'Info', info};
-            end
-        end
-
         function tmpFile = writeTempData(obj, dataVal, folder, nodeIDLocal, outName, sourceInfo)
             %WRITETEMPDATA Write temporary DATA output and return its full saved path.
             %
@@ -12241,7 +12340,8 @@ classdef PipelineManager < handle
             %   tmpFile = writeTempData(..., sourceInfo)
             %
             %   sourceInfo (optional) is the record's source Info; saveData
-            %   takes the header frame rate and exposure from it.
+            %   takes the header frame rate and exposure from it, and the
+            %   axis names come from saveDataArgs (resolveDimNames).
             %
             %   Behavior:
             %       - Validates that the requested output exists on the step
@@ -12305,11 +12405,8 @@ classdef PipelineManager < handle
             if nargin < 6
                 sourceInfo = [];
             end
-            srcInfoArgs = {};
-            if ~isempty(sourceInfo)
-                srcInfoArgs = {'Info', sourceInfo};
-            end
-            savedPath = saveData(tmpBasePath, dataVal, srcInfoArgs{:}, channelNameArgs{:});
+            saveArgs = obj.saveDataArgs(dataVal, sourceInfo, nodeIDLocal, outName);
+            savedPath = saveData(tmpBasePath, dataVal, saveArgs{:}, channelNameArgs{:});
             savedPath = char(string(savedPath));
 
             % Normalize to full path if saveData returned only a filename
@@ -12622,8 +12719,9 @@ classdef PipelineManager < handle
                 % ---------------------------------------------------------
                 if hasRamValue
 
-                    srcInfoArgs = obj.sourceInfoArgs(rec);
-                    savedPath = saveData(dstPath, rec.ramValue, srcInfoArgs{:});
+                    saveArgs = obj.saveDataArgs(rec.ramValue, ...
+                        obj.recordSourceInfo(rec), node.id, outName);
+                    savedPath = saveData(dstPath, rec.ramValue, saveArgs{:});
                     savedPath = char(string(savedPath));
 
                     if ~isfile(savedPath)
@@ -12633,6 +12731,7 @@ classdef PipelineManager < handle
                     [~,savedBase,savedExt] = fileparts(savedPath);
                     savedFileName = string(savedBase) + string(savedExt);
 
+                    rec.sourceInfo = obj.savedFileSourceInfo(obj.recordSourceInfo(rec), savedPath);
                     rec.fileName = string(savedPath);
                     rec.isTemp   = false;
                     obj.dataStore(key) = rec;
@@ -14944,6 +15043,90 @@ classdef PipelineManager < handle
     end
 
     methods (Static)
+
+        function names = resolveDimNames(value, sourceInfo, declaredType)
+            %RESOLVEDIMNAMES Axis names under which a numeric value is saved as .dat.
+            %
+            %   NAMES = PipelineManager.resolveDimNames(VALUE, SOURCEINFO, DECLAREDTYPE)
+            %
+            %   saveData needs explicit axis names (DimNames) for numeric
+            %   data; PipelineManager resolves them for the values it saves:
+            %       1) SOURCEINFO.dimNames (the propagated source Info, or a
+            %          step's metaData output), when VALUE fits them
+            %          (ndims(VALUE) <= numel(dimNames)) and they agree with
+            %          DECLAREDTYPE: no T axis for 'Image', a T axis for
+            %          'ImageTimeSeries', any layout otherwise;
+            %       2) else a default from DECLAREDTYPE and ndims(VALUE):
+            %             ndims   'Image'   'ImageTimeSeries'   other ('')
+            %               2     Y,X       Y,X,T (T = 1)       Y,X
+            %               3     Y,X,E     Y,X,T               Y,X,T
+            %               4     error     Y,X,T,E             Y,X,T,E
+            %   Any other case raises
+            %   Umitoolbox:PipelineManager:unresolvedDimNames.
+            %
+            %   DECLAREDTYPE is 'Image', 'ImageTimeSeries', or '' (see
+            %   declaredOutputType).
+
+            if nargin < 3 || isempty(declaredType)
+                declaredType = '';
+            end
+            declaredType = char(string(declaredType));
+            nd = ndims(value);
+
+            if isstruct(sourceInfo) && isscalar(sourceInfo) && isfield(sourceInfo, 'dimNames') && ...
+                    PipelineManager.isValidDatLayout(sourceInfo.dimNames)
+                candidate = cellstr(string(sourceInfo.dimNames(:).'));
+                hasT = any(strcmp(candidate, 'T'));
+                agrees = (strcmpi(declaredType, 'Image') && ~hasT) || ...
+                    (strcmpi(declaredType, 'ImageTimeSeries') && hasT) || ...
+                    ~any(strcmpi(declaredType, {'Image', 'ImageTimeSeries'}));
+                if nd <= numel(candidate) && agrees
+                    names = candidate;
+                    return
+                end
+            end
+
+            switch lower(declaredType)
+                case 'image'
+                    defaults = {{'Y', 'X'}, {'Y', 'X', 'E'}, {}};
+                case 'imagetimeseries'
+                    defaults = {{'Y', 'X', 'T'}, {'Y', 'X', 'T'}, {'Y', 'X', 'T', 'E'}};
+                otherwise
+                    defaults = {{'Y', 'X'}, {'Y', 'X', 'T'}, {'Y', 'X', 'T', 'E'}};
+            end
+            names = {};
+            if nd >= 2 && nd <= 4
+                names = defaults{nd - 1};
+            end
+            if isempty(names)
+                if isempty(declaredType)
+                    typeText = 'no image type';
+                else
+                    typeText = sprintf('type ''%s''', declaredType);
+                end
+                error('Umitoolbox:PipelineManager:unresolvedDimNames', ...
+                    ['Cannot resolve the axis names of a %d-D value declared with %s; ' ...
+                     'return a metaData output with dimNames.'], nd, typeText);
+            end
+        end
+
+        function tf = isValidDatLayout(dimNames)
+            %ISVALIDDATLAYOUT True for 'Y','X', then distinct axes among 'T','E','F' in that order.
+            tf = false;
+            if ~(iscell(dimNames) || isstring(dimNames)) || isempty(dimNames)
+                return
+            end
+            try
+                names = cellstr(string(dimNames(:).'));
+            catch
+                return
+            end
+            if numel(names) < 2 || numel(names) > 5 || ~strcmp(names{1}, 'Y') || ~strcmp(names{2}, 'X')
+                return
+            end
+            [isKnown, slot] = ismember(names(3:end), {'T', 'E', 'F'});
+            tf = all(isKnown) && all(diff(slot) > 0);
+        end
 
         function info = createPipelineInfo(name, description)
             %CREATEPIPELINEINFO Create a new pipelineInfo struct.
