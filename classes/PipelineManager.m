@@ -8490,7 +8490,16 @@ classdef PipelineManager < handle
                 return
             end
 
-            S = load(logFile,'pipeLog');
+            % An unreadable leftover (e.g. from a failed run) is treated like
+            % a missing log: it is replaced when the log is next saved.
+            try
+                S = load(logFile,'pipeLog');
+            catch ME
+                warning('PipelineManager:loadPipeLog:Unreadable', ...
+                    'Ignoring unreadable pipeLog.mat in "%s": %s', SaveFolder, ME.message);
+                obj.folderPipeLog = table();
+                return
+            end
 
             if ~isfield(S,'pipeLog') || ~istable(S.pipeLog)
                 obj.folderPipeLog = table();
@@ -10221,38 +10230,18 @@ classdef PipelineManager < handle
         end
 
         function tf = isFreshSaveFolder(~, saveFolder)
-            %ISFRESHSAVEFOLDER True when no processed-dataset artifacts exist.
+            %ISFRESHSAVEFOLDER True when the SaveFolder has no AcqInfos.mat.
             %
-            % RawFolder and SaveFolder are frequently the same directory, so raw
-            % acquisition files and subfolders do not disqualify initialization.
-            % Existing image/derived data, bindings, or owned SaveFolder metadata
-            % make the folder legacy/ambiguous and retain the hard processing block.
+            % Only AcqInfos.mat, the metadata an acquisition importer creates,
+            % makes a folder "not fresh" (decided 2026-10-02). Other files are
+            % ignored: raw acquisition files (RawFolder and SaveFolder are
+            % often the same directory) and leftovers of a failed import,
+            % such as stale, corrupt, or even valid .dat files, events.mat, or
+            % pipeLog.mat. Those must not lock the folder; a valid importer
+            % may run and overwrite them. A folder whose AcqInfos.mat exists
+            % but is invalid or old-schema keeps the legacy-schema block.
 
-            blockedExtensions = {'.dat', '.umt', '.roi', '.umitlink'};
-            blockedNames = { ...
-                'AcqInfos.mat', ...
-                'DataParams.mat', ...
-                'events.mat', ...
-                'Text_events.mat', ...
-                'dataHistory.mat', ...
-                'pipeLog.mat', ...
-                'LogBook.mat'};
-
-            tf = true;
-            entries = dir(saveFolder);
-            for iEntry = 1:numel(entries)
-                if entries(iEntry).isdir
-                    continue
-                end
-
-                entryName = entries(iEntry).name;
-                [~, ~, extension] = fileparts(entryName);
-                if any(strcmpi(entryName, blockedNames)) || ...
-                        any(strcmpi(extension, blockedExtensions))
-                    tf = false;
-                    return
-                end
-            end
+            tf = ~isfile(fullfile(char(string(saveFolder)), 'AcqInfos.mat'));
         end
 
         function tf = isSetupExecutionNode(obj, nodeLocal)
