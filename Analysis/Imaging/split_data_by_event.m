@@ -164,6 +164,7 @@ if ischar(data) || (isstring(data) && isscalar(data))
 
     switch ext
         case '.dat'
+            assertDatLayout(loadMetaData(inPath), {{'Y','X','T'}}, 'split_data_by_event');
             loaded = loadData(inPath);
             assert(isnumeric(loaded) && ndims(loaded) == 3, ...
                 'Umitoolbox:split_data_by_event:invalidDatInput', ...

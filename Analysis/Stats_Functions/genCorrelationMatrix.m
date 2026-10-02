@@ -210,6 +210,7 @@ if ischar(data) || (isstring(data) && isscalar(data))
     ext = lower(ext);
     switch ext
         case '.dat'
+            assertDatLayout(loadMetaData(dataFile), {{'Y','X','T'}}, 'genCorrelationMatrix');
             value = single(loadData(dataFile));
             dimNames = {'Y','X','T'};
             return

@@ -260,6 +260,7 @@ if ischar(data) || (isstring(data) && isscalar(data))
 
     switch ext
         case '.dat'
+            assertDatLayout(loadMetaData(dataFile), {{'Y','X','T'}}, 'getDataFromROI');
             rawData = loadData(dataFile);
             entryNames = {'main'};
             entryValues = {single(rawData)};

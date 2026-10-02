@@ -471,6 +471,7 @@ labels = struct();
 eventInfo = struct();
 
 meta = loadMetaData(dataFile);
+assertDatLayout(meta, {{'Y','X','T'}}, 'apply_aggregate_function');
 if ~isfield(meta, 'dimNames') || ~isfield(meta, 'dimSizes')
     error('apply_aggregate_function:InvalidMetaData', ...
         'loadMetaData did not return dimNames and dimSizes for "%s".', dataFile);

@@ -221,6 +221,7 @@ function outFile = iZscoreDatFile(inFile, SaveFolder)
 
 slabIn = spatialSlabIO('open', inFile);
 cIn = onCleanup(@() spatialSlabIO('close', slabIn));
+assertDatLayout(slabIn.Info, {{'Y','X','T'}}, 'normalizeZScore');
 Ny = slabIn.Ny;
 Nx = slabIn.Nx;
 Nt = datAxisSize(slabIn.Info, 'T');

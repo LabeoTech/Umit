@@ -34,13 +34,27 @@ function outData = funcTemplate(data, SaveFolder, varargin)
 %             a connected downstream data input.
 %
 % Metadata Behavior
-%   Metadata is not a function input or output. When a copied function
-%   needs metadata, resolve it locally from the concrete data file, for
-%   example:
+%   Per-data metadata (frame rate, axes, exposure) describes the data, not
+%   the pipeline. A function that needs it declares 'sourceInfo' inputs
+%   (FrameRateHz, DimNames, ExposureMsec; see PipelineManager.addInput),
+%   which PipelineManager injects as Name-Value parameters from the data
+%   flowing into the step. Inside the function, resolve the value with
+%   resolveDataInfoValue (explicit value, then the .dat header, then a
+%   clear error). Never read the frame rate from AcqInfos.mat.
+%
+%   When a copied function accepts a .dat filename, describe the file and
+%   check its layout before reading data or writing outputs, for example:
 %
 %       dataFile = fullfile(SaveFolder, dataFileName);
 %       dataInfo = loadMetaData(dataFile);
+%       assertDatLayout(dataInfo, {{'Y','X','T'}}, mfilename);
 %       nFrames  = datAxisSize(dataInfo, 'T');   % 0 when the file has no T axis
+%
+%   .dat files may be Y-X, Y-X-T, Y-X-T-E, Y-X-E, or Y-X-F; a function that
+%   assumes Y-X-T must refuse the others (Umitoolbox:<fn>:unsupportedLayout).
+%   Outputs saved by PipelineManager take their axes from the source Info
+%   or the declared output type; a direct saveData call must pass
+%   'DimNames'.
 %
 %   For .dat files, read only the .dat Info schema fields: dimNames,
 %   dimSizes, dataClass, frameRateHz, exposureMsec, dataOffset, format,
