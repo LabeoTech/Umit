@@ -508,6 +508,7 @@ eventInfo = struct();
 
 slabIn = spatialSlabIO('open', inFile);
 cleanObj = onCleanup(@() spatialSlabIO('close', slabIn));
+assertDatLayout(slabIn.Info, {{'Y','X','T'}}, 'normalizeBSLN');
 Ny = slabIn.Ny;
 Nx = slabIn.Nx;
 Nt = datAxisSize(slabIn.Info, 'T');

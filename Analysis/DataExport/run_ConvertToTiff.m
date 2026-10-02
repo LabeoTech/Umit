@@ -149,6 +149,8 @@ if ischar(data) || (isstring(data) && isscalar(data))
 
     switch lower(ext)
         case '.dat'
+            % Y-X-T, or a single Y-X frame exported as a one-page TIFF.
+            assertDatLayout(loadMetaData(dataFile), {{'Y','X','T'}, {'Y','X'}}, 'run_ConvertToTiff');
             payload = single(loadData(dataFile));
             dimNames = {'Y','X','T'};
             return
@@ -190,8 +192,8 @@ function iWriteTiffStack(filePath, data)
 %IWRITETIFFSTACK Write a YXT stack to TIFF.
 
 data = single(data);
-assert(ndims(data) == 3, 'Umitoolbox:run_ConvertToTiff:InvalidTiffPayload', ...
-    'TIFF payload must be a 3D YXT array.');
+assert(ndims(data) <= 3, 'Umitoolbox:run_ConvertToTiff:InvalidTiffPayload', ...
+    'TIFF payload must be a YXT array (or a single YX frame).');
 
 if exist('ConvertToTiff', 'file') == 2
     [folderPath, fileName, ext] = fileparts(filePath);

@@ -420,6 +420,7 @@ if ischar(dataIn) || (isstring(dataIn) && isscalar(dataIn))
         src.representation = 'continuous';
         src.fileName = fileName;
         src.Info = loadMetaData(fileName);
+        assertDatLayout(src.Info, {{'Y','X','T'}}, 'genAmplitudeMaps');
         src.isRawDat = true;
         src.data = [];
         return

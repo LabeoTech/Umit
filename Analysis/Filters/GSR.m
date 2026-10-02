@@ -79,6 +79,7 @@ bLowRAM = ischar(dataIn) || (isstring(dataIn) && isscalar(dataIn));
 if bLowRAM
     dataFile = localResolveDataFile(char(string(dataIn)), SaveFolder);
     metaData = loadMetaData(dataFile);
+    assertDatLayout(metaData, {{'Y','X','T'}}, 'GSR');
 
     assert(strcmpi(metaData.dataClass, 'single'), ...
         'Umitoolbox:GSR:InvalidInput', ...

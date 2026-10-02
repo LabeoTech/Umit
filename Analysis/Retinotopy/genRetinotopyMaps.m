@@ -96,11 +96,13 @@ else
         'Umitoolbox:genRetinotopyMaps:WrongInput', ...
         'Only numeric YXT input or raw .dat input are supported.');
 
-    metaData = iInternalMetaFromInfo(loadMetaData(dataFile));
+    fileInfo = loadMetaData(dataFile);
+    assertDatLayout(fileInfo, {{'Y','X','T'}}, 'genRetinotopyMaps');
+    metaData = iInternalMetaFromInfo(fileInfo);
     dataIn = dataFile;
 end
 
-assert(all(ismember({'Y','X','T'}, cellstr(string(metaData.dim_names)))), ...
+assert(isequal(cellstr(string(metaData.dim_names(:).')), {'Y','X','T'}), ...
     'Umitoolbox:genRetinotopyMaps:WrongInput', ...
     'Input data must have dimensions Y, X, and T.');
 

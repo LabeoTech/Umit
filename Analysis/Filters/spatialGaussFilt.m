@@ -13,8 +13,10 @@ function outData = spatialGaussFilt(data, SaveFolder, varargin)
 %          - Triggered when "data" is a .dat filename
 %
 %   Accepted input forms:
-%       1) Numeric array with dimensions Y x X or Y x X x T
-%       2) Filename to a .dat file storing Y x X x T data
+%       1) Numeric array whose first two dimensions are Y x X (e.g. Y x X,
+%          Y x X x T, Y x X x T x E); each Y x X frame is filtered
+%       2) Filename to a .dat file of any layout starting with Y, X (Y-X,
+%          Y-X-T, Y-X-T-E, Y-X-E, Y-X-F); the output keeps its axes
 %       3) UMT struct with image entries using dimensions:
 %              {'Y','X'}
 %              {'Y','X','T'}
@@ -31,7 +33,7 @@ function outData = spatialGaussFilt(data, SaveFolder, varargin)
 %
 %   Inputs:
 %       data       - Input data in one of the accepted forms above.
-%       SaveFolder - Folder used for file resolution and AcqInfos.mat lookup.
+%       SaveFolder - Folder used for file resolution and outputs.
 %
 %   Name-Value parameters:
 %       Sigma      - Positive scalar Gaussian sigma. Default: 1
@@ -81,12 +83,12 @@ end
 if isnumeric(data) || islogical(data)
     validateattributes(data, {'numeric','logical'}, {'nonempty'}, mfilename, 'data');
 
-    if ~(ismatrix(data) || ndims(data) == 3)
-        error('spatialGaussFilt:InvalidArrayInput', ...
-            'Numeric input must be a YX image or a YXT image time series.');
-    end
-
-    outData = iSpatialGaussBlock(data, Sigma);
+    % Per-frame filter: any layout whose first two axes are Y, X (Y-X,
+    % Y-X-T, Y-X-T-E, Y-X-E, ...). Trailing axes are flattened into frames
+    % and restored afterwards (.dat header Phase 6b-1).
+    inSize = size(data);
+    outData = iSpatialGaussBlock(reshape(data, inSize(1), inSize(2), []), Sigma);
+    outData = reshape(outData, inSize);
     return
 end
 
@@ -302,13 +304,17 @@ end
 % Local helper: low-RAM .dat execution
 % =========================================================================
 function outFile = iSpatialGaussDatFile(inFile, SaveFolder, sigma, defaultOutput)
-%ISPATIALGAUSSDATFILE Apply spatial filtering to a raw YXT .dat file.
+%ISPATIALGAUSSDATFILE Apply spatial filtering to a .dat file, frame by frame.
+%
+% Any layout whose first two axes are Y, X: every Y-X frame of the
+% flattened trailing axes (T, E, F, ...) is filtered, and the output keeps
+% the input's axes (.dat header Phase 6b-1).
 
 slabIn = spatialSlabIO('open', inFile);
 cIn = onCleanup(@() spatialSlabIO('close', slabIn));
 Ny = slabIn.Ny;
 Nx = slabIn.Nx;
-Nt = datAxisSize(slabIn.Info, 'T');
+Nt = slabIn.nFrames;   % frames across all trailing axes
 
 % Write through a scratch file so the declared pipeline output only appears
 % once the run has completed, and so the input can safely be the file the

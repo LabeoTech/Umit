@@ -151,7 +151,9 @@ classdef DatImageSource < handle
 
             obj.Ny = datAxisSize(obj.Info, 'Y');
             obj.Nx = datAxisSize(obj.Info, 'X');
-            obj.Nt = datAxisSize(obj.Info, 'T');
+            % A single-frame Y-X file is shown as one frame (.dat header
+            % Phase 6b-1); its frame rate is NaN.
+            obj.Nt = max(1, datAxisSize(obj.Info, 'T'));
 
             obj.Precision = char(string(obj.Info.dataClass));
             obj.BytesPerSample = obj.getByteSize(obj.Precision);
@@ -804,12 +806,13 @@ classdef DatImageSource < handle
         end
 
         function validateContinuousDatLayout(obj, Info) %#ok<INUSL>
-            %VALIDATECONTINUOUSDATLAYOUT Reject non-YXT or non-single .dat files.
+            %VALIDATECONTINUOUSDATLAYOUT Reject .dat layouts other than Y-X-T or Y-X, and non-single files.
             %
-            %   Uses the .dat Info schema from loadMetaData. This method
-            %   deliberately fails fast for event-split or other non-YXT
-            %   files and for data classes other than single; those are not
-            %   supported by the viewer backend yet.
+            %   Uses the .dat Info schema from loadMetaData. Y-X-T files and
+            %   single-frame Y-X files (shown as one frame) are supported.
+            %   This method fails fast for event-split or other layouts and
+            %   for data classes other than single; those are not supported
+            %   by the viewer backend yet.
 
             if ~isfield(Info, 'format') || ~isfield(Info, 'filePath')
                 error('DatImageSource:InvalidFileType', ...
@@ -822,21 +825,18 @@ classdef DatImageSource < handle
             end
 
             dimNames = upper(cellstr(string(Info.dimNames(:).')));
-            expected = {'Y', 'X', 'T'};
 
             if any(strcmp(dimNames, 'E'))
                 error('DatImageSource:EventSplitDatUnsupported', ...
-                    ['This .dat file declares an event dimension and cannot be ' ...
-                     'opened by DatImageSource. Legacy event-split .dat files ' ...
-                     'are no longer supported by the DataViewer backend. ' ...
-                     'Convert this dataset to a .umt image structure with ' ...
-                     'dimNames {''Y'',''X'',''T'',''E''} and shared eventInfo.']);
+                    ['This .dat file declares an event dimension ({%s}). Displaying ' ...
+                     'event-split .dat files (E axis) is not supported by the ' ...
+                     'DataViewer backend yet.'], strjoin(dimNames, ', '));
             end
 
-            if numel(dimNames) ~= 3 || ~all(strcmp(dimNames, expected))
+            if ~(isequal(dimNames, {'Y', 'X', 'T'}) || isequal(dimNames, {'Y', 'X'}))
                 error('DatImageSource:UnsupportedDatLayout', ...
-                    ['Unsupported .dat layout: {%s}. DatImageSource only ' ...
-                     'supports continuous files with dimNames={''Y'',''X'',''T''}.'], ...
+                    ['Unsupported .dat layout: {%s}. DatImageSource supports ' ...
+                     'dimNames {''Y'',''X'',''T''} and single frames {''Y'',''X''}.'], ...
                     strjoin(dimNames, ', '));
             end
 
@@ -850,13 +850,13 @@ classdef DatImageSource < handle
                     'Only single-precision .dat files are currently supported.');
             end
 
-            if ~isfield(Info, 'dimSizes') || numel(Info.dimSizes) ~= 3
+            if ~isfield(Info, 'dimSizes') || numel(Info.dimSizes) ~= numel(dimNames)
                 error('DatImageSource:MissingCoreMetadata', ...
-                    '.dat metadata must contain the sizes of Y, X, and T.');
+                    '.dat metadata must contain the size of every axis (Y, X, and T if present).');
             end
 
             sizeNames = {'Height', 'Width', 'Length'};
-            for k = 1:3
+            for k = 1:numel(dimNames)
                 validateattributes(double(Info.dimSizes(k)), {'numeric'}, ...
                     {'scalar', 'real', 'finite', 'positive', 'integer'}, ...
                     'DatImageSource', sizeNames{k});

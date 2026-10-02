@@ -391,6 +391,7 @@ function outFile = iApplyDetrendDatFile(inFile, SaveFolder, defaultOutput, expli
 
 slabIn = spatialSlabIO('open', inFile);
 cIn = onCleanup(@() spatialSlabIO('close', slabIn));
+assertDatLayout(slabIn.Info, {{'Y','X','T'}}, 'apply_detrend');
 Ny = slabIn.Ny;
 Nx = slabIn.Nx;
 Nt = datAxisSize(slabIn.Info, 'T');
