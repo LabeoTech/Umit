@@ -28,6 +28,10 @@ function outData = run_HemoCorrection(data, SaveFolder, varargin)
 %       'Green'     - logical scalar
 %       'Amber'     - logical scalar
 %       'Other'     - custom channel filename
+%       'FrameRateHz' - frame rate of the fluorescence data (Hz).
+%                     PipelineManager injects it from the data; a .dat
+%                     input's header provides it otherwise. Numeric input
+%                     needs it explicitly; AcqInfos.mat is not used.
 %
 %   Output:
 %       - standard mode: corrected fluorescence array
@@ -51,6 +55,7 @@ addParameter(p, 'Red', true, @(x) islogical(x) && isscalar(x));
 addParameter(p, 'Green', true, @(x) islogical(x) && isscalar(x));
 addParameter(p, 'Amber', true, @(x) islogical(x) && isscalar(x));
 addParameter(p, 'Other', '', @(x) ischar(x) || (isstring(x) && isscalar(x)));
+addParameter(p, 'FrameRateHz', []);
 parse(p, data, SaveFolder, varargin{:});
 
 SaveFolder = char(string(p.Results.SaveFolder));
@@ -77,7 +82,6 @@ md = load(acqFile, 'AcqInfoStream');
 assert(isfield(md, 'AcqInfoStream') && isstruct(md.AcqInfoStream), ...
     'Umitoolbox:run_HemoCorrection:InvalidAcqInfos', ...
     'AcqInfos.mat does not contain a valid AcqInfoStream structure.');
-acq = md.AcqInfoStream;
 
 % Build selected channel list.
 channelList = {};
@@ -99,9 +103,20 @@ end
 fprintf('Performing hemodynamic correction in fluo channel using %s algorithm...\n', ...
     algorithm);
 
+% Frame rate of the fluorescence data itself (explicit or injected, else
+% the .dat header); AcqInfos.mat is not used. Resolved where needed, after
+% the input checks.
+resolveRate = @() resolveDataInfoValue('frameRateHz', p.Results.FrameRateHz, ...
+    iDataFileOrArray(SaveFolder, data), mfilename);
+
 switch lower(algorithm)
     case 'linearregression'
-        outData = HemoCorrection(data, SaveFolder, 'ChannelList', channelList);
+        if isnumeric(data)
+            outData = HemoCorrection(data, SaveFolder, 'ChannelList', channelList, ...
+                'FrameRateHz', resolveRate());
+        else
+            outData = HemoCorrection(data, SaveFolder, 'ChannelList', channelList);
+        end
 
     case 'ratiometric'
         assert(isscalar(channelList), ...
@@ -118,9 +133,12 @@ switch lower(algorithm)
         if ischar(data) || (isstring(data) && isscalar(data))
             [fluoPath, fluoName] = localResolveFileInSaveFolder(SaveFolder, data);
             fluoMeta = localNormalizeDatMeta(loadMetaData(fluoPath));
+            frameRateHz = resolveRate();
+            fluoMeta.Freq = frameRateHz;
+            fluoMeta.FrameRateHz = frameRateHz;
             outData = localRatiometricLowRAM(SaveFolder, fluoName, fluoMeta, refFile, default_Output);
         else
-            fluoMeta = localResolveNumericYXTMetadata(data, acq);
+            fluoMeta = localResolveNumericYXTMetadata(data, resolveRate());
             outData = localRatiometricStandard(SaveFolder, data, fluoMeta, refFile);
         end
 
@@ -213,6 +231,13 @@ fprintf('Finished hemodynamic correction.\n');
             'callType', 'namevalue', ...
             'default', '', ...
             'dataType', 'char');
+
+        info = PipelineManager.addInput(info, ...
+            'FrameRateHz', ...
+            'sourceInfo', ...
+            'Frame rate of the fluorescence data (Hz), injected from the data.', ...
+            'kind', 'sourceInfo', ...
+            'sourceField', 'frameRateHz');
 
         info = PipelineManager.addOutput(info, ...
             'outData', ...
@@ -446,8 +471,10 @@ else
 end
 end
 
-function meta = localResolveNumericYXTMetadata(data, AcqInfoStream)
+function meta = localResolveNumericYXTMetadata(data, frameRateHz)
 %LOCALRESOLVENUMERICYXTMETADATA Build file-like metadata for numeric YXT input.
+%
+% FRAMERATEHZ is the data's own frame rate (resolveDataInfoValue).
 
 % Y and X come from the array itself: AcqInfos.mat Height/Width is the raw
 % acquisition size and no longer matches aligned data. The reference
@@ -455,16 +482,16 @@ function meta = localResolveNumericYXTMetadata(data, AcqInfoStream)
 height = double(size(data, 1));
 width = double(size(data, 2));
 
-timelineInfo = resolveDatTimeline(size(data,3), AcqInfoStream);
+nT = double(size(data, 3));
 
 meta = struct();
 meta.datSize = [height, width];
 meta.Height = height;
 meta.Width = width;
-meta.datLength = double(timelineInfo.Length);
-meta.Length = double(timelineInfo.Length);
-meta.Freq = double(timelineInfo.FrameRateHz);
-meta.FrameRateHz = double(timelineInfo.FrameRateHz);
+meta.datLength = nT;
+meta.Length = nT;
+meta.Freq = double(frameRateHz);
+meta.FrameRateHz = double(frameRateHz);
 meta.Datatype = 'single';
 meta.dim_names = {'Y','X','T'};
 end
@@ -510,4 +537,12 @@ if isempty(ext)
     filePath = [filePath ext];
 end
 fileName = [baseName ext];
+end
+
+function dataOut = iDataFileOrArray(SaveFolder, data)
+%IDATAFILEORARRAY The fluorescence .dat path for file input, else the array.
+dataOut = data;
+if ischar(data) || (isstring(data) && isscalar(data))
+    dataOut = localResolveFileInSaveFolder(SaveFolder, data);
+end
 end

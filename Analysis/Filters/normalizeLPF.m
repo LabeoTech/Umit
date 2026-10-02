@@ -30,8 +30,7 @@ function outData = normalizeLPF(data, SaveFolder, varargin)
 %
 %   Inputs:
 %       data       - Input data in one of the accepted forms above.
-%       SaveFolder - Folder containing AcqInfos.mat used to retrieve the
-%                    frame rate for filter validation and execution.
+%       SaveFolder - Output folder (for .dat inputs).
 %
 %   Name-Value parameters:
 %       BaselineCutoffHz - Low cut-off frequency used to estimate the slow
@@ -46,6 +45,12 @@ function outData = normalizeLPF(data, SaveFolder, varargin)
 %       bApplyExpFit     - Logical scalar. If true, apply exponential decay
 %                          correction inside NormalisationFiltering.
 %                          Default: false
+%
+%       FrameRateHz      - Frame rate of DATA (Hz), used for the filter.
+%                          PipelineManager injects it from the data; a
+%                          .dat input's header provides it otherwise, and
+%                          a UMT entry's meta.FrameRateHz. In-RAM arrays
+%                          need it explicitly; AcqInfos.mat is not used.
 %
 %   Output:
 %       outData     - Filtered data with the same representation type as
@@ -92,6 +97,7 @@ addParameter(p, 'Normalize', true, ...
     @(x) islogical(x) && isscalar(x));
 addParameter(p, 'bApplyExpFit', false, ...
     @(x) islogical(x) && isscalar(x));
+addParameter(p, 'FrameRateHz', []);
 
 parse(p, data, SaveFolder, varargin{:});
 
@@ -100,6 +106,7 @@ BaselineCutoffHz = double(p.Results.BaselineCutoffHz);
 SignalCutoffHz = double(p.Results.SignalCutoffHz);
 bNormalize = p.Results.Normalize;
 bApplyExpFit = p.Results.bApplyExpFit;
+explicitRate = p.Results.FrameRateHz;
 
 if ~isfolder(SaveFolder)
     error('normalizeLPF:InvalidSaveFolder', ...
@@ -127,25 +134,17 @@ if isFileInput
     ext = lower(ext);
 end
 
-if isFileInput && ismember(ext, {'.dat','.umt'})
-    Fs = iGetFrameRateHz(SaveFolder, dataFile);
-else
-    Fs = iGetFrameRateHz(SaveFolder);
+% Frame rate of the data itself: the explicit FrameRateHz (injected by
+% PipelineManager), else the .dat header; UMT input uses its entry meta
+% (below). AcqInfos.mat is not used (resolveDataInfoValue).
+Fs = [];
+if isFileInput && strcmp(ext, '.dat')
+    Fs = resolveDataInfoValue('frameRateHz', explicitRate, dataFile, mfilename);
+elseif isnumeric(data) || islogical(data)
+    Fs = resolveDataInfoValue('frameRateHz', explicitRate, data, mfilename);
 end
-
-if BaselineCutoffHz < 0 || BaselineCutoffHz > Fs/2
-    error('normalizeLPF:InvalidCutoff', ...
-        'BaselineCutoffHz must be between 0 and the Nyquist frequency.');
-end
-
-if SignalCutoffHz <= 0 || SignalCutoffHz > Fs/2
-    error('normalizeLPF:InvalidCutoff', ...
-        'SignalCutoffHz must be > 0 and <= the Nyquist frequency.');
-end
-
-if SignalCutoffHz < BaselineCutoffHz
-    error('normalizeLPF:InvalidCutoff', ...
-        'SignalCutoffHz must be >= BaselineCutoffHz.');
+if ~isempty(Fs)
+    iCheckCutoffs(Fs, BaselineCutoffHz, SignalCutoffHz);
 end
 
 % -------------------------------------------------------------------------
@@ -197,6 +196,9 @@ end
 
 [entryNames, entryData, entryDims, sourceLabels, sourceEventInfo, hasE] = ...
     iExtractValidUMTData(data);
+
+Fs = iUMTFrameRate(explicitRate, data, entryNames);
+iCheckCutoffs(Fs, BaselineCutoffHz, SignalCutoffHz);
 
 out = [];
 hasSourceLabels = ~isempty(fieldnames(sourceLabels));
@@ -302,7 +304,7 @@ outData = out;
             info, ...
             'SaveFolder', ...
             'SaveFolder', ...
-            'Folder containing AcqInfos.mat.', ...
+            'Output folder.', ...
             'kind', 'input', ...
             'position', 2, ...
             'callType', 'positional', ...
@@ -347,6 +349,15 @@ outData = out;
             'default', false, ...
             'allowed', [true false], ...
             'callType', 'namevalue');
+
+        info = PipelineManager.addInput( ...
+            info, ...
+            'FrameRateHz', ...
+            'sourceInfo', ...
+            'Frame rate of the input data (Hz), injected from the data.', ...
+            'kind', 'sourceInfo', ...
+            'sourceField', 'frameRateHz', ...
+            'required', false);
 
         info = PipelineManager.addOutput( ...
             info, ...
@@ -522,49 +533,34 @@ error('normalizeLPF:NoUMTFoundInFile', ...
 end
 
 % =========================================================================
-% Helper: Get frame rate from AcqInfos.mat
+% Helpers: frame rate of UMT input, cutoff checks
 % =========================================================================
-function freqHz = iGetFrameRateHz(SaveFolder, dataFile)
-%IGETFRAMERATEHZ Resolve the frame rate for the data being processed.
-%
-% When dataFile is given, resolve it from that file's own metadata via
-% loadMetaData -- never from an arbitrary, unrelated file in SaveFolder.
-% Otherwise (a raw numeric array or an in-RAM UMT struct, neither of which
-% has a file identity of its own) fall back to the single authoritative
-% AcqInfos.mat.
-
-if nargin >= 2 && ~isempty(dataFile)
-    meta = loadMetaData(dataFile);
-    if isfield(meta, 'frameRateHz')
-        % .dat files: the .dat Info schema.
-        freqHz = double(meta.frameRateHz);
-    elseif isfield(meta, 'Freq')
-        % .umt files keep their own Info field names.
-        freqHz = double(meta.Freq);
-    else
-        freqHz = [];
+function freqHz = iUMTFrameRate(explicitRate, umt, entryNames)
+%IUMTFRAMERATE Explicit FrameRateHz, else the first UMT entry's meta.FrameRateHz.
+ownRate = [];
+if ~isempty(entryNames)
+    entry = umt.data.(entryNames{1});
+    if isfield(entry, 'meta') && isstruct(entry.meta) && isfield(entry.meta, 'FrameRateHz')
+        ownRate = entry.meta.FrameRateHz;
     end
-    if isempty(freqHz) || isnan(freqHz)
-        error('normalizeLPF:MissingFrameRate', ...
-            'loadMetaData did not return a frame rate for "%s".', dataFile);
-    end
-    return
+end
+freqHz = resolveDataInfoValue('frameRateHz', explicitRate, [], 'normalizeLPF', ...
+    'OwnValue', ownRate, 'OwnSource', 'the UMT entry meta.FrameRateHz');
 end
 
-acqInfoFile = fullfile(SaveFolder, 'AcqInfos.mat');
-if ~isfile(acqInfoFile)
-    error('normalizeLPF:MissingReferenceData', ...
-        'Could not determine frame rate because "AcqInfos.mat" was not found in "%s".', ...
-        SaveFolder);
+function iCheckCutoffs(Fs, BaselineCutoffHz, SignalCutoffHz)
+if BaselineCutoffHz < 0 || BaselineCutoffHz > Fs/2
+    error('normalizeLPF:InvalidCutoff', ...
+        'BaselineCutoffHz must be between 0 and the Nyquist frequency.');
 end
 
-S = load(acqInfoFile, 'AcqInfoStream');
-if ~isfield(S, 'AcqInfoStream') || ~isfield(S.AcqInfoStream, 'FrameRateHz') || ...
-        isempty(S.AcqInfoStream.FrameRateHz)
-    error('normalizeLPF:MissingFrameRate', ...
-        '"AcqInfos.mat" in "%s" does not define FrameRateHz.', SaveFolder);
+if SignalCutoffHz <= 0 || SignalCutoffHz > Fs/2
+    error('normalizeLPF:InvalidCutoff', ...
+        'SignalCutoffHz must be > 0 and <= the Nyquist frequency.');
 end
 
-freqHz = double(S.AcqInfoStream.FrameRateHz);
-
+if SignalCutoffHz < BaselineCutoffHz
+    error('normalizeLPF:InvalidCutoff', ...
+        'SignalCutoffHz must be >= BaselineCutoffHz.');
+end
 end

@@ -1822,6 +1822,21 @@ classdef EventsManager < handle
             fprintf('Events info loaded from folder %s\n', Folder);
         end
 
+        function frameRateHz = dataFrameRate(obj, frameRateHz)
+            %DATAFRAMERATE Frame rate used to convert event times to frames.
+            %
+            %   The caller's FRAMERATEHZ (the data's own rate). When empty,
+            %   the folder AcqInfos.mat rate (obj.AcqInfo.FrameRateHz). That
+            %   fallback is DEPRECATED (.dat header Phase 6b-2): AcqInfos.mat
+            %   describes the raw acquisition, whose rate differs from the
+            %   imported data after temporal binning. It is kept only for
+            %   DataViewer.mlapp callers and is removed in the GUI phase. All
+            %   toolbox analysis callers pass the data's rate.
+            if isempty(frameRateHz)
+                frameRateHz = obj.AcqInfo.FrameRateHz;
+            end
+        end
+
         function [frMat, conditionIDlist, repetitionList] = getFrameMatrix(obj, datLen, varargin)
             %GETFRAMEMATRIX Generate a repetition-by-frame index matrix for trial splitting.
             %
@@ -1835,6 +1850,14 @@ classdef EventsManager < handle
             %       Number of frames in the imaging time series.
             %   conditionName   : optional condition name
             %   repetitionIndex : optional repetition index or indices
+            %
+            % Name-Value Pairs:
+            %   'FrameRateHz'   : positive scalar
+            %       Frame rate of the imaging data, used to convert event times
+            %       (s) to frame indices. Pass the data's own rate (its .dat
+            %       header, or the FrameRateHz PipelineManager injects).
+            %       Omitting it uses the folder AcqInfos.mat rate: deprecated,
+            %       kept only for DataViewer callers until the GUI phase.
             %
             % Outputs:
             %   frMat           : repetition-by-frame matrix of frame indices
@@ -1855,10 +1878,14 @@ classdef EventsManager < handle
             addRequired(p, 'datLen', @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x > 0 && x == round(x));
             addOptional(p, 'conditionName', '', @(x) ischar(x) || isStringScalar(x))
             addOptional(p, 'repetitionIndex', [], @(x) (isnumeric(x) && all(x > 0)) || isempty(x))
+            % 'FrameRateHz' is taken out first: inputParser would otherwise
+            % read the text as the optional conditionName.
+            [frameRateArg, varargin] = EventsManager.extractFrameRateArg(varargin);
             parse(p, obj, datLen, varargin{:});
 
             conditionName = convertStringsToChars(p.Results.conditionName);
             repetitionIndex = p.Results.repetitionIndex;
+            frameRateHz = obj.dataFrameRate(frameRateArg);
 
             if isempty(conditionName) && ~isempty(repetitionIndex)
                 error('Repetition index cannot be set without the condition name.')
@@ -1882,8 +1909,8 @@ classdef EventsManager < handle
             end
             onsetMask = obj.state & ~obj.PurgedEvents;
 
-            evOnsetFrame = round(obj.baselinePeriod * obj.AcqInfo.FrameRateHz);
-            frOn = ceil(obj.timestamps(onsetMask) * obj.AcqInfo.FrameRateHz);
+            evOnsetFrame = round(obj.baselinePeriod * frameRateHz);
+            frOn = ceil(obj.timestamps(onsetMask) * frameRateHz);
             frStart = frOn - evOnsetFrame + 1;
 
             if numel(frOn) >= 2
@@ -1932,16 +1959,22 @@ classdef EventsManager < handle
             %     valid trial length.
             %   - The event dimension is stored last to match the current YXTE
             %     convention used elsewhere in the analysis code.
+            %   - 'FrameRateHz' (Name-Value): frame rate of DATA, passed to
+            %     getFrameMatrix. Omitting it uses the deprecated folder
+            %     AcqInfos.mat rate (see dataFrameRate).
 
             p = inputParser();
             addRequired(p, 'obj');
             addRequired(p, 'data', @(x) isnumeric(x) && ndims(x) == 3);
             addParameter(p, 'condition', '', @(x) ischar(x) || isStringScalar(x))
             addParameter(p, 'repetition', [], @(x) (isnumeric(x) && all(x > 0)) || isempty(x))
+            addParameter(p, 'FrameRateHz', [], @(x) isempty(x) || ...
+                (isnumeric(x) && isscalar(x) && isreal(x) && isfinite(x) && x > 0))
             parse(p, obj, data, varargin{:});
 
             [frMat, conditionIDlist, repetitionList] = obj.getFrameMatrix( ...
-                size(data,3), p.Results.condition, p.Results.repetition);
+                size(data,3), p.Results.condition, p.Results.repetition, ...
+                'FrameRateHz', p.Results.FrameRateHz);
 
             if isempty(frMat)
                 dataByEv = nan(size(data,1), size(data,2), 0, 0, 'single');
@@ -1971,8 +2004,16 @@ classdef EventsManager < handle
             disp('Finished splitting data by events');
         end
 
-        function evInfo = exportEventInfo(obj)
+        function evInfo = exportEventInfo(obj, varargin)
             %EXPORTEVENTINFO Package event-related information into a structure.
+            %
+            %   evInfo = obj.exportEventInfo()
+            %   evInfo = obj.exportEventInfo('FrameRateHz', rate)
+            %
+            % 'FrameRateHz' is the frame rate of the data the events are
+            % exported with (recorded as evInfo.FrameRateHz). Omitting it
+            % records the deprecated folder AcqInfos.mat rate (see
+            % dataFrameRate).
             %
             % Output:
             %   evInfo : struct
@@ -2002,13 +2043,18 @@ classdef EventsManager < handle
                 obj.PurgedEvents = false(size(obj.eventID));
             end
 
+            p = inputParser();
+            addParameter(p, 'FrameRateHz', [], @(x) isempty(x) || ...
+                (isnumeric(x) && isscalar(x) && isreal(x) && isfinite(x) && x > 0))
+            parse(p, varargin{:});
+
             fieldsToExport = {'eventNameList','baselinePeriod'};
             evInfo = struct();
             for ii = 1:length(fieldsToExport)
                 evInfo.(fieldsToExport{ii}) = obj.(fieldsToExport{ii});
             end
 
-            evInfo.FrameRateHz = obj.AcqInfo.FrameRateHz;
+            evInfo.FrameRateHz = obj.dataFrameRate(p.Results.FrameRateHz);
             evInfo.eventID = obj.eventID(obj.state);
             evInfo.selectedEvents = obj.selectedEvents(obj.state);
             evInfo.PurgedEvents = obj.PurgedEvents(obj.state);
@@ -2211,6 +2257,26 @@ classdef EventsManager < handle
             end
         end
 
+    end
+    methods (Static, Access = private)
+        function [frameRateHz, args] = extractFrameRateArg(args)
+            %EXTRACTFRAMERATEARG Remove a 'FrameRateHz', value pair from ARGS.
+            frameRateHz = [];
+            k = 1;
+            while k <= numel(args)
+                if (ischar(args{k}) || (isstring(args{k}) && isscalar(args{k}))) && ...
+                        strcmpi(char(string(args{k})), 'FrameRateHz') && k < numel(args)
+                    frameRateHz = args{k + 1};
+                    args(k:k + 1) = [];
+                else
+                    k = k + 1;
+                end
+            end
+            if ~isempty(frameRateHz)
+                validateattributes(frameRateHz, {'numeric'}, ...
+                    {'scalar', 'real', 'finite', 'positive'}, 'EventsManager', 'FrameRateHz');
+            end
+        end
     end
     methods (Access = private)
         function setInfo(obj)

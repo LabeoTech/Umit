@@ -2,6 +2,13 @@ function outData = apply_detrend(data, SaveFolder, varargin)
 %APPLY_DETREND Apply linear detrending along the time dimension.
 %
 %   outData = apply_detrend(data, SaveFolder)
+%   outData = apply_detrend(data, SaveFolder, 'FrameRateHz', rate)
+%
+%   FrameRateHz is the frame rate of DATA, used to convert the events.mat
+%   baseline period into frames. PipelineManager injects it from the data;
+%   a .dat input's header provides it otherwise, and a UMT entry's
+%   meta.FrameRateHz. In-RAM arrays need it explicitly when events.mat
+%   defines a baseline period; AcqInfos.mat is not used.
 %
 %   This function applies the existing linear detrend algorithm along the
 %   time dimension T. The algorithm is unchanged from the legacy version:
@@ -60,9 +67,11 @@ p = inputParser;
 p.FunctionName = mfilename;
 addRequired(p, 'data');
 addRequired(p, 'SaveFolder', @(x) ischar(x) || (isstring(x) && isscalar(x)));
+addParameter(p, 'FrameRateHz', []);
 parse(p, data, SaveFolder, varargin{:});
 
 SaveFolder = char(string(p.Results.SaveFolder));
+explicitRate = p.Results.FrameRateHz;
 
 if ~isfolder(SaveFolder)
     error('apply_detrend:InvalidSaveFolder', ...
@@ -81,7 +90,7 @@ if isnumeric(data) || islogical(data)
             'Numeric input must be YXT or YXTE.');
     end
 
-    frames = iGetDetrendFrameCount(SaveFolder, size(data, 3));
+    frames = iGetDetrendFrameCount(SaveFolder, size(data, 3), explicitRate, data, []);
 
     if ndims(data) == 3
         outData = iApplyDetrendToYXT(data, frames);
@@ -114,7 +123,7 @@ if ischar(data) || (isstring(data) && isscalar(data))
 
     switch ext
         case '.dat'
-            outData = iApplyDetrendDatFile(dataFile, SaveFolder, default_Output);
+            outData = iApplyDetrendDatFile(dataFile, SaveFolder, default_Output, explicitRate);
             return
 
         case '.umt'
@@ -156,7 +165,11 @@ for iEntry = 1:numel(entryNames)
 
     value = entryData{iEntry};
     dimNames = entryDims{iEntry};
-    frames = iGetDetrendFrameCount(SaveFolder, size(value, 3));
+    ownRate = [];
+    if isstruct(entryMetas{iEntry}) && isfield(entryMetas{iEntry}, 'FrameRateHz')
+        ownRate = entryMetas{iEntry}.FrameRateHz;
+    end
+    frames = iGetDetrendFrameCount(SaveFolder, size(value, 3), explicitRate, [], ownRate);
 
     switch strjoin(dimNames, '')
         case 'YXT'
@@ -230,6 +243,15 @@ disp('Finished detrend!');
             'position', 2, ...
             'callType', 'positional', ...
             'isData', false);
+
+        info = PipelineManager.addInput( ...
+            info, ...
+            'FrameRateHz', ...
+            'sourceInfo', ...
+            'Frame rate of the input data (Hz), injected from the data.', ...
+            'kind', 'sourceInfo', ...
+            'sourceField', 'frameRateHz', ...
+            'required', false);
 
         info = PipelineManager.addOutput( ...
             info, ...
@@ -314,45 +336,18 @@ end
 % =========================================================================
 % Helper: determine baseline frame count
 % =========================================================================
-function frames = iGetDetrendFrameCount(SaveFolder, Nt, dataFile)
+function frames = iGetDetrendFrameCount(SaveFolder, Nt, explicitRate, rateData, ownRate)
 %IGETDETRENDFRAMECOUNT Determine the detrend baseline window in frames.
 %
-% When dataFile is given, prefer loadMetaData(dataFile) so the reported
-% frame rate stays consistent with that specific file's on-disk size.
-% Never select an arbitrary, unrelated file from SaveFolder: when there is
-% no file being processed (a raw numeric array or an in-RAM UMT struct),
-% fall back to the single authoritative AcqInfos.mat instead.
+% With an events.mat baseline period, the window is that period in frames
+% of the data's own frame rate: the explicit FrameRateHz (injected by
+% PipelineManager), else the .dat header of RATEDATA, else OWNRATE (a UMT
+% entry's meta.FrameRateHz); without one, resolveDataInfoValue raises an
+% error. AcqInfos.mat is not used. Without a baseline period the default
+% window of 7 frames is used.
 
 frames = 7;
-
-freqHz = [];
 baselineSec = [];
-
-if nargin > 2 && ~isempty(dataFile)
-    try
-        meta = loadMetaData(dataFile);
-        if isfield(meta, 'frameRateHz') && ~isempty(meta.frameRateHz) && ~isnan(meta.frameRateHz)
-            freqHz = double(meta.frameRateHz);
-        end
-    catch ME
-        warning('apply_detrend:FrameRateFromFileFailed', ...
-            'Could not resolve frame rate from "%s": %s', dataFile, ME.message);
-    end
-else
-    try
-        acqInfoFile = fullfile(SaveFolder, 'AcqInfos.mat');
-        if isfile(acqInfoFile)
-            S = load(acqInfoFile, 'AcqInfoStream');
-            if isfield(S, 'AcqInfoStream') && isfield(S.AcqInfoStream, 'FrameRateHz') && ...
-                    ~isempty(S.AcqInfoStream.FrameRateHz)
-                freqHz = double(S.AcqInfoStream.FrameRateHz);
-            end
-        end
-    catch ME
-        warning('apply_detrend:FrameRateFromAcqInfosFailed', ...
-            'Could not resolve frame rate from "%s": %s', acqInfoFile, ME.message);
-    end
-end
 
 eventsFile = fullfile(SaveFolder, 'events.mat');
 if isfile(eventsFile)
@@ -367,7 +362,9 @@ if isfile(eventsFile)
     end
 end
 
-if ~isempty(freqHz) && ~isempty(baselineSec)
+if ~isempty(baselineSec)
+    freqHz = resolveDataInfoValue('frameRateHz', explicitRate, rateData, 'apply_detrend', ...
+        'OwnValue', ownRate, 'OwnSource', 'the UMT entry meta.FrameRateHz');
     frames = round(baselineSec * freqHz);
 end
 
@@ -389,7 +386,7 @@ end
 % =========================================================================
 % Helper: low-RAM .dat execution for continuous YXT data
 % =========================================================================
-function outFile = iApplyDetrendDatFile(inFile, SaveFolder, defaultOutput)
+function outFile = iApplyDetrendDatFile(inFile, SaveFolder, defaultOutput, explicitRate)
 %IAPPLYDETRENDDATFILE Apply detrending to a raw continuous YXT .dat file.
 
 slabIn = spatialSlabIO('open', inFile);
@@ -397,7 +394,7 @@ cIn = onCleanup(@() spatialSlabIO('close', slabIn));
 Ny = slabIn.Ny;
 Nx = slabIn.Nx;
 Nt = datAxisSize(slabIn.Info, 'T');
-frames = iGetDetrendFrameCount(SaveFolder, Nt, inFile);
+frames = iGetDetrendFrameCount(SaveFolder, Nt, explicitRate, inFile, []);
 
 % Write through a scratch file so the declared pipeline output only appears
 % once the run has completed, and so the input can safely be the file that
