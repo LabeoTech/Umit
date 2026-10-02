@@ -24,6 +24,9 @@ function varargout = HemoCorrection(data, SaveFolder, varargin)
 %                       If empty, a list dialog is shown.
 %       'LowPassFreq' - Low-pass cutoff frequency in Hz. Set to 0 to
 %                       disable filtering.
+%       'FrameRateHz' - Frame rate of numeric fluorescence input (Hz),
+%                       required for numeric input (the data's own rate;
+%                       run_HemoCorrection passes it).
 %
 %   Output:
 %       - Numeric input  -> corrected numeric YXT data
@@ -31,8 +34,8 @@ function varargout = HemoCorrection(data, SaveFolder, varargin)
 %
 %   Notes:
 %       - Metadata are resolved through loadMetaData for file inputs.
-%       - Numeric inputs are validated against the timelines described by
-%         AcqInfos.mat.
+%       - Numeric inputs take their frame rate from 'FrameRateHz'
+%         (AcqInfos.mat is not used for it).
 %       - Hemodynamic reference channels are temporally resampled to match
 %         the fluorescence timeline before regression.
 
@@ -51,6 +54,9 @@ addRequired(p, 'data', @(x) (isnumeric(x) && ndims(x) == 3) || ischar(x) || (iss
 addRequired(p, 'SaveFolder', @(x) (ischar(x) || (isstring(x) && isscalar(x))) && isfolder(x));
 addParameter(p, 'ChannelList', {}, @(x) isempty(x) || (iscell(x) && all(cellfun(@(c) ischar(c) || (isstring(c) && isscalar(c)), x))));
 addParameter(p, 'LowPassFreq', 0, @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0);
+% Frame rate of numeric fluorescence input (.dat header Phase 6b-2): the
+% data's own rate, never AcqInfos.mat.
+addParameter(p, 'FrameRateHz', []);
 parse(p, data, SaveFolder, varargin{:});
 
 SaveFolder = char(string(p.Results.SaveFolder));
@@ -70,7 +76,6 @@ md = load(acqFile, 'AcqInfoStream');
 assert(isfield(md, 'AcqInfoStream') && isstruct(md.AcqInfoStream), ...
     'Umitoolbox:HemoCorrection:invalidAcqInfos', ...
     'AcqInfos.mat does not contain a valid AcqInfoStream structure.');
-acq = md.AcqInfoStream;
 
 if ischar(data) || (isstring(data) && isscalar(data))
     [fileData, inputFileName] = iResolveFileInSaveFolder(SaveFolder, data);
@@ -85,7 +90,8 @@ if ischar(data) || (isstring(data) && isscalar(data))
 else
     fileData = data;
     inputFileName = '';
-    fMetaData = iResolveNumericYXTMetadata(data, acq);
+    fMetaData = iResolveNumericYXTMetadata(data, ...
+        resolveDataInfoValue('frameRateHz', p.Results.FrameRateHz, data, 'HemoCorrection'));
 end
 
 assert(lowPassFreq < fMetaData.Freq/2 || lowPassFreq == 0, ...
@@ -575,8 +581,10 @@ end
 end
 
 
-function fMetaData = iResolveNumericYXTMetadata(data, AcqInfoStream)
+function fMetaData = iResolveNumericYXTMetadata(data, frameRateHz)
 %IRESOLVENUMERICYXTMETADATA Build file-like metadata for numeric YXT input.
+%
+% FRAMERATEHZ is the data's own frame rate (the FrameRateHz Name-Value).
 
 % Y and X come from the array itself: AcqInfos.mat Height/Width is the raw
 % acquisition size and no longer matches aligned data. The reference
@@ -584,16 +592,16 @@ function fMetaData = iResolveNumericYXTMetadata(data, AcqInfoStream)
 height = double(size(data, 1));
 width = double(size(data, 2));
 
-timelineInfo = resolveDatTimeline(size(data,3), AcqInfoStream);
+nT = double(size(data, 3));
 
 fMetaData = struct();
 fMetaData.datSize = [height, width];
 fMetaData.Height = height;
 fMetaData.Width = width;
-fMetaData.datLength = double(timelineInfo.Length);
-fMetaData.Length = double(timelineInfo.Length);
-fMetaData.Freq = double(timelineInfo.FrameRateHz);
-fMetaData.FrameRateHz = double(timelineInfo.FrameRateHz);
+fMetaData.datLength = nT;
+fMetaData.Length = nT;
+fMetaData.Freq = double(frameRateHz);
+fMetaData.FrameRateHz = double(frameRateHz);
 fMetaData.Datatype = 'single';
 fMetaData.dim_names = {'Y','X','T'};
 end

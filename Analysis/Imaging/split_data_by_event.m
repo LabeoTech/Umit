@@ -1,7 +1,8 @@
-function outData = split_data_by_event(data, SaveFolder)
+function outData = split_data_by_event(data, SaveFolder, varargin)
 %SPLIT_DATA_BY_EVENT Split continuous image time series into event trials.
 %
 %   outData = split_data_by_event(data, SaveFolder)
+%   outData = split_data_by_event(data, SaveFolder, 'FrameRateHz', rate)
 %
 %   This function uses the event definitions stored in "events.mat" to
 %   split a continuous image time series into event instances. The output is
@@ -14,8 +15,14 @@ function outData = split_data_by_event(data, SaveFolder)
 %                    * Raw .dat filename containing continuous Y X T data
 %                    * UMT struct containing one continuous image entry
 %                    * .umt filename containing one continuous image entry
-%       SaveFolder - Folder containing events.mat and any metadata needed to
-%                    resolve file-backed inputs.
+%       SaveFolder - Folder containing events.mat.
+%
+%   Name-Value parameters:
+%       FrameRateHz - Frame rate of DATA (Hz), used to convert event times to
+%                     frames. PipelineManager injects it from the data; a .dat
+%                     input's header provides it otherwise, and a UMT entry's
+%                     meta.FrameRateHz. In-RAM arrays need it explicitly;
+%                     AcqInfos.mat is not used.
 %
 %   Output:
 %       outData    - UMT structure containing one image entry with dimNames
@@ -49,21 +56,22 @@ assert(isfile(fullfile(SaveFolder, 'events.mat')), ...
     'Umitoolbox:split_data_by_event:missingEventsFile', ...
     'The "events.mat" file is missing in "%s".', SaveFolder);
 
+opts = inputParser;
+opts.FunctionName = mfilename;
+addParameter(opts, 'FrameRateHz', []);
+parse(opts, varargin{:});
+
 src = iResolveInput(data, SaveFolder);
+frameRateHz = resolveDataInfoValue('frameRateHz', opts.Results.FrameRateHz, src.rateData, ...
+    mfilename, 'OwnValue', src.ownRate, 'OwnSource', 'the UMT entry meta.FrameRateHz');
 ev = EventsManager(SaveFolder);
 
-dataByEv = ev.splitDataByEvents(src.dataYXT);
+dataByEv = ev.splitDataByEvents(src.dataYXT, 'FrameRateHz', frameRateHz);
 assert(ndims(dataByEv) == 4, ...
     'Umitoolbox:split_data_by_event:invalidSplitOutput', ...
     'EventsManager.splitDataByEvents returned unexpected data dimensions.');
 
-entryMeta = struct();
-if isfield(src, 'entryMeta') && isstruct(src.entryMeta) && ...
-        isfield(src.entryMeta, 'FrameRateHz') && ~isempty(src.entryMeta.FrameRateHz)
-    entryMeta.FrameRateHz = src.entryMeta.FrameRateHz;
-elseif isfield(src, 'frameRateHz') && ~isempty(src.frameRateHz)
-    entryMeta.FrameRateHz = src.frameRateHz;
-end
+entryMeta = struct('FrameRateHz', frameRateHz);
 
 outData = genUMTStruct(single(dataByEv), ...
     'kind', 'image', ...
@@ -73,7 +81,7 @@ outData = genUMTStruct(single(dataByEv), ...
     'SaveFolder', SaveFolder);
 
 outData = appendUMTEventInfo(outData, ...
-    'eventInfo', ev.exportEventInfo(), ...
+    'eventInfo', ev.exportEventInfo('FrameRateHz', frameRateHz), ...
     'overwrite', true);
 
 validateUMTStruct(outData);
@@ -97,11 +105,19 @@ validateUMTStruct(outData);
         info = PipelineManager.addInput(info, ...
             'SaveFolder', ...
             'SaveFolder', ...
-            'Folder containing events.mat and metadata.', ...
+            'Folder containing events.mat.', ...
             'kind', 'input', ...
             'position', 2, ...
             'callType', 'positional', ...
             'isData', false);
+
+        info = PipelineManager.addInput(info, ...
+            'FrameRateHz', ...
+            'sourceInfo', ...
+            'Frame rate of the input data (Hz), injected from the data.', ...
+            'kind', 'sourceInfo', ...
+            'sourceField', 'frameRateHz', ...
+            'required', false);
 
         info = PipelineManager.addOutput(info, ...
             'outData', ...
@@ -120,7 +136,8 @@ function src = iResolveInput(data, SaveFolder)
 src = struct();
 src.dataYXT = [];
 src.entryMeta = struct();
-src.frameRateHz = [];
+src.rateData = [];   % .dat file whose header gives the frame rate
+src.ownRate = [];    % UMT entry meta.FrameRateHz
 
 if isnumeric(data)
     assert(ndims(data) == 3, ...
@@ -147,18 +164,12 @@ if ischar(data) || (isstring(data) && isscalar(data))
 
     switch ext
         case '.dat'
-            [loaded, datInfo] = loadData(inPath);
+            loaded = loadData(inPath);
             assert(isnumeric(loaded) && ndims(loaded) == 3, ...
                 'Umitoolbox:split_data_by_event:invalidDatInput', ...
                 'Raw .dat input must resolve to continuous YXT data.');
             src.dataYXT = single(loaded);
-
-            % The file's own frame rate (header, or its channel timeline for
-            % headerless files); left empty when unknown.
-            if isfield(datInfo, 'frameRateHz') && ~isempty(datInfo.frameRateHz) && ...
-                    ~isnan(datInfo.frameRateHz)
-                src.frameRateHz = double(datInfo.frameRateHz);
-            end
+            src.rateData = inPath;
             return
 
         case '.umt'
@@ -193,17 +204,7 @@ if isfield(entry, 'meta') && isstruct(entry.meta)
 end
 
 if isfield(src.entryMeta, 'FrameRateHz') && ~isempty(src.entryMeta.FrameRateHz)
-    src.frameRateHz = double(src.entryMeta.FrameRateHz);
-elseif isfolder(SaveFolder)
-    md = load(fullfile(SaveFolder,'AcqInfos.mat'),'AcqInfoStream');
-    md = md.AcqInfoStream;
-    if isstruct(md)
-        if isfield(md, 'FrameRateHz') && ~isempty(md.FrameRateHz)
-            src.frameRateHz = double(md.FrameRateHz);
-        elseif isfield(md, 'Freq') && ~isempty(md.Freq)
-            src.frameRateHz = double(md.Freq);
-        end
-    end
+    src.ownRate = double(src.entryMeta.FrameRateHz);
 end
 end
 

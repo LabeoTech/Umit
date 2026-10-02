@@ -19,6 +19,11 @@ function outData = apply_aggregate_function(data, SaveFolder, varargin)
 %                   Default: 'mean'
 %   dimensionName : 'T' or 'E'
 %                   Default: 'T'
+%   FrameRateHz   : Frame rate of DATA (Hz), needed for E aggregation of
+%                   raw arrays and .dat files (event times to frames).
+%                   PipelineManager injects it from the data; a .dat
+%                   input's header provides it otherwise. In-RAM arrays
+%                   need it explicitly; AcqInfos.mat is not used.
 %
 % Output:
 %   outData    : Output UMT struct.
@@ -55,8 +60,10 @@ addRequired(p, 'data');
 addRequired(p, 'SaveFolder', @(x) ischar(x) || (isstring(x) && isscalar(x)));
 addParameter(p, 'aggregateFcn', 'mean', @(x) ischar(x) || (isstring(x) && isscalar(x)));
 addParameter(p, 'dimensionName', 'T', @(x) ischar(x) || (isstring(x) && isscalar(x)));
+addParameter(p, 'FrameRateHz', []);
 
 parse(p, data, SaveFolder, varargin{:});
+explicitRate = p.Results.FrameRateHz;
 
 aggFcn = lower(char(string(p.Results.aggregateFcn)));
 dimName = upper(char(string(p.Results.dimensionName)));
@@ -106,7 +113,9 @@ if isnumeric(data) || islogical(data)
 
         case 'E'
             evObj = EventsManager(SaveFolder);
-            [frMat, conditionIDlist, ~] = evObj.getFrameMatrix(size(rawData, 3));
+            frameRateHz = resolveDataInfoValue('frameRateHz', explicitRate, data, mfilename);
+            [frMat, conditionIDlist, ~] = evObj.getFrameMatrix(size(rawData, 3), ...
+                'FrameRateHz', frameRateHz);
 
             if isempty(frMat)
                 error('apply_aggregate_function:NoEventsFound', ...
@@ -187,7 +196,7 @@ if ischar(data) || (isstring(data) && isscalar(data))
     switch ext
         case '.dat'
             [aggData, outDimNames, labels, eventInfo] = ...
-                iExecuteChunkedDat(dataFile, SaveFolder, aggFcn, dimName);
+                iExecuteChunkedDat(dataFile, SaveFolder, aggFcn, dimName, explicitRate);
 
             outData = iPackageOutputUMT( ...
                 {'main'}, ...
@@ -432,6 +441,15 @@ outData = iPackageOutputUMT( ...
             'allowed', {'T','E'}, ...
             'callType', 'namevalue');
 
+        info = PipelineManager.addInput( ...
+            info, ...
+            'FrameRateHz', ...
+            'sourceInfo', ...
+            'Frame rate of the input data (Hz), injected from the data.', ...
+            'kind', 'sourceInfo', ...
+            'sourceField', 'frameRateHz', ...
+            'required', false);
+
         info = PipelineManager.addOutput( ...
             info, ...
             'outData', ...
@@ -447,7 +465,7 @@ end
 % =========================================================================
 % Helper: Chunked raw-DAT input execution with an in-memory output
 % =========================================================================
-function [aggData, outDimNames, labels, eventInfo] = iExecuteChunkedDat(dataFile, SaveFolder, aggFcn, dimName)
+function [aggData, outDimNames, labels, eventInfo] = iExecuteChunkedDat(dataFile, SaveFolder, aggFcn, dimName, explicitRate)
 
 labels = struct();
 eventInfo = struct();
@@ -495,7 +513,8 @@ switch dimName
 
     case 'E'
         evObj = EventsManager(SaveFolder);
-        [frMat, conditionIDlist, ~] = evObj.getFrameMatrix(nT);
+        frameRateHz = resolveDataInfoValue('frameRateHz', explicitRate, dataFile, 'apply_aggregate_function');
+        [frMat, conditionIDlist, ~] = evObj.getFrameMatrix(nT, 'FrameRateHz', frameRateHz);
 
         if isempty(frMat)
             error('apply_aggregate_function:NoEventsFound', ...

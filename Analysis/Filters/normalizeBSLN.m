@@ -14,8 +14,7 @@ function outData = normalizeBSLN(data, SaveFolder, varargin)
 %                3) UMT struct
 %                4) Filename to a .umt file containing a UMT struct
 %
-%   SaveFolder : Folder containing AcqInfos.mat and, for trial mode,
-%                events.mat.
+%   SaveFolder : Folder containing, for trial mode, events.mat.
 %
 % Name-Value parameters:
 %   normalizationMode : 'recording' or 'trial'
@@ -33,6 +32,14 @@ function outData = normalizeBSLN(data, SaveFolder, varargin)
 %
 %   b_centerAtOne     : Logical scalar. If true, add 1 after DeltaR/R0.
 %                       Default: false
+%
+%   FrameRateHz       : Frame rate of DATA (Hz), needed for a numeric
+%                       baselineMode and for trial mode. PipelineManager
+%                       injects it from the data flowing into the step; a
+%                       .dat input's header provides it otherwise, and a
+%                       .umt entry's meta.FrameRateHz. In-RAM arrays need
+%                       it explicitly. AcqInfos.mat is not used
+%                       (resolveDataInfoValue).
 %
 % Output:
 %   outData           : Output UMT struct.
@@ -72,6 +79,7 @@ addParameter(p, 'baselineMode', 'auto', ...
          (isnumeric(x) && isscalar(x) && isfinite(x) && x > 0)));
 addParameter(p, 'b_centerAtOne', false, ...
     @(x) islogical(x) && isscalar(x));
+addParameter(p, 'FrameRateHz', []);
 
 parse(p, data, SaveFolder, varargin{:});
 
@@ -79,6 +87,10 @@ SaveFolder = char(string(p.Results.SaveFolder));
 normalizationMode = lower(char(string(p.Results.normalizationMode)));
 baselineMode = p.Results.baselineMode;
 b_centerAtOne = p.Results.b_centerAtOne;
+explicitRate = p.Results.FrameRateHz;
+% The frame rate matters only for a numeric baseline or for trial mode.
+needsRate = strcmpi(normalizationMode, 'trial') || ...
+    ~(ischar(baselineMode) || (isstring(baselineMode) && isscalar(baselineMode)));
 
 if ~ismember(normalizationMode, {'recording','trial'})
     error('normalizeBSLN:InvalidNormalizationMode', ...
@@ -107,7 +119,10 @@ if isnumeric(data) || islogical(data)
         mfilename, 'data');
 
     rawData = single(data);
-    freqHz = iGetFrameRateHz(SaveFolder);
+    freqHz = NaN;
+    if needsRate
+        freqHz = resolveDataInfoValue('frameRateHz', explicitRate, data, mfilename);
+    end
 
     switch normalizationMode
         case 'recording'
@@ -131,7 +146,8 @@ if isnumeric(data) || islogical(data)
 
         case 'trial'
             evObj = EventsManager(SaveFolder);
-            [frMat, conditionIDlist, repetitionList] = evObj.getFrameMatrix(size(rawData, 3));
+            [frMat, conditionIDlist, repetitionList] = evObj.getFrameMatrix(size(rawData, 3), ...
+                'FrameRateHz', freqHz);
 
             if isempty(frMat)
                 error('normalizeBSLN:NoEventsFound', ...
@@ -215,7 +231,8 @@ if ischar(data) || (isstring(data) && isscalar(data))
         case '.dat'
             [outVal, outDimNames, labels, eventInfo] = ...
                 normalizeBSLN_chunkedDatMode( ...
-                    dataFile, SaveFolder, normalizationMode, baselineMode, b_centerAtOne);
+                    dataFile, SaveFolder, normalizationMode, baselineMode, b_centerAtOne, ...
+                    explicitRate, needsRate);
 
             outData = iPackageOutputUMT( ...
                 {'main'}, ...
@@ -283,7 +300,10 @@ switch normalizationMode
                  'without an E dimension.']);
         end
 
-        freqHz = iGetFrameRateHz(SaveFolder);
+        freqHz = NaN;
+        if needsRate
+            freqHz = iUMTFrameRate(explicitRate, entryMetas);
+        end
         baselineSec = [];
         if ~(ischar(baselineMode) || (isstring(baselineMode) && isscalar(baselineMode)))
             baselineSec = double(baselineMode);
@@ -347,7 +367,7 @@ switch normalizationMode
         end
 
         evObj = EventsManager(SaveFolder);
-        freqHz = iGetFrameRateHz(SaveFolder);
+        freqHz = iUMTFrameRate(explicitRate, entryMetas);
 
         outEntryData = entryData;
         outEntryDims = entryDims;
@@ -420,7 +440,7 @@ end
             info, ...
             'SaveFolder', ...
             'SaveFolder', ...
-            'Folder containing AcqInfos.mat and, for trial mode, events.mat.', ...
+            'Folder containing, for trial mode, events.mat.', ...
             'kind', 'input', ...
             'position', 2, ...
             'callType', 'positional', ...
@@ -456,6 +476,15 @@ end
             'allowed', [true false], ...
             'callType', 'namevalue');
 
+        info = PipelineManager.addInput( ...
+            info, ...
+            'FrameRateHz', ...
+            'sourceInfo', ...
+            'Frame rate of the input data (Hz), injected from the data.', ...
+            'kind', 'sourceInfo', ...
+            'sourceField', 'frameRateHz', ...
+            'required', false);
+
         info = PipelineManager.addOutput( ...
             info, ...
             'outData', ...
@@ -472,7 +501,7 @@ end
 % Helper: Chunked raw-DAT input execution with an in-memory output
 % =========================================================================
 function [outVal, outDimNames, labels, eventInfo] = normalizeBSLN_chunkedDatMode( ...
-    inFile, SaveFolder, normalizationMode, baselineMode, b_centerAtOne)
+    inFile, SaveFolder, normalizationMode, baselineMode, b_centerAtOne, explicitRate, needsRate)
 
 labels = struct();
 eventInfo = struct();
@@ -482,7 +511,10 @@ cleanObj = onCleanup(@() spatialSlabIO('close', slabIn));
 Ny = slabIn.Ny;
 Nx = slabIn.Nx;
 Nt = datAxisSize(slabIn.Info, 'T');
-freqHz = slabIn.Info.frameRateHz;
+freqHz = NaN;
+if needsRate
+    freqHz = resolveDataInfoValue('frameRateHz', explicitRate, inFile, 'normalizeBSLN');
+end
 
 % Conservative fixed chunk-size budget (not derived from calculateMaxChunkSize's
 % dynamic available-RAM estimate, to keep this path's chunk sizing predictable).
@@ -520,7 +552,7 @@ switch lower(normalizationMode)
 
     case 'trial'
         evObj = EventsManager(SaveFolder);
-        [frMat, conditionIDlist, repetitionList] = evObj.getFrameMatrix(Nt);
+        [frMat, conditionIDlist, repetitionList] = evObj.getFrameMatrix(Nt, 'FrameRateHz', freqHz);
 
         if isempty(frMat)
             error('normalizeBSLN:NoEventsFound', ...
@@ -699,30 +731,16 @@ end
 end
 
 % =========================================================================
-% Helper: Frame rate
+% Helper: Frame rate of UMT input
 % =========================================================================
-function freqHz = iGetFrameRateHz(SaveFolder)
-%IGETFRAMERATEHZ Resolve the frame rate for data with no file identity of
-%its own (a raw numeric array or an in-RAM UMT struct), from the single
-%authoritative AcqInfos.mat. Do not select an arbitrary file from
-%SaveFolder: a specific input file's own metadata is instead resolved
-%directly via loadMetaData at its own call site (see iGetRawDatInfo).
-
-acqInfoFile = fullfile(SaveFolder, 'AcqInfos.mat');
-if ~isfile(acqInfoFile)
-    error('normalizeBSLN:MissingReferenceData', ...
-        'Could not determine frame rate because "AcqInfos.mat" was not found in "%s".', ...
-        SaveFolder);
+function freqHz = iUMTFrameRate(explicitRate, entryMetas)
+%IUMTFRAMERATE Explicit FrameRateHz, else the first UMT entry's meta.FrameRateHz.
+ownRate = [];
+if ~isempty(entryMetas) && isstruct(entryMetas{1}) && isfield(entryMetas{1}, 'FrameRateHz')
+    ownRate = entryMetas{1}.FrameRateHz;
 end
-
-S = load(acqInfoFile, 'AcqInfoStream');
-if ~isfield(S, 'AcqInfoStream') || ~isfield(S.AcqInfoStream, 'FrameRateHz') || ...
-        isempty(S.AcqInfoStream.FrameRateHz)
-    error('normalizeBSLN:MissingFrameRate', ...
-        '"AcqInfos.mat" in "%s" does not define FrameRateHz.', SaveFolder);
-end
-
-freqHz = double(S.AcqInfoStream.FrameRateHz);
+freqHz = resolveDataInfoValue('frameRateHz', explicitRate, [], 'normalizeBSLN', ...
+    'OwnValue', ownRate, 'OwnSource', 'the UMT entry meta.FrameRateHz');
 end
 
 % =========================================================================

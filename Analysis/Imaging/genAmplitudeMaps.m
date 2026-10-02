@@ -33,6 +33,11 @@ function outData = genAmplitudeMaps(data, SaveFolder, varargin)
 %                               'all'
 %                               [startSec endSec]
 %                           Default: 'all'
+%       'FrameRateHz'     - Frame rate of DATA (Hz). PipelineManager injects
+%                           it from the data; a .dat input's header provides
+%                           it otherwise, and a UMT entry's meta.FrameRateHz.
+%                           In-RAM arrays need it explicitly; AcqInfos.mat is
+%                           not used.
 %
 %   Notes:
 %       - BaselineMeasure and ResponseMeasure are applied jointly across
@@ -62,6 +67,7 @@ addRequired(p, 'SaveFolder', @(x) ischar(x) || isstring(x));
 addParameter(p, 'BaselineMeasure', 'median');
 addParameter(p, 'ResponseMeasure', 'max');
 addParameter(p, 'TimeWindow_sec', 'all');
+addParameter(p, 'FrameRateHz', []);
 parse(p, data, SaveFolder, varargin{:});
 
 SaveFolder = char(string(p.Results.SaveFolder));
@@ -85,10 +91,25 @@ assert(iValidateTimeWindowInput(timeWindowSec), ...
 
 src = iResolveInput(data, SaveFolder);
 
+% Frame rate of the data itself: the explicit FrameRateHz (injected by
+% PipelineManager), else the .dat header or the UMT entry's
+% meta.FrameRateHz. AcqInfos.mat is not used (resolveDataInfoValue).
+rateData = [];
 if src.isRawDat
-    outData = iRunChunkedDat(src, baselineMeasure, responseMeasure, timeWindowSec, SaveFolder);
+    rateData = src.fileName;
+end
+ownRate = [];
+if isstruct(src.entry) && isfield(src.entry, 'meta') && isstruct(src.entry.meta) && ...
+        isfield(src.entry.meta, 'FrameRateHz')
+    ownRate = src.entry.meta.FrameRateHz;
+end
+frameRateHz = resolveDataInfoValue('frameRateHz', p.Results.FrameRateHz, rateData, ...
+    mfilename, 'OwnValue', ownRate, 'OwnSource', 'the UMT entry meta.FrameRateHz');
+
+if src.isRawDat
+    outData = iRunChunkedDat(src, baselineMeasure, responseMeasure, timeWindowSec, SaveFolder, frameRateHz);
 else
-    outData = iRunStandard(src, baselineMeasure, responseMeasure, timeWindowSec, SaveFolder);
+    outData = iRunStandard(src, baselineMeasure, responseMeasure, timeWindowSec, SaveFolder, frameRateHz);
 end
 
     function info = localPipelineInfo()
@@ -112,7 +133,7 @@ end
             info, ...
             'SaveFolder', ...
             'SaveFolder', ...
-            'Folder containing acquisition metadata and/or events.mat.', ...
+            'Folder containing events.mat.', ...
             'isData', false, ...
             'position', 2, ...
             'callType', 'positional');
@@ -150,6 +171,15 @@ end
             'position', 5, ...
             'callType', 'namevalue');
 
+        info = PipelineManager.addInput( ...
+            info, ...
+            'FrameRateHz', ...
+            'sourceInfo', ...
+            'Frame rate of the input data (Hz), injected from the data.', ...
+            'kind', 'sourceInfo', ...
+            'sourceField', 'frameRateHz', ...
+            'required', false);
+
         info = PipelineManager.addOutput( ...
             info, ...
             'outData', ...
@@ -162,7 +192,7 @@ end
     end
 end
 
-function outData = iRunStandard(src, baselineMeasure, responseMeasure, timeWindowSec, SaveFolder)
+function outData = iRunStandard(src, baselineMeasure, responseMeasure, timeWindowSec, SaveFolder, frameRateHz)
 
 switch src.representation
     case 'continuous'
@@ -183,9 +213,8 @@ switch src.representation
             'The file "events.mat" was not found in SaveFolder.');
 
         ev = EventsManager(SaveFolder);
-        dataYXTE = single(ev.splitDataByEvents(dataYXT));
+        dataYXTE = single(ev.splitDataByEvents(dataYXT, 'FrameRateHz', frameRateHz));
 
-        frameRateHz = double(ev.AcqInfo.FrameRateHz);
         baselineFrames = 1:round(double(ev.baselinePeriod) * frameRateHz);
         [baselineFrames, responseFrames] = iResolveAnalysisFrames( ...
             size(dataYXTE, 3), baselineFrames, frameRateHz, timeWindowSec);
@@ -217,12 +246,6 @@ switch src.representation
         assert(all(isfield(eventInfo, requiredFields)), ...
             'Umitoolbox:genAmplitudeMaps:invalidUMTEventInfo', ...
             'UMT eventInfo is missing required fields.');
-
-        assert(isfield(entry, 'meta') && isstruct(entry.meta) && ...
-            isfield(entry.meta, 'FrameRateHz') && ~isempty(entry.meta.FrameRateHz), ...
-            'Umitoolbox:genAmplitudeMaps:missingFrameRate', ...
-            'UMT event-split input requires entry.meta.FrameRateHz.');
-        frameRateHz = double(entry.meta.FrameRateHz);
 
         if isfield(eventInfo, 'baselinePeriod') && ~isempty(eventInfo.baselinePeriod)
             baselineFrames = 1:round(double(eventInfo.baselinePeriod) * frameRateHz);
@@ -273,20 +296,19 @@ outData = iBuildOutputUMT( ...
 
 end
 
-function outData = iRunChunkedDat(src, baselineMeasure, responseMeasure, timeWindowSec, SaveFolder)
+function outData = iRunChunkedDat(src, baselineMeasure, responseMeasure, timeWindowSec, SaveFolder, frameRateHz)
 Info = src.Info;
 Ny = datAxisSize(Info, 'Y');
 Nx = datAxisSize(Info, 'X');
 Nt = datAxisSize(Info, 'T');
 
 ev = EventsManager(SaveFolder);
-[frMat, conditionIDlist] = ev.getFrameMatrix(Nt);
+[frMat, conditionIDlist] = ev.getFrameMatrix(Nt, 'FrameRateHz', frameRateHz);
 if isempty(frMat)
     error('Umitoolbox:genAmplitudeMaps:noFrames', ...
         'No event frames were returned by EventsManager.getFrameMatrix.');
 end
 
-frameRateHz = double(ev.AcqInfo.FrameRateHz);
 baselineFrames = 1:round(double(ev.baselinePeriod) * frameRateHz);
 [baselineFrames, responseFrames] = iResolveAnalysisFrames( ...
     size(frMat, 2), baselineFrames, frameRateHz, timeWindowSec);

@@ -1988,6 +1988,33 @@ classdef PipelineManager < handle
             parse(p, varargin{:});
             report = struct('errors', {{}}, 'warnings', {{}});
 
+            % 'sourceInfo' inputs: a required field that cannot be resolved
+            % from the data is an error; values set by an upstream metaData
+            % output are only known at run time and are reported as deferred.
+            for iNode = 1:numel(obj.nodes)
+                node = obj.nodes(iNode);
+                if ~isfield(node, 'kind') || ~strcmpi(node.kind, 'stream') || ...
+                        isempty(obj.nodeSourceInfoDecls(node))
+                    continue
+                end
+                for iFolder = 1:numel(obj.SaveFolderList)
+                    injections = obj.resolveSourceInfoInjections(node, obj.SaveFolderList{iFolder});
+                    for iInj = 1:numel(injections)
+                        inj = injections(iInj);
+                        if inj.resolved || ~inj.required
+                            continue
+                        end
+                        if inj.deferred
+                            report.warnings{end+1} = sprintf( ... %#ok<AGROW>
+                                'Step %d: ''%s'' of input "%s" is resolved at run time (%s).', ...
+                                node.id, inj.name, inj.inputName, inj.origin);
+                        else
+                            report.errors{end+1} = obj.unresolvedSourceInfoMessage(node, inj);
+                        end
+                    end
+                end
+            end
+
             for iNode = 1:numel(obj.nodes)
                 node = obj.nodes(iNode);
                 if ~isfield(node, 'kind') || ~strcmpi(node.kind, 'stream') || ...
@@ -2567,6 +2594,13 @@ classdef PipelineManager < handle
             end
 
             % -------------------------------------------------------------
+            % Per-data metadata declarations ('sourceInfo' inputs) follow the
+            % function's current pipelineInfo, so older saved pipelines get
+            % them too.
+            % -------------------------------------------------------------
+            obj.refreshSourceInfoDecls();
+
+            % -------------------------------------------------------------
             % Mark validity
             % -------------------------------------------------------------
             if isprop(obj,'b_pipeIsValid')
@@ -3133,6 +3167,24 @@ classdef PipelineManager < handle
 
                 [callArgs, primaryDataFileExpr] = buildCallArguments(nodeLocal);
 
+                % 'sourceInfo' inputs: the same injection plan as live runs,
+                % resolved from per-input source-Info expressions.
+                planLocal = obj.sourceInfoInjectionPlan(nodeLocal);
+                if ~isempty(planLocal)
+                    srcArgsVar = sprintf('step_%03d_sourceArgs', nodeLocal.id);
+                    appendLine(sprintf('    %s = {};', srcArgsVar));
+                    for iInj = 1:numel(planLocal)
+                        injLocal = planLocal(iInj);
+                        whereText = sprintf('Step %d (%s) input "%s"', nodeLocal.id, ...
+                            char(string(nodeLocal.info.name)), injLocal.inputName);
+                        appendLine(sprintf('    %s = localInjectSourceInfo(%s, %s, %s, %s, %s, %s);', ...
+                            srcArgsVar, srcArgsVar, buildInputSourceInfoExpr(nodeLocal, injLocal.inputName), ...
+                            matlabLiteral(injLocal.field), matlabLiteral(injLocal.name), ...
+                            matlabLiteral(injLocal.required), matlabLiteral(whereText)));
+                    end
+                    callArgs{end+1} = [srcArgsVar '{:}']; %#ok<AGROW>
+                end
+
                 outputsLocal = struct([]);
                 if isfield(nodeLocal,'info') && isfield(nodeLocal.info,'outputs') && ~isempty(nodeLocal.info.outputs)
                     outputsLocal = sortOutputs(nodeLocal.info.outputs);
@@ -3282,6 +3334,20 @@ classdef PipelineManager < handle
             appendLine('        end');
             appendLine('        saveArgs = localSaveArgs(outValue, sourceInfo, declaredType);');
             appendLine('        saveData(dstPath, outValue, saveArgs{:});');
+            appendLine('    end');
+            appendLine('end');
+            appendLine('');
+
+            appendLine('function args = localInjectSourceInfo(args, info, field, nvName, required, whereText)');
+            appendLine('%LOCALINJECTSOURCEINFO Append a per-data metadata Name-Value pair, as PipelineManager injects it.');
+            appendLine('    fields = sourceInfoFields();');
+            appendLine('    spec = fields(strcmp({fields.field}, field));');
+            appendLine('    if isstruct(info) && isfield(info, field) && spec.isValid(info.(field))');
+            appendLine('        args = [args, {nvName, info.(field)}];');
+            appendLine('    elseif required');
+            appendLine('        error(''Umitoolbox:PipelineManager:unresolvedSourceInfo'', ...');
+            appendLine('            ''%s: the %s of the input data is unknown, so ''''%s'''' cannot be passed.'', ...');
+            appendLine('            whereText, field, nvName);');
             appendLine('    end');
             appendLine('end');
             appendLine('');
@@ -3699,6 +3765,11 @@ classdef PipelineManager < handle
                             argList{end+1} = valueExprLocal; %#ok<AGROW>
                         end
 
+                    elseif isfield(argLocal,'kind') && strcmpi(argLocal.kind,'sourceInfo')
+                        % Injected from the step's source Info (see the
+                        % localInjectSourceInfo lines emitted before the call).
+                        continue
+
                     elseif isfield(argLocal,'kind') && strcmpi(argLocal.kind,'parameter')
 
                         paramValueLocal = getCurrentParameterValue(nodeLocal, argNameLocal);
@@ -3757,12 +3828,19 @@ classdef PipelineManager < handle
                 if isempty(dataInputsLocal)
                     return
                 end
-                [valueExprPrimary, fileExprPrimary] = buildDataInputExpression( ...
-                    nodeLocal, char(string(dataInputsLocal(1).name)));
-                if ~isempty(fileExprPrimary)
-                    exprLocal = sprintf('localSourceInfo(%s)', fileExprPrimary);
-                elseif isvarname(valueExprPrimary)
-                    exprLocal = [valueExprPrimary '_info'];
+                exprLocal = buildInputSourceInfoExpr(nodeLocal, char(string(dataInputsLocal(1).name)));
+            end
+
+            function exprLocal = buildInputSourceInfoExpr(nodeLocal, inputNameLocal)
+                %BUILDINPUTSOURCEINFOEXPR Script expression of one DATA input's source Info.
+                %   A file input gives localSourceInfo(<file>); a branch
+                %   input gives the upstream value's <var>_info.
+                exprLocal = '[]';
+                [valueExprInput, fileExprInput] = buildDataInputExpression(nodeLocal, inputNameLocal);
+                if ~isempty(fileExprInput)
+                    exprLocal = sprintf('localSourceInfo(%s)', fileExprInput);
+                elseif isvarname(valueExprInput)
+                    exprLocal = [valueExprInput '_info'];
                 end
             end
 
@@ -11187,6 +11265,10 @@ classdef PipelineManager < handle
                         end
                     end
 
+                elseif strcmpi(arg.kind,'sourceInfo')
+                    % Injected below from the data flowing into the step.
+                    continue
+
                 else % parameter
 
                     if isfield(node.info,'legacyOpts') && node.info.legacyOpts && strcmpi(argName,'opts')
@@ -11205,6 +11287,21 @@ classdef PipelineManager < handle
                     else
                         posArgs{end+1} = val; %#ok<AGROW>
                     end
+                end
+            end
+
+            % -------------------------------------------------------------
+            % 'sourceInfo' inputs: per-data metadata, re-resolved now since
+            % upstream metaData outputs are only known at run time.
+            % -------------------------------------------------------------
+            injections = obj.resolveSourceInfoInjections(node, saveFolder);
+            for iInj = 1:numel(injections)
+                inj = injections(iInj);
+                if inj.resolved
+                    nvArgs(end+1:end+2) = {inj.name, inj.value};
+                elseif inj.required
+                    error('Umitoolbox:PipelineManager:unresolvedSourceInfo', '%s', ...
+                        obj.unresolvedSourceInfoMessage(node, inj));
                 end
             end
         end
@@ -12146,72 +12243,297 @@ classdef PipelineManager < handle
             %
             %   INFO = RESOLVESTEPSOURCEINFO(OBJ, NODE, SAVEFOLDER) returns the
             %   frameRateHz, exposureMsec, and dimNames that manager-saved
-            %   outputs of NODE inherit, or [] when no source is known. The primary input is the
-            %   first DATA input (as in getMetaData). In order:
-            %       1) the connection's selectedFile, when it is a .dat file;
-            %       2) the upstream record's sourceInfo, when non-empty;
-            %       3) the upstream record's file, when it is a .dat file;
-            %       4) resolveDataInputSource (folder and proxy sources).
-            %   A .dat file is described by loadMetaData. Failures give [].
+            %   outputs of NODE inherit, or [] when no source is known. The
+            %   primary input is the first DATA input (as in getMetaData). It
+            %   is resolved by resolveInputSourceInfo, the same resolver used
+            %   for 'sourceInfo' injection, so saving and injection never
+            %   diverge.
 
             info = [];
+            inName = obj.primaryDataInputName(node);
+            if isempty(inName)
+                return
+            end
+            try
+                info = obj.resolveInputSourceInfo(node, inName, saveFolder);
+            catch
+                info = [];
+            end
+        end
+
+        function msg = unresolvedSourceInfoMessage(~, node, inj)
+            %UNRESOLVEDSOURCEINFOMESSAGE Text for an unresolved required 'sourceInfo' input.
+            stepName = '';
+            if isfield(node, 'info') && isfield(node.info, 'name')
+                stepName = char(string(node.info.name));
+            end
+            msg = sprintf(['Step %d (%s): the %s of input "%s" is unknown, so ''%s'' ' ...
+                'cannot be passed. Source: %s. Use a source file with a header that ' ...
+                'records it, or a step that sets it through a metaData output.'], ...
+                node.id, stepName, inj.field, inj.inputName, inj.name, inj.origin);
+        end
+
+        function inName = primaryDataInputName(~, node)
+            %PRIMARYDATAINPUTNAME Name of a node's first DATA input, or ''.
+            inName = '';
             if ~isfield(node, 'info') || ~isfield(node.info, 'inputs') || isempty(node.info.inputs)
                 return
             end
             dataInputs = node.info.inputs(arrayfun(@(x) isfield(x, 'isData') && ...
                 ~isempty(x.isData) && logical(x.isData), node.info.inputs));
-            if isempty(dataInputs)
+            if ~isempty(dataInputs)
+                inName = char(string(dataInputs(1).name));
+            end
+        end
+
+        function [info, origin, deferred] = resolveInputSourceInfo(obj, node, inName, saveFolder, depth)
+            %RESOLVEINPUTSOURCEINFO Source Info of one DATA input of a step.
+            %
+            %   [INFO, ORIGIN, DEFERRED] = RESOLVEINPUTSOURCEINFO(OBJ, NODE,
+            %   INNAME, SAVEFOLDER) returns the per-data metadata (frameRateHz,
+            %   exposureMsec, dimNames; see mergeSourceInfo) of the data that
+            %   flows into input INNAME of NODE, or [] when unknown. ORIGIN
+            %   describes the source for messages. In order:
+            %       1) the connection's selectedFile, when it is a .dat file;
+            %       2) the upstream record's propagated sourceInfo (at run time;
+            %          it includes upstream metaData updates);
+            %       3) the upstream record's file, when it is a .dat file;
+            %       4) resolveDataInputSource (folder and file-producing
+            %          sources), described with loadMetaData;
+            %       5) before the upstream step has run (preflight): the
+            %          upstream step's own primary input, traced back. If the
+            %          upstream step declares a metaData output, the value is
+            %          only known at run time: DEFERRED is true and INFO is [].
+
+            if nargin < 5
+                depth = 0;
+            end
+            info = [];
+            origin = 'no source file';
+            deferred = false;
+            if depth > 64
                 return
             end
-            inName = char(string(dataInputs(1).name));
 
-            try
-                connIdx = [];
-                if ~isempty(obj.connections)
-                    connIdx = find([obj.connections.targetNodeID] == node.id & ...
-                        strcmpi({obj.connections.targetInputName}, inName), 1, 'first');
+            connIdx = [];
+            if ~isempty(obj.connections)
+                connIdx = find([obj.connections.targetNodeID] == node.id & ...
+                    strcmpi({obj.connections.targetInputName}, inName), 1, 'first');
+            end
+
+            if ~isempty(connIdx)
+                conn = obj.connections(connIdx);
+
+                if isfield(conn, 'selectedFile') && ~isempty(conn.selectedFile)
+                    filePath = fullfile(saveFolder, char(string(conn.selectedFile)));
+                    [info, origin] = localInfoFromFile(filePath);
+                    return
                 end
 
-                if ~isempty(connIdx)
-                    conn = obj.connections(connIdx);
-
-                    if isfield(conn, 'selectedFile') && ~isempty(conn.selectedFile)
-                        info = localInfoFromFile(fullfile(saveFolder, char(string(conn.selectedFile))));
+                key = obj.makeKey(conn.sourceNodeID, conn.sourceOutputName);
+                if isa(obj.dataStore, 'containers.Map') && obj.dataStore.isKey(key)
+                    rec = obj.dataStore(key);
+                    info = obj.recordSourceInfo(rec);
+                    if ~isempty(info)
+                        origin = sprintf('the propagated Info of step %d output "%s"', ...
+                            conn.sourceNodeID, char(string(conn.sourceOutputName)));
                         return
                     end
-
-                    key = obj.makeKey(conn.sourceNodeID, conn.sourceOutputName);
-                    if isa(obj.dataStore, 'containers.Map') && obj.dataStore.isKey(key)
-                        rec = obj.dataStore(key);
-                        info = obj.recordSourceInfo(rec);
+                    if isfield(rec, 'fileName') && strlength(string(rec.fileName)) > 0
+                        [info, origin] = localInfoFromFile(char(string(rec.fileName)));
                         if ~isempty(info)
                             return
                         end
-                        if isfield(rec, 'fileName') && strlength(string(rec.fileName)) > 0
-                            info = localInfoFromFile(char(string(rec.fileName)));
-                            if ~isempty(info)
-                                return
-                            end
-                        end
                     end
                 end
-
-                [~, resolvedFile, ~] = obj.resolveDataInputSource(node, inName);
-                if ~isempty(resolvedFile)
-                    info = localInfoFromFile(fullfile(saveFolder, char(string(resolvedFile))));
-                end
-            catch
-                info = [];
             end
 
-            function infoLocal = localInfoFromFile(filePath)
+            try
+                [~, resolvedFile, ~] = obj.resolveDataInputSource(node, inName);
+            catch
+                resolvedFile = '';
+            end
+            if ~isempty(resolvedFile)
+                [info, origin] = localInfoFromFile(fullfile(saveFolder, char(string(resolvedFile))));
+                if ~isempty(info)
+                    return
+                end
+            end
+
+            % Preflight: trace the branch back through steps not yet run.
+            if isempty(connIdx)
+                return
+            end
+            srcIdx = find([obj.nodes.id] == conn.sourceNodeID, 1);
+            if isempty(srcIdx)
+                return
+            end
+            srcNode = obj.nodes(srcIdx);
+            if isfield(srcNode, 'kind') && strcmpi(srcNode.kind, 'folder')
+                return
+            end
+            if isfield(srcNode, 'info') && isfield(srcNode.info, 'outputs') && ...
+                    ~isempty(srcNode.info.outputs) && ...
+                    any(strcmpi(cellfun(@(x) char(string(x)), {srcNode.info.outputs.name}, ...
+                    'UniformOutput', false), 'metaData'))
+                deferred = true;
+                origin = sprintf('the metaData output of step %d (known at run time)', srcNode.id);
+                return
+            end
+            srcIn = obj.primaryDataInputName(srcNode);
+            if isempty(srcIn)
+                return
+            end
+            [info, origin, deferred] = obj.resolveInputSourceInfo(srcNode, srcIn, saveFolder, depth + 1);
+
+            function [infoLocal, originLocal] = localInfoFromFile(filePath)
                 infoLocal = [];
+                originLocal = sprintf('"%s"', filePath);
                 [~, ~, extLocal] = fileparts(filePath);
                 if ~strcmpi(extLocal, '.dat') || ~isfile(filePath)
                     return
                 end
                 md = loadMetaData(filePath);
                 infoLocal = obj.mergeSourceInfo([], md);
+            end
+        end
+
+        function injections = resolveSourceInfoInjections(obj, node, saveFolder)
+            %RESOLVESOURCEINFOINJECTIONS Values of a step's 'sourceInfo' inputs.
+            %
+            %   INJECTIONS = RESOLVESOURCEINFOINJECTIONS(OBJ, NODE, SAVEFOLDER)
+            %   resolves every 'sourceInfo' declaration of NODE (see addInput)
+            %   with resolveInputSourceInfo. It is the single resolver used by
+            %   preflight, by injection right before the call, and by
+            %   generateScript. INJECTIONS is a struct array with fields:
+            %       name, field, inputName, required - from the declaration
+            %       value    - the valid value, or [] when unresolved
+            %       resolved - logical
+            %       deferred - true when only known at run time (upstream
+            %                  metaData output)
+            %       origin   - description of the source, for messages
+
+            plan = obj.sourceInfoInjectionPlan(node);
+            injections = struct('name', {}, 'field', {}, 'inputName', {}, 'required', {}, ...
+                'value', {}, 'resolved', {}, 'deferred', {}, 'origin', {});
+            if isempty(plan)
+                return
+            end
+            fieldsLocal = sourceInfoFields();
+            cache = containers.Map();
+            for k = 1:numel(plan)
+                d = plan(k);
+                inName = d.inputName;
+                if cache.isKey(inName)
+                    resolvedInput = cache(inName);
+                else
+                    try
+                        [infoLocal, originLocal, deferredLocal] = ...
+                            obj.resolveInputSourceInfo(node, inName, saveFolder);
+                    catch ME
+                        infoLocal = [];
+                        originLocal = sprintf('unreadable source (%s)', ME.message);
+                        deferredLocal = false;
+                    end
+                    resolvedInput = struct('info', {infoLocal}, 'origin', originLocal, ...
+                        'deferred', deferredLocal);
+                    cache(inName) = resolvedInput;
+                end
+
+                spec = fieldsLocal(strcmp({fieldsLocal.field}, d.field));
+                value = [];
+                infoLocal = resolvedInput.info;
+                if isstruct(infoLocal) && isfield(infoLocal, spec.field) && ...
+                        spec.isValid(infoLocal.(spec.field))
+                    value = infoLocal.(spec.field);
+                    if strcmp(spec.field, 'dimNames')
+                        value = cellstr(string(value(:).'));
+                    else
+                        value = double(value);
+                    end
+                end
+                injections(end+1) = struct( ...
+                    'name', char(string(d.name)), ...
+                    'field', spec.field, ...
+                    'inputName', inName, ...
+                    'required', logical(d.required), ...
+                    'value', {value}, ...
+                    'resolved', ~isempty(value), ...
+                    'deferred', isempty(value) && resolvedInput.deferred, ...
+                    'origin', resolvedInput.origin); %#ok<AGROW>
+            end
+        end
+
+        function plan = sourceInfoInjectionPlan(obj, node)
+            %SOURCEINFOINJECTIONPLAN What a step's 'sourceInfo' inputs inject, and from which input.
+            %
+            %   PLAN = SOURCEINFOINJECTIONPLAN(OBJ, NODE) returns a struct array
+            %   with fields name (Name-Value name), field (sourceInfoFields
+            %   field), inputName (the DATA input supplying it: sourceInput, or
+            %   the first DATA input), and required. Live execution
+            %   (resolveSourceInfoInjections) and generateScript both consume
+            %   this list.
+            decls = obj.nodeSourceInfoDecls(node);
+            plan = struct('name', {}, 'field', {}, 'inputName', {}, 'required', {});
+            for k = 1:numel(decls)
+                inName = strtrim(char(string(decls(k).sourceInput)));
+                if isempty(inName)
+                    inName = obj.primaryDataInputName(node);
+                end
+                plan(end+1) = struct('name', char(string(decls(k).name)), ...
+                    'field', char(string(decls(k).sourceField)), ...
+                    'inputName', inName, 'required', logical(decls(k).required)); %#ok<AGROW>
+            end
+        end
+
+        function decls = nodeSourceInfoDecls(~, node)
+            %NODESOURCEINFODECLS A node's 'sourceInfo' declarations (empty if none).
+            decls = PipelineManager.emptySourceInfoDecls();
+            if isfield(node, 'info')
+                decls = PipelineManager.sourceInfoDecls(node.info);
+            end
+        end
+
+        function refreshSourceInfoDecls(obj)
+            %REFRESHSOURCEINFODECLS Take step 'sourceInfo' declarations from the current pipelineInfo.
+            %
+            %   Saved pipelines keep the node info of the time they were
+            %   saved. Per-data metadata declarations describe the function,
+            %   so they are refreshed from funcList: missing info.sourceInfo
+            %   entries and their info.arguments entries are added, and stale
+            %   ones are replaced.
+
+            if isempty(obj.nodes) || isempty(obj.funcList)
+                return
+            end
+            for iNode = 1:numel(obj.nodes)
+                nodeLocal = obj.nodes(iNode);
+                if (isfield(nodeLocal, 'kind') && strcmpi(nodeLocal.kind, 'folder')) || ...
+                        ~isfield(nodeLocal, 'info') || ~isfield(nodeLocal.info, 'name')
+                    continue
+                end
+                fIdx = find(strcmpi({obj.funcList.name}, char(string(nodeLocal.info.name))), 1);
+                if isempty(fIdx)
+                    continue
+                end
+                current = PipelineManager.sourceInfoDecls(obj.funcList(fIdx).info);
+                infoLocal = nodeLocal.info;
+                infoLocal.sourceInfo = current;
+                if isfield(infoLocal, 'arguments') && ~isempty(infoLocal.arguments)
+                    keep = ~strcmpi({infoLocal.arguments.kind}, 'sourceInfo');
+                    infoLocal.arguments = infoLocal.arguments(keep);
+                end
+                for k = 1:numel(current)
+                    newArg = struct('name', current(k).name, 'kind', 'sourceInfo', ...
+                        'position', numel(infoLocal.arguments) + 1, ...
+                        'callType', 'namevalue', 'isData', false);
+                    if isempty(infoLocal.arguments)
+                        infoLocal.arguments = newArg;
+                    else
+                        infoLocal.arguments(end+1) = newArg;
+                    end
+                end
+                obj.nodes(iNode).info = infoLocal;
             end
         end
 
@@ -12813,6 +13135,12 @@ classdef PipelineManager < handle
 
         function md = getMetaData(obj, node, saveFolder)
             %GETMETADATA Return metadata for legacy functions without loading the data array.
+            %
+            %   DEPRECATED (.dat header Phase 6b-2): kept working for legacy
+            %   functions that declare a 'metaData' input, but not extended. New
+            %   functions declare 'sourceInfo' inputs (FrameRateHz, DimNames,
+            %   ExposureMsec; see PipelineManager.addInput), which PipelineManager
+            %   injects from the data flowing into the step.
             %
             %   MD = GETMETADATA(OBJ, NODE, SAVEFOLDER) retrieves the metadata
             %   associated with the primary DATA input of NODE.
@@ -13974,6 +14302,10 @@ classdef PipelineManager < handle
                     end
                 end
 
+                % 'sourceInfo' declarations must name a whitelist field and a
+                % declared data input; a broken declaration is a function bug.
+                PipelineManager.validateSourceInfoDecls(infoStruct, fcnName);
+
                 % -------------------------------------------------------------
                 % Create and append function list entry.
                 % -------------------------------------------------------------
@@ -15112,20 +15444,68 @@ classdef PipelineManager < handle
 
         function tf = isValidDatLayout(dimNames)
             %ISVALIDDATLAYOUT True for 'Y','X', then distinct axes among 'T','E','F' in that order.
-            tf = false;
-            if ~(iscell(dimNames) || isstring(dimNames)) || isempty(dimNames)
+            %   Thin wrapper of the dimNames rule in sourceInfoFields.
+            fieldsLocal = sourceInfoFields();
+            tf = fieldsLocal(strcmp({fieldsLocal.field}, 'dimNames')).isValid(dimNames);
+        end
+
+        function decls = emptySourceInfoDecls()
+            %EMPTYSOURCEINFODECLS Empty info.sourceInfo struct array.
+            decls = struct('name', {}, 'sourceField', {}, 'sourceInput', {}, ...
+                'required', {}, 'description', {});
+        end
+
+        function decls = sourceInfoDecls(info)
+            %SOURCEINFODECLS A pipelineInfo's 'sourceInfo' declarations (empty if none).
+            decls = PipelineManager.emptySourceInfoDecls();
+            if isstruct(info) && isscalar(info) && isfield(info, 'sourceInfo') && ...
+                    ~isempty(info.sourceInfo)
+                decls = info.sourceInfo;
+            end
+        end
+
+        function validateSourceInfoDecls(info, fcnName)
+            %VALIDATESOURCEINFODECLS Check a pipelineInfo's 'sourceInfo' declarations.
+            %
+            %   Raises Umitoolbox:PipelineManager:invalidSourceInfoDeclaration,
+            %   naming FCNNAME, for an unknown field, a name that does not match
+            %   its field, a 'sourceInput' that is not a declared data input, or
+            %   declarations in a function without data inputs.
+
+            decls = PipelineManager.sourceInfoDecls(info);
+            if isempty(decls)
                 return
             end
-            try
-                names = cellstr(string(dimNames(:).'));
-            catch
-                return
+            fcnName = char(string(fcnName));
+            fieldsLocal = sourceInfoFields();
+            dataNames = {};
+            if isfield(info, 'inputs') && ~isempty(info.inputs)
+                isDataMask = arrayfun(@(x) isfield(x, 'isData') && ~isempty(x.isData) && ...
+                    logical(x.isData), info.inputs);
+                dataNames = cellfun(@(x) char(string(x)), {info.inputs(isDataMask).name}, ...
+                    'UniformOutput', false);
             end
-            if numel(names) < 2 || numel(names) > 5 || ~strcmp(names{1}, 'Y') || ~strcmp(names{2}, 'X')
-                return
+            if isempty(dataNames)
+                error('Umitoolbox:PipelineManager:invalidSourceInfoDeclaration', ...
+                    ['Function "%s" declares sourceInfo inputs but no data input to ' ...
+                     'take them from.'], fcnName);
             end
-            [isKnown, slot] = ismember(names(3:end), {'T', 'E', 'F'});
-            tf = all(isKnown) && all(diff(slot) > 0);
+            for k = 1:numel(decls)
+                d = decls(k);
+                fIdx = find(strcmp({fieldsLocal.field}, char(string(d.sourceField))), 1);
+                if isempty(fIdx) || ~strcmp(char(string(d.name)), fieldsLocal(fIdx).nvName)
+                    error('Umitoolbox:PipelineManager:invalidSourceInfoDeclaration', ...
+                        ['Function "%s": sourceInfo input "%s" has an invalid source ' ...
+                         'field "%s".'], fcnName, char(string(d.name)), char(string(d.sourceField)));
+                end
+                srcIn = strtrim(char(string(d.sourceInput)));
+                if ~isempty(srcIn) && ~any(strcmp(dataNames, srcIn))
+                    error('Umitoolbox:PipelineManager:invalidSourceInfoDeclaration', ...
+                        ['Function "%s": sourceInfo input "%s" names sourceInput "%s", ' ...
+                         'which is not a declared data input (%s).'], fcnName, ...
+                        char(string(d.name)), srcIn, strjoin(dataNames, ', '));
+                end
+            end
         end
 
         function info = createPipelineInfo(name, description)
@@ -15166,7 +15546,7 @@ classdef PipelineManager < handle
             %
             %           Fields:
             %               name
-            %               kind        - 'input' or 'parameter'
+            %               kind        - 'input', 'parameter', or 'sourceInfo'
             %               position
             %               callType    - 'positional' or 'namevalue'
             %               isData
@@ -15184,6 +15564,18 @@ classdef PipelineManager < handle
             %                              receive a filename/file-backed source.
             %               dataMode     - DATA inputs only. One of:
             %                              'either', 'ram', or 'file'.
+            %
+            %       info.sourceInfo
+            %           Per-data metadata parameters (kind 'sourceInfo'), injected
+            %           by PipelineManager from the data flowing into the step and
+            %           never user-editable. See PipelineManager.addInput.
+            %
+            %           Fields:
+            %               name        - Name-Value name, e.g. 'FrameRateHz'
+            %               sourceField - sourceInfoFields field, e.g. 'frameRateHz'
+            %               sourceInput - Data input supplying it ('' = first)
+            %               required    - Logical
+            %               description
             %
             %       info.parameters
             %           User-editable parameter metadata.
@@ -15271,6 +15663,11 @@ classdef PipelineManager < handle
                 'allowed', {}, ...
                 'description', {} );
 
+            % Per-data metadata injected by PipelineManager (kind 'sourceInfo').
+            % Kept apart from inputs and parameters so they are never
+            % user-editable; see PipelineManager.addInput.
+            info.sourceInfo = PipelineManager.emptySourceInfoDecls();
+
             % Pipeline output semantics.
             % Do not include supportsFile/dataMode here; they are not output concepts.
             info.outputs = struct( ...
@@ -15299,6 +15696,21 @@ classdef PipelineManager < handle
             %     info = PipelineManager.addInput(info, paramName, 'parameter', '', ...
             %               'kind','parameter','default',val,'allowed',allowedVals, ...)
             %
+            %   SOURCEINFO (set 'kind','sourceInfo'): per-data metadata that
+            %   PipelineManager injects as a Name-Value pair from the data
+            %   flowing into the step (never user-editable):
+            %     info = PipelineManager.addInput(info, 'FrameRateHz', 'sourceInfo', ...
+            %               'Frame rate of the data (Hz).', 'kind','sourceInfo', ...
+            %               'sourceField','frameRateHz')
+            %   name must be the field's Name-Value name (see sourceInfoFields:
+            %   frameRateHz -> FrameRateHz, dimNames -> DimNames, exposureMsec ->
+            %   ExposureMsec). The value comes from 'sourceInput' (a declared DATA
+            %   input; default: the first one): its propagated source Info, or
+            %   loadMetaData of its file. If 'required' (default true) and it
+            %   cannot be resolved, preflight and the call fail; otherwise the
+            %   pair is omitted. The function takes it with addParameter and
+            %   resolveDataInfoValue.
+            %
             % REQUIRED INPUTS
             %   info        pipelineInfo struct (from createPipelineInfo)
             %   name        (text) port/parameter name
@@ -15307,7 +15719,10 @@ classdef PipelineManager < handle
             %   description (char|string) optional
             %
             % NAME-VALUE OPTIONS
-            %   'kind'        : 'input' | 'parameter' (default: 'input')
+            %   'kind'        : 'input' | 'parameter' | 'sourceInfo' (default: 'input')
+            %   'sourceField' : sourceInfoFields field (sourceInfo only, required)
+            %   'sourceInput' : DATA input supplying it (sourceInfo only; default first)
+            %   'required'    : logical (sourceInfo only; default true)
             %   'position'    : scalar numeric. If empty, appended to end of arguments.
             %   'callType'    : If 'positional' (case-insensitive), argument is positional.
             %                   Otherwise, argument is treated as name-value and stored as
@@ -15320,7 +15735,7 @@ classdef PipelineManager < handle
             %   'dataMode'    : 'either'|'ram'|'file'. DATA ports only. Default 'either'.
             %
             % STRICT VALIDATION
-            %   - kind must be 'input' or 'parameter'
+            %   - kind must be 'input', 'parameter', or 'sourceInfo'
             %   - callType is normalized: only 'positional' stays positional; all other
             %     values become 'namevalue'
             %   - dataMode must be one of 'either','ram','file' (DATA ports only)
@@ -15352,12 +15767,23 @@ classdef PipelineManager < handle
             supportsFile = false;
             dataMode     = 'either';
 
+            % SOURCEINFO-only metadata
+            sourceField  = '';
+            sourceInput  = '';
+            isRequired   = true;
+
             % Parse optional arguments (manual to keep backwards compatibility)
             for k = 1:2:numel(varargin)
                 key = lower(char(string(varargin{k})));
                 val = varargin{k+1};
 
                 switch key
+                    case 'sourcefield'
+                        sourceField = char(string(val));
+                    case 'sourceinput'
+                        sourceInput = char(string(val));
+                    case 'required'
+                        isRequired = logical(val);
                     case 'kind'
                         kind = lower(char(string(val)));
                     case 'position'
@@ -15383,9 +15809,56 @@ classdef PipelineManager < handle
             % -------------------------------------------------------------
             % Validate / normalize kind
             % -------------------------------------------------------------
-            validKinds = {'input','parameter'};
+            validKinds = {'input','parameter','sourceinfo'};
             if ~ismember(kind, validKinds)
-                error('addInput:InvalidKind', 'kind must be one of: %s', strjoin(validKinds, ', '));
+                error('addInput:InvalidKind', 'kind must be one of: %s', ...
+                    strjoin({'input','parameter','sourceInfo'}, ', '));
+            end
+
+            % -------------------------------------------------------------
+            % SOURCEINFO: per-data metadata injected by PipelineManager.
+            % Stored in info.sourceInfo and info.arguments only (never in
+            % inputs or parameters), so it is never user-editable.
+            % -------------------------------------------------------------
+            if strcmp(kind, 'sourceinfo')
+                name = strtrim(char(string(name)));
+                fieldsLocal = sourceInfoFields();
+                fIdx = find(strcmp({fieldsLocal.field}, sourceField), 1);
+                if isempty(fIdx)
+                    error('Umitoolbox:PipelineManager:invalidSourceInfoDeclaration', ...
+                        ['sourceInfo input "%s": ''sourceField'' must be one of %s ' ...
+                         '(got "%s").'], name, strjoin({fieldsLocal.field}, ', '), sourceField);
+                end
+                if ~strcmp(name, fieldsLocal(fIdx).nvName)
+                    error('Umitoolbox:PipelineManager:invalidSourceInfoDeclaration', ...
+                        ['sourceInfo input "%s": the name of source field "%s" must be ' ...
+                         '"%s".'], name, sourceField, fieldsLocal(fIdx).nvName);
+                end
+                if ~isfield(info, 'sourceInfo') || isempty(info.sourceInfo)
+                    info.sourceInfo = PipelineManager.emptySourceInfoDecls();
+                end
+                if any(strcmp({info.sourceInfo.name}, name))
+                    error('Umitoolbox:PipelineManager:invalidSourceInfoDeclaration', ...
+                        'sourceInfo input "%s" is declared twice.', name);
+                end
+                info.sourceInfo(end+1) = struct( ...
+                    'name', name, ...
+                    'sourceField', sourceField, ...
+                    'sourceInput', strtrim(sourceInput), ...
+                    'required', logical(isRequired), ...
+                    'description', char(string(description)));
+
+                if isempty(position)
+                    position = numel(info.arguments) + 1;
+                end
+                newArg = struct('name', name, 'kind', 'sourceInfo', 'position', position, ...
+                    'callType', 'namevalue', 'isData', false);
+                if isempty(info.arguments)
+                    info.arguments = newArg;
+                else
+                    info.arguments(end+1) = newArg;
+                end
+                return
             end
 
             % -------------------------------------------------------------
