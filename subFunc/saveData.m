@@ -1,57 +1,61 @@
 function outFile = saveData(filename, data, varargin)
-%SAVEDATA Save raw image-series data or derived UMIT data to disk.
+%SAVEDATA Save image data or derived UMIT data to disk.
 %
-%   saveData(filename, data)
-%   saveData(filename, data, AcqInfoStream)
+%   saveData(filename, data, 'DimNames', dimNames)
 %   saveData(..., 'Info', Info)
 %   saveData(..., 'FrameRateHz', rate)
 %   saveData(..., 'ChannelName', name)
 %   saveData(..., 'Append', true)
+%   saveData(filename, umtStruct)
 %
 %   Inputs:
 %       filename        - Full path of the file to be saved. The extension
 %                         is forced based on the input data type.
 %       data            - Either:
-%                         1) non-empty single numeric 3D array (Y-X-T),
-%                            saved as a headered .dat file
+%                         1) non-empty single numeric array, saved as a
+%                            headered .dat file with the axes in DimNames
 %                         2) valid derived-data structure, saved as .umt
-%
-%   Optional inputs for numeric data only:
-%       AcqInfoStream   - Acquisition info structure. Saved as AcqInfos.mat
-%                         when that file does not exist yet, and used as
-%                         the frame-rate fallback (see Notes).
+%                            (its entries carry their own dimNames)
 %
 %   Name-Value options (numeric data only):
+%       DimNames        - Required. Axis names of DATA in memory order: 'Y',
+%                         'X', then any of 'T', 'E', 'F' in that order, e.g.
+%                         {'Y','X'}, {'Y','X','T'}, {'Y','X','T','E'},
+%                         {'Y','X','E'}. saveData never guesses the layout.
+%                         DATA must fit them: ndims(data) <= numel(DimNames)
+%                         (MATLAB drops trailing singleton axes, so a 2-D
+%                         array can be saved as Y-X-T with T = 1), and the
+%                         axis sizes are size(data, 1:numel(DimNames)).
 %       Info            - .dat Info struct of the source file (as returned
 %                         by loadMetaData). Its frameRateHz and exposureMsec
-%                         fields, when present, describe the output.
+%                         fields, when valid, describe the output.
 %       FrameRateHz     - Positive finite frame rate of the output.
 %                         Overrides Info.frameRateHz.
 %       ChannelName     - Header channelName. Default: the output file's
 %                         base name. (PipelineManager passes the save
 %                         target's name for temporary files that may be
 %                         promoted to it.)
-%       Append          - Logical scalar. If true, append the frames to an
+%       Append          - Logical scalar. If true, append DATA to an
 %                         existing headered .dat file along its last axis.
 %                         Default: false
 %
 %   Notes:
 %       - Numeric arrays are written with a version-1 header (see
-%         docs/dev/dat-header-spec.md): axes {'Y','X','T'}, class single,
+%         docs/dev/dat-header-spec.md): axes DimNames, class single,
 %         channelName = the output file's base name (non-ASCII characters
 %         replaced by '_', truncated to the header field).
-%       - Frame rate: FrameRateHz, else Info.frameRateHz, else the rate
-%         "AcqInfos.mat" in the target folder (or the AcqInfoStream
-%         argument) gives this file: its ImportedChannels entry matched by
-%         file name, then by length (resolveDatTimeline, as headerless
-%         loading does), else its top-level FrameRateHz. Error if none gives
-%         a finite rate > 0. The AcqInfos fallback is transitional.
-%       - Exposure: Info.exposureMsec; else, when the rate came from an
-%         ImportedChannels entry, that entry's ExposureMsec; else NaN.
+%       - Frame rate, with a T axis: FrameRateHz, else Info.frameRateHz;
+%         with neither, Umitoolbox:saveData:missingFrameRate is raised and
+%         nothing is written. Without a T axis the header frame rate is NaN
+%         and both are ignored. AcqInfos.mat is never read or written: it
+%         describes the raw acquisition, whose rate can differ from the
+%         imported data (temporal binning).
+%       - Exposure: Info.exposureMsec, else NaN.
 %       - An existing file is overwritten, headered or not.
 %       - Append to a missing file creates it. Append to a headered file
-%         requires the same class, the same Y and X sizes, a Y-X-T layout,
-%         a complete earlier write, and the same frame rate. Append to a
+%         requires the same axes (DimNames), class, and frame rate, the
+%         same size on every axis except the last, and a complete earlier
+%         write; the last axis grows by DATA's size along it. Append to a
 %         headerless file is an error and leaves the file unchanged.
 %       - Structured derived data are saved as MAT-files with ".umt".
 
@@ -63,7 +67,7 @@ p.FunctionName = 'saveData';
 
 addRequired(p, 'filename', @(x) validateattributes(x, {'char', 'string'}, {'nonempty'}));
 addRequired(p, 'data', @(x) (isnumeric(x) && isa(x, 'single') && ~isempty(x)) || isstruct(x));
-addOptional(p, 'AcqInfoStream', struct.empty(0,1), @isstruct);
+addParameter(p, 'DimNames', {}, @(x) iscell(x) || isstring(x) || ischar(x));
 addParameter(p, 'Append', false, @(x) islogical(x) && isscalar(x));
 addParameter(p, 'Info', struct.empty(0,1), @(x) isstruct(x) || isempty(x));
 addParameter(p, 'FrameRateHz', [], @(x) isempty(x) || ...
@@ -95,17 +99,14 @@ end
 % =========================================================================
 
 function save2dat(filePath, data, opts)
-%SAVE2DAT Save a numeric Y-X-T array to a headered .dat file.
+%SAVE2DAT Save a numeric array to a headered .dat file with explicit axes.
 
 if ~(isnumeric(data) && isa(data, 'single') && ~isempty(data))
     error('Umitoolbox:saveData:invalidInput', ...
         'Numeric data must be a non-empty single array.');
 end
 
-if ndims(data) ~= 3
-    error('Umitoolbox:saveData:invalidInput', ...
-        'Numeric data must be a 3D single array.');
-end
+[dimNames, dimSizes] = iResolveLayout(opts.DimNames, data, filePath);
 
 [saveFolder, fileName, ext] = fileparts(filePath);
 if isempty(saveFolder)
@@ -120,20 +121,14 @@ if ~isfolder(saveFolder)
         'Target folder does not exist: "%s".', saveFolder);
 end
 
-acqInfoFile = fullfile(saveFolder, 'AcqInfos.mat');
-if ~isfile(acqInfoFile) && ~isempty(opts.AcqInfoStream)
-    AcqInfoStream = opts.AcqInfoStream;
-    save(acqInfoFile, 'AcqInfoStream');
-end
-
-[frameRateHz, exposureMsec] = iResolveRateAndExposure(opts, acqInfoFile, filePath, size(data, 3));
+[frameRateHz, exposureMsec] = iResolveRateAndExposure(opts, filePath, any(strcmp(dimNames, 'T')));
 
 channelName = fileName;
 if strlength(string(opts.ChannelName)) > 0
     channelName = char(opts.ChannelName);
 end
-hdr = datHeaderFromInfo(struct('dataClass', 'single', 'dimNames', {{'Y', 'X', 'T'}}, ...
-    'dimSizes', size(data), 'frameRateHz', frameRateHz, 'exposureMsec', exposureMsec), ...
+hdr = datHeaderFromInfo(struct('dataClass', 'single', 'dimNames', {dimNames}, ...
+    'dimSizes', dimSizes, 'frameRateHz', frameRateHz, 'exposureMsec', exposureMsec), ...
     channelName);
 
 disp('Writing data to .DAT file ...');
@@ -145,13 +140,52 @@ end
 
 h = spatialSlabIO('create', filePath, hdr);
 cleanupObj = onCleanup(@() spatialSlabIO('close', h));
-spatialSlabIO('write', h, 1:size(data, 2), data);
+spatialSlabIO('write', h, 1:dimSizes(2), data);
 spatialSlabIO('finalize', h);
 clear cleanupObj
 end
 
+function [dimNames, dimSizes] = iResolveLayout(dimNamesIn, data, filePath)
+%IRESOLVELAYOUT Validate DimNames and return them with the axis sizes of DATA.
+
+if isempty(dimNamesIn)
+    error('Umitoolbox:saveData:missingDimNames', ...
+        ['Failed to save "%s": numeric data needs ''DimNames'', the axis layout ' ...
+         'of the array, for example {''Y'',''X'',''T''} or {''Y'',''X'',''T'',''E''}.'], ...
+        filePath);
+end
+
+dimNames = cellstr(string(dimNamesIn));
+dimNames = dimNames(:).';
+if ~iIsValidLayout(dimNames)
+    error('Umitoolbox:saveData:invalidDimNames', ...
+        ['Failed to save "%s": DimNames {%s} is not a valid .dat layout. It must ' ...
+         'start with ''Y'',''X'', followed by distinct axes among ''T'',''E'',''F'' ' ...
+         'in that order.'], filePath, strjoin(dimNames, ','));
+end
+if ndims(data) > numel(dimNames)
+    error('Umitoolbox:saveData:invalidDimNames', ...
+        ['Failed to save "%s": the array has %d dimensions but DimNames {%s} ' ...
+         'names only %d axes.'], filePath, ndims(data), strjoin(dimNames, ','), ...
+        numel(dimNames));
+end
+dimSizes = double(size(data, 1:numel(dimNames)));
+end
+
+function tf = iIsValidLayout(dimNames)
+%IISVALIDLAYOUT 'Y','X', then distinct axes among 'T','E','F' in slot order.
+
+tf = numel(dimNames) >= 2 && numel(dimNames) <= 5 && ...
+    strcmp(dimNames{1}, 'Y') && strcmp(dimNames{2}, 'X');
+if ~tf
+    return
+end
+[isKnown, slot] = ismember(dimNames(3:end), {'T', 'E', 'F'});
+tf = all(isKnown) && all(diff(slot) > 0);
+end
+
 function iAppend(filePath, data, hdr)
-%IAPPEND Append frames to an existing headered file along its last axis.
+%IAPPEND Append DATA to an existing headered file along its last axis.
 
 if ~isDatWithHeader(filePath)
     error('Umitoolbox:saveData:appendToHeaderless', ...
@@ -170,13 +204,21 @@ if ~strcmp(existing.dataClass, hdr.dataClass)
     iAppendMismatch(filePath, sprintf('the file stores %s values', existing.dataClass));
 end
 if ~isequal(existing.dimNames, hdr.dimNames)
-    iAppendMismatch(filePath, sprintf('the file axes are {%s}', strjoin(existing.dimNames, ',')));
+    iAppendMismatch(filePath, sprintf('the file axes are {%s}, not {%s}', ...
+        strjoin(existing.dimNames, ','), strjoin(hdr.dimNames, ',')));
 end
-if ~isequal(existing.dimSizes(1:2), hdr.dimSizes(1:2))
-    iAppendMismatch(filePath, sprintf('the file frames are %d x %d', ...
-        existing.dimSizes(1), existing.dimSizes(2)));
+nAxes = numel(existing.dimNames);
+if nAxes < 3
+    iAppendMismatch(filePath, sprintf(['the file axes {%s} have no axis after X ' ...
+        'to grow'], strjoin(existing.dimNames, ',')));
 end
-if single(hdr.frameRateHz) ~= single(existing.frameRateHz)
+for k = 1:nAxes - 1
+    if existing.dimSizes(k) ~= hdr.dimSizes(k)
+        iAppendMismatch(filePath, sprintf('axis %s is %d in the file but %d in the data', ...
+            existing.dimNames{k}, existing.dimSizes(k), hdr.dimSizes(k)));
+    end
+end
+if any(strcmp(existing.dimNames, 'T')) && single(hdr.frameRateHz) ~= single(existing.frameRateHz)
     iAppendMismatch(filePath, sprintf('the file frame rate is %g Hz, not %g Hz', ...
         existing.frameRateHz, hdr.frameRateHz));
 end
@@ -196,7 +238,7 @@ if fid == -1
 end
 cleanupObj = onCleanup(@() safeFclose(fid));
 
-% Mark the file incomplete, append the frames, then record the new size.
+% Mark the file incomplete, append the data, then record the new size.
 fwrite(fid, encodeDatHeader(grown), 'uint8');
 fseek(fid, 0, 'eof');
 nWritten = fwrite(fid, data, 'single');
@@ -206,7 +248,7 @@ if nWritten ~= numel(data)
         filePath, nWritten, numel(data));
 end
 
-grown.dimSizes(end) = grown.dimSizes(end) + size(data, 3);
+grown.dimSizes(end) = grown.dimSizes(end) + hdr.dimSizes(end);
 grown.writeComplete = true;
 fseek(fid, 0, 'bof');
 fwrite(fid, encodeDatHeader(grown), 'uint8');
@@ -218,10 +260,15 @@ error('Umitoolbox:saveData:appendMismatch', ...
     'Cannot append to "%s": %s.', filePath, reason);
 end
 
-function [rate, exposure] = iResolveRateAndExposure(opts, acqInfoFile, filePath, nFrames)
-%IRESOLVERATEANDEXPOSURE FrameRateHz option, then Info, then AcqInfos.mat.
+function [rate, exposure] = iResolveRateAndExposure(opts, filePath, hasT)
+%IRESOLVERATEANDEXPOSURE FrameRateHz option, then Info; NaN without a T axis.
 
 exposure = iValidExposure(opts.Info);
+
+if ~hasT
+    rate = NaN;
+    return
+end
 
 if ~isempty(opts.FrameRateHz)
     rate = double(opts.FrameRateHz);
@@ -229,49 +276,11 @@ if ~isempty(opts.FrameRateHz)
 end
 
 rate = iValidRate(opts.Info, 'frameRateHz');
-if ~isempty(rate)
-    return
-end
-
-if isfile(acqInfoFile)
-    S = load(acqInfoFile);
-    if isfield(S, 'AcqInfoStream') && isstruct(S.AcqInfoStream) && isscalar(S.AcqInfoStream)
-        [rate, channelExposure] = iRateFromAcqInfos(S.AcqInfoStream, filePath, nFrames);
-        if isnan(exposure)
-            exposure = channelExposure;
-        end
-    end
-end
 if isempty(rate)
     error('Umitoolbox:saveData:missingFrameRate', ...
-        ['Failed to save "%s": no frame rate. Pass ''FrameRateHz'' or the ' ...
-         'source file''s ''Info'', or provide AcqInfos.mat with FrameRateHz.'], ...
+        ['Failed to save "%s": the data has a T axis but no frame rate. Pass ' ...
+         '''FrameRateHz'' or the source file''s ''Info'' (with frameRateHz).'], ...
         filePath);
-end
-end
-
-function [rate, exposure] = iRateFromAcqInfos(acq, filePath, nFrames)
-%IRATEFROMACQINFOS Rate (and channel exposure) AcqInfos.mat gives this file.
-
-rate = [];
-exposure = NaN;
-try
-    timeline = resolveDatTimeline(nFrames, acq, 'DatFile', filePath, 'ThrowError', false);
-catch
-    timeline = struct('IsValid', false);
-end
-
-if timeline.IsValid
-    rate = iValidRate(timeline, 'FrameRateHz');
-    if ~isempty(rate) && startsWith(timeline.SourceType, 'ImportedChannels') && ...
-            isfield(acq, 'ImportedChannels') && isfield(acq.ImportedChannels, 'ExposureMsec') && ...
-            timeline.SourceIndex >= 1 && timeline.SourceIndex <= numel(acq.ImportedChannels)
-        exposure = iValidExposure(struct('exposureMsec', ...
-            acq.ImportedChannels(timeline.SourceIndex).ExposureMsec));
-    end
-end
-if isempty(rate)
-    rate = iValidRate(acq, 'FrameRateHz');
 end
 end
 
