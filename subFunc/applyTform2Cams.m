@@ -121,12 +121,16 @@ for ii = 1:length(fNames)
     end
 end
 
-if ~isfield(AcqInfo, 'Height') || ~isfield(AcqInfo, 'Width')
-    warnmsg = 'AcqInfoStream is missing Height and/or Width.';
+% Processed frame size from the Camera 2 files themselves (.dat header
+% Phase 7a): AcqInfos.mat Height/Width describe the raw acquisition, not
+% the imported (binned) data. The binning factors still come from it.
+firstCam2 = fullfile(DataFolder, Cam2List{1});
+if ~isfile(firstCam2)
+    warnmsg = sprintf('Camera 2 file not found: "%s".', firstCam2);
     return
 end
-
-frameSizeYX = [double(AcqInfo.Height), double(AcqInfo.Width)];
+firstInfo = loadMetaData(firstCam2);
+frameSizeYX = [datAxisSize(firstInfo, 'Y'), datAxisSize(firstInfo, 'X')];
 
 % Account for rotation in acquisition software:
 rot_diff = 90 * double(AcqInfo.Rotation) - 90 * double(tformInfo.Rotation);
@@ -165,7 +169,7 @@ for ii = 1:length(Cam2List)
 
     if ny ~= frameSizeYX(1) || nx ~= frameSizeYX(2)
         warnmsg = sprintf(['File "%s" has frame size [%d %d], which does not match ' ...
-            'AcqInfos.mat frame size [%d %d].'], Cam2List{ii}, ny, nx, frameSizeYX(1), frameSizeYX(2));
+            'the other Camera 2 files [%d %d].'], Cam2List{ii}, ny, nx, frameSizeYX(1), frameSizeYX(2));
         return
     end
 

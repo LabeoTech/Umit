@@ -21,10 +21,10 @@ function out = genUMTStruct(data, varargin)
 %       - entry-specific processing metadata is stored in entry.meta.
 %       - shared event metadata is stored only at the top level in
 %         out.eventInfo.
-%       - When entry.meta.FrameRateHz is not provided and SaveFolder is
-%         given, genUMTStruct attempts to auto-populate FrameRateHz from
-%         AcqInfos.mat via loadMetaData, with a direct AcqInfos.mat
-%         fallback if needed.
+%       - entry.meta.FrameRateHz is only what the caller passes in 'meta'
+%         (the data's own frame rate). The 'SaveFolder' option is
+%         DEPRECATED and ignored: it used to fill FrameRateHz from
+%         AcqInfos.mat, which describes the raw acquisition, not the data.
 
 if iLooksLikeUMT(data)
     out = iAppendToExistingUMT(data, varargin{:});
@@ -71,11 +71,9 @@ dimNames = iNormalizeDimNames(p.Results.dimNames, schema, errID, entryName);
 labels = iNormalizeLabelsStruct(p.Results.labels, schema, errID);
 meta = iNormalizeEntryMetaStruct(p.Results.meta, schema, errID, entryName);
 
-% Auto-populate critical per-entry processing metadata from AcqInfos.mat
-% when the caller supplied SaveFolder but did not explicitly provide the
-% metadata in entry.meta.
-meta = iAutofillEntryMeta(meta, p.Results.SaveFolder);
-meta = iNormalizeEntryMetaStruct(meta, schema, errID, entryName);
+% entry.meta is only what the caller passes (.dat header Phase 7a): the
+% deprecated 'SaveFolder' option no longer fills FrameRateHz from
+% AcqInfos.mat, which describes the raw acquisition, not this data.
 
 value = iForceDeclaredShape(value, dimNames, errID, entryName);
 
@@ -139,11 +137,9 @@ labels = iNormalizeLabelsStruct(p.Results.labels, schema, errID);
 meta = iNormalizeEntryMetaStruct(p.Results.meta, schema, errID, entryName);
 overwrite = p.Results.overwrite;
 
-% Auto-populate critical per-entry processing metadata from AcqInfos.mat
-% when the caller supplied SaveFolder but did not explicitly provide the
-% metadata in entry.meta.
-meta = iAutofillEntryMeta(meta, p.Results.SaveFolder);
-meta = iNormalizeEntryMetaStruct(meta, schema, errID, entryName);
+% entry.meta is only what the caller passes (.dat header Phase 7a): the
+% deprecated 'SaveFolder' option no longer fills FrameRateHz from
+% AcqInfos.mat, which describes the raw acquisition, not this data.
 
 value = iForceDeclaredShape(value, dimNames, errID, entryName);
 
@@ -400,72 +396,6 @@ if isfield(meta, 'FrameRateHz')
             ['Operation aborted. "%s.meta.FrameRateHz" must be a positive ' ...
             'numeric scalar.'], ...
             entryName);
-    end
-end
-end
-
-function metaOut = iAutofillEntryMeta(metaIn, saveFolderIn)
-%IAUTOFILLENTRYMETA Populate critical per-entry metadata from SaveFolder.
-%
-% FrameRateHz is first resolved through loadMetaData for consistency with
-% existing toolbox loaders. If that does not return a usable value, the
-% function falls back to reading AcqInfos.mat directly.
-
-metaOut = metaIn;
-saveFolder = char(string(saveFolderIn));
-
-if isempty(saveFolder) || ~isfolder(saveFolder)
-    return
-end
-
-if isfield(metaOut, 'FrameRateHz') && ~isempty(metaOut.FrameRateHz)
-    return
-end
-
-frameRateHz = [];
-
-% First try the toolbox compatibility loader.
-try
-    md = loadMetaData(saveFolder);
-    if isstruct(md)
-        if isfield(md, 'FrameRateHz') && ~isempty(md.FrameRateHz)
-            frameRateHz = md.FrameRateHz;
-        elseif isfield(md, 'Freq') && ~isempty(md.Freq)
-            frameRateHz = md.Freq;
-        end
-    end
-catch
-end
-
-% Fall back to reading AcqInfos.mat directly when needed.
-if isempty(frameRateHz)
-    acqFile = fullfile(saveFolder, 'AcqInfos.mat');
-    if isfile(acqFile)
-        try
-            s = load(acqFile);
-            fn = fieldnames(s);
-            for iField = 1:numel(fn)
-                thisVal = s.(fn{iField});
-                if ~isstruct(thisVal)
-                    continue
-                end
-                if isfield(thisVal, 'FrameRateHz') && ~isempty(thisVal.FrameRateHz)
-                    frameRateHz = thisVal.FrameRateHz;
-                    break
-                elseif isfield(thisVal, 'Freq') && ~isempty(thisVal.Freq)
-                    frameRateHz = thisVal.Freq;
-                    break
-                end
-            end
-        catch
-        end
-    end
-end
-
-if ~isempty(frameRateHz)
-    frameRateHz = double(frameRateHz);
-    if isscalar(frameRateHz) && isfinite(frameRateHz) && frameRateHz > 0
-        metaOut.FrameRateHz = frameRateHz;
     end
 end
 end

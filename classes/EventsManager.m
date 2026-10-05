@@ -256,6 +256,13 @@ classdef EventsManager < handle
             %     of the shortest inter-trigger interval.
             %   - If omitted and only a single trigger exists, the baseline is set to
             %     20% of the remaining analog acquisition duration after trigger onset.
+            %     Without analog input (or with no time left after the onset) it
+            %     cannot be determined: pass baselinePeriod explicitly.
+            %   - An explicit baseline must be positive and, with 2 or more
+            %     triggers, shorter than the shortest inter-trigger interval.
+            %   - The baseline is in seconds; it is converted to frames later
+            %     with the data's own frame rate (getFrameMatrix). No frame
+            %     period from AcqInfos.mat is used (.dat header Phase 7a).
             %   - For a single trigger, long baselines are allowed and any out-of-range
             %     frames are later padded with NaNs by "getFrameMatrix".
 
@@ -271,18 +278,21 @@ classdef EventsManager < handle
             assert(~isempty(tm_on), ...
                 'Failed to set baseline period. No trigger onset timestamps available.');
 
-            framePeriod = 1 / obj.AcqInfo.FrameRateHz;
-
             if nargin < 2
                 if numel(tm_on) >= 2
                     trialLength = diff(tm_on);
                     baselinePeriod = 0.2 * min(trialLength);
                 else
+                    remainingDuration = 0;
                     if ~isempty(obj.AnalogIN)
                         acqDuration = size(obj.AnalogIN, 1) / obj.sr;
-                        remainingDuration = max(acqDuration - tm_on(1), framePeriod);
-                    else
-                        remainingDuration = framePeriod;
+                        remainingDuration = acqDuration - tm_on(1);
+                    end
+                    if ~(remainingDuration > 0)
+                        error('Umitoolbox:EventsManager:baselineUndetermined', ...
+                            ['Cannot determine a default baseline period for a single ' ...
+                             'trigger without analog acquisition time after its onset. ' ...
+                             'Pass the baseline period (seconds) explicitly.']);
                     end
                     baselinePeriod = 0.2 * remainingDuration;
                 end
@@ -292,15 +302,11 @@ classdef EventsManager < handle
                     'setBaselinePeriod', 'baselinePeriod');
 
                 if numel(tm_on) >= 2
-                    maxBaselineAllowed = min(diff(tm_on) - framePeriod);
+                    maxBaselineAllowed = min(diff(tm_on));
                     assert(baselinePeriod < maxBaselineAllowed, ...
                         'Baseline time period is too long. It must be shorter than %0.2f seconds.', ...
                         maxBaselineAllowed);
                 end
-
-                assert(baselinePeriod >= framePeriod, ...
-                    'Baseline time period is too short. It must be larger than %0.2f seconds.', ...
-                    framePeriod);
             end
 
             obj.baselinePeriod = baselinePeriod;
@@ -742,7 +748,18 @@ classdef EventsManager < handle
             end
 
             if isempty(obj.baselinePeriod)
-                obj.setBaselinePeriod;
+                % Trigger detection must not fail because a default baseline
+                % cannot be determined (single trigger without analog time
+                % after it): leave it unset; building frames later asks for
+                % an explicit baseline.
+                try
+                    obj.setBaselinePeriod;
+                catch ME
+                    if ~strcmp(ME.identifier, 'Umitoolbox:EventsManager:baselineUndetermined')
+                        rethrow(ME)
+                    end
+                    warning('Umitoolbox:EventsManager:baselineUndetermined', '%s', ME.message);
+                end
             end
         end
 

@@ -3503,34 +3503,22 @@ classdef PipelineManager < handle
             appendLine('end');
             appendLine('');
 
-            appendLine('function md = localGetMetaData(primaryDataPath, saveFolder)');
-            appendLine('%LOCALGETMETADATA Best-effort metadata resolution for legacy functions.');
+            appendLine('function md = localGetMetaData(primaryDataPath, saveFolder, sourceInfo) %#ok<INUSD>');
+            appendLine('%LOCALGETMETADATA Metadata for legacy functions (deprecated metaData input).');
+            appendLine('%   The primary .dat file''s own metadata, else the propagated source Info');
+            appendLine('%   with legacy aliases; AcqInfos.mat is not used.');
             appendLine('    md = [];');
             appendLine('');
-            appendLine('    if nargin >= 1 && ~isempty(primaryDataPath)');
+            appendLine('    if ~isempty(primaryDataPath)');
             appendLine('        try');
             appendLine('            md = loadMetaData(primaryDataPath);');
             appendLine('            return');
             appendLine('        catch');
-            appendLine('            % Fall back to AcqInfos.mat below.');
+            appendLine('            % Fall back to the propagated source Info below.');
             appendLine('        end');
             appendLine('    end');
             appendLine('');
-            appendLine('    infoFile = fullfile(saveFolder, ''AcqInfos.mat'');');
-            appendLine('    if ~isfile(infoFile)');
-            appendLine('        return');
-            appendLine('    end');
-            appendLine('');
-            appendLine('    S = load(infoFile);');
-            appendLine('    if isfield(S, ''AcqInfoStream'')');
-            appendLine('        md = S.AcqInfoStream;');
-            appendLine('        return');
-            appendLine('    end');
-            appendLine('');
-            appendLine('    fns = fieldnames(S);');
-            appendLine('    if ~isempty(fns)');
-            appendLine('        md = S.(fns{1});');
-            appendLine('    end');
+            appendLine('    md = PipelineManager.legacyMetaDataFromSourceInfo(sourceInfo);');
             appendLine('end');
             appendLine('');
 
@@ -3938,10 +3926,12 @@ classdef PipelineManager < handle
                 end
 
                 if strcmp(inputNameLowerLocal,'metadata') || any(strcmpi(inputTypesLocal,'metaData'))
+                    srcInfoExprLocal = buildPrimarySourceInfoExpr(nodeLocal);
                     if isempty(primaryDataFileExprLocal)
-                        valueExprLocal = 'localGetMetaData([], SaveFolder)';
+                        valueExprLocal = sprintf('localGetMetaData([], SaveFolder, %s)', srcInfoExprLocal);
                     else
-                        valueExprLocal = sprintf('localGetMetaData(%s, SaveFolder)', primaryDataFileExprLocal);
+                        valueExprLocal = sprintf('localGetMetaData(%s, SaveFolder, %s)', ...
+                            primaryDataFileExprLocal, srcInfoExprLocal);
                     end
                     return
                 end
@@ -13141,8 +13131,11 @@ classdef PipelineManager < handle
             %          datLength, Freq, dim_names, Datatype that older functions
             %          expect). Works for headered and legacy sidecar
             %          files.
-            %       2) Otherwise, or if loadMetaData fails, fall back to
-            %          <saveFolder>/AcqInfos.mat.
+            %       2) Otherwise, the step's propagated source Info (frameRateHz,
+            %          exposureMsec, dimNames, plus the aliases FrameRateHz, Freq,
+            %          dim_names that older functions read), or [] when unknown.
+            %          AcqInfos.mat is not used: it describes the raw
+            %          acquisition, not the data (.dat header Phase 7a).
             %
             %   Notes:
             %       - This is intended only for legacy/custom functions that still use
@@ -13207,28 +13200,11 @@ classdef PipelineManager < handle
             end
 
             % -------------------------------------------------------------
-            % 3) Fallback to new-format shared metadata file
+            % 3) Otherwise: the propagated source Info of the step (with
+            %    the aliases legacy functions read). Never AcqInfos.mat.
             % -------------------------------------------------------------
-            acqInfoPath = fullfile(saveFolder, 'AcqInfos.mat');
-
-            if isfile(acqInfoPath)
-                tmp = load(acqInfoPath);
-
-                if isfield(tmp, 'AcqInfoStream')
-                    md = tmp.AcqInfoStream;
-                elseif isfield(tmp, 'AcqInfos')
-                    md = tmp.AcqInfos;
-                else
-                    % Best-effort fallback: return the first variable in the MAT file
-                    fn = fieldnames(tmp);
-                    if ~isempty(fn)
-                        md = tmp.(fn{1});
-                    else
-                        md = [];
-                    end
-                end
-            end
-
+            md = PipelineManager.legacyMetaDataFromSourceInfo( ...
+                obj.resolveStepSourceInfo(node, saveFolder));
             obj.metaData = md;
         end
 
@@ -15428,6 +15404,26 @@ classdef PipelineManager < handle
                 error('Umitoolbox:PipelineManager:unresolvedDimNames', ...
                     ['Cannot resolve the axis names of a %d-D value declared with %s; ' ...
                      'return a metaData output with dimNames.'], nd, typeText);
+            end
+        end
+
+        function md = legacyMetaDataFromSourceInfo(info)
+            %LEGACYMETADATAFROMSOURCEINFO Legacy 'metaData' struct from a source Info.
+            %
+            %   Returns the source Info fields frameRateHz, exposureMsec, and
+            %   dimNames with the aliases FrameRateHz, Freq, and dim_names, or
+            %   [] when INFO is empty (deprecated getMetaData path).
+            md = [];
+            if isempty(info) || ~isstruct(info)
+                return
+            end
+            md = info;
+            if isfield(info, 'frameRateHz') && ~isnan(info.frameRateHz)
+                md.FrameRateHz = info.frameRateHz;
+                md.Freq = info.frameRateHz;
+            end
+            if isfield(info, 'dimNames') && ~isempty(info.dimNames)
+                md.dim_names = info.dimNames;
             end
         end
 

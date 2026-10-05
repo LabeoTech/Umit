@@ -14,7 +14,8 @@ function Info = loadMetaData(fileName)
 %          Described from the header alone; AcqInfos.mat and sidecars in
 %          the folder are ignored.
 %       2) Legacy .dat files with sidecar metadata (.mat or _info.mat).
-%       3) .umt files with embedded metadata and/or AcqInfos.mat
+%       3) .umt files: embedded metadata, then the first entry (dimNames,
+%          sizes, meta.FrameRateHz); AcqInfos.mat is not used
 %
 %   Headerless .dat files without a legacy sidecar (formerly described
 %   only by the folder-global AcqInfos.mat) are no longer supported and
@@ -461,13 +462,11 @@ validateUMTStruct(umt, 'requireEventInfo', false);
 
 Info = struct();
 
-% Embedded metadata, if any, comes first.
+% Embedded metadata, if any, comes first. AcqInfos.mat is not merged: it
+% describes the raw acquisition, not this file's data (.dat header Phase
+% 7a); the file's own entries describe the rest.
 embedded = iExtractEmbeddedMetadata(umt);
 Info = iAppendMissingFields(Info, embedded);
-
-% Then append missing fields from AcqInfos.mat.
-acqInfo = iLoadAcqInfo(folderPath);
-Info = iAppendMissingFields(Info, acqInfo);
 
 % Derive compatibility fields from the first entry when possible.
 entryNames = fieldnames(umt.data);
@@ -490,11 +489,15 @@ if ~isempty(entryNames)
         if ~isfield(Info, 'datLength') || isempty(Info.datLength)
             Info.datLength = dimSizes(idxT);
         end
-        % Length must mirror this entry's own temporal extent (datLength),
-        % not a stale acquisition-level value already copied in from
-        % AcqInfos.mat above -- the entry's T can legitimately differ from
-        % the base acquisition length (e.g. a derived T-1 output).
+        % Length mirrors this entry's own temporal extent (datLength).
         Info.Length = Info.datLength;
+    end
+
+    % Frame rate: the entry's own meta.FrameRateHz, when present.
+    if ~isfield(Info, 'FrameRateHz') && ~isfield(Info, 'Freq') && ...
+            isfield(firstEntry, 'meta') && isstruct(firstEntry.meta) && ...
+            isfield(firstEntry.meta, 'FrameRateHz') && ~isempty(firstEntry.meta.FrameRateHz)
+        Info.FrameRateHz = double(firstEntry.meta.FrameRateHz);
     end
 end
 

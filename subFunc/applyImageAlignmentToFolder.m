@@ -55,7 +55,7 @@ function report = applyImageAlignmentToFolder(targetFolder, finalTform, opts)
 %       file is modified. Each aligned file is written with a header: the
 %       new frame size, and the input's class, frame rate, exposure, and
 %       name. The old frame size is the .dat files' own size, else
-%       DataParams.view.imageSizeYX, else AcqInfos.mat Height/Width.
+%       DataParams.view.imageSizeYX (AcqInfos.mat is not used).
 %
 %       genBackupFolder intentionally ignores raw acquisition files such as
 %       .bin and .tif. This function therefore creates a managed-folder
@@ -1336,13 +1336,13 @@ scaleInfo.isSimilarity = isUniformScale && hasNoShear && isfinite(scale) && scal
 scaleInfo.rotationDeg = rotationDeg;
 end
 
-function oldSizeYX = iResolveOldSizeYX(AcqInfoStream, DataParams, datFiles, datInfos)
+function oldSizeYX = iResolveOldSizeYX(~, DataParams, datFiles, datInfos)
 %IRESOLVEOLDSIZEYX Resolve old [Y X] image size before alignment.
 %
 % The .dat files' own frame size comes first (they must all share it),
-% then DataParams.view.imageSizeYX, then AcqInfos.mat Height/Width.
-% AcqInfos.mat keeps the raw acquisition size after an alignment, so it is
-% only the last fallback.
+% then DataParams.view.imageSizeYX. AcqInfos.mat is not used: its
+% Height/Width describe the raw acquisition, not the imported data (.dat
+% header Phase 7a).
 
 described = ~cellfun(@isempty, datInfos);
 if any(described)
@@ -1367,15 +1367,9 @@ if isstruct(DataParams) && isfield(DataParams, 'view') && ...
     return
 end
 
-if isstruct(AcqInfoStream) && ...
-        isfield(AcqInfoStream, 'Height') && isfield(AcqInfoStream, 'Width')
-    oldSizeYX = [double(AcqInfoStream.Height), double(AcqInfoStream.Width)];
-    return
-end
-
 error('ImageAlignmentTool:CouldNotResolveOldSize', ...
-    ['Could not resolve old image size from the .dat files, ' ...
-     'DataParams.view.imageSizeYX, or AcqInfos.mat Height/Width.']);
+    ['Could not resolve old image size from the .dat files or ' ...
+     'DataParams.view.imageSizeYX.']);
 end
 
 function tmpPath = iMakeTempSiblingPath(filePath)
