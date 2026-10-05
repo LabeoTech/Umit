@@ -1839,18 +1839,18 @@ classdef EventsManager < handle
             fprintf('Events info loaded from folder %s\n', Folder);
         end
 
-        function frameRateHz = dataFrameRate(obj, frameRateHz)
+        function frameRateHz = dataFrameRate(~, frameRateHz)
             %DATAFRAMERATE Frame rate used to convert event times to frames.
             %
-            %   The caller's FRAMERATEHZ (the data's own rate). When empty,
-            %   the folder AcqInfos.mat rate (obj.AcqInfo.FrameRateHz). That
-            %   fallback is DEPRECATED (.dat header Phase 6b-2): AcqInfos.mat
-            %   describes the raw acquisition, whose rate differs from the
-            %   imported data after temporal binning. It is kept only for
-            %   DataViewer.mlapp callers and is removed in the GUI phase. All
-            %   toolbox analysis callers pass the data's rate.
+            %   The caller's FRAMERATEHZ (the data's own rate) is required.
+            %   AcqInfos.mat is not used: it describes the raw acquisition,
+            %   whose rate differs from the imported data after temporal
+            %   binning (.dat header Phase 8a removed that fallback).
             if isempty(frameRateHz)
-                frameRateHz = obj.AcqInfo.FrameRateHz;
+                error('Umitoolbox:EventsManager:missingFrameRate', ...
+                    ['The frame rate of the data is required to convert event times ' ...
+                     'to frames. Pass ''FrameRateHz'', <rate in Hz> (for a .dat file, ' ...
+                     'its header frameRateHz; see loadMetaData).']);
             end
         end
 
@@ -1873,8 +1873,8 @@ classdef EventsManager < handle
             %       Frame rate of the imaging data, used to convert event times
             %       (s) to frame indices. Pass the data's own rate (its .dat
             %       header, or the FrameRateHz PipelineManager injects).
-            %       Omitting it uses the folder AcqInfos.mat rate: deprecated,
-            %       kept only for DataViewer callers until the GUI phase.
+            %       Required: omitting it raises
+            %       Umitoolbox:EventsManager:missingFrameRate.
             %
             % Outputs:
             %   frMat           : repetition-by-frame matrix of frame indices
@@ -1976,9 +1976,8 @@ classdef EventsManager < handle
             %     valid trial length.
             %   - The event dimension is stored last to match the current YXTE
             %     convention used elsewhere in the analysis code.
-            %   - 'FrameRateHz' (Name-Value): frame rate of DATA, passed to
-            %     getFrameMatrix. Omitting it uses the deprecated folder
-            %     AcqInfos.mat rate (see dataFrameRate).
+            %   - 'FrameRateHz' (Name-Value, required): frame rate of DATA,
+            %     passed to getFrameMatrix.
 
             p = inputParser();
             addRequired(p, 'obj');
@@ -2027,10 +2026,8 @@ classdef EventsManager < handle
             %   evInfo = obj.exportEventInfo()
             %   evInfo = obj.exportEventInfo('FrameRateHz', rate)
             %
-            % 'FrameRateHz' is the frame rate of the data the events are
-            % exported with (recorded as evInfo.FrameRateHz). Omitting it
-            % records the deprecated folder AcqInfos.mat rate (see
-            % dataFrameRate).
+            % 'FrameRateHz' (required) is the frame rate of the data the
+            % events are exported with (recorded as evInfo.FrameRateHz).
             %
             % Output:
             %   evInfo : struct

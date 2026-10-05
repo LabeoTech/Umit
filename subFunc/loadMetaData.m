@@ -35,45 +35,29 @@ function Info = loadMetaData(fileName)
 %       writeComplete - Header write-complete flag (true for headerless)
 %   Use datAxisSize(Info, axisName) for single axis sizes.
 %
-%   Deprecated .dat fields: Height, Width, Length, datLength, datSize,
-%   dim_names, Datatype, Freq, FrameRateHz, ExposureMsec, datFile,
-%   folderPath, FileType, datName, FirstDim, MetadataSource, and (for
-%   legacy sidecar files) CamIdx, MultiCam, ExposureSpeckleMsec are
-%   still returned for
-%   existing callers and will be removed. New code must use the schema.
+%   For .dat files, Info holds exactly these schema fields. The former
+%   names (Height, Width, Length, datLength, datSize, dim_names, Datatype,
+%   Freq, FrameRateHz, ExposureMsec, ...) were removed in .dat header
+%   Phase 8a; see the field mapping in the custom-function update guide.
 %
 %   For headered files whose write-complete flag is not set, a warning
 %   (Umitoolbox:loadMetaData:incompleteFile) is issued once. A headered
 %   file marked complete must have exactly the size its header describes.
 %
-%   Compatibility rules for .dat files:
-%       - If a legacy sidecar metadata file is found and recognized, its
-%         fields are copied first and take precedence.
-%       - Fields from AcqInfoStream are then appended only when they are
-%         missing from the legacy metadata.
-%       - If no valid legacy metadata is found, the file is rejected
-%         (acqInfosBoundUnsupported).
-%       - All .dat files are assumed to be single precision unless a
-%         legacy metadata file already defines Datatype.
+%   Legacy sidecar .dat files:
+%       - The sidecar metadata (.mat or _info.mat) are read with their old
+%         field names and converted to the schema. Fields missing from the
+%         sidecar are completed from AcqInfos.mat, as before.
+%       - Height and Width come from the sidecar; the temporal length is
+%         inferred from the actual file size.
+%       - Valid legacy event-split metadata are preserved and are not
+%         collapsed to continuous YXT.
+%       - Files are single precision unless the sidecar defines Datatype.
 %
 %   Notes:
-%       - The output is a compact flat structure with fields that describe
-%         the associated file directly. Acquisition-session fields such as
-%         analog input, stimulation, and illumination definitions are not
-%         copied to Info.
-%       - For .dat files, legacy-compatible fields such as dim_names,
-%         datSize, datLength, Freq, and Datatype are always provided.
-%       - For legacy sidecar .dat files, Height and Width are strict
-%         metadata and the temporal length is inferred from actual file
-%         size.
-%       - Valid legacy event-split .dat metadata are preserved and are not
-%         collapsed to continuous YXT.
-%       - For .umt files, embedded metadata is optional. When missing, core
-%         metadata are derived from the first data entry when possible.
-%       - When legacy sidecar metadata are used for .dat files, the fields
-%         FrameRateHz, Width, Height, and Length are refreshed from the
-%         legacy fields Freq, datSize, datLength, and dim_names for forward
-%         compatibility.
+%       - For .umt files, Info keeps the UMT metadata names (for example
+%         FrameRateHz, Freq, dim_names). Embedded metadata is optional;
+%         when missing, core metadata are derived from the first entry.
 
 p = inputParser;
 p.FunctionName = 'loadMetaData';
@@ -102,12 +86,11 @@ end
 switch ext
     case '.dat'
         if isDatWithHeader(fileName)
-            [Info, deprecatedFields] = iLoadHeaderedDatMetaData(fileName, folderPath);
+            Info = iLoadHeaderedDatMetaData(fileName);
         else
-            [deprecatedFields, ownExposureMsec] = iLoadDatMetaData(fileName, folderPath, baseName);
-            Info = iDatSchemaFromResolved(deprecatedFields, ownExposureMsec);
+            [resolved, ownExposureMsec] = iLoadDatMetaData(fileName, folderPath, baseName);
+            Info = iDatSchemaFromResolved(resolved, ownExposureMsec);
         end
-        Info = iAppendDeprecatedDatFields(Info, deprecatedFields);
 
     case '.umt'
         Info = iLoadUMTMetaData(fileName, folderPath);
@@ -118,7 +101,7 @@ end
 % =========================================================================
 % .dat Info schema
 % =========================================================================
-function [Info, deprecatedFields] = iLoadHeaderedDatMetaData(fileName, folderPath)
+function Info = iLoadHeaderedDatMetaData(fileName)
 %ILOADHEADEREDDATMETADATA Describe a headered .dat file from its header alone.
 
 hdr = readDatHeader(fileName);
@@ -148,30 +131,6 @@ Info.exposureMsec = hdr.exposureMsec;
 Info.channelName = hdr.channelName;
 Info.writeComplete = hdr.writeComplete;
 
-% Deprecated names derived from the schema (see iAppendDeprecatedDatFields).
-isT = strcmp(hdr.dimNames, 'T');
-nT = hdr.dimSizes(isT);
-if isempty(nT)
-    nT = 1;
-end
-deprecatedFields = struct();
-deprecatedFields.datFile = fileName;
-deprecatedFields.folderPath = folderPath;
-deprecatedFields.FileType = '.dat';
-deprecatedFields.Height = datAxisSize(Info, 'Y');
-deprecatedFields.Width = datAxisSize(Info, 'X');
-deprecatedFields.Length = nT;
-deprecatedFields.FrameRateHz = hdr.frameRateHz;
-deprecatedFields.Datatype = hdr.dataClass;
-deprecatedFields.dim_names = hdr.dimNames;
-deprecatedFields.datSize = hdr.dimSizes(~isT);
-deprecatedFields.datLength = nT;
-deprecatedFields.Freq = hdr.frameRateHz;
-deprecatedFields.datName = 'data';
-deprecatedFields.FirstDim = 'y';
-deprecatedFields.ExposureMsec = hdr.exposureMsec;
-deprecatedFields.MetadataSource = 'header';
-
 end
 
 function Info = iDatSchemaFromResolved(resolved, ownExposureMsec)
@@ -200,22 +159,6 @@ Info.frameRateHz = double(resolved.FrameRateHz);
 Info.exposureMsec = double(ownExposureMsec);
 Info.channelName = '';
 Info.writeComplete = true;
-
-end
-
-function Info = iAppendDeprecatedDatFields(Info, deprecatedFields)
-%IAPPENDDEPRECATEDDATFIELDS Temporary compatibility block for old .dat field names.
-%
-% DEPRECATED: the only place where the old .dat Info names (Height, Width,
-% Length, datLength, datSize, dim_names, Datatype, Freq, FrameRateHz,
-% ExposureMsec, datFile, folderPath, FileType, datName, FirstDim,
-% MetadataSource, and the AcqInfos-derived CamIdx, MultiCam,
-% ExposureSpeckleMsec) are added to
-% the returned Info. Kept only while existing callers move to the schema
-% fields; remove this function in the .dat header GUI phase, once no .m
-% or .mlapp code reads the old names.
-
-Info = iAppendMissingFields(Info, deprecatedFields);
 
 end
 

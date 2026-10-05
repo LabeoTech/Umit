@@ -3503,25 +3503,6 @@ classdef PipelineManager < handle
             appendLine('end');
             appendLine('');
 
-            appendLine('function md = localGetMetaData(primaryDataPath, saveFolder, sourceInfo) %#ok<INUSD>');
-            appendLine('%LOCALGETMETADATA Metadata for legacy functions (deprecated metaData input).');
-            appendLine('%   The primary .dat file''s own metadata, else the propagated source Info');
-            appendLine('%   with legacy aliases; AcqInfos.mat is not used.');
-            appendLine('    md = [];');
-            appendLine('');
-            appendLine('    if ~isempty(primaryDataPath)');
-            appendLine('        try');
-            appendLine('            md = loadMetaData(primaryDataPath);');
-            appendLine('            return');
-            appendLine('        catch');
-            appendLine('            % Fall back to the propagated source Info below.');
-            appendLine('        end');
-            appendLine('    end');
-            appendLine('');
-            appendLine('    md = PipelineManager.legacyMetaDataFromSourceInfo(sourceInfo);');
-            appendLine('end');
-            appendLine('');
-
             appendLine('function localCleanupTempFiles(tempFilesLocal)');
             appendLine('%LOCALCLEANUPTEMPFILES Delete temporary files created by this script.');
             appendLine('    tempFilesLocal = string(tempFilesLocal(:));');
@@ -3743,7 +3724,7 @@ classdef PipelineManager < handle
                         if isDataLocal
                             [valueExprLocal, ~] = buildDataInputExpression(nodeLocal, argNameLocal);
                         else
-                            valueExprLocal = buildNonDataInputExpression(nodeLocal, argNameLocal, primaryDataFileExprLocal);
+                            valueExprLocal = buildNonDataInputExpression(nodeLocal, argNameLocal);
                         end
 
                         if strcmpi(callTypeLocal,'namevalue')
@@ -3892,7 +3873,7 @@ classdef PipelineManager < handle
                 fileExprLocal = '';
             end
 
-            function valueExprLocal = buildNonDataInputExpression(nodeLocal, inputNameLocal, primaryDataFileExprLocal)
+            function valueExprLocal = buildNonDataInputExpression(nodeLocal, inputNameLocal)
                 valueExprLocal = '';
 
                 % Try semantic type first
@@ -3922,17 +3903,6 @@ classdef PipelineManager < handle
 
                 if strcmp(inputNameLowerLocal,'rawfolder') || any(strcmpi(inputTypesLocal,'RawFolder'))
                     valueExprLocal = 'RawFolder';
-                    return
-                end
-
-                if strcmp(inputNameLowerLocal,'metadata') || any(strcmpi(inputTypesLocal,'metaData'))
-                    srcInfoExprLocal = buildPrimarySourceInfoExpr(nodeLocal);
-                    if isempty(primaryDataFileExprLocal)
-                        valueExprLocal = sprintf('localGetMetaData([], SaveFolder, %s)', srcInfoExprLocal);
-                    else
-                        valueExprLocal = sprintf('localGetMetaData(%s, SaveFolder, %s)', ...
-                            primaryDataFileExprLocal, srcInfoExprLocal);
-                    end
                     return
                 end
 
@@ -5696,14 +5666,12 @@ classdef PipelineManager < handle
                             end
 
                         else
-                            % Placeholders: store exact values (metaData ignored for now)
+                            % Placeholders: store exact values
                             switch lower(inName)
                                 case 'savefolder'
                                     thisIn.source = char(string(saveFolder));
                                 case 'rawfolder'
                                     thisIn.source = char(string(rawFolder));
-                                case 'metadata'
-                                    thisIn.source = []; % ignored for now
                                 otherwise
                                     thisIn.source = [];
                             end
@@ -11236,8 +11204,6 @@ classdef PipelineManager < handle
                                 posArgs{end+1} = saveFolder; %#ok<AGROW>
                             case 'rawfolder'
                                 posArgs{end+1} = rawFolder; %#ok<AGROW>
-                            case 'metadata'
-                                posArgs{end+1} = obj.getMetaData(node,saveFolder); %#ok<AGROW>
                             otherwise
                                 warning('Unknown non-data input "%s" for step %s — passing empty.', argName, string(node.id));
                                 posArgs{end+1} = []; %#ok<AGROW>
@@ -12223,7 +12189,7 @@ classdef PipelineManager < handle
             %   INFO = RESOLVESTEPSOURCEINFO(OBJ, NODE, SAVEFOLDER) returns the
             %   frameRateHz, exposureMsec, and dimNames that manager-saved
             %   outputs of NODE inherit, or [] when no source is known. The
-            %   primary input is the first DATA input (as in getMetaData). It
+            %   primary input is the first DATA input of the step. It
             %   is resolved by resolveInputSourceInfo, the same resolver used
             %   for 'sourceInfo' injection, so saving and injection never
             %   diverge.
@@ -13112,102 +13078,6 @@ classdef PipelineManager < handle
 
         end
 
-        function md = getMetaData(obj, node, saveFolder)
-            %GETMETADATA Return metadata for legacy functions without loading the data array.
-            %
-            %   DEPRECATED (.dat header Phase 6b-2): kept working for legacy
-            %   functions that declare a 'metaData' input, but not extended. New
-            %   functions declare 'sourceInfo' inputs (FrameRateHz, DimNames,
-            %   ExposureMsec; see PipelineManager.addInput), which PipelineManager
-            %   injects from the data flowing into the step.
-            %
-            %   MD = GETMETADATA(OBJ, NODE, SAVEFOLDER) retrieves the metadata
-            %   associated with the primary DATA input of NODE.
-            %
-            %   Resolution policy:
-            %       1) If the primary DATA input can be traced to a concrete .dat file,
-            %          return loadMetaData(filePath): the file's own metadata (.dat
-            %          Info schema, plus the deprecated names such as datSize,
-            %          datLength, Freq, dim_names, Datatype that older functions
-            %          expect). Works for headered and legacy sidecar
-            %          files.
-            %       2) Otherwise, the step's propagated source Info (frameRateHz,
-            %          exposureMsec, dimNames, plus the aliases FrameRateHz, Freq,
-            %          dim_names that older functions read), or [] when unknown.
-            %          AcqInfos.mat is not used: it describes the raw
-            %          acquisition, not the data (.dat header Phase 7a).
-            %
-            %   Notes:
-            %       - This is intended only for legacy/custom functions that still use
-            %         'metaData' as an input.
-            %       - The data array itself is never loaded.
-            %       - If no metadata source can be found, [] is returned.
-
-            md = [];
-
-            if nargin < 3 || isempty(saveFolder)
-                return
-            end
-
-            % -------------------------------------------------------------
-            % 1) Try to trace the first DATA input back to a concrete file
-            % -------------------------------------------------------------
-            dataFilePath = '';
-
-            if nargin >= 2 && ~isempty(node) && isfield(node, 'info') && ...
-                    isfield(node.info, 'inputs') && ~isempty(node.info.inputs)
-
-                dataInputs = node.info.inputs(arrayfun(@(x) isfield(x,'isData') && x.isData, node.info.inputs));
-
-                if ~isempty(dataInputs)
-                    inName = char(string(dataInputs(1).name));
-
-                    try
-                        [~, resolvedFile, ~] = obj.resolveDataInputSource(node, inName);
-
-                        if ~isempty(resolvedFile)
-                            cand = fullfile(saveFolder, char(string(resolvedFile)));
-                            if isfile(cand)
-                                dataFilePath = cand;
-                            end
-                        end
-                    catch
-                        % Fall through to AcqInfos fallback
-                    end
-                end
-            end
-
-            % -------------------------------------------------------------
-            % 2) If a concrete .dat file is available, return its own
-            %    metadata from loadMetaData.
-            % -------------------------------------------------------------
-            if ~isempty(dataFilePath)
-                [~, ~, ext] = fileparts(dataFilePath);
-
-                if strcmpi(ext, '.dat')
-                    try
-                        md = loadMetaData(dataFilePath);
-                        obj.metaData = md;
-                        return
-                    catch
-                        % Fall through to AcqInfos fallback
-                    end
-                elseif strcmpi(ext, '.pdat')
-                    md = [];
-                    obj.metaData = md;
-                    return
-                end
-            end
-
-            % -------------------------------------------------------------
-            % 3) Otherwise: the propagated source Info of the step (with
-            %    the aliases legacy functions read). Never AcqInfos.mat.
-            % -------------------------------------------------------------
-            md = PipelineManager.legacyMetaDataFromSourceInfo( ...
-                obj.resolveStepSourceInfo(node, saveFolder));
-            obj.metaData = md;
-        end
-
         function restoreExecutionRunState(obj, previousRunPolicy, previousSessionTag)
             %RESTOREEXECUTIONRUNSTATE Restore transient per-run execution state.
 
@@ -13768,8 +13638,6 @@ classdef PipelineManager < handle
                                     thisIn.source = char(string(saveFolder));
                                 case 'rawfolder'
                                     thisIn.source = char(string(rawFolder));
-                                case 'metadata'
-                                    thisIn.source = [];
                                 otherwise
                                     thisIn.source = [];
                             end
@@ -14169,10 +14037,10 @@ classdef PipelineManager < handle
                 end
 
                 % -------------------------------------------------------------
-                % Detect whether the file explicitly declares a modern
-                % pipelineInfo query. This is used only to decide whether a failed
-                % query should fall back to legacy parsing or be reported as a
-                % broken modern metadata block.
+                % Detect whether the file explicitly declares a pipelineInfo
+                % query. This decides whether a failed query is reported as a
+                % broken pipelineInfo block or the function is skipped as one
+                % without pipelineInfo.
                 % -------------------------------------------------------------
                 b_declaresPipelineInfo = false;
                 try
@@ -14188,8 +14056,8 @@ classdef PipelineManager < handle
                     b_declaresPipelineInfo = ~isempty(regexpi(nonCommentText, ...
                         '[''\"]pipelineInfo[''\"]', 'once'));
                 catch
-                    % If the file cannot be inspected here, keep the old behavior:
-                    % try the query, and use legacy fallback if needed.
+                    % If the file cannot be inspected here, try the query and
+                    % skip the function if it fails.
                     b_declaresPipelineInfo = false;
                 end
 
@@ -14228,9 +14096,8 @@ classdef PipelineManager < handle
                         continue
                     end
 
-                    % If the file appears to declare modern pipelineInfo support,
-                    % do not silently legacy-parse it. A failed modern metadata query
-                    % means the function metadata needs to be fixed.
+                    % If the file appears to declare pipelineInfo support, a
+                    % failed query means the function metadata needs fixing.
                     if b_declaresPipelineInfo
                         error('PipelineManager:createFcnList:BrokenPipelineInfo', ...
                             ['Function "%s" appears to declare a modern pipelineInfo query, ' ...
@@ -14238,38 +14105,21 @@ classdef PipelineManager < handle
                             fcnName, fcnName, getReport(ME, 'basic', 'hyperlinks', 'off'));
                     end
 
-                    % Fallback to legacy parser for callable functions that do not
-                    % support modern pipelineInfo querying.
-                    infoStruct = obj.parseFuncFile(list(i));
-
-                    % -------------------------------------------------------------
-                    % Add boolean to indicate if each input is semantic data.
-                    % -------------------------------------------------------------
-                    for jj = 1:length(infoStruct.inputs)
-
-                        if any(ismember(infoStruct.inputs(jj).type, obj.dataSemanticTypes))
-                            infoStruct.inputs(jj).isData = true;
-                        else
-                            infoStruct.inputs(jj).isData = false;
-                        end
-                    end
-
-                    % -------------------------------------------------------------
-                    % Add boolean to indicate if each output is semantic data.
-                    % -------------------------------------------------------------
-                    for jj = 1:length(infoStruct.outputs)
-
-                        if any(ismember(infoStruct.outputs(jj).type, obj.dataSemanticTypes))
-                            infoStruct.outputs(jj).isData = true;
-                        else
-                            infoStruct.outputs(jj).isData = false;
-                        end
-                    end
+                    % Only functions that declare pipelineInfo are supported
+                    % (.dat header Phase 8a). Legacy, signature-parsed
+                    % functions are skipped.
+                    warning('PipelineManager:createFcnList:NoPipelineInfo', ...
+                        ['Skipping function "%s": it does not answer %s(''pipelineInfo''). ' ...
+                         'PipelineManager supports only functions that declare pipelineInfo; ' ...
+                         'update it following Analysis/funcTemplate.m and the umIT guide ' ...
+                         '"Updating custom functions for PipelineManager".'], fcnName, fcnName);
+                    continue
                 end
 
                 % 'sourceInfo' declarations must name a whitelist field and a
                 % declared data input; a broken declaration is a function bug.
                 PipelineManager.validateSourceInfoDecls(infoStruct, fcnName);
+                PipelineManager.rejectMetaDataInputs(infoStruct, fcnName);
 
                 % -------------------------------------------------------------
                 % Create and append function list entry.
@@ -14282,306 +14132,6 @@ classdef PipelineManager < handle
             end
 
             disp('Function list created!');
-        end
-
-        function info = parseFuncFile(~, fcnStruct)
-            %PARSEFUNCFILE Parse a legacy analysis function into pipelineInfo metadata.
-            %
-            %   INFO = PARSEFUNCFILE(~, FCNSTRUCT) reads a legacy function file and
-            %   converts its signature and legacy defaults into a pipelineInfo-
-            %   compatible struct.
-            %
-            %   UPDATED POLICY
-            %       - NAME in outputs refers to the MATLAB output variable / output port.
-            %       - File-producing outputs must declare default filenames through
-            %         default_Output.
-            %       - For legacy multi-file functions, output variable name remains
-            %         'outFile', while defOutfilename stores the allowed filename list.
-            %
-            %   OUTPUT ASSUMPTIONS FOR LEGACY FUNCTIONS
-            %       - outData  : DATA output carried as array by default
-            %       - outFile  : file-producing DATA output; requires default_Output
-            %       - metaData : non-data output
-            %
-            %   NOTES
-            %       - Legacy functions are assumed not to support file INPUTS unless
-            %         they are explicitly modernized.
-            %       - Optional parameters are still represented through the legacy
-            %         'opts' positional argument in info.arguments.
-            %       - default_Output is mandatory for legacy outFile outputs.
-
-            % -------------------------------------------------------------
-            % Step 1: Legacy parsing
-            % -------------------------------------------------------------
-            legacyInfo = struct('argsIn', {}, 'argsOut', {}, 'outFileName', '', 'opts', [], 'opts_vals', []);
-
-            fid = fopen(fullfile(fcnStruct.folder, fcnStruct.name), 'r');
-            txt = '';
-
-            while true
-                tline = fgetl(fid);
-                if tline == -1
-                    break
-                end
-                if ~startsWith(strip(tline), '%')
-                    txt = [txt, sprintf('%s\n', tline)]; %#ok<AGROW>
-                end
-            end
-
-            fclose(fid);
-
-            % -------------------------------------------------------------
-            % Parse function header
-            % -------------------------------------------------------------
-            funcStr = erase(regexp(txt, '(?<=function\s*).*?(?=\r*\n)', 'match', 'once'), ' ');
-
-            outStr = regexpi(funcStr, '.*(?=\=)', 'match', 'once');
-            out_args = regexpi(outStr, '\[*(\w*)\,*(\w*)\]*', 'tokens', 'once');
-            legacyInfo(1).argsOut = out_args(~cellfun(@isempty, out_args));
-
-            [~, funcName, ~] = fileparts(fcnStruct.name);
-
-            expInput = ['(?<=' funcName '\s*\().*?(?=\))'];
-            str = regexpi(funcStr, expInput, 'match', 'once');
-            str = strip(split(str, ','));
-            legacyInfo.argsIn = str(~strcmp(str, 'varargin'));
-
-            % -------------------------------------------------------------
-            % Default output filename(s)
-            % -------------------------------------------------------------
-            expOutput = 'default_Output\s*=.*?(?=\n)';
-            str = regexpi(txt, expOutput, 'match', 'once');
-
-            if ~isempty(str)
-                eval(str) %#ok<EVLDIR>
-            else
-                default_Output = '';
-            end
-
-            legacyInfo.outFileName = default_Output;
-
-            % -------------------------------------------------------------
-            % Optional parameters
-            % -------------------------------------------------------------
-            expOpts = 'default_opts\s*=.*?(?=\n)';
-            str = regexpi(txt, expOpts, 'match', 'once');
-
-            optsStruct = struct();
-            optsValues = struct();
-
-            if ~isempty(str)
-                eval(str) %#ok<EVLDIR>
-                optsStruct = default_opts;
-
-                optsValsExp = 'opts_values\s*=.*?(?=\n)';
-                str_opts = regexpi(txt, optsValsExp, 'match', 'once');
-
-                if ~isempty(str_opts)
-                    eval(str_opts) %#ok<EVLDIR>
-                    optsValues = opts_values;
-                end
-            end
-
-            % -------------------------------------------------------------
-            % Step 2: Build pipelineInfo
-            % -------------------------------------------------------------
-            info = PipelineManager.createPipelineInfo();
-
-            info.name = funcName;
-            info.version = '';
-            info.description = '';
-
-            % -------------------------------------------------------------
-            % Inputs
-            % -------------------------------------------------------------
-            for kIn = 1:length(legacyInfo.argsIn)
-
-                arg = legacyInfo.argsIn{kIn};
-
-                if strcmpi(arg, 'data')
-                    type = 'UnknownDataType';
-                    isData = true;
-
-                elseif strcmpi(arg, 'savefolder')
-                    type = 'SaveFolder';
-                    isData = false;
-
-                elseif strcmpi(arg, 'rawfolder')
-                    type = 'RawFolder';
-                    isData = false;
-
-                elseif strcmpi(arg, 'metadata')
-                    type = 'metaData';
-                    isData = false;
-
-                elseif strcmpi(arg, 'object')
-                    continue
-
-                elseif strcmpi(arg, 'opts')
-                    % handled later as parameter container
-                    continue
-
-                else
-                    type = 'Unknown';
-                    isData = false;
-                end
-
-                if isData
-                    % Legacy functions: assume NO file-input support unless explicitly modernized
-                    info = PipelineManager.addInput( ...
-                        info, ...
-                        arg, ...
-                        type, ...
-                        '', ...
-                        'kind', 'input', ...
-                        'position', kIn, ...
-                        'callType', 'positional', ...
-                        'isData', true, ...
-                        'supportsFile', false, ...
-                        'dataMode', 'either');
-                else
-                    info = PipelineManager.addInput( ...
-                        info, ...
-                        arg, ...
-                        type, ...
-                        '', ...
-                        'kind', 'input', ...
-                        'position', kIn, ...
-                        'callType', 'positional', ...
-                        'isData', false);
-                end
-            end
-
-            % -------------------------------------------------------------
-            % Parameters (from opts struct)
-            % -------------------------------------------------------------
-            flds = fieldnames(optsStruct);
-
-            for kP = 1:numel(flds)
-
-                val = optsStruct.(flds{kP});
-
-                if isfield(optsValues, flds{kP})
-                    allowed = optsValues.(flds{kP});
-                else
-                    allowed = {};
-                end
-
-                info = PipelineManager.addInput( ...
-                    info, ...
-                    flds{kP}, ...
-                    'parameter', ...
-                    '', ...
-                    'kind', 'parameter', ...
-                    'default', val, ...
-                    'allowed', allowed, ...
-                    'callType', 'namevalue');
-            end
-
-            % ---------------------------------------------------------
-            % Fix "arguments" field to display just "opts" (LEGACY)
-            % ---------------------------------------------------------
-            info.arguments(strcmp({info.arguments.kind}, 'parameter')) = [];
-
-            if isempty(info.arguments)
-                pos = 1;
-            else
-                pos = max([info.arguments.position]) + 1;
-            end
-
-            info.arguments(end+1) = struct( ...
-                'name', 'opts', ...
-                'kind', 'parameter', ...
-                'position', pos, ...
-                'callType', 'positional', ...
-                'isData', false);
-
-            % -------------------------------------------------------------
-            % Outputs
-            % -------------------------------------------------------------
-            for kOut = 1:length(legacyInfo.argsOut)
-
-                arg = legacyInfo.argsOut{kOut};
-
-                if strcmpi(arg, 'outData')
-                    type = 'UnknownDataType';
-                    outputMode = 'data';
-
-                    % outData is a DATA output, but it is not itself a file output.
-                    % Do not pass legacyInfo.outFileName here; that belongs only to
-                    % legacy outFile outputs.
-                    info = PipelineManager.addOutput( ...
-                        info, ...
-                        arg, ...
-                        type, ...
-                        outputMode, ...
-                        '', ...
-                        '', ...
-                        kOut, ...
-                        'isData', true, ...
-                        'saveFileName', '');
-
-                elseif strcmpi(arg, 'outFile')
-                    type = 'UnknownDataType';
-                    outputMode = 'file';
-
-                    % Enforce new policy:
-                    % legacy file outputs must declare default_Output.
-                    if isempty(legacyInfo.outFileName) || ...
-                            (iscell(legacyInfo.outFileName) && isempty(legacyInfo.outFileName)) || ...
-                            ((ischar(legacyInfo.outFileName) || isstring(legacyInfo.outFileName)) && ...
-                            strlength(string(legacyInfo.outFileName)) == 0)
-                        error('PipelineManager:parseFuncFile:MissingDefaultOutput', ...
-                            ['Legacy function "%s" declares output "outFile" but does not define ' ...
-                            'default_Output.\n' ...
-                            'File-producing functions must declare their default output filename(s).'], ...
-                            funcName);
-                    end
-
-                    info = PipelineManager.addOutput( ...
-                        info, ...
-                        arg, ...
-                        type, ...
-                        outputMode, ...
-                        '', ...
-                        legacyInfo.outFileName, ...
-                        kOut, ...
-                        'isData', true, ...
-                        'saveFileName', '');
-
-                elseif strcmpi(arg, 'metaData')
-                    type = 'metaData';
-                    outputMode = 'data';
-
-                    info = PipelineManager.addOutput( ...
-                        info, ...
-                        arg, ...
-                        type, ...
-                        outputMode, ...
-                        '', ...
-                        '', ...
-                        kOut, ...
-                        'isData', false);
-
-                else
-                    type = 'Unknown';
-                    outputMode = 'data';
-
-                    % Unknown legacy outputs are treated as non-data by default
-                    info = PipelineManager.addOutput( ...
-                        info, ...
-                        arg, ...
-                        type, ...
-                        outputMode, ...
-                        '', ...
-                        '', ...
-                        kOut, ...
-                        'isData', false);
-                end
-            end
-
-            % Add Legacy Flag
-            info.legacyOpts = true;
         end
 
         function list_truncated = truncateFolderList(~,list)
@@ -15407,23 +14957,27 @@ classdef PipelineManager < handle
             end
         end
 
-        function md = legacyMetaDataFromSourceInfo(info)
-            %LEGACYMETADATAFROMSOURCEINFO Legacy 'metaData' struct from a source Info.
-            %
-            %   Returns the source Info fields frameRateHz, exposureMsec, and
-            %   dimNames with the aliases FrameRateHz, Freq, and dim_names, or
-            %   [] when INFO is empty (deprecated getMetaData path).
-            md = [];
-            if isempty(info) || ~isstruct(info)
+        function rejectMetaDataInputs(info, fcnName)
+            %REJECTMETADATAINPUTS Refuse a pipelineInfo that declares a metaData input.
+            %   The legacy 'metaData' input was removed in .dat header Phase 8a.
+            %   Functions declare 'sourceInfo' inputs (FrameRateHz, DimNames,
+            %   ExposureMsec) instead. A 'metaData' OUTPUT is still supported.
+            if ~isfield(info, 'inputs') || isempty(info.inputs)
                 return
             end
-            md = info;
-            if isfield(info, 'frameRateHz') && ~isnan(info.frameRateHz)
-                md.FrameRateHz = info.frameRateHz;
-                md.Freq = info.frameRateHz;
-            end
-            if isfield(info, 'dimNames') && ~isempty(info.dimNames)
-                md.dim_names = info.dimNames;
+            for iIn = 1:numel(info.inputs)
+                inName = char(string(info.inputs(iIn).name));
+                inTypes = {};
+                if isfield(info.inputs(iIn), 'type') && ~isempty(info.inputs(iIn).type)
+                    inTypes = cellstr(string(info.inputs(iIn).type));
+                end
+                if strcmpi(inName, 'metaData') || any(strcmpi(inTypes, 'metaData'))
+                    error('PipelineManager:createFcnList:MetaDataInputUnsupported', ...
+                        ['Function "%s" declares the input "%s" of type metaData, which ' ...
+                         'is no longer supported. Declare ''sourceInfo'' inputs ' ...
+                         '(FrameRateHz, DimNames, ExposureMsec) instead; see ' ...
+                         'PipelineManager.addInput.'], fcnName, inName);
+                end
             end
         end
 
