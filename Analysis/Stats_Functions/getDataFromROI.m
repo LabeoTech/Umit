@@ -81,6 +81,7 @@ addParameter(p, 'ROImasks_filename', 'myROI.roi', ...
 addParameter(p, 'SpatialAggFcn', 'mean', ...
     @(x) (ischar(x) || (isstring(x) && isscalar(x))) && ...
     ismember(lower(char(string(x))), validAgg));
+addParameter(p, 'FrameRateHz', []);
 
 parse(p, data, SaveFolder, varargin{:});
 
@@ -102,7 +103,7 @@ roiSet = iLoadROISet(roiFile, SaveFolder, 'getDataFromROI');
 % Resolve input to one or more image entries
 % -------------------------------------------------------------------------
 [entryNames, entryValues, entryDims, entryMetas, srcEventInfo] = ...
-    iResolveImageInput(data, SaveFolder);
+    iResolveImageInput(data, SaveFolder, p.Results.FrameRateHz);
 
 outData = struct();
 roiEntryNames = entryNames;
@@ -127,16 +128,14 @@ for iEntry = 1:numel(roiEntryNames)
             'entryName', roiEntryNames{iEntry}, ...
             'dimNames', roiEntryDims{iEntry}, ...
             'labels', iBuildROILabels(roiSet, roiEntryValues{iEntry}, roiEntryDims{iEntry}, spatialAggFcn), ...
-            'meta', entryMetas{iEntry}, ...
-            'SaveFolder', SaveFolder);
+            'meta', entryMetas{iEntry});
     else
         outData = genUMTStruct( ...
             outData, ...
             'value', roiEntryValues{iEntry}, ...
             'entryName', roiEntryNames{iEntry}, ...
             'dimNames', roiEntryDims{iEntry}, ...
-            'meta', entryMetas{iEntry}, ...
-            'SaveFolder', SaveFolder);
+            'meta', entryMetas{iEntry});
     end
 end
 
@@ -203,6 +202,15 @@ validateUMTStruct(outData, 'requireEventInfo', false);
             'allowed', validAgg, ...
             'callType', 'namevalue');
 
+        info = PipelineManager.addInput( ...
+            info, ...
+            'FrameRateHz', ...
+            'sourceInfo', ...
+            'Frame rate of the input data (Hz), injected from the data.', ...
+            'kind', 'sourceInfo', ...
+            'sourceField', 'frameRateHz', ...
+            'required', false);
+
         info = PipelineManager.addOutput( ...
             info, ...
             'outData', ...
@@ -220,11 +228,13 @@ end
 % =========================================================================
 
 function [entryNames, entryValues, entryDims, entryMetas, eventInfo] = ...
-    iResolveImageInput(data, SaveFolder)
+    iResolveImageInput(data, SaveFolder, explicitRate)
 %IRESOLVEIMAGEINPUT Resolve supported input forms to image entries.
 %
-% entryMetas carries each source entry's meta struct (empty when the input
-% is a raw array or .dat). eventInfo carries the source UMT's shared
+% entryMetas carries each source entry's meta struct. For a raw array or a
+% .dat file it holds the data's own frame rate (meta.FrameRateHz) when
+% known: the explicit or injected FrameRateHz, else the .dat header
+% (.dat header Phase 7a; AcqInfos.mat is not used). eventInfo carries the source UMT's shared
 % top-level event metadata, or an empty struct when there is none.
 
 % entryMetas is assigned on every return path below. eventInfo needs a
@@ -238,7 +248,7 @@ if isnumeric(data) || islogical(data)
     entryNames = {'main'};
     entryValues = {single(data)};
     entryDims = {{'Y','X','T'}};
-    entryMetas = {struct()};
+    entryMetas = {iRateMeta(explicitRate, [])};
     return
 end
 
@@ -265,7 +275,7 @@ if ischar(data) || (isstring(data) && isscalar(data))
             entryNames = {'main'};
             entryValues = {single(rawData)};
             entryDims = {{'Y','X','T'}};
-            entryMetas = {struct()};
+            entryMetas = {iRateMeta(explicitRate, dataFile)};
             return
 
         case '.umt'
@@ -524,4 +534,19 @@ switch fcnName
 end
 
 out = single(out);
+end
+
+function meta = iRateMeta(explicitRate, dataFile)
+%IRATEMETA Entry meta with the data's own frame rate, when it is known.
+meta = struct();
+if isempty(explicitRate) && isempty(dataFile)
+    return
+end
+try
+    meta.FrameRateHz = resolveDataInfoValue('frameRateHz', explicitRate, dataFile, 'getDataFromROI');
+catch ME
+    if ~endsWith(ME.identifier, ':missingFrameRateHz')
+        rethrow(ME)
+    end
+end
 end

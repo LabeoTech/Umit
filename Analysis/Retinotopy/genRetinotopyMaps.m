@@ -10,8 +10,7 @@ function outData = genRetinotopyMaps(data, SaveFolder, varargin)
 %
 %   Inputs:
 %       data       - Numeric Y x X x T array, or raw .dat filename.
-%       SaveFolder - Folder containing events.mat and metadata resolvable
-%                    through loadMetaData(...).
+%       SaveFolder - Folder containing events.mat.
 %
 %   Name-Value parameters:
 %       b_useAverageMovie - Logical scalar. If true, compute maps from the
@@ -21,6 +20,10 @@ function outData = genRetinotopyMaps(data, SaveFolder, varargin)
 %       ViewingDist_cm    - Viewing distance in cm. Default: 0
 %       ScreenXsize_cm    - Screen width in cm. Default: 0
 %       ScreenYsize_cm    - Screen height in cm. Default: 0
+%       FrameRateHz       - Frame rate of DATA (Hz). PipelineManager injects
+%                           it from the data; a .dat input's header provides
+%                           it otherwise. Numeric input needs it explicitly;
+%                           AcqInfos.mat is not used.
 %
 %   Output:
 %       outData    - UMT struct with one or two entries:
@@ -62,6 +65,7 @@ addParameter(p, 'Direction', 'All', @(x) ischar(x) || (isstring(x) && isscalar(x
 addParameter(p, 'ViewingDist_cm', 0, @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0);
 addParameter(p, 'ScreenXsize_cm', 0, @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0);
 addParameter(p, 'ScreenYsize_cm', 0, @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0);
+addParameter(p, 'FrameRateHz', []);
 parse(p, data, SaveFolder, varargin{:});
 
 SaveFolder = char(string(p.Results.SaveFolder));
@@ -78,7 +82,8 @@ opts.ScreenYsize_cm = double(p.Results.ScreenYsize_cm);
 if isnumeric(data) || islogical(data)
     validateattributes(data, {'numeric','logical'}, {'nonempty','3d'}, mfilename, 'data');
     dataIn = single(data);
-    metaData = iResolveRepresentativeMeta(dataIn, SaveFolder);
+    metaData = iResolveRepresentativeMeta(dataIn, ...
+        resolveDataInfoValue('frameRateHz', p.Results.FrameRateHz, data, mfilename));
 else
     dataFile = char(string(data));
     if ~isfile(dataFile)
@@ -99,6 +104,12 @@ else
     fileInfo = loadMetaData(dataFile);
     assertDatLayout(fileInfo, {{'Y','X','T'}}, 'genRetinotopyMaps');
     metaData = iInternalMetaFromInfo(fileInfo);
+    if ~isempty(p.Results.FrameRateHz)
+        % An explicit (or injected) rate wins over the header, with a
+        % warning when they differ (resolveDataInfoValue).
+        metaData.Freq = resolveDataInfoValue('frameRateHz', p.Results.FrameRateHz, ...
+            dataFile, mfilename);
+    end
     dataIn = dataFile;
 end
 
@@ -207,6 +218,14 @@ outData = iPackageOutputUMT(mapStruct);
             'default', 0, ...
             'allowed', [0 Inf], ...
             'dataType', 'numeric');
+
+        info = PipelineManager.addInput(info, ...
+            'FrameRateHz', ...
+            'sourceInfo', ...
+            'Frame rate of the input data (Hz), injected from the data.', ...
+            'kind', 'sourceInfo', ...
+            'sourceField', 'frameRateHz', ...
+            'required', false);
 
         info = PipelineManager.addOutput(info, ...
             'outData', ...
@@ -565,32 +584,18 @@ end
 end
 
 %% ==================== REPRESENTATIVE METADATA ====================
-function metaData = iResolveRepresentativeMeta(data, SaveFolder)
+function metaData = iResolveRepresentativeMeta(data, frameRateHz)
 %IRESOLVEREPRESENTATIVEMETA Build metadata for a raw numeric YXT array.
 %
-% datSize/datLength/dim_names come directly from the array being
-% processed, not from an arbitrary file in SaveFolder. A raw numeric array
-% has no file identity of its own to resolve Freq from, so it is read
-% directly from the single authoritative AcqInfos.mat instead.
+% datSize/datLength/dim_names come from the array being processed; the
+% frame rate is the data's own (explicit or injected FrameRateHz; .dat
+% header Phase 7a: AcqInfos.mat is not used).
 
 metaData = struct();
 metaData.dim_names = {'Y','X','T'};
 metaData.datSize = [size(data,1), size(data,2)];
 metaData.datLength = size(data,3);
-
-acqInfoFile = fullfile(SaveFolder, 'AcqInfos.mat');
-assert(isfile(acqInfoFile), ...
-    'Umitoolbox:genRetinotopyMaps:MissingInput', ...
-    'Could not determine frame rate because "AcqInfos.mat" was not found in "%s".', ...
-    SaveFolder);
-
-S = load(acqInfoFile, 'AcqInfoStream');
-assert(isfield(S, 'AcqInfoStream') && isfield(S.AcqInfoStream, 'FrameRateHz') && ...
-    ~isempty(S.AcqInfoStream.FrameRateHz), ...
-    'Umitoolbox:genRetinotopyMaps:MissingInput', ...
-    '"AcqInfos.mat" in "%s" does not define FrameRateHz.', SaveFolder);
-
-metaData.Freq = double(S.AcqInfoStream.FrameRateHz);
+metaData.Freq = double(frameRateHz);
 end
 
 %% ==================== PACKAGE OUTPUT ====================

@@ -29,9 +29,10 @@ function outData = funcTemplateUMT(data, SaveFolder, varargin)
 %
 % Metadata and Dimension Behavior
 %   The calculation removes the T dimension, so the output declares
-%   dimNames={'Y','X'} instead of passing input metadata through. Supply
-%   SaveFolder to genUMTStruct so supported entry metadata can be resolved
-%   locally. When a copied function creates event-split data or changes
+%   dimNames={'Y','X'} instead of passing input metadata through. Entries
+%   with a T axis carry the data's own frame rate in their meta
+%   (meta.FrameRateHz); genUMTStruct does not fill it from AcqInfos.mat.
+%   When a copied function creates event-split data or changes
 %   other dimensions, update dimNames, labels, eventInfo, and entry meta to
 %   match the result before calling validateUMTStruct.
 %
@@ -83,13 +84,13 @@ end
 meanImage = mean(data, 3, 'omitnan');
 
 % KEEP OR UPDATE TOGETHER: the UMT kind and dimNames must describe the
-% returned value. SaveFolder enables local metadata resolution.
+% returned value. Entries with a T axis should carry the data's own frame
+% rate in 'meta' (struct('FrameRateHz', rate)); this Y-X map has none.
 outData = genUMTStruct( ...
     meanImage, ...
     'kind', 'image', ...
     'entryName', entryName, ...
-    'dimNames', {'Y','X'}, ...
-    'SaveFolder', SaveFolder);
+    'dimNames', {'Y','X'});
 
 validateUMTStruct(outData, 'requireEventInfo', false);
 

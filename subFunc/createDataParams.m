@@ -9,14 +9,17 @@ function DataParams = createDataParams(folderPath, varargin)
 %   Creates a default folder-global DataParams structure and saves it as
 %   DataParams.mat in the specified folder.
 %
-%   If AcqInfos.mat exists in the folder, this function loads
-%   AcqInfoStream and uses its Height and Width fields to:
+%   The image size of the folder's data (.dat header Phase 7a) is used to:
 %       - populate DataParams.view.imageSizeYX
 %       - create a default full TRUE mask
 %       - set the default image origin to [1 1]
+%   It is read with loadMetaData from the first ImportedChannels .dat file
+%   that loads, else from the first readable .dat file in the folder. Only
+%   when no .dat file can be read (legacy data) does it fall back to the
+%   AcqInfos.mat Height and Width, with a warning: AcqInfos.mat describes
+%   the raw acquisition, whose frame size can differ from the imported data.
 %
-%   If AcqInfos.mat does not exist, the related spatial fields are left
-%   empty.
+%   Without any of these, the related spatial fields are left empty.
 %
 %   If DataParams.mat already exists:
 %       - By default, a warning is issued and the existing file is loaded,
@@ -87,44 +90,16 @@ defaultOrigin = [];
 defaultPixelSize = [];
 
 % -------------------------------------------------------------------------
-% Load AcqInfos.mat if available.
+% Image size of the folder's data.
 % -------------------------------------------------------------------------
-acqInfoPath = fullfile(folderPath, 'AcqInfos.mat');
+sizeYX = iImageSizeFromData(folderPath);
+if isempty(sizeYX)
+    sizeYX = iImageSizeFromAcqInfos(folderPath);
+end
 
-if exist(acqInfoPath, 'file')
-    S = load(acqInfoPath, 'AcqInfoStream');
-
-    if ~isfield(S, 'AcqInfoStream')
-        error('createDataParams:MissingAcqInfoStream', ...
-            'File "%s" does not contain variable "AcqInfoStream".', ...
-            acqInfoPath);
-    end
-
-    AcqInfoStream = S.AcqInfoStream;
-
-    if ~isstruct(AcqInfoStream) || ~isscalar(AcqInfoStream)
-        error('createDataParams:InvalidAcqInfoStream', ...
-            'Variable "AcqInfoStream" in "%s" must be a scalar struct.', ...
-            acqInfoPath);
-    end
-
-    if ~isfield(AcqInfoStream, 'Height') || ...
-            ~isfield(AcqInfoStream, 'Width')
-        error('createDataParams:MissingAcqFields', ...
-            'AcqInfoStream must contain fields "Height" and "Width".');
-    end
-
-    Ny = double(AcqInfoStream.Height);
-    Nx = double(AcqInfoStream.Width);
-
-    validateattributes(Ny, {'numeric'}, ...
-        {'scalar', 'real', 'finite', 'positive', 'integer'}, ...
-        'createDataParams', 'AcqInfoStream.Height');
-
-    validateattributes(Nx, {'numeric'}, ...
-        {'scalar', 'real', 'finite', 'positive', 'integer'}, ...
-        'createDataParams', 'AcqInfoStream.Width');
-
+if ~isempty(sizeYX)
+    Ny = sizeYX(1);
+    Nx = sizeYX(2);
     defaultImageSizeYX = [Ny, Nx];
     defaultMask = true(Ny, Nx);
     defaultOrigin = [1, 1];
@@ -367,4 +342,85 @@ else
     statusText = 'invalid';
 end
 
+end
+
+function sizeYX = iImageSizeFromData(folderPath)
+%IIMAGESIZEFROMDATA [Ny Nx] of the folder's image data, or [] if none loads.
+%
+% The first ImportedChannels .dat file that loadMetaData describes, else the
+% first readable .dat file in the folder (sorted by name).
+
+sizeYX = [];
+candidates = {};
+acqInfoPath = fullfile(folderPath, 'AcqInfos.mat');
+if isfile(acqInfoPath)
+    try
+        S = load(acqInfoPath, 'AcqInfoStream');
+        if isfield(S, 'AcqInfoStream') && isstruct(S.AcqInfoStream) && ...
+                isfield(S.AcqInfoStream, 'ImportedChannels') && ...
+                isfield(S.AcqInfoStream.ImportedChannels, 'DatFile')
+            candidates = cellfun(@(f) char(string(f)), ...
+                {S.AcqInfoStream.ImportedChannels.DatFile}, 'UniformOutput', false);
+        end
+    catch
+        candidates = {};
+    end
+end
+listing = dir(fullfile(folderPath, '*.dat'));
+candidates = [candidates, sort({listing.name})];
+
+for k = 1:numel(candidates)
+    filePath = fullfile(folderPath, candidates{k});
+    if ~isfile(filePath)
+        continue
+    end
+    try
+        Info = loadMetaData(filePath);
+        sizeYX = [datAxisSize(Info, 'Y'), datAxisSize(Info, 'X')];
+        if all(sizeYX > 0)
+            return
+        end
+        sizeYX = [];
+    catch
+        sizeYX = [];
+    end
+end
+end
+
+function sizeYX = iImageSizeFromAcqInfos(folderPath)
+%IIMAGESIZEFROMACQINFOS Legacy fallback: AcqInfos.mat Height/Width, with a warning.
+
+sizeYX = [];
+acqInfoPath = fullfile(folderPath, 'AcqInfos.mat');
+if ~isfile(acqInfoPath)
+    return
+end
+
+S = load(acqInfoPath, 'AcqInfoStream');
+if ~isfield(S, 'AcqInfoStream')
+    error('createDataParams:MissingAcqInfoStream', ...
+        'File "%s" does not contain variable "AcqInfoStream".', acqInfoPath);
+end
+AcqInfoStream = S.AcqInfoStream;
+if ~isstruct(AcqInfoStream) || ~isscalar(AcqInfoStream)
+    error('createDataParams:InvalidAcqInfoStream', ...
+        'Variable "AcqInfoStream" in "%s" must be a scalar struct.', acqInfoPath);
+end
+if ~isfield(AcqInfoStream, 'Height') || ~isfield(AcqInfoStream, 'Width')
+    error('createDataParams:MissingAcqFields', ...
+        'AcqInfoStream must contain fields "Height" and "Width".');
+end
+
+Ny = double(AcqInfoStream.Height);
+Nx = double(AcqInfoStream.Width);
+validateattributes(Ny, {'numeric'}, {'scalar', 'real', 'finite', 'positive', 'integer'}, ...
+    'createDataParams', 'AcqInfoStream.Height');
+validateattributes(Nx, {'numeric'}, {'scalar', 'real', 'finite', 'positive', 'integer'}, ...
+    'createDataParams', 'AcqInfoStream.Width');
+
+warning('createDataParams:SizeFromAcqInfos', ...
+    ['No readable .dat file in "%s": the default image size comes from ' ...
+     'AcqInfos.mat Height/Width, which describe the raw acquisition and ' ...
+     'can differ from the imported data.'], folderPath);
+sizeYX = [Ny, Nx];
 end
