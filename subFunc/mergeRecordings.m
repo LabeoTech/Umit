@@ -195,9 +195,32 @@ end
 saveEventsFile(SaveFolder,allEventID,timestamps,state,allEventNameList)
 % Copy AcqInfo file from one of the original files to get some experiment info. This is used by some IOI_ana functions.
 copyfile(fullfile(folderList{end}, 'AcqInfos.mat'), fullfile(SaveFolder,'AcqInfos.mat'));
+% Keep the merged channel's manifest entry truthful (.dat header Phase 7b):
+iUpdateMergedChannelLength(fullfile(SaveFolder,'AcqInfos.mat'), SaveFilename, sum(nFrames));
 close(w)
 % The merged .dat is headered, so no metadata .mat file is written.
 disp('Done')
+end
+
+function iUpdateMergedChannelLength(acqInfoPath, mergedFile, mergedLength)
+%IUPDATEMERGEDCHANNELLENGTH Set the merged file's ImportedChannels Length.
+% The copied AcqInfos.mat describes the last recording. Its entry for the
+% merged file (if any) gets the merged file's frame count; nothing is added.
+
+S = load(acqInfoPath, 'AcqInfoStream');
+if ~isfield(S, 'AcqInfoStream') || ~isfield(S.AcqInfoStream, 'ImportedChannels') || ...
+        isempty(S.AcqInfoStream.ImportedChannels)
+    return
+end
+AcqInfoStream = S.AcqInfoStream;
+[~, mergedName, mergedExt] = fileparts(mergedFile);
+idx = find(strcmpi(cellstr(string({AcqInfoStream.ImportedChannels.DatFile})), ...
+    [mergedName, mergedExt]));
+if isempty(idx)
+    return
+end
+[AcqInfoStream.ImportedChannels(idx).Length] = deal(double(mergedLength));
+save(acqInfoPath, 'AcqInfoStream');
 end
 
 function iAssertCompatibleInputs(mD, datNames)
