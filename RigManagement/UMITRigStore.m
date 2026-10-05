@@ -1743,6 +1743,7 @@ classdef UMITRigStore < handle
                 error(errID, 'Archive destination already exists: %s', archivePath);
             end
 
+            UMITRigStore.iEnsureParentFolder(archivePath, errID);
             [ok, message] = movefile(oldPath, archivePath, 'f');
             if ~ok
                 error(errID, 'Could not archive resource: %s', message);
@@ -1798,6 +1799,7 @@ classdef UMITRigStore < handle
                 error(errID, 'Restore destination already exists: %s', activePath);
             end
 
+            UMITRigStore.iEnsureParentFolder(activePath, errID);
             [ok, message] = movefile(oldPath, activePath, 'f');
             if ~ok
                 error(errID, 'Could not restore resource: %s', message);
@@ -2333,6 +2335,7 @@ classdef UMITRigStore < handle
             RigInfo.resourceRegistry(end+1) = record;
             RigInfo.modifiedOn = nowTime;
 
+            UMITRigStore.iEnsureParentFolder(destinationPath, errID);
             [ok, message] = movefile(stagedFile, destinationPath, 'f');
             if ~ok
                 error(errID, 'Could not install resource: %s', message);
@@ -3622,6 +3625,21 @@ classdef UMITRigStore < handle
                 parts{iPart} = value;
             end
             rel = strjoin(parts, '/');
+        end
+
+        function iEnsureParentFolder(filePath, errID)
+            %IENSUREPARENTFOLDER Create a missing resource state folder.
+            %   UMITRigStore.create makes the canonical resource folders, but
+            %   a rig folder can lose them later; recreate before a move.
+
+            parentFolder = fileparts(filePath);
+            if isfolder(parentFolder)
+                return
+            end
+            [ok, message] = mkdir(parentFolder);
+            if ~ok
+                error(errID, 'Could not create resource folder: %s', message);
+            end
         end
 
         function iRemoveFolderIfPresent(path)
