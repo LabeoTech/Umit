@@ -240,18 +240,12 @@ for indCam = 1:length(channelInfoByCam)
         'for all output channels from the same camera.']);
 end
 
-% Save shared acquisition metadata for the processed outputs. Spatial
-% properties stay at the top level. Imported-channel temporal metadata are
-% stored in ImportedChannels.
-baseLenList = [channelInfo.datLength] ./ [channelInfo.RepeatCount];
-baseFreqList = [channelInfo.FrameRateHz] ./ [channelInfo.RepeatCount];
-AcqInfoStream.Width = Rx;
-AcqInfoStream.Height = Ry;
-AcqInfoStream.Length = baseLenList(1);
-AcqInfoStream.FrameRateHz = baseFreqList(1);
+% AcqInfos.mat describes the raw acquisition: Width, Height, and
+% FrameRateHz keep their info.txt values (.dat header Phase 7b). The
+% imported data (frame size, length, rate, class) is described by each
+% .dat header. Only the import settings and the channel manifest are added.
 AcqInfoStream.BinningSpatial = BinningSpatial;
 AcqInfoStream.BinningTemp = BinningTemp;
-AcqInfoStream.Datatype = 'single';
 
 if isfield(AcqInfoStream, 'ImportedChannels')
     AcqInfoStream = rmfield(AcqInfoStream, 'ImportedChannels');

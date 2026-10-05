@@ -1,11 +1,17 @@
 function AcqInfoStream = genAcqInfo(Width,Height,Length,FrameRateHz,ExposureMsec,extraInfo)
-% GENACQINFO creates the 'AcqInfoStream' structure necessary to read all
-% .dat files inside the saveFolder.
+% GENACQINFO creates the 'AcqInfoStream' structure saved in AcqInfos.mat.
+%
+% AcqInfos.mat describes the raw acquisition: pass the raw (pre-binning)
+% Width, Height, FrameRateHz, and ExposureMsec. The imported data is
+% described by each .dat header. Pass an empty Length to leave the field
+% out, which importers do (.dat header Phase 7b).
 
 % Set AcqInfoStream structure with basic information:
 AcqInfoStream.Width = Width;
 AcqInfoStream.Height = Height;
-AcqInfoStream.Length = Length;
+if ~isempty(Length)
+    AcqInfoStream.Length = Length;
+end
 AcqInfoStream.FrameRateHz = FrameRateHz;
 AcqInfoStream.ExposureMsec = ExposureMsec;
 

@@ -6,7 +6,9 @@ function outFiles = funcTemplateAcquisitionInitializer(RawFolder, SaveFolder)
 %   SAVEFOLDER. RAWFOLDER and SAVEFOLDER may be the same directory. For a
 %   runnable example, RAWFOLDER must contain
 %   funcTemplateAcquisition.mat with variables imageData and
-%   AcqInfoStream. The metadata must describe IMAGEData exactly.
+%   AcqInfoStream. AcqInfoStream describes the raw acquisition: its
+%   Width and Height must match IMAGEData's X and Y sizes, and its
+%   FrameRateHz is the stream's rate.
 %
 %   INFO = FUNCTEMPLATEACQUISITIONINITIALIZER('pipelineInfo') returns the
 %   PipelineManager discovery contract.
@@ -17,8 +19,12 @@ function outFiles = funcTemplateAcquisitionInitializer(RawFolder, SaveFolder)
 %                              'FrameRateHz', rate, 'Info',
 %                              struct('exposureMsec', exposure)) so the
 %                              file carries its own .dat header.
-%   AcqInfos.mat             - Current acquisition metadata owned by this
-%                              importer, including ImportedChannels.
+%   AcqInfos.mat             - Raw acquisition metadata owned by this
+%                              importer (Width, Height, FrameRateHz, ...),
+%                              plus ImportedChannels. It holds no Length or
+%                              Datatype: the imported data is described by
+%                              the .dat header, whose rate is set through
+%                              saveData's 'FrameRateHz'.
 %
 % Fresh SaveFolder Contract
 %   freshSaveFolderRole='acquisition-initializer' is reserved for an
@@ -75,9 +81,10 @@ localWriteImageData(dataPath, imageData, AcqInfoStream);
 
 % Importers own AcqInfos.mat. Build ImportedChannels from the raw facts;
 % do not ask PipelineManager or a companion function to synthesize it.
-if isfield(AcqInfoStream, 'ImportedChannels')
-    AcqInfoStream = rmfield(AcqInfoStream, 'ImportedChannels');
-end
+% AcqInfos.mat describes the raw acquisition; imported-data facts such as
+% Length and Datatype belong to the .dat header.
+AcqInfoStream = rmfield(AcqInfoStream, intersect(fieldnames(AcqInfoStream), ...
+    {'ImportedChannels', 'Length', 'Datatype'}));
 channelInfo = struct( ...
     'DatFile', defaultOutput{1}, ...
     'Length', size(imageData, 3), ...
@@ -174,14 +181,15 @@ if ~(isstruct(AcqInfoStream) && isscalar(AcqInfoStream))
         'AcqInfoStream must be a scalar structure.');
 end
 
-requiredFields = {'Width', 'Height', 'Length', 'FrameRateHz'};
+requiredFields = {'Width', 'Height', 'FrameRateHz'};
 if ~all(isfield(AcqInfoStream, requiredFields))
     error('Umitoolbox:funcTemplateAcquisitionInitializer:InvalidMetadata', ...
-        'AcqInfoStream must contain Width, Height, Length, and FrameRateHz.');
+        'AcqInfoStream must contain Width, Height, and FrameRateHz.');
 end
-expectedSize = [double(AcqInfoStream.Height), ...
-    double(AcqInfoStream.Width), double(AcqInfoStream.Length)];
-if ~isequal(double(size(imageData)), expectedSize) || ...
+% This template has no binning, so the raw Y/X sizes are the imported ones.
+% The number of frames is not stored in AcqInfos.mat.
+expectedSize = [double(AcqInfoStream.Height), double(AcqInfoStream.Width)];
+if ~isequal(double([size(imageData, 1), size(imageData, 2)]), expectedSize) || ...
         ~(isnumeric(AcqInfoStream.FrameRateHz) && ...
         isscalar(AcqInfoStream.FrameRateHz) && ...
         isfinite(AcqInfoStream.FrameRateHz) && ...
