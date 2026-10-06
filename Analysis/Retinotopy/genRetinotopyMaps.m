@@ -39,7 +39,7 @@ function outData = genRetinotopyMaps(data, SaveFolder, varargin)
 %         file on disk. A warning is raised when this assumption is used.
 %       - With b_useAverageMovie = false, only ON-to-OFF stimulus epochs
 %         are concatenated before the FFT. Inter-stimulus gaps are excluded.
-%         This makes bin nSweeps+1 represent the stimulus repetition in the
+%         This makes bin nKeptSweeps+1 represent the stimulus repetition in the
 %         concatenated window, at the cost of discontinuities between epochs.
 %         Previous releases transformed one contiguous first-onset-to-last-
 %         offset span, so their maps are not numerically comparable.
@@ -122,10 +122,17 @@ assert(isfile(fullfile(SaveFolder, 'events.mat')), ...
     '"events.mat" file not found.');
 
 evObj = EventsManager(SaveFolder);
+% Ignored sweeps (selectedEvents false) keep their place in the sweep
+% structure but are left out of the maps (.dat header Phase 8c).
+selected = true(size(evObj.eventID));
+if ~isempty(evObj.selectedEvents) && isequal(size(evObj.selectedEvents), size(evObj.eventID))
+    selected = logical(evObj.selectedEvents);
+end
 evntInfo = struct( ...
     'eventID', evObj.eventID, ...
     'timestamps', evObj.timestamps, ...
     'state', evObj.state, ...
+    'selected', selected, ...
     'eventNameList', {evObj.eventNameList});
 evntInfo = iStandardizeEvents(evntInfo, opts.Direction);
 
@@ -242,11 +249,6 @@ end
 function mapStruct = standardMode(data, metaData, evntInfo, opts)
 ampMaps = cell(size(evntInfo.eventNameList));
 phiMaps = ampMaps;
-if opts.b_useAverageMovie
-    freqFFT = 2;
-else
-    freqFFT = round(evntInfo.nSweeps) + 1;
-end
 
 framestamps = round(evntInfo.timestamps * metaData.Freq);
 iValidateEventTransitions(evntInfo, framestamps, size(data, 3), opts.b_useAverageMovie);
@@ -255,12 +257,20 @@ w = waitbar(0,'Calculating FFT ...','Name','genRetinotopyMaps');
 for ind = 1:numel(evntInfo.eventNameList)
     waitbar((ind-1)/numel(evntInfo.eventNameList), w, ...
         ['Calculating FFT for direction ' strrep(evntInfo.eventNameList{ind}, '_', ' ')]);
-    indxOn = find(evntInfo.eventID == ind & evntInfo.state == 1);
-    indxOff = find(evntInfo.eventID == ind & evntInfo.state == 0);
+    [indxOnAll, indxOffAll, indxOn, indxOff] = iDirectionSweeps(evntInfo, ind);
+    if isempty(indxOn)
+        % Every sweep of this direction is ignored: NaN maps (Phase 8c).
+        ampMaps{ind} = nan(metaData.datSize, 'single');
+        phiMaps{ind} = nan(metaData.datSize, 'single');
+        waitbar(ind/numel(evntInfo.eventNameList),w);
+        continue
+    end
+    freqFFT = iFrequencyIndex(opts, numel(indxOn));
 
     if opts.b_useAverageMovie
-        bsln_len = round(mean(framestamps(indxOn(2:end)) - framestamps(indxOff(1:end-1))));
-        trial_len = round(mean(framestamps(indxOff) - framestamps(indxOn)));
+        % Window lengths come from every sweep; only kept sweeps are averaged.
+        bsln_len = round(mean(framestamps(indxOnAll(2:end)) - framestamps(indxOffAll(1:end-1))));
+        trial_len = round(mean(framestamps(indxOffAll) - framestamps(indxOnAll)));
         assert(~isempty(bsln_len) && bsln_len > 0, ...
             'Umitoolbox:genRetinotopyMaps:InvalidBaseline', ...
             ['Could not compute a valid baseline period. Check whether the ' ...
@@ -309,11 +319,6 @@ phiMaps = ampMaps;
 framestamps = round(evntInfo.timestamps * metaData.Freq);
 iValidateEventTransitions(evntInfo, framestamps, nT, opts.b_useAverageMovie);
 
-if opts.b_useAverageMovie
-    freqFFT = 2;
-else
-    freqFFT = round(evntInfo.nSweeps) + 1;
-end
 
 w = waitbar(0,'Calculating FFT (Low RAM usage) ...','Name','genRetinotopyMaps');
 slabIn = spatialSlabIO('open', datFile, 'Info', metaData);
@@ -322,15 +327,23 @@ cIn = onCleanup(@() spatialSlabIO('close', slabIn));
 for ind = 1:numel(evntInfo.eventNameList)
     waitbar((ind-1)/numel(evntInfo.eventNameList), w, ...
         ['Calculating FFT for direction ' strrep(evntInfo.eventNameList{ind}, '_', ' ')]);
-    indxOn = find(evntInfo.eventID == ind & evntInfo.state == 1);
-    indxOff = find(evntInfo.eventID == ind & evntInfo.state == 0);
+    [indxOnAll, indxOffAll, indxOn, indxOff] = iDirectionSweeps(evntInfo, ind);
+    if isempty(indxOn)
+        % Every sweep of this direction is ignored: NaN maps (Phase 8c).
+        ampMaps{ind} = nan(nY,nX,'single');
+        phiMaps{ind} = nan(nY,nX,'single');
+        waitbar(ind/numel(evntInfo.eventNameList),w);
+        continue
+    end
+    freqFFT = iFrequencyIndex(opts, numel(indxOn));
 
     ampMaps{ind} = zeros(nY,nX,'single');
     phiMaps{ind} = zeros(nY,nX,'single');
 
     if opts.b_useAverageMovie
-        bsln_len = round(mean(framestamps(indxOn(2:end)) - framestamps(indxOff(1:end-1))));
-        trial_len = round(mean(framestamps(indxOff) - framestamps(indxOn)));
+        % Window lengths come from every sweep; only kept sweeps are averaged.
+        bsln_len = round(mean(framestamps(indxOnAll(2:end)) - framestamps(indxOffAll(1:end-1))));
+        trial_len = round(mean(framestamps(indxOffAll) - framestamps(indxOnAll)));
         assert(~isempty(bsln_len) && bsln_len > 0, ...
             'Umitoolbox:genRetinotopyMaps:InvalidBaseline', ...
             ['Could not compute a valid baseline period. Check whether the ' ...
@@ -478,6 +491,32 @@ end
 end
 
 %% ==================== EVENT STANDARDIZATION ====================
+function [indxOnAll, indxOffAll, indxOn, indxOff] = iDirectionSweeps(evntInfo, ind)
+%IDIRECTIONSWEEPS ON/OFF transitions of direction IND: all, and kept ones.
+%   Ignored sweeps (evntInfo.selected false) keep their place for timing
+%   estimates but are left out of the maps (.dat header Phase 8c).
+indxOnAll = find(evntInfo.eventID == ind & evntInfo.state == 1);
+indxOffAll = find(evntInfo.eventID == ind & evntInfo.state == 0);
+if isfield(evntInfo, 'selected')
+    indxOn = indxOnAll(evntInfo.selected(indxOnAll));
+    indxOff = indxOffAll(evntInfo.selected(indxOffAll));
+else
+    indxOn = indxOnAll;
+    indxOff = indxOffAll;
+end
+end
+
+function freqFFT = iFrequencyIndex(opts, nKeptSweeps)
+%IFREQUENCYINDEX FFT bin of the stimulus frequency.
+%   Average movie: one sweep per window (bin 2). Concatenated sweeps: one
+%   cycle per kept sweep (bin nKeptSweeps + 1).
+if opts.b_useAverageMovie
+    freqFFT = 2;
+else
+    freqFFT = nKeptSweeps + 1;
+end
+end
+
 function evntInfo = iStandardizeEvents(evntInfo, directionMode)
 requiredFields = {'eventID','timestamps','state','eventNameList'};
 assert(all(isfield(evntInfo, requiredFields)), ...

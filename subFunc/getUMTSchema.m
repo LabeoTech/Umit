@@ -63,9 +63,10 @@ switch version
             'eventName', ...
             'eventAxisMode'};
         % selected / durationSec: per-instance flags and ON-to-OFF durations
-        % of event-split data (.dat header Phase 8b). Optional, so older
-        % files remain valid.
-        schema.optionalEventInfoFields = {'baselinePeriod', 'selected', 'durationSec'};
+        % of event-split data (.dat header Phase 8b); nInstances: instances
+        % reduced into each aggregated row (Phase 8c). Optional, so older
+        % files remain valid (see normalizeOptionalEventInfoFields).
+        schema.optionalEventInfoFields = {'baselinePeriod', 'selected', 'durationSec', 'nInstances'};
 
         schema.allowedEventAxisModes = {'instances', 'aggregated_repetitions'};
 

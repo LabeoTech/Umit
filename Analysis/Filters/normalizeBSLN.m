@@ -1,4 +1,4 @@
-function outData = normalizeBSLN(data, SaveFolder, varargin)
+function [outData, metaData] = normalizeBSLN(data, SaveFolder, varargin)
 %NORMALIZEBSLN Normalize image data by baseline (DeltaR/R0).
 %
 %   outData = normalizeBSLN(data, SaveFolder)
@@ -42,7 +42,15 @@ function outData = normalizeBSLN(data, SaveFolder, varargin)
 %                       (resolveDataInfoValue).
 %
 % Output:
-%   outData           : Output UMT struct.
+%   outData           : - Trial mode on a raw YXT array or a .dat file:
+%                         numeric Y x X x T x E array, one slice per event
+%                         instance (ignored ones included), saved as .dat
+%                         by PipelineManager (.dat header Phase 8c).
+%                       - Otherwise: output UMT struct (UMT inputs carry
+%                         their eventInfo through).
+%   metaData          : struct with dimNames {'Y','X','T','E'} and
+%                       frameRateHz for the numeric output; empty struct
+%                       otherwise.
 %
 % Notes:
 %   - Raw YXT arrays and raw .dat files use EventsManager only when
@@ -59,6 +67,7 @@ function outData = normalizeBSLN(data, SaveFolder, varargin)
 %     processed there.
 
 default_Output = 'normBSLN.umt'; %#ok<NASGU>
+metaData = struct();
 
 if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) ...
         && strcmpi(strtrim(char(string(data))), 'pipelineInfo')
@@ -146,13 +155,16 @@ if isnumeric(data) || islogical(data)
 
         case 'trial'
             evObj = EventsManager(SaveFolder);
-            [frMat, conditionIDlist, repetitionList] = evObj.getFrameMatrix(size(rawData, 3), ...
-                'FrameRateHz', freqHz);
+            % Every instance is normalized and saved, ignored ones included
+            % and flagged (.dat header Phase 8c).
+            frMat = evObj.getFrameMatrix(size(rawData, 3), ...
+                'FrameRateHz', freqHz, 'IncludeIgnored', true);
 
             if isempty(frMat)
                 error('normalizeBSLN:NoEventsFound', ...
                     'No valid events were found for trial normalization.');
             end
+            frMat = iCropLikeSplit(frMat);
 
             trialLen = size(frMat, 2);
             nBaseFrames = iResolveTrialBaselineFrames(trialLen, freqHz, double(evObj.baselinePeriod));
@@ -162,12 +174,10 @@ if isnumeric(data) || islogical(data)
             nX = size(rawData, 2);
 
             outVal = nan(nY, nX, trialLen, nTrials, 'single');
-            eventNames = cell(nTrials, 1);
 
             for iTrial = 1:nTrials
                 validMask = ~isnan(frMat(iTrial, :));
                 frameIdx = frMat(iTrial, validMask);
-                eventNames{iTrial} = evObj.eventNameList{conditionIDlist(iTrial)};
 
                 if isempty(frameIdx)
                     continue
@@ -187,21 +197,10 @@ if isnumeric(data) || islogical(data)
                 outVal(:,:,:,iTrial) = trialData;
             end
 
-            labels = struct();
-
-            eventInfo = struct();
-            eventInfo.eventID = conditionIDlist(:);
-            eventInfo.repetitionIndex = repetitionList(:);
-            eventInfo.eventName = eventNames;
-            eventInfo.eventAxisMode = 'instances';
-
-            outData = iPackageOutputUMT( ...
-                {'main'}, ...
-                {outVal}, ...
-                {{'Y','X','T','E'}}, ...
-                labels, ...
-                eventInfo, ...
-                {struct()});
+            % Event-split image data are saved as .dat (Phase 8c); the
+            % flags come from events.mat through resolveDatEventMapping.
+            outData = outVal;
+            metaData = struct('dimNames', {{'Y','X','T','E'}}, 'frameRateHz', freqHz);
     end
 
     return
@@ -233,6 +232,14 @@ if ischar(data) || (isstring(data) && isscalar(data))
                 normalizeBSLN_chunkedDatMode( ...
                     dataFile, SaveFolder, normalizationMode, baselineMode, b_centerAtOne, ...
                     explicitRate, needsRate);
+
+            if strcmp(normalizationMode, 'trial')
+                % Event-split image data are saved as .dat (Phase 8c).
+                outData = outVal;
+                metaData = struct('dimNames', {outDimNames}, 'frameRateHz', ...
+                    resolveDataInfoValue('frameRateHz', explicitRate, dataFile, 'normalizeBSLN'));
+                return
+            end
 
             outData = iPackageOutputUMT( ...
                 {'main'}, ...
@@ -490,10 +497,21 @@ end
             'outData', ...
             {'ImageTimeSeries','ProcessedData'}, ...
             'data', ...
-            'Baseline-normalized output UMT.', ...
+            ['Baseline-normalized output: Y-X-T-E trials (.dat) in trial mode ' ...
+             'on raw data, else a UMT struct.'], ...
             'normBSLN.umt', ...
             1, ...
             'isData', true);
+
+        info = PipelineManager.addOutput( ...
+            info, ...
+            'metaData', ...
+            'metaData', ...
+            'data', ...
+            'Axes and frame rate of the .dat output.', ...
+            '', ...
+            2, ...
+            'isData', false);
     end
 end
 
@@ -553,12 +571,16 @@ switch lower(normalizationMode)
 
     case 'trial'
         evObj = EventsManager(SaveFolder);
-        [frMat, conditionIDlist, repetitionList] = evObj.getFrameMatrix(Nt, 'FrameRateHz', freqHz);
+        % Every instance is normalized and saved, ignored ones included and
+        % flagged (.dat header Phase 8c).
+        [frMat, conditionIDlist] = evObj.getFrameMatrix(Nt, 'FrameRateHz', freqHz, ...
+            'IncludeIgnored', true);
 
         if isempty(frMat)
             error('normalizeBSLN:NoEventsFound', ...
                 'No valid events were found for trial normalization.');
         end
+        frMat = iCropLikeSplit(frMat);
 
         nTrials = size(frMat, 1);
         trialLen = size(frMat, 2);
@@ -600,13 +622,25 @@ switch lower(normalizationMode)
             xStart = xEnd + 1;
         end
 
-        eventInfo.eventID = conditionIDlist(:);
-        eventInfo.repetitionIndex = repetitionList(:);
-        eventInfo.eventName = eventNames;
-        eventInfo.eventAxisMode = 'instances';
+        eventInfo = iTrialEventInfo(evObj, freqHz, conditionIDlist, eventNames);
 
         outDimNames = {'Y','X','T','E'};
 end
+end
+
+% =========================================================================
+% Helper: per-instance eventInfo of trial-normalized output
+% =========================================================================
+function eventInfo = iTrialEventInfo(evObj, freqHz, conditionIDlist, eventNames)
+%ITRIALEVENTINFO eventInfo of every instance, with selected, durationSec,
+% and baselinePeriod (from exportEventInfo; Phase 8c).
+eventInfo = evObj.exportEventInfo('FrameRateHz', freqHz, 'IncludeIgnored', true);
+assert(isequal(double(eventInfo.eventID(:)), double(conditionIDlist(:))), ...
+    'normalizeBSLN:EventAxisMismatch', 'The event list does not match the split trials.');
+eventInfo.eventName = eventNames;
+eventInfo.eventAxisMode = 'instances';
+eventInfo = rmfield(eventInfo, intersect(fieldnames(eventInfo), ...
+    {'eventNameList', 'FrameRateHz', 'selectedEvents'}));
 end
 
 % =========================================================================
@@ -720,11 +754,10 @@ for iEntry = 1:numel(entryNames)
 end
 
 if ~isempty(eventInfoIn) && isstruct(eventInfoIn) && ~isempty(fieldnames(eventInfoIn))
+    % Struct form: the input eventInfo is carried intact, including
+    % selected, durationSec, nInstances, and baselinePeriod (Phase 8c).
     outUMT = appendUMTEventInfo(outUMT, ...
-        'eventID', eventInfoIn.eventID, ...
-        'repetitionIndex', eventInfoIn.repetitionIndex, ...
-        'eventName', eventInfoIn.eventName, ...
-        'eventAxisMode', eventInfoIn.eventAxisMode, ...
+        'eventInfo', eventInfoIn, ...
         'overwrite', true);
 else
     validateUMTStruct(outUMT, 'requireEventInfo', true);
@@ -771,4 +804,17 @@ function nBaseFrames = iResolveTrialBaselineFrames(trialLen, freqHz, baselinePer
 nBaseFrames = round(double(baselinePeriodSec) * freqHz);
 nBaseFrames = max(1, nBaseFrames);
 nBaseFrames = min(nBaseFrames, trialLen);
+end
+
+% =========================================================================
+% Helper: trial length of split_data_by_event
+% =========================================================================
+function frMat = iCropLikeSplit(frMat)
+%ICROPLIKESPLIT Same trial length as EventsManager.splitDataByEvents
+% (split_data_by_event): crop every trial from the first frame that any
+% instance lacks.
+firstNaNCol = find(any(isnan(frMat), 1), 1, 'first');
+if ~isempty(firstNaNCol)
+    frMat(:, firstNaNCol:end) = [];
+end
 end

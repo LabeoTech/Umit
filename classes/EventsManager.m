@@ -2093,7 +2093,7 @@ classdef EventsManager < handle
             evInfo.baselinePeriod = obj.baselinePeriod;
             evInfo.FrameRateHz = obj.dataFrameRate(p.Results.FrameRateHz);
             evInfo.eventID = cast(inst.eventID(keep), 'like', obj.eventID);
-            evInfo.repetitionIndex = inst.repetitionIndex(keep);
+            evInfo.repetitionIndex = cast(inst.repetitionIndex(keep), 'like', obj.eventID);
             evInfo.selected = inst.selected(keep);
             evInfo.selectedEvents = evInfo.selected;
             evInfo.durationSec = inst.durationSec(keep);
@@ -2359,6 +2359,178 @@ classdef EventsManager < handle
 
     end
     methods (Static)
+        function plan = conditionAggregationPlan(eventInfo)
+            %CONDITIONAGGREGATIONPLAN Plan the reduction of event instances per condition.
+            %
+            %   plan = EventsManager.conditionAggregationPlan(eventInfo)
+            %
+            %   EVENTINFO describes the E axis of event-split data, one row per
+            %   instance (UMT eventInfo with eventAxisMode 'instances', or the
+            %   output of exportEventInfo / getEventInstances). Every function
+            %   that reduces event-split data over events uses this plan
+            %   (.dat header Phase 8c), so the rules live in one place:
+            %     - ignored instances (selected = false) are excluded; a missing
+            %       'selected' field means all instances are selected;
+            %     - conditions are ordered by their first appearance in the
+            %       instance (time) order, not by condition ID;
+            %     - every condition gets an output slice; a condition whose
+            %       instances are all ignored gives a NaN slice (nInstances = 0);
+            %     - already aggregated input is refused.
+            %
+            %   Output struct:
+            %       nInstancesIn  - number of input instances (E size)
+            %       conditionID   - condition IDs, first-appearance order
+            %       conditionName - condition names (string)
+            %       instanceIdx   - cell, selected instance indices per condition
+            %       nInstances    - number of selected instances per condition
+            %       durationSec   - mean duration of the selected instances (NaN
+            %                       when unknown or none)
+            %       baselinePeriod - from EVENTINFO ([] when absent)
+            %       eventInfoOut  - UMT eventInfo of the reduced output
+            %                       ('aggregated_repetitions', repetitionIndex 0,
+            %                       selected = nInstances > 0, durationSec,
+            %                       nInstances, baselinePeriod when known)
+            %
+            %   See also EventsManager.reduceByCondition.
+
+            errID = 'Umitoolbox:EventsManager:invalidEventInfo';
+            if ~isstruct(eventInfo) || ~isscalar(eventInfo) || ~isfield(eventInfo, 'eventID') || ...
+                    isempty(eventInfo.eventID)
+                error(errID, 'eventInfo must be a scalar struct with a non-empty eventID.');
+            end
+            if isfield(eventInfo, 'eventAxisMode') && ...
+                    strcmpi(char(string(eventInfo.eventAxisMode)), 'aggregated_repetitions')
+                error('Umitoolbox:EventsManager:alreadyAggregated', ...
+                    'The data are already aggregated per condition; they cannot be aggregated again.');
+            end
+
+            ids = double(eventInfo.eventID(:));
+            nIn = numel(ids);
+            if isfield(eventInfo, 'eventName') && numel(eventInfo.eventName) == nIn
+                names = reshape(string(eventInfo.eventName), [], 1);
+            elseif isfield(eventInfo, 'eventNameList') && ~isempty(eventInfo.eventNameList)
+                nameList = reshape(string(eventInfo.eventNameList), [], 1);
+                names = nameList(ids);
+            else
+                names = "Event" + string(ids);
+            end
+            selected = true(nIn, 1);
+            if isfield(eventInfo, 'selected') && ~isempty(eventInfo.selected)
+                if numel(eventInfo.selected) ~= nIn
+                    error(errID, 'eventInfo.selected must have one value per event instance.');
+                end
+                selected = logical(eventInfo.selected(:));
+            end
+            durations = nan(nIn, 1);
+            if isfield(eventInfo, 'durationSec') && numel(eventInfo.durationSec) == nIn
+                durations = double(eventInfo.durationSec(:));
+            end
+
+            condIDs = EventsManager.conditionOrder(ids);
+            nCond = numel(condIDs);
+            plan = struct();
+            plan.nInstancesIn = nIn;
+            plan.conditionID = condIDs;
+            plan.conditionName = strings(nCond, 1);
+            plan.instanceIdx = cell(nCond, 1);
+            plan.nInstances = zeros(nCond, 1);
+            plan.durationSec = nan(nCond, 1);
+            plan.baselinePeriod = [];
+            if isfield(eventInfo, 'baselinePeriod') && ~isempty(eventInfo.baselinePeriod)
+                plan.baselinePeriod = double(eventInfo.baselinePeriod);
+            end
+
+            for iCond = 1:nCond
+                inst = find(ids == condIDs(iCond));
+                used = inst(selected(inst));
+                plan.conditionName(iCond) = names(inst(1));
+                plan.instanceIdx{iCond} = used(:).';
+                plan.nInstances(iCond) = numel(used);
+                d = durations(used);
+                d = d(isfinite(d));
+                if ~isempty(d)
+                    plan.durationSec(iCond) = mean(d);
+                end
+            end
+
+            out = struct();
+            out.eventID = cast(condIDs, 'like', eventInfo.eventID);
+            out.repetitionIndex = zeros(nCond, 1);
+            out.eventName = plan.conditionName;
+            out.eventAxisMode = 'aggregated_repetitions';
+            out.selected = plan.nInstances > 0;
+            out.durationSec = plan.durationSec;
+            out.nInstances = plan.nInstances;
+            if ~isempty(plan.baselinePeriod)
+                out.baselinePeriod = plan.baselinePeriod;
+            end
+            plan.eventInfoOut = out;
+        end
+
+        function out = reduceByCondition(data, plan, reduceFcn, eDim)
+            %REDUCEBYCONDITION Reduce event-split data per condition with a plan.
+            %
+            %   out = EventsManager.reduceByCondition(data, plan, reduceFcn, eDim)
+            %
+            %   DATA has its E axis (one slice per event instance, as described by
+            %   the eventInfo of PLAN, see conditionAggregationPlan) at dimension
+            %   EDIM. It may be the whole array or one spatial slab. For each
+            %   condition, REDUCEFCN is called with the sub-array of its SELECTED
+            %   instances (E axis kept at EDIM) and must return the reduced
+            %   result with size 1 (or no axis) at EDIM. The results are stacked
+            %   along EDIM in plan order; a condition with no selected instance
+            %   gives a NaN slice of the same size (.dat header Phase 8c).
+            %
+            %   Example (mean over events of Y-X-T-E data):
+            %       out = EventsManager.reduceByCondition(dataYXTE, plan, ...
+            %           @(x) mean(x, 4, 'omitnan'), 4);
+
+            if size(data, eDim) ~= plan.nInstancesIn
+                error('Umitoolbox:EventsManager:eventAxisMismatch', ...
+                    ['The E axis has %d slices but the event information lists %d ' ...
+                     'event instances.'], size(data, eDim), plan.nInstancesIn);
+            end
+
+            nCond = numel(plan.conditionID);
+            results = cell(nCond, 1);
+            template = [];
+            idx = repmat({':'}, 1, max(ndims(data), eDim));
+            for iCond = 1:nCond
+                if isempty(plan.instanceIdx{iCond})
+                    continue
+                end
+                idx{eDim} = plan.instanceIdx{iCond};
+                results{iCond} = reduceFcn(data(idx{:}));
+                if size(results{iCond}, eDim) ~= 1
+                    error('Umitoolbox:EventsManager:invalidReduction', ...
+                        'reduceFcn must collapse the E axis (dimension %d) to size 1.', eDim);
+                end
+                if isempty(template)
+                    template = results{iCond};
+                end
+            end
+            if isempty(template)
+                error('Umitoolbox:EventsManager:noSelectedInstances', ...
+                    'Every event instance is ignored; there is nothing to aggregate.');
+            end
+            for iCond = 1:nCond
+                if isempty(results{iCond})
+                    results{iCond} = nan(size(template), 'like', template);
+                end
+            end
+            out = cat(eDim, results{:});
+        end
+
+        function condIDs = conditionOrder(eventIDs)
+            %CONDITIONORDER Condition IDs in order of first appearance.
+            %
+            %   The one ordering rule for per-condition outputs of event-split
+            %   data (.dat header Phase 8c): conditions appear in the order of
+            %   their first instance in time, not sorted by ID. An aggregated
+            %   .dat file relies on it to be matched to events.mat.
+            condIDs = unique(double(eventIDs(:)), 'stable');
+        end
+
         function files = findEventSplitFiles(folder)
             %FINDEVENTSPLITFILES Event-split data files in a SaveFolder.
             %

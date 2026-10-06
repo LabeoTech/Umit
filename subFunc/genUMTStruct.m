@@ -507,6 +507,10 @@ if isfield(eventInfoIn, 'baselinePeriod')
     end
     eventInfo.baselinePeriod = double(bp);
 end
+
+% Optional per-row fields survive (selected, durationSec, nInstances;
+% .dat header Phase 8b/8c).
+eventInfo = normalizeOptionalEventInfoFields(eventInfo, eventInfoIn, errID);
 end
 
 function tf = iHasNameValue(args, name)
