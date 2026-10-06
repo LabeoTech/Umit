@@ -483,20 +483,12 @@ if isfield(eventInfoIn, 'baselinePeriod')
     end
 end
 
-if isfield(eventInfoIn, 'selected')
-    sel = eventInfoIn.selected;
-    if ~islogical(sel) || numel(sel) ~= nE
-        error(errID, ...
-            'Operation aborted. eventInfo.selected must be a logical vector with one value per event.');
-    end
+if isfield(eventInfoIn, 'selected') && ~islogical(eventInfoIn.selected)
+    error(errID, 'Operation aborted. eventInfo.selected must be logical.');
 end
-
-if isfield(eventInfoIn, 'durationSec')
-    dur = eventInfoIn.durationSec;
-    if ~isnumeric(dur) || numel(dur) ~= nE || any(dur(:) < 0)
-        error(errID, ...
-            ['Operation aborted. eventInfo.durationSec must be a numeric vector ' ...
-             'with one non-negative value (or NaN) per event.']);
-    end
+normalizeOptionalEventInfoFields(struct('eventID', eventInfoIn.eventID), eventInfoIn, errID);
+if isfield(eventInfoIn, 'nInstances') && strcmp(axisMode, 'instances')
+    error(errID, ...
+        'Operation aborted. eventInfo.nInstances is only valid when eventAxisMode="aggregated_repetitions".');
 end
 end

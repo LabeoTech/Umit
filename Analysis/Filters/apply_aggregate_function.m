@@ -1,14 +1,17 @@
-function outData = apply_aggregate_function(data, SaveFolder, varargin)
+function [outData, metaData] = apply_aggregate_function(data, SaveFolder, varargin)
 %APPLY_AGGREGATE_FUNCTION Aggregate image-backed data along T or E.
 %
 %   outData = apply_aggregate_function(data, SaveFolder)
-%   outData = apply_aggregate_function(data, SaveFolder, ...
+%   [outData, metaData] = apply_aggregate_function(data, SaveFolder, ...
 %       'aggregateFcn', aggFcn, 'dimensionName', dimName)
 %
 % Inputs:
 %   data       : One of:
 %                1) Numeric 3-D array with dimensions Y x X x T
-%                2) Filename to a .dat file storing Y x X x T data
+%                2) Filename to a .dat file storing Y x X x T data, or, for
+%                   E aggregation, event-split Y-X-T-E / Y-X-E data whose
+%                   E axis matches events.mat (resolveDatEventMapping;
+%                   loaded fully into RAM)
 %                3) UMT struct
 %                4) Filename to a .umt file containing a UMT struct
 %
@@ -26,7 +29,14 @@ function outData = apply_aggregate_function(data, SaveFolder, varargin)
 %                   need it explicitly; AcqInfos.mat is not used.
 %
 % Output:
-%   outData    : Output UMT struct.
+%   outData    : - E aggregation of a raw YXT array or a .dat file: numeric
+%                  Y x X x T x E (Y x X x E for a Y-X-E .dat) array, one
+%                  slice per event condition
+%                  (saved as .dat by PipelineManager, .dat header Phase 8c).
+%                - Otherwise: output UMT struct.
+%   metaData   : struct with dimNames {'Y','X','T','E'} and frameRateHz for
+%                the numeric output (PipelineManager uses it to save the
+%                .dat); empty struct otherwise.
 %
 % Notes:
 %   - Raw YXT arrays and raw .dat files use live event information from
@@ -38,14 +48,20 @@ function outData = apply_aggregate_function(data, SaveFolder, varargin)
 %     The E path sizes each slab for the simultaneous input, condition,
 %     permutation, and aggregate workspaces.
 %   - If a .umt file is provided, its content is loaded fully into RAM.
-%   - Output eventInfo.eventAxisMode is always 'aggregated_repetitions' for
-%     E-dimension aggregation: repetitions have been collapsed by aggFcn, so
-%     eventInfo.repetitionIndex is a fixed all-zero sentinel, not a real
-%     per-entry repetition count.
+%   - E aggregation follows EventsManager.conditionAggregationPlan and
+%     reduceByCondition (.dat header Phase 8c): ignored instances are
+%     excluded, conditions are ordered by first appearance, and a condition
+%     whose instances are all ignored gives a NaN slice. UMT outputs carry
+%     the aggregated eventInfo (eventAxisMode 'aggregated_repetitions',
+%     repetitionIndex 0, selected, durationSec, nInstances). The .dat output
+%     stores no labels: its E axis is matched to events.mat by
+%     resolveDatEventMapping (one slice per condition).
+%   - UMT inputs keep UMT outputs, with their own eventInfo carried through.
 %
 % See also: spatialSlabIO, genUMTStruct, appendUMTEventInfo
 
 default_Output = 'aggFcn_applied.umt';
+metaData = struct();
 
 if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) ...
         && strcmpi(strtrim(char(string(data))), 'pipelineInfo')
@@ -114,60 +130,12 @@ if isnumeric(data) || islogical(data)
         case 'E'
             evObj = EventsManager(SaveFolder);
             frameRateHz = resolveDataInfoValue('frameRateHz', explicitRate, data, mfilename);
-            [frMat, conditionIDlist, ~] = evObj.getFrameMatrix(size(rawData, 3), ...
-                'FrameRateHz', frameRateHz);
+            [frMat, plan] = iEventFramePlan(evObj, size(rawData, 3), frameRateHz);
 
-            if isempty(frMat)
-                error('apply_aggregate_function:NoEventsFound', ...
-                    'No valid events were found in events.mat for E aggregation.');
-            end
-
-            condIDs = unique(conditionIDlist(:), 'stable');
-            nCond = numel(condIDs);
-            nY = size(rawData, 1);
-            nX = size(rawData, 2);
-            trialLen = size(frMat, 2);
-
-            aggData = zeros(nY, nX, trialLen, nCond, 'single');
-            eventNames = cell(nCond, 1);
-
-            for iCond = 1:nCond
-                rowIdx = find(conditionIDlist(:) == condIDs(iCond));
-                nRep = numel(rowIdx);
-
-                condBlock = nan(nY, nX, trialLen, nRep, 'single');
-
-                for iRep = 1:nRep
-                    validMask = ~isnan(frMat(rowIdx(iRep), :));
-                    if any(validMask)
-                        frameIdx = frMat(rowIdx(iRep), validMask);
-                        condBlock(:, :, validMask, iRep) = rawData(:, :, frameIdx);
-                    end
-                end
-
-                condP = permute(condBlock, [4 1 2 3]);
-                condP = reshape(condP, nRep, []);
-                aggFlat = iCalcAgg(condP, aggFcn);
-                aggData(:, :, :, iCond) = reshape(single(aggFlat), nY, nX, trialLen);
-
-                eventNames{iCond} = evObj.eventNameList{condIDs(iCond)};
-            end
-
-            labels = struct();
-
-            eventInfo = struct();
-            eventInfo.eventID = condIDs(:);
-            eventInfo.repetitionIndex = zeros(nCond, 1);
-            eventInfo.eventName = eventNames;
-            eventInfo.eventAxisMode = 'aggregated_repetitions';
-
-            outData = iPackageOutputUMT( ...
-                {'main'}, ...
-                {aggData}, ...
-                {{'Y','X','T','E'}}, ...
-                labels, ...
-                eventInfo, ...
-                {struct()});
+            dataYXTE = iInstancesFromFrames(rawData, frMat);
+            outData = EventsManager.reduceByCondition(dataYXTE, plan, ...
+                @(x) iCalcAgg(x, aggFcn, 4), 4);
+            metaData = struct('dimNames', {{'Y','X','T','E'}}, 'frameRateHz', frameRateHz);
     end
 
     return
@@ -195,8 +163,23 @@ if ischar(data) || (isstring(data) && isscalar(data))
 
     switch ext
         case '.dat'
-            [aggData, outDimNames, labels, eventInfo] = ...
+            datMeta = loadMetaData(dataFile);
+            if strcmp(dimName, 'E') && any(strcmp(cellstr(string(datMeta.dimNames)), 'E'))
+                % Event-split .dat (e.g. split_data_by_event output).
+                [outData, metaData] = iAggregateEventSplitDat(dataFile, datMeta, ...
+                    SaveFolder, aggFcn);
+                return
+            end
+
+            [aggData, outDimNames, labels, eventInfo, frameRateHz] = ...
                 iExecuteChunkedDat(dataFile, SaveFolder, aggFcn, dimName, explicitRate);
+
+            if strcmp(dimName, 'E')
+                % One slice per condition: saved as .dat (Phase 8c).
+                outData = aggData;
+                metaData = struct('dimNames', {outDimNames}, 'frameRateHz', frameRateHz);
+                return
+            end
 
             outData = iPackageOutputUMT( ...
                 {'main'}, ...
@@ -282,14 +265,7 @@ if strcmpi(dimName, 'E')
              'The current eventInfo already represents aggregated repetitions.']);
     end
 
-    condIDs = unique(sourceEventInfo.eventID(:), 'stable');
-    nCond = numel(condIDs);
-    eventNames = cell(nCond, 1);
-
-    for iCond = 1:nCond
-        idxFirst = find(sourceEventInfo.eventID(:) == condIDs(iCond), 1, 'first');
-        eventNames{iCond} = sourceEventInfo.eventName{idxFirst};
-    end
+    plan = EventsManager.conditionAggregationPlan(sourceEventInfo);
 end
 
 outEntryData = entryData;
@@ -328,24 +304,13 @@ for iEntry = 1:numel(entryNames)
             outEntryDims{iEntry} = newDims;
 
         case 'E'
-            permOrder = [idxTarget setdiff(1:ndims(thisData), idxTarget)];
-            dataP = permute(thisData, permOrder);
-            szP = size(dataP);
-            assert(numel(sourceEventInfo.eventID) == szP(1), ...
+            assert(numel(sourceEventInfo.eventID) == size(thisData, idxTarget), ...
                 'apply_aggregate_function:EventAxisMismatch', ...
                 ['Entry "%s" has %d elements along dimension "E", but ' ...
                  'sourceEventInfo.eventID has %d elements.'], ...
-                entryNames{iEntry}, szP(1), numel(sourceEventInfo.eventID));
-            dataP = reshape(dataP, szP(1), []);
-
-            outFlat = zeros(nCond, size(dataP, 2), 'single');
-            for iCond = 1:nCond
-                idxCond = sourceEventInfo.eventID(:) == condIDs(iCond);
-                outFlat(iCond, :) = single(iCalcAgg(dataP(idxCond, :), aggFcn));
-            end
-
-            outP = reshape(outFlat, [nCond szP(2:end)]);
-            outEntryData{iEntry} = ipermute(outP, permOrder);
+                entryNames{iEntry}, size(thisData, idxTarget), numel(sourceEventInfo.eventID));
+            outEntryData{iEntry} = EventsManager.reduceByCondition(thisData, plan, ...
+                @(x) iCalcAgg(x, aggFcn, idxTarget), idxTarget);
             outEntryDims{iEntry} = thisDims;
     end
 end
@@ -372,11 +337,7 @@ if bOutputUsesE
     if strcmpi(dimName, 'T')
         outEventInfo = sourceEventInfo;
     else
-        outEventInfo = struct();
-        outEventInfo.eventID = condIDs(:);
-        outEventInfo.repetitionIndex = zeros(nCond, 1);
-        outEventInfo.eventName = eventNames;
-        outEventInfo.eventAxisMode = 'aggregated_repetitions';
+        outEventInfo = plan.eventInfoOut;
     end
 end
 
@@ -455,20 +416,32 @@ outData = iPackageOutputUMT( ...
             'outData', ...
             'ProcessedData', ...
             'data', ...
-            'Aggregated UMT output.', ...
+            ['Aggregated output: Y x X x T x E per-condition image data ' ...
+             '(.dat) for E aggregation of raw data, else a UMT struct.'], ...
             default_Output, ...
             1, ...
             'isData', true);
+
+        info = PipelineManager.addOutput( ...
+            info, ...
+            'metaData', ...
+            'metaData', ...
+            'data', ...
+            'Axes and frame rate of the .dat output.', ...
+            '', ...
+            2, ...
+            'isData', false);
     end
 end
 
 % =========================================================================
 % Helper: Chunked raw-DAT input execution with an in-memory output
 % =========================================================================
-function [aggData, outDimNames, labels, eventInfo] = iExecuteChunkedDat(dataFile, SaveFolder, aggFcn, dimName, explicitRate)
+function [aggData, outDimNames, labels, eventInfo, frameRateHz] = iExecuteChunkedDat(dataFile, SaveFolder, aggFcn, dimName, explicitRate)
 
 labels = struct();
 eventInfo = struct();
+frameRateHz = [];
 
 meta = loadMetaData(dataFile);
 assertDatLayout(meta, {{'Y','X','T'}}, 'apply_aggregate_function');
@@ -515,31 +488,19 @@ switch dimName
     case 'E'
         evObj = EventsManager(SaveFolder);
         frameRateHz = resolveDataInfoValue('frameRateHz', explicitRate, dataFile, 'apply_aggregate_function');
-        [frMat, conditionIDlist, ~] = evObj.getFrameMatrix(nT, 'FrameRateHz', frameRateHz);
+        [frMat, plan] = iEventFramePlan(evObj, nT, frameRateHz);
 
-        if isempty(frMat)
-            error('apply_aggregate_function:NoEventsFound', ...
-                'No valid events were found in events.mat for E aggregation.');
-        end
-
-        condIDs = unique(conditionIDlist(:), 'stable');
-        nCond = numel(condIDs);
+        nInst = size(frMat, 1);
+        nCond = numel(plan.conditionID);
         trialLen = size(frMat, 2);
 
-        maxReps = 0;
-        for iCond = 1:nCond
-            maxReps = max(maxReps, sum(conditionIDlist(:) == condIDs(iCond)));
-        end
-
-        % Live scratch can include the input slab, condBlock, permuted
-        % condP copy, and one trial-length aggregate result at once.
-        bytesPerX = nY * ...
-            (nT + 2 * trialLen * max(maxReps,1) + trialLen) * ...
+        % Live scratch: the input slab, all instances of the slab, and the
+        % per-condition aggregate.
+        bytesPerX = nY * (nT + 2 * trialLen * nInst + trialLen * nCond) * ...
             getByteSize('single');
         xPerSlab = max(1, floor(targetBytes / max(bytesPerX, 1)));
 
         aggData = zeros(nY, nX, trialLen, nCond, 'single');
-        eventNames = cell(nCond, 1);
 
         xStart = 1;
         while xStart <= nX
@@ -547,37 +508,90 @@ switch dimName
             xIdx = xStart:xEnd;
 
             slabData = single(spatialSlabIO('read', slabIn, xIdx));
-
-            for iCond = 1:nCond
-                rowIdx = find(conditionIDlist(:) == condIDs(iCond));
-                nRep = numel(rowIdx);
-
-                condBlock = nan(nY, numel(xIdx), trialLen, nRep, 'single');
-                eventNames{iCond} = evObj.eventNameList{condIDs(iCond)};
-
-                for iRep = 1:nRep
-                    validMask = ~isnan(frMat(rowIdx(iRep), :));
-                    if any(validMask)
-                        frameIdx = frMat(rowIdx(iRep), validMask);
-                        condBlock(:, :, validMask, iRep) = slabData(:, :, frameIdx);
-                    end
-                end
-
-                condP = permute(condBlock, [4 1 2 3]);
-                condP = reshape(condP, nRep, []);
-                aggFlat = iCalcAgg(condP, aggFcn);
-                aggData(:, xIdx, :, iCond) = reshape(single(aggFlat), nY, numel(xIdx), trialLen);
-            end
+            slabE = iInstancesFromFrames(slabData, frMat);
+            aggData(:, xIdx, :, :) = EventsManager.reduceByCondition(slabE, plan, ...
+                @(x) iCalcAgg(x, aggFcn, 4), 4);
 
             xStart = xEnd + 1;
         end
 
-        eventInfo.eventID = condIDs(:);
-        eventInfo.repetitionIndex = zeros(nCond, 1);
-        eventInfo.eventName = eventNames;
-        eventInfo.eventAxisMode = 'aggregated_repetitions';
-
+        eventInfo = plan.eventInfoOut;
         outDimNames = {'Y','X','T','E'};
+end
+end
+
+% =========================================================================
+% Helper: E aggregation of an event-split .dat (Y-X-T-E or Y-X-E)
+% =========================================================================
+function [outData, metaData] = iAggregateEventSplitDat(dataFile, datMeta, SaveFolder, aggFcn)
+%IAGGREGATEEVENTSPLITDAT Per-condition aggregate of an event-split .dat.
+%
+% The file stores no event labels: its E axis is matched to events.mat by
+% resolveDatEventMapping, then reduced through the UMT path in RAM. The
+% output is numeric (saved as .dat), one E slice per condition.
+
+assertDatLayout(datMeta, {{'Y','X','T','E'}, {'Y','X','E'}}, 'apply_aggregate_function');
+dims = cellstr(string(datMeta.dimNames(:).'));
+mapping = resolveDatEventMapping(datMeta, SaveFolder);
+if strcmpi(mapping.status, 'aggregated')
+    % Raises Umitoolbox:EventsManager:alreadyAggregated.
+    EventsManager.conditionAggregationPlan(mapping.eventInfo);
+end
+if ~strcmpi(mapping.status, 'matched')
+    warning('Umitoolbox:apply_aggregate_function:eventsNotMatched', '%s', mapping.message);
+end
+
+umt = genUMTStruct(single(loadData(dataFile)), 'kind', 'image', ...
+    'entryName', 'main', 'dimNames', dims);
+umt = appendUMTEventInfo(umt, 'eventInfo', mapping.eventInfo);
+outUMT = apply_aggregate_function(umt, SaveFolder, 'aggregateFcn', aggFcn, ...
+    'dimensionName', 'E');
+
+outData = outUMT.data.main.value;
+metaData = struct('dimNames', {dims}, 'frameRateHz', datMeta.frameRateHz);
+end
+
+% =========================================================================
+% Helper: event frames and aggregation plan of a continuous recording
+% =========================================================================
+function [frMat, plan] = iEventFramePlan(evObj, nT, frameRateHz)
+%IEVENTFRAMEPLAN Frame matrix of every instance and its aggregation plan.
+%
+% Every instance is split, ignored ones included; the plan (EventsManager)
+% excludes the ignored ones from each condition's aggregate (Phase 8c).
+
+[frMat, conditionIDlist] = evObj.getFrameMatrix(nT, 'FrameRateHz', frameRateHz, ...
+    'IncludeIgnored', true);
+if isempty(frMat)
+    error('apply_aggregate_function:NoEventsFound', ...
+        'No valid events were found in events.mat for E aggregation.');
+end
+% Same trial length as EventsManager.splitDataByEvents (split_data_by_event):
+% crop every trial from the first frame that any instance lacks.
+firstNaNCol = find(any(isnan(frMat), 1), 1, 'first');
+if ~isempty(firstNaNCol)
+    frMat(:, firstNaNCol:end) = [];
+end
+evInfo = evObj.exportEventInfo('FrameRateHz', frameRateHz, 'IncludeIgnored', true);
+assert(isequal(double(evInfo.eventID(:)), double(conditionIDlist(:))), ...
+    'apply_aggregate_function:EventAxisMismatch', ...
+    'The event list does not match the split trials.');
+plan = EventsManager.conditionAggregationPlan(evInfo);
+end
+
+% =========================================================================
+% Helper: Y x X x T x E trials of every instance from a frame matrix
+% =========================================================================
+function dataYXTE = iInstancesFromFrames(dataYXT, frMat)
+%IINSTANCESFROMFRAMES Trials of DATAYXT (rows of FRMAT); NaN outside the data.
+
+nInst = size(frMat, 1);
+dataYXTE = nan(size(dataYXT, 1), size(dataYXT, 2), size(frMat, 2), nInst, 'single');
+for iInst = 1:nInst
+    validMask = ~isnan(frMat(iInst, :));
+    if any(validMask)
+        dataYXTE(:, :, validMask, iInst) = dataYXT(:, :, frMat(iInst, validMask));
+    end
 end
 end
 
@@ -692,11 +706,10 @@ for iEntry = 1:numel(entryNames)
 end
 
 if ~isempty(eventInfoIn) && isstruct(eventInfoIn) && ~isempty(fieldnames(eventInfoIn))
+    % Struct form: selected, durationSec, nInstances, and baselinePeriod
+    % survive (Phase 8c).
     outUMT = appendUMTEventInfo(outUMT, ...
-        'eventID', eventInfoIn.eventID, ...
-        'repetitionIndex', eventInfoIn.repetitionIndex, ...
-        'eventName', eventInfoIn.eventName, ...
-        'eventAxisMode', eventInfoIn.eventAxisMode, ...
+        'eventInfo', eventInfoIn, ...
         'overwrite', true);
 else
     validateUMTStruct(outUMT, 'requireEventInfo', true);
@@ -706,8 +719,8 @@ end
 % =========================================================================
 % Helper: Core aggregation function
 % =========================================================================
-function out = iCalcAgg(vals, aggFcn)
-%ICALCAGG Reduce VALS along dimension 1 using AGGFCN, omitting NaN.
+function out = iCalcAgg(vals, aggFcn, dim)
+%ICALCAGG Reduce VALS along dimension DIM (default 1) using AGGFCN, omitting NaN.
 %
 % For a pixel/column that is entirely NaN, 'sum' returns 0 (sum's own
 % 'omitnan' convention: an empty/all-NaN input sums to 0), while 'mean',
@@ -715,24 +728,28 @@ function out = iCalcAgg(vals, aggFcn)
 % therefore reads as a valid zero under 'sum' aggregation, not as missing
 % data the way it does under every other aggregateFcn.
 
+if nargin < 3
+    dim = 1;
+end
+
 switch lower(aggFcn)
     case 'mean'
-        out = mean(vals, 1, 'omitnan');
+        out = mean(vals, dim, 'omitnan');
 
     case 'median'
-        out = median(vals, 1, 'omitnan');
+        out = median(vals, dim, 'omitnan');
 
     case 'std'
-        out = std(vals, 0, 1, 'omitnan');
+        out = std(vals, 0, dim, 'omitnan');
 
     case 'max'
-        out = max(vals, [], 1, 'omitnan');
+        out = max(vals, [], dim, 'omitnan');
 
     case 'min'
-        out = min(vals, [], 1, 'omitnan');
+        out = min(vals, [], dim, 'omitnan');
 
     case 'sum'
-        out = sum(vals, 1, 'omitnan');
+        out = sum(vals, dim, 'omitnan');
 
     otherwise
         error('apply_aggregate_function:InvalidAggregateFcnInternal', ...

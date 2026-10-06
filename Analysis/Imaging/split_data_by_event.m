@@ -1,4 +1,4 @@
-function outData = split_data_by_event(data, SaveFolder, varargin)
+function [outData, metaData] = split_data_by_event(data, SaveFolder, varargin)
 %SPLIT_DATA_BY_EVENT Split continuous image time series into event trials.
 %
 %   outData = split_data_by_event(data, SaveFolder)
@@ -25,8 +25,14 @@ function outData = split_data_by_event(data, SaveFolder, varargin)
 %                     AcqInfos.mat is not used.
 %
 %   Output:
-%       outData    - UMT structure containing one image entry with dimNames
-%                    {'Y','X','T','E'} and shared top-level eventInfo.
+%       outData    - Numeric Y x X x T x E array, one slice per event instance
+%                    of events.mat (ignored ones included), saved as .dat by
+%                    PipelineManager (.dat header Phase 8c). The .dat stores
+%                    no labels: resolveDatEventMapping matches its E axis to
+%                    events.mat, whose selection flags apply at display and
+%                    processing time.
+%       metaData   - struct with dimNames {'Y','X','T','E'} and frameRateHz,
+%                    used by PipelineManager to save the .dat.
 %
 %   Notes:
 %       - This function does not implement low-RAM mode.
@@ -36,14 +42,13 @@ function outData = split_data_by_event(data, SaveFolder, varargin)
 %         are rejected.
 %       - Every event instance of events.mat is saved, including the ones the
 %         user removed (ignored), so the E axis maps one to one onto
-%         events.mat. eventInfo.selected flags the ignored instances and
-%         eventInfo.durationSec holds each instance's ON-to-OFF duration
-%         (.dat header Phase 8b). Removal affects display and processing, not
-%         saving. Until the event-split consumers honour these flags (Phase
-%         8c), functions that process this output include ignored instances.
+%         events.mat (.dat header Phase 8b). Removal affects display and
+%         processing, not saving: functions that reduce this output over
+%         events exclude the ignored instances (Phase 8c).
 
 % Default output for pipeline management:
-default_Output = 'dataByEv.umt';
+default_Output = 'dataByEv.dat';
+metaData = struct();
 
 if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) && ...
         strcmpi(strtrim(char(string(data))), 'pipelineInfo')
@@ -79,19 +84,9 @@ assert(ndims(dataByEv) == 4, ...
     'Umitoolbox:split_data_by_event:invalidSplitOutput', ...
     'EventsManager.splitDataByEvents returned unexpected data dimensions.');
 
-entryMeta = struct('FrameRateHz', frameRateHz);
-
-outData = genUMTStruct(single(dataByEv), ...
-    'kind', 'image', ...
-    'entryName', 'main', ...
-    'dimNames', {'Y','X','T','E'}, ...
-    'meta', entryMeta);
-
-outData = appendUMTEventInfo(outData, ...
-    'eventInfo', ev.exportEventInfo('FrameRateHz', frameRateHz, 'IncludeIgnored', true), ...
-    'overwrite', true);
-
-validateUMTStruct(outData);
+% Event-split image data are saved as .dat (Phase 8c).
+outData = single(dataByEv);
+metaData = struct('dimNames', {{'Y','X','T','E'}}, 'frameRateHz', frameRateHz);
 
     function info = localPipelineInfo()
         info = PipelineManager.createPipelineInfo( ...
@@ -130,10 +125,19 @@ validateUMTStruct(outData);
             'outData', ...
             'ProcessedData', ...
             'data', ...
-            'Event-split image data in UMT format.', ...
+            'Event-split image data (Y-X-T-E), one slice per event instance.', ...
             default_Output, ...
             1, ...
             'isData', true);
+
+        info = PipelineManager.addOutput(info, ...
+            'metaData', ...
+            'metaData', ...
+            'data', ...
+            'Axes and frame rate of the .dat output.', ...
+            '', ...
+            2, ...
+            'isData', false);
     end
 end
 

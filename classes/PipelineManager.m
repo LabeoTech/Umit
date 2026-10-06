@@ -13058,18 +13058,23 @@ classdef PipelineManager < handle
             function [finalPath, finalFileName] = localResolveFinalPath(dstPathIn, srcPathIn)
                 %LOCALRESOLVEFINALPATH Resolve final destination path/file name.
                 %
-                % If dstPathIn already has an extension, keep it.
-                % Otherwise, inherit the extension from srcPathIn when available.
+                % If dstPathIn has no extension, inherit the extension from
+                % srcPathIn. If both are data formats (.dat/.umt) and differ,
+                % the actual file's format wins: saveData chooses .dat or
+                % .umt from the returned value, and a function's output may
+                % be either depending on its input (.dat header Phase 8c).
+                % Otherwise keep dstPathIn's extension.
 
                 finalPath = char(string(dstPathIn));
 
                 [dstFolder, dstBase, dstExt] = fileparts(finalPath);
+                [~,~,srcExtLocal] = fileparts(char(string(srcPathIn)));
+                dataExts = {'.dat', '.umt'};
 
-                if isempty(dstExt)
-                    [~,~,srcExtLocal] = fileparts(char(string(srcPathIn)));
-                    if ~isempty(srcExtLocal)
-                        finalPath = fullfile(dstFolder, [dstBase srcExtLocal]);
-                    end
+                if ~isempty(srcExtLocal) && (isempty(dstExt) || ...
+                        (any(strcmpi(dstExt, dataExts)) && any(strcmpi(srcExtLocal, dataExts)) && ...
+                        ~strcmpi(dstExt, srcExtLocal)))
+                    finalPath = fullfile(dstFolder, [dstBase srcExtLocal]);
                 end
 
                 [~,finalBase,finalExt] = fileparts(finalPath);

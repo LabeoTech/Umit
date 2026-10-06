@@ -1,8 +1,8 @@
-function outData = genAmplitudeMaps(data, SaveFolder, varargin)
+function [outData, metaData] = genAmplitudeMaps(data, SaveFolder, varargin)
 %GENAMPLITUDEMAPS Compute event-wise response amplitude maps from imaging data.
 %
 %   outData = genAmplitudeMaps(data, SaveFolder)
-%   outData = genAmplitudeMaps(data, SaveFolder, 'BaselineMeasure', value, ...)
+%   [outData, metaData] = genAmplitudeMaps(data, SaveFolder, 'BaselineMeasure', value, ...)
 %
 %   This function computes response amplitude maps by subtracting an
 %   aggregate baseline value from an aggregate response value along the time
@@ -39,7 +39,20 @@ function outData = genAmplitudeMaps(data, SaveFolder, varargin)
 %                           In-RAM arrays need it explicitly; AcqInfos.mat is
 %                           not used.
 %
+%   Output:
+%       - Continuous inputs (numeric YXT, .dat, UMT YXT entry): numeric
+%         Y x X x E array, one amplitude map per event condition, saved as
+%         .dat by PipelineManager; metaData holds dimNames {'Y','X','E'}.
+%         The .dat stores no labels: resolveDatEventMapping matches its E
+%         axis to events.mat (one slice per condition).
+%       - Event-split UMT inputs: UMT struct with the aggregated eventInfo
+%         (selected, durationSec, nInstances); metaData is an empty struct.
+%
 %   Notes:
+%       - Conditions follow EventsManager.conditionAggregationPlan (.dat
+%         header Phase 8c): ignored instances are excluded, conditions are
+%         ordered by first appearance, and a condition whose instances are
+%         all ignored gives a NaN map.
 %       - BaselineMeasure and ResponseMeasure are applied jointly across
 %         frames AND trials within each condition, not per-trial-then-
 %         averaged-across-trials. With the default ResponseMeasure='max',
@@ -53,6 +66,7 @@ function outData = genAmplitudeMaps(data, SaveFolder, varargin)
 
 % Legacy pipeline placeholder
 default_Output = 'amplitudeMap.umt';
+metaData = struct();
 
 if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) ...
         && strcmpi(strtrim(char(string(data))), 'pipelineInfo')
@@ -110,6 +124,10 @@ if src.isRawDat
     outData = iRunChunkedDat(src, baselineMeasure, responseMeasure, timeWindowSec, SaveFolder, frameRateHz);
 else
     outData = iRunStandard(src, baselineMeasure, responseMeasure, timeWindowSec, SaveFolder, frameRateHz);
+end
+if isnumeric(outData)
+    % One map per condition: saved as .dat (Phase 8c).
+    metaData = struct('dimNames', {{'Y','X','E'}});
 end
 
     function info = localPipelineInfo()
@@ -185,10 +203,21 @@ end
             'outData', ...
             'ProcessedData', ...
             'data', ...
-            'UMT structure containing YXE amplitude maps.', ...
+            ['YXE amplitude maps, one per event condition: .dat for continuous ' ...
+             'inputs, UMT for event-split UMT inputs.'], ...
             default_Output, ...
             1, ...
             'isData', true);
+
+        info = PipelineManager.addOutput( ...
+            info, ...
+            'metaData', ...
+            'metaData', ...
+            'data', ...
+            'Axes of the .dat output.', ...
+            '', ...
+            2, ...
+            'isData', false);
     end
 end
 
@@ -213,25 +242,19 @@ switch src.representation
             'The file "events.mat" was not found in SaveFolder.');
 
         ev = EventsManager(SaveFolder);
-        dataYXTE = single(ev.splitDataByEvents(dataYXT, 'FrameRateHz', frameRateHz));
+        % Every instance is split; the plan excludes ignored ones (8c).
+        dataYXTE = single(ev.splitDataByEvents(dataYXT, 'FrameRateHz', frameRateHz, ...
+            'IncludeIgnored', true));
+        plan = EventsManager.conditionAggregationPlan( ...
+            ev.exportEventInfo('FrameRateHz', frameRateHz, 'IncludeIgnored', true));
 
         baselineFrames = 1:round(double(ev.baselinePeriod) * frameRateHz);
         [baselineFrames, responseFrames] = iResolveAnalysisFrames( ...
             size(dataYXTE, 3), baselineFrames, frameRateHz, timeWindowSec);
 
-        eventIDsPerInstance = double(ev.eventID(ev.state));
-        uniqueIDs = unique(eventIDsPerInstance, 'stable');
-
-        eventInfoOut = struct();
-        eventInfoOut.eventID = reshape(uniqueIDs, [], 1);
-        eventInfoOut.repetitionIndex = zeros(numel(uniqueIDs), 1, 'uint16');
-        eventInfoOut.eventName = reshape(string(ev.eventNameList(uniqueIDs)), [], 1);
-        eventInfoOut.eventAxisMode = 'aggregated_repetitions';
-        eventInfoOut.baselinePeriod = double(ev.baselinePeriod);
-
-        ampMap = iComputeAmplitudeFromYXTE( ...
-            dataYXTE, baselineFrames, responseFrames, ...
-            baselineMeasure, responseMeasure, eventIDsPerInstance);
+        outData = iConditionsToE(EventsManager.reduceByCondition(dataYXTE, plan, ...
+            iAmplitudeReducer(baselineFrames, responseFrames, baselineMeasure, responseMeasure), 4));
+        return
 
     case 'eventsplit'
         entry = src.entry;
@@ -256,35 +279,24 @@ switch src.representation
         [baselineFrames, responseFrames] = iResolveAnalysisFrames( ...
             size(dataYXTE, 3), baselineFrames, frameRateHz, timeWindowSec);
 
-        eventIDsRaw = double(eventInfo.eventID(:));
-        eventNamesRaw = string(eventInfo.eventName(:));
         axisMode = char(string(eventInfo.eventAxisMode));
 
         if strcmpi(axisMode, 'aggregated_repetitions')
-            eventIDsForComputation = eventIDsRaw;
-            eventIDsOut = eventIDsRaw;
-            eventNamesOut = eventNamesRaw;
+            % Already one slice per condition: one map per row.
+            eventIDs = double(eventInfo.eventID(:));
+            ampMap = iComputeAmplitudeFromYXTE( ...
+                dataYXTE, baselineFrames, responseFrames, ...
+                baselineMeasure, responseMeasure, (1:numel(eventIDs)).');
+            eventInfoOut = eventInfo;
         elseif strcmpi(axisMode, 'instances')
-            eventIDsForComputation = eventIDsRaw;
-            [eventIDsOut, ia] = unique(eventIDsRaw, 'stable');
-            eventNamesOut = eventNamesRaw(ia);
+            plan = EventsManager.conditionAggregationPlan(eventInfo);
+            ampMap = iConditionsToE(EventsManager.reduceByCondition(dataYXTE, plan, ...
+                iAmplitudeReducer(baselineFrames, responseFrames, baselineMeasure, responseMeasure), 4));
+            eventInfoOut = plan.eventInfoOut;
         else
             error('Umitoolbox:genAmplitudeMaps:unsupportedEventAxisMode', ...
                 'Unsupported eventAxisMode "%s".', axisMode);
         end
-
-        eventInfoOut = struct();
-        eventInfoOut.eventID = reshape(eventIDsOut, [], 1);
-        eventInfoOut.repetitionIndex = zeros(numel(eventIDsOut), 1, 'uint16');
-        eventInfoOut.eventName = reshape(eventNamesOut, [], 1);
-        eventInfoOut.eventAxisMode = 'aggregated_repetitions';
-        if isfield(eventInfo, 'baselinePeriod')
-            eventInfoOut.baselinePeriod = double(eventInfo.baselinePeriod);
-        end
-
-        ampMap = iComputeAmplitudeFromYXTE( ...
-            dataYXTE, baselineFrames, responseFrames, ...
-            baselineMeasure, responseMeasure, eventIDsForComputation);
 
     otherwise
         error('Umitoolbox:genAmplitudeMaps:unknownRepresentation', ...
@@ -297,95 +309,78 @@ outData = iBuildOutputUMT( ...
 end
 
 function outData = iRunChunkedDat(src, baselineMeasure, responseMeasure, timeWindowSec, SaveFolder, frameRateHz)
+%IRUNCHUNKEDDAT Amplitude maps of a YXT .dat, read in X slabs (Phase 8c plan).
 Info = src.Info;
 Ny = datAxisSize(Info, 'Y');
 Nx = datAxisSize(Info, 'X');
 Nt = datAxisSize(Info, 'T');
 
 ev = EventsManager(SaveFolder);
-[frMat, conditionIDlist] = ev.getFrameMatrix(Nt, 'FrameRateHz', frameRateHz);
+[frMat, conditionIDlist] = ev.getFrameMatrix(Nt, 'FrameRateHz', frameRateHz, 'IncludeIgnored', true);
 if isempty(frMat)
     error('Umitoolbox:genAmplitudeMaps:noFrames', ...
         'No event frames were returned by EventsManager.getFrameMatrix.');
 end
+evInfo = ev.exportEventInfo('FrameRateHz', frameRateHz, 'IncludeIgnored', true);
+assert(isequal(double(evInfo.eventID(:)), double(conditionIDlist(:))), ...
+    'Umitoolbox:genAmplitudeMaps:eventAxisMismatch', ...
+    'The event list does not match the split trials.');
+plan = EventsManager.conditionAggregationPlan(evInfo);
 
 baselineFrames = 1:round(double(ev.baselinePeriod) * frameRateHz);
 [baselineFrames, responseFrames] = iResolveAnalysisFrames( ...
     size(frMat, 2), baselineFrames, frameRateHz, timeWindowSec);
 
-eventIDs = unique(conditionIDlist(:), 'stable');
-nEvents = numel(eventIDs);
-ampMap = zeros(Ny, Nx, nEvents, 'single');
+% Only the baseline and response columns of each trial are read.
+usedCols = [baselineFrames, responseFrames];
+frUsed = frMat(:, usedCols);
+frUsed(frUsed < 1 | frUsed > Nt) = NaN;
+needed = unique(frUsed(isfinite(frUsed)));
+nB = numel(baselineFrames);
+reducer = iAmplitudeReducer(1:nB, nB + (1:numel(responseFrames)), ...
+    baselineMeasure, responseMeasure);
+
+nInst = size(frMat, 1);
+nCond = numel(plan.conditionID);
+outData = zeros(Ny, Nx, nCond, 'single');
 
 slabIn = spatialSlabIO('open', src.fileName, 'Info', Info);
 cleanupFid = onCleanup(@() spatialSlabIO('close', slabIn));
 
-bytesPerElement = getByteSize('single');
-trialCounts = arrayfun(@(eventID) sum(conditionIDlist == eventID), eventIDs);
-maxTrials = max(trialCounts);
 scratchBytes = double(Ny) * double(Nx) * ...
-    double(numel(baselineFrames) + numel(responseFrames)) * ...
-    double(maxTrials) * double(bytesPerElement);
-nChunks = calculateMaxChunkSize(scratchBytes, 1, 0.2);
-nChunks = max(1, nChunks);
+    (double(numel(usedCols)) * double(nInst) + double(numel(needed))) * ...
+    double(getByteSize('single'));
+nChunks = max(1, calculateMaxChunkSize(scratchBytes, 1, 0.2));
 chunkX = ceil(Nx / nChunks);
-nChunks = ceil(Nx / chunkX);
 
-for iEv = 1:nEvents
-    idxTrials = conditionIDlist == eventIDs(iEv);
-    trialMat = frMat(idxTrials, :);
-
-    for iChunk = 1:nChunks
-        xStart = (iChunk - 1) * chunkX + 1;
-        xEnd = min(xStart + chunkX - 1, Nx);
-        xIdx = xStart:xEnd;
-
-        baselineVals = zeros(Ny, numel(xIdx), numel(baselineFrames), size(trialMat,1), 'single');
-        responseVals = zeros(Ny, numel(xIdx), numel(responseFrames), size(trialMat,1), 'single');
-
-        for iTrial = 1:size(trialMat,1)
-            thisFrames = trialMat(iTrial, :);
-            for iB = 1:numel(baselineFrames)
-                fr = thisFrames(baselineFrames(iB));
-                if ~isnan(fr) && fr >= 1 && fr <= Nt
-                    baselineVals(:,:,iB,iTrial) = iReadFrameSlab(slabIn, double(fr), xIdx);
-                else
-                    baselineVals(:,:,iB,iTrial) = NaN;
-                end
-            end
-            for iR = 1:numel(responseFrames)
-                fr = thisFrames(responseFrames(iR));
-                if ~isnan(fr) && fr >= 1 && fr <= Nt
-                    responseVals(:,:,iR,iTrial) = iReadFrameSlab(slabIn, double(fr), xIdx);
-                else
-                    responseVals(:,:,iR,iTrial) = NaN;
-                end
-            end
-        end
-
-        baselineVals = reshape(baselineVals, Ny, numel(xIdx), []);
-        responseVals = reshape(responseVals, Ny, numel(xIdx), []);
-
-        baselineMap = iApplyAggFcnND(baselineVals, baselineMeasure);
-        responseMap = iApplyAggFcnND(responseVals, responseMeasure);
-        ampMap(:, xIdx, iEv) = responseMap - baselineMap;
+for xStart = 1:chunkX:Nx
+    xIdx = xStart:min(xStart + chunkX - 1, Nx);
+    frames = single(spatialSlabIO('read', slabIn, xIdx, needed(:).'));
+    slabE = nan(Ny, numel(xIdx), numel(usedCols), nInst, 'single');
+    for iInst = 1:nInst
+        valid = isfinite(frUsed(iInst, :));
+        [~, loc] = ismember(frUsed(iInst, valid), needed);
+        slabE(:, :, valid, iInst) = frames(:, :, loc);
     end
+    outData(:, xIdx, :) = iConditionsToE(EventsManager.reduceByCondition(slabE, plan, reducer, 4));
+end
 end
 
-eventNames = ev.eventNameList(:);
-if isempty(eventNames)
-    eventNames = arrayfun(@(x) sprintf('Event%d', x), eventIDs, 'UniformOutput', false);
+function ampMap = iConditionsToE(perCondition)
+%ICONDITIONSTOE Y x X x 1 x E (one map per condition along dim 4) to Y x X x E.
+ampMap = reshape(perCondition, size(perCondition, 1), size(perCondition, 2), []);
 end
 
-eventInfoOut = struct();
-eventInfoOut.eventID = reshape(eventIDs, [], 1);
-eventInfoOut.repetitionIndex = zeros(nEvents, 1, 'uint16');
-eventInfoOut.eventName = reshape(string(eventNames(eventIDs)), [], 1);
-eventInfoOut.eventAxisMode = 'aggregated_repetitions';
-eventInfoOut.baselinePeriod = double(ev.baselinePeriod);
+function fcn = iAmplitudeReducer(baselineFrames, responseFrames, baselineMeasure, responseMeasure)
+%IAMPLITUDEREDUCER Per-condition amplitude: response minus baseline, pooled
+%over frames and the condition's selected trials (Y x X x T x E -> Y x X).
+fcn = @(x) iAmplitudeOfTrials(x, baselineFrames, responseFrames, baselineMeasure, responseMeasure);
+end
 
-outData = iBuildOutputUMT( ...
-    ampMap, eventInfoOut, baselineMeasure, responseMeasure, timeWindowSec);
+function ampMap = iAmplitudeOfTrials(x, baselineFrames, responseFrames, baselineMeasure, responseMeasure)
+baselineVals = reshape(x(:, :, baselineFrames, :), size(x, 1), size(x, 2), []);
+responseVals = reshape(x(:, :, responseFrames, :), size(x, 1), size(x, 2), []);
+ampMap = iApplyAggFcnND(responseVals, responseMeasure) - iApplyAggFcnND(baselineVals, baselineMeasure);
 end
 
 function src = iResolveInput(dataIn, SaveFolder)
@@ -530,12 +525,6 @@ switch lower(char(string(aggfcn)))
             'Unknown aggregate function "%s".', char(string(aggfcn)));
 end
 out = single(out);
-end
-
-function slab = iReadFrameSlab(slabIn, frameIdx, xIdx)
-%IREADFRAMESLAB Read one frame's X-slab through an open spatialSlabIO reader.
-
-slab = single(spatialSlabIO('read', slabIn, xIdx, frameIdx));
 end
 
 function outData = iBuildOutputUMT(ampMap, eventInfoOut, baselineMeasure, responseMeasure, timeWindowSec)

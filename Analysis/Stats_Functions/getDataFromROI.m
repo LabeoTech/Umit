@@ -8,10 +8,16 @@ function outData = getDataFromROI(data, SaveFolder, varargin)
 %   returns the result as a UMT structure of kind "roi".
 %
 %   Supported inputs:
-%       1) Numeric image data with dimensions Y x X x T
-%       2) Raw .dat filename storing continuous Y x X x T data
+%       1) Numeric image data: Y x X x T, or with an event axis (Y x X x T x E,
+%          Y x X x E) when 'DimNames' says so (a 4-D array defaults to
+%          Y-X-T-E)
+%       2) .dat filename: Y-X-T, Y-X, Y-X-T-E, or Y-X-E
 %       3) UMT struct of kind "image"
 %       4) Filename to a .umt file containing one image UMT struct
+%   Event-split arrays and .dat files carry no event labels: their eventInfo
+%   comes from SaveFolder's events.mat (resolveDatEventMapping: one slice per
+%   instance or per condition; otherwise one condition, with a warning).
+%   Event-split image outputs are .dat since .dat header Phase 8c.
 %
 %   Inputs:
 %       data       - Image-backed input in one of the supported forms above.
@@ -82,6 +88,7 @@ addParameter(p, 'SpatialAggFcn', 'mean', ...
     @(x) (ischar(x) || (isstring(x) && isscalar(x))) && ...
     ismember(lower(char(string(x))), validAgg));
 addParameter(p, 'FrameRateHz', []);
+addParameter(p, 'DimNames', {});
 
 parse(p, data, SaveFolder, varargin{:});
 
@@ -103,7 +110,7 @@ roiSet = iLoadROISet(roiFile, SaveFolder, 'getDataFromROI');
 % Resolve input to one or more image entries
 % -------------------------------------------------------------------------
 [entryNames, entryValues, entryDims, entryMetas, srcEventInfo] = ...
-    iResolveImageInput(data, SaveFolder, p.Results.FrameRateHz);
+    iResolveImageInput(data, SaveFolder, p.Results.FrameRateHz, p.Results.DimNames);
 
 outData = struct();
 roiEntryNames = entryNames;
@@ -139,9 +146,10 @@ for iEntry = 1:numel(roiEntryNames)
     end
 end
 
-% Carry the source event metadata through unchanged. Both conditions matter:
-% without an E dimension the schema forbids eventInfo, and an event-split
-% input that carried none must not have one invented for it.
+% Carry the source event metadata through unchanged: a UMT input's own
+% eventInfo, or for an event-split array/.dat the mapping onto events.mat.
+% Without an E dimension the schema forbids eventInfo, and an event-split
+% UMT that carried none must not have one invented for it.
 if any(cellfun(@(d) any(strcmp(d, 'E')), roiEntryDims)) && ...
         isstruct(srcEventInfo) && ~isempty(fieldnames(srcEventInfo))
     outData = appendUMTEventInfo(outData, ...
@@ -211,6 +219,15 @@ validateUMTStruct(outData, 'requireEventInfo', false);
             'sourceField', 'frameRateHz', ...
             'required', false);
 
+        info = PipelineManager.addInput( ...
+            info, ...
+            'DimNames', ...
+            'sourceInfo', ...
+            'Axes of the input data, injected from the data.', ...
+            'kind', 'sourceInfo', ...
+            'sourceField', 'dimNames', ...
+            'required', false);
+
         info = PipelineManager.addOutput( ...
             info, ...
             'outData', ...
@@ -228,7 +245,7 @@ end
 % =========================================================================
 
 function [entryNames, entryValues, entryDims, entryMetas, eventInfo] = ...
-    iResolveImageInput(data, SaveFolder, explicitRate)
+    iResolveImageInput(data, SaveFolder, explicitRate, explicitDims)
 %IRESOLVEIMAGEINPUT Resolve supported input forms to image entries.
 %
 % entryMetas carries each source entry's meta struct. For a raw array or a
@@ -242,13 +259,16 @@ function [entryNames, entryValues, entryDims, entryMetas, eventInfo] = ...
 eventInfo = struct();
 
 if isnumeric(data) || islogical(data)
-    validateattributes(data, {'numeric','logical'}, {'nonempty','3d'}, ...
-        mfilename, 'data');
+    validateattributes(data, {'numeric','logical'}, {'nonempty'}, mfilename, 'data');
+    dims = iNumericDims(data, explicitDims);
 
     entryNames = {'main'};
     entryValues = {single(data)};
-    entryDims = {{'Y','X','T'}};
+    entryDims = {dims};
     entryMetas = {iRateMeta(explicitRate, [])};
+    if any(strcmp(dims, 'E'))
+        eventInfo = iEventInfoFromFolder(dims, size(data), SaveFolder);
+    end
     return
 end
 
@@ -270,12 +290,18 @@ if ischar(data) || (isstring(data) && isscalar(data))
 
     switch ext
         case '.dat'
-            assertDatLayout(loadMetaData(dataFile), {{'Y','X','T'}}, 'getDataFromROI');
+            md = loadMetaData(dataFile);
+            assertDatLayout(md, {{'Y','X','T'}, {'Y','X'}, {'Y','X','T','E'}, {'Y','X','E'}}, ...
+                'getDataFromROI');
             rawData = loadData(dataFile);
+            dims = cellstr(string(md.dimNames(:).'));
             entryNames = {'main'};
             entryValues = {single(rawData)};
-            entryDims = {{'Y','X','T'}};
+            entryDims = {dims};
             entryMetas = {iRateMeta(explicitRate, dataFile)};
+            if any(strcmp(dims, 'E'))
+                eventInfo = iEventInfoFromFolder(dims, md.dimSizes, SaveFolder);
+            end
             return
 
         case '.umt'
@@ -534,6 +560,41 @@ switch fcnName
 end
 
 out = single(out);
+end
+
+function dims = iNumericDims(data, explicitDims)
+%INUMERICDIMS Axes of a numeric input: explicit/injected DimNames when they
+% fit, else Y-X-T for 3-D and Y-X-T-E for 4-D arrays.
+allowed = {{'Y','X','T'}, {'Y','X'}, {'Y','X','T','E'}, {'Y','X','E'}};
+if ~isempty(explicitDims)
+    dims = cellstr(string(explicitDims(:).'));
+    assert(any(cellfun(@(c) isequal(dims, c), allowed)) && ndims(data) <= numel(dims), ...
+        'Umitoolbox:getDataFromROI:unsupportedLayout', ...
+        'DimNames {%s} does not describe a supported image layout of the data.', strjoin(dims, ','));
+    return
+end
+switch ndims(data)
+    case {2, 3}
+        dims = {'Y','X','T'};
+    case 4
+        dims = {'Y','X','T','E'};
+    otherwise
+        error('Umitoolbox:getDataFromROI:unsupportedLayout', ...
+            'Numeric input must be Y x X x T or Y x X x T x E.');
+end
+end
+
+function eventInfo = iEventInfoFromFolder(dims, sz, SaveFolder)
+%IEVENTINFOFROMFOLDER eventInfo of an event-split input without labels, from
+% the SaveFolder's events.mat (resolveDatEventMapping, .dat header Phase 8c).
+sizes = ones(1, numel(dims));
+sizes(1:min(numel(sz), numel(dims))) = sz(1:min(numel(sz), numel(dims)));
+mapping = resolveDatEventMapping(struct('filePath', 'input data', ...
+    'dimNames', {dims}, 'dimSizes', sizes), SaveFolder);
+if ~any(strcmpi(mapping.status, {'matched', 'aggregated'}))
+    warning('Umitoolbox:getDataFromROI:eventsNotMatched', '%s', mapping.message);
+end
+eventInfo = mapping.eventInfo;
 end
 
 function meta = iRateMeta(explicitRate, dataFile)
