@@ -34,6 +34,13 @@ function outData = split_data_by_event(data, SaveFolder, varargin)
 %         EventsManager.splitDataByEvents(...).
 %       - Continuous UMT inputs are supported. Already event-split UMT data
 %         are rejected.
+%       - Every event instance of events.mat is saved, including the ones the
+%         user removed (ignored), so the E axis maps one to one onto
+%         events.mat. eventInfo.selected flags the ignored instances and
+%         eventInfo.durationSec holds each instance's ON-to-OFF duration
+%         (.dat header Phase 8b). Removal affects display and processing, not
+%         saving. Until the event-split consumers honour these flags (Phase
+%         8c), functions that process this output include ignored instances.
 
 % Default output for pipeline management:
 default_Output = 'dataByEv.umt';
@@ -66,7 +73,8 @@ frameRateHz = resolveDataInfoValue('frameRateHz', opts.Results.FrameRateHz, src.
     mfilename, 'OwnValue', src.ownRate, 'OwnSource', 'the UMT entry meta.FrameRateHz');
 ev = EventsManager(SaveFolder);
 
-dataByEv = ev.splitDataByEvents(src.dataYXT, 'FrameRateHz', frameRateHz);
+dataByEv = ev.splitDataByEvents(src.dataYXT, 'FrameRateHz', frameRateHz, ...
+    'IncludeIgnored', true);
 assert(ndims(dataByEv) == 4, ...
     'Umitoolbox:split_data_by_event:invalidSplitOutput', ...
     'EventsManager.splitDataByEvents returned unexpected data dimensions.');
@@ -80,7 +88,7 @@ outData = genUMTStruct(single(dataByEv), ...
     'meta', entryMeta);
 
 outData = appendUMTEventInfo(outData, ...
-    'eventInfo', ev.exportEventInfo('FrameRateHz', frameRateHz), ...
+    'eventInfo', ev.exportEventInfo('FrameRateHz', frameRateHz, 'IncludeIgnored', true), ...
     'overwrite', true);
 
 validateUMTStruct(outData);

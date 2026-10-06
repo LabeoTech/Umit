@@ -1494,16 +1494,20 @@ classdef EventsManager < handle
             %
             % Name-Value Pair:
             %   'Purge' (scalar logical, default = false):
-            %       When true, the condition is also excluded from trial-boundary/
-            %       timing computation in "getFrameMatrix" (its timestamps no longer
-            %       act as a boundary for a neighboring trial). Use this only for
-            %       events that are not real stimuli (e.g. a device-required
-            %       "baseline" placeholder). When false (default), behavior is
-            %       unchanged: the condition is dropped from analysis output but its
-            %       timing still bounds neighboring trials.
+            %       When true, the condition's events are REMOVED from the event
+            %       list (eventID, timestamps, state, ...), so they are no longer
+            %       events and no longer bound neighboring trials. Use this only
+            %       for events that are not real stimuli (e.g. a device-required
+            %       "baseline" placeholder). A purge is refused while the
+            %       SaveFolder holds event-split data (.dat or .umt files with an
+            %       E axis), because their E axis maps onto the current event
+            %       list; delete those files first. Save to update events.mat.
+            %       When false (default), the condition is only ignored: it stays
+            %       in the event list and in saved event-split data, flagged as
+            %       not selected, and is excluded from display and processing.
             %
             % Notes:
-            %   - Both ON and OFF transitions of the selected condition are ignored.
+            %   - Both ON and OFF transitions of the selected condition are affected.
             %   - If all conditions become ignored, a warning is raised.
 
             p = inputParser;
@@ -1519,16 +1523,14 @@ classdef EventsManager < handle
             end
 
             condID = find(strcmpi(conditionName, obj.eventNameList), 1, 'first');
-            obj.selectedEvents(obj.eventID == condID) = false;
 
             if bPurge
-                if isempty(obj.PurgedEvents) || ~islogical(obj.PurgedEvents) || ...
-                        ~isequal(size(obj.PurgedEvents), size(obj.eventID))
-                    obj.PurgedEvents = false(size(obj.eventID));
-                end
-                obj.PurgedEvents(obj.eventID == condID) = true;
-                fprintf('Condition "%s" will be purged and excluded from trial timing!\n', obj.eventNameList{condID})
+                obj.assertNoEventSplitFiles('purge');
+                obj.deleteEvents(obj.eventID == condID);
+                fprintf('Condition "%s" was purged: its events were removed from the event list.\n', ...
+                    obj.eventNameList{condID})
             else
+                obj.selectedEvents(obj.eventID == condID) = false;
                 fprintf('Condition "%s" will be ignored!\n', obj.eventNameList{condID})
             end
 
@@ -1551,13 +1553,13 @@ classdef EventsManager < handle
             %
             % Name-Value Pair:
             %   'Purge' (scalar logical, default = false):
-            %       When true, the selected repetitions are also excluded from
-            %       trial-boundary/timing computation in "getFrameMatrix" (see
-            %       "removeCondition" for details). Default false preserves today's
-            %       ignore-only behavior.
+            %       When true, the selected repetitions are REMOVED from the event
+            %       list (see "removeCondition"); refused while the SaveFolder
+            %       holds event-split data. The remaining repetitions of the
+            %       condition are renumbered. Default false only ignores them.
             %
             % Notes:
-            %   - Both ON and OFF transitions of each selected repetition are ignored.
+            %   - Both ON and OFF transitions of each selected repetition are affected.
             %   - If all repetitions from the selected condition become ignored, a
             %     warning is raised.
 
@@ -1587,29 +1589,25 @@ classdef EventsManager < handle
             idxCond = (obj.eventID == condID);
             idxRep = ismember(obj.repetitionID, repetitionIndex);
 
-            obj.selectedEvents(idxCond & idxRep) = false;
-
             if bPurge
-                if isempty(obj.PurgedEvents) || ~islogical(obj.PurgedEvents) || ...
-                        ~isequal(size(obj.PurgedEvents), size(obj.eventID))
-                    obj.PurgedEvents = false(size(obj.eventID));
-                end
-                obj.PurgedEvents(idxCond & idxRep) = true;
+                obj.assertNoEventSplitFiles('purge');
+                obj.deleteEvents(idxCond & idxRep);
+                verb = 'purged (removed from the event list)';
+                idxCond = (obj.eventID == condID);
+            else
+                obj.selectedEvents(idxCond & idxRep) = false;
+                verb = 'ignored';
             end
 
             if isscalar(repetitionIndex)
-                verb = 'ignored';
-                if bPurge; verb = 'purged and excluded from trial timing'; end
                 fprintf('Repetition "%d" from condition "%s" will be %s!\n', ...
                     repetitionIndex, obj.eventNameList{condID}, verb);
             else
-                verb = 'ignored';
-                if bPurge; verb = 'purged and excluded from trial timing'; end
                 fprintf('Repetitions [%s] from condition "%s" will be %s!\n', ...
                     num2str(repetitionIndex), obj.eventNameList{condID}, verb);
             end
 
-            if all(~obj.selectedEvents(idxCond))
+            if any(idxCond) && all(~obj.selectedEvents(idxCond))
                 warning('All repetitions from condition "%s" were ignored. The whole condition will be ignored!', ...
                     obj.eventNameList{condID})
             end
@@ -1663,6 +1661,26 @@ classdef EventsManager < handle
             if isempty(obj.timestamps)
                 warning('Unable to create events.mat file. No triggers found!')
                 return
+            end
+
+            % Legacy purge flags (files written before purge removed events):
+            % remove the flagged events now, unless event-split data already
+            % maps onto the current event list (.dat header Phase 8b).
+            if ~isempty(obj.PurgedEvents) && islogical(obj.PurgedEvents) && ...
+                    isequal(size(obj.PurgedEvents), size(obj.eventID)) && any(obj.PurgedEvents)
+                splitFiles = EventsManager.findEventSplitFiles(saveFolder);
+                if isempty(splitFiles)
+                    nPurged = nnz(obj.PurgedEvents & obj.state);
+                    obj.deleteEvents(obj.PurgedEvents);
+                    fprintf('Removed %d legacy purged event(s) from the event list.\n', nPurged);
+                else
+                    warning('Umitoolbox:EventsManager:legacyPurgeKept', ...
+                        ['events.mat holds legacy purged events. They are kept (still ' ...
+                         'excluded from trial timing) because the SaveFolder holds ' ...
+                         'event-split data that maps onto the current event list. ' ...
+                         'Delete these files to let the purged events be removed: %s'], ...
+                        strjoin(splitFiles, ', '));
+                end
             end
 
             RawFolder = obj.RawFolder; %#ok<NASGU>
@@ -1854,7 +1872,7 @@ classdef EventsManager < handle
             end
         end
 
-        function [frMat, conditionIDlist, repetitionList] = getFrameMatrix(obj, datLen, varargin)
+        function [frMat, conditionIDlist, repetitionList, selectedList] = getFrameMatrix(obj, datLen, varargin)
             %GETFRAMEMATRIX Generate a repetition-by-frame index matrix for trial splitting.
             %
             % This method outputs frame indices for each selected trial. It supports:
@@ -1875,11 +1893,16 @@ classdef EventsManager < handle
             %       header, or the FrameRateHz PipelineManager injects).
             %       Required: omitting it raises
             %       Umitoolbox:EventsManager:missingFrameRate.
+            %   'IncludeIgnored' : logical scalar, default false
+            %       When true, ignored instances are returned too (one row per
+            %       event instance, see getEventInstances); selectedList flags
+            %       them. Trial boundaries do not depend on this option.
             %
             % Outputs:
             %   frMat           : repetition-by-frame matrix of frame indices
             %   conditionIDlist   : condition ID for each returned trial
             %   repetitionList  : repetition index for each returned trial
+            %   selectedList    : false for ignored trials (IncludeIgnored)
             %
             % Notes:
             %   - Out-of-bounds frames are set to NaN.
@@ -1895,9 +1918,14 @@ classdef EventsManager < handle
             addRequired(p, 'datLen', @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x > 0 && x == round(x));
             addOptional(p, 'conditionName', '', @(x) ischar(x) || isStringScalar(x))
             addOptional(p, 'repetitionIndex', [], @(x) (isnumeric(x) && all(x > 0)) || isempty(x))
-            % 'FrameRateHz' is taken out first: inputParser would otherwise
-            % read the text as the optional conditionName.
+            % Name-Value pairs are taken out first: inputParser would otherwise
+            % read their names as the optional conditionName.
             [frameRateArg, varargin] = EventsManager.extractFrameRateArg(varargin);
+            [includeIgnored, varargin] = EventsManager.extractNameValueArg(varargin, 'IncludeIgnored');
+            if isempty(includeIgnored)
+                includeIgnored = false;
+            end
+            validateattributes(includeIgnored, {'logical'}, {'scalar'}, 'getFrameMatrix', 'IncludeIgnored');
             parse(p, obj, datLen, varargin{:});
 
             conditionName = convertStringsToChars(p.Results.conditionName);
@@ -1914,8 +1942,9 @@ classdef EventsManager < handle
             assert(~isempty(obj.baselinePeriod), ...
                 'baselinePeriod is not set. Detect triggers and set a valid baseline before calling getFrameMatrix.');
 
-            [evIdx, conditionIDlist, repetitionList] = obj.getEventIndex(conditionName, repetitionIndex);
-            if isempty(evIdx)
+            [evIdx, conditionIDlist, repetitionList, ~, selectedList] = ...
+                obj.getEventIndex(conditionName, repetitionIndex, includeIgnored);
+            if isempty(evIdx) || ~any(evIdx)
                 frMat = [];
                 return
             end
@@ -1949,7 +1978,7 @@ classdef EventsManager < handle
             frMat = frMat(evIdx, :);
         end
 
-        function [dataByEv, conditionIDlist, repetitionList] = splitDataByEvents(obj, data, varargin)
+        function [dataByEv, conditionIDlist, repetitionList, selectedList] = splitDataByEvents(obj, data, varargin)
             %SPLITDATABYEVENTS Split a 3-D image time series into event-locked trials.
             %
             % Input:
@@ -1978,6 +2007,11 @@ classdef EventsManager < handle
             %     convention used elsewhere in the analysis code.
             %   - 'FrameRateHz' (Name-Value, required): frame rate of DATA,
             %     passed to getFrameMatrix.
+            %   - 'IncludeIgnored' (Name-Value, default false): when true, ignored
+            %     events are kept, one E slice per event instance (see
+            %     getEventInstances). Use it whenever split data is SAVED, so E maps
+            %     onto events.mat; selectedList (4th output) flags which instances
+            %     are selected (.dat header Phase 8b).
 
             p = inputParser();
             addRequired(p, 'obj');
@@ -1986,11 +2020,12 @@ classdef EventsManager < handle
             addParameter(p, 'repetition', [], @(x) (isnumeric(x) && all(x > 0)) || isempty(x))
             addParameter(p, 'FrameRateHz', [], @(x) isempty(x) || ...
                 (isnumeric(x) && isscalar(x) && isreal(x) && isfinite(x) && x > 0))
+            addParameter(p, 'IncludeIgnored', false, @(x) islogical(x) && isscalar(x))
             parse(p, obj, data, varargin{:});
 
-            [frMat, conditionIDlist, repetitionList] = obj.getFrameMatrix( ...
+            [frMat, conditionIDlist, repetitionList, selectedList] = obj.getFrameMatrix( ...
                 size(data,3), p.Results.condition, p.Results.repetition, ...
-                'FrameRateHz', p.Results.FrameRateHz);
+                'FrameRateHz', p.Results.FrameRateHz, 'IncludeIgnored', p.Results.IncludeIgnored);
 
             if isempty(frMat)
                 dataByEv = nan(size(data,1), size(data,2), 0, 0, 'single');
@@ -2023,55 +2058,97 @@ classdef EventsManager < handle
         function evInfo = exportEventInfo(obj, varargin)
             %EXPORTEVENTINFO Package event-related information into a structure.
             %
-            %   evInfo = obj.exportEventInfo()
             %   evInfo = obj.exportEventInfo('FrameRateHz', rate)
+            %   evInfo = obj.exportEventInfo('FrameRateHz', rate, 'IncludeIgnored', false)
             %
             % 'FrameRateHz' (required) is the frame rate of the data the
             % events are exported with (recorded as evInfo.FrameRateHz).
+            % 'IncludeIgnored' (default true) keeps ignored instances, matching
+            % event-split data saved with splitDataByEvents(..., 'IncludeIgnored',
+            % true); false keeps only selected instances, matching the default
+            % split.
             %
             % Output:
-            %   evInfo : struct
-            %       Contains:
-            %           - eventNameList
-            %           - baselinePeriod
-            %           - FrameRateHz
-            %           - eventID        (ON events only)
-            %           - selectedEvents (ON events only)
-            %           - PurgedEvents   (ON events only)
-
-            if isempty(obj.eventID)
-                obj.selectedEvents = [];
-            elseif isempty(obj.selectedEvents) || ...
-                    ~islogical(obj.selectedEvents) || ...
-                    ~isequal(size(obj.selectedEvents), size(obj.eventID))
-                warning(['selectedEvents was missing or invalid. ' ...
-                    'Resetting it to all TRUE with the same size as eventID.']);
-                obj.selectedEvents = true(size(obj.eventID));
-            end
-
-            if isempty(obj.eventID)
-                obj.PurgedEvents = [];
-            elseif isempty(obj.PurgedEvents) || ...
-                    ~islogical(obj.PurgedEvents) || ...
-                    ~isequal(size(obj.PurgedEvents), size(obj.eventID))
-                obj.PurgedEvents = false(size(obj.eventID));
-            end
+            %   evInfo : struct, one row per event instance in split order
+            %       (see getEventInstances):
+            %           - eventNameList, baselinePeriod, FrameRateHz
+            %           - eventID, repetitionIndex
+            %           - selected       (logical; also as selectedEvents)
+            %           - durationSec    (ON to OFF time; NaN when unknown)
 
             p = inputParser();
             addParameter(p, 'FrameRateHz', [], @(x) isempty(x) || ...
                 (isnumeric(x) && isscalar(x) && isreal(x) && isfinite(x) && x > 0))
+            addParameter(p, 'IncludeIgnored', true, @(x) islogical(x) && isscalar(x))
             parse(p, varargin{:});
 
-            fieldsToExport = {'eventNameList','baselinePeriod'};
-            evInfo = struct();
-            for ii = 1:length(fieldsToExport)
-                evInfo.(fieldsToExport{ii}) = obj.(fieldsToExport{ii});
+            inst = obj.getEventInstances();
+            keep = true(size(inst.eventID));
+            if ~p.Results.IncludeIgnored
+                keep = inst.selected;
             end
 
+            evInfo = struct();
+            evInfo.eventNameList = obj.eventNameList;
+            evInfo.baselinePeriod = obj.baselinePeriod;
             evInfo.FrameRateHz = obj.dataFrameRate(p.Results.FrameRateHz);
-            evInfo.eventID = obj.eventID(obj.state);
-            evInfo.selectedEvents = obj.selectedEvents(obj.state);
-            evInfo.PurgedEvents = obj.PurgedEvents(obj.state);
+            evInfo.eventID = cast(inst.eventID(keep), 'like', obj.eventID);
+            evInfo.repetitionIndex = inst.repetitionIndex(keep);
+            evInfo.selected = inst.selected(keep);
+            evInfo.selectedEvents = evInfo.selected;
+            evInfo.durationSec = inst.durationSec(keep);
+        end
+
+        function inst = getEventInstances(obj)
+            %GETEVENTINSTANCES Event instances in split order.
+            %
+            %   inst = obj.getEventInstances()
+            %
+            %   One row per event instance: the ON transitions that are not
+            %   (legacy) purged, in stored order. This is the order of the rows
+            %   of getFrameMatrix and of the E axis of splitDataByEvents with
+            %   'IncludeIgnored', true, so saved event-split data maps onto it.
+            %
+            %   Output struct (column vectors):
+            %       eventID         - condition ID
+            %       repetitionIndex - repetition of the condition
+            %       eventName       - condition name (string)
+            %       selected        - false for ignored instances
+            %       onsetSec        - ON timestamp (s)
+            %       durationSec     - OFF minus ON time of the same condition and
+            %                         repetition (s); NaN when no OFF is found
+
+            inst = struct('eventID', zeros(0, 1), 'repetitionIndex', zeros(0, 1), ...
+                'eventName', strings(0, 1), 'selected', false(0, 1), ...
+                'onsetSec', zeros(0, 1), 'durationSec', zeros(0, 1));
+            if isempty(obj.eventID)
+                return
+            end
+            obj.normalizeSelectionVectors();
+
+            onIdx = find(obj.state(:) & ~obj.PurgedEvents(:));
+            eventIDs = double(obj.eventID(:));
+            repIDs = double(obj.repetitionID(:));
+            times = double(obj.timestamps(:));
+            states = logical(obj.state(:));
+
+            nInst = numel(onIdx);
+            inst.eventID = eventIDs(onIdx);
+            inst.repetitionIndex = repIDs(onIdx);
+            names = cellstr(string(obj.eventNameList(:)));
+            inst.eventName = reshape(string(names(inst.eventID)), [], 1);
+            inst.selected = logical(obj.selectedEvents(onIdx));
+            inst.selected = inst.selected(:);
+            inst.onsetSec = times(onIdx);
+            inst.durationSec = nan(nInst, 1);
+            for ii = 1:nInst
+                k = onIdx(ii);
+                offIdx = find(~states & eventIDs == eventIDs(k) & repIDs == repIDs(k) & ...
+                    (1:numel(states)).' > k, 1, 'first');
+                if ~isempty(offIdx)
+                    inst.durationSec(ii) = times(offIdx) - times(k);
+                end
+            end
         end
 
         function [tmstmp, state] = getConditionTimestamps(obj, conditionName, varargin)
@@ -2133,7 +2210,7 @@ classdef EventsManager < handle
             state = obj.state(fullMask);
         end
 
-        function [evIdx, conditionIDlist, repetitionList, eventNameList] = getEventIndex(obj, conditionName, repetitionIndex)
+        function [evIdx, conditionIDlist, repetitionList, eventNameList, selectedList] = getEventIndex(obj, conditionName, repetitionIndex, includeIgnored)
             %GETEVENTINDEX Retrieve ON-event indices based on condition and repetition.
             %
             %   [evIdx, conditionIDlist, repetitionList, eventNameList] = ...
@@ -2173,7 +2250,8 @@ classdef EventsManager < handle
             %
             %   Notes:
             %       - Filtering is performed on ON events only.
-            %       - Ignored events are excluded automatically.
+            %       - Ignored events are excluded unless INCLUDEIGNORED is true
+            %         (default false); selectedList flags the returned instances.
             %       - Purged events are removed from the ON-event onset space entirely
             %         (evIdx is indexed against ON events that are not purged), so its
             %         length matches "getFrameMatrix"'s purge-aware onset sequence.
@@ -2188,11 +2266,15 @@ classdef EventsManager < handle
             if nargin < 3
                 repetitionIndex = [];
             end
+            if nargin < 4 || isempty(includeIgnored)
+                includeIgnored = false;
+            end
 
             evIdx = [];
             conditionIDlist = [];
             repetitionList = [];
             eventNameList = {};
+            selectedList = false(0, 1);
 
             if isempty(obj.eventID)
                 return
@@ -2241,7 +2323,10 @@ classdef EventsManager < handle
             end
 
             condIdxFull = ismember(obj.eventID, condID);
-            onMaskBase = obj.state & condIdxFull & obj.selectedEvents;
+            onMaskBase = obj.state & condIdxFull & ~obj.PurgedEvents;
+            if ~includeIgnored
+                onMaskBase = onMaskBase & obj.selectedEvents;
+            end
 
             if isempty(repetitionIndex)
                 evIdxFull = onMaskBase;
@@ -2261,6 +2346,7 @@ classdef EventsManager < handle
 
             conditionIDlist = obj.eventID(evIdxFull);
             repetitionList = obj.repetitionID(evIdxFull);
+            selectedList = obj.selectedEvents(evIdxFull);
             evIdx = evIdxFull(onsetMask);
 
             % Return event names with the same size/order as conditionIDlist.
@@ -2272,27 +2358,109 @@ classdef EventsManager < handle
         end
 
     end
+    methods (Static)
+        function files = findEventSplitFiles(folder)
+            %FINDEVENTSPLITFILES Event-split data files in a SaveFolder.
+            %
+            %   files = EventsManager.findEventSplitFiles(folder) returns the
+            %   names (cellstr) of the .dat and .umt files in FOLDER whose layout
+            %   has an E axis. Their E axis maps onto the event list of
+            %   events.mat, so the event list must not be purged while they
+            %   exist (.dat header Phase 8b). Files that cannot be described are
+            %   skipped with a warning.
+
+            files = {};
+            if isempty(folder) || ~isfolder(folder)
+                return
+            end
+            listing = [dir(fullfile(folder, '*.dat')); dir(fullfile(folder, '*.umt'))];
+            for ii = 1:numel(listing)
+                fileName = fullfile(listing(ii).folder, listing(ii).name);
+                try
+                    md = loadMetaData(fileName);
+                catch ME
+                    warning('Umitoolbox:EventsManager:unreadableDataFile', ...
+                        'Could not check "%s" for an event axis: %s', fileName, ME.message);
+                    continue
+                end
+                dimNames = {};
+                if isfield(md, 'dimNames')
+                    dimNames = md.dimNames;
+                elseif isfield(md, 'dim_names')
+                    dimNames = md.dim_names;
+                end
+                if any(strcmpi(cellstr(string(dimNames)), 'E'))
+                    files{end+1} = listing(ii).name; %#ok<AGROW>
+                end
+            end
+        end
+    end
     methods (Static, Access = private)
         function [frameRateHz, args] = extractFrameRateArg(args)
             %EXTRACTFRAMERATEARG Remove a 'FrameRateHz', value pair from ARGS.
-            frameRateHz = [];
-            k = 1;
-            while k <= numel(args)
-                if (ischar(args{k}) || (isstring(args{k}) && isscalar(args{k}))) && ...
-                        strcmpi(char(string(args{k})), 'FrameRateHz') && k < numel(args)
-                    frameRateHz = args{k + 1};
-                    args(k:k + 1) = [];
-                else
-                    k = k + 1;
-                end
-            end
+            [frameRateHz, args] = EventsManager.extractNameValueArg(args, 'FrameRateHz');
             if ~isempty(frameRateHz)
                 validateattributes(frameRateHz, {'numeric'}, ...
                     {'scalar', 'real', 'finite', 'positive'}, 'EventsManager', 'FrameRateHz');
             end
         end
+
+        function [value, args] = extractNameValueArg(args, name)
+            %EXTRACTNAMEVALUEARG Remove a NAME, value pair from ARGS ([] when absent).
+            value = [];
+            k = 1;
+            while k <= numel(args)
+                if (ischar(args{k}) || (isstring(args{k}) && isscalar(args{k}))) && ...
+                        strcmpi(char(string(args{k})), name) && k < numel(args)
+                    value = args{k + 1};
+                    args(k:k + 1) = [];
+                else
+                    k = k + 1;
+                end
+            end
+        end
     end
     methods (Access = private)
+        function normalizeSelectionVectors(obj)
+            %NORMALIZESELECTIONVECTORS Make selectedEvents/PurgedEvents valid.
+            if isempty(obj.eventID)
+                obj.selectedEvents = [];
+                obj.PurgedEvents = [];
+                return
+            end
+            if isempty(obj.selectedEvents) || ~islogical(obj.selectedEvents) || ...
+                    ~isequal(size(obj.selectedEvents), size(obj.eventID))
+                obj.selectedEvents = true(size(obj.eventID));
+            end
+            if isempty(obj.PurgedEvents) || ~islogical(obj.PurgedEvents) || ...
+                    ~isequal(size(obj.PurgedEvents), size(obj.eventID))
+                obj.PurgedEvents = false(size(obj.eventID));
+            end
+        end
+
+        function deleteEvents(obj, mask)
+            %DELETEEVENTS Remove event transitions (MASK over eventID) from the list.
+            obj.normalizeSelectionVectors();
+            keep = ~mask;
+            obj.eventID = obj.eventID(keep);
+            obj.timestamps = obj.timestamps(keep);
+            obj.state = obj.state(keep);
+            obj.selectedEvents = obj.selectedEvents(keep);
+            obj.PurgedEvents = obj.PurgedEvents(keep);
+        end
+
+        function assertNoEventSplitFiles(obj, operation)
+            %ASSERTNOEVENTSPLITFILES Refuse OPERATION while event-split data exists.
+            files = EventsManager.findEventSplitFiles(obj.SaveFolder);
+            if ~isempty(files)
+                error('Umitoolbox:EventsManager:purgeBlockedByEventSplitFiles', ...
+                    ['Cannot %s events: the SaveFolder "%s" holds event-split data ' ...
+                     'whose E axis maps onto the current event list. Delete these ' ...
+                     'file(s) manually first, then %s again: %s'], ...
+                    operation, obj.SaveFolder, operation, strjoin(files, ', '));
+            end
+        end
+
         function setInfo(obj)
             %SETINFO Read acquisition metadata and update dependent class properties.
             %

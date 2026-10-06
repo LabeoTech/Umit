@@ -62,7 +62,10 @@ switch version
             'repetitionIndex', ...
             'eventName', ...
             'eventAxisMode'};
-        schema.optionalEventInfoFields = {'baselinePeriod'};
+        % selected / durationSec: per-instance flags and ON-to-OFF durations
+        % of event-split data (.dat header Phase 8b). Optional, so older
+        % files remain valid.
+        schema.optionalEventInfoFields = {'baselinePeriod', 'selected', 'durationSec'};
 
         schema.allowedEventAxisModes = {'instances', 'aggregated_repetitions'};
 

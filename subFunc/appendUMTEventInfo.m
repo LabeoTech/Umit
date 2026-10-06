@@ -256,6 +256,26 @@ if isfield(filtered, 'baselinePeriod')
     end
     eventInfo.baselinePeriod = double(bp);
 end
+
+% Per-instance selection flags and durations (.dat header Phase 8b).
+nE = numel(eventInfo.eventID);
+if isfield(filtered, 'selected') && ~isempty(filtered.selected)
+    sel = filtered.selected;
+    if ~(islogical(sel) || isnumeric(sel)) || numel(sel) ~= nE
+        error(errID, ...
+            'Operation aborted. eventInfo.selected must be a logical vector with one value per event.');
+    end
+    eventInfo.selected = logical(sel(:));
+end
+if isfield(filtered, 'durationSec') && ~isempty(filtered.durationSec)
+    dur = filtered.durationSec;
+    if ~isnumeric(dur) || numel(dur) ~= nE || any(dur(:) < 0)
+        error(errID, ...
+            ['Operation aborted. eventInfo.durationSec must be a numeric vector ' ...
+             'with one non-negative value (or NaN) per event.']);
+    end
+    eventInfo.durationSec = double(dur(:));
+end
 end
 
 function eventInfo = iNormalizeEventInfoFromNameValue(eventID, repIdx, evName, axisMode, eLen, schema, errID)
