@@ -49,7 +49,7 @@ function [outData, metaData] = normalizeBSLN(data, SaveFolder, varargin)
 %                       - Otherwise: output UMT struct (UMT inputs carry
 %                         their eventInfo through).
 %   metaData          : struct with dimNames {'Y','X','T','E'} and
-%                       frameRateHz for the numeric output; empty struct
+%                       the numeric output; empty struct
 %                       otherwise.
 %
 % Notes:
@@ -200,7 +200,7 @@ if isnumeric(data) || islogical(data)
             % Event-split image data are saved as .dat (Phase 8c); the
             % flags come from events.mat through resolveDatEventMapping.
             outData = outVal;
-            metaData = struct('dimNames', {{'Y','X','T','E'}}, 'frameRateHz', freqHz);
+            metaData = struct('dimNames', {{'Y','X','T','E'}});
     end
 
     return
@@ -236,8 +236,7 @@ if ischar(data) || (isstring(data) && isscalar(data))
             if strcmp(normalizationMode, 'trial')
                 % Event-split image data are saved as .dat (Phase 8c).
                 outData = outVal;
-                metaData = struct('dimNames', {outDimNames}, 'frameRateHz', ...
-                    resolveDataInfoValue('frameRateHz', explicitRate, dataFile, 'normalizeBSLN'));
+                metaData = struct('dimNames', {outDimNames});
                 return
             end
 
@@ -508,7 +507,7 @@ end
             'metaData', ...
             'metaData', ...
             'data', ...
-            'Axes and frame rate of the .dat output.', ...
+            'Axes of the .dat output.', ...
             '', ...
             2, ...
             'isData', false);

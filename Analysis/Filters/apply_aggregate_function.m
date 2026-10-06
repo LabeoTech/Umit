@@ -34,7 +34,7 @@ function [outData, metaData] = apply_aggregate_function(data, SaveFolder, vararg
 %                  slice per event condition
 %                  (saved as .dat by PipelineManager, .dat header Phase 8c).
 %                - Otherwise: output UMT struct.
-%   metaData   : struct with dimNames {'Y','X','T','E'} and frameRateHz for
+%   metaData   : struct with dimNames {'Y','X','T','E'} for
 %                the numeric output (PipelineManager uses it to save the
 %                .dat); empty struct otherwise.
 %
@@ -135,7 +135,7 @@ if isnumeric(data) || islogical(data)
             dataYXTE = iInstancesFromFrames(rawData, frMat);
             outData = EventsManager.reduceByCondition(dataYXTE, plan, ...
                 @(x) iCalcAgg(x, aggFcn, 4), 4);
-            metaData = struct('dimNames', {{'Y','X','T','E'}}, 'frameRateHz', frameRateHz);
+            metaData = struct('dimNames', {{'Y','X','T','E'}});
     end
 
     return
@@ -171,13 +171,13 @@ if ischar(data) || (isstring(data) && isscalar(data))
                 return
             end
 
-            [aggData, outDimNames, labels, eventInfo, frameRateHz] = ...
+            [aggData, outDimNames, labels, eventInfo] = ...
                 iExecuteChunkedDat(dataFile, SaveFolder, aggFcn, dimName, explicitRate);
 
             if strcmp(dimName, 'E')
                 % One slice per condition: saved as .dat (Phase 8c).
                 outData = aggData;
-                metaData = struct('dimNames', {outDimNames}, 'frameRateHz', frameRateHz);
+                metaData = struct('dimNames', {outDimNames});
                 return
             end
 
@@ -427,7 +427,7 @@ outData = iPackageOutputUMT( ...
             'metaData', ...
             'metaData', ...
             'data', ...
-            'Axes and frame rate of the .dat output.', ...
+            'Axes of the .dat output.', ...
             '', ...
             2, ...
             'isData', false);
@@ -548,7 +548,7 @@ outUMT = apply_aggregate_function(umt, SaveFolder, 'aggregateFcn', aggFcn, ...
     'dimensionName', 'E');
 
 outData = outUMT.data.main.value;
-metaData = struct('dimNames', {dims}, 'frameRateHz', datMeta.frameRateHz);
+metaData = struct('dimNames', {dims});
 end
 
 % =========================================================================
