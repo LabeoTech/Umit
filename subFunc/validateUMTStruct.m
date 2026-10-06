@@ -482,4 +482,21 @@ if isfield(eventInfoIn, 'baselinePeriod')
              'positive numeric scalar when provided.']);
     end
 end
+
+if isfield(eventInfoIn, 'selected')
+    sel = eventInfoIn.selected;
+    if ~islogical(sel) || numel(sel) ~= nE
+        error(errID, ...
+            'Operation aborted. eventInfo.selected must be a logical vector with one value per event.');
+    end
+end
+
+if isfield(eventInfoIn, 'durationSec')
+    dur = eventInfoIn.durationSec;
+    if ~isnumeric(dur) || numel(dur) ~= nE || any(dur(:) < 0)
+        error(errID, ...
+            ['Operation aborted. eventInfo.durationSec must be a numeric vector ' ...
+             'with one non-negative value (or NaN) per event.']);
+    end
+end
 end

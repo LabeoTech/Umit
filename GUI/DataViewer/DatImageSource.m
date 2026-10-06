@@ -1,24 +1,29 @@
 classdef DatImageSource < handle
-%DATIMAGESOURCE RAM-safe direct-read backend for continuous [Y,X,T] .dat files.
+%DATIMAGESOURCE RAM-safe direct-read backend for .dat image files.
 %
 %   src = DatImageSource(filePath)
 %   src = DatImageSource(filePath, Name, Value)
 %
 %   This class provides a DataViewer-oriented access layer for .dat files
-%   that hold single-precision MATLAB-order [Y,X,T] arrays: headered files
+%   that hold single-precision MATLAB-order image arrays: headered files
 %   and legacy sidecar files. Metadata come from
 %   loadMetaData once, in the constructor. Full frames and temporal-cache
 %   blocks are read through spatialSlabIO, reopening the file for each read
 %   with the already resolved Info, so the file is never held open between
 %   reads.
 %
-%   Supported layout:
-%       dimNames = {'Y','X','T'}
+%   Supported layouts:
+%       {'Y','X','T'}       continuous time series
+%       {'Y','X'}           single frame (shown as one frame)
+%       {'Y','X','T','E'}   event-split time series (.dat header Phase 8b)
+%       {'Y','X','E'}       one map per event (T = 1)
 %
-%   Unsupported layout:
-%       Any .dat file with an event dimension, for example
-%       dimNames = {'Y','X','T','E'}. Event-split image data should be
-%       stored and loaded as a .umt image structure.
+%   Event-split files: the E axis is mapped onto the SaveFolder's
+%   events.mat by resolveDatEventMapping (EventMapping property). getSize
+%   returns [Y X T E]; getFrame, getFrameBlock, and getPixelTrace take an
+%   optional event index, like UMTImageSource. Internally the trailing axes
+%   are read as flat frames f = t + (e-1)*T (spatialSlabIO order), so the
+%   cache holds all T*E frames of the cached pixels.
 %
 %   Name-Value options:
 %       cacheRAMFraction - Fraction of conservative usable RAM assigned to
@@ -31,8 +36,8 @@ classdef DatImageSource < handle
 %       cacheMode        - 'auto' or 'locked'. Default: 'auto'.
 %
 %   Main methods:
-%       getSize              - Return [Ny Nx Nt 1].
-%       getFrame             - Read one full [Y,X] frame.
+%       getSize              - Return [Ny Nx Nt Ne].
+%       getFrame             - Read one full [Y,X] frame (optionally of event e).
 %       getFrameBlock        - Read one spatial block from one frame.
 %       getPixelTrace        - Return full-T pixel trace from the cache.
 %       getROIMeanTraceMatrix - Return ROI mean traces for normal/event frames.
@@ -54,6 +59,11 @@ classdef DatImageSource < handle
         Ny double = 0
         Nx double = 0
         Nt double = 0
+        Ne double = 1
+        NFrames double = 0          % flat frames read from disk: Nt * Ne
+
+        HasEventAxis logical = false
+        EventMapping struct = struct()  % resolveDatEventMapping output (E files)
 
         Precision char = 'single'
         BytesPerSample double = 4
@@ -89,9 +99,9 @@ classdef DatImageSource < handle
             %   obj = DatImageSource(filePath)
             %   obj = DatImageSource(filePath, 'cacheRAMFraction', 0.25)
             %
-            %   The constructor validates that the file is a continuous
-            %   [Y,X,T] .dat file. Legacy event-split .dat files are rejected
-            %   before any 3D reshape or cache access is attempted.
+            %   The constructor validates the layout (Y-X-T, Y-X, Y-X-T-E, or
+            %   Y-X-E, single class) before any cache access, and maps the E
+            %   axis of event-split files onto events.mat.
 
             p = inputParser;
             p.FunctionName = 'DatImageSource';
@@ -147,13 +157,18 @@ classdef DatImageSource < handle
                 end
             end
             obj.Info = loadMetaData(obj.FilePath);
-            obj.validateContinuousDatLayout(obj.Info);
+            obj.validateDatLayout(obj.Info);
 
             obj.Ny = datAxisSize(obj.Info, 'Y');
             obj.Nx = datAxisSize(obj.Info, 'X');
             % A single-frame Y-X file is shown as one frame (.dat header
             % Phase 6b-1); its frame rate is NaN.
             obj.Nt = max(1, datAxisSize(obj.Info, 'T'));
+            obj.HasEventAxis = any(strcmpi(cellstr(string(obj.Info.dimNames)), 'E'));
+            if obj.HasEventAxis
+                obj.Ne = datAxisSize(obj.Info, 'E');
+            end
+            obj.NFrames = obj.Nt * obj.Ne;
 
             obj.Precision = char(string(obj.Info.dataClass));
             obj.BytesPerSample = obj.getByteSize(obj.Precision);
@@ -164,6 +179,10 @@ classdef DatImageSource < handle
 
             obj.validateFileSize();
 
+            if obj.HasEventAxis
+                obj.EventMapping = resolveDatEventMapping(obj.Info, dataFolder);
+            end
+
             % Initial cache: largest safe cache centered in the image.
             obj.updateCacheAround(round(obj.Ny / 2), round(obj.Nx / 2));
         end
@@ -173,10 +192,9 @@ classdef DatImageSource < handle
             %
             %   sz = obj.getSize()
             %
-            %   For .dat files, E is always singleton because only
-            %   continuous [Y,X,T] .dat files are supported.
+            %   E is 1 for continuous files; T is 1 for Y-X and Y-X-E files.
 
-            sz = [obj.Ny, obj.Nx, obj.Nt, 1];
+            sz = [obj.Ny, obj.Nx, obj.Nt, obj.Ne];
         end
 
         function info = getInfo(obj)
@@ -192,46 +210,87 @@ classdef DatImageSource < handle
         end
 
         function eventInfo = getEventInfo(obj)
-            %GETEVENTINFO Return empty eventInfo struct for .dat backend.
+            %GETEVENTINFO Return the UMT-style eventInfo of the E axis.
+            %
+            %   For event-split files: the mapping onto events.mat (see
+            %   resolveDatEventMapping and EventMapping.status). For continuous
+            %   files: an empty struct (events come from EventsManager).
 
             eventInfo = struct();
+            if obj.HasEventAxis && isfield(obj.EventMapping, 'eventInfo')
+                eventInfo = obj.EventMapping.eventInfo;
+            end
         end
 
-        function frame = getFrame(obj, tIdx, varargin) %#ok<INUSD>
+        function mapping = refreshEventMapping(obj)
+            %REFRESHEVENTMAPPING Re-map the E axis onto the current events.mat.
+            %
+            %   Call after events.mat changed (for example after editing
+            %   events in Events Manager), so ignore flags and names follow it.
+            %   Continuous files return an empty struct.
+
+            mapping = struct();
+            if ~obj.HasEventAxis
+                return
+            end
+            obj.EventMapping = resolveDatEventMapping(obj.Info, fileparts(obj.FilePath));
+            mapping = obj.EventMapping;
+        end
+
+        function f = flatFrameIndex(obj, tIdx, eIdx)
+            %FLATFRAMEINDEX Flat frame index of (t, e): t + (e-1)*Nt.
+            if nargin < 3 || isempty(eIdx)
+                eIdx = 1;
+            end
+            obj.validateFrameIndex(tIdx);
+            obj.validateEventIndex(eIdx);
+            f = double(tIdx) + (double(eIdx) - 1) * obj.Nt;
+        end
+
+        function frame = getFrame(obj, tIdx, eIdx)
             %GETFRAME Read one full frame from disk.
             %
             %   frame = obj.getFrame(tIdx)
+            %   frame = obj.getFrame(tIdx, eIdx)   % event-split files
             %
             %   Output:
             %       frame - Numeric matrix of size [Y,X].
 
-            obj.validateFrameIndex(tIdx);
+            if nargin < 3
+                eIdx = [];
+            end
+            f = obj.flatFrameIndex(tIdx, eIdx);
 
             if obj.isFullImageCached()
-                frame = obj.CacheData(:, :, tIdx);
+                frame = obj.CacheData(:, :, f);
                 return
             end
 
             reader = obj.openReader();
             cleanupObj = onCleanup(@() spatialSlabIO('close', reader)); %#ok<NASGU>
 
-            frame = spatialSlabIO('read', reader, 1:obj.Nx, tIdx);
+            frame = spatialSlabIO('read', reader, 1:obj.Nx, f);
         end
 
-        function block = getFrameBlock(obj, tIdx, yRange, xRange)
+        function block = getFrameBlock(obj, tIdx, yRange, xRange, eIdx)
             %GETFRAMEBLOCK Read one spatial block from one frame.
             %
             %   block = obj.getFrameBlock(tIdx, yRange, xRange)
+            %   block = obj.getFrameBlock(tIdx, yRange, xRange, eIdx)
             %
             %   Inputs:
             %       tIdx   - Frame index.
             %       yRange - Contiguous Y indices.
             %       xRange - Contiguous X indices.
+            %       eIdx   - Event index (event-split files; default 1).
             %
             %   Output:
             %       block  - Numeric matrix [numel(yRange), numel(xRange)].
 
-            obj.validateFrameIndex(tIdx);
+            if nargin < 5
+                eIdx = [];
+            end
+            tIdx = obj.flatFrameIndex(tIdx, eIdx);
             yRange = obj.validateContiguousIndexRange(yRange, obj.Ny, 'Y');
             xRange = obj.validateContiguousIndexRange(xRange, obj.Nx, 'X');
 
@@ -249,11 +308,15 @@ classdef DatImageSource < handle
             block = slab(yRange, :);
         end
 
-        function [trace, status] = getPixelTrace(obj, y, x)
+        function [trace, status] = getPixelTrace(obj, y, x, eIdx)
             %GETPIXELTRACE Return full temporal trace for one pixel.
             %
             %   trace = obj.getPixelTrace(y, x)
             %   [trace, status] = obj.getPixelTrace(y, x)
+            %   [trace, status] = obj.getPixelTrace(y, x, eIdx)
+            %
+            %   For event-split files the trace covers T of event eIdx
+            %   (default 1).
             %
             %   If the pixel is inside the temporal cache, the trace is read
             %   directly from memory.
@@ -269,6 +332,10 @@ classdef DatImageSource < handle
             %       'outside_locked_cache'
 
             obj.validatePixelIndex(y, x);
+            if nargin < 4 || isempty(eIdx)
+                eIdx = 1;
+            end
+            obj.validateEventIndex(eIdx);
 
             status = 'ok';
 
@@ -286,7 +353,8 @@ classdef DatImageSource < handle
             yLocal = y - obj.CacheYRange(1) + 1;
             xLocal = x - obj.CacheXRange(1) + 1;
 
-            trace = squeeze(obj.CacheData(yLocal, xLocal, :));
+            frames = (double(eIdx) - 1) * obj.Nt + (1:obj.Nt);
+            trace = squeeze(obj.CacheData(yLocal, xLocal, frames));
             trace = trace(:);
         end
 
@@ -354,7 +422,8 @@ classdef DatImageSource < handle
             %                  - cell array of logical [Y,X] masks
             %                  - logical/numeric [Y,X,nROI] stack
             %                  - logical/numeric [Y,X] single mask
-            %       frameIdx - Source frame indices. The shape controls the output:
+            %       frameIdx - Source frame indices (flat indices for event-split
+            %                  files, see flatFrameIndex). The shape controls the output:
             %                  - vector [1,nFrames] or [nFrames,1]
             %                    returns traceMatrix [nROI,nFrames]
             %                  - matrix [nTrials,nFrames]
@@ -476,7 +545,7 @@ classdef DatImageSource < handle
                 obj.CacheMode, ...
                 numel(obj.CacheYRange), ...
                 numel(obj.CacheXRange), ...
-                obj.Nt);
+                obj.NFrames);
         end
     end
 
@@ -565,9 +634,9 @@ classdef DatImageSource < handle
             end
 
             if any(mod(finiteFrameIdx, 1) ~= 0) || ...
-                    any(finiteFrameIdx < 1) || any(finiteFrameIdx > obj.Nt)
+                    any(finiteFrameIdx < 1) || any(finiteFrameIdx > obj.NFrames)
                 error('DatImageSource:InvalidROIFrameIndex', ...
-                    'frameIdx contains indices outside the valid range [1,%d].', obj.Nt);
+                    'frameIdx contains indices outside the valid range [1,%d].', obj.NFrames);
             end
         end
 
@@ -795,8 +864,8 @@ classdef DatImageSource < handle
                     'Frame list contains invalid frame indices.');
             end
 
-            obj.validateFrameIndex(min(frameList));
-            obj.validateFrameIndex(max(frameList));
+            obj.validateFlatFrameIndex(min(frameList));
+            obj.validateFlatFrameIndex(max(frameList));
 
             [uniqueFrames, ~, whichFrame] = unique(frameList, 'stable');
             frameBlock = spatialSlabIO('read', reader, 1:obj.Nx, uniqueFrames);
@@ -805,14 +874,13 @@ classdef DatImageSource < handle
             end
         end
 
-        function validateContinuousDatLayout(obj, Info) %#ok<INUSL>
-            %VALIDATECONTINUOUSDATLAYOUT Reject .dat layouts other than Y-X-T or Y-X, and non-single files.
+        function validateDatLayout(obj, Info) %#ok<INUSL>
+            %VALIDATEDATLAYOUT Accept Y-X-T, Y-X, Y-X-T-E, and Y-X-E single files.
             %
-            %   Uses the .dat Info schema from loadMetaData. Y-X-T files and
-            %   single-frame Y-X files (shown as one frame) are supported.
-            %   This method fails fast for event-split or other layouts and
-            %   for data classes other than single; those are not supported
-            %   by the viewer backend yet.
+            %   Uses the .dat Info schema from loadMetaData. Single-frame Y-X
+            %   files are shown as one frame; event-split files (E last) are
+            %   supported since .dat header Phase 8b. Other layouts and data
+            %   classes other than single fail fast.
 
             if ~isfield(Info, 'format') || ~isfield(Info, 'filePath')
                 error('DatImageSource:InvalidFileType', ...
@@ -826,17 +894,11 @@ classdef DatImageSource < handle
 
             dimNames = upper(cellstr(string(Info.dimNames(:).')));
 
-            if any(strcmp(dimNames, 'E'))
-                error('DatImageSource:EventSplitDatUnsupported', ...
-                    ['This .dat file declares an event dimension ({%s}). Displaying ' ...
-                     'event-split .dat files (E axis) is not supported by the ' ...
-                     'DataViewer backend yet.'], strjoin(dimNames, ', '));
-            end
-
-            if ~(isequal(dimNames, {'Y', 'X', 'T'}) || isequal(dimNames, {'Y', 'X'}))
+            supported = {{'Y', 'X', 'T'}, {'Y', 'X'}, {'Y', 'X', 'T', 'E'}, {'Y', 'X', 'E'}};
+            if ~any(cellfun(@(c) isequal(dimNames, c), supported))
                 error('DatImageSource:UnsupportedDatLayout', ...
-                    ['Unsupported .dat layout: {%s}. DatImageSource supports ' ...
-                     'dimNames {''Y'',''X'',''T''} and single frames {''Y'',''X''}.'], ...
+                    ['Unsupported .dat layout: {%s}. DatImageSource supports dimNames ' ...
+                     '{Y,X,T}, {Y,X}, {Y,X,T,E}, and {Y,X,E}.'], ...
                     strjoin(dimNames, ', '));
             end
 
@@ -852,19 +914,18 @@ classdef DatImageSource < handle
 
             if ~isfield(Info, 'dimSizes') || numel(Info.dimSizes) ~= numel(dimNames)
                 error('DatImageSource:MissingCoreMetadata', ...
-                    '.dat metadata must contain the size of every axis (Y, X, and T if present).');
+                    '.dat metadata must contain the size of every axis.');
             end
 
-            sizeNames = {'Height', 'Width', 'Length'};
             for k = 1:numel(dimNames)
                 validateattributes(double(Info.dimSizes(k)), {'numeric'}, ...
                     {'scalar', 'real', 'finite', 'positive', 'integer'}, ...
-                    'DatImageSource', sizeNames{k});
+                    'DatImageSource', [dimNames{k} ' size']);
             end
         end
 
         function validateFileSize(obj)
-            %VALIDATEFILESIZE Ensure the file holds the whole [Y,X,T] array.
+            %VALIDATEFILESIZE Ensure the file holds the whole array.
             %
             %   The header of a headered file (Info.dataOffset bytes) is not
             %   counted as data.
@@ -872,18 +933,18 @@ classdef DatImageSource < handle
             fileInfo = dir(obj.FilePath);
 
             dataOffset = double(obj.Info.dataOffset);
-            expectedBytes = dataOffset + obj.Ny * obj.Nx * obj.Nt * obj.BytesPerSample;
+            expectedBytes = dataOffset + obj.Ny * obj.Nx * obj.NFrames * obj.BytesPerSample;
 
             if fileInfo.bytes < expectedBytes
                 error('DatImageSource:FileSizeMismatch', ...
                     ['File size mismatch for "%s". Expected %.0f bytes for ' ...
-                     '[Y,X,T]=[%d,%d,%d] with precision "%s" after a %d-byte ' ...
+                     '[Y,X,frames]=[%d,%d,%d] with precision "%s" after a %d-byte ' ...
                      'header, found %.0f bytes.'], ...
                     obj.FilePath, ...
                     expectedBytes, ...
                     obj.Ny, ...
                     obj.Nx, ...
-                    obj.Nt, ...
+                    obj.NFrames, ...
                     obj.Precision, ...
                     dataOffset, ...
                     fileInfo.bytes);
@@ -891,11 +952,27 @@ classdef DatImageSource < handle
         end
 
         function validateFrameIndex(obj, tIdx)
-            %VALIDATEFRAMEINDEX Validate one frame index.
+            %VALIDATEFRAMEINDEX Validate one frame index (T axis).
 
             validateattributes(tIdx, {'numeric'}, ...
                 {'scalar', 'real', 'finite', 'integer', '>=', 1, '<=', obj.Nt}, ...
                 'DatImageSource', 'tIdx');
+        end
+
+        function validateEventIndex(obj, eIdx)
+            %VALIDATEEVENTINDEX Validate one event index (E axis; 1 without E).
+
+            validateattributes(eIdx, {'numeric'}, ...
+                {'scalar', 'real', 'finite', 'integer', '>=', 1, '<=', obj.Ne}, ...
+                'DatImageSource', 'eIdx');
+        end
+
+        function validateFlatFrameIndex(obj, f)
+            %VALIDATEFLATFRAMEINDEX Validate one flat frame index (1..Nt*Ne).
+
+            validateattributes(f, {'numeric'}, ...
+                {'scalar', 'real', 'finite', 'integer', '>=', 1, '<=', obj.NFrames}, ...
+                'DatImageSource', 'frame');
         end
 
         function validatePixelIndex(obj, y, x)
@@ -954,7 +1031,7 @@ classdef DatImageSource < handle
                 budgetBytes = min(budgetBytes, obj.MaxCacheBytes);
             end
 
-            bytesPerPixelTrace = obj.Nt * obj.BytesPerSample;
+            bytesPerPixelTrace = obj.NFrames * obj.BytesPerSample;
             maxCachePixels = floor(budgetBytes / bytesPerPixelTrace);
 
             if maxCachePixels < 1
@@ -998,7 +1075,7 @@ classdef DatImageSource < handle
         end
 
         function cache = readTemporalBlock(obj, yRange, xRange)
-            %READTEMPORALBLOCK Read [Ycache,Xcache,T] from the .dat file.
+            %READTEMPORALBLOCK Read [Ycache,Xcache,T*E] (flat frames) from the .dat file.
             %
             %   Reads the cached X columns in chunks of consecutive frames
             %   through spatialSlabIO and crops Y per chunk, so peak memory
@@ -1011,7 +1088,7 @@ classdef DatImageSource < handle
             nY = numel(yRange);
             nX = numel(xRange);
 
-            cache = zeros(nY, nX, obj.Nt, obj.Precision);
+            cache = zeros(nY, nX, obj.NFrames, obj.Precision);
 
             reader = obj.openReader();
             cleanupObj = onCleanup(@() spatialSlabIO('close', reader)); %#ok<NASGU>
@@ -1019,8 +1096,8 @@ classdef DatImageSource < handle
             chunkBytes = 64 * 1024^2;
             framesPerChunk = max(1, floor(chunkBytes / (obj.Ny * nX * obj.BytesPerSample)));
 
-            for t1 = 1:framesPerChunk:obj.Nt
-                t2 = min(t1 + framesPerChunk - 1, obj.Nt);
+            for t1 = 1:framesPerChunk:obj.NFrames
+                t2 = min(t1 + framesPerChunk - 1, obj.NFrames);
                 slab = spatialSlabIO('read', reader, xRange, t1:t2);
                 cache(:, :, t1:t2) = slab(yRange, :, :);
             end
