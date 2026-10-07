@@ -827,8 +827,9 @@ classdef DataViewer_pipelineMngr < handle
                         error('Unsupported platform');
                 end
             catch ME
-                warning('calculateMaxChunkSize:NoOSAccess', ...
-                    'RAM query failed, falling back to 1 chunk.\n%s', ME.message);
+                warning('DataViewer_pipelineMngr:NoOSAccess', ...
+                    'Could not query the available RAM. Running in standard (in-memory) mode, which may fail on large data.\n%s', ...
+                    ME.message);
                 obj.RAMSafeMode = false;
                 return
                 
