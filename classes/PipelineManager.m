@@ -14896,6 +14896,72 @@ classdef PipelineManager < handle
 
     methods (Static)
 
+        function transferDataHistoryEntry(saveFolder, sourceFile, targetFile, mode)
+            %TRANSFERDATAHISTORYENTRY Carry a file's provenance to a renamed or copied file.
+            %
+            %   PipelineManager.transferDataHistoryEntry(SAVEFOLDER, SOURCEFILE, TARGETFILE, MODE)
+            %
+            %   dataHistory.mat is keyed by file name and entries of missing files
+            %   are pruned on load, so a file renamed outside PipelineManager would
+            %   lose its provenance. SOURCEFILE and TARGETFILE are file names (a
+            %   folder part is ignored) inside SAVEFOLDER.
+            %       MODE 'copy' : keep SOURCEFILE's entry and add one for TARGETFILE.
+            %       MODE 'move' : re-key SOURCEFILE's entry to TARGETFILE.
+            %   An existing entry for TARGETFILE is replaced. Nothing happens when
+            %   dataHistory.mat or SOURCEFILE's entry does not exist.
+
+            mode = lower(char(string(mode)));
+            if ~ismember(mode, {'copy', 'move'})
+                error('Umitoolbox:PipelineManager:invalidHistoryTransferMode', ...
+                    'Mode must be ''copy'' or ''move''.');
+            end
+
+            historyFile = fullfile(char(string(saveFolder)), 'dataHistory.mat');
+            if ~isfile(historyFile)
+                return
+            end
+
+            S = load(historyFile);
+            if ~isfield(S, 'dataHistory') || ~isstruct(S.dataHistory) || ...
+                    isempty(S.dataHistory) || ~isfield(S.dataHistory, 'file')
+                return
+            end
+
+            [~, sourceName, sourceExt] = fileparts(char(string(sourceFile)));
+            [~, targetName, targetExt] = fileparts(char(string(targetFile)));
+            sourceName = [sourceName sourceExt];
+            targetName = [targetName targetExt];
+
+            if strcmpi(sourceName, targetName)
+                return
+            end
+
+            dataHist = S.dataHistory;
+            files = arrayfun(@(e) char(string(e.file)), dataHist, 'UniformOutput', false);
+            sourceIdx = find(strcmpi(files, sourceName), 1, 'first');
+            if isempty(sourceIdx)
+                return
+            end
+
+            entry = dataHist(sourceIdx);
+            entry.file = targetName;
+
+            % Any previous entry for the target name is stale.
+            staleMask = strcmpi(files, targetName);
+
+            if strcmp(mode, 'move')
+                dataHist(sourceIdx) = entry;
+            end
+            dataHist(staleMask) = [];
+
+            if strcmp(mode, 'copy')
+                dataHist(end + 1) = entry; %#ok<AGROW>
+            end
+
+            dataHistory = dataHist; %#ok<NASGU>
+            save(historyFile, 'dataHistory');
+        end
+
         function names = resolveDimNames(value, sourceInfo, declaredType)
             %RESOLVEDIMNAMES Axis names under which a numeric value is saved as .dat.
             %
