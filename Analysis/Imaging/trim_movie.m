@@ -53,6 +53,7 @@ function outFile = trim_movie(SaveFolder, varargin)
 %       Amber or Yellow             -> yellow.dat
 %       Green                       -> green.dat
 %       Fluo                        -> fluo.dat
+%       Speckle                     -> speckle.dat
 %       Fluo #<N> <wavelength> nm   -> fluo_<wavelength>.dat
 
 % Defaults
@@ -355,6 +356,8 @@ switch colorNameLower
         datFileName = 'green.dat';
     case 'fluo'
         datFileName = 'fluo.dat';
+    case 'speckle'
+        datFileName = 'speckle.dat';
     otherwise
         tokens = regexp(colorName, '^Fluo\s*#\d+\s+(\d+)\s*nm$', 'tokens', 'once');
         if isempty(tokens)
