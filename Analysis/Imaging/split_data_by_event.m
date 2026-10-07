@@ -1,13 +1,13 @@
 function [outData, metaData] = split_data_by_event(data, SaveFolder, varargin)
 %SPLIT_DATA_BY_EVENT Split continuous image time series into event trials.
 %
-%   outData = split_data_by_event(data, SaveFolder)
-%   outData = split_data_by_event(data, SaveFolder, 'FrameRateHz', rate)
+%   [outData, metaData] = split_data_by_event(data, SaveFolder)
+%   [outData, metaData] = split_data_by_event(data, SaveFolder, 'FrameRateHz', rate)
 %
 %   This function uses the event definitions stored in "events.mat" to
 %   split a continuous image time series into event instances. The output is
-%   returned as a UMT structure containing event-split image data with
-%   dimensions Y X T E, where E is the event-instance axis.
+%   a numeric array of event-split image data with dimensions Y X T E,
+%   where E is the event-instance axis (saved as .dat, see Output).
 %
 %   Inputs:
 %       data       - One of:
