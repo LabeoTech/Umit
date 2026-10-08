@@ -48,7 +48,7 @@ function varargout = applyRegistrationTformOnFolder(SaveFolder, varargin)
 %   Notes:
 %       - This function has no normal runtime output. PipelineManager treats
 %         the files above as non-returning, non-DATA file effects.
-%       - After completion, it prints the modified .dat files and the
+%       - After completion, it prints the modified image files and the
 %         updated DataParams file to the command window.
 %       - A pipelineInfo structure can still be queried with:
 %             info = applyRegistrationTformOnFolder('pipelineInfo')
