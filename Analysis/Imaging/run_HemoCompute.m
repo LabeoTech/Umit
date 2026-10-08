@@ -7,23 +7,23 @@ function varargout = run_HemoCompute(SaveFolder, data, varargin)
 %   run_HemoCompute('preflight', SaveFolder, parameters)
 %
 %   This wrapper normalizes stable canonical illumination names, resolves
-%   acquisition/Rig optical information, and dispatches HemoCompute in
-%   standard or RAM-safe mode depending on the type of "data". Channel
-%   timebase differences are resolved inside HemoCompute from AcqInfos.mat.
-%   If AcqInfos does not identify a Rig, the existing active default Rig is
-%   used with a warning; the acquisition metadata is not modified.
+%   acquisition/Rig optical information, and runs HemoCompute in its
+%   file-based (low-RAM) mode. Channel timebase differences are resolved
+%   inside HemoCompute from AcqInfos.mat. If AcqInfos does not identify a Rig,
+%   the existing active default Rig is used with a warning; the acquisition
+%   metadata is not modified.
 %
 %   Inputs:
 %       SaveFolder - Folder containing AcqInfos.mat and intrinsic channels.
-%       data       - Execution-mode selector, NOT the pixel data. HemoCompute
-%                    always reads the illumination channel files resolved
-%                    from AcqInfos.mat and the Rig optical configuration, so
-%                    the content of "data" is never consumed. A .dat filename
-%                    selects RAM-safe mode; a numeric YXT array selects
-%                    standard mode. A filename that is not one of the
-%                    resolved illumination channels raises a warning, because
-%                    the run then processes the raw channels rather than the
-%                    file that was wired in.
+%       data       - Name of one of the Y-X-T illumination channel .dat files
+%                    in SaveFolder (for example 'red.dat'). HemoCompute
+%                    reads all the illumination channel files resolved from
+%                    AcqInfos.mat and the Rig optical configuration, so
+%                    "data" must be one of them; it is the file wired into
+%                    the step. Arrays, other extensions, other layouts, and
+%                    files that are not a resolved illumination channel are
+%                    not supported, and every resolved channel file must be
+%                    Y-X-T.
 %
 %   Name-Value parameters:
 %       'FilterSet'              - Filter set name.
@@ -36,12 +36,11 @@ function varargout = run_HemoCompute(SaveFolder, data, varargin)
 %
 %   Outputs:
 %       outFiles          - With one requested output, returns a
-%                           {HbOFile,HbRFile} manifest of the names written
-%                           into SaveFolder, in both execution modes.
+%                           {HbOFile,HbRFile} manifest of the Y-X-T .dat
+%                           files written into SaveFolder.
 %       HbOFile, HbRFile  - With two requested outputs, returns the two
-%                           backing filenames in both execution modes. Load
-%                           those files, or call HemoCompute directly, when
-%                           numeric arrays are required.
+%                           backing filenames. Load those files with
+%                           loadData when numeric arrays are required.
 
 % Default outputs for pipeline management.
 default_Output = {'HbO.dat', 'HbR.dat'}; 
@@ -68,7 +67,7 @@ end
 p = inputParser;
 p.FunctionName = 'run_HemoCompute';
 addRequired(p, 'SaveFolder', @(x) (ischar(x) || (isstring(x) && isscalar(x))) && isfolder(x));
-addRequired(p, 'data', @(x) (isnumeric(x) && ndims(x) == 3) || ischar(x) || (isstring(x) && isscalar(x)));
+addRequired(p, 'data');
 addParameter(p, 'FilterSet', 'none', @(x) ischar(x) || (isstring(x) && isscalar(x)));
 addParameter(p, 'b_normalize', true, @(x) islogical(x) && isscalar(x));
 addParameter(p, 'Illuminations', {'red','green','yellow'}, ...
@@ -92,15 +91,13 @@ assert(numel(illumination) >= 2, ...
     'Umitoolbox:run_HemoCompute:InvalidInput', ...
     'At least two different illumination wavelengths must be selected.');
 
-% Decide RAM-safe mode from input type.
-b_lowRAMmode = ischar(data) || (isstring(data) && isscalar(data));
+% The wired-in file: a Y-X-T .dat in SaveFolder.
+dataName = localResolveDataFile(data, SaveFolder);
 opticalInfo = localResolveOpticalInfo(SaveFolder, illumination, filterSet);
 
-% "data" only selects the execution mode; HemoCompute re-reads the
-% illumination channels from SaveFolder. Warn when a file was wired in that
-% is not one of those channels, so a pipeline cannot silently process the
-% raw channels instead of the file the user connected.
-localWarnUnusedDataInput(data, b_lowRAMmode, opticalInfo);
+% HemoCompute reads the illumination channels from SaveFolder, so the wired
+% file must be one of them and every channel file must be Y-X-T.
+localAssertChannelFiles(dataName, opticalInfo, SaveFolder);
 
 try
     [~, ~] = HemoCompute( ...
@@ -112,7 +109,7 @@ try
         'HbT_uM', HbT_uM, ...
         'O2_sat', O2_sat, ...
         'OpticalInfo', opticalInfo, ...
-        'RAMSafeMode', b_lowRAMmode);
+        'RAMSafeMode', true);
 catch ME
     ME = addCause(ME, MException( ...
         'Umitoolbox:run_HemoCompute:UnknownError', ...
@@ -136,6 +133,7 @@ fprintf('Finished HemoCompute.\n');
         info = PipelineManager.createPipelineInfo( ...
             'run_HemoCompute', ...
             'Wrapper around HemoCompute for HbO/HbR computation.');
+        info.version = '2.0.0';
 
         info = PipelineManager.addInput(info, ...
             'SaveFolder', ...
@@ -149,15 +147,13 @@ fprintf('Finished HemoCompute.\n');
         info = PipelineManager.addInput(info, ...
             'data', ...
             'ImageTimeSeries', ...
-            ['Execution-mode selector, not the processed data. A .dat filename ' ...
-             'selects RAM-safe mode and a numeric array selects standard mode; ' ...
-             'HemoCompute reads the illumination channels from SaveFolder in ' ...
-             'both cases.'], ...
+            ['One of the Y-X-T illumination channel .dat files (red, green or ' ...
+             'yellow) in SaveFolder; HemoCompute reads all resolved channels.'], ...
             'position', 2, ...
             'callType', 'positional', ...
             'isData', true, ...
             'supportsFile', true, ...
-            'dataMode', 'either');
+            'dataMode', 'file');
 
         info = PipelineManager.addInput(info, ...
             'FilterSet', ...
@@ -237,18 +233,28 @@ fprintf('Finished HemoCompute.\n');
     end
 end
 
-function localWarnUnusedDataInput(data, b_lowRAMmode, opticalInfo)
-%LOCALWARNUNUSEDDATAINPUT Warn when the "data" input cannot influence the run.
+function dataName = localResolveDataFile(data, SaveFolder)
+%LOCALRESOLVEDATAFILE Validate the wired-in file: a Y-X-T .dat in SaveFolder.
 
-if ~b_lowRAMmode
-    % A numeric array is the documented way to request standard mode. It
-    % never reaches HemoCompute, but that is expected here, so it does not
-    % warrant a warning on every run.
-    return
+assert(ischar(data) || (isstring(data) && isscalar(data)), ...
+    'Umitoolbox:run_HemoCompute:UnsupportedInputType', ...
+    'Input "data" must be the name of a Y-X-T channel .dat file (arrays are not supported).');
+
+[~, stem, ext] = fileparts(char(string(data)));
+assert(isempty(ext) || strcmpi(ext, '.dat'), ...
+    'Umitoolbox:run_HemoCompute:UnsupportedInputFile', ...
+    'Unsupported input file extension "%s". Only .dat files are supported.', ext);
+dataName = [stem '.dat'];
+
+dataPath = fullfile(SaveFolder, dataName);
+assert(isfile(dataPath), ...
+    'Umitoolbox:run_HemoCompute:FileNotFound', ...
+    'Input .dat file not found in SaveFolder: "%s".', dataName);
+assertDatLayout(loadMetaData(dataPath), {{'Y','X','T'}}, 'run_HemoCompute');
 end
 
-[~, inputStem, inputExt] = fileparts(char(string(data)));
-inputName = [inputStem inputExt];
+function localAssertChannelFiles(dataName, opticalInfo, SaveFolder)
+%LOCALASSERTCHANNELFILES The wired file is a resolved channel; all are Y-X-T.
 
 channelFiles = {};
 if isstruct(opticalInfo) && isfield(opticalInfo, 'channels') && ...
@@ -256,15 +262,18 @@ if isstruct(opticalInfo) && isfield(opticalInfo, 'channels') && ...
     channelFiles = cellstr(string({opticalInfo.channels.datFile}));
 end
 
-if ~isempty(channelFiles) && any(strcmpi(channelFiles, inputName))
-    return
+assert(any(strcmpi(channelFiles, dataName)), ...
+    'Umitoolbox:run_HemoCompute:DataInputNotAChannel', ...
+    ['Input file "%s" is not one of the resolved illumination channels (%s). ' ...
+     'HemoCompute processes those channels, so the wired file must be one of them.'], ...
+    dataName, strjoin(channelFiles, ', '));
+
+for iFile = 1:numel(channelFiles)
+    channelPath = fullfile(SaveFolder, channelFiles{iFile});
+    if isfile(channelPath)
+        assertDatLayout(loadMetaData(channelPath), {{'Y','X','T'}}, 'run_HemoCompute');
+    end
 end
-
-warning('Umitoolbox:run_HemoCompute:DataInputNotConsumed', ...
-    ['Input file "%s" is not one of the resolved illumination channels ' ...
-     '(%s). HemoCompute processes those channels, not the file wired into ' ...
-     'this step.'], inputName, strjoin(channelFiles, ', '));
-
 end
 
 function outFiles = localConfirmWrittenOutputs(SaveFolder, expectedFiles)

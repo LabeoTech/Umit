@@ -15,12 +15,16 @@ function outData = run_HemoCorrection(data, SaveFolder, varargin)
 %      normalized reference reflectance.
 %
 %   Supported input modes:
-%       - numeric fluorescence array [Y, X, T]
-%       - fluorescence .dat filename
+%       - numeric fluorescence array [Y, X, T] or [Y, X, T, E]
+%       - fluorescence .dat filename with axes Y-X-T or Y-X-T-E
+%       UMT structs and .umt files are not supported.
 %
 %   Inputs:
-%       data       - Numeric YXT fluorescence array or .dat filename.
-%       SaveFolder - Folder containing AcqInfos.mat and reference files.
+%       data       - Fluorescence array or .dat filename (see above).
+%       SaveFolder - Folder containing the reference files (continuous
+%                    Y-X-T channels such as red.dat), and events.mat for
+%                    event-split (E axis) fluorescence. AcqInfos.mat is not
+%                    read.
 %
 %   Name-Value parameters:
 %       'Algorithm' - 'LinearRegression' or 'Ratiometric'
@@ -28,14 +32,30 @@ function outData = run_HemoCorrection(data, SaveFolder, varargin)
 %       'Green'     - logical scalar
 %       'Amber'     - logical scalar
 %       'Other'     - custom channel filename
-%       'FrameRateHz' - frame rate of the fluorescence data (Hz).
-%                     PipelineManager injects it from the data; a .dat
-%                     input's header provides it otherwise. Numeric input
-%                     needs it explicitly; AcqInfos.mat is not used.
+%       'FrameRateHz' - frame rate of the FLUORESCENCE data (Hz), never of a
+%                     reference channel. PipelineManager injects it from the
+%                     data input; a .dat input's header provides it
+%                     otherwise. Numeric input needs it explicitly;
+%                     AcqInfos.mat is not used. Every reference channel uses
+%                     its own .dat header rate and is resampled to this one.
 %
 %   Output:
-%       - standard mode: corrected fluorescence array
-%       - low-RAM mode : hemoCorr_fluo.dat
+%       - numeric input: corrected fluorescence array (same size)
+%       - .dat input   : hemoCorr_fluo.dat (same axes as the input)
+%
+%   Event-split fluorescence (Y-X-T-E):
+%       Each E slice is a trial that is corrected independently: its own
+%       fluorescence and reference means, and its own regression over the
+%       trial's frames. The E axis must hold one slice per event instance of
+%       events.mat (as saved by split_data_by_event). The continuous
+%       reference channels are cut by the same events: every trial's frame
+%       times, taken from events.mat at the fluorescence frame rate, are
+%       sampled in each reference channel by linear interpolation, so a
+%       reference with a different frame rate is up- or down-sampled onto the
+%       fluorescence timeline of every trial. A reference faster than the
+%       fluorescence is low-pass filtered (0.45 x the fluorescence rate)
+%       before it is sampled. Continuous (Y-X-T) fluorescence resamples the
+%       whole reference to the fluorescence length the same way.
 
 % Default output for pipeline management:
 default_Output = 'hemoCorr_fluo.dat'; 
@@ -48,7 +68,7 @@ end
 
 p = inputParser;
 p.FunctionName = 'run_HemoCorrection';
-addRequired(p, 'data', @(x) (isnumeric(x) && ndims(x) == 3) || ischar(x) || (isstring(x) && isscalar(x)));
+addRequired(p, 'data');
 addRequired(p, 'SaveFolder', @(x) (ischar(x) || (isstring(x) && isscalar(x))) && isfolder(x));
 addParameter(p, 'Algorithm', 'LinearRegression', @(x) ischar(x) || (isstring(x) && isscalar(x)));
 addParameter(p, 'Red', true, @(x) islogical(x) && isscalar(x));
@@ -73,15 +93,9 @@ assert(ismember(lower(algorithm), {'linearregression', 'ratiometric'}), ...
     'Umitoolbox:run_HemoCorrection:InvalidInput', ...
     'Unknown correction algorithm "%s".', algorithm);
 
-acqFile = fullfile(SaveFolder, 'AcqInfos.mat');
-assert(isfile(acqFile), ...
-    'Umitoolbox:run_HemoCorrection:MissingAcqInfos', ...
-    'AcqInfos.mat was not found in "%s".', SaveFolder);
-
-md = load(acqFile, 'AcqInfoStream');
-assert(isfield(md, 'AcqInfoStream') && isstruct(md.AcqInfoStream), ...
-    'Umitoolbox:run_HemoCorrection:InvalidAcqInfos', ...
-    'AcqInfos.mat does not contain a valid AcqInfoStream structure.');
+% Y-X-T runs through the legacy paths below; Y-X-T-E (event-split) fluorescence
+% is corrected trial by trial (localCorrectEventSplit).
+hasE = iClassifyInput(data, SaveFolder);
 
 % Build selected channel list.
 channelList = {};
@@ -109,6 +123,13 @@ fprintf('Performing hemodynamic correction in fluo channel using %s algorithm...
 resolveRate = @() resolveDataInfoValue('frameRateHz', p.Results.FrameRateHz, ...
     iDataFileOrArray(SaveFolder, data), mfilename);
 
+if hasE
+    outData = localCorrectEventSplit(data, SaveFolder, algorithm, channelList, ...
+        p.Results.FrameRateHz, default_Output);
+    fprintf('Finished hemodynamic correction.\n');
+    return
+end
+
 switch lower(algorithm)
     case 'linearregression'
         if isnumeric(data)
@@ -119,13 +140,7 @@ switch lower(algorithm)
         end
 
     case 'ratiometric'
-        assert(isscalar(channelList), ...
-            'Umitoolbox:run_HemoCorrection:InvalidInput', ...
-            ['Ratiometric correction requires exactly one reference channel, ' ...
-             'but %d are currently selected (%s). Red, Green, and Amber each ' ...
-             'default to true; set all but one to false before using ' ...
-             'Algorithm=''Ratiometric''.'], ...
-            numel(channelList), strjoin(channelList, ', '));
+        localAssertSingleReference(channelList);
 
         refFile = localResolveReferenceFile(SaveFolder, channelList{1});
         fprintf('Using channel "%s" in hemodynamic correction...\n', refFile);
@@ -161,8 +176,8 @@ fprintf('Finished hemodynamic correction.\n');
 
         info = PipelineManager.addInput(info, ...
             'data', ...
-            'ImageTimeSeries', ...
-            'Fluorescence image time series input.', ...
+            {'ImageTimeSeries','ProcessedData'}, ...
+            'Fluorescence image time series input (YXT or event-split YXTE).', ...
             'position', 1, ...
             'callType', 'positional', ...
             'isData', true, ...
@@ -172,7 +187,7 @@ fprintf('Finished hemodynamic correction.\n');
         info = PipelineManager.addInput(info, ...
             'SaveFolder', ...
             'SaveFolder', ...
-            'Folder containing AcqInfos.mat and reference channels.', ...
+            'Folder containing the reference channels (and events.mat for event-split data).', ...
             'kind', 'input', ...
             'position', 2, ...
             'callType', 'positional', ...
@@ -235,13 +250,15 @@ fprintf('Finished hemodynamic correction.\n');
         info = PipelineManager.addInput(info, ...
             'FrameRateHz', ...
             'sourceInfo', ...
-            'Frame rate of the fluorescence data (Hz), injected from the data.', ...
+            ['Frame rate of the fluorescence data (Hz), injected from the ' ...
+             '"data" input (never from a reference channel).'], ...
             'kind', 'sourceInfo', ...
-            'sourceField', 'frameRateHz');
+            'sourceField', 'frameRateHz', ...
+            'sourceInput', 'data');
 
         info = PipelineManager.addOutput(info, ...
             'outData', ...
-            'ImageTimeSeries', ...
+            {'ImageTimeSeries','ProcessedData'}, ...
             'data', ...
             'Hemodynamically corrected fluorescence output.', ...
             default_Output, ...
@@ -544,5 +561,326 @@ function dataOut = iDataFileOrArray(SaveFolder, data)
 dataOut = data;
 if ischar(data) || (isstring(data) && isscalar(data))
     dataOut = localResolveFileInSaveFolder(SaveFolder, data);
+end
+end
+
+function hasE = iClassifyInput(data, SaveFolder)
+%ICLASSIFYINPUT Validate the fluorescence input; true when it has an E axis.
+%
+% Accepted: a Y-X-T or Y-X-T-E numeric array, or a .dat file with those axes.
+
+if isnumeric(data) || islogical(data)
+    validateattributes(data, {'numeric','logical'}, {'nonempty'}, ...
+        'run_HemoCorrection', 'data');
+    assert(ndims(data) == 3 || ndims(data) == 4, ...
+        'Umitoolbox:run_HemoCorrection:InvalidInput', ...
+        'Numeric input must be a Y x X x T or Y x X x T x E array.');
+    hasE = ndims(data) == 4;
+elseif ischar(data) || (isstring(data) && isscalar(data))
+    filePath = localResolveFileInSaveFolder(SaveFolder, data);
+    [~, ~, ext] = fileparts(filePath);
+    assert(strcmpi(ext, '.dat'), ...
+        'Umitoolbox:run_HemoCorrection:UnsupportedInputFile', ...
+        'Unsupported input file extension "%s". Only .dat files are supported.', ext);
+    assert(isfile(filePath), ...
+        'Umitoolbox:run_HemoCorrection:FileNotFound', ...
+        'Fluorescence file "%s" was not found.', filePath);
+    info = loadMetaData(filePath);
+    assertDatLayout(info, {{'Y','X','T'}, {'Y','X','T','E'}}, 'run_HemoCorrection');
+    hasE = any(strcmp(cellstr(string(info.dimNames)), 'E'));
+else
+    error('Umitoolbox:run_HemoCorrection:UnsupportedInputType', ...
+        ['Input "data" must be a YXT or YXTE array or a .dat filename. ' ...
+         'UMT structs and .umt files are not supported.']);
+end
+end
+
+function localAssertSingleReference(channelList)
+%LOCALASSERTSINGLEREFERENCE Ratiometric correction uses exactly one reference.
+
+assert(isscalar(channelList), ...
+    'Umitoolbox:run_HemoCorrection:InvalidInput', ...
+    ['Ratiometric correction requires exactly one reference channel, ' ...
+     'but %d are currently selected (%s). Red, Green, and Amber each ' ...
+     'default to true; set all but one to false before using ' ...
+     'Algorithm=''Ratiometric''.'], ...
+    numel(channelList), strjoin(channelList, ', '));
+end
+
+% =========================================================================
+% Event-split (Y-X-T-E) fluorescence
+% =========================================================================
+function outData = localCorrectEventSplit(data, SaveFolder, algorithm, channelList, frameRateArg, defaultOutput)
+%LOCALCORRECTEVENTSPLIT Hemodynamic correction of event-split fluorescence.
+%
+% Every E slice is a trial corrected on its own. The reference channels are
+% continuous recordings: each trial's frame times (events.mat, at the
+% FLUORESCENCE frame rate) are sampled in every reference by linear
+% interpolation, so references of any frame rate land on the fluorescence
+% timeline of the trial. A faster reference is first low-pass filtered, as in
+% the continuous path. LinearRegression follows the algorithm of the
+% IOIAnalysis HemoCorrection core, Ratiometric that of localRatiometricStandard,
+% each applied to one trial at a time.
+
+isRatiometric = strcmpi(algorithm, 'ratiometric');
+assert(~isempty(channelList), ...
+    'Umitoolbox:run_HemoCorrection:InvalidInput', ...
+    'No reference channel is selected. Enable Red, Green, or Amber, or set Other.');
+if isRatiometric
+    localAssertSingleReference(channelList);
+end
+
+% ---- Fluorescence ------------------------------------------------------
+isFile = ischar(data) || (isstring(data) && isscalar(data));
+if isFile
+    fluoPath = localResolveFileInSaveFolder(SaveFolder, data);
+    fluoInfo = loadMetaData(fluoPath);
+    fluoRate = resolveDataInfoValue('frameRateHz', frameRateArg, fluoPath, mfilename);
+    Ny = datAxisSize(fluoInfo, 'Y');
+    Nx = datAxisSize(fluoInfo, 'X');
+    Nt = datAxisSize(fluoInfo, 'T');
+    Ne = datAxisSize(fluoInfo, 'E');
+    mapInfo = fluoInfo;
+else
+    fluoRate = resolveDataInfoValue('frameRateHz', frameRateArg, data, mfilename);
+    [Ny, Nx, Nt, Ne] = size(data);
+    mapInfo = struct('filePath', 'input data', 'dimNames', {{'Y','X','T','E'}}, ...
+        'dimSizes', [Ny, Nx, Nt, Ne]);
+end
+
+mapping = resolveDatEventMapping(mapInfo, SaveFolder);
+if ~strcmpi(mapping.status, 'matched')
+    reason = mapping.message;
+    if isempty(reason)
+        reason = ['Its E axis holds one slice per condition (aggregated data), ' ...
+                  'not one per event instance.'];
+    end
+    error('Umitoolbox:run_HemoCorrection:EventsNotMatched', ...
+        ['Event-split fluorescence needs one E slice per event instance of the ' ...
+         'events.mat in "%s". %s'], SaveFolder, reason);
+end
+
+% ---- Reference channels (continuous Y-X-T files) ---------------------------
+nRef = numel(channelList);
+refPaths = cell(1, nRef);
+refMeta = cell(1, nRef);
+refRate = zeros(1, nRef);
+refNt = zeros(1, nRef);
+fluoSizeMeta = struct('datSize', [Ny, Nx]);
+for k = 1:nRef
+    refFile = localResolveReferenceFile(SaveFolder, channelList{k});
+    refPaths{k} = fullfile(SaveFolder, refFile);
+    refMeta{k} = localNormalizeDatMeta(loadMetaData(refPaths{k}));
+    assertDatLayout(refMeta{k}, {{'Y','X','T'}}, 'run_HemoCorrection');
+    localValidateSpatialMatch(refMeta{k}, fluoSizeMeta, refFile);
+    refRate(k) = refMeta{k}.Freq;
+    refNt(k) = refMeta{k}.datLength;
+    assert(isfinite(refRate(k)) && refRate(k) > 0, ...
+        'Umitoolbox:run_HemoCorrection:InvalidReferenceRate', ...
+        'Reference channel "%s" has no valid frame rate in its header.', refFile);
+end
+
+refDurationSec = refNt ./ refRate;
+assert(max(refDurationSec) - min(refDurationSec) <= 1e-3, ...
+    'Umitoolbox:run_HemoCorrection:DurationMismatch', ...
+    ['Reference channels do not span the same recording duration (%s s). ' ...
+     'Event trials are cut from channels that share one acquisition clock.'], ...
+    mat2str(refDurationSec, 6));
+
+% ---- Trial times on the fluorescence timeline ------------------------------
+% The recording length is inferred from the references (two frames of slack
+% so a last trial is not truncated); only the first Nt frames of each trial
+% are used, as split_data_by_event cropped every trial to the shortest one.
+datLen = ceil(refDurationSec(1) * fluoRate) + 2;
+frMat = EventsManager(SaveFolder).getFrameMatrix(datLen, '', [], ...
+    'FrameRateHz', fluoRate, 'IncludeIgnored', true);
+assert(size(frMat, 1) == Ne && size(frMat, 2) >= Nt, ...
+    'Umitoolbox:run_HemoCorrection:EventsNotMatched', ...
+    ['The trials of events.mat (%d trials, up to %d frames at %g Hz) do not fit ' ...
+     'the event-split fluorescence (%d trials of %d frames).'], ...
+    size(frMat, 1), size(frMat, 2), fluoRate, Ne, Nt);
+frMat = frMat(:, 1:Nt);
+assert(~any(isnan(frMat(:))), ...
+    'Umitoolbox:run_HemoCorrection:EventsNotMatched', ...
+    'Some trial frames of events.mat fall outside the recording.');
+tFluo = (frMat - 1) / fluoRate;
+
+% Per reference: where each trial frame falls in the reference (linear
+% interpolation between frames k0 and k1 with weight w), and the anti-alias
+% filter when the reference is faster than the fluorescence.
+tables = repmat(struct('k0', [], 'k1', [], 'w', [], 'lowpass', []), 1, nRef);
+for k = 1:nRef
+    pos = tFluo * refRate(k) + 1;
+    assert(all(pos(:) >= 0) && all(pos(:) <= refNt(k) + 1), ...
+        'Umitoolbox:run_HemoCorrection:EventsOutsideReference', ...
+        ['Trial times of events.mat fall more than one frame outside reference ' ...
+         'channel "%s".'], channelList{k});
+    pos = min(max(pos, 1), refNt(k));
+    k0 = floor(pos);
+    tables(k).k0 = k0;
+    tables(k).k1 = min(k0 + 1, refNt(k));
+    tables(k).w = single(pos - k0);
+    tables(k).lowpass = iAntiAliasFilter(refRate(k), fluoRate);
+end
+
+% ---- Slabs ---------------------------------------------------------------
+spatSigma = 1;
+pad = 0;
+if ~isRatiometric
+    pad = ceil(3 * spatSigma);
+end
+
+bytesPerX = Ny * 4 * (3 * max(refNt) + (4 + nRef) * Nt * Ne);
+nChunks = calculateMaxChunkSize(bytesPerX * Nx, 1, .1);
+chunkX = ceil(Nx / nChunks);
+nChunks = ceil(Nx / chunkX);
+
+outFile = fullfile(SaveFolder, defaultOutput);
+if isFile
+    [~, outStem, outExt] = fileparts(defaultOutput);
+    tmpFile = fullfile(SaveFolder, [outStem '_writing' outExt]);
+    slabFluo = spatialSlabIO('open', fluoPath, 'Info', fluoInfo);
+    cFluo = onCleanup(@() spatialSlabIO('close', slabFluo));
+    slabOut = spatialSlabIO('create', tmpFile, ...
+        datHeaderFromInfo(fluoInfo, outStem, 'dataClass', 'single'));
+    cOut = onCleanup(@() spatialSlabIO('close', slabOut));
+else
+    outData = zeros(Ny, Nx, Nt, Ne, 'single');
+end
+slabRef = cell(1, nRef);
+for k = 1:nRef
+    slabRef{k} = spatialSlabIO('open', refPaths{k}, 'Info', refMeta{k});
+end
+cRef = onCleanup(@() cellfun(@(h) spatialSlabIO('close', h), slabRef));
+
+for c = 1:nChunks
+    xStart = (c - 1) * chunkX + 1;
+    xEnd = min(xStart + chunkX - 1, Nx);
+    xIdx = xStart:xEnd;
+    padStart = min(pad, xStart - 1);
+    padStop = min(pad, Nx - xEnd);
+    xIdxPad = (xStart - padStart):(xEnd + padStop);
+    nX = numel(xIdx);
+    Np = Ny * nX;
+    fprintf('Hemodynamic correction (event-split): chunk %i/%i\n', c, nChunks);
+
+    if isFile
+        fSlab = single(spatialSlabIO('read', slabFluo, xIdx));
+    else
+        fSlab = single(data(:, xIdx, :, :));
+    end
+    fSlab = reshape(fSlab, Np, Nt, Ne);
+
+    refData = zeros(nRef, Np, Nt, Ne, 'single');
+    for k = 1:nRef
+        raw = single(spatialSlabIO('read', slabRef{k}, xIdxPad));
+        trials = iSampleReferenceTrials(raw, tables(k));      % Ny x nPad x Nt x Ne
+        if ~isRatiometric
+            nPad = size(trials, 2);
+            trials = imgaussfilt(reshape(trials, Ny, nPad, Nt * Ne), spatSigma, ...
+                'Padding', 'symmetric');
+            trials = reshape(trials, Ny, nPad, Nt, Ne);
+            trials = trials(:, padStart + 1:end - padStop, :, :);
+        end
+        trials = reshape(trials, Np, Nt, Ne);
+
+        % Normalize each trial of each pixel: (x - mean) / mean.
+        if isRatiometric
+            m = mean(trials, 2, 'omitnan');
+        else
+            m = mean(trials, 2);
+        end
+        refData(k, :, :, :) = reshape((trials - m) ./ m, 1, Np, Nt, Ne);
+    end
+
+    if isRatiometric
+        mFluo = mean(fSlab, 2, 'omitnan');
+        fSlab = (((fSlab - mFluo) ./ mFluo) - reshape(refData, Np, Nt, Ne)) .* mFluo + mFluo;
+    else
+        mFluo = mean(fSlab, 2);
+        fSlab = iRegressTrials((fSlab - mFluo) ./ mFluo, refData) .* mFluo + mFluo;
+    end
+
+    fSlab = reshape(fSlab, Ny, nX, Nt, Ne);
+    if isFile
+        spatialSlabIO('write', slabOut, xIdx, fSlab);
+    else
+        outData(:, xIdx, :, :) = fSlab;
+    end
+end
+
+if isFile
+    % Close every handle before the move: on Windows an open handle blocks it,
+    % and the input may be the file the declared output overwrites.
+    spatialSlabIO('finalize', slabOut);
+    spatialSlabIO('close', slabFluo);
+    cellfun(@(h) spatialSlabIO('close', h), slabRef);
+
+    [moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
+    assert(moveOk, 'Umitoolbox:run_HemoCorrection:OutputMoveFailed', ...
+        'Failed to move "%s" onto "%s": %s', tmpFile, outFile, moveMsg);
+    outData = defaultOutput;
+end
+end
+
+function lp = iAntiAliasFilter(refRate, fluoRate)
+%IANTIALIASFILTER Low-pass filter for a reference faster than the fluorescence.
+%
+% Same rule as the continuous path: 0.45 x the fluorescence rate. Empty when
+% the reference is not faster (or the cutoff is not usable).
+
+lp = [];
+if refRate > fluoRate
+    cutoff = 0.45 * fluoRate;
+    if cutoff > 0 && cutoff < refRate / 2
+        f = fdesign.lowpass('N,F3dB', 4, cutoff, refRate);
+        d = design(f, 'butter');
+        lp = struct('sos', d.sosMatrix, 'scale', d.ScaleValues);
+    end
+end
+end
+
+function trials = iSampleReferenceTrials(raw, tbl)
+%ISAMPLEREFERENCETRIALS Sample a continuous reference slab at every trial's frame times.
+%
+% RAW is Y x X x T(reference); the result is Y x X x Nt x Ne, interpolating
+% linearly between reference frames K0 and K1 with weight W (up- or
+% down-sampling onto the fluorescence timeline of each trial).
+
+if ~isempty(tbl.lowpass)
+    sz = size(raw);
+    flat = double(reshape(raw, [], sz(3)));
+    raw = reshape(single(filtfilt(tbl.lowpass.sos, tbl.lowpass.scale, flat.')).', sz);
+end
+
+[Ne, Nt] = size(tbl.k0);
+trials = zeros(size(raw, 1), size(raw, 2), Nt, Ne, 'single');
+for e = 1:Ne
+    a = raw(:, :, tbl.k0(e, :));
+    b = raw(:, :, tbl.k1(e, :));
+    trials(:, :, :, e) = a + (b - a) .* reshape(tbl.w(e, :), 1, 1, Nt);
+end
+end
+
+function fNorm = iRegressTrials(fNorm, refData)
+%IREGRESSTRIALS Per-trial, per-pixel regression of the normalized references.
+%
+% FNORM is Np x Nt x Ne (normalized fluorescence); REFDATA is nRef x Np x Nt x Ne.
+% The design matrix of the IOIAnalysis core: constant, linear drift, and the
+% reference traces. The fit is subtracted from every trial.
+
+[Np, Nt, Ne] = size(fNorm);
+nRef = size(refData, 1);
+baseTerms = single([ones(Nt, 1), linspace(0, 1, Nt).']);
+
+warnState = warning('off', 'MATLAB:rankDeficientMatrix');
+cleanupWarn = onCleanup(@() warning(warnState));
+
+for e = 1:Ne
+    for p = 1:Np
+        X = [baseTerms, reshape(refData(:, p, :, e), nRef, Nt).'];
+        y = reshape(fNorm(p, :, e), Nt, 1);
+        fNorm(p, :, e) = (y - X * (X \ y)).';
+    end
 end
 end

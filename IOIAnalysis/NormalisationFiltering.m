@@ -34,8 +34,9 @@ function varargout = NormalisationFiltering(FolderData, FileData, lowFreq, ...
 %
 % Notes:
 %   - File mode takes the axes, sizes, class, and frame rate from the
-%     .dat Info schema returned by loadMetaData(...), and reads the input
-%     through loadData (event data) or spatialSlabIO (Y,X,T data).
+%     .dat Info schema returned by loadMetaData(...), and streams Y,X,T and
+%     Y,X,T,E data in X slabs through spatialSlabIO. Event data stored in any
+%     other axis order is loaded whole through loadData.
 %   - Non-event file data are expected to be stored as Y,X,T on disk.
 %   - The core filtering algorithm is unchanged.
 
@@ -308,58 +309,171 @@ if hasEvents
         'NormalisationFiltering:InvalidDimNames', ...
         'Event data must define Y, X, T, and E dimensions.');
 
-    storedData = reshape(loadData(inFile), storedSize);
-    permToYXTE = [idxY idxX idxT idxE];
-    dataYXTE = permute(storedData, permToYXTE);
+    if isequal(dimNames, {'Y','X','T','E'})
+        % Y-X-T-E is streamed in X slabs: every pixel of every trial is
+        % filtered independently along T, so slabs are exact. The
+        % exponential fit is one whole-image fit per trial (a pre-pass over
+        % the slabs, as for Y,X,T data), so the output does not depend on
+        % the number of slabs.
+        Ny = storedSize(1);
+        Nx = storedSize(2);
+        Nt = storedSize(3);
+        Ne = storedSize(4);
 
-    [Ny, ~, Nt, Ne] = size(dataYXTE);
-
-    for e = 1:Ne
-        fprintf('Trial %d / %d\n', e, Ne);
-        slab = dataYXTE(:,:,:,e);
+        slabIn = spatialSlabIO('open', inFile, 'Info', fMetaData);
+        cIn = onCleanup(@() spatialSlabIO('close', slabIn));
 
         if bExpFit
-            S = mean(reshape(slab, [], Nt), 1);
-            initB = double(rand(1,6) .* [30 1 20 1 1 mean(double(S))]);
-            B = fminsearch(@(P) sum((double(S) - ExpFun(P, 1:Nt)).^2), ...
-                initB, Opt);
-            Approx = ExpFun([B(1:4) 0 0], 1:Nt);
-            Pred = [ones(1,Nt); linspace(0,1,Nt); Approx]';
+            nChunks = calculateMaxChunkSize(prod(storedSize) * getByteSize(dataType), 2, .3);
+        else
+            nChunks = calculateMaxChunkSize(prod(storedSize) * getByteSize(dataType), 1, .3);
+        end
+        chunkX = ceil(Nx / nChunks);
+        nChunks = ceil(Nx / chunkX);
+        fprintf('Filtering event-split data (%i chunk(s))...\n', nChunks)
+
+        if bExpFit
+            sumS = zeros(Ne, Nt);
+            countS = zeros(Ne, Nt);
+            for c = 1:nChunks
+                xIdx = ((c-1) * chunkX + 1):min(c * chunkX, Nx);
+                slab = spatialSlabIO('read', slabIn, xIdx);
+                for e = 1:Ne
+                    trialSlab = reshape(double(slab(:,:,:,e)), [], Nt);
+                    isValidS = ~isnan(trialSlab);
+                    trialSlab(~isValidS) = 0;
+                    sumS(e,:) = sumS(e,:) + sum(trialSlab, 1);
+                    countS(e,:) = countS(e,:) + sum(isValidS, 1);
+                end
+            end
+            clear slab trialSlab isValidS
+
+            PredByTrial = cell(1, Ne);
+            for e = 1:Ne
+                S = sumS(e,:) ./ countS(e,:);
+                rng('shuffle');
+                initB = double(rand(1,6) .* [30 1 20 1 1 mean(S)]);
+                B = fminsearch(@(P) sum((S - ExpFun(P, 1:Nt)).^2), initB, Opt);
+                Approx = ExpFun([B(1:4) 0 0], 1:Nt);
+                PredByTrial{e} = [ones(1,Nt); linspace(0,1,Nt); Approx]';
+            end
         end
 
-        for y = 1:Ny
-            Signal = double(squeeze(slab(y,:,:)));
+        for c = 1:nChunks
+            xIdx = ((c-1) * chunkX + 1):min(c * chunkX, Nx);
+            nX = numel(xIdx);
+
+            fprintf('Chunk #%i [Reading data from file...]\n', c)
+            slab = spatialSlabIO('read', slabIn, xIdx);
+
+            % Mask NaNs before filtering and restore them afterward, the
+            % same policy as the Y,X,T path and normalizeLPF's in-RAM path.
+            idxNaN = isnan(slab);
+            if any(idxNaN(:))
+                slab(idxNaN) = 0;
+            end
+
+            fprintf('Chunk #%i [Temporal filtering...]\n', c)
+            for e = 1:Ne
+                if bExpFit
+                    Pred = PredByTrial{e};
+                end
+
+                for y = 1:Ny
+                    Signal = double(reshape(slab(y,:,:,e), nX, Nt));
+
+                    if bExpFit
+                        B = Pred \ Signal';
+                        Signal = Signal ./ (Pred * B)';
+                        clear B
+                    end
+
+                    if UseLPFilt
+                        LP_low = filtfilt(lpass.sosMatrix, lpass.ScaleValues, Signal')';
+                    else
+                        LP_low = ones(size(Signal));
+                    end
+
+                    if UseHPFilt
+                        LP_high = filtfilt(hpass.sosMatrix, hpass.ScaleValues, Signal')';
+                    else
+                        LP_high = Signal;
+                    end
+
+                    if bDivide
+                        slab(y,:,:,e) = reshape(cast(LP_high ./ LP_low, dataType), 1, nX, Nt);
+                    else
+                        slab(y,:,:,e) = reshape(cast(LP_high - LP_low, dataType), 1, nX, Nt);
+                    end
+                end
+            end
+
+            if any(idxNaN(:))
+                slab(idxNaN) = NaN;
+            end
+
+            fprintf('Chunk #%i [Writing to file...]\n', c)
+            spatialSlabIO('write', slabOut, xIdx, slab);
+            fprintf('Chunk #%i [Completed]\n', c)
+            clear slab idxNaN
+        end
+        spatialSlabIO('close', slabIn);
+
+    else
+        % Other stored axis orders: the whole file is loaded and permuted.
+        storedData = reshape(loadData(inFile), storedSize);
+        permToYXTE = [idxY idxX idxT idxE];
+        dataYXTE = permute(storedData, permToYXTE);
+
+        [Ny, ~, Nt, Ne] = size(dataYXTE);
+
+        for e = 1:Ne
+            fprintf('Trial %d / %d\n', e, Ne);
+            slab = dataYXTE(:,:,:,e);
 
             if bExpFit
-                B = Pred \ Signal';
-                Signal = Signal ./ (Pred * B)';
-                clear B
+                S = mean(reshape(slab, [], Nt), 1);
+                initB = double(rand(1,6) .* [30 1 20 1 1 mean(double(S))]);
+                B = fminsearch(@(P) sum((double(S) - ExpFun(P, 1:Nt)).^2), ...
+                    initB, Opt);
+                Approx = ExpFun([B(1:4) 0 0], 1:Nt);
+                Pred = [ones(1,Nt); linspace(0,1,Nt); Approx]';
             end
 
-            if UseLPFilt
-                LP_low = filtfilt(lpass.sosMatrix, lpass.ScaleValues, Signal')';
-            else
-                LP_low = ones(size(Signal));
+            for y = 1:Ny
+                Signal = double(squeeze(slab(y,:,:)));
+
+                if bExpFit
+                    B = Pred \ Signal';
+                    Signal = Signal ./ (Pred * B)';
+                    clear B
+                end
+
+                if UseLPFilt
+                    LP_low = filtfilt(lpass.sosMatrix, lpass.ScaleValues, Signal')';
+                else
+                    LP_low = ones(size(Signal));
+                end
+
+                if UseHPFilt
+                    LP_high = filtfilt(hpass.sosMatrix, hpass.ScaleValues, Signal')';
+                else
+                    LP_high = Signal;
+                end
+
+                if bDivide
+                    slab(y,:,:) = cast(LP_high ./ LP_low, dataType);
+                else
+                    slab(y,:,:) = cast(LP_high - LP_low, dataType);
+                end
             end
 
-            if UseHPFilt
-                LP_high = filtfilt(hpass.sosMatrix, hpass.ScaleValues, Signal')';
-            else
-                LP_high = Signal;
-            end
-
-            if bDivide
-                slab(y,:,:) = cast(LP_high ./ LP_low, dataType);
-            else
-                slab(y,:,:) = cast(LP_high - LP_low, dataType);
-            end
+            dataYXTE(:,:,:,e) = slab;
         end
 
-        dataYXTE(:,:,:,e) = slab;
+        storedOut = ipermute(dataYXTE, permToYXTE);
+        spatialSlabIO('write', slabOut, 1:slabOut.Nx, storedOut);
     end
-
-    storedOut = ipermute(dataYXTE, permToYXTE);
-    spatialSlabIO('write', slabOut, 1:slabOut.Nx, storedOut);
 
 %% =========================================================
 % NO EVENTS: Y,X,T only

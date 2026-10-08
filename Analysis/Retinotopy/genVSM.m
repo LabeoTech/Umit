@@ -9,12 +9,16 @@ function [outData, roiFile] = genVSM(retinotopyUMT, SaveFolder, varargin)
 %   genRetinotopyMaps.
 %
 %   Inputs:
-%       retinotopyUMT - UMT struct output from genRetinotopyMaps.
-%                       It must contain entries named:
+%       retinotopyUMT - Name or path of the .umt file written by
+%                       genRetinotopyMaps (a bare name is also looked up in
+%                       SaveFolder). Only that output is accepted: an image
+%                       UMT with exactly two entries,
 %                           * AzimuthMap
 %                           * ElevationMap
-%                       and each entry must use dimNames {'Y','X','F'} with
-%                       F = 2, where slice 1 is amplitude and slice 2 is phase.
+%                       each using dimNames {'Y','X','F'} with F = 2, where
+%                       slice 1 is amplitude and slice 2 is phase. UMT
+%                       structs in RAM, arrays, and other files are not
+%                       supported.
 %
 %       SaveFolder    - Folder where the visual-area ROI file is saved.
 %
@@ -53,7 +57,7 @@ end
 
 p = inputParser;
 p.FunctionName = 'genVSM';
-addRequired(p, 'retinotopyUMT', @(x) isstruct(x) && isscalar(x));
+addRequired(p, 'retinotopyUMT', @(x) ischar(x) || (isstring(x) && isscalar(x)));
 addRequired(p, 'SaveFolder', @(x) (ischar(x) || (isstring(x) && isscalar(x))) && isfolder(x));
 addParameter(p, 'PhaseMapFilter_Sigma', 0, @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0);
 addParameter(p, 'VSMFilter_Sigma', 0, @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0);
@@ -70,12 +74,17 @@ opts.b_UseMask = p.Results.b_UseMask;
 opts.MaskFile = char(string(p.Results.MaskFile));
 SaveFolder = char(string(p.Results.SaveFolder));
 
+retinotopyUMT = iLoadRetinotopyUMT(p.Results.retinotopyUMT, SaveFolder);
 validateUMTStruct(retinotopyUMT, 'requireEventInfo', false);
 assert(strcmpi(retinotopyUMT.kind, 'image'), ...
     'Umitoolbox:genVSM:InvalidInput', ...
     'Input UMT must have kind = "image".');
 
 requiredEntries = {'AzimuthMap', 'ElevationMap'};
+assert(isempty(setdiff(fieldnames(retinotopyUMT.data), requiredEntries)), ...
+    'Umitoolbox:genVSM:InvalidInput', ...
+    ['The input must be the genRetinotopyMaps output: only the entries ' ...
+     'AzimuthMap and ElevationMap are accepted.']);
 for iEntry = 1:numel(requiredEntries)
     assert(isfield(retinotopyUMT.data, requiredEntries{iEntry}), ...
         'Umitoolbox:genVSM:MissingInput', ...
@@ -134,17 +143,18 @@ roiFile = genVAmask(vsm, size(vsm), SaveFolder, opts);
     function info = localPipelineInfo()
         info = PipelineManager.createPipelineInfo( ...
             'genVSM', ...
-            'Generate a Visual Sign Map from retinotopy-map UMT input.');
+            'Generate a Visual Sign Map from the .umt output of genRetinotopyMaps.');
+        info.version = '2.0.0';
 
         info = PipelineManager.addInput(info, ...
             'retinotopyUMT', ...
             'ProcessedData', ...
-            'Retinotopy UMT containing AzimuthMap and ElevationMap entries.', ...
+            '.umt file written by genRetinotopyMaps (AzimuthMap and ElevationMap entries).', ...
             'position', 1, ...
             'callType', 'positional', ...
             'isData', true, ...
-            'supportsFile', false, ...
-            'dataMode', 'ram');
+            'supportsFile', true, ...
+            'dataMode', 'file');
 
         info = PipelineManager.addInput(info, ...
             'SaveFolder', ...
@@ -227,6 +237,29 @@ roiFile = genVAmask(vsm, size(vsm), SaveFolder, opts);
             'isData', false, ...
             'isRequired', false);
     end
+end
+
+function umt = iLoadRetinotopyUMT(input, SaveFolder)
+%ILOADRETINOTOPYUMT Load the .umt file written by genRetinotopyMaps.
+
+umtFile = char(string(input));
+if ~isfile(umtFile)
+    altPath = fullfile(SaveFolder, umtFile);
+    assert(isfile(altPath), ...
+        'Umitoolbox:genVSM:InputFileNotFound', ...
+        'Input file "%s" was not found.', char(string(input)));
+    umtFile = altPath;
+end
+
+[~, ~, ext] = fileparts(umtFile);
+assert(strcmpi(ext, '.umt'), ...
+    'Umitoolbox:genVSM:UnsupportedInputFile', ...
+    'Unsupported input file extension "%s". Only .umt files are supported.', ext);
+
+umt = loadData(umtFile);
+assert(isstruct(umt) && isscalar(umt), ...
+    'Umitoolbox:genVSM:InvalidInput', ...
+    'The file "%s" does not hold a scalar UMT struct.', umtFile);
 end
 
 function roiFile = genVAmask(vsm, frameSize, SaveFolder, opts)

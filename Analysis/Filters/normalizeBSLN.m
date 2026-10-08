@@ -1,4 +1,4 @@
-function [outData, metaData] = normalizeBSLN(data, SaveFolder, varargin)
+function outData = normalizeBSLN(data, SaveFolder, varargin)
 %NORMALIZEBSLN Normalize image data by baseline (DeltaR/R0).
 %
 %   outData = normalizeBSLN(data, SaveFolder)
@@ -8,17 +8,21 @@ function [outData, metaData] = normalizeBSLN(data, SaveFolder, varargin)
 %       'b_centerAtOne', tf)
 %
 % Inputs:
-%   data       : One of:
-%                1) Numeric 3-D array with dimensions Y x X x T
-%                2) Filename to a .dat file storing Y x X x T data
-%                3) UMT struct
-%                4) Filename to a .umt file containing a UMT struct
+%   data       : .dat filename (or path) with axes Y-X-T (continuous) or
+%                Y-X-T-E (event-split, e.g. split_data_by_event output).
+%                Arrays, UMT structs, and .umt files are not supported.
 %
-%   SaveFolder : Folder containing, for trial mode, events.mat.
+%   SaveFolder : Folder of the .dat output; for trial mode it also holds
+%                events.mat.
 %
 % Name-Value parameters:
 %   normalizationMode : 'recording' or 'trial'
 %                       Default: 'recording'
+%                         - 'recording': the baseline is taken from the
+%                           start of the recording (Y-X-T), or from the
+%                           start of every trial (Y-X-T-E).
+%                         - 'trial': Y-X-T-E only. The baseline of every
+%                           trial is the baseline period of events.mat.
 %
 %   baselineMode      : 'auto' or positive numeric scalar (seconds)
 %                       Default: 'auto'
@@ -28,46 +32,35 @@ function [outData, metaData] = normalizeBSLN(data, SaveFolder, varargin)
 %                             * numeric => first baselineMode seconds
 %                         - trial mode:
 %                             * must be 'auto'
-%                             * baseline uses EventsManager.baselinePeriod
+%                             * baseline uses the baseline period of
+%                               events.mat
 %
 %   b_centerAtOne     : Logical scalar. If true, add 1 after DeltaR/R0.
 %                       Default: false
 %
 %   FrameRateHz       : Frame rate of DATA (Hz), needed for a numeric
 %                       baselineMode and for trial mode. PipelineManager
-%                       injects it from the data flowing into the step; a
-%                       .dat input's header provides it otherwise, and a
-%                       .umt entry's meta.FrameRateHz. In-RAM arrays need
-%                       it explicitly. AcqInfos.mat is not used
-%                       (resolveDataInfoValue).
+%                       injects it from the data flowing into the step; the
+%                       .dat header provides it otherwise. AcqInfos.mat is
+%                       not used (resolveDataInfoValue).
 %
 % Output:
-%   outData           : - Trial mode on a raw YXT array or a .dat file:
-%                         numeric Y x X x T x E array, one slice per event
-%                         instance (ignored ones included), saved as .dat
-%                         by PipelineManager (.dat header Phase 8c).
-%                       - Otherwise: output UMT struct (UMT inputs carry
-%                         their eventInfo through).
-%   metaData          : struct with dimNames {'Y','X','T','E'} and
-%                       the numeric output; empty struct
-%                       otherwise.
+%   outData           : Full path of the .dat output ("normBSLN.dat" in
+%                       SaveFolder), with the same axes and sizes as the
+%                       input (single precision). A Y-X-T-E file keeps its E
+%                       axis: every trial is normalized on its own, ignored
+%                       instances included, so the E axis still matches
+%                       events.mat.
 %
 % Notes:
-%   - Raw YXT arrays and raw .dat files use EventsManager only when
-%     normalizationMode = 'trial'.
-%   - UMT input must have kind = 'image'.
-%   - All UMT entries must contain Y, X, and T.
-%   - In recording mode, UMT entries must not contain E.
-%   - In trial mode, all UMT entries must contain E, and the UMT must
-%     provide shared top-level eventInfo with eventAxisMode = 'instances'.
-%   - Raw .dat input uses spatially chunked reads, but the complete output
-%     remains resident in RAM. Its single-precision payload is 4*Y*X*T
-%     bytes in recording mode or 4*Y*X*trialLen*nTrials bytes in trial mode.
-%   - If a .umt file is provided, its content is loaded fully into RAM and
-%     processed there.
+%   - The baseline of each pixel (and trial) is the median over the baseline
+%     frames, omitting NaN; a zero baseline is replaced by 1.
+%   - The file is streamed in X slabs sized from the available RAM and the
+%     output is written slab by slab (Low-RAM mode is always on).
+%   - Continuous data are not split here: trial mode needs an event-split
+%     file, so split it first with split_data_by_event.
 
-default_Output = 'normBSLN.umt'; %#ok<NASGU>
-metaData = struct();
+default_Output = 'normBSLN.dat';
 
 if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) ...
         && strcmpi(strtrim(char(string(data))), 'pipelineInfo')
@@ -97,9 +90,6 @@ normalizationMode = lower(char(string(p.Results.normalizationMode)));
 baselineMode = p.Results.baselineMode;
 b_centerAtOne = p.Results.b_centerAtOne;
 explicitRate = p.Results.FrameRateHz;
-% The frame rate matters only for a numeric baseline or for trial mode.
-needsRate = strcmpi(normalizationMode, 'trial') || ...
-    ~(ischar(baselineMode) || (isstring(baselineMode) && isscalar(baselineMode)));
 
 if ~ismember(normalizationMode, {'recording','trial'})
     error('normalizeBSLN:InvalidNormalizationMode', ...
@@ -119,334 +109,54 @@ if ~isfolder(SaveFolder)
         'SaveFolder "%s" does not exist.', SaveFolder);
 end
 
-% -------------------------------------------------------------------------
-% Case 1: Raw YXT array in RAM
-% -------------------------------------------------------------------------
-if isnumeric(data) || islogical(data)
-
-    validateattributes(data, {'numeric','logical'}, {'nonempty','3d'}, ...
-        mfilename, 'data');
-
-    rawData = single(data);
-    freqHz = NaN;
-    if needsRate
-        freqHz = resolveDataInfoValue('frameRateHz', explicitRate, data, mfilename);
-    end
-
-    switch normalizationMode
-        case 'recording'
-            nT = size(rawData, 3);
-            nBaseFrames = iResolveRecordingBaselineFrames(nT, freqHz, baselineMode);
-
-            bsln = median(rawData(:,:,1:nBaseFrames), 3, 'omitnan');
-            bsln(bsln == 0) = 1;
-            outVal = (rawData - bsln) ./ bsln;
-            if b_centerAtOne
-                outVal = outVal + 1;
-            end
-
-            outData = iPackageOutputUMT( ...
-                {'main'}, ...
-                {single(outVal)}, ...
-                {{'Y','X','T'}}, ...
-                struct(), ...
-                struct(), ...
-                {struct()});
-
-        case 'trial'
-            evObj = EventsManager(SaveFolder);
-            % Every instance is normalized and saved, ignored ones included
-            % and flagged (.dat header Phase 8c).
-            frMat = evObj.getFrameMatrix(size(rawData, 3), ...
-                'FrameRateHz', freqHz, 'IncludeIgnored', true);
-
-            if isempty(frMat)
-                error('normalizeBSLN:NoEventsFound', ...
-                    'No valid events were found for trial normalization.');
-            end
-            frMat = iCropLikeSplit(frMat);
-
-            trialLen = size(frMat, 2);
-            nBaseFrames = iResolveTrialBaselineFrames(trialLen, freqHz, double(evObj.baselinePeriod));
-
-            nTrials = size(frMat, 1);
-            nY = size(rawData, 1);
-            nX = size(rawData, 2);
-
-            outVal = nan(nY, nX, trialLen, nTrials, 'single');
-
-            for iTrial = 1:nTrials
-                validMask = ~isnan(frMat(iTrial, :));
-                frameIdx = frMat(iTrial, validMask);
-
-                if isempty(frameIdx)
-                    continue
-                end
-
-                trialData = nan(nY, nX, trialLen, 'single');
-                trialData(:,:,validMask) = rawData(:,:,frameIdx);
-
-                bsln = median(trialData(:,:,1:nBaseFrames), 3, 'omitnan');
-                bsln(bsln == 0) = 1;
-                trialData = (trialData - bsln) ./ bsln;
-
-                if b_centerAtOne
-                    trialData = trialData + 1;
-                end
-
-                outVal(:,:,:,iTrial) = trialData;
-            end
-
-            % Event-split image data are saved as .dat (Phase 8c); the
-            % flags come from events.mat through resolveDatEventMapping.
-            outData = outVal;
-            metaData = struct('dimNames', {{'Y','X','T','E'}});
-    end
-
-    return
-end
-
-% -------------------------------------------------------------------------
-% Case 2: File input
-% -------------------------------------------------------------------------
-if ischar(data) || (isstring(data) && isscalar(data))
-
-    dataFile = char(string(data));
-
-    if ~isfile(dataFile)
-        altPath = fullfile(SaveFolder, dataFile);
-        if isfile(altPath)
-            dataFile = altPath;
-        else
-            error('normalizeBSLN:InputFileNotFound', ...
-                'Input file "%s" was not found.', data);
-        end
-    end
-
-    [~,~,ext] = fileparts(dataFile);
-    ext = lower(ext);
-
-    switch ext
-        case '.dat'
-            [outVal, outDimNames, labels, eventInfo] = ...
-                normalizeBSLN_chunkedDatMode( ...
-                    dataFile, SaveFolder, normalizationMode, baselineMode, b_centerAtOne, ...
-                    explicitRate, needsRate);
-
-            if strcmp(normalizationMode, 'trial')
-                % Event-split image data are saved as .dat (Phase 8c).
-                outData = outVal;
-                metaData = struct('dimNames', {outDimNames});
-                return
-            end
-
-            outData = iPackageOutputUMT( ...
-                {'main'}, ...
-                {outVal}, ...
-                {outDimNames}, ...
-                labels, ...
-                eventInfo, ...
-                {struct()});
-            return
-
-        case {'.umt','.mat'}
-            warning('normalizeBSLN:UMTFileLoadsInRAM', ...
-                ['The chunked raw-DAT path is not available for data stored ' ...
-                 'in this format. Loading the UMT content into RAM.']);
-
-            try
-                loadedUMT = loadData(dataFile);
-                if ~(isstruct(loadedUMT) && isscalar(loadedUMT) && ...
-                        all(ismember({'version','kind','data'}, fieldnames(loadedUMT))))
-                    error('Invalid UMT payload loaded.');
-                end
-            catch
-                S = load(dataFile, '-mat');
-                fn = fieldnames(S);
-                loadedUMT = [];
-                for iField = 1:numel(fn)
-                    candidate = S.(fn{iField});
-                    if isstruct(candidate) && isscalar(candidate) && ...
-                            all(ismember({'version','kind','data'}, fieldnames(candidate)))
-                        loadedUMT = candidate;
-                        break
-                    end
-                end
-                if isempty(loadedUMT)
-                    error('normalizeBSLN:NoUMTFoundInFile', ...
-                        'No scalar UMT struct was found in "%s".', dataFile);
-                end
-            end
-
-            data = loadedUMT;
-
-        otherwise
-            error('normalizeBSLN:UnsupportedInputFile', ...
-                'Unsupported input file extension "%s".', ext);
-    end
-end
-
-% -------------------------------------------------------------------------
-% Case 3: UMT struct in RAM
-% -------------------------------------------------------------------------
-if ~isstruct(data)
+if ~(ischar(data) || (isstring(data) && isscalar(data)))
     error('normalizeBSLN:UnsupportedInputType', ...
-        ['Input "data" must be a YXT array, a .dat filename, ' ...
-         'a UMT struct, or a .umt filename containing a UMT struct.']);
+        'Input "data" must be the name or path of a .dat file (arrays and UMT inputs are not supported).');
 end
 
-[entryNames, entryData, entryDims, sourceLabels, sourceEventInfo, hasE, entryMetas] = ...
-    iExtractValidUMTData(data);
-
-switch normalizationMode
-    case 'recording'
-        if any(hasE)
-            error('normalizeBSLN:RecordingModeRequiresContinuousUMT', ...
-                ['Recording-mode normalization only supports continuous UMT entries ' ...
-                 'without an E dimension.']);
-        end
-
-        freqHz = NaN;
-        if needsRate
-            freqHz = iUMTFrameRate(explicitRate, entryMetas);
-        end
-        baselineSec = [];
-        if ~(ischar(baselineMode) || (isstring(baselineMode) && isscalar(baselineMode)))
-            baselineSec = double(baselineMode);
-        end
-
-        outEntryData = entryData;
-        outEntryDims = entryDims;
-
-        for iEntry = 1:numel(entryNames)
-            thisData = single(entryData{iEntry});
-            thisDims = entryDims{iEntry};
-
-            idxT = find(strcmp(thisDims, 'T'), 1, 'first');
-
-            permOrder = [setdiff(1:ndims(thisData), idxT, 'stable') idxT];
-            dataP = permute(thisData, permOrder);
-            szP = size(dataP);
-            nT = szP(end);
-
-            if isempty(baselineSec)
-                nBaseFrames = iResolveRecordingBaselineFrames(nT, freqHz, 'auto');
-            else
-                nBaseFrames = iResolveRecordingBaselineFrames(nT, freqHz, baselineSec);
-            end
-
-            spatialShape = szP(1:end-1);
-            data2D = reshape(dataP, prod(spatialShape), nT);
-
-            bsln = median(data2D(:, 1:nBaseFrames), 2, 'omitnan');
-            bsln(bsln == 0) = 1;
-            data2D = (data2D - bsln) ./ bsln;
-
-            if b_centerAtOne
-                data2D = data2D + 1;
-            end
-
-            dataP = reshape(data2D, szP);
-            outEntryData{iEntry} = ipermute(dataP, permOrder);
-            outEntryDims{iEntry} = thisDims;
-        end
-
-        outData = iPackageOutputUMT( ...
-            entryNames, outEntryData, outEntryDims, sourceLabels, struct(), entryMetas);
-
-    case 'trial'
-        if ~all(hasE)
-            error('normalizeBSLN:TrialModeRequiresEventSplitUMT', ...
-                ['Trial-mode normalization on UMT input requires all entries to ' ...
-                 'contain an E dimension.']);
-        end
-
-        if isempty(fieldnames(sourceEventInfo))
-            error('normalizeBSLN:MissingEventInfo', ...
-                'Trial-mode normalization on UMT input requires shared top-level eventInfo.');
-        end
-
-        if ~strcmpi(sourceEventInfo.eventAxisMode, 'instances')
-            error('normalizeBSLN:InvalidEventAxisMode', ...
-                ['Trial-mode normalization on UMT input requires eventAxisMode = ' ...
-                 '"instances".']);
-        end
-
-        evObj = EventsManager(SaveFolder);
-        freqHz = iUMTFrameRate(explicitRate, entryMetas);
-
-        outEntryData = entryData;
-        outEntryDims = entryDims;
-
-        for iEntry = 1:numel(entryNames)
-            thisData = single(entryData{iEntry});
-            thisDims = entryDims{iEntry};
-
-            idxT = find(strcmp(thisDims, 'T'), 1, 'first');
-            idxE = find(strcmp(thisDims, 'E'), 1, 'first');
-
-            permOrder = [setdiff(1:ndims(thisData), [idxT idxE], 'stable') idxT idxE];
-            dataP = permute(thisData, permOrder);
-            szP = size(dataP);
-
-            nT = szP(end-1);
-            nTrials = szP(end);
-            nBaseFrames = iResolveTrialBaselineFrames(nT, freqHz, double(evObj.baselinePeriod));
-
-            spatialShape = szP(1:end-2);
-            data2D = reshape(dataP, prod(spatialShape), nT, nTrials);
-
-            for iTrial = 1:nTrials
-                bsln = median(data2D(:, 1:nBaseFrames, iTrial), 2, 'omitnan');
-                bsln(bsln == 0) = 1;
-                data2D(:, :, iTrial) = (data2D(:, :, iTrial) - bsln) ./ bsln;
-
-                if b_centerAtOne
-                    data2D(:, :, iTrial) = data2D(:, :, iTrial) + 1;
-                end
-            end
-
-            dataP = reshape(data2D, szP);
-            outEntryData{iEntry} = ipermute(dataP, permOrder);
-            outEntryDims{iEntry} = thisDims;
-        end
-
-        outLabels = sourceLabels;
-        if isempty(fieldnames(outLabels))
-            outLabels = struct();
-        end
-
-        outData = iPackageOutputUMT( ...
-            entryNames, outEntryData, outEntryDims, outLabels, sourceEventInfo, entryMetas);
+dataFile = char(string(data));
+if ~isfile(dataFile)
+    altPath = fullfile(SaveFolder, dataFile);
+    if isfile(altPath)
+        dataFile = altPath;
+    else
+        error('normalizeBSLN:InputFileNotFound', ...
+            'Input file "%s" was not found.', char(string(data)));
+    end
 end
 
-% =========================================================================
-% Local pipeline info
-% =========================================================================
+[~, ~, ext] = fileparts(dataFile);
+if ~strcmpi(ext, '.dat')
+    error('normalizeBSLN:UnsupportedInputFile', ...
+        'Unsupported input file extension "%s". Only .dat files are supported.', ext);
+end
+
+outData = iNormalizeDatFile(dataFile, SaveFolder, default_Output, normalizationMode, ...
+    baselineMode, b_centerAtOne, explicitRate);
+
     function info = localPipelineInfo()
         info = PipelineManager.createPipelineInfo(mfilename, ...
-            ['Normalize raw image time-series or processed event-split data ' ...
-             'by baseline and return a UMT struct.']);
-        
+            ['Normalize image data by baseline (DeltaR/R0): Y-X-T and event-split ' ...
+             'Y-X-T-E .dat files in, a .dat file with the same axes out.']);
+        info.version = '2.0.0';
 
         info = PipelineManager.addInput( ...
             info, ...
             'data', ...
             {'ImageTimeSeries','ProcessedData','UnknownDataType'}, ...
-            ['Input data. Accepted forms: YXT array, .dat filename, ' ...
-             'UMT struct, or .umt file containing one UMT struct.'], ...
+            'Input .dat file with axes Y-X-T or Y-X-T-E.', ...
             'kind', 'input', ...
             'position', 1, ...
             'callType', 'positional', ...
             'isData', true, ...
             'supportsFile', true, ...
-            'dataMode', 'either');
+            'dataMode', 'file');
 
         info = PipelineManager.addInput( ...
             info, ...
             'SaveFolder', ...
             'SaveFolder', ...
-            'Folder containing, for trial mode, events.mat.', ...
+            'Folder receiving the .dat output and, for trial mode, containing events.mat.', ...
             'kind', 'input', ...
             'position', 2, ...
             'callType', 'positional', ...
@@ -456,7 +166,7 @@ end
             info, ...
             'normalizationMode', ...
             'parameter', ...
-            'Normalization mode: recording or trial.', ...
+            'Normalization mode: recording or trial (event-split data only).', ...
             'kind', 'parameter', ...
             'default', 'recording', ...
             'allowed', {'recording','trial'}, ...
@@ -496,284 +206,104 @@ end
             'outData', ...
             {'ImageTimeSeries','ProcessedData'}, ...
             'data', ...
-            ['Baseline-normalized output: Y-X-T-E trials (.dat) in trial mode ' ...
-             'on raw data, else a UMT struct.'], ...
-            'normBSLN.umt', ...
+            'Baseline-normalized .dat output with the same axes as the input.', ...
+            default_Output, ...
             1, ...
             'isData', true);
-
-        info = PipelineManager.addOutput( ...
-            info, ...
-            'metaData', ...
-            'metaData', ...
-            'data', ...
-            'Axes of the .dat output.', ...
-            '', ...
-            2, ...
-            'isData', false);
     end
 end
 
 % =========================================================================
-% Helper: Chunked raw-DAT input execution with an in-memory output
+% Helper: streamed normalization of a Y-X-T or Y-X-T-E .dat file
 % =========================================================================
-function [outVal, outDimNames, labels, eventInfo] = normalizeBSLN_chunkedDatMode( ...
-    inFile, SaveFolder, normalizationMode, baselineMode, b_centerAtOne, explicitRate, needsRate)
+function outFile = iNormalizeDatFile(inFile, SaveFolder, defaultOutput, normalizationMode, baselineMode, b_centerAtOne, explicitRate)
+%INORMALIZEDATFILE Read in X slabs, normalize along T per trial, write a .dat.
 
-labels = struct();
-eventInfo = struct();
+Info = loadMetaData(inFile);
+assertDatLayout(Info, {{'Y','X','T'}, {'Y','X','T','E'}}, 'normalizeBSLN');
+Ny = datAxisSize(Info, 'Y');
+Nx = datAxisSize(Info, 'X');
+Nt = datAxisSize(Info, 'T');
+Ne = max(1, datAxisSize(Info, 'E'));
+hasE = datAxisSize(Info, 'E') > 0;
 
-slabIn = spatialSlabIO('open', inFile);
-cleanObj = onCleanup(@() spatialSlabIO('close', slabIn));
-assertDatLayout(slabIn.Info, {{'Y','X','T'}}, 'normalizeBSLN');
-Ny = slabIn.Ny;
-Nx = slabIn.Nx;
-Nt = datAxisSize(slabIn.Info, 'T');
+isTrialMode = strcmp(normalizationMode, 'trial');
+if isTrialMode && ~hasE
+    error('normalizeBSLN:TrialModeRequiresEventSplit', ...
+        ['Trial-mode normalization needs an event-split Y-X-T-E file ("%s" has ' ...
+         'axes %s). Split it first with split_data_by_event.'], inFile, ...
+        strjoin(cellstr(string(Info.dimNames(:).')), '-'));
+end
+
+% The frame rate matters only for a numeric baseline or for trial mode.
+needsRate = isTrialMode || ~(ischar(baselineMode) || (isstring(baselineMode) && isscalar(baselineMode)));
 freqHz = NaN;
 if needsRate
     freqHz = resolveDataInfoValue('frameRateHz', explicitRate, inFile, 'normalizeBSLN');
 end
 
-% Conservative fixed chunk-size budget (not derived from calculateMaxChunkSize's
-% dynamic available-RAM estimate, to keep this path's chunk sizing predictable).
-targetBytes = 128 * 1024 * 1024; % 128 MB
-bytesPerX = Ny * Nt * getByteSize('single');
-xPerSlab = max(1, floor(targetBytes / max(bytesPerX, 1)));
-
-switch lower(normalizationMode)
-
-    case 'recording'
-        nBaseFrames = iResolveRecordingBaselineFrames(Nt, freqHz, baselineMode);
-
-        outVal = zeros(Ny, Nx, Nt, 'single');
-        xStart = 1;
-
-        while xStart <= Nx
-            xEnd = min(Nx, xStart + xPerSlab - 1);
-            xIdx = xStart:xEnd;
-
-            slab = single(spatialSlabIO('read', slabIn, xIdx));
-
-            bsln = median(slab(:,:,1:nBaseFrames), 3, 'omitnan');
-            bsln(bsln == 0) = 1;
-            slab = (slab - bsln) ./ bsln;
-
-            if b_centerAtOne
-                slab = slab + 1;
-            end
-
-            outVal(:, xIdx, :) = slab;
-            xStart = xEnd + 1;
-        end
-
-        outDimNames = {'Y','X','T'};
-
-    case 'trial'
-        evObj = EventsManager(SaveFolder);
-        % Every instance is normalized and saved, ignored ones included and
-        % flagged (.dat header Phase 8c).
-        [frMat, conditionIDlist] = evObj.getFrameMatrix(Nt, 'FrameRateHz', freqHz, ...
-            'IncludeIgnored', true);
-
-        if isempty(frMat)
-            error('normalizeBSLN:NoEventsFound', ...
-                'No valid events were found for trial normalization.');
-        end
-        frMat = iCropLikeSplit(frMat);
-
-        nTrials = size(frMat, 1);
-        trialLen = size(frMat, 2);
-        nBaseFrames = iResolveTrialBaselineFrames(trialLen, freqHz, double(evObj.baselinePeriod));
-
-        outVal = nan(Ny, Nx, trialLen, nTrials, 'single');
-        eventNames = cell(nTrials, 1);
-
-        xStart = 1;
-        while xStart <= Nx
-            xEnd = min(Nx, xStart + xPerSlab - 1);
-            xIdx = xStart:xEnd;
-
-            slabData = single(spatialSlabIO('read', slabIn, xIdx));
-
-            for iTrial = 1:nTrials
-                validMask = ~isnan(frMat(iTrial, :));
-                frameIdx = frMat(iTrial, validMask);
-                eventNames{iTrial} = evObj.eventNameList{conditionIDlist(iTrial)};
-
-                if isempty(frameIdx)
-                    continue
-                end
-
-                trialData = nan(Ny, numel(xIdx), trialLen, 'single');
-                trialData(:,:,validMask) = slabData(:,:,frameIdx);
-
-                bsln = median(trialData(:,:,1:nBaseFrames), 3, 'omitnan');
-                bsln(bsln == 0) = 1;
-                trialData = (trialData - bsln) ./ bsln;
-
-                if b_centerAtOne
-                    trialData = trialData + 1;
-                end
-
-                outVal(:, xIdx, :, iTrial) = trialData;
-            end
-
-            xStart = xEnd + 1;
-        end
-
-        eventInfo = iTrialEventInfo(evObj, freqHz, conditionIDlist, eventNames);
-
-        outDimNames = {'Y','X','T','E'};
-end
-end
-
-% =========================================================================
-% Helper: per-instance eventInfo of trial-normalized output
-% =========================================================================
-function eventInfo = iTrialEventInfo(evObj, freqHz, conditionIDlist, eventNames)
-%ITRIALEVENTINFO eventInfo of every instance, with selected, durationSec,
-% and baselinePeriod (from exportEventInfo; Phase 8c).
-eventInfo = evObj.exportEventInfo('FrameRateHz', freqHz, 'IncludeIgnored', true);
-assert(isequal(double(eventInfo.eventID(:)), double(conditionIDlist(:))), ...
-    'normalizeBSLN:EventAxisMismatch', 'The event list does not match the split trials.');
-eventInfo.eventName = eventNames;
-eventInfo.eventAxisMode = 'instances';
-eventInfo = rmfield(eventInfo, intersect(fieldnames(eventInfo), ...
-    {'eventNameList', 'FrameRateHz', 'selectedEvents'}));
-end
-
-% =========================================================================
-% Helper: Extract and validate image-backed data from a UMT structure
-% =========================================================================
-function [entryNames, entryData, entryDims, labels, eventInfo, hasE, entryMetas] = iExtractValidUMTData(umt)
-
-validateUMTStruct(umt, 'requireEventInfo', false);
-
-if ~strcmpi(umt.kind, 'image')
-    error('normalizeBSLN:InvalidUMTKind', ...
-        ['Operation aborted. UMT input must have kind = "image". ' ...
-         'This function does not support non-image UMT structures.']);
-end
-
-entryNames = fieldnames(umt.data);
-if isempty(entryNames)
-    error('normalizeBSLN:EmptyUMTData', ...
-        'Operation aborted. UMT data is empty.');
-end
-
-entryData = cell(size(entryNames));
-entryDims = cell(size(entryNames));
-entryMetas = cell(size(entryNames));
-hasE = false(size(entryNames));
-
-for iEntry = 1:numel(entryNames)
-    thisEntry = umt.data.(entryNames{iEntry});
-    thisDims = cellstr(string(thisEntry.dimNames));
-
-    if ~all(ismember({'Y','X','T'}, thisDims))
-        error('normalizeBSLN:InvalidUMTEntry', ...
-            ['Operation aborted. All entries in the input UMT must be image-backed ' ...
-             'and contain dimensions Y, X, and T.\nInvalid entry: "%s".'], ...
-            entryNames{iEntry});
+if isTrialMode
+    mapping = resolveDatEventMapping(Info, SaveFolder);
+    if ~(isfield(mapping.eventInfo, 'baselinePeriod') && ~isempty(mapping.eventInfo.baselinePeriod))
+        error('normalizeBSLN:MissingBaselinePeriod', ...
+            'Trial-mode normalization needs a baseline period in the events.mat of "%s".', SaveFolder);
     end
-
-    entryData{iEntry} = single(thisEntry.value);
-    entryDims{iEntry} = thisDims;
-    hasE(iEntry) = any(strcmp(thisDims, 'E'));
-
-    if isfield(thisEntry, 'meta') && isstruct(thisEntry.meta) && isscalar(thisEntry.meta)
-        entryMetas{iEntry} = thisEntry.meta;
-    else
-        entryMetas{iEntry} = struct();
-    end
-end
-
-if isfield(umt, 'labels')
-    labels = umt.labels;
+    nBaseFrames = iResolveTrialBaselineFrames(Nt, freqHz, double(mapping.eventInfo.baselinePeriod));
 else
-    labels = struct();
+    nBaseFrames = iResolveRecordingBaselineFrames(Nt, freqHz, baselineMode);
 end
 
-if isfield(umt, 'eventInfo')
-    eventInfo = umt.eventInfo;
-else
-    eventInfo = struct();
-end
-end
+slabIn = spatialSlabIO('open', inFile, 'Info', Info);
+cIn = onCleanup(@() spatialSlabIO('close', slabIn));
 
-% =========================================================================
-% Helper: Package processed entries into a UMT output
-% =========================================================================
-function outUMT = iPackageOutputUMT(entryNames, entryData, entryDims, labelsIn, eventInfoIn, entryMetasIn)
+% Write through a scratch file so the output only appears once the run has
+% completed, and so the input can be the very file the output replaces.
+outFile = fullfile(SaveFolder, defaultOutput);
+[~, outStem, outExt] = fileparts(outFile);
+tmpFile = fullfile(SaveFolder, [outStem, '_writing', outExt]);
+cTmp = onCleanup(@() iDeleteIfExists(tmpFile));
+slabOut = spatialSlabIO('create', tmpFile, ...
+    datHeaderFromInfo(Info, outStem, 'dataClass', 'single'));
+cOut = onCleanup(@() spatialSlabIO('close', slabOut));
 
-outUMT = [];
+% Peak memory of a slab: the slab, the normalized copy, and a temporary.
+nChunks = calculateMaxChunkSize(double(Ny) * Nx * Nt * Ne * 4, 3, 0.2);
+chunkX = max(1, ceil(Nx / nChunks));
+nChunks = ceil(Nx / chunkX);
 
-labelsOut = struct();
-if ~isempty(labelsIn) && isstruct(labelsIn)
-    usedDims = {};
-    for iEntry = 1:numel(entryDims)
-        usedDims = [usedDims, entryDims{iEntry}]; %#ok<AGROW>
+for c = 1:nChunks
+    xIdx = ((c-1) * chunkX + 1):min(c * chunkX, Nx);
+
+    fprintf('Chunk %i/%i [Reading file ...]\n', c, nChunks)
+    slab = single(spatialSlabIO('read', slabIn, xIdx));
+
+    fprintf('Chunk %i/%i [Normalizing data ...]\n', c, nChunks)
+    % The baseline of every pixel and trial: median over the first frames.
+    bsln = median(slab(:, :, 1:nBaseFrames, :), 3, 'omitnan');
+    bsln(bsln == 0) = 1;
+    slab = (slab - bsln) ./ bsln;
+    if b_centerAtOne
+        slab = slab + 1;
     end
-    usedDims = unique(usedDims, 'stable');
 
-    labelFields = fieldnames(labelsIn);
-    for iField = 1:numel(labelFields)
-        if ismember(labelFields{iField}, usedDims)
-            labelsOut.(labelFields{iField}) = labelsIn.(labelFields{iField});
-        end
-    end
+    fprintf('Chunk %i/%i [Writing to file ...]\n', c, nChunks)
+    spatialSlabIO('write', slabOut, xIdx, slab);
+    fprintf('Chunk %i/%i [Completed]\n', c, nChunks)
 end
 
-for iEntry = 1:numel(entryNames)
-    if iEntry == 1
-        if isempty(fieldnames(labelsOut))
-            outUMT = genUMTStruct( ...
-                entryData{iEntry}, ...
-                'kind', 'image', ...
-                'entryName', entryNames{iEntry}, ...
-                'dimNames', entryDims{iEntry}, ...
-                'meta', entryMetasIn{iEntry});
-        else
-            outUMT = genUMTStruct( ...
-                entryData{iEntry}, ...
-                'kind', 'image', ...
-                'entryName', entryNames{iEntry}, ...
-                'dimNames', entryDims{iEntry}, ...
-                'labels', labelsOut, ...
-                'meta', entryMetasIn{iEntry});
-        end
-    else
-        outUMT = genUMTStruct( ...
-            outUMT, ...
-            'value', entryData{iEntry}, ...
-            'entryName', entryNames{iEntry}, ...
-            'dimNames', entryDims{iEntry}, ...
-            'meta', entryMetasIn{iEntry});
-    end
+spatialSlabIO('finalize', slabOut);
+clear cIn cOut; % close both files before the move below
+
+[moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
+assert(moveOk, 'normalizeBSLN:OutputMoveFailed', ...
+    'Failed to move "%s" onto "%s": %s', tmpFile, outFile, moveMsg);
 end
 
-if ~isempty(eventInfoIn) && isstruct(eventInfoIn) && ~isempty(fieldnames(eventInfoIn))
-    % Struct form: the input eventInfo is carried intact, including
-    % selected, durationSec, nInstances, and baselinePeriod (Phase 8c).
-    outUMT = appendUMTEventInfo(outUMT, ...
-        'eventInfo', eventInfoIn, ...
-        'overwrite', true);
-else
-    validateUMTStruct(outUMT, 'requireEventInfo', true);
+function iDeleteIfExists(filePath)
+%IDELETEIFEXISTS Remove a scratch file left by a failed run.
+if isfile(filePath)
+    delete(filePath);
 end
-end
-
-% =========================================================================
-% Helper: Frame rate of UMT input
-% =========================================================================
-function freqHz = iUMTFrameRate(explicitRate, entryMetas)
-%IUMTFRAMERATE Explicit FrameRateHz, else the first UMT entry's meta.FrameRateHz.
-ownRate = [];
-if ~isempty(entryMetas) && isstruct(entryMetas{1}) && isfield(entryMetas{1}, 'FrameRateHz')
-    ownRate = entryMetas{1}.FrameRateHz;
-end
-freqHz = resolveDataInfoValue('frameRateHz', explicitRate, [], 'normalizeBSLN', ...
-    'OwnValue', ownRate, 'OwnSource', 'the UMT entry meta.FrameRateHz');
 end
 
 % =========================================================================
@@ -803,17 +333,4 @@ function nBaseFrames = iResolveTrialBaselineFrames(trialLen, freqHz, baselinePer
 nBaseFrames = round(double(baselinePeriodSec) * freqHz);
 nBaseFrames = max(1, nBaseFrames);
 nBaseFrames = min(nBaseFrames, trialLen);
-end
-
-% =========================================================================
-% Helper: trial length of split_data_by_event
-% =========================================================================
-function frMat = iCropLikeSplit(frMat)
-%ICROPLIKESPLIT Same trial length as EventsManager.splitDataByEvents
-% (split_data_by_event): crop every trial from the first frame that any
-% instance lacks.
-firstNaNCol = find(any(isnan(frMat), 1), 1, 'first');
-if ~isempty(firstNaNCol)
-    frMat(:, firstNaNCol:end) = [];
-end
 end

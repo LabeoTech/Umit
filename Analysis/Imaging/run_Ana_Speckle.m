@@ -1,31 +1,30 @@
 function outData = run_Ana_Speckle(SaveFolder, data, varargin)
-%RUN_ANA_SPECKLE Wrapper around Ana_Speckle.
+%RUN_ANA_SPECKLE Wrapper around Ana_Speckle (blood flow from speckle data).
 %
 %   outData = run_Ana_Speckle(SaveFolder, data)
-%   outData = run_Ana_Speckle(SaveFolder, data, ...
-%       'bNormalize', true, ...
-%       'SpeckleFileName', 'speckle')
+%   outData = run_Ana_Speckle(SaveFolder, data, 'bNormalize', true)
 %
-%   This wrapper dispatches Ana_Speckle in standard or RAM-safe mode.
+%   This wrapper runs Ana_Speckle in its file-based (low-RAM) mode.
 %
 %   Inputs:
-%       SaveFolder      - Folder containing the speckle file and metadata.
-%       data            - Numeric YXT array placeholder or raw .dat filename.
-%                         The underlying Ana_Speckle implementation remains
-%                         file-based; numeric input is accepted to preserve
-%                         pipeline compatibility and selects standard mode.
+%       SaveFolder - Folder of the speckle file and of the .dat output.
+%       data       - Name of a Y-X-T speckle .dat file in SaveFolder.
+%                    Arrays, other extensions, and other layouts are not
+%                    supported.
 %
 %   Name-Value parameters:
-%       'bNormalize'      - Logical scalar. Normalize by temporal mean.
-%       'SpeckleFileName' - Basename or filename of the speckle input.
+%       'bNormalize' - Logical scalar. Normalize the finished flow map by its
+%                      per-pixel temporal mean. Default: false
 %
 %   Output:
-%       outData         - Standard mode: single Y x X x T blood-flow array.
-%                         Low-RAM mode: full path to the raw Flow.dat output.
+%       outData    - Full path of the Y-X-T Flow.dat output in SaveFolder
+%                    (single precision, same axes, rate, and exposure as the
+%                    input).
 %
 %   Notes:
-%       - The legacy metaData output has been removed. File opening and
-%         metadata resolution are handled through loadMetaData(...).
+%       - The file is read, processed, and written in chunks by
+%         Ana_Speckle (Low-RAM mode is always on).
+%       - The layout is checked first, so a refused input writes nothing.
 
 % Default output for pipeline management.
 default_Output = 'Flow.dat';
@@ -39,47 +38,36 @@ end
 p = inputParser;
 p.FunctionName = 'run_Ana_Speckle';
 addRequired(p, 'SaveFolder', @(x) (ischar(x) || (isstring(x) && isscalar(x))) && isfolder(x));
-addRequired(p, 'data', @(x) (isnumeric(x) && ndims(x) == 3) || ischar(x) || (isstring(x) && isscalar(x)));
+addRequired(p, 'data');
 addParameter(p, 'bNormalize', false, @(x) islogical(x) && isscalar(x));
-addParameter(p, 'SpeckleFileName', 'speckle', @(x) ischar(x) || (isstring(x) && isscalar(x)));
 parse(p, SaveFolder, data, varargin{:});
 
 SaveFolder = char(string(p.Results.SaveFolder));
 bNormalize = p.Results.bNormalize;
-speckleFileName = char(string(p.Results.SpeckleFileName));
+
+assert(ischar(data) || (isstring(data) && isscalar(data)), ...
+    'Umitoolbox:run_Ana_Speckle:UnsupportedInputType', ...
+    'Input "data" must be the name of a Y-X-T .dat file (arrays are not supported).');
+
+speckleFile = char(string(data));
+[~, speckleBase, speckleExt] = fileparts(speckleFile);
+assert(isempty(speckleExt) || strcmpi(speckleExt, '.dat'), ...
+    'Umitoolbox:run_Ana_Speckle:UnsupportedInputFile', ...
+    'Unsupported input file extension "%s". Only .dat files are supported.', speckleExt);
+
+datFile = fullfile(SaveFolder, [speckleBase '.dat']);
+assert(isfile(datFile), ...
+    'Umitoolbox:run_Ana_Speckle:FileNotFound', ...
+    'Speckle .dat file not found: "%s".', datFile);
+assertDatLayout(loadMetaData(datFile), {{'Y','X','T'}}, 'run_Ana_Speckle');
 
 fprintf('Calculating blood flow...\n');
-
-% RAMSafeMode is inferred here from the type of `data` (array vs. filename)
-% as a stand-in for a flag PipelineManager does not yet pass explicitly.
-% `data` itself is not consumed in RAM-safe mode -- this function always
-% reads a named file from SaveFolder. See
-% TASK_F3_F44_ramsafe_explicit_flag_deferred.md for the planned fix.
-localWarnRAMSafeModeProxyOnce(mfilename);
-
-% Decide RAM-safe mode from input type.
-bRAMsafeMode = ischar(data) || (isstring(data) && isscalar(data));
-
-% If the caller passed a file-backed input, prefer that filename unless the
-% user explicitly overrode it through SpeckleFileName.
-if bRAMsafeMode
-    [~, inputBase, inputExt] = fileparts(char(string(data)));
-    if ~isempty(inputBase)
-        if strcmpi(speckleFileName, 'speckle')
-            if strcmpi(inputExt, '.dat')
-                speckleFileName = inputBase;
-            else
-                speckleFileName = char(string(data));
-            end
-        end
-    end
-end
 
 outData = Ana_Speckle( ...
     SaveFolder, ...
     bNormalize, ...
-    'Filename', speckleFileName, ...
-    'RAMSafeMode', bRAMsafeMode);
+    'Filename', speckleBase, ...
+    'RAMSafeMode', true);
 
 fprintf('Finished Ana_Speckle.\n');
 
@@ -87,6 +75,7 @@ fprintf('Finished Ana_Speckle.\n');
         info = PipelineManager.createPipelineInfo( ...
             'run_Ana_Speckle', ...
             'Wrapper around Ana_Speckle for blood-flow computation from speckle data.');
+        info.version = '2.0.0';
 
         info = PipelineManager.addInput(info, ...
             'SaveFolder', ...
@@ -100,12 +89,12 @@ fprintf('Finished Ana_Speckle.\n');
         info = PipelineManager.addInput(info, ...
             'data', ...
             'ImageTimeSeries', ...
-            'Numeric YXT placeholder or raw .dat filename.', ...
+            'Y-X-T speckle .dat file.', ...
             'position', 2, ...
             'callType', 'positional', ...
             'isData', true, ...
             'supportsFile', true, ...
-            'dataMode', 'either');
+            'dataMode', 'file');
 
         info = PipelineManager.addInput(info, ...
             'bNormalize', ...
@@ -118,47 +107,14 @@ fprintf('Finished Ana_Speckle.\n');
             'allowed', [true false], ...
             'dataType', 'logical');
 
-        info = PipelineManager.addInput(info, ...
-            'SpeckleFileName', ...
-            'parameter', ...
-            'Basename or filename of the speckle input.', ...
-            'kind', 'parameter', ...
-            'position', 4, ...
-            'callType', 'namevalue', ...
-            'default', 'speckle', ...
-            'dataType', 'char');
-
         info = PipelineManager.addOutput(info, ...
             'outData', ...
             {'ImageTimeSeries', 'ProcessedData'}, ...
             'data', ...
-            'Blood-flow output from Ana_Speckle: a single Y x X x T image time series.', ...
+            'Blood-flow output from Ana_Speckle: a single Y-X-T .dat image time series.', ...
             default_Output, ...
             1, ...
             'isData', true, ...
             'saveFileName', default_Output);
     end
-end
-
-function localWarnRAMSafeModeProxyOnce(callerName)
-%LOCALWARNRAMSAFEMODEPROXYONCE Warn once per session about the RAMSafeMode proxy.
-
-persistent hasWarned
-if isempty(hasWarned)
-    hasWarned = false;
-end
-
-if hasWarned
-    return
-end
-
-warning('Umitoolbox:RunWrapper:RAMSafeModeProxy', ...
-    ['%s infers RAMSafeMode from the type of "data" (array vs. filename) as a ' ...
-     'stand-in for a flag PipelineManager does not yet pass explicitly. "data" ' ...
-     'itself is not consumed in RAM-safe mode -- this function always reads a ' ...
-     'named file from SaveFolder. See TASK_F3_F44_ramsafe_explicit_flag_deferred.md ' ...
-     'for the planned fix.'], callerName);
-
-hasWarned = true;
-
 end

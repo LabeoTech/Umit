@@ -32,8 +32,8 @@ function outFile = createRegistrationTform(SaveFolder, varargin)
 %                    invisibly.
 %                    Default: true
 %
-%       RefStatistic - Statistic used to collapse a YXT file into a 2D
-%                    moving image when needed.
+%       RefStatistic - Statistic used to collapse the Y-X-T file into a 2D
+%                    moving image (computed in X slabs, Low-RAM).
 %                    Allowed: 'mean', 'median', 'first'
 %                    Default: 'mean'
 %
@@ -574,27 +574,45 @@ assert(isfile(targetFile), ...
 end
 
 function img2D = iBuildMovingImageFromDat(datFile, refStatistic)
-%IBUILDMOVINGIMAGEFROMDAT Build one 2D moving image from a YXT .dat file.
+%IBUILDMOVINGIMAGEFROMDAT Build one 2D moving image from a Y-X-T .dat file.
+%
+% The file is read in X slabs sized from the available RAM, so the whole
+% recording is never loaded. Only Y-X-T files are accepted.
 
-data = loadData(datFile);
+info = loadMetaData(datFile);
+assertDatLayout(info, {{'Y','X','T'}}, 'createRegistrationTform');
+nY = datAxisSize(info, 'Y');
+nX = datAxisSize(info, 'X');
+nT = datAxisSize(info, 'T');
 
-assert(isnumeric(data) && ndims(data) == 3, ...
-    'Umitoolbox:createRegistrationTform:InvalidDatDims', ...
-    'The moving file must resolve to a 3D YXT array.');
-
-switch refStatistic
-    case 'mean'
-        img2D = mean(data, 3, 'omitnan');
-    case 'median'
-        img2D = median(data, 3, 'omitnan');
-    case 'first'
-        img2D = data(:,:,1);
-    otherwise
-        error('Umitoolbox:createRegistrationTform:InvalidRefStatistic', ...
-            'Unsupported RefStatistic "%s".', refStatistic);
+if ~ismember(refStatistic, {'mean', 'median', 'first'})
+    error('Umitoolbox:createRegistrationTform:InvalidRefStatistic', ...
+        'Unsupported RefStatistic "%s".', refStatistic);
 end
 
-img2D = single(img2D);
+slabIn = spatialSlabIO('open', datFile, 'Info', info);
+cIn = onCleanup(@() spatialSlabIO('close', slabIn));
+
+img2D = zeros(nY, nX, 'single');
+
+if strcmp(refStatistic, 'first')
+    img2D(:, :) = single(spatialSlabIO('read', slabIn, 1:nX, 1));
+    return
+end
+
+% A slab and the reduction temporaries.
+nChunks = calculateMaxChunkSize(double(nY) * nX * nT * 4, 3, 0.2);
+chunkX = max(1, ceil(nX / nChunks));
+for xStart = 1:chunkX:nX
+    xIdx = xStart:min(xStart + chunkX - 1, nX);
+    slab = single(spatialSlabIO('read', slabIn, xIdx));
+    switch refStatistic
+        case 'mean'
+            img2D(:, xIdx) = mean(slab, 3, 'omitnan');
+        case 'median'
+            img2D(:, xIdx) = median(slab, 3, 'omitnan');
+    end
+end
 
 end
 

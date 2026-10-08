@@ -80,11 +80,18 @@ opts.ScreenYsize_cm = double(p.Results.ScreenYsize_cm);
 % Resolve input data and metadata
 % -------------------------------------------------------------------------
 if isnumeric(data) || islogical(data)
-    validateattributes(data, {'numeric','logical'}, {'nonempty','3d'}, mfilename, 'data');
+    validateattributes(data, {'numeric','logical'}, {'nonempty'}, mfilename, 'data');
+    assert(ndims(data) == 3, ...
+        'Umitoolbox:genRetinotopyMaps:WrongInput', ...
+        'Numeric input must be a 3-D Y x X x T array.');
     dataIn = single(data);
     metaData = iResolveRepresentativeMeta(dataIn, ...
         resolveDataInfoValue('frameRateHz', p.Results.FrameRateHz, data, mfilename));
 else
+    assert(ischar(data) || (isstring(data) && isscalar(data)), ...
+        'Umitoolbox:genRetinotopyMaps:WrongInput', ...
+        ['Input must be a numeric Y x X x T array or a .dat filename. ' ...
+         'UMT structs are not supported.']);
     dataFile = char(string(data));
     if ~isfile(dataFile)
         altPath = fullfile(SaveFolder, dataFile);
@@ -427,7 +434,15 @@ for ind = 1:numel(evntInfo.eventNameList)
 
         ampMap = ampMaps{ind};
         phiMap = phiMaps{ind};
-        nChunks = calculateMaxChunkSize(nY * nX * nT * 4,1,.1);
+
+        % Only this direction's stimulus frames are read (sorted and unique,
+        % as spatialSlabIO requires); frMap restores the sweep order and any
+        % repeated frame of frOn. The slab holds the frames, their complex
+        % FFT (two real copies), and a reordered copy when frMap is needed.
+        [frUnique, ~, frMap] = unique(frOn);
+        frMap = frMap(:).';
+        bReorder = ~isequal(frMap, 1:numel(frOn));
+        nChunks = calculateMaxChunkSize(nY * nX * numel(frUnique) * 4, 4, .1);
         chunkX  = ceil(nX / nChunks);
         nChunks = ceil(nX / chunkX);
 
@@ -437,8 +452,10 @@ for ind = 1:numel(evntInfo.eventNameList)
             xEnd   = min(xStart + chunkX - 1, nX);
             xIdx   = xStart:xEnd;
 
-            slabData = single(spatialSlabIO('read', slabIn, xIdx));
-            slabData = slabData(:,:,frOn);
+            slabData = iReadFramesXSlab(slabIn, frUnique, xIdx);
+            if bReorder
+                slabData = slabData(:,:,frMap);
+            end
 
             fSlab = fft(slabData,[],3);
             ampSlab = (abs(fSlab(:,:,freqFFT))*2)/size(fSlab,3);

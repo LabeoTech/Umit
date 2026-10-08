@@ -1,33 +1,38 @@
 function outFile = run_ConvertToTiff(data, SaveFolder)
-%RUN_CONVERTTOTIFF Export image-backed data to TIFF file(s).
+%RUN_CONVERTTOTIFF Export image .dat data to TIFF file(s).
 %
 %   outFile = run_ConvertToTiff(data, SaveFolder)
 %   info    = run_ConvertToTiff('pipelineInfo')
 %
-%   Supported inputs:
-%       1) Numeric Y x X x T array
-%       2) Raw .dat filename storing continuous Y x X x T data
-%       3) Image UMT struct
-%       4) .umt filename containing one image UMT struct
+%   Supported input:
+%       .dat file (name or path; a bare name is also looked up in
+%       SaveFolder) with layout Y-X-T, Y-X-T-E, or a single Y-X frame.
+%       Arrays, UMT structs, and .umt files are not supported.
 %
 %   Behavior:
-%       - Continuous image data produce one TIFF file.
-%       - Event-split image UMT data with dimensions {'Y','X','T','E'}
-%         produce one TIFF file per event instance.
-%       - For event-split data, a companion text file named
+%       - Y-X-T (and Y-X) data produce one TIFF file with one page per
+%         frame.
+%       - Event-split Y-X-T-E data produce one TIFF file per E slice. The E
+%         axis is labeled from the events.mat in the file's folder
+%         (resolveDatEventMapping). Without an events.mat the slices are
+%         labeled as repetitions 1..E of one condition; an E axis that
+%         cannot be matched to events.mat is rejected, since its file names
+%         would carry wrong labels. A companion text file named
 %         <baseName>_info.txt is created using CSV formatting. It lists the
 %         generated TIFF file name, condition name, and repetition index.
+%       - Pages are written as 32-bit floating-point values. The .dat file
+%         is streamed in blocks of frames, so its size is limited by disk,
+%         not RAM (Low-RAM mode is always on; the block size follows the
+%         available RAM). A file larger than 3.9 GB is written as BigTIFF.
 %
 %   Output:
 %       outFile - File manifest cell array containing the generated file
 %                 name(s) saved in SaveFolder. Names are derived from the
-%                 input, so they are not fixed:
-%                     array input        -> img_out.tif
-%                     file input         -> img_<inputStem>.tif
-%                     event-split input  -> one <baseName>_C<id>_R<rep>.tif
-%                                           per event
-%                 Event-split exports also include <baseName>_info.txt.
-
+%                 input file:
+%                     Y-X-T, Y-X   -> img_<inputStem>.tif
+%                     Y-X-T-E      -> one img_<inputStem>_C<id>_R<rep>.tif
+%                                     per E slice, plus
+%                                     img_<inputStem>_info.txt
 
 default_Output = {'img_out.tif'};
 
@@ -44,43 +49,52 @@ addRequired(p, 'SaveFolder', @isfolder);
 parse(p, data, SaveFolder);
 
 SaveFolder = p.Results.SaveFolder;
-outFile = {};
 
-[payload, dimNames, eventInfo, baseName] = iResolveExportInput(data, SaveFolder);
+[dataFile, baseName] = iResolveDatFile(data, SaveFolder);
+datInfo = loadMetaData(dataFile);
+assertDatLayout(datInfo, {{'Y','X','T'}, {'Y','X'}, {'Y','X','T','E'}}, 'run_ConvertToTiff');
 
-assert(ismember(numel(dimNames), [3 4]), ...
-    'Umitoolbox:run_ConvertToTiff:InvalidDims', ...
-    'Input data must resolve to YXT or YXTE image data.');
+dimNames = cellstr(string(datInfo.dimNames));
+hasE = any(strcmpi(dimNames, 'E'));
 
-if isequal(dimNames, {'Y','X','T'})
+if hasE
+    mapping = resolveDatEventMapping(datInfo, fileparts(dataFile));
+    assert(ismember(mapping.status, {'matched','aggregated','noEvents'}), ...
+        'Umitoolbox:run_ConvertToTiff:EventMappingMismatch', ...
+        'The E axis of "%s" cannot be matched to events.mat: %s', dataFile, mapping.message);
+end
+
+slabIn = spatialSlabIO('open', dataFile, 'Info', datInfo);
+closeIn = onCleanup(@() spatialSlabIO('close', slabIn));
+
+nT = datAxisSize(datInfo, 'T');
+if nT < 1
+    nT = 1;   % single Y-X frame: one TIFF page
+end
+nE = datAxisSize(datInfo, 'E');
+if nE < 1
+    nE = 1;
+end
+
+if ~hasE
     tifName = [baseName '.tif'];
-    iWriteTiffStack(fullfile(SaveFolder, tifName), payload);
+    iStreamTiff(fullfile(SaveFolder, tifName), slabIn, 1:nT);
     outFile = {tifName};
     return
 end
 
-assert(isequal(dimNames, {'Y','X','T','E'}), ...
-    'Umitoolbox:run_ConvertToTiff:InvalidDims', ...
-    'Event-split export requires dimensions {''Y'',''X'',''T'',''E''}.');
-assert(~isempty(fieldnames(eventInfo)), ...
-    'Umitoolbox:run_ConvertToTiff:MissingEventInfo', ...
-    'Event-split image export requires top-level eventInfo.');
-assert(isfield(eventInfo, 'eventName') && isfield(eventInfo, 'repetitionIndex') && isfield(eventInfo, 'eventID'), ...
-    'Umitoolbox:run_ConvertToTiff:InvalidEventInfo', ...
-    'eventInfo must contain eventID, eventName, and repetitionIndex.');
-
-nE = size(payload, 4);
-assert(numel(eventInfo.eventID) == nE && numel(eventInfo.repetitionIndex) == nE && numel(eventInfo.eventName) == nE, ...
-    'Umitoolbox:run_ConvertToTiff:InvalidEventInfoLength', ...
-    'eventInfo length must match the E dimension length.');
-
+eventInfo = mapping.eventInfo;
+outFile = cell(1, nE);
 infoRows = cell(nE, 3);
 for iE = 1:nE
-    tifName = sprintf('%s_C%d_R%d.tif', baseName, eventInfo.eventID(iE), eventInfo.repetitionIndex(iE));
-    iWriteTiffStack(fullfile(SaveFolder, tifName), payload(:,:,:,iE));
-    outFile{end+1} = tifName; %#ok<AGROW>
+    tifName = sprintf('%s_C%d_R%d.tif', baseName, ...
+        eventInfo.eventID(iE), eventInfo.repetitionIndex(iE));
+    % E is the last axis, so the frames of slice iE are one contiguous run
+    % of the flattened trailing axes.
+    iStreamTiff(fullfile(SaveFolder, tifName), slabIn, (iE-1)*nT + (1:nT));
+    outFile{iE} = tifName;
     infoRows{iE,1} = tifName;
-    infoRows{iE,2} = char(string(eventInfo.eventName{iE}));
+    infoRows{iE,2} = char(string(eventInfo.eventName(iE)));
     infoRows{iE,3} = eventInfo.repetitionIndex(iE);
 end
 
@@ -90,13 +104,13 @@ outFile{end+1} = infoName;
 
     function info = localPipelineInfo()
         info = PipelineManager.createPipelineInfo(mfilename, ...
-            'Export image-backed data to TIFF file(s).');
-        info.version = '1.0.0';
+            'Export image .dat data to TIFF file(s).');
+        info.version = '2.0.0';
 
         info = PipelineManager.addInput(info, 'data', ...
             {'ImageTimeSeries','ProcessedData','UnknownDataType'}, ...
-            ['Image-backed input to export as TIFF. PipelineManager passes ' ...
-             'the file-backed representation so the source stem, and therefore ' ...
+            ['Image .dat file (Y-X-T or event-split Y-X-T-E) to export as TIFF. ' ...
+             'PipelineManager passes the file so the source stem, and therefore ' ...
              'the exported file identity, is independent of RAM mode.'], ...
             'kind', 'input', 'position', 1, 'callType', 'positional', ...
             'isData', true, 'supportsFile', true, 'dataMode', 'file');
@@ -108,121 +122,77 @@ outFile{end+1} = infoName;
 
         info = PipelineManager.addOutput(info, 'outFile', 'ImageTimeSeries', 'file', ...
             ['Generated TIFF file manifest saved in SaveFolder. The base name is ' ...
-             '''img_out'' for array input and ''img_<inputStem>'' for file input; ' ...
-             'event-split input writes one ''<baseName>_C<eventID>_R<repetition>.tif'' ' ...
-             'per event instead of a single ''<baseName>.tif''. The declared names ' ...
-             'are the array-input, non-event case. Read the returned manifest for ' ...
-             'the names actually written.'], ...
+             '''img_<inputStem>''; event-split input writes one ' ...
+             '''<baseName>_C<eventID>_R<repetition>.tif'' per E slice instead of a ' ...
+             'single ''<baseName>.tif''. The declared name is the non-event case. ' ...
+             'Read the returned manifest for the names actually written.'], ...
             default_Output, 1, 'isData', true, 'saveFileName', '');
     end
 end
 
-function [payload, dimNames, eventInfo, baseName] = iResolveExportInput(data, SaveFolder)
-%IRESOLVEEXPORTINPUT Resolve supported inputs to export payload.
+function [dataFile, baseName] = iResolveDatFile(data, SaveFolder)
+%IRESOLVEDATFILE Resolve the input to an existing .dat path and base name.
 
-eventInfo = struct();
-baseName = 'img_out';
-
-if isnumeric(data) || islogical(data)
-    validateattributes(data, {'numeric','logical'}, {'nonempty','3d'}, mfilename, 'data');
-    payload = single(data);
-    dimNames = {'Y','X','T'};
-    return
-end
-
-if ischar(data) || (isstring(data) && isscalar(data))
-    dataFile = char(string(data));
-    if ~isfile(dataFile)
-        altPath = fullfile(SaveFolder, dataFile);
-        if isfile(altPath)
-            dataFile = altPath;
-        else
-            error('Umitoolbox:run_ConvertToTiff:InputFileNotFound', ...
-                'Input file "%s" was not found.', data);
-        end
-    end
-
-    [~, stem, ext] = fileparts(dataFile);
-    if ~isempty(stem)
-        baseName = ['img_' stem];
-    end
-
-    switch lower(ext)
-        case '.dat'
-            % Y-X-T, or a single Y-X frame exported as a one-page TIFF.
-            assertDatLayout(loadMetaData(dataFile), {{'Y','X','T'}, {'Y','X'}}, 'run_ConvertToTiff');
-            payload = single(loadData(dataFile));
-            dimNames = {'Y','X','T'};
-            return
-        case '.umt'
-            data = loadData(dataFile);
-        otherwise
-            error('Umitoolbox:run_ConvertToTiff:UnsupportedInputFile', ...
-                'Unsupported input file extension "%s".', ext);
-    end
-end
-
-assert(isstruct(data) && isscalar(data), ...
+assert(ischar(data) || (isstring(data) && isscalar(data)), ...
     'Umitoolbox:run_ConvertToTiff:UnsupportedInputType', ...
-    'Unsupported input type for run_ConvertToTiff.');
-validateUMTStruct(data, 'requireEventInfo', false);
-assert(strcmpi(char(string(data.kind)), 'image'), ...
-    'Umitoolbox:run_ConvertToTiff:InvalidUMTKind', ...
-    'Input UMT must have kind = "image".');
+    'run_ConvertToTiff accepts only a .dat file name or path.');
 
-entryNames = fieldnames(data.data);
-assert(~isempty(entryNames), ...
-    'Umitoolbox:run_ConvertToTiff:EmptyUMTData', ...
-    'Input UMT contains no image entries.');
-assert(isscalar(entryNames), ...
-    'Umitoolbox:run_ConvertToTiff:multipleCompatibleUMTEntries', ...
-    ['Multiple compatible image entries were found in the UMT input. ' ...
-     'The current version can process only one image entry.']);
-
-entry = data.data.(entryNames{1});
-payload = single(entry.value);
-dimNames = cellstr(string(entry.dimNames));
-
-if isfield(data, 'eventInfo')
-    eventInfo = data.eventInfo;
-end
-end
-
-function iWriteTiffStack(filePath, data)
-%IWRITETIFFSTACK Write a YXT stack to TIFF.
-
-data = single(data);
-assert(ndims(data) <= 3, 'Umitoolbox:run_ConvertToTiff:InvalidTiffPayload', ...
-    'TIFF payload must be a YXT array (or a single YX frame).');
-
-if exist('ConvertToTiff', 'file') == 2
-    [folderPath, fileName, ext] = fileparts(filePath);
-    ConvertToTiff(folderPath, data, [fileName ext]);
-    return
-end
-
-% Fallback writer. imwrite() treats single/double image data as already
-% normalized to [0,1] and clips outside that range, which would silently
-% corrupt processed DeltaR/R data that is not in that range. Write true
-% 32-bit floating-point TIFF frames instead, preserving the exact values.
-tagstruct.ImageLength = size(data, 1);
-tagstruct.ImageWidth = size(data, 2);
-tagstruct.Photometric = Tiff.Photometric.MinIsBlack;
-tagstruct.BitsPerSample = 32;
-tagstruct.SamplesPerPixel = 1;
-tagstruct.SampleFormat = Tiff.SampleFormat.IEEEFP;
-tagstruct.PlanarConfiguration = Tiff.PlanarConfiguration.Chunky;
-tagstruct.Compression = Tiff.Compression.None;
-
-tiffObj = Tiff(filePath, 'w');
-cleanupObj = onCleanup(@() tiffObj.close());
-
-for iFrame = 1:size(data, 3)
-    if iFrame > 1
-        tiffObj.writeDirectory();
+dataFile = char(string(data));
+if ~isfile(dataFile)
+    altPath = fullfile(SaveFolder, dataFile);
+    if isfile(altPath)
+        dataFile = altPath;
+    else
+        error('Umitoolbox:run_ConvertToTiff:InputFileNotFound', ...
+            'Input file "%s" was not found.', char(string(data)));
     end
-    tiffObj.setTag(tagstruct);
-    tiffObj.write(data(:,:,iFrame));
+end
+
+[~, stem, ext] = fileparts(dataFile);
+assert(strcmpi(ext, '.dat'), ...
+    'Umitoolbox:run_ConvertToTiff:UnsupportedInputFile', ...
+    'Unsupported input file extension "%s". Only .dat files are supported.', ext);
+baseName = ['img_' stem];
+end
+
+function iStreamTiff(filePath, slabIn, frameIdx)
+%ISTREAMTIFF Write the given frames of an open .dat as one TIFF stack.
+%   Frames are read in blocks sized from the available RAM and written as
+%   they arrive, so only one block is in memory.
+
+Ny = slabIn.Ny;
+Nx = slabIn.Nx;
+nFrames = numel(frameIdx);
+
+% Fast_Tiff_Write uses 32-bit offsets; switch to BigTIFF past ~4 GB.
+if double(Ny) * Nx * nFrames * 4 < 3.9e9
+    writer = Fast_Tiff_Write(filePath, 1, 0);
+else
+    writer = Fast_BigTiff_Write(filePath, 1, 0);
+end
+[~, tifName, tifExt] = fileparts(filePath);
+cleanupWriter = onCleanup(@() iCloseWriter(writer));
+
+nBlocks = calculateMaxChunkSize(double(Ny) * Nx * nFrames * 4, 2, 0.1);
+framesPerBlock = max(1, ceil(nFrames / nBlocks));
+nBlocks = ceil(nFrames / framesPerBlock);
+
+for iBlock = 1:nBlocks
+    sel = ((iBlock-1)*framesPerBlock + 1):min(iBlock*framesPerBlock, nFrames);
+    block = single(spatialSlabIO('read', slabIn, 1:Nx, frameIdx(sel)));
+    for iFrame = 1:size(block, 3)
+        writer.WriteIMG(block(:,:,iFrame)');
+    end
+    if nBlocks > 1
+        fprintf('%s%s: %d/%d frames written\n', tifName, tifExt, sel(end), nFrames);
+    end
+end
+end
+
+function iCloseWriter(writer)
+%ICLOSEWRITER Close a TIFF writer once, whether or not the write succeeded.
+if ~writer.Closed
+    writer.close();
 end
 end
 

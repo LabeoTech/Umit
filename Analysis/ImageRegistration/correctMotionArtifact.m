@@ -1,19 +1,20 @@
-function [outData, outFiles] = correctMotionArtifact(data, SaveFolder, varargin)
-%CORRECTMOTIONARTIFACT Correct frame-wise motion artifacts in a YXT .dat file.
+function outData = correctMotionArtifact(data, SaveFolder, varargin)
+%CORRECTMOTIONARTIFACT Correct frame-wise motion artifacts in a YXT array or .dat file.
 %
-%   [outData, outFiles] = correctMotionArtifact(data, SaveFolder)
-%   [outData, outFiles] = correctMotionArtifact(data, SaveFolder, Name, Value, ...)
+%   outData = correctMotionArtifact(data, SaveFolder)
+%   outData = correctMotionArtifact(data, SaveFolder, Name, Value, ...)
 %   info = correctMotionArtifact('pipelineInfo')
 %
 %   Estimates the transform that registers every frame of a Y-by-X-by-T
-%   .dat file to its own first frame, and warps each frame with it using
+%   recording to its own first frame, and warps each frame with it using
 %   cubic interpolation. Frames are high-pass filtered before registration
 %   so that uneven illumination does not bias the estimate.
 %
-%   Each file is corrected independently, against its own first frame. The
-%   transforms are not shared between files: with strobed illumination the
-%   channels are sampled at different instants, so motion can differ between
-%   them. To correct several channels, run the function once per file.
+%   Each recording is corrected independently, against its own first frame.
+%   The transforms are not shared between recordings: with strobed
+%   illumination the channels are sampled at different instants, so motion
+%   can differ between them. To correct several channels, run the function
+%   once per channel.
 %
 %   Two transform types are available (TransformType):
 %     'translation' - row/column shift estimated with the FFT-based
@@ -27,12 +28,13 @@ function [outData, outFiles] = correctMotionArtifact(data, SaveFolder, varargin)
 %   first frame, before and after correction, is printed and plotted.
 %
 % Inputs
-%   data       - Filename of the .dat file to correct. If not found as
-%                given, it is resolved relative to SaveFolder. Must be a
-%                continuous Y-X-T single-precision file with at least 2
-%                frames, located in SaveFolder.
-%   SaveFolder - Existing folder containing the file. Corrected files and
-%                run provenance are written here.
+%   data       - Either a numeric Y-X-T array with at least 2 frames, or the
+%                filename of a continuous Y-X-T single-precision .dat file
+%                (resolved relative to SaveFolder when not found as given).
+%                Event-split (Y-X-T-E) data, UMT structs, and .umt files are
+%                not supported.
+%   SaveFolder - Existing folder. The corrected .dat file and the optional
+%                run files are written here.
 %
 % Name-Value Options
 %   TransformType    - 'translation' (default) or 'similarity'.
@@ -41,31 +43,27 @@ function [outData, outFiles] = correctMotionArtifact(data, SaveFolder, varargin)
 %                      whole pixel; higher values register to within
 %                      1/factor of a pixel. Ignored for 'similarity'.
 %                      Default: 100.
-%   Overwrite        - Logical scalar. When false (default), the corrected
-%                      file is written next to the original as
-%                      "<name>_MotionCorrected.dat" and the source file is
-%                      not modified. When true, the file is destructively
-%                      replaced in place.
-%   SaveShifts       - Logical scalar. When true (default), the per-frame
-%                      transform parameters, correlations and run metadata
-%                      are saved to "<name>_MotionCorrection.mat", and the
-%                      QC figure to "<name>_MotionCorrectionQC.png", in
-%                      SaveFolder.
+%   SaveShifts       - Logical scalar. When true (default), the shift matrix
+%                      and the run metadata are saved to
+%                      "<name>_MotionCorrection.mat" (variable
+%                      MotionCorrection; its field "params" is the Nt-by-4
+%                      matrix [tx, ty, rotationDeg, scale] of each frame
+%                      onto the first frame, in pixels and degrees, with
+%                      row 1 always [0 0 0 1] and rotation 0 and scale 1 for
+%                      'translation'), and the QC figure to
+%                      "<name>_MotionCorrectionQC.png", in SaveFolder. For
+%                      array input the files are named "MotionCorrection.mat"
+%                      and "MotionCorrectionQC.png". When false, neither
+%                      file is written.
 %   ShowPlot         - Logical scalar. When true (default), shows the QC
 %                      figure.
 %
 % Output
-%   outData  - Nt-by-4 double matrix [tx, ty, rotationDeg, scale] of the
-%              transform of each frame onto the first frame, in pixels and
-%              degrees (tx is the column shift, ty the row shift; rotation 0
-%              and scale 1 for 'translation'). Row 1 is always [0 0 0 1].
-%   outFiles - Cell array with the full path of the corrected .dat file.
-%
-% Files Created or Modified
-%   Overwrite=false (default): writes "<name>_MotionCorrected.dat", plus the
-%   provenance .mat and QC figure when SaveShifts is true. The source file
-%   is not modified.
-%   Overwrite=true: the .dat file is rewritten in place.
+%   outData - The corrected data, with the size of the input.
+%             - Array input: a single-precision Y-X-T array.
+%             - .dat input: the full path of "motionCorrected.dat" in
+%               SaveFolder (same axes and class as the input). The source
+%               file is never modified.
 %
 % Notes
 %   - Pixels warped in from outside the frame are filled with 0. NaN pixels
@@ -83,27 +81,28 @@ function [outData, outFiles] = correctMotionArtifact(data, SaveFolder, varargin)
 %     dropped by more than 0.01.
 %
 % Example
-%   [shifts, outFiles] = correctMotionArtifact('green.dat', saveFolder, ...
+%   corrected = correctMotionArtifact('green.dat', saveFolder, ...
 %       'TransformType', 'similarity');
 %
 % See also CREATEREGISTRATIONFORM, APPLYREGISTRATIONFORMONFOLDER.
 
+default_Output = 'motionCorrected.dat';
+
 if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) ...
         && strcmpi(strtrim(char(string(data))), 'pipelineInfo')
-    outData = localPipelineInfo();
+    outData = localPipelineInfo(default_Output);
     return
 end
 
 p = inputParser;
 p.FunctionName = mfilename;
-addRequired(p, 'data', @(x) ischar(x) || (isstring(x) && isscalar(x)));
+addRequired(p, 'data');
 addRequired(p, 'SaveFolder', @(x) ischar(x) || (isstring(x) && isscalar(x)));
 addParameter(p, 'TransformType', 'translation', ...
     @(x) (ischar(x) || (isstring(x) && isscalar(x))) && ...
     ismember(lower(char(string(x))), {'translation','similarity'}));
 addParameter(p, 'UpsamplingFactor', 100, ...
     @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x >= 1 && x == round(x));
-addParameter(p, 'Overwrite', false, @(x) islogical(x) && isscalar(x));
 addParameter(p, 'SaveShifts', true, @(x) islogical(x) && isscalar(x));
 addParameter(p, 'ShowPlot', true, @(x) islogical(x) && isscalar(x));
 parse(p, data, SaveFolder, varargin{:});
@@ -116,7 +115,6 @@ end
 
 transformType = lower(char(string(p.Results.TransformType)));
 usfac = double(p.Results.UpsamplingFactor);
-overwrite = p.Results.Overwrite;
 saveShifts = p.Results.SaveShifts;
 showPlot = p.Results.ShowPlot;
 
@@ -124,67 +122,82 @@ showPlot = p.Results.ShowPlot;
 warnState = warning('off', 'backtrace');
 restoreWarnings = onCleanup(@() warning(warnState));
 
-inFile = char(string(p.Results.data));
+entry = iResolveInput(data, SaveFolder);
+if entry.nt < 2
+    error('Umitoolbox:correctMotionArtifact:TooFewFrames', ...
+        '%s must contain at least 2 frames.', entry.name);
+end
+
+fprintf('Estimating %s motion in %s...\n', transformType, entry.name);
+[tforms, shifts, failedFrames, corrBefore] = iEstimateTransforms(entry, transformType, usfac);
+
+fprintf('Correcting %s...\n', entry.name);
+[outData, corrAfter] = iApplyTransforms(entry, tforms, SaveFolder, default_Output);
+
+iPrintSummary(entry, shifts, corrBefore, corrAfter, failedFrames);
+
+qcFile = '';
+if saveShifts
+    qcFile = fullfile(SaveFolder, [entry.sidecar 'QC.png']);
+end
+if saveShifts || showPlot
+    iPlotQC(entry, transformType, shifts, corrBefore, corrAfter, showPlot, qcFile);
+end
+
+if saveShifts
+    correctedFile = '';
+    if strcmp(entry.kind, 'dat')
+        correctedFile = outData;
+    end
+    iSaveProvenance(SaveFolder, entry, transformType, usfac, shifts, ...
+        corrBefore, corrAfter, failedFrames, correctedFile);
+end
+
+end
+
+% =========================================================================
+% Local helpers: validate and resolve the input
+% =========================================================================
+function entry = iResolveInput(data, SaveFolder)
+%IRESOLVEINPUT Resolve a Y-X-T array or a .dat filename into an entry struct.
+
+if isnumeric(data) || islogical(data)
+    validateattributes(data, {'numeric','logical'}, {'nonempty'}, mfilename, 'data');
+    if ndims(data) ~= 3
+        error('Umitoolbox:correctMotionArtifact:UnsupportedLayout', ...
+            'Numeric input must be a Y x X x T array, got %d dimensions.', ndims(data));
+    end
+    entry = struct('kind', 'array', 'name', 'The input array', 'stem', '', ...
+        'sidecar', 'MotionCorrection', 'path', '', ...
+        'ny', size(data, 1), 'nx', size(data, 2), 'nt', size(data, 3), ...
+        'info', struct(), 'data', single(data));
+    return
+end
+
+if ~(ischar(data) || (isstring(data) && isscalar(data)))
+    error('Umitoolbox:correctMotionArtifact:UnsupportedInputType', ...
+        ['Input "data" must be a Y-X-T array or a .dat filename. ' ...
+         'UMT structs are not supported.']);
+end
+
+inFile = char(string(data));
 if ~isfile(inFile)
     altPath = fullfile(SaveFolder, inFile);
     if isfile(altPath)
         inFile = altPath;
     else
         error('Umitoolbox:correctMotionArtifact:InputFileNotFound', ...
-            'Input file "%s" was not found.', data);
+            'Input file "%s" was not found.', char(string(data)));
     end
 end
+
 [~, inStem, inExt] = fileparts(inFile);
-inFileName = [inStem inExt];
-
-% The corrected file and provenance are written beside the source, so the
-% source must live in SaveFolder.
-iAssertInFolder(inFile, SaveFolder, inFileName);
-
-entry = iResolveDatFile(fullfile(SaveFolder, inFileName), inFileName);
-if entry.nt < 2
-    error('Umitoolbox:correctMotionArtifact:TooFewFrames', ...
-        'File "%s" must contain at least 2 frames.', inFileName);
+if ~strcmpi(inExt, '.dat')
+    error('Umitoolbox:correctMotionArtifact:UnsupportedInputFile', ...
+        'Unsupported input file extension "%s". Only .dat files are supported.', inExt);
 end
 
-fprintf('Estimating %s motion in %s...\n', transformType, inFileName);
-[tforms, outData, failedFrames, corrBefore] = iEstimateTransforms(entry, transformType, usfac);
-
-fprintf('Correcting %s...\n', inFileName);
-[outPath, corrAfter] = iApplyTransformsToFile(entry, tforms, overwrite);
-outFiles = {outPath};
-
-iPrintSummary(entry, outData, corrBefore, corrAfter, failedFrames);
-
-qcFile = '';
-if saveShifts
-    qcFile = fullfile(SaveFolder, [inStem '_MotionCorrectionQC.png']);
-end
-if saveShifts || showPlot
-    iPlotQC(entry, transformType, outData, corrBefore, corrAfter, showPlot, qcFile);
-end
-
-if saveShifts
-    iSaveProvenance(SaveFolder, entry, transformType, usfac, outData, ...
-        corrBefore, corrAfter, failedFrames, outPath);
-end
-
-end
-
-% =========================================================================
-% Local helper: validate the input file
-% =========================================================================
-function iAssertInFolder(inFile, SaveFolder, inFileName)
-%IASSERTINFOLDER Require that inFile lives directly in SaveFolder.
-
-fileDir = dir(inFile);
-folderDir = dir(fullfile(SaveFolder, '.'));
-sameFolder = ~isempty(fileDir) && ~isempty(folderDir) && ...
-    strcmpi(fileDir(1).folder, folderDir(1).folder);
-if ~sameFolder
-    error('Umitoolbox:correctMotionArtifact:InputNotInFolder', ...
-        'Input file "%s" must be a .dat file located in "%s".', inFileName, SaveFolder);
-end
+entry = iResolveDatFile(inFile, [inStem inExt]);
 
 end
 
@@ -216,9 +229,10 @@ if ~strcmp(md.dataClass, 'single')
 end
 
 [~, stem] = fileparts(fileName);
-entry = struct('name', fileName, 'stem', stem, 'path', datPath, ...
+entry = struct('kind', 'dat', 'name', fileName, 'stem', stem, ...
+    'sidecar', [stem '_MotionCorrection'], 'path', datPath, ...
     'ny', datAxisSize(md, 'Y'), 'nx', datAxisSize(md, 'X'), ...
-    'nt', datAxisSize(md, 'T'), 'info', md);
+    'nt', datAxisSize(md, 'T'), 'info', md, 'data', []);
 
 end
 
@@ -230,8 +244,11 @@ function [tforms, params, failedFrames, corrBefore] = iEstimateTransforms(entry,
 %
 % Also returns the correlation of each (uncorrected) frame with frame 1.
 
-slabIn = spatialSlabIO('open', entry.path, 'Info', entry.info);
-c = onCleanup(@() spatialSlabIO('close', slabIn));
+slabIn = [];
+if strcmp(entry.kind, 'dat')
+    slabIn = spatialSlabIO('open', entry.path, 'Info', entry.info);
+    c = onCleanup(@() spatialSlabIO('close', slabIn));
+end
 
 fixed = iPrepareForRegistration(iReadFrame(slabIn, entry, 1));
 if strcmp(transformType, 'translation')
@@ -275,7 +292,11 @@ end
 function frame = iReadFrame(slabIn, entry, t)
 %IREADFRAME Read frame t (1-based) as a Y-by-X single array.
 
-frame = reshape(spatialSlabIO('read', slabIn, 1:entry.nx, t), entry.ny, entry.nx);
+if strcmp(entry.kind, 'array')
+    frame = entry.data(:, :, t);
+else
+    frame = reshape(spatialSlabIO('read', slabIn, 1:entry.nx, t), entry.ny, entry.nx);
+end
 
 end
 
@@ -345,36 +366,42 @@ p = [A(1,3), A(2,3), atan2d(A(2,1), A(1,1)), hypot(A(1,1), A(2,1))];
 end
 
 % =========================================================================
-% Local helper: apply the estimated transforms to the .dat file
+% Local helper: apply the estimated transforms
 % =========================================================================
-function [outPath, corrAfter] = iApplyTransformsToFile(entry, tforms, overwrite)
-%IAPPLYTRANSFORMSTOFILE Warp every frame of the file with its transform.
+function [outData, corrAfter] = iApplyTransforms(entry, tforms, SaveFolder, defaultOutput)
+%IAPPLYTRANSFORMS Warp every frame with its transform.
 %
-% Also returns the correlation of each corrected frame with frame 1.
+% Array input returns the corrected single array. A .dat input is written
+% to DEFAULTOUTPUT in SaveFolder through a scratch file (so the declared
+% output only appears once the run has completed, and the input may be the
+% file it would overwrite) and its full path is returned. Also returns the
+% correlation of each corrected frame with frame 1.
 
 nt = entry.nt;
-srcPath = entry.path;
-
-if overwrite
-    destPath = srcPath;
-else
-    [srcFolder, stem, ext] = fileparts(srcPath);
-    destPath = fullfile(srcFolder, [stem '_MotionCorrected' ext]);
-end
-
-[destFolder, destStem, destExt] = fileparts(destPath);
-tmpPath = fullfile(destFolder, [destStem '_writing' destExt]);
+isDat = strcmp(entry.kind, 'dat');
 outputView = imref2d([entry.ny, entry.nx]);
+corrAfter = ones(nt, 1);
+
+if isDat
+    [~, outStem, outExt] = fileparts(defaultOutput);
+    destPath = fullfile(SaveFolder, defaultOutput);
+    tmpPath = fullfile(SaveFolder, [outStem '_writing' outExt]);
+else
+    outData = zeros(entry.ny, entry.nx, nt, 'single');
+end
 
 % The corrected file is headered with the input's class, sizes, rate, and
 % exposure, and the name of the file it is installed as.
 try
-    slabIn = spatialSlabIO('open', srcPath, 'Info', entry.info);
-    cIn = onCleanup(@() spatialSlabIO('close', slabIn));
-    slabOut = spatialSlabIO('create', tmpPath, datHeaderFromInfo(entry.info, destStem));
-    cOut = onCleanup(@() spatialSlabIO('close', slabOut));
+    if isDat
+        slabIn = spatialSlabIO('open', entry.path, 'Info', entry.info);
+        cIn = onCleanup(@() spatialSlabIO('close', slabIn));
+        slabOut = spatialSlabIO('create', tmpPath, datHeaderFromInfo(entry.info, outStem));
+        cOut = onCleanup(@() spatialSlabIO('close', slabOut));
+    else
+        slabIn = [];
+    end
 
-    corrAfter = ones(nt, 1);
     for t = 1:nt
         frame = iReadFrame(slabIn, entry, t);
         if t == 1
@@ -389,64 +416,32 @@ try
             corrAfter(t) = iFrameCorrelation(fixed, iPrepareForRegistration(frame));
         end
 
-        spatialSlabIO('write', slabOut, 1:entry.nx, frame, t);
+        if isDat
+            spatialSlabIO('write', slabOut, 1:entry.nx, frame, t);
+        else
+            outData(:, :, t) = frame;
+        end
     end
-    spatialSlabIO('finalize', slabOut);
+
+    if isDat
+        spatialSlabIO('finalize', slabOut);
+    end
 catch ME
     clear cIn cOut
-    if isfile(tmpPath)
+    if isDat && isfile(tmpPath)
         delete(tmpPath);
     end
     rethrow(ME);
 end
 
-clear cIn cOut % close both handles before the file move below
+if isDat
+    clear cIn cOut % close both handles before the file move below
 
-if overwrite
-    iReplaceFileSafely(tmpPath, destPath);
-else
     [moveOk, moveMsg] = movefile(tmpPath, destPath, 'f');
     assert(moveOk, 'Umitoolbox:correctMotionArtifact:OutputMoveFailed', ...
         'Failed to move "%s" onto "%s": %s', tmpPath, destPath, moveMsg);
-end
 
-outPath = destPath;
-
-end
-
-% =========================================================================
-% Local helper: atomic in-place replace (Overwrite=true only)
-% =========================================================================
-function iReplaceFileSafely(tmpPath, destPath)
-%IREPLACEFILESAFELY Install tmpPath as destPath without a data-loss window.
-%
-% Mirrors applyRegistrationTformOnFolder's iReplaceFileSafely: move the
-% existing file aside, install the replacement, then drop the backup, so a
-% failed move cannot leave the folder without the data.
-
-backupPath = [destPath '.bak'];
-backupCreated = false;
-
-if isfile(destPath)
-    [ok, message] = movefile(destPath, backupPath, 'f');
-    if ~ok
-        error('Umitoolbox:correctMotionArtifact:BackupFailed', ...
-            'Could not back up "%s" before replacing it: %s', destPath, message);
-    end
-    backupCreated = true;
-end
-
-[ok, message] = movefile(tmpPath, destPath, 'f');
-if ~ok
-    if backupCreated && isfile(backupPath)
-        movefile(backupPath, destPath, 'f');
-    end
-    error('Umitoolbox:correctMotionArtifact:ReplaceFailed', ...
-        'Could not install the corrected data as "%s": %s', destPath, message);
-end
-
-if backupCreated && isfile(backupPath)
-    delete(backupPath);
+    outData = destPath;
 end
 
 end
@@ -544,38 +539,38 @@ MotionCorrection = struct( ...
     'appliedOn', char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss')), ...
     'appliedBy', mfilename);
 
-save(fullfile(SaveFolder, [entry.stem '_MotionCorrection.mat']), 'MotionCorrection');
+save(fullfile(SaveFolder, [entry.sidecar '.mat']), 'MotionCorrection');
 
 end
 
 % =========================================================================
 % Local pipeline info
 % =========================================================================
-function info = localPipelineInfo()
+function info = localPipelineInfo(defaultOutput)
 %LOCALPIPELINEINFO Return PipelineManager metadata for correctMotionArtifact.
 
 info = PipelineManager.createPipelineInfo( ...
     'correctMotionArtifact', ...
-    ['Estimate per-frame motion against the first frame of a .dat file ' ...
-     'and correct it.']);
+    ['Estimate per-frame motion against the first frame of a Y-X-T array ' ...
+     'or .dat file and correct it.']);
 
 info = PipelineManager.addInput( ...
     info, ...
     'data', ...
-    'ImageTimeSeries', ...
-    'Y-X-T .dat filename to correct, estimated against its own first frame.', ...
+    {'ImageTimeSeries','ProcessedData'}, ...
+    'Y-X-T array or .dat filename to correct, estimated against its own first frame.', ...
     'kind', 'input', ...
     'position', 1, ...
     'callType', 'positional', ...
     'isData', true, ...
     'supportsFile', true, ...
-    'dataMode', 'file');
+    'dataMode', 'either');
 
 info = PipelineManager.addInput( ...
     info, ...
     'SaveFolder', ...
     'SaveFolder', ...
-    'Folder containing the .dat file; corrected files are written here.', ...
+    'Folder where the corrected .dat file and the optional run files are written.', ...
     'kind', 'input', ...
     'position', 2, ...
     'callType', 'positional', ...
@@ -607,26 +602,14 @@ info = PipelineManager.addInput( ...
 
 info = PipelineManager.addInput( ...
     info, ...
-    'Overwrite', ...
-    'parameter', ...
-    ['If true, destructively rewrites the .dat file in place instead ' ...
-     'of writing a "_MotionCorrected" copy.'], ...
-    'kind', 'parameter', ...
-    'position', 5, ...
-    'callType', 'namevalue', ...
-    'default', false, ...
-    'allowed', [true false], ...
-    'dataType', 'logical');
-
-info = PipelineManager.addInput( ...
-    info, ...
     'SaveShifts', ...
     'parameter', ...
-    ['If true, saves the per-frame transforms and correlations to ' ...
-     '<name>_MotionCorrection.mat and the QC figure to ' ...
-     '<name>_MotionCorrectionQC.png.'], ...
+    ['If true, saves the shift matrix (Nt-by-4 [tx, ty, rotationDeg, ' ...
+     'scale]), correlations and run metadata to <name>_MotionCorrection.mat ' ...
+     'and the QC figure to <name>_MotionCorrectionQC.png; nothing is ' ...
+     'saved when false.'], ...
     'kind', 'parameter', ...
-    'position', 6, ...
+    'position', 5, ...
     'callType', 'namevalue', ...
     'default', true, ...
     'allowed', [true false], ...
@@ -638,7 +621,7 @@ info = PipelineManager.addInput( ...
     'parameter', ...
     'If true, shows the correlation and motion QC figure.', ...
     'kind', 'parameter', ...
-    'position', 7, ...
+    'position', 6, ...
     'callType', 'namevalue', ...
     'default', true, ...
     'allowed', [true false], ...
@@ -647,31 +630,18 @@ info = PipelineManager.addInput( ...
 info = PipelineManager.addOutput( ...
     info, ...
     'outData', ...
-    'MotionShifts', ...
-    'data', ...
-    'Nt-by-4 [tx, ty, rotationDeg, scale] transform of each frame onto the first frame.', ...
-    'MotionCorrectionShifts.mat', ...
-    1, ...
-    'isData', true, ...
-    'saveFileName', 'MotionCorrectionShifts.mat');
-
-info = PipelineManager.addOutput( ...
-    info, ...
-    'correctedDatFiles', ...
     {'ImageTimeSeries','ProcessedData'}, ...
-    'file', ...
-    ['The corrected .dat file, written as a new file ' ...
-     '(or in place when Overwrite is true).'], ...
-    '*.dat', ...
-    2, ...
-    'isData', false, ...
-    'returnsValue', false);
+    'data', ...
+    'Motion-corrected Y-X-T data (array for array input, .dat for .dat input).', ...
+    defaultOutput, ...
+    1, ...
+    'isData', true);
 
 info.notes = { ...
     ['Uses the third-party DFTREGISTRATION algorithm (Guizar-Sicairos, ' ...
      'Thurman & Fienup, Opt. Lett. 33, 156-158, 2008), bundled as a ' ...
      'private helper.']; ...
-    'Overwrite=false (default) never modifies the source .dat file.'; ...
-    'Each file is corrected independently against its own first frame.'};
+    'The source .dat file is never modified.'; ...
+    'Each recording is corrected independently against its own first frame.'};
 
 end
