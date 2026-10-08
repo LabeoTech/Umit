@@ -62,7 +62,8 @@ grand_parent: Functions
     </p>
     <ul>
       <li><samp>SaveFolder</samp> contains <samp>AcqInfos.mat</samp> and the imported reflectance channels.</li>
-      <li><samp>data</samp> is the name of one of the illumination channel <samp>.dat</samp> files in the SaveFolder (for example <samp>red.dat</samp>), as wired into the pipeline step. It must be one of the channel files resolved from <samp>AcqInfos.mat</samp> and the Rig optical configuration (see below), otherwise the function returns an error. Numeric arrays, other file types and other dimension layouts are not supported.</li>
+      <li><samp>data</samp> is the name of one of the illumination channel <samp>.dat</samp> files in the SaveFolder (for example <samp>red.dat</samp>), as wired into the pipeline step. It must be one of the channel files resolved from <samp>AcqInfos.mat</samp> and the Rig optical configuration (see below), otherwise the function returns an error. Numeric arrays, other file types and other dimension layouts are not supported.
+        <br><b>Why this input exists:</b> it is a pipeline dependency, not the data that is processed. The function reads <i>all</i> the selected channel files from the SaveFolder, whichever one is passed, so the values of <samp>data</samp> are validated but never used. The input is kept because the pipeline schedules a step from its data inputs: a step without one would be treated as a source and run in the first phase, before setup steps such as the registration of the folder, and without waiting for the step that produces the channels. Wiring one channel file into <samp>data</samp> makes the step run after its producer, in the main schedule.</li>
     </ul>
     <p>
       HemoCompute reads all the channels selected by <samp>Illuminations</samp> from the

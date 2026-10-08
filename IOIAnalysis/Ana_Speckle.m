@@ -1,11 +1,21 @@
-function varargout = Ana_Speckle(SaveFolder, bNormalize, varargin)
+function varargout = Ana_Speckle(data, SaveFolder, bNormalize, varargin)
 %ANA_SPECKLE Calculate blood-flow maps from speckle data.
 %
-%   Ana_Speckle(SaveFolder, bNormalize)
-%   data = Ana_Speckle(SaveFolder, bNormalize)
-%   [data, metaData] = Ana_Speckle(SaveFolder, bNormalize, ...)
+%   Ana_Speckle(data, SaveFolder, bNormalize)
+%   out = Ana_Speckle(data, SaveFolder, bNormalize)
+%   [out, metaData] = Ana_Speckle(data, SaveFolder, bNormalize, ...)
 %
-%   metaData describes the Flow.dat output: in RAM-safe mode it is
+%   The nature of DATA selects the execution mode:
+%
+%       Filename (char or string)  -> LOW-RAM mode. The .dat file is read,
+%                                     processed, and written in chunks;
+%                                     "Flow.dat" is written in SaveFolder.
+%       Numeric Y-X-T array        -> STANDARD mode. The array is processed
+%                                     in RAM and the flow array is returned
+%                                     (or saved as "Flow.dat" when no output
+%                                     is requested).
+%
+%   metaData describes the Flow.dat output: in Low-RAM mode it is
 %   loadMetaData of the written file; in standard mode (no file written)
 %   it holds the .dat Info schema fields the file would have (filePath,
 %   format, dataOffset, dataClass, dimNames, dimSizes, frameRateHz,
@@ -23,8 +33,12 @@ function varargout = Ana_Speckle(SaveFolder, bNormalize, varargin)
 %          its own per-pixel temporal mean
 %
 %   Inputs:
-%       SaveFolder   - Folder containing the speckle .dat file and
-%                      metadata sources resolvable by loadMetaData(...).
+%       data         - Either the name or path of a Y-X-T speckle .dat file
+%                      (a bare name, with or without ".dat", is looked up
+%                      in SaveFolder), or a numeric Y-X-T array with at
+%                      least 2 frames.
+%       SaveFolder   - Existing folder. Resolves a bare file name and
+%                      receives "Flow.dat".
 %       bNormalize   - Logical scalar. If true, normalize the finished flow
 %                      map (after temporal median filtering) by its own
 %                      per-pixel temporal mean. Does not affect the
@@ -32,86 +46,95 @@ function varargout = Ana_Speckle(SaveFolder, bNormalize, varargin)
 %                      regardless of this flag.
 %
 %   Name-Value parameters:
-%       'Filename'    - Basename or filename of the speckle .dat input.
-%                       Default: 'speckle'
-%       'RAMSafeMode' - Logical scalar. If true, use low-RAM file-backed
-%                       execution. Default: false
+%       'FrameRateHz'  - Frame rate of DATA (Hz). The .dat header provides
+%                        it for a file; an array needs it explicitly. An
+%                        explicit value wins over the header (resolveDataInfoValue).
+%       'ExposureMsec' - Speckle exposure time (ms), with the same rules as
+%                        'FrameRateHz'.
 %
 %   Outputs:
-%       data / outFile - Standard mode returns a single Y x X x T
-%                        blood-flow array. Low-RAM mode returns the full
-%                        path to the raw Flow.dat output.
-%       metaData       - Flat compatibility metadata describing the output.
+%       out      - Array input returns a single Y x X x T blood-flow array.
+%                  File input returns the full path to the Flow.dat output.
+%       metaData - Flat compatibility metadata describing the output.
 %
 %   Notes:
-%       - The MeanMap (or per-frame equivalent in RAMSafe mode) correction
+%       - The MeanMap (or per-frame equivalent in Low-RAM mode) correction
 %         is always applied, independent of bNormalize; bNormalize affects
 %         only the output-level normalization in step 5.
 %       - One flow frame is calculated from each input frame, so the output
 %         retains the input temporal length T and follows the normal raw
 %         .dat timeline contract.
-%       - Raw .dat length is resolved through loadMetaData, which infers
-%         datLength from the actual file size.
-%       - The speckle exposure is the input file's own exposure
-%         (exposureMsec of loadMetaData(...)).
+%       - AcqInfos.mat is not used: the frame rate and the speckle exposure
+%         come from the .dat header or from the Name-Value parameters.
 
 % Default output for pipeline management.
 default_Output = 'Flow.dat';
 
-if nargin == 1 && (ischar(SaveFolder) || (isstring(SaveFolder) && isscalar(SaveFolder))) && ...
-        strcmpi(strtrim(char(string(SaveFolder))), 'pipelineInfo')
+if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) && ...
+        strcmpi(strtrim(char(string(data))), 'pipelineInfo')
     varargout{1} = localPipelineInfo();
     return
 end
 
 p = inputParser;
 p.FunctionName = 'Ana_Speckle';
+addRequired(p, 'data');
 addRequired(p, 'SaveFolder', @(x) (ischar(x) || (isstring(x) && isscalar(x))) && isfolder(x));
 addRequired(p, 'bNormalize', @(x) islogical(x) && isscalar(x));
-addParameter(p, 'Filename', 'speckle', @(x) ischar(x) || (isstring(x) && isscalar(x)));
-addParameter(p, 'RAMSafeMode', false, @(x) islogical(x) && isscalar(x));
-parse(p, SaveFolder, bNormalize, varargin{:});
+addParameter(p, 'FrameRateHz', []);
+addParameter(p, 'ExposureMsec', []);
+parse(p, data, SaveFolder, bNormalize, varargin{:});
 
 SaveFolder = char(string(p.Results.SaveFolder));
 bNormalize = p.Results.bNormalize;
-filename = erase(char(string(p.Results.Filename)), '.dat');
-bRAMsafe = p.Results.RAMSafeMode;
 
 fprintf('Running Ana_Speckle...\n');
 
 % -------------------------------------------------------------------------
-% Resolve input file and metadata
+% Control point: the type of DATA selects the mode and where the metadata
+% come from.
 % -------------------------------------------------------------------------
-datFile = fullfile(SaveFolder, [filename '.dat']);
-if ~isfile(datFile)
-    error('Ana_Speckle:InputFileNotFound', ...
-        'No speckle data file was found: "%s".', datFile);
-end
+bLowRAM = ischar(data) || (isstring(data) && isscalar(data));
 
-Iptr = loadMetaData(datFile);
-
-requiredFields = {'dimNames','dimSizes','frameRateHz','exposureMsec'};
-for iField = 1:numel(requiredFields)
-    assert(isfield(Iptr, requiredFields{iField}) && ~isempty(Iptr.(requiredFields{iField})), ...
-        'Ana_Speckle:MissingMetaData', ...
-        'loadMetaData did not return required field "%s" for "%s".', ...
-        requiredFields{iField}, datFile);
+if bLowRAM
+    datFile = localResolveDatFile(char(string(data)), SaveFolder);
+    Iptr = loadMetaData(datFile);
+    assertDatLayout(Iptr, {{'Y','X','T'}}, 'Ana_Speckle');
+    metaSource = datFile;
+else
+    assert(isnumeric(data) || islogical(data), ...
+        'Ana_Speckle:UnsupportedInputType', ...
+        'Input "data" must be a .dat filename or a numeric Y-X-T array.');
+    assert(ndims(data) == 3 && ~isempty(data), ...
+        'Ana_Speckle:UnsupportedLayout', ...
+        'Array input must be a non-empty Y x X x T array.');
+    Iptr = struct('dataClass', 'single', 'dimNames', {{'Y','X','T'}}, ...
+        'dimSizes', size(data), 'frameRateHz', NaN, 'exposureMsec', NaN);
+    metaSource = data;
 end
 
 ny = datAxisSize(Iptr, 'Y');
 nx = datAxisSize(Iptr, 'X');
 nt = datAxisSize(Iptr, 'T');
-tFreq = double(Iptr.frameRateHz);
-speckle_int_time = double(Iptr.exposureMsec) / 1000;
+
+% Explicit value > .dat header > error. AcqInfos.mat is not used.
+tFreq = resolveDataInfoValue('frameRateHz', p.Results.FrameRateHz, ...
+    metaSource, 'Ana_Speckle');
+exposureMsec = resolveDataInfoValue('exposureMsec', p.Results.ExposureMsec, ...
+    metaSource, 'Ana_Speckle');
+assert(exposureMsec > 0, 'Ana_Speckle:InvalidExposure', ...
+    'The speckle exposure must be positive (got %g ms).', exposureMsec);
+speckle_int_time = exposureMsec / 1000;
 
 OPTIONS.GPU = 0;
 OPTIONS.Power2Flag = 0;
 OPTIONS.Brep = 0;
 
-% Header of the Flow.dat output: the input's axes, sizes, rate, and
-% exposure, stored as single.
+% Header of the Flow.dat output: the input's axes and sizes, with the
+% resolved rate and exposure, stored as single.
 [~, outBaseName] = fileparts(default_Output);
-outHeader = datHeaderFromInfo(Iptr, outBaseName, 'dataClass', 'single');
+outHeader = datHeaderFromInfo(Iptr, outBaseName, 'dataClass', 'single', ...
+    'frameRateHz', tFreq, 'exposureMsec', exposureMsec);
 
 assert(nt >= 2, 'Ana_Speckle:InvalidInputLength', ...
     'Speckle input must contain at least 2 frames.');
@@ -119,7 +142,7 @@ assert(nt >= 2, 'Ana_Speckle:InvalidInputLength', ...
 %% ------------------------------------------------------------------------
 % Low-RAM mode
 % -------------------------------------------------------------------------
-if bRAMsafe
+if bLowRAM
     % Compute through a fixed-name raw scratch file (bounded RAM via slab
     % I/O), then move the completed file onto the declared Flow.dat output.
     % Renaming the declared output when it already exists would make every
@@ -244,8 +267,7 @@ end
 %% ------------------------------------------------------------------------
 % Standard mode
 % -------------------------------------------------------------------------
-dat = single(loadData(datFile));
-dat = reshape(dat, ny, nx, nt);
+dat = single(data);
 MeanMap = mean(dat, 3);
 
 datOut = zeros(nt, ny, nx, 'single');
@@ -261,7 +283,6 @@ for t = 1:nt
 end
 
 % Temporal median filter
-tic
 fW = ceil(0.5 * tFreq);
 datOut = medfilt1(datOut, fW, [], 1, 'truncate');
 
@@ -283,7 +304,8 @@ if nargout > 0
     end
 else
     fprintf('Saving data to file: "%s"...\n', default_Output);
-    saveData(outFile, datOut, 'Info', Iptr, 'DimNames', {'Y', 'X', 'T'});
+    saveData(outFile, datOut, 'DimNames', {'Y', 'X', 'T'}, ...
+        'Info', struct('frameRateHz', tFreq, 'exposureMsec', exposureMsec));
 end
 
 fprintf('Done!\n');
@@ -294,46 +316,50 @@ fprintf('Done!\n');
             'Calculate blood-flow maps from speckle data.');
 
         info = PipelineManager.addInput(info, ...
-            'SaveFolder', ...
-            {'parameter'}, ...
-            'Folder containing the speckle input and metadata.', ...
-            'kind', 'parameter', ...
+            'data', ...
+            'ImageTimeSeries', ...
+            'Y-X-T speckle data: a .dat file (Low-RAM mode) or a numeric array (standard mode).', ...
             'position', 1, ...
             'callType', 'positional', ...
-            'default', '', ...
-            'dataType', 'char');
+            'isData', true, ...
+            'supportsFile', true, ...
+            'dataMode', 'either');
+
+        info = PipelineManager.addInput(info, ...
+            'SaveFolder', ...
+            'SaveFolder', ...
+            'Folder resolving a bare file name and receiving Flow.dat.', ...
+            'kind', 'input', ...
+            'position', 2, ...
+            'callType', 'positional', ...
+            'isData', false);
 
         info = PipelineManager.addInput(info, ...
             'bNormalize', ...
             'parameter', ...
-            'If true, normalize each frame by the temporal mean.', ...
+            'If true, normalize the finished flow map by its own temporal mean.', ...
             'kind', 'parameter', ...
-            'position', 2, ...
+            'position', 3, ...
             'callType', 'positional', ...
             'default', false, ...
             'allowed', {false,true}, ...
             'dataType', 'logical');
 
         info = PipelineManager.addInput(info, ...
-            'Filename', ...
-            'parameter', ...
-            'Basename or filename of the speckle input.', ...
-            'kind', 'parameter', ...
-            'position', 3, ...
-            'callType', 'namevalue', ...
-            'default', 'speckle', ...
-            'dataType', 'char');
+            'FrameRateHz', ...
+            'sourceInfo', ...
+            'Frame rate of the input data (Hz), injected from the data.', ...
+            'kind', 'sourceInfo', ...
+            'sourceField', 'frameRateHz', ...
+            'required', false);
 
         info = PipelineManager.addInput(info, ...
-            'RAMSafeMode', ...
-            'parameter', ...
-            'If true, use low-RAM file-backed execution.', ...
-            'kind', 'parameter', ...
-            'position', 4, ...
-            'callType', 'namevalue', ...
-            'default', false, ...
-            'allowed', {false,true}, ...
-            'dataType', 'logical');
+            'ExposureMsec', ...
+            'sourceInfo', ...
+            'Speckle exposure of the input data (ms), injected from the data.', ...
+            'kind', 'sourceInfo', ...
+            'sourceField', 'exposureMsec', ...
+            'required', false);
 
         info = PipelineManager.addOutput(info, ...
             'outData', ...
@@ -364,6 +390,28 @@ K  = ((Tau2/(2*T)).*(1-exp(-2*T*ones(size(Tau2))./Tau2))).^(1/2);
 Tau2=[Tau2(1) Tau2 Tau2(end)];
 K=[0 K 1e30];
 speed=1./interp1(K,Tau2,contrast);
+end
+
+function datFile = localResolveDatFile(data, SaveFolder)
+%LOCALRESOLVEDATFILE Resolve a .dat name or path to an existing file.
+%   A bare name (with or without ".dat") is looked up in SaveFolder, a path
+%   is used as given.
+
+[folder, stem, ext] = fileparts(data);
+assert(isempty(ext) || strcmpi(ext, '.dat'), ...
+    'Ana_Speckle:UnsupportedInputFile', ...
+    'Unsupported input file extension "%s". Only .dat files are supported.', ext);
+
+if isempty(folder)
+    datFile = fullfile(SaveFolder, [stem '.dat']);
+else
+    datFile = fullfile(folder, [stem '.dat']);
+end
+
+if ~isfile(datFile)
+    error('Ana_Speckle:InputFileNotFound', ...
+        'No speckle data file was found: "%s".', datFile);
+end
 end
 
 function Info = iPlannedInfo(filePath, hdr)

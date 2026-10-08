@@ -16,14 +16,27 @@ function varargout = run_HemoCompute(SaveFolder, data, varargin)
 %   Inputs:
 %       SaveFolder - Folder containing AcqInfos.mat and intrinsic channels.
 %       data       - Name of one of the Y-X-T illumination channel .dat files
-%                    in SaveFolder (for example 'red.dat'). HemoCompute
-%                    reads all the illumination channel files resolved from
-%                    AcqInfos.mat and the Rig optical configuration, so
-%                    "data" must be one of them; it is the file wired into
-%                    the step. Arrays, other extensions, other layouts, and
-%                    files that are not a resolved illumination channel are
-%                    not supported, and every resolved channel file must be
-%                    Y-X-T.
+%                    in SaveFolder (for example 'red.dat'). Arrays, other
+%                    extensions, other layouts, and files that are not a
+%                    resolved illumination channel are not supported, and
+%                    every resolved channel file must be Y-X-T.
+%
+%                    WHY "data" EXISTS: it is a pipeline dependency, not
+%                    the computation's input. HemoCompute does not read
+%                    this file in particular: it reads ALL the illumination
+%                    channel files resolved from AcqInfos.mat and the Rig
+%                    optical configuration in SaveFolder, whichever one is
+%                    passed. The input is kept because PipelineManager
+%                    schedules a step from its DATA inputs. Without one, the
+%                    step would be classified as a source (no DATA input)
+%                    and run in the first phase, before setup steps such as
+%                    applyRegistrationTformOnFolder and without being
+%                    ordered after the step that produces the channels.
+%                    Wiring one channel file into "data" makes the step wait
+%                    for that producer and run in the main schedule. For
+%                    that reason "data" is validated (it must exist, be
+%                    Y-X-T, and be one of the resolved channels) but its
+%                    values are never used.
 %
 %   Name-Value parameters:
 %       'FilterSet'              - Filter set name.
@@ -148,7 +161,10 @@ fprintf('Finished HemoCompute.\n');
             'data', ...
             'ImageTimeSeries', ...
             ['One of the Y-X-T illumination channel .dat files (red, green or ' ...
-             'yellow) in SaveFolder; HemoCompute reads all resolved channels.'], ...
+             'yellow) in SaveFolder. Dependency input only: HemoCompute reads ' ...
+             'all resolved channels, and this input orders the step after the ' ...
+             'one that produces them (a step with no DATA input would be ' ...
+             'scheduled as a source, before setup steps).'], ...
             'position', 2, ...
             'callType', 'positional', ...
             'isData', true, ...
