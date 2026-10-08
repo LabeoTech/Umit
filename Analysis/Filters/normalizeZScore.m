@@ -1,5 +1,5 @@
 function outData = normalizeZScore(data, SaveFolder, varargin)
-%NORMALIZEZSCORE Normalize continuous image time-series data to z-scores.
+%NORMALIZEZSCORE Normalize image time-series data to z-scores along T.
 %
 %   outData = normalizeZScore(data, SaveFolder)
 %
@@ -8,46 +8,46 @@ function outData = normalizeZScore(data, SaveFolder, varargin)
 %
 %       z = (x - mean(x, T)) ./ std(x, T)
 %
+%   The statistics are computed independently for every pixel and, for
+%   event-split data, for every event instance (E slice), so each trial is
+%   normalized over its own frames.
+%
 %   Supported execution modes:
 %       1) STANDARD MODE (in-memory)
-%          - Triggered when "data" is a numeric array or a UMT struct
+%          - Triggered when "data" is a numeric array
 %       2) LOW-RAM MODE (file-backed)
 %          - Triggered when "data" is a .dat filename
 %
 %   Accepted input forms:
 %       1) Numeric array with dimensions Y x X x T
-%       2) Filename to a .dat file storing Y x X x T data
-%       3) UMT struct with image entries of dimensions Y x X x T
-%       4) Filename to a .umt file containing one UMT struct
+%       2) Numeric array with dimensions Y x X x T x E (event-split data)
+%       3) Filename to a .dat file with axes Y-X-T or Y-X-T-E
 %
 %   Input/output behavior:
-%       - If the input is a numeric YXT array, the output is a numeric YXT
-%         array with the same size.
-%       - If the input is a .dat filename, the output is a .dat filename.
-%       - If the input is a UMT struct, the output is a UMT struct.
-%       - If the input is a .umt filename, the file is loaded in
-%         RAM and the output is a UMT struct.
-%
-%   Limitations:
-%       - Only continuous image time-series data are supported.
-%       - Event-split data are not supported.
-%       - UMT entries must use dimNames {'Y','X','T'} exactly.
+%       - If the input is a numeric array, the output is a numeric array
+%         with the same size.
+%       - If the input is a .dat filename, the output is a .dat filename
+%         ("normZ.dat" in SaveFolder) with the same axes as the input.
+%       - UMT structs and .umt files are not supported.
 %
 %   Inputs:
 %       data       - Input data in one of the accepted forms above.
-%       SaveFolder - Folder used for file resolution and AcqInfos.mat lookup.
+%       SaveFolder - Folder used for file resolution and outputs.
 %
 %   Output:
-%       outData    - Z-score normalized output with the same representation
-%                    type as the input.
+%       outData    - Z-score normalized output with the same
+%                    representation type as the input.
 %
 %   Notes:
 %       - In low-RAM mode, the input file is processed chunk-by-chunk along
-%         the X dimension.
+%         the X dimension; the chunk size accounts for the E axis.
+%       - NaN values are ignored when computing the mean and standard
+%         deviation.
 %       - For constant time traces, standard deviation is forced to 1 to
 %         avoid division by zero, preserving the original algorithm.
-%       - Raw .dat files are assumed to store YXT data in single precision.
-%       - For UMT/.umt input, RAM-safe mode is not available.
+%       - Every E slice is normalized, ignored event instances included, so
+%         the E axis of a .dat output still matches events.mat.
+%       - Raw .dat files are assumed to store data in single precision.
 
 default_Output = 'normZ.dat';
 
@@ -73,12 +73,17 @@ if ~isfolder(SaveFolder)
 end
 
 % -------------------------------------------------------------------------
-% Case 1: In-memory numeric array
+% Case 1: In-memory numeric array (Y x X x T or Y x X x T x E)
 % -------------------------------------------------------------------------
 if isnumeric(data) || islogical(data)
-    validateattributes(data, {'numeric','logical'}, {'nonempty','3d'}, ...
+    validateattributes(data, {'numeric','logical'}, {'nonempty'}, ...
         mfilename, 'data');
-    outData = iZscoreArray(data);
+    if ~(ndims(data) == 3 || ndims(data) == 4)
+        error('normalizeZScore:InvalidArrayInput', ...
+            'Numeric input must be YXT or YXTE.');
+    end
+
+    outData = iZscoreAlongT(data);
     return
 end
 
@@ -100,65 +105,28 @@ if ischar(data) || (isstring(data) && isscalar(data))
     end
 
     [~,~,ext] = fileparts(dataFile);
-    ext = lower(ext);
 
-    switch ext
-        case '.dat'
-            outData = iZscoreDatFile(dataFile, SaveFolder);
-            return
-
-        case '.umt'
-            warning('normalizeZScore:UMTFileLoadsInRAM', ...
-                ['RAM-safe mode is not available for data stored in this format. ' ...
-                 'Loading the UMT content into RAM.']);
-            data = loadData(dataFile);
-
-        otherwise
-            error('normalizeZScore:UnsupportedInputFile', ...
-                'Unsupported input file extension "%s".', ext);
+    if ~strcmpi(ext, '.dat')
+        error('normalizeZScore:UnsupportedInputFile', ...
+            'Unsupported input file extension "%s". Only .dat files are supported.', ext);
     end
+
+    outData = iZscoreDatFile(dataFile, SaveFolder, default_Output);
+    return
 end
 
-% -------------------------------------------------------------------------
-% Case 3: UMT struct
-% -------------------------------------------------------------------------
-if ~isstruct(data)
-    error('normalizeZScore:UnsupportedInputType', ...
-        ['Input "data" must be a YXT array, a .dat filename, ' ...
-         'a UMT struct, or a .umt filename containing a UMT struct.']);
-end
-
-[entryNames, entryData, entryDims, labels, entryMetas] = iExtractValidUMTData(data);
-
-outStruct = data;
-outStruct.data = struct();
-
-for iEntry = 1:numel(entryNames)
-    outStruct = genUMTStruct( ...
-        outStruct, ...
-        'value', iZscoreArray(entryData{iEntry}), ...
-        'entryName', entryNames{iEntry}, ...
-        'dimNames', entryDims{iEntry}, ...
-        'meta', entryMetas{iEntry}, ...
-        'overwrite', true);
-end
-
-if ~isempty(fieldnames(labels))
-    outStruct.labels = labels;
-elseif isfield(outStruct, 'labels')
-    outStruct = rmfield(outStruct, 'labels');
-end
-
-validateUMTStruct(outStruct, 'requireEventInfo', true);
-outData = outStruct;
+error('normalizeZScore:UnsupportedInputType', ...
+    ['Input "data" must be a YXT or YXTE array or a .dat filename. ' ...
+     'UMT structs and .umt files are not supported.']);
 
 % =========================================================================
 % Local pipeline info
 % =========================================================================
     function info = localPipelineInfo()
         info = PipelineManager.createPipelineInfo(mfilename, ...
-            ['Normalize continuous image time-series data to zero mean and ' ...
-             'unit standard deviation along the time dimension.']);
+            ['Normalize image time-series data to zero mean and unit ' ...
+             'standard deviation along the time dimension, per event ' ...
+             'instance for event-split data.']);
 
         info.version = '1.0.0';
 
@@ -166,8 +134,7 @@ outData = outStruct;
             info, ...
             'data', ...
             {'ImageTimeSeries','ProcessedData','UnknownDataType'}, ...
-            ['Input data. Accepted forms: YXT array, .dat filename, ' ...
-             'UMT struct, or .umt file containing one UMT struct.'], ...
+            'Input data. Accepted forms: YXT or YXTE array, or .dat filename.', ...
             'kind', 'input', ...
             'position', 1, ...
             'callType', 'positional', ...
@@ -179,7 +146,7 @@ outData = outStruct;
             info, ...
             'SaveFolder', ...
             'SaveFolder', ...
-            'Folder used for file resolution and AcqInfos.mat lookup.', ...
+            'Folder used for file resolution and outputs.', ...
             'kind', 'input', ...
             'position', 2, ...
             'callType', 'positional', ...
@@ -198,13 +165,13 @@ outData = outStruct;
 end
 
 % =========================================================================
-% Helper: z-score one in-memory YXT array
+% Helper: z-score along the 3rd dimension (T), independently per pixel and E
 % =========================================================================
-function outArray = iZscoreArray(inArray)
-%IZSCOREARRAY Apply z-score normalization along the 3rd dimension.
+function outArray = iZscoreAlongT(inArray)
+%IZSCOREALONGT Z-score a Y x X x T (x E) array along T.
 
 origSz = size(inArray);
-workArray = reshape(inArray, [], origSz(3));
+workArray = reshape(inArray, origSz(1) * origSz(2), origSz(3), []);
 
 mu  = mean(workArray, 2, 'omitnan');
 sig = std(workArray, 0, 2, 'omitnan');
@@ -216,26 +183,31 @@ end
 % =========================================================================
 % Helper: low-RAM .dat execution
 % =========================================================================
-function outFile = iZscoreDatFile(inFile, SaveFolder)
-%IZSCOREDATFILE Apply z-score normalization to a raw YXT .dat file.
+function outFile = iZscoreDatFile(inFile, SaveFolder, defaultOutput)
+%IZSCOREDATFILE Apply z-score normalization to a Y-X-T or Y-X-T-E .dat file.
 
 slabIn = spatialSlabIO('open', inFile);
 cIn = onCleanup(@() spatialSlabIO('close', slabIn));
-assertDatLayout(slabIn.Info, {{'Y','X','T'}}, 'normalizeZScore');
+assertDatLayout(slabIn.Info, {{'Y','X','T'}, {'Y','X','T','E'}}, 'normalizeZScore');
 Ny = slabIn.Ny;
 Nx = slabIn.Nx;
 Nt = datAxisSize(slabIn.Info, 'T');
+Ne = 1;
+if any(strcmp(cellstr(string(slabIn.Info.dimNames)), 'E'))
+    Ne = datAxisSize(slabIn.Info, 'E');
+end
 
 % Write through a scratch file so the declared pipeline output only
 % appears once the run has completed, and so the input can safely be the
 % file that the declared output would overwrite (a pipeline re-run).
-outFile = fullfile(SaveFolder, 'normZ.dat');
-tmpFile = fullfile(SaveFolder, 'normZ_writing.dat');
+outFile = fullfile(SaveFolder, defaultOutput);
+[~, outStem, outExt] = fileparts(defaultOutput);
+tmpFile = fullfile(SaveFolder, [outStem '_writing' outExt]);
 slabOut = spatialSlabIO('create', tmpFile, ...
-    datHeaderFromInfo(slabIn.Info, 'normZ', 'dataClass', 'single'));
+    datHeaderFromInfo(slabIn.Info, outStem, 'dataClass', 'single'));
 cOut = onCleanup(@() spatialSlabIO('close', slabOut));
 
-totalBytes = Ny * Nx * Nt * getByteSize('single');
+totalBytes = Ny * Nx * Nt * Ne * getByteSize('single');
 nChunks = calculateMaxChunkSize(totalBytes, 2);
 chunkX = ceil(Nx / nChunks);
 nChunks = ceil(Nx / chunkX);
@@ -246,15 +218,7 @@ for c = 1:nChunks
     xIdx   = xStart:xEnd;
 
     slab = single(spatialSlabIO('read', slabIn, xIdx));
-
-    slab2D = reshape(slab, [], Nt);
-
-    mu  = mean(slab2D, 2, 'omitnan');
-    sig = std(slab2D, 0, 2, 'omitnan');
-    sig(sig == 0) = 1;
-
-    slab2D = (slab2D - mu) ./ sig;
-    slab = reshape(single(slab2D), size(slab));
+    slab = iZscoreAlongT(slab);
 
     spatialSlabIO('write', slabOut, xIdx, slab);
 end
@@ -265,64 +229,4 @@ clear cIn cOut; % close the input reader before the move below
 [moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
 assert(moveOk, 'normalizeZScore:OutputMoveFailed', ...
     'Failed to move "%s" onto "%s": %s', tmpFile, outFile, moveMsg);
-end
-
-% =========================================================================
-% Helper: extract raw .dat dimensions from AcqInfos.mat / file size
-% =========================================================================
-% =========================================================================
-% Helper: validate/extract UMT data
-% =========================================================================
-function [entryNames, entryData, entryDims, labels, entryMetas] = iExtractValidUMTData(umt)
-%IEXTRACTVALIDUMTDATA Validate and extract continuous YXT image entries.
-
-validateUMTStruct(umt, 'requireEventInfo', false);
-
-if ~strcmpi(umt.kind, 'image')
-    error('normalizeZScore:InvalidUMTKind', ...
-        ['Operation aborted. UMT input must have kind = "image". ' ...
-         'This function does not support non-image UMT structures.']);
-end
-
-entryNames = fieldnames(umt.data);
-if isempty(entryNames)
-    error('normalizeZScore:EmptyUMTData', ...
-        'Operation aborted. UMT data is empty.');
-end
-
-entryData = cell(size(entryNames));
-entryDims = cell(size(entryNames));
-entryMetas = cell(size(entryNames));
-
-for iEntry = 1:numel(entryNames)
-    thisEntry = umt.data.(entryNames{iEntry});
-    thisDims = cellstr(string(thisEntry.dimNames));
-
-    if ~isequal(thisDims, {'Y','X','T'})
-        error('normalizeZScore:InvalidUMTEntry', ...
-            ['Operation aborted. All UMT entries must use dimNames ' ...
-             '{''Y'',''X'',''T''}. Invalid entry: "%s".'], ...
-            entryNames{iEntry});
-    end
-
-    entryData{iEntry} = thisEntry.value;
-    entryDims{iEntry} = thisDims;
-
-    if isfield(thisEntry, 'meta') && isstruct(thisEntry.meta) && isscalar(thisEntry.meta)
-        entryMetas{iEntry} = thisEntry.meta;
-    else
-        entryMetas{iEntry} = struct();
-    end
-end
-
-if isfield(umt, 'eventInfo')
-    error('normalizeZScore:EventDataNotSupported', ...
-        'normalizeZScore does not support event-split data.');
-end
-
-if isfield(umt, 'labels')
-    labels = umt.labels;
-else
-    labels = struct();
-end
 end

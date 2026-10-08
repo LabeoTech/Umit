@@ -7,17 +7,14 @@ function outData = getDataFromROI(data, SaveFolder, varargin)
 %   This function extracts data from ROI masks stored in an ROI file and
 %   returns the result as a UMT structure of kind "roi".
 %
-%   Supported inputs:
-%       1) Numeric image data: Y x X x T, or with an event axis (Y x X x T x E,
-%          Y x X x E) when 'DimNames' says so (a 4-D array defaults to
-%          Y-X-T-E)
-%       2) .dat filename: Y-X-T, Y-X, Y-X-T-E, or Y-X-E
-%       3) UMT struct of kind "image"
-%       4) Filename to a .umt file containing one image UMT struct
-%   Event-split arrays and .dat files carry no event labels: their eventInfo
-%   comes from SaveFolder's events.mat (resolveDatEventMapping: one slice per
-%   instance or per condition; otherwise one condition, with a warning).
-%   Event-split image outputs are .dat since .dat header Phase 8c.
+%   Supported inputs (any data that has Y and X axes):
+%       1) .dat filename with axes Y-X, Y-X-T, Y-X-E, Y-X-F, or Y-X-T-E
+%       2) UMT struct of kind "image" whose entries use those same layouts
+%       3) Filename to a .umt file containing one such image UMT struct
+%   Numeric arrays are not supported. Event-split .dat files carry no event
+%   labels: their eventInfo comes from SaveFolder's events.mat
+%   (resolveDatEventMapping: one slice per instance or per condition;
+%   otherwise one condition, with a warning).
 %
 %   Inputs:
 %       data       - Image-backed input in one of the supported forms above.
@@ -38,6 +35,9 @@ function outData = getDataFromROI(data, SaveFolder, varargin)
 %                               'sum'
 %                               'std'
 %                           Default: 'mean'
+%       FrameRateHz       - Frame rate of DATA (Hz), recorded in the output
+%                           entry meta. PipelineManager injects it from the
+%                           data; a .dat header provides it otherwise.
 %
 %   Output:
 %       outData    - UMT structure of kind "roi".
@@ -48,7 +48,10 @@ function outData = getDataFromROI(data, SaveFolder, varargin)
 %       - If SpatialAggFcn == 'none':
 %             ROI x Pixel x ...
 %
-%       where "..." preserves the non-spatial dimensions of the input.
+%       where "..." preserves the non-spatial dimensions of the input (T, E,
+%       and/or F). 'none' is not available for inputs with an F axis, since
+%       the UMT schema has no {ROI,Pixel,F} layout. Labels of the preserved
+%       axes of a UMT input (for example F) are carried to the output.
 %
 %   Notes:
 %       - ROI files are read through loadROIFile(...), which migrates and
@@ -58,14 +61,15 @@ function outData = getDataFromROI(data, SaveFolder, varargin)
 %         carried through to the roi UMT output unchanged. Nothing is
 %         invented: continuous inputs produce no eventInfo, and an
 %         event-split input without eventInfo is still accepted.
-%       - Raw .dat input is treated as continuous YXT data.
-%       - Event-aware processing for raw .dat should be handled upstream by
-%         converting data to a UMT image structure with E as the last
-%         dimension when needed.
+%       - A .dat file is streamed: only the columns that contain ROI pixels
+%         are read, in blocks of consecutive frames, and every block is
+%         aggregated as soon as it is read (the aggregation runs across the
+%         pixels of each frame, so it is exact for every SpatialAggFcn). The
+%         recording is never loaded whole; memory is one block plus
+%         nROI x frames. 'none' keeps the ROI pixels of every frame.
 %       - With SpatialAggFcn='none', the Pixel dimension is sized to the
 %         largest ROI's pixel count; every smaller ROI is NaN-padded to
 %         that length.
-
 
 default_Output = 'ROI_data.umt';
 validAgg = {'none','mean','max','min','median','mode','sum','std'};
@@ -88,7 +92,6 @@ addParameter(p, 'SpatialAggFcn', 'mean', ...
     @(x) (ischar(x) || (isstring(x) && isscalar(x))) && ...
     ismember(lower(char(string(x))), validAgg));
 addParameter(p, 'FrameRateHz', []);
-addParameter(p, 'DimNames', {});
 
 parse(p, data, SaveFolder, varargin{:});
 
@@ -107,50 +110,37 @@ end
 roiSet = iLoadROISet(roiFile, SaveFolder, 'getDataFromROI');
 
 % -------------------------------------------------------------------------
-% Resolve input to one or more image entries
+% Resolve the input and extract the ROI-organized entries
 % -------------------------------------------------------------------------
-[entryNames, entryValues, entryDims, entryMetas, srcEventInfo] = ...
-    iResolveImageInput(data, SaveFolder, p.Results.FrameRateHz, p.Results.DimNames);
+[entries, srcEventInfo, srcLabels] = iResolveInput( ...
+    data, SaveFolder, p.Results.FrameRateHz, roiSet, spatialAggFcn);
 
 outData = struct();
-roiEntryNames = entryNames;
-roiEntryValues = cell(size(entryValues));
-roiEntryDims = cell(size(entryDims));
-
-for iEntry = 1:numel(entryNames)
-    thisValue = entryValues{iEntry};
-    thisDims = entryDims{iEntry};
-
-    [roiValue, roiDims] = iExtractROIsFromEntry(thisValue, thisDims, roiSet, spatialAggFcn);
-
-    roiEntryValues{iEntry} = roiValue;
-    roiEntryDims{iEntry} = roiDims;
-end
-
-for iEntry = 1:numel(roiEntryNames)
+for iEntry = 1:numel(entries)
     if iEntry == 1
         outData = genUMTStruct( ...
-            roiEntryValues{iEntry}, ...
+            entries(iEntry).roiValue, ...
             'kind', 'roi', ...
-            'entryName', roiEntryNames{iEntry}, ...
-            'dimNames', roiEntryDims{iEntry}, ...
-            'labels', iBuildROILabels(roiSet, roiEntryValues{iEntry}, roiEntryDims{iEntry}, spatialAggFcn), ...
-            'meta', entryMetas{iEntry});
+            'entryName', entries(iEntry).name, ...
+            'dimNames', entries(iEntry).roiDims, ...
+            'labels', iBuildROILabels(roiSet, entries(iEntry).roiValue, ...
+                entries(iEntry).roiDims, spatialAggFcn, srcLabels), ...
+            'meta', entries(iEntry).meta);
     else
         outData = genUMTStruct( ...
             outData, ...
-            'value', roiEntryValues{iEntry}, ...
-            'entryName', roiEntryNames{iEntry}, ...
-            'dimNames', roiEntryDims{iEntry}, ...
-            'meta', entryMetas{iEntry});
+            'value', entries(iEntry).roiValue, ...
+            'entryName', entries(iEntry).name, ...
+            'dimNames', entries(iEntry).roiDims, ...
+            'meta', entries(iEntry).meta);
     end
 end
 
 % Carry the source event metadata through unchanged: a UMT input's own
-% eventInfo, or for an event-split array/.dat the mapping onto events.mat.
+% eventInfo, or for an event-split .dat the mapping onto events.mat.
 % Without an E dimension the schema forbids eventInfo, and an event-split
 % UMT that carried none must not have one invented for it.
-if any(cellfun(@(d) any(strcmp(d, 'E')), roiEntryDims)) && ...
+if any(arrayfun(@(e) any(strcmp(e.roiDims, 'E')), entries)) && ...
         isstruct(srcEventInfo) && ~isempty(fieldnames(srcEventInfo))
     outData = appendUMTEventInfo(outData, ...
         'eventInfo', srcEventInfo, ...
@@ -172,14 +162,15 @@ validateUMTStruct(outData, 'requireEventInfo', false);
             info, ...
             'data', ...
             {'ImageTimeSeries','ProcessedData','UnknownDataType'}, ...
-            ['Image-backed input. Accepted forms: YXT array, .dat filename, ' ...
-             'image UMT struct, or .umt file containing one image UMT struct.'], ...
+            ['Image-backed input with Y and X axes. Accepted forms: .dat ' ...
+             'filename, image UMT struct, or .umt file containing one image ' ...
+             'UMT struct.'], ...
             'kind', 'input', ...
             'position', 1, ...
             'callType', 'positional', ...
             'isData', true, ...
             'supportsFile', true, ...
-            'dataMode', 'either');
+            'dataMode', 'file');
 
         info = PipelineManager.addInput( ...
             info, ...
@@ -219,15 +210,6 @@ validateUMTStruct(outData, 'requireEventInfo', false);
             'sourceField', 'frameRateHz', ...
             'required', false);
 
-        info = PipelineManager.addInput( ...
-            info, ...
-            'DimNames', ...
-            'sourceInfo', ...
-            'Axes of the input data, injected from the data.', ...
-            'kind', 'sourceInfo', ...
-            'sourceField', 'dimNames', ...
-            'required', false);
-
         info = PipelineManager.addOutput( ...
             info, ...
             'outData', ...
@@ -244,32 +226,28 @@ end
 % Local helpers
 % =========================================================================
 
-function [entryNames, entryValues, entryDims, entryMetas, eventInfo] = ...
-    iResolveImageInput(data, SaveFolder, explicitRate, explicitDims)
-%IRESOLVEIMAGEINPUT Resolve supported input forms to image entries.
-%
-% entryMetas carries each source entry's meta struct. For a raw array or a
-% .dat file it holds the data's own frame rate (meta.FrameRateHz) when
-% known: the explicit or injected FrameRateHz, else the .dat header
-% (.dat header Phase 7a; AcqInfos.mat is not used). eventInfo carries the source UMT's shared
-% top-level event metadata, or an empty struct when there is none.
+function layouts = iSupportedLayouts()
+%ISUPPORTEDLAYOUTS Image layouts that have Y and X and a ROI-schema output.
+layouts = {{'Y','X'}, {'Y','X','T'}, {'Y','X','E'}, {'Y','X','F'}, {'Y','X','T','E'}};
+end
 
-% entryMetas is assigned on every return path below. eventInfo needs a
-% default because only the UMT path can supply one.
+function [entries, eventInfo, srcLabels] = iResolveInput(data, SaveFolder, explicitRate, roiSet, spatialAggFcn)
+%IRESOLVEINPUT Resolve supported input forms to ROI-organized entries.
+%
+% entries(k) has name, roiValue, roiDims, and meta (the source entry's meta
+% struct; for a .dat file it holds the data's own frame rate, meta.FrameRateHz,
+% when known: the explicit or injected FrameRateHz, else the .dat header;
+% AcqInfos.mat is not used). eventInfo carries the source's shared top-level
+% event metadata, or an empty struct when there is none. srcLabels holds the
+% labels of a UMT input.
+
 eventInfo = struct();
+srcLabels = struct();
 
 if isnumeric(data) || islogical(data)
-    validateattributes(data, {'numeric','logical'}, {'nonempty'}, mfilename, 'data');
-    dims = iNumericDims(data, explicitDims);
-
-    entryNames = {'main'};
-    entryValues = {single(data)};
-    entryDims = {dims};
-    entryMetas = {iRateMeta(explicitRate, [])};
-    if any(strcmp(dims, 'E'))
-        eventInfo = iEventInfoFromFolder(dims, size(data), SaveFolder);
-    end
-    return
+    error('Umitoolbox:getDataFromROI:UnsupportedInputType', ...
+        ['Numeric arrays are not supported. Input "data" must be a .dat ' ...
+         'filename, an image UMT struct, or a .umt filename.']);
 end
 
 if ischar(data) || (isstring(data) && isscalar(data))
@@ -290,17 +268,9 @@ if ischar(data) || (isstring(data) && isscalar(data))
 
     switch ext
         case '.dat'
-            md = loadMetaData(dataFile);
-            assertDatLayout(md, {{'Y','X','T'}, {'Y','X'}, {'Y','X','T','E'}, {'Y','X','E'}}, ...
-                'getDataFromROI');
-            rawData = loadData(dataFile);
-            dims = cellstr(string(md.dimNames(:).'));
-            entryNames = {'main'};
-            entryValues = {single(rawData)};
-            entryDims = {dims};
-            entryMetas = {iRateMeta(explicitRate, dataFile)};
+            [entries, dims, sizes] = iEntryFromDat(dataFile, roiSet, spatialAggFcn, explicitRate);
             if any(strcmp(dims, 'E'))
-                eventInfo = iEventInfoFromFolder(dims, md.dimSizes, SaveFolder);
+                eventInfo = iEventInfoFromFolder(dims, sizes, SaveFolder);
             end
             return
 
@@ -315,7 +285,7 @@ end
 
 assert(isstruct(data) && isscalar(data), ...
     'Umitoolbox:getDataFromROI:UnsupportedInputType', ...
-    ['Input "data" must be a YXT array, a .dat filename, an image UMT struct, ' ...
+    ['Input "data" must be a .dat filename, an image UMT struct, ' ...
      'or a .umt file containing one image UMT struct.']);
 
 validateUMTStruct(data, 'requireEventInfo', false);
@@ -329,41 +299,108 @@ assert(~isempty(entryNames), ...
     'Umitoolbox:getDataFromROI:EmptyUMTData', ...
     'Input UMT data is empty.');
 
-entryValues = cell(size(entryNames));
-entryDims = cell(size(entryNames));
-entryMetas = cell(size(entryNames));
-
-allowedDims = { ...
-    {'Y','X'}, ...
-    {'Y','X','T'}, ...
-    {'Y','X','E'}, ...
-    {'Y','X','T','E'}};
+layouts = iSupportedLayouts();
+entries = repmat(struct('name', '', 'roiValue', [], 'roiDims', {{}}, 'meta', struct()), ...
+    numel(entryNames), 1);
 
 for iEntry = 1:numel(entryNames)
     thisEntry = data.data.(entryNames{iEntry});
     thisDims = cellstr(string(thisEntry.dimNames));
 
-    isAllowed = any(cellfun(@(x) isequal(thisDims, x), allowedDims));
+    isAllowed = any(cellfun(@(x) isequal(thisDims, x), layouts));
     assert(isAllowed, ...
         'Umitoolbox:getDataFromROI:InvalidUMTEntryDims', ...
         ['Entry "%s" has unsupported dimNames. Supported image layouts are ' ...
-         '{Y,X}, {Y,X,T}, {Y,X,E}, and {Y,X,T,E}.'], ...
+         '{Y,X}, {Y,X,T}, {Y,X,E}, {Y,X,F}, and {Y,X,T,E}.'], ...
         entryNames{iEntry});
 
-    entryValues{iEntry} = single(thisEntry.value);
-    entryDims{iEntry} = thisDims;
+    [roiPix, trailingDims, trailingSz] = iGatherROIPixels(single(thisEntry.value), ...
+        thisDims, roiSet);
+    [roiValue, roiDims] = iAssembleOutput(iAggregateAll(roiPix, spatialAggFcn), roiPix, ...
+        trailingDims, trailingSz, spatialAggFcn);
 
+    entries(iEntry).name = entryNames{iEntry};
+    entries(iEntry).roiValue = roiValue;
+    entries(iEntry).roiDims = roiDims;
     if isfield(thisEntry, 'meta') && isstruct(thisEntry.meta) && isscalar(thisEntry.meta)
-        entryMetas{iEntry} = thisEntry.meta;
-    else
-        entryMetas{iEntry} = struct();
+        entries(iEntry).meta = thisEntry.meta;
     end
 end
 
 if isfield(data, 'eventInfo')
     eventInfo = data.eventInfo;
 end
+if isfield(data, 'labels') && isstruct(data.labels)
+    srcLabels = data.labels;
+end
 
+end
+
+function [entries, dims, sizes] = iEntryFromDat(dataFile, roiSet, spatialAggFcn, explicitRate)
+%IENTRYFROMDAT ROI-organized entry of a .dat file, streamed in frame blocks.
+
+info = loadMetaData(dataFile);
+assertDatLayout(info, iSupportedLayouts(), 'getDataFromROI');
+
+dims = cellstr(string(info.dimNames(:).'));
+sizes = double(info.dimSizes(:).');
+Ny = datAxisSize(info, 'Y');
+Nx = datAxisSize(info, 'X');
+assert(isequal([Ny, Nx], roiSet.imageSizeYX), ...
+    'Umitoolbox:getDataFromROI:IncompatibleSizes', ...
+    'Input frame size is different from the frame size in the ROI file.');
+
+trailingDims = dims(3:end);
+trailingSz = sizes(3:end);
+nFrames = max(1, prod(trailingSz));
+
+roiNames = roiSet.names;
+nROI = numel(roiNames);
+masks = roiSet.masks;
+bNone = strcmp(spatialAggFcn, 'none');
+
+% Only the columns that any ROI touches are read. The ROI masks are cut to
+% those columns once, so a pixel selection indexes a block directly.
+xNeeded = find(any(any(cat(3, masks{:}), 3), 1));
+masksCols = cellfun(@(m) m(:, xNeeded), masks, 'UniformOutput', false);
+
+roiAgg = nan(nROI, nFrames, 'single');
+roiPix = cell(nROI, 1);
+if bNone
+    for iROI = 1:nROI
+        roiPix{iROI} = nan(nnz(masks{iROI}), nFrames, 'single');
+    end
+end
+
+slabIn = spatialSlabIO('open', dataFile, 'Info', info);
+cIn = onCleanup(@() spatialSlabIO('close', slabIn));
+
+% Consecutive frames per block: the block as read and its single-precision
+% copy are alive together. Blocks of frames (not of columns) keep the file
+% read in one pass, one contiguous read per frame, whatever the memory budget.
+blockBytes = double(Ny) * numel(xNeeded) * nFrames * 4;
+nBlocks = calculateMaxChunkSize(blockBytes, 2, 0.1);
+framesPerBlock = max(1, ceil(nFrames / nBlocks));
+
+for t0 = 1:framesPerBlock:nFrames
+    tIdx = t0:min(t0 + framesPerBlock - 1, nFrames);
+    block = reshape(single(spatialSlabIO('read', slabIn, xNeeded, tIdx)), ...
+        Ny * numel(xNeeded), numel(tIdx));
+
+    for iROI = 1:nROI
+        pixVals = block(masksCols{iROI}(:), :);
+        if bNone
+            roiPix{iROI}(:, tIdx) = pixVals;
+        else
+            roiAgg(iROI, tIdx) = iApplyAggFcn(pixVals, spatialAggFcn);
+        end
+    end
+end
+
+[roiValue, roiDims] = iAssembleOutput(roiAgg, roiPix, trailingDims, trailingSz, spatialAggFcn);
+
+entries = struct('name', 'main', 'roiValue', roiValue, 'roiDims', {roiDims}, ...
+    'meta', iRateMeta(explicitRate, dataFile));
 end
 
 % =========================================================================
@@ -408,8 +445,11 @@ roiSet.masks = roiSet.masks(:);
 
 end
 
-function [roiValue, roiDims] = iExtractROIsFromEntry(value, dimNames, roiSet, spatialAggFcn)
-%IEXTRACTROISFROMENTRY Extract ROI-organized values from one image entry.
+function [roiPix, trailingDims, trailingSz] = iGatherROIPixels(value, dimNames, roiSet)
+%IGATHERROIPIXELS ROI pixel values of an in-RAM image entry.
+%
+% roiPix{k} is nPixels-by-nFrames, with the frames of the non-spatial axes
+% flattened in their stored order. trailingDims/trailingSz describe those axes.
 
 [~,yxLoc] = ismember({'Y','X'}, dimNames);
 
@@ -418,8 +458,7 @@ if numel(dataSz) < numel(dimNames)
     dataSz(end+1:numel(dimNames)) = 1;
 end
 
-refFrameSz = roiSet.imageSizeYX;
-assert(isequal(dataSz(yxLoc), refFrameSz), ...
+assert(isequal(dataSz(yxLoc), roiSet.imageSizeYX), ...
     'Umitoolbox:getDataFromROI:IncompatibleSizes', ...
     'Input frame size is different from the frame size in the ROI file.');
 
@@ -429,41 +468,58 @@ newDim = [yxLoc, setdiff(origDim, yxLoc, 'stable')];
 value = permute(value, newDim);
 permDims = dimNames(newDim);
 permSz = dataSz(newDim);
+trailingDims = permDims(3:end);
+trailingSz = permSz(3:end);
 
 value2D = reshape(value, prod(permSz(1:2)), []);
-roiNames = roiSet.names;
+roiPix = cell(numel(roiSet.masks), 1);
+for iROI = 1:numel(roiPix)
+    roiPix{iROI} = value2D(roiSet.masks{iROI}(:), :);
+end
+end
+
+function roiAgg = iAggregateAll(roiPix, spatialAggFcn)
+%IAGGREGATEALL Aggregate every ROI across its pixels (nROI-by-nFrames).
+if strcmp(spatialAggFcn, 'none')
+    roiAgg = [];
+    return
+end
+nFrames = size(roiPix{1}, 2);
+roiAgg = nan(numel(roiPix), nFrames, 'single');
+for iROI = 1:numel(roiPix)
+    roiAgg(iROI, :) = iApplyAggFcn(roiPix{iROI}, spatialAggFcn);
+end
+end
+
+function [roiValue, roiDims] = iAssembleOutput(roiAgg, roiPix, trailingDims, trailingSz, spatialAggFcn)
+%IASSEMBLEOUTPUT Shape ROI values as ROI x [Pixel] x trailing axes.
+%
+% roiAgg is nROI-by-nFrames (any aggregation); roiPix holds the per-ROI pixel
+% values (nPixels-by-nFrames) and is only used by SpatialAggFcn 'none'.
+
+nROI = numel(roiPix);
 
 if strcmp(spatialAggFcn, 'none')
-    pixelCounts = zeros(numel(roiNames), 1);
-    roiPixVals = cell(size(roiNames));
+    assert(~any(strcmp(trailingDims, 'F')), ...
+        'Umitoolbox:getDataFromROI:NoneNotSupportedForF', ...
+        ['SpatialAggFcn "none" is not available for inputs with an F axis: ' ...
+         'the UMT schema has no {ROI,Pixel,F} layout. Use an aggregation function.']);
 
-    for iROI = 1:numel(roiPixVals)
-        roiMask = roiSet.masks{iROI};
-        pixVals = value2D(roiMask(:), :);
-        pixelCounts(iROI) = size(pixVals, 1);
-
-        if numel(permSz) > 2
-            % The trailing-dimension assignment below indexes each declared
-            % trailing dimension with its own ':' range, which only accepts
-            % a flattened RHS when there is a single trailing dimension.
-            pixVals = reshape(pixVals, [size(pixVals,1), permSz(3:end)]);
-        end
-
-        roiPixVals{iROI} = single(pixVals);
-    end
-
+    pixelCounts = cellfun(@(c) size(c, 1), roiPix);
     maxPixel = max(pixelCounts);
-    trailingSz = permSz(3:end);
 
     if isempty(trailingSz)
-        roiValue = nan(numel(roiNames), maxPixel, 'single');
-        for iROI = 1:numel(roiNames)
-            roiValue(iROI, 1:pixelCounts(iROI)) = roiPixVals{iROI};
+        roiValue = nan(nROI, maxPixel, 'single');
+        for iROI = 1:nROI
+            roiValue(iROI, 1:pixelCounts(iROI)) = single(roiPix{iROI});
         end
     else
-        roiValue = nan([numel(roiNames), maxPixel, trailingSz], 'single');
-        for iROI = 1:numel(roiNames)
-            thisVal = roiPixVals{iROI};
+        roiValue = nan([nROI, maxPixel, trailingSz], 'single');
+        for iROI = 1:nROI
+            % The trailing-dimension assignment indexes each declared
+            % trailing dimension with its own ':' range, which needs a
+            % shape-conforming right-hand side.
+            thisVal = reshape(single(roiPix{iROI}), [pixelCounts(iROI), trailingSz]);
             idx = repmat({':'}, 1, ndims(roiValue));
             idx{1} = iROI;
             idx{2} = 1:pixelCounts(iROI);
@@ -471,49 +527,20 @@ if strcmp(spatialAggFcn, 'none')
         end
     end
 
-    roiDims = [{'ROI','Pixel'}, permDims(3:end)];
-
+    roiDims = [{'ROI','Pixel'}, trailingDims];
 else
-    roiPixVals = cell(size(roiNames));
-
-    for iROI = 1:numel(roiPixVals)
-        roiMask = roiSet.masks{iROI};
-        pixVals = value2D(roiMask(:), :);
-        pixVals = iApplyAggFcn(pixVals, spatialAggFcn);
-
-        if numel(permSz) > 2
-            % See the matching comment in the 'none' branch above: the
-            % trailing-dimension assignment below needs a shape-conforming
-            % RHS whenever there is more than one trailing dimension.
-            pixVals = reshape(pixVals, [size(pixVals,1), permSz(3:end)]);
-        end
-
-        roiPixVals{iROI} = single(pixVals);
-    end
-
-    trailingSz = permSz(3:end);
-
     if isempty(trailingSz)
-        roiValue = nan(numel(roiNames), 1, 'single');
-        for iROI = 1:numel(roiNames)
-            roiValue(iROI, 1) = roiPixVals{iROI};
-        end
-        roiValue = reshape(roiValue, [numel(roiNames), 1]);
+        roiValue = reshape(single(roiAgg), [nROI, 1]);
     else
-        roiValue = nan([numel(roiNames), trailingSz], 'single');
-        for iROI = 1:numel(roiNames)
-            idx = repmat({':'}, 1, ndims(roiValue));
-            idx{1} = iROI;
-            roiValue(idx{:}) = roiPixVals{iROI};
-        end
+        roiValue = reshape(single(roiAgg), [nROI, trailingSz]);
     end
 
-    roiDims = [{'ROI'}, permDims(3:end)];
+    roiDims = [{'ROI'}, trailingDims];
 end
 
 end
 
-function labels = iBuildROILabels(roiSet, roiValue, roiDims, spatialAggFcn)
+function labels = iBuildROILabels(roiSet, roiValue, roiDims, spatialAggFcn, srcLabels)
 %IBUILDROILABELS Build shared display/reference labels for roi output.
 
 roiNames = roiSet.names;
@@ -524,6 +551,13 @@ labels.ROI = roiNames(:).';
 if strcmp(spatialAggFcn, 'none')
     pixelLen = size(roiValue, 2);
     labels.Pixel = arrayfun(@num2str, 1:pixelLen, 'UniformOutput', false);
+end
+
+% Labels of the preserved axes (for example F = Amplitude/Phase) stay valid.
+for fieldName = {'T', 'E', 'F'}
+    if isfield(srcLabels, fieldName{1}) && ismember(fieldName{1}, roiDims)
+        labels.(fieldName{1}) = srcLabels.(fieldName{1});
+    end
 end
 
 labelFields = fieldnames(labels);
@@ -560,28 +594,6 @@ switch fcnName
 end
 
 out = single(out);
-end
-
-function dims = iNumericDims(data, explicitDims)
-%INUMERICDIMS Axes of a numeric input: explicit/injected DimNames when they
-% fit, else Y-X-T for 3-D and Y-X-T-E for 4-D arrays.
-allowed = {{'Y','X','T'}, {'Y','X'}, {'Y','X','T','E'}, {'Y','X','E'}};
-if ~isempty(explicitDims)
-    dims = cellstr(string(explicitDims(:).'));
-    assert(any(cellfun(@(c) isequal(dims, c), allowed)) && ndims(data) <= numel(dims), ...
-        'Umitoolbox:getDataFromROI:unsupportedLayout', ...
-        'DimNames {%s} does not describe a supported image layout of the data.', strjoin(dims, ','));
-    return
-end
-switch ndims(data)
-    case {2, 3}
-        dims = {'Y','X','T'};
-    case 4
-        dims = {'Y','X','T','E'};
-    otherwise
-        error('Umitoolbox:getDataFromROI:unsupportedLayout', ...
-            'Numeric input must be Y x X x T or Y x X x T x E.');
-end
 end
 
 function eventInfo = iEventInfoFromFolder(dims, sz, SaveFolder)

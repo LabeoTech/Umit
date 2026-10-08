@@ -1,67 +1,66 @@
-function [outData, metaData] = apply_aggregate_function(data, SaveFolder, varargin)
-%APPLY_AGGREGATE_FUNCTION Aggregate image-backed data along T or E.
+function outData = apply_aggregate_function(data, SaveFolder, varargin)
+%APPLY_AGGREGATE_FUNCTION Aggregate image data along T or E.
 %
 %   outData = apply_aggregate_function(data, SaveFolder)
-%   [outData, metaData] = apply_aggregate_function(data, SaveFolder, ...
+%   outData = apply_aggregate_function(data, SaveFolder, ...
 %       'aggregateFcn', aggFcn, 'dimensionName', dimName)
 %
 % Inputs:
 %   data       : One of:
-%                1) Numeric 3-D array with dimensions Y x X x T
-%                2) Filename to a .dat file storing Y x X x T data, or, for
-%                   E aggregation, event-split Y-X-T-E / Y-X-E data whose
-%                   E axis matches events.mat (resolveDatEventMapping;
-%                   loaded fully into RAM)
-%                3) UMT struct
-%                4) Filename to a .umt file containing a UMT struct
+%                1) Filename of a .dat file with axes Y-X-T, Y-X-T-E, or
+%                   Y-X-E
+%                2) Single-entry image UMT struct
+%                3) Filename of a .umt file containing one single-entry
+%                   image UMT struct
+%                Arrays are not supported.
 %
-%   SaveFolder : Folder containing AcqInfos.mat and events.mat.
+%   SaveFolder : Folder containing events.mat; also the folder of the .dat
+%                output.
 %
 % Name-Value parameters:
 %   aggregateFcn  : 'mean','median','std','max','min','sum'
 %                   Default: 'mean'
-%   dimensionName : 'T' or 'E'
+%   dimensionName : 'T' or 'E'. The data must contain that axis.
 %                   Default: 'T'
-%   FrameRateHz   : Frame rate of DATA (Hz), needed for E aggregation of
-%                   raw arrays and .dat files (event times to frames).
-%                   PipelineManager injects it from the data; a .dat
-%                   input's header provides it otherwise. In-RAM arrays
-%                   need it explicitly; AcqInfos.mat is not used.
+%   FrameRateHz   : Frame rate of DATA (Hz), needed to turn the event times
+%                   of events.mat into frames when a continuous Y-X-T .dat
+%                   is aggregated along E. PipelineManager injects it from
+%                   the data; the .dat header provides it otherwise.
+%                   AcqInfos.mat is not used.
 %
-% Output:
-%   outData    : - E aggregation of a raw YXT array or a .dat file: numeric
-%                  Y x X x T x E (Y x X x E for a Y-X-E .dat) array, one
-%                  slice per event condition
-%                  (saved as .dat by PipelineManager, .dat header Phase 8c).
-%                - Otherwise: output UMT struct.
-%   metaData   : struct with dimNames {'Y','X','T','E'} for
-%                the numeric output (PipelineManager uses it to save the
-%                .dat); empty struct otherwise.
+% Output (same representation as the input):
+%   .dat input  -> .dat file ("aggFcn_applied.dat" in SaveFolder); outData
+%                  is its full path.
+%   UMT input   -> UMT struct (from a .umt file as well).
+%
+%   Axes of the result:
+%       T aggregation   Y-X-T   -> Y-X
+%                       Y-X-T-E -> Y-X-E (each trial reduced on its own)
+%       E aggregation   Y-X-T-E, Y-X-E -> same axes, one E slice per
+%                       condition
+%                       Y-X-T   -> Y-X-T-E: the instances of events.mat are
+%                       split out of the continuous recording and reduced
+%                       per condition (trial length as split_data_by_event)
 %
 % Notes:
-%   - Raw YXT arrays and raw .dat files use live event information from
-%     events.mat through EventsManager.
-%   - UMT inputs use the frozen shared top-level eventInfo stored in the UMT.
-%   - Raw .dat input uses spatially chunked reads. The complete aggregate
-%     output remains resident in RAM: 4*Y*X bytes for T aggregation, or
-%     4*Y*X*trialLen*nConditions bytes for E aggregation (single precision).
-%     The E path sizes each slab for the simultaneous input, condition,
-%     permutation, and aggregate workspaces.
-%   - If a .umt file is provided, its content is loaded fully into RAM.
+%   - A .dat input is streamed in X slabs and its output written slab by
+%     slab, so neither the recording nor the result is ever resident whole
+%     (Low-RAM mode is always on; the slab size follows the available RAM).
 %   - E aggregation follows EventsManager.conditionAggregationPlan and
 %     reduceByCondition (.dat header Phase 8c): ignored instances are
 %     excluded, conditions are ordered by first appearance, and a condition
-%     whose instances are all ignored gives a NaN slice. UMT outputs carry
-%     the aggregated eventInfo (eventAxisMode 'aggregated_repetitions',
-%     repetitionIndex 0, selected, durationSec, nInstances). The .dat output
+%     whose instances are all ignored gives a NaN slice. The .dat output
 %     stores no labels: its E axis is matched to events.mat by
-%     resolveDatEventMapping (one slice per condition).
-%   - UMT inputs keep UMT outputs, with their own eventInfo carried through.
+%     resolveDatEventMapping (one slice per condition). An event-split .dat
+%     that is already aggregated is refused.
+%   - UMT outputs carry the aggregated eventInfo (eventAxisMode
+%     'aggregated_repetitions', repetitionIndex 0, selected, durationSec,
+%     nInstances). UMT E aggregation uses the frozen eventInfo stored in the
+%     UMT. A .umt file is loaded fully into RAM.
 %
 % See also: spatialSlabIO, genUMTStruct, appendUMTEventInfo
 
 default_Output = 'aggFcn_applied.umt';
-metaData = struct();
 
 if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) ...
         && strcmpi(strtrim(char(string(data))), 'pipelineInfo')
@@ -102,47 +101,7 @@ if ~isfolder(SaveFolder)
 end
 
 % -------------------------------------------------------------------------
-% Case 1: raw YXT array in RAM
-% -------------------------------------------------------------------------
-if isnumeric(data) || islogical(data)
-
-    validateattributes(data, {'numeric','logical'}, {'nonempty','3d'}, ...
-        mfilename, 'data');
-
-    rawData = single(data);
-
-    switch dimName
-
-        case 'T'
-            dataP = permute(rawData, [3 1 2]);
-            dataP = reshape(dataP, size(rawData,3), []);
-            aggFlat = iCalcAgg(dataP, aggFcn);
-            aggData = reshape(single(aggFlat), size(rawData,1), size(rawData,2));
-
-            outData = iPackageOutputUMT( ...
-                {'main'}, ...
-                {aggData}, ...
-                {{'Y','X'}}, ...
-                struct(), ...
-                struct(), ...
-                {struct()});
-
-        case 'E'
-            evObj = EventsManager(SaveFolder);
-            frameRateHz = resolveDataInfoValue('frameRateHz', explicitRate, data, mfilename);
-            [frMat, plan] = iEventFramePlan(evObj, size(rawData, 3), frameRateHz);
-
-            dataYXTE = iInstancesFromFrames(rawData, frMat);
-            outData = EventsManager.reduceByCondition(dataYXTE, plan, ...
-                @(x) iCalcAgg(x, aggFcn, 4), 4);
-            metaData = struct('dimNames', {{'Y','X','T','E'}});
-    end
-
-    return
-end
-
-% -------------------------------------------------------------------------
-% Case 2: file input
+% Case 1: file input
 % -------------------------------------------------------------------------
 if ischar(data) || (isstring(data) && isscalar(data))
 
@@ -163,77 +122,29 @@ if ischar(data) || (isstring(data) && isscalar(data))
 
     switch ext
         case '.dat'
-            datMeta = loadMetaData(dataFile);
-            if strcmp(dimName, 'E') && any(strcmp(cellstr(string(datMeta.dimNames)), 'E'))
-                % Event-split .dat (e.g. split_data_by_event output).
-                [outData, metaData] = iAggregateEventSplitDat(dataFile, datMeta, ...
-                    SaveFolder, aggFcn);
-                return
-            end
-
-            [aggData, outDimNames, labels, eventInfo] = ...
-                iExecuteChunkedDat(dataFile, SaveFolder, aggFcn, dimName, explicitRate);
-
-            if strcmp(dimName, 'E')
-                % One slice per condition: saved as .dat (Phase 8c).
-                outData = aggData;
-                metaData = struct('dimNames', {outDimNames});
-                return
-            end
-
-            outData = iPackageOutputUMT( ...
-                {'main'}, ...
-                {aggData}, ...
-                {outDimNames}, ...
-                labels, ...
-                eventInfo, ...
-                {struct()});
+            outData = iAggregateDatFile(dataFile, SaveFolder, default_Output, ...
+                aggFcn, dimName, explicitRate);
             return
 
-        case {'.umt','.mat'}
+        case '.umt'
             warning('apply_aggregate_function:UMTFileLoadsInRAM', ...
                 ['RAM-Safe mode is not available for data stored in this format. ' ...
                  'Loading the UMT content into RAM.']);
-
-            try
-                loadedUMT = loadData(dataFile);
-                if ~(isstruct(loadedUMT) && isscalar(loadedUMT) && ...
-                        all(ismember({'version','kind','data'}, fieldnames(loadedUMT))))
-                    error('Invalid UMT payload loaded.');
-                end
-            catch
-                S = load(dataFile, '-mat');
-                fn = fieldnames(S);
-                loadedUMT = [];
-                for iField = 1:numel(fn)
-                    candidate = S.(fn{iField});
-                    if isstruct(candidate) && isscalar(candidate) && ...
-                            all(ismember({'version','kind','data'}, fieldnames(candidate)))
-                        loadedUMT = candidate;
-                        break
-                    end
-                end
-                if isempty(loadedUMT)
-                    error('apply_aggregate_function:NoUMTFoundInFile', ...
-                        'No scalar UMT struct was found in "%s".', dataFile);
-                end
-            end
-
-            data = loadedUMT;
+            data = loadData(dataFile);
 
         otherwise
             error('apply_aggregate_function:UnsupportedInputFile', ...
-                'Unsupported input file extension "%s".', ext);
+                'Unsupported input file extension "%s". Only .dat and .umt files are supported.', ext);
     end
 end
 
 % -------------------------------------------------------------------------
-% Case 3: UMT struct in RAM
+% Case 2: UMT struct in RAM
 % -------------------------------------------------------------------------
-if ~isstruct(data)
+if ~(isstruct(data) && isscalar(data))
     error('apply_aggregate_function:UnsupportedInputType', ...
-        ['Input "data" must be a YXT array, a .dat filename, ' ...
-         'a UMT struct, or a .umt filename containing a UMT struct.']);
+        ['Input "data" must be a .dat filename, a UMT struct, ' ...
+         'or a .umt filename containing a UMT struct.']);
 end
 
 [entryNames, entryData, entryDims, sourceLabels, sourceEventInfo, entryMetas] = ...
@@ -354,29 +265,29 @@ outData = iPackageOutputUMT( ...
 % =========================================================================
     function info = localPipelineInfo()
         info = PipelineManager.createPipelineInfo(mfilename, ...
-            ['Aggregate raw image time-series or UMT image-backed data ' ...
-             'along T or E and return a UMT struct.']);
+            ['Aggregate image data along T or E. A .dat input gives a .dat ' ...
+             'output, a UMT input gives a UMT output.']);
 
-        info.version = '1.0.0';
+        info.version = '2.0.0';
 
         info = PipelineManager.addInput( ...
             info, ...
             'data', ...
             {'ImageTimeSeries','ProcessedData','UnknownDataType'}, ...
-            ['Input data. Accepted forms: YXT array, .dat filename, ' ...
-             'UMT struct, or .umt file containing one UMT struct.'], ...
+            ['Input data. Accepted forms: .dat file (Y-X-T, Y-X-T-E or Y-X-E), ' ...
+             'or a .umt file / UMT struct with one image entry.'], ...
             'kind', 'input', ...
             'position', 1, ...
             'callType', 'positional', ...
             'isData', true, ...
             'supportsFile', true, ...
-            'dataMode', 'either');
+            'dataMode', 'file');
 
         info = PipelineManager.addInput( ...
             info, ...
             'SaveFolder', ...
             'SaveFolder', ...
-            'Folder containing AcqInfos.mat and events.mat.', ...
+            'Folder containing events.mat and receiving the .dat output.', ...
             'kind', 'input', ...
             'position', 2, ...
             'callType', 'positional', ...
@@ -416,139 +327,143 @@ outData = iPackageOutputUMT( ...
             'outData', ...
             'ProcessedData', ...
             'data', ...
-            ['Aggregated output: Y x X x T x E per-condition image data ' ...
-             '(.dat) for E aggregation of raw data, else a UMT struct.'], ...
+            ['Aggregated output, in the representation of the input: a .dat ' ...
+             'file for .dat input, else a UMT struct (saved as .umt).'], ...
             default_Output, ...
             1, ...
             'isData', true);
-
-        info = PipelineManager.addOutput( ...
-            info, ...
-            'metaData', ...
-            'metaData', ...
-            'data', ...
-            'Axes of the .dat output.', ...
-            '', ...
-            2, ...
-            'isData', false);
     end
 end
 
 % =========================================================================
-% Helper: Chunked raw-DAT input execution with an in-memory output
+% Helper: streamed aggregation of a .dat file into a .dat file
 % =========================================================================
-function [aggData, outDimNames, labels, eventInfo, frameRateHz] = iExecuteChunkedDat(dataFile, SaveFolder, aggFcn, dimName, explicitRate)
-
-labels = struct();
-eventInfo = struct();
-frameRateHz = [];
+function outFile = iAggregateDatFile(dataFile, SaveFolder, defaultOutput, aggFcn, dimName, explicitRate)
+%IAGGREGATEDATFILE Aggregate a .dat along T or E, writing a .dat in X slabs.
 
 meta = loadMetaData(dataFile);
-assertDatLayout(meta, {{'Y','X','T'}}, 'apply_aggregate_function');
-if ~isfield(meta, 'dimNames') || ~isfield(meta, 'dimSizes')
-    error('apply_aggregate_function:InvalidMetaData', ...
-        'loadMetaData did not return dimNames and dimSizes for "%s".', dataFile);
+assertDatLayout(meta, {{'Y','X','T'}, {'Y','X','T','E'}, {'Y','X','E'}}, ...
+    'apply_aggregate_function');
+inDims = cellstr(string(meta.dimNames(:).'));
+hasT = any(strcmp(inDims, 'T'));
+hasE = any(strcmp(inDims, 'E'));
+
+if ~any(strcmp(inDims, dimName))
+    % Only a continuous Y-X-T recording can be aggregated along E without
+    % having an E axis (its instances come from events.mat).
+    if ~(strcmp(dimName, 'E') && hasT)
+        error('apply_aggregate_function:MissingDimension', ...
+            'The file "%s" has no %s axis (axes: %s).', dataFile, dimName, strjoin(inDims, '-'));
+    end
 end
 
 nY = datAxisSize(meta, 'Y');
 nX = datAxisSize(meta, 'X');
 nT = datAxisSize(meta, 'T');
+nE = datAxisSize(meta, 'E');
+frameRateHz = [];   % rate of the output header; [] keeps the input's
 
-% Conservative fixed chunk-size budget (not derived from calculateMaxChunkSize's
-% dynamic available-RAM estimate, to keep this path's chunk sizing predictable).
-targetBytes = 128 * 1024 * 1024; % 128 MB
+% Plan: output axes/sizes, and the per-slab reduction.
+if strcmp(dimName, 'T')
+    outDims = inDims(~strcmp(inDims, 'T'));
+    outSizes = [nY, nX, nE(nE > 0)];
+    frameRateHz = NaN;   % no T axis left
+    reduceSlab = @(slab) iReduceT(slab, aggFcn, nY, nE);
+    bytesPerX = nY * max(nT, 1) * max(nE, 1) * 4 * 2;
+
+elseif hasE
+    % Event-split file: reduce the E axis per condition.
+    mapping = resolveDatEventMapping(meta, SaveFolder);
+    if strcmpi(mapping.status, 'aggregated')
+        % Raises Umitoolbox:EventsManager:alreadyAggregated.
+        EventsManager.conditionAggregationPlan(mapping.eventInfo);
+    end
+    if ~strcmpi(mapping.status, 'matched')
+        warning('Umitoolbox:apply_aggregate_function:eventsNotMatched', '%s', mapping.message);
+    end
+    plan = EventsManager.conditionAggregationPlan(mapping.eventInfo);
+    idxE = find(strcmp(inDims, 'E'), 1);
+    outDims = inDims;
+    outSizes = meta.dimSizes(:).';
+    outSizes(idxE) = numel(plan.conditionID);
+    reduceSlab = @(slab) EventsManager.reduceByCondition(slab, plan, ...
+        @(x) iCalcAgg(x, aggFcn, idxE), idxE);
+    bytesPerX = nY * max(nT, 1) * (nE + numel(plan.conditionID)) * 4 * 2;
+
+else
+    % Continuous Y-X-T: split the instances of events.mat and reduce them.
+    evObj = EventsManager(SaveFolder);
+    frameRateHz = resolveDataInfoValue('frameRateHz', explicitRate, dataFile, 'apply_aggregate_function');
+    [frMat, plan] = iEventFramePlan(evObj, nT, frameRateHz);
+    nInst = size(frMat, 1);
+    nCond = numel(plan.conditionID);
+    trialLen = size(frMat, 2);
+    outDims = {'Y','X','T','E'};
+    outSizes = [nY, nX, trialLen, nCond];
+    reduceSlab = @(slab) EventsManager.reduceByCondition( ...
+        iInstancesFromFrames(slab, frMat), plan, @(x) iCalcAgg(x, aggFcn, 4), 4);
+    % Input slab, all instances (and a permuted copy), and the aggregate.
+    bytesPerX = nY * (nT + 2 * trialLen * nInst + trialLen * nCond) * 4;
+end
+
 slabIn = spatialSlabIO('open', dataFile, 'Info', meta);
-cleanObj = onCleanup(@() spatialSlabIO('close', slabIn));
+cIn = onCleanup(@() spatialSlabIO('close', slabIn));
 
-switch dimName
-
-    case 'T'
-        % slabP/reshape can coexist with slab during aggregation.
-        bytesPerX = 2 * nY * nT * getByteSize('single');
-        xPerSlab = max(1, floor(targetBytes / max(bytesPerX, 1)));
-
-        aggData = zeros(nY, nX, 'single');
-        xStart = 1;
-
-        while xStart <= nX
-            xEnd = min(nX, xStart + xPerSlab - 1);
-            xIdx = xStart:xEnd;
-
-            slab = single(spatialSlabIO('read', slabIn, xIdx));
-            slabP = permute(slab, [3 1 2]);
-            slabP = reshape(slabP, nT, []);
-            aggFlat = iCalcAgg(slabP, aggFcn);
-            aggData(:, xIdx) = reshape(single(aggFlat), nY, numel(xIdx));
-
-            xStart = xEnd + 1;
-        end
-
-        outDimNames = {'Y','X'};
-
-    case 'E'
-        evObj = EventsManager(SaveFolder);
-        frameRateHz = resolveDataInfoValue('frameRateHz', explicitRate, dataFile, 'apply_aggregate_function');
-        [frMat, plan] = iEventFramePlan(evObj, nT, frameRateHz);
-
-        nInst = size(frMat, 1);
-        nCond = numel(plan.conditionID);
-        trialLen = size(frMat, 2);
-
-        % Live scratch: the input slab, all instances of the slab, and the
-        % per-condition aggregate.
-        bytesPerX = nY * (nT + 2 * trialLen * nInst + trialLen * nCond) * ...
-            getByteSize('single');
-        xPerSlab = max(1, floor(targetBytes / max(bytesPerX, 1)));
-
-        aggData = zeros(nY, nX, trialLen, nCond, 'single');
-
-        xStart = 1;
-        while xStart <= nX
-            xEnd = min(nX, xStart + xPerSlab - 1);
-            xIdx = xStart:xEnd;
-
-            slabData = single(spatialSlabIO('read', slabIn, xIdx));
-            slabE = iInstancesFromFrames(slabData, frMat);
-            aggData(:, xIdx, :, :) = EventsManager.reduceByCondition(slabE, plan, ...
-                @(x) iCalcAgg(x, aggFcn, 4), 4);
-
-            xStart = xEnd + 1;
-        end
-
-        eventInfo = plan.eventInfoOut;
-        outDimNames = {'Y','X','T','E'};
+% Write through a scratch file so the output only appears once the run has
+% completed, and so the input can be the very file the output replaces (a
+% pipeline re-run).
+outFile = fullfile(SaveFolder, strrep(defaultOutput, '.umt', '.dat'));
+[~, outStem, outExt] = fileparts(outFile);
+tmpFile = fullfile(SaveFolder, [outStem, '_writing', outExt]);
+cTmp = onCleanup(@() iDeleteIfExists(tmpFile));
+hdrOpts = {'dataClass', 'single', 'dimNames', outDims, 'dimSizes', outSizes};
+if ~isempty(frameRateHz)
+    hdrOpts = [hdrOpts, {'frameRateHz', frameRateHz}];
 end
+slabOut = spatialSlabIO('create', tmpFile, datHeaderFromInfo(meta, outStem, hdrOpts{:}));
+cOut = onCleanup(@() spatialSlabIO('close', slabOut));
+
+nChunks = calculateMaxChunkSize(double(nX) * bytesPerX, 1.5, 0.2);
+chunkX = max(1, ceil(nX / nChunks));
+nChunks = ceil(nX / chunkX);
+
+for c = 1:nChunks
+    xIdx = ((c-1) * chunkX + 1):min(c * chunkX, nX);
+
+    fprintf('Chunk %i/%i [Reading file ...]\n', c, nChunks)
+    slab = single(spatialSlabIO('read', slabIn, xIdx));
+
+    fprintf('Chunk %i/%i [Aggregating %s ...]\n', c, nChunks, dimName)
+    slab = reduceSlab(slab);
+
+    fprintf('Chunk %i/%i [Writing to file ...]\n', c, nChunks)
+    spatialSlabIO('write', slabOut, xIdx, reshape(slab, [nY, numel(xIdx), outSizes(3:end), 1]));
+    fprintf('Chunk %i/%i [Completed]\n', c, nChunks)
 end
 
-% =========================================================================
-% Helper: E aggregation of an event-split .dat (Y-X-T-E or Y-X-E)
-% =========================================================================
-function [outData, metaData] = iAggregateEventSplitDat(dataFile, datMeta, SaveFolder, aggFcn)
-%IAGGREGATEEVENTSPLITDAT Per-condition aggregate of an event-split .dat.
-%
-% The file stores no event labels: its E axis is matched to events.mat by
-% resolveDatEventMapping, then reduced through the UMT path in RAM. The
-% output is numeric (saved as .dat), one E slice per condition.
+spatialSlabIO('finalize', slabOut);
+clear cIn cOut; % close both files before the move below
 
-assertDatLayout(datMeta, {{'Y','X','T','E'}, {'Y','X','E'}}, 'apply_aggregate_function');
-dims = cellstr(string(datMeta.dimNames(:).'));
-mapping = resolveDatEventMapping(datMeta, SaveFolder);
-if strcmpi(mapping.status, 'aggregated')
-    % Raises Umitoolbox:EventsManager:alreadyAggregated.
-    EventsManager.conditionAggregationPlan(mapping.eventInfo);
-end
-if ~strcmpi(mapping.status, 'matched')
-    warning('Umitoolbox:apply_aggregate_function:eventsNotMatched', '%s', mapping.message);
+[moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
+assert(moveOk, 'apply_aggregate_function:OutputMoveFailed', ...
+    'Failed to move "%s" onto "%s": %s', tmpFile, outFile, moveMsg);
 end
 
-umt = genUMTStruct(single(loadData(dataFile)), 'kind', 'image', ...
-    'entryName', 'main', 'dimNames', dims);
-umt = appendUMTEventInfo(umt, 'eventInfo', mapping.eventInfo);
-outUMT = apply_aggregate_function(umt, SaveFolder, 'aggregateFcn', aggFcn, ...
-    'dimensionName', 'E');
+function out = iReduceT(slab, aggFcn, nY, nE)
+%IREDUCET Aggregate a [Y, nx, T(, E)] slab along T: [Y, nx(, E)].
+% Reduce along the first dimension of a [T, Y*nx*E] view: the same
+% accumulation order as the in-memory UMT path, so both give identical
+% single-precision sums.
+nTloc = size(slab, 3);
+out = iCalcAgg(reshape(permute(slab, [3 1 2 4]), nTloc, []), aggFcn);
+out = reshape(single(out), nY, size(slab, 2), max(nE, 1));
+end
 
-outData = outUMT.data.main.value;
-metaData = struct('dimNames', {dims});
+function iDeleteIfExists(filePath)
+%IDELETEIFEXISTS Remove a scratch file left by a failed run.
+if isfile(filePath)
+    delete(filePath);
+end
 end
 
 % =========================================================================
@@ -612,6 +527,12 @@ entryNames = fieldnames(umt.data);
 if isempty(entryNames)
     error('apply_aggregate_function:EmptyUMTData', ...
         'Operation aborted. UMT data is empty.');
+end
+
+if ~isscalar(entryNames)
+    error('apply_aggregate_function:multipleCompatibleUMTEntries', ...
+        ['Operation aborted. The input UMT has %d entries; ' ...
+         'only a single image entry is supported.'], numel(entryNames));
 end
 
 entryData = cell(size(entryNames));

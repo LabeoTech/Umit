@@ -15,18 +15,16 @@ function outData = normalizeLPF(data, SaveFolder, varargin)
 %   normalized by the baseline component to express the signal as DeltaR/R.
 %
 %   Accepted input forms:
-%       1) Numeric 3-D array with dimensions Y x X x T
-%       2) Filename to a .dat file storing Y x X x T data
-%       3) UMT struct
-%       4) Filename to a .umt or .mat file containing a UMT struct
+%       1) Numeric array with dimensions Y x X x T
+%       2) Numeric array with dimensions Y x X x T x E (event-split data)
+%       3) Filename to a .dat file with axes Y-X-T or Y-X-T-E
+%       UMT structs and .umt/.mat files are not supported.
 %
 %   Input/output behavior:
-%       - If the input is a numeric 3-D array, the output is a numeric
-%         3-D array with the same size.
-%       - If the input is a .dat filename, the output is a .dat filename.
-%       - If the input is a UMT struct, the output is a UMT struct.
-%       - If the input is a .umt or .mat filename, the file is loaded in
-%         RAM and the output is a UMT struct.
+%       - If the input is a numeric array, the output is a numeric array
+%         with the same size.
+%       - If the input is a .dat filename, the output is a .dat filename
+%         ("normLPF.dat" in SaveFolder) with the same axes and sizes.
 %
 %   Inputs:
 %       data       - Input data in one of the accepted forms above.
@@ -48,9 +46,9 @@ function outData = normalizeLPF(data, SaveFolder, varargin)
 %
 %       FrameRateHz      - Frame rate of DATA (Hz), used for the filter.
 %                          PipelineManager injects it from the data; a
-%                          .dat input's header provides it otherwise, and
-%                          a UMT entry's meta.FrameRateHz. In-RAM arrays
-%                          need it explicitly; AcqInfos.mat is not used.
+%                          .dat input's header provides it otherwise.
+%                          In-RAM arrays need it explicitly; AcqInfos.mat
+%                          is not used.
 %
 %   Output:
 %       outData     - Filtered data with the same representation type as
@@ -59,17 +57,15 @@ function outData = normalizeLPF(data, SaveFolder, varargin)
 %   Notes:
 %       - The filtering algorithm itself is delegated to the IOI library
 %         function "NormalisationFiltering". This wrapper only handles
-%         input resolution, validation, low-RAM orchestration, and UMT I/O.
+%         input resolution, validation, and low-RAM orchestration.
 %       - Raw .dat input is passed through to NormalisationFiltering in its
 %         own file mode; the chunking itself happens inside
 %         NormalisationFiltering, not in a low-RAM helper in this wrapper.
-%       - UMT input must have kind = 'image'.
-%       - All UMT entries must use dimensions:
-%             {'Y','X','T'} or {'Y','X','T','E'}
-%       - Entries with an E dimension are filtered trial-by-trial and keep
-%         the E dimension unchanged.
-%       - If a .umt or .mat file is provided, RAM-safe mode is not
-%         available and the UMT content is loaded into RAM.
+%         Y-X-T and Y-X-T-E files are streamed in X slabs, so the recording
+%         is never loaded whole.
+%       - Event-split data (an E axis) are filtered trial-by-trial along T
+%         and keep the E dimension unchanged; with bApplyExpFit each trial
+%         gets its own exponential fit.
 %       - For in-RAM (non-.dat) inputs, NaN pixels are replaced by 0 before
 %         filtering and restored afterward. This biases the low-pass
 %         baseline near mask borders, and with Normalize=true can feed a
@@ -135,10 +131,14 @@ if isFileInput
 end
 
 % Frame rate of the data itself: the explicit FrameRateHz (injected by
-% PipelineManager), else the .dat header; UMT input uses its entry meta
-% (below). AcqInfos.mat is not used (resolveDataInfoValue).
+% PipelineManager), else the .dat header. AcqInfos.mat is not used
+% (resolveDataInfoValue).
 Fs = [];
 if isFileInput && strcmp(ext, '.dat')
+    % The layout is checked first: an axis layout without time (for example
+    % Y-X-E) has no frame rate to resolve.
+    assertDatLayout(loadMetaData(dataFile), ...
+        {{'Y','X','T'}, {'Y','X','T','E'}}, 'normalizeLPF');
     Fs = resolveDataInfoValue('frameRateHz', explicitRate, dataFile, mfilename);
 elseif isnumeric(data) || islogical(data)
     Fs = resolveDataInfoValue('frameRateHz', explicitRate, data, mfilename);
@@ -148,15 +148,28 @@ if ~isempty(Fs)
 end
 
 % -------------------------------------------------------------------------
-% Case 1: Raw YXT array in RAM
+% Case 1: YXT or YXTE array in RAM
 % -------------------------------------------------------------------------
 if isnumeric(data) || islogical(data)
 
-    validateattributes(data, {'numeric','logical'}, {'nonempty','3d'}, ...
+    validateattributes(data, {'numeric','logical'}, {'nonempty'}, ...
         mfilename, 'data');
+    if ~(ndims(data) == 3 || ndims(data) == 4)
+        error('normalizeLPF:InvalidArrayInput', ...
+            'Numeric input must be YXT or YXTE.');
+    end
 
-    outData = iFilterArray(single(data), BaselineCutoffHz, SignalCutoffHz, ...
-        bNormalize, bApplyExpFit, Fs);
+    if ndims(data) == 3
+        outData = iFilterArray(single(data), BaselineCutoffHz, SignalCutoffHz, ...
+            bNormalize, bApplyExpFit, Fs);
+    else
+        % Event-split data: every trial is filtered along T on its own.
+        outData = zeros(size(data), 'single');
+        for iTrial = 1:size(data, 4)
+            outData(:,:,:,iTrial) = iFilterArray(single(data(:,:,:,iTrial)), ...
+                BaselineCutoffHz, SignalCutoffHz, bNormalize, bApplyExpFit, Fs);
+        end
+    end
     return
 end
 
@@ -173,108 +186,15 @@ if isFileInput
                 bNormalize, bApplyExpFit, Fs);
             return
 
-        case {'.umt','.mat'}
-            warning('normalizeLPF:UMTFileLoadsInRAM', ...
-                ['RAM-safe mode is not available for data stored in this format. ' ...
-                 'Loading the UMT content into RAM.']);
-            data = iLoadUMTFromFile(dataFile);
-
         otherwise
             error('normalizeLPF:UnsupportedInputFile', ...
-                'Unsupported input file extension "%s".', ext);
+                'Unsupported input file extension "%s". Only .dat files are supported.', ext);
     end
 end
 
-% -------------------------------------------------------------------------
-% Case 3: UMT struct in RAM
-% -------------------------------------------------------------------------
-if ~isstruct(data)
-    error('normalizeLPF:UnsupportedInputType', ...
-        ['Input "data" must be a YXT array, a .dat filename, ' ...
-         'a UMT struct, or a .umt/.mat filename containing a UMT struct.']);
-end
-
-[entryNames, entryData, entryDims, sourceLabels, sourceEventInfo, hasE] = ...
-    iExtractValidUMTData(data);
-
-Fs = iUMTFrameRate(explicitRate, data, entryNames);
-iCheckCutoffs(Fs, BaselineCutoffHz, SignalCutoffHz);
-
-out = [];
-hasSourceLabels = ~isempty(fieldnames(sourceLabels));
-
-for iEntry = 1:numel(entryNames)
-
-    value = entryData{iEntry};
-    dimNames = entryDims{iEntry};
-
-    if isequal(dimNames, {'Y','X','T'})
-        filtData = iFilterArray(value, BaselineCutoffHz, SignalCutoffHz, ...
-            bNormalize, bApplyExpFit, Fs);
-
-    elseif isequal(dimNames, {'Y','X','T','E'})
-        nTrials = size(value, 4);
-        filtData = zeros(size(value), 'like', value);
-
-        for iTrial = 1:nTrials
-            trial = value(:,:,:,iTrial);
-            filtData(:,:,:,iTrial) = iFilterArray(trial, ...
-                BaselineCutoffHz, SignalCutoffHz, ...
-                bNormalize, bApplyExpFit, Fs);
-        end
-
-    else
-        error('normalizeLPF:InvalidUMTEntryDims', ...
-            ['Entry "%s" must use dimNames {''Y'',''X'',''T''} or ' ...
-             '{''Y'',''X'',''T'',''E''}.'], ...
-            entryNames{iEntry});
-    end
-
-    if iEntry == 1
-        if isscalar(entryNames) && hasSourceLabels
-            out = genUMTStruct( ...
-                filtData, ...
-                'kind', data.kind, ...
-                'entryName', entryNames{iEntry}, ...
-                'dimNames', dimNames, ...
-                'labels', sourceLabels);
-        else
-            out = genUMTStruct( ...
-                filtData, ...
-                'kind', data.kind, ...
-                'entryName', entryNames{iEntry}, ...
-                'dimNames', dimNames);
-        end
-    elseif iEntry == numel(entryNames) && hasSourceLabels
-        out = genUMTStruct( ...
-            out, ...
-            'value', filtData, ...
-            'entryName', entryNames{iEntry}, ...
-            'dimNames', dimNames, ...
-            'labels', sourceLabels);
-    else
-        out = genUMTStruct( ...
-            out, ...
-            'value', filtData, ...
-            'entryName', entryNames{iEntry}, ...
-            'dimNames', dimNames);
-    end
-end
-
-if any(hasE)
-    % Struct form: the input eventInfo is carried intact, including
-    % selected, durationSec, nInstances, and baselinePeriod (Phase 8c).
-    out = appendUMTEventInfo(out, ...
-        'eventInfo', sourceEventInfo, ...
-        'overwrite', true);
-else
-    if isfield(out, 'eventInfo')
-        out = rmfield(out, 'eventInfo');
-    end
-    validateUMTStruct(out, 'requireEventInfo', true);
-end
-
-outData = out;
+error('normalizeLPF:UnsupportedInputType', ...
+    ['Input "data" must be a YXT or YXTE array or a .dat filename. ' ...
+     'UMT structs and .umt/.mat files are not supported.']);
 
 % =========================================================================
 % Local pipeline info
@@ -290,8 +210,8 @@ outData = out;
             info, ...
             'data', ...
             {'ImageTimeSeries','ProcessedData','UnknownDataType'}, ...
-            ['Input data. Accepted forms: YXT array, .dat filename, ' ...
-             'UMT struct, or .umt file containing one UMT struct.'], ...
+            ['Input data. Accepted forms: YXT or YXTE array, or a .dat ' ...
+             'filename with axes Y-X-T or Y-X-T-E.'], ...
             'kind', 'input', ...
             'position', 1, ...
             'callType', 'positional', ...
@@ -429,124 +349,8 @@ end
 end
 
 % =========================================================================
-% Helper: Extract and validate image-backed data from a UMT structure
+% Helper: cutoff checks
 % =========================================================================
-function [entryNames, entryData, entryDims, labels, eventInfo, hasE] = iExtractValidUMTData(umt)
-
-validateUMTStruct(umt, 'requireEventInfo', false);
-
-if ~strcmpi(umt.kind, 'image')
-    error('normalizeLPF:InvalidUMTKind', ...
-        ['Operation aborted. UMT input must have kind = "image". ' ...
-         'This function does not support non-image UMT structures.']);
-end
-
-entryNames = fieldnames(umt.data);
-if isempty(entryNames)
-    error('normalizeLPF:EmptyUMTData', ...
-        'Operation aborted. UMT data is empty.');
-end
-
-entryData = cell(size(entryNames));
-entryDims = cell(size(entryNames));
-hasE = false(size(entryNames));
-
-for iEntry = 1:numel(entryNames)
-    thisEntry = umt.data.(entryNames{iEntry});
-    thisDims = cellstr(string(thisEntry.dimNames));
-
-    if ~(isequal(thisDims, {'Y','X','T'}) || isequal(thisDims, {'Y','X','T','E'}))
-        error('normalizeLPF:InvalidUMTEntry', ...
-            ['Operation aborted. All entries in the input UMT must use ' ...
-             'dimNames {''Y'',''X'',''T''} or {''Y'',''X'',''T'',''E''}.' ...
-             '\nInvalid entry: "%s".'], ...
-            entryNames{iEntry});
-    end
-
-    entryData{iEntry} = thisEntry.value;
-    entryDims{iEntry} = thisDims;
-    hasE(iEntry) = isequal(thisDims, {'Y','X','T','E'});
-end
-
-if isfield(umt, 'labels')
-    labels = umt.labels;
-else
-    labels = struct();
-end
-
-if any(hasE)
-    if ~isfield(umt, 'eventInfo')
-        error('normalizeLPF:MissingEventInfo', ...
-            ['Operation aborted. The input UMT contains entries with an E ' ...
-             'dimension but has no shared top-level eventInfo.']);
-    end
-    eventInfo = umt.eventInfo;
-else
-    eventInfo = struct();
-end
-
-end
-
-% =========================================================================
-% Helper: Load UMT from file
-% =========================================================================
-function umt = iLoadUMTFromFile(filePath)
-
-[~,~,ext] = fileparts(filePath);
-ext = lower(ext);
-
-switch ext
-    case '.umt'
-        try
-            tmp = loadData(filePath);
-            if isstruct(tmp) && isscalar(tmp) && ...
-                    all(ismember({'version','kind','data'}, fieldnames(tmp)))
-                umt = tmp;
-                return
-            end
-        catch
-        end
-        S = load(filePath, '-mat');
-
-    case '.mat'
-        S = load(filePath);
-
-    otherwise
-        error('normalizeLPF:InvalidUMTFile', ...
-            'Unsupported UMT file extension "%s".', ext);
-end
-
-fn = fieldnames(S);
-for iField = 1:numel(fn)
-    candidate = S.(fn{iField});
-    if isstruct(candidate) && isscalar(candidate) && ...
-            all(ismember({'version','kind','data'}, fieldnames(candidate)))
-        umt = candidate;
-        return
-    end
-end
-
-error('normalizeLPF:NoUMTFoundInFile', ...
-    'No scalar UMT struct was found in "%s".', filePath);
-
-end
-
-% =========================================================================
-% Helpers: frame rate of UMT input, cutoff checks
-% =========================================================================
-function freqHz = iUMTFrameRate(explicitRate, umt, entryNames)
-%IUMTFRAMERATE Explicit FrameRateHz, else the first UMT entry's meta.FrameRateHz.
-ownRate = [];
-if ~isempty(entryNames)
-    entry = umt.data.(entryNames{1});
-    if isfield(entry, 'meta') && isstruct(entry.meta) && isfield(entry.meta, 'FrameRateHz')
-        ownRate = entry.meta.FrameRateHz;
-    end
-end
-freqHz = resolveDataInfoValue('frameRateHz', explicitRate, [], 'normalizeLPF', ...
-    'OwnValue', ownRate, 'OwnSource', 'the UMT entry meta.FrameRateHz');
-end
-
 function iCheckCutoffs(Fs, BaselineCutoffHz, SignalCutoffHz)
 if BaselineCutoffHz < 0 || BaselineCutoffHz > Fs/2
     error('normalizeLPF:InvalidCutoff', ...

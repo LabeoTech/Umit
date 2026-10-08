@@ -1,14 +1,13 @@
-function outFile = genCorrelationMatrix(data, SaveFolder, varargin)
-%GENCORRELATIONMATRIX Generate ROI correlation matrices from image-backed data.
+function [outData, spcFile] = genCorrelationMatrix(data, SaveFolder, varargin)
+%GENCORRELATIONMATRIX Generate ROI correlation matrices from a .dat image time series.
 %
-%   outFile = genCorrelationMatrix(data, SaveFolder)
-%   outFile = genCorrelationMatrix(data, SaveFolder, 'ROImasks_filename', fileName, ...)
+%   outData = genCorrelationMatrix(data, SaveFolder)
+%   [outData, spcFile] = genCorrelationMatrix(data, SaveFolder, 'Name', Value, ...)
 %
-%   Supported inputs:
-%       1) Numeric Y x X x T array
-%       2) Raw .dat filename storing continuous Y x X x T data
-%       3) Image UMT struct
-%       4) .umt filename containing one image UMT struct
+%   Supported input:
+%       Raw .dat filename storing continuous Y-X-T data. Arrays, UMT
+%       structs, .umt files, and event-split (Y-X-T-E) files are not
+%       supported.
 %
 %   Name-Value parameters:
 %       ROImasks_filename    - UMIT .roi file name or full path. A bare
@@ -30,26 +29,33 @@ function outFile = genCorrelationMatrix(data, SaveFolder, varargin)
 %                              Default: false
 %
 %   Output:
-%       outFile - File manifest cell array containing the generated UMT
-%                 file name(s) saved in SaveFolder.
+%       outData - UMT struct of kind "roi": entry "CorrMatrix" with
+%                 dimensions {'ROI','ROI'} and the ROI names as labels.
+%       spcFile - SaveFolder-relative name of the image UMT file holding the
+%                 SPC maps ('corrMatrix_SPCMaps.umt', one Y-X entry per
+%                 ROI). Empty when b_genSPCMaps is false.
 %
 %   Notes:
 %       - ROI files are read through loadROIFile(...), which migrates and
 %         validates the current UMIT .roi schema. Pre-.roi ROI files are
 %         not supported.
-%       - The main output is a roi UMT correlation matrix file.
-%       - SPC maps are saved as a second image UMT file when requested.
+%       - The .dat file is streamed in X slabs sized for a fixed 128 MB
+%         budget; the recording is never loaded whole. 'centroid_vs_centroid'
+%         reads only the seed pixels. Without SPC maps, only the columns that
+%         contain ROI pixels are read. The SPC maps (4*Y*X*nROI bytes) stay
+%         resident in RAM until saved.
 %       - Traces that are entirely NaN (masked pixels) are reported as NaN
 %         and do not propagate into the coefficients of the other ROIs.
 %         Partially masked traces use the pairwise-complete estimator, which
 %         requires the Statistics and Machine Learning Toolbox.
 
-
-default_Output = {'corrMatrix.umt', 'corrMatrix_SPCMaps.umt'};
+default_Output = 'corrMatrix.umt';
+spcFileName = 'corrMatrix_SPCMaps.umt';
+spcFile = '';
 
 if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) ...
         && strcmpi(strtrim(char(string(data))), 'pipelineInfo')
-    outFile = localPipelineInfo();
+    outData = localPipelineInfo();
     return
 end
 
@@ -80,76 +86,71 @@ assert(isfolder(SaveFolder), 'Umitoolbox:genCorrelationMatrix:InvalidSaveFolder'
 
 roiSet = iLoadROISet(roiFile, SaveFolder);
 
-[value, dimNames] = iResolveImageInput(data, SaveFolder);
-assert(isequal(dimNames, {'Y','X','T'}), ...
-    'Umitoolbox:genCorrelationMatrix:WrongFormat', ...
-    'Input data must be an Image time series with dimensions {''Y'',''X'',''T''}.');
-assert(isequal([size(value,1), size(value,2)], roiSet.imageSizeYX), ...
+dataFile = iResolveDatFile(data, SaveFolder);
+datInfo = loadMetaData(dataFile);
+assertDatLayout(datInfo, {{'Y','X','T'}}, 'genCorrelationMatrix');
+assert(isequal([datAxisSize(datInfo, 'Y'), datAxisSize(datInfo, 'X')], roiSet.imageSizeYX), ...
     'Umitoolbox:genCorrelationMatrix:IncompatibleSizes', ...
     'Input frame size is different from the frame size in the ROI file.');
 
 roiNames = roiSet.names;
 [centroidList, roiMasks] = iExtractROIGeometry(roiSet);
 
-corrMatrix = iComputeCorrelationMatrix(value, roiMasks, centroidList, corrAlgorithm, spatialAggFcn);
+slabIn = spatialSlabIO('open', dataFile, 'Info', datInfo);
+cIn = onCleanup(@() spatialSlabIO('close', slabIn));
+
+[corrMatrix, spcMaps] = iStreamCorrelations(slabIn, roiMasks, centroidList, ...
+    corrAlgorithm, spatialAggFcn, bGenSPCMaps);
 if bFisherZ
     corrMatrix = iZFisherTruncated(corrMatrix);
 end
 
 labels = struct();
 labels.ROI = roiNames(:).';
-corrUMT = genUMTStruct(corrMatrix, ...
+outData = genUMTStruct(corrMatrix, ...
     'kind', 'roi', ...
     'entryName', 'CorrMatrix', ...
     'dimNames', {'ROI','ROI'}, ...
     'labels', labels);
 
-corrFile = 'corrMatrix.umt';
-saveData(fullfile(SaveFolder, corrFile), corrUMT);
-outFile = {corrFile};
-
 if bGenSPCMaps
-    spcMaps = iComputeSPCMaps(value, centroidList);
     if bFisherZ
-        for iMap = 1:numel(spcMaps)
-            spcMaps{iMap} = iZFisherTruncated(spcMaps{iMap});
-        end
+        spcMaps = iZFisherTruncated(spcMaps);
     end
 
     spcUMT = [];
-    for iMap = 1:numel(spcMaps)
+    for iMap = 1:numel(roiNames)
         entryName = matlab.lang.makeValidName(roiNames{iMap});
         if isempty(entryName)
             entryName = sprintf('ROI_%d', iMap);
         end
         if iMap == 1
-            spcUMT = genUMTStruct(spcMaps{iMap}, ...
+            spcUMT = genUMTStruct(spcMaps(:,:,iMap), ...
                 'kind', 'image', ...
                 'entryName', entryName, ...
                 'dimNames', {'Y','X'});
         else
             spcUMT = genUMTStruct(spcUMT, ...
-                'value', spcMaps{iMap}, ...
+                'value', spcMaps(:,:,iMap), ...
                 'entryName', entryName, ...
                 'dimNames', {'Y','X'});
         end
     end
 
-    spcFile = 'corrMatrix_SPCMaps.umt';
-    saveData(fullfile(SaveFolder, spcFile), spcUMT);
-    outFile = [outFile, {spcFile}];
+    saveData(fullfile(SaveFolder, spcFileName), spcUMT);
+    spcFile = spcFileName;
 end
 
     function info = localPipelineInfo()
         info = PipelineManager.createPipelineInfo(mfilename, ...
-            'Generate ROI correlation matrices from image-backed inputs.');
+            'Generate ROI correlation matrices from a .dat image time series.');
         info.version = '1.0.0';
 
         info = PipelineManager.addInput(info, 'data', ...
             {'ImageTimeSeries','ProcessedData','UnknownDataType'}, ...
-            'Image-backed input.', ...
+            'Continuous Y-X-T .dat image time series (file input only).', ...
             'kind', 'input', 'position', 1, 'callType', 'positional', ...
-            'isData', true, 'supportsFile', true, 'dataMode', 'either');
+            'isData', true, 'supportsFile', true, 'dataMode', 'file');
 
         info = PipelineManager.addInput(info, 'SaveFolder', 'SaveFolder', ...
             'Folder used for relative path resolution and output saving.', ...
@@ -178,68 +179,42 @@ end
             'Generate and save SPC maps as a second UMT output file.', ...
             'kind', 'parameter', 'default', false, 'callType', 'namevalue');
 
-        info = PipelineManager.addOutput(info, 'outFile', 'ProcessedData', ...
-            'file', 'Generated UMT file manifest saved in SaveFolder.', ...
-            default_Output, 1, 'isData', true, 'saveFileName', '');
+        info = PipelineManager.addOutput(info, 'outData', 'ProcessedData', ...
+            'data', 'ROI correlation matrix UMT (kind roi).', ...
+            default_Output, 1, 'isData', true);
+
+        info = PipelineManager.addOutput(info, 'spcFile', 'ProcessedData', ...
+            'file', ['Seed-pixel correlation maps (image UMT), saved in ' ...
+            'SaveFolder when b_genSPCMaps is true.'], ...
+            spcFileName, 2, 'isData', false, 'isRequired', false);
     end
 end
 
-function [value, dimNames] = iResolveImageInput(data, SaveFolder)
-%IRESOLVEIMAGEINPUT Resolve supported image input forms.
+function dataFile = iResolveDatFile(data, SaveFolder)
+%IRESOLVEDATFILE Resolve the .dat filename input (the only supported form).
 
-if isnumeric(data) || islogical(data)
-    validateattributes(data, {'numeric','logical'}, {'nonempty','3d'}, mfilename, 'data');
-    value = single(data);
-    dimNames = {'Y','X','T'};
-    return
+if ~(ischar(data) || (isstring(data) && isscalar(data)))
+    error('Umitoolbox:genCorrelationMatrix:UnsupportedInputType', ...
+        ['Input "data" must be a .dat filename. Arrays, UMT structs, and ' ...
+         '.umt files are not supported.']);
 end
 
-if ischar(data) || (isstring(data) && isscalar(data))
-    dataFile = char(string(data));
-    if ~isfile(dataFile)
-        altPath = fullfile(SaveFolder, dataFile);
-        if isfile(altPath)
-            dataFile = altPath;
-        else
-            error('Umitoolbox:genCorrelationMatrix:InputFileNotFound', ...
-                'Input file "%s" was not found.', data);
-        end
-    end
-
-    [~,~,ext] = fileparts(dataFile);
-    ext = lower(ext);
-    switch ext
-        case '.dat'
-            assertDatLayout(loadMetaData(dataFile), {{'Y','X','T'}}, 'genCorrelationMatrix');
-            value = single(loadData(dataFile));
-            dimNames = {'Y','X','T'};
-            return
-        case '.umt'
-            data = loadData(dataFile);
-        otherwise
-            error('Umitoolbox:genCorrelationMatrix:UnsupportedInputFile', ...
-                'Unsupported input file extension "%s".', ext);
+dataFile = char(string(data));
+if ~isfile(dataFile)
+    altPath = fullfile(SaveFolder, dataFile);
+    if isfile(altPath)
+        dataFile = altPath;
+    else
+        error('Umitoolbox:genCorrelationMatrix:InputFileNotFound', ...
+            'Input file "%s" was not found.', data);
     end
 end
 
-assert(isstruct(data) && isscalar(data), ...
-    'Umitoolbox:genCorrelationMatrix:UnsupportedInputType', ...
-    'Unsupported input type for genCorrelationMatrix.');
-validateUMTStruct(data, 'requireEventInfo', false);
-assert(strcmpi(char(string(data.kind)), 'image'), ...
-    'Umitoolbox:genCorrelationMatrix:InvalidUMTKind', ...
-    'Input UMT must have kind = "image".');
-
-entryNames = fieldnames(data.data);
-assert(~isempty(entryNames), 'Umitoolbox:genCorrelationMatrix:EmptyUMTData', ...
-    'Input UMT contains no image entries.');
-assert(isscalar(entryNames), ...
-    'Umitoolbox:genCorrelationMatrix:multipleCompatibleUMTEntries', ...
-    ['Multiple compatible image entries were found in the UMT input. ' ...
-     'The current version can process only one image entry.']);
-entry = data.data.(entryNames{1});
-value = single(entry.value);
-dimNames = cellstr(string(entry.dimNames));
+[~,~,ext] = fileparts(dataFile);
+if ~strcmpi(ext, '.dat')
+    error('Umitoolbox:genCorrelationMatrix:UnsupportedInputFile', ...
+        'Unsupported input file extension "%s". Only .dat files are supported.', ext);
+end
 end
 
 function [centroidList, roiMasks] = iExtractROIGeometry(roiSet)
@@ -310,37 +285,118 @@ roiSet.masks = roiSet.masks(:);
 
 end
 
-function B = iComputeCorrelationMatrix(data, roiMasks, centroidList, corrAlgorithm, spatialAggFcn)
-%ICOMPUTECORRELATIONMATRIX Compute ROI correlation matrix.
+% =========================================================================
+% Streaming computation
+% =========================================================================
+function [B, spcMaps] = iStreamCorrelations(slabIn, roiMasks, centroidList, corrAlgorithm, spatialAggFcn, bSPC)
+%ISTREAMCORRELATIONS ROI correlation matrix (and SPC maps) from X slabs.
+%
+%   Reads the seed traces first. 'centroid_vs_centroid' needs nothing else;
+%   the other algorithms make one pass over the file, restricted to the
+%   columns holding ROI pixels unless SPC maps (all pixels) are requested.
+%   B is nROI-by-nROI; spcMaps is Y-by-X-by-nROI (empty without SPC).
 
-[nY, nX, nT] = size(data);
-data2D = reshape(single(data), nY*nX, nT);
+Ny = slabIn.Ny;
+Nx = slabIn.Nx;
+Nt = datAxisSize(slabIn.Info, 'T');
 nROI = numel(roiMasks);
+
+[cy, cx] = ind2sub([Ny, Nx], centroidList);
+seeds = iReadSeedTraces(slabIn, cy, cx, Nt);
+
+if bSPC
+    spcMaps = nan(Ny, Nx, nROI, 'single');
+else
+    spcMaps = zeros(Ny, Nx, 0, 'single');
+end
+needPass = bSPC || any(strcmp(corrAlgorithm, {'avg_vs_avg', 'centroid_vs_agg'}));
+
+if needPass
+    roiMask2D = cellfun(@(m) reshape(m, Ny, Nx), roiMasks, 'UniformOutput', false);
+
+    if bSPC
+        xList = 1:Nx;
+    else
+        xList = find(any(cat(3, roiMask2D{:}), [1 3]));
+    end
+
+    % Slab width for a fixed byte budget. The factor covers the slab, the
+    % extracted pixel traces, and the temporary copies made by iCorrRows.
+    slabBudgetBytes = 128 * 1024 * 1024;
+    bytesPerX = Ny * Nt * 4 * 6;
+    xPerSlab = max(1, floor(slabBudgetBytes / bytesPerX));
+
+    traceSum = zeros(nROI, Nt);
+    traceCount = zeros(nROI, Nt);
+    rhoByROI = cell(nROI, 1);
+    rhoFilled = zeros(nROI, 1);
+    if strcmp(corrAlgorithm, 'centroid_vs_agg')
+        for iROI = 1:nROI
+            rhoByROI{iROI} = nan(nROI, nnz(roiMasks{iROI}), 'single');
+        end
+    end
+
+    for k = 1:xPerSlab:numel(xList)
+        xIdx = xList(k:min(k + xPerSlab - 1, numel(xList)));
+        slab2D = reshape(single(spatialSlabIO('read', slabIn, xIdx)), ...
+            Ny * numel(xIdx), Nt);
+
+        if bSPC
+            rho = iCorrRows(seeds, slab2D);
+            spcMaps(:, xIdx, :) = permute(reshape(rho, nROI, Ny, numel(xIdx)), [2 3 1]);
+        end
+
+        for iROI = 1:nROI
+            inSlab = find(reshape(roiMask2D{iROI}(:, xIdx), [], 1));
+            if isempty(inSlab)
+                continue
+            end
+            traces = slab2D(inSlab, :);
+
+            switch corrAlgorithm
+                case 'avg_vs_avg'
+                    traceSum(iROI, :) = traceSum(iROI, :) + sum(double(traces), 1, 'omitnan');
+                    traceCount(iROI, :) = traceCount(iROI, :) + sum(~isnan(traces), 1);
+
+                case 'centroid_vs_agg'
+                    cols = rhoFilled(iROI) + (1:numel(inSlab));
+                    rhoByROI{iROI}(:, cols) = iCorrRows(seeds, traces);
+                    rhoFilled(iROI) = rhoFilled(iROI) + numel(inSlab);
+            end
+        end
+    end
+end
 
 switch corrAlgorithm
     case 'centroid_vs_centroid'
-        roiVals = data2D(centroidList, :);
-        B = iCorrRows(roiVals, roiVals);
+        B = iCorrRows(seeds, seeds);
 
     case 'avg_vs_avg'
-        roiVals = zeros(nROI, nT, 'single');
-        for iROI = 1:nROI
-            roiVals(iROI,:) = mean(data2D(roiMasks{iROI}, :), 1, 'omitnan');
-        end
+        roiVals = single(traceSum ./ traceCount);
         B = iCorrRows(roiVals, roiVals);
 
     case 'centroid_vs_agg'
         % One centroid-vs-all-pixels correlation per target ROI, rather than
         % one corrcoef call per (seed, pixel) pair.
-        sources = data2D(centroidList, :);
         B = zeros(nROI, nROI, 'single');
         for jROI = 1:nROI
-            rhoVals = iCorrRows(sources, data2D(roiMasks{jROI}, :));
-            B(:,jROI) = iAggregateRho(rhoVals, spatialAggFcn);
+            B(:, jROI) = iAggregateRho(rhoByROI{jROI}, spatialAggFcn);
         end
 end
 
 B = single(B);
+end
+
+function seeds = iReadSeedTraces(slabIn, cy, cx, Nt)
+%IREADSEEDTRACES Time traces of the centroid pixels (nROI-by-T).
+
+xUnique = unique(cx(:)).';
+block = single(spatialSlabIO('read', slabIn, xUnique));
+
+seeds = zeros(numel(cy), Nt, 'single');
+for iROI = 1:numel(cy)
+    seeds(iROI, :) = reshape(block(cy(iROI), xUnique == cx(iROI), :), 1, Nt);
+end
 end
 
 function agg = iAggregateRho(rhoVals, spatialAggFcn)
@@ -408,23 +464,6 @@ R = Xc' * Yc;
 
 % Guard against rounding pushing a coefficient just outside [-1, 1].
 R = max(min(R, 1), -1);
-end
-
-function SPCMaps = iComputeSPCMaps(data, centroidList)
-%ICOMPUTESPCMAPS Compute seed-pixel correlation maps.
-
-[nY, nX, ~] = size(data);
-data2D = reshape(single(data), nY*nX, []);
-nROI = numel(centroidList);
-SPCMaps = cell(nROI,1);
-
-% One seeds-by-all-pixels correlation instead of one corrcoef call per
-% (seed, pixel) pair.
-rho = iCorrRows(data2D(centroidList, :), data2D);
-
-for iROI = 1:nROI
-    SPCMaps{iROI} = reshape(rho(iROI,:), nY, nX);
-end
 end
 
 function out = iZFisherTruncated(data)

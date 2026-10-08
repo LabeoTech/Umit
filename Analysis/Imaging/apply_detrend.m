@@ -6,9 +6,9 @@ function outData = apply_detrend(data, SaveFolder, varargin)
 %
 %   FrameRateHz is the frame rate of DATA, used to convert the events.mat
 %   baseline period into frames. PipelineManager injects it from the data;
-%   a .dat input's header provides it otherwise, and a UMT entry's
-%   meta.FrameRateHz. In-RAM arrays need it explicitly when events.mat
-%   defines a baseline period; AcqInfos.mat is not used.
+%   a .dat input's header provides it otherwise. In-RAM arrays need it
+%   explicitly when events.mat defines a baseline period; AcqInfos.mat is
+%   not used.
 %
 %   This function applies the existing linear detrend algorithm along the
 %   time dimension T. The algorithm is unchanged from the legacy version:
@@ -19,38 +19,37 @@ function outData = apply_detrend(data, SaveFolder, varargin)
 %
 %   Supported execution modes:
 %       1) STANDARD MODE (in-memory)
-%          - Triggered when "data" is a numeric array or a UMT struct
+%          - Triggered when "data" is a numeric array
 %       2) LOW-RAM MODE (file-backed)
 %          - Triggered when "data" is a .dat filename
+%          - The file is read, detrended, and written in X slabs, so the
+%            recording is never loaded whole
 %
 %   Accepted input forms:
 %       1) Numeric array with dimensions Y x X x T
 %       2) Numeric array with dimensions Y x X x T x E
-%       3) Filename to a .dat file storing continuous Y x X x T data
-%       4) UMT struct with image entries using dimensions:
-%              {'Y','X','T'}
-%              {'Y','X','T','E'}
-%       5) Filename to a .umt file containing one UMT struct
+%       3) Filename to a .dat file with axes Y-X-T or Y-X-T-E
+%       UMT structs and .umt files are not supported.
 %
 %   Input/output behavior:
-%       - Numeric array in  -> numeric array out
-%       - .dat filename in  -> .dat filename out
-%       - UMT struct in     -> UMT struct out
-%       - .umt filename in  -> UMT struct out
+%       - Numeric array in  -> numeric array out, same size
+%       - .dat filename in  -> .dat filename out ("data_detrended.dat" in
+%         SaveFolder), same axes and sizes
 %
 %   Inputs:
 %       data       - Input data in one of the accepted forms above.
-%       SaveFolder - Folder used for file resolution and metadata lookup.
+%       SaveFolder - Folder used for file resolution, events.mat lookup,
+%                    and the .dat output.
 %
 %   Output:
-%       outData    - Detrended output with the same representation type as
-%                    the input.
+%       outData    - Detrended output with the same representation type
+%                    and dimensions as the input.
 %
 %   Notes:
-%       - Raw .dat files are assumed to store continuous YXT data in single
-%         precision.
-%       - Low-RAM mode is implemented only for raw .dat input.
-%       - For event-split data, the current convention is YXTE.
+%       - Raw .dat files are assumed to store single-precision data.
+%       - For event-split data (E axis) every trial is detrended on its own
+%         along T, ignored event instances included, so the E axis of a .dat
+%         output still matches events.mat.
 %       - If events.mat exists and contains a baseline period, that value is
 %         converted to a frame count and used to determine the detrend
 %         baseline window. Otherwise a default of 7 frames is used.
@@ -90,7 +89,7 @@ if isnumeric(data) || islogical(data)
             'Numeric input must be YXT or YXTE.');
     end
 
-    frames = iGetDetrendFrameCount(SaveFolder, size(data, 3), explicitRate, data, []);
+    frames = iGetDetrendFrameCount(SaveFolder, size(data, 3), explicitRate, data);
 
     if ndims(data) == 3
         outData = iApplyDetrendToYXT(data, frames);
@@ -126,90 +125,15 @@ if ischar(data) || (isstring(data) && isscalar(data))
             outData = iApplyDetrendDatFile(dataFile, SaveFolder, default_Output, explicitRate);
             return
 
-        case '.umt'
-            warning('apply_detrend:UMTFileLoadsInRAM', ...
-                ['RAM-safe mode is not available for data stored in this format. ' ...
-                 'Loading the UMT content into RAM.']);
-            data = loadData(dataFile);
-
         otherwise
             error('apply_detrend:UnsupportedInputFile', ...
-                'Unsupported input file extension "%s".', ext);
+                'Unsupported input file extension "%s". Only .dat files are supported.', ext);
     end
 end
 
-% -------------------------------------------------------------------------
-% Case 3: UMT struct
-% -------------------------------------------------------------------------
-if ~isstruct(data)
-    error('apply_detrend:UnsupportedInputType', ...
-        ['Input "data" must be a YXT/YXTE array, a .dat filename, ' ...
-         'a UMT struct, or a .umt filename containing a UMT struct.']);
-end
-
-[entryNames, entryData, entryDims, labels, sourceEventInfo, hasE, entryMetas] = ...
-    iExtractValidUMTData(data);
-
-outStruct = data;
-outStruct.data = struct();
-if isfield(outStruct, 'eventInfo')
-    % Strip before rebuilding entries one at a time below: with mixed
-    % YXT/YXTE entries, a non-E entry can be appended before any E entry
-    % exists yet, which would make a carried-forward eventInfo temporarily
-    % inconsistent with the entries seen so far. eventInfo is re-attached
-    % once, after every entry is in place, via appendUMTEventInfo below.
-    outStruct = rmfield(outStruct, 'eventInfo');
-end
-
-for iEntry = 1:numel(entryNames)
-
-    value = entryData{iEntry};
-    dimNames = entryDims{iEntry};
-    ownRate = [];
-    if isstruct(entryMetas{iEntry}) && isfield(entryMetas{iEntry}, 'FrameRateHz')
-        ownRate = entryMetas{iEntry}.FrameRateHz;
-    end
-    frames = iGetDetrendFrameCount(SaveFolder, size(value, 3), explicitRate, [], ownRate);
-
-    switch strjoin(dimNames, '')
-        case 'YXT'
-            detrended = iApplyDetrendToYXT(value, frames);
-
-        case 'YXTE'
-            detrended = iApplyDetrendToYXTE(value, frames);
-
-        otherwise
-            error('apply_detrend:InvalidUMTEntryDims', ...
-                'Unsupported dimNames in entry "%s".', entryNames{iEntry});
-    end
-
-    outStruct = genUMTStruct( ...
-        outStruct, ...
-        'value', detrended, ...
-        'entryName', entryNames{iEntry}, ...
-        'dimNames', dimNames, ...
-        'meta', entryMetas{iEntry}, ...
-        'overwrite', true);
-end
-
-if ~isempty(fieldnames(labels))
-    outStruct.labels = labels;
-elseif isfield(outStruct, 'labels')
-    outStruct = rmfield(outStruct, 'labels');
-end
-
-if any(hasE)
-    % Struct form: the input eventInfo is carried intact, including
-    % selected, durationSec, nInstances, and baselinePeriod (Phase 8c).
-    outStruct = appendUMTEventInfo(outStruct, ...
-        'eventInfo', sourceEventInfo, ...
-        'overwrite', true);
-else
-    validateUMTStruct(outStruct, 'requireEventInfo', true);
-end
-
-outData = outStruct;
-disp('Finished detrend!');
+error('apply_detrend:UnsupportedInputType', ...
+    ['Input "data" must be a YXT/YXTE array or a .dat filename. ' ...
+     'UMT structs and .umt files are not supported.']);
 
 % =========================================================================
 % Local pipeline info
@@ -224,8 +148,8 @@ disp('Finished detrend!');
             info, ...
             'data', ...
             {'ImageTimeSeries','ProcessedData','UnknownDataType'}, ...
-            ['Input data. Accepted forms: YXT array, YXTE array, .dat filename, ' ...
-             'UMT struct, or .umt file containing one UMT struct.'], ...
+            ['Input data. Accepted forms: YXT or YXTE array, or a .dat ' ...
+             'filename with axes Y-X-T or Y-X-T-E.'], ...
             'kind', 'input', ...
             'position', 1, ...
             'callType', 'positional', ...
@@ -237,7 +161,7 @@ disp('Finished detrend!');
             info, ...
             'SaveFolder', ...
             'SaveFolder', ...
-            'Folder used for file resolution and metadata lookup.', ...
+            'Folder used for file resolution, events.mat lookup, and the .dat output.', ...
             'kind', 'input', ...
             'position', 2, ...
             'callType', 'positional', ...
@@ -335,15 +259,15 @@ end
 % =========================================================================
 % Helper: determine baseline frame count
 % =========================================================================
-function frames = iGetDetrendFrameCount(SaveFolder, Nt, explicitRate, rateData, ownRate)
+function frames = iGetDetrendFrameCount(SaveFolder, Nt, explicitRate, rateData)
 %IGETDETRENDFRAMECOUNT Determine the detrend baseline window in frames.
 %
 % With an events.mat baseline period, the window is that period in frames
 % of the data's own frame rate: the explicit FrameRateHz (injected by
-% PipelineManager), else the .dat header of RATEDATA, else OWNRATE (a UMT
-% entry's meta.FrameRateHz); without one, resolveDataInfoValue raises an
-% error. AcqInfos.mat is not used. Without a baseline period the default
-% window of 7 frames is used.
+% PipelineManager), else the .dat header of RATEDATA; without one,
+% resolveDataInfoValue raises an error. AcqInfos.mat is not used. Without a
+% baseline period the default window of 7 frames is used. NT is the length
+% of one trace (the trial length for event-split data).
 
 frames = 7;
 baselineSec = [];
@@ -362,8 +286,7 @@ if isfile(eventsFile)
 end
 
 if ~isempty(baselineSec)
-    freqHz = resolveDataInfoValue('frameRateHz', explicitRate, rateData, 'apply_detrend', ...
-        'OwnValue', ownRate, 'OwnSource', 'the UMT entry meta.FrameRateHz');
+    freqHz = resolveDataInfoValue('frameRateHz', explicitRate, rateData, 'apply_detrend');
     frames = round(baselineSec * freqHz);
 end
 
@@ -383,18 +306,26 @@ end
 end
 
 % =========================================================================
-% Helper: low-RAM .dat execution for continuous YXT data
+% Helper: low-RAM .dat execution for YXT and YXTE data
 % =========================================================================
 function outFile = iApplyDetrendDatFile(inFile, SaveFolder, defaultOutput, explicitRate)
-%IAPPLYDETRENDDATFILE Apply detrending to a raw continuous YXT .dat file.
+%IAPPLYDETRENDDATFILE Apply detrending to a Y-X-T or Y-X-T-E .dat file.
+%
+% The file is processed in X slabs (all T and E of a slab at once), so the
+% recording is never loaded whole. Every trial of an event-split file is
+% detrended on its own, exactly as the in-memory path does.
 
 slabIn = spatialSlabIO('open', inFile);
 cIn = onCleanup(@() spatialSlabIO('close', slabIn));
-assertDatLayout(slabIn.Info, {{'Y','X','T'}}, 'apply_detrend');
+assertDatLayout(slabIn.Info, {{'Y','X','T'}, {'Y','X','T','E'}}, 'apply_detrend');
 Ny = slabIn.Ny;
 Nx = slabIn.Nx;
 Nt = datAxisSize(slabIn.Info, 'T');
-frames = iGetDetrendFrameCount(SaveFolder, Nt, explicitRate, inFile, []);
+Ne = 1;
+if any(strcmp(cellstr(string(slabIn.Info.dimNames)), 'E'))
+    Ne = datAxisSize(slabIn.Info, 'E');
+end
+frames = iGetDetrendFrameCount(SaveFolder, Nt, explicitRate, inFile);
 
 % Write through a scratch file so the declared pipeline output only appears
 % once the run has completed, and so the input can safely be the file that
@@ -406,7 +337,9 @@ slabOut = spatialSlabIO('create', tmpFile, ...
     datHeaderFromInfo(slabIn.Info, defOutFilename, 'dataClass', 'single'));
 cOut = onCleanup(@() spatialSlabIO('close', slabOut));
 
-nChunks = calculateMaxChunkSize(Nx * Ny * Nt * 4, 2, 0.3);
+% Peak memory of a slab: the slab, the detrended copy, and the trend and
+% difference temporaries of the 2-D algorithm.
+nChunks = calculateMaxChunkSize(Nx * Ny * Nt * Ne * 4, 4, 0.3);
 chunkX = ceil(Nx / nChunks);
 nChunks = ceil(Nx / chunkX);
 
@@ -417,11 +350,14 @@ for c = 1:nChunks
 
     fprintf('Chunk %i/%i [Reading file ...]\n', c, nChunks)
     slab = single(spatialSlabIO('read', slabIn, xIdx));
+    slabSize = size(slab);
 
     fprintf('Chunk %i/%i [Detrending data ...]\n', c, nChunks)
-    slab = reshape(slab, Ny * numel(xIdx), Nt);
-    slab = iApplyDetrend2D(slab, frames);
-    slab = reshape(slab, Ny, numel(xIdx), Nt);
+    slab = reshape(slab, Ny * numel(xIdx), Nt, Ne);
+    for iEvent = 1:Ne
+        slab(:, :, iEvent) = iApplyDetrend2D(slab(:, :, iEvent), frames);
+    end
+    slab = reshape(slab, slabSize);
 
     fprintf('Chunk %i/%i [Writing to file ...]\n', c, nChunks)
     spatialSlabIO('write', slabOut, xIdx, slab);
@@ -438,73 +374,3 @@ assert(moveOk, 'apply_detrend:OutputMoveFailed', ...
 disp('Finished detrend!');
 end
 
-% =========================================================================
-% Helper: validate/extract UMT data
-% =========================================================================
-function [entryNames, entryData, entryDims, labels, eventInfo, hasE, entryMetas] = iExtractValidUMTData(umt)
-%IEXTRACTVALIDUMTDATA Validate and extract image-backed UMT entries.
-
-validateUMTStruct(umt, 'requireEventInfo', false);
-
-if ~strcmpi(umt.kind, 'image')
-    error('apply_detrend:InvalidUMTKind', ...
-        ['Operation aborted. UMT input must have kind = "image". ' ...
-         'This function does not support non-image UMT structures.']);
-end
-
-entryNames = fieldnames(umt.data);
-if isempty(entryNames)
-    error('apply_detrend:EmptyUMTData', ...
-        'Operation aborted. UMT data is empty.');
-end
-
-entryData = cell(size(entryNames));
-entryDims = cell(size(entryNames));
-entryMetas = cell(size(entryNames));
-hasE = false(size(entryNames));
-
-allowed = { ...
-    {'Y','X','T'}, ...
-    {'Y','X','T','E'}};
-
-for iEntry = 1:numel(entryNames)
-    thisEntry = umt.data.(entryNames{iEntry});
-    thisDims = cellstr(string(thisEntry.dimNames));
-
-    isAllowed = any(cellfun(@(x) isequal(thisDims, x), allowed));
-    if ~isAllowed
-        error('apply_detrend:InvalidUMTEntry', ...
-            ['Operation aborted. All UMT entries must use dimNames ' ...
-             '{''Y'',''X'',''T''} or {''Y'',''X'',''T'',''E''}. ' ...
-             'Invalid entry: "%s".'], ...
-            entryNames{iEntry});
-    end
-
-    entryData{iEntry} = thisEntry.value;
-    entryDims{iEntry} = thisDims;
-    hasE(iEntry) = any(strcmp(thisDims, 'E'));
-
-    if isfield(thisEntry, 'meta') && isstruct(thisEntry.meta) && isscalar(thisEntry.meta)
-        entryMetas{iEntry} = thisEntry.meta;
-    else
-        entryMetas{iEntry} = struct();
-    end
-end
-
-if any(hasE)
-    if ~isfield(umt, 'eventInfo')
-        error('apply_detrend:MissingEventInfo', ...
-            ['Operation aborted. The input UMT contains entries with an E ' ...
-             'dimension but has no shared top-level eventInfo.']);
-    end
-    eventInfo = umt.eventInfo;
-else
-    eventInfo = struct();
-end
-
-if isfield(umt, 'labels')
-    labels = umt.labels;
-else
-    labels = struct();
-end
-end

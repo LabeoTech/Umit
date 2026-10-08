@@ -22,8 +22,10 @@ function outData = GSR(data, SaveFolder, varargin)
 % Inputs:
 %   data :
 %       Either:
-%         - single array [Y, X, T]              -> STANDARD MODE
-%         - Character/string .dat filename      -> LOW-RAM MODE
+%         - single array [Y, X, T] or [Y, X, T, E]   -> STANDARD MODE
+%         - Character/string .dat filename with axes
+%           Y-X-T or Y-X-T-E                         -> LOW-RAM MODE
+%       UMT structs and .umt files are not supported.
 %
 %   SaveFolder :
 %       Folder containing AcqInfos.mat and, optionally, DataParams.mat.
@@ -37,13 +39,19 @@ function outData = GSR(data, SaveFolder, varargin)
 %
 % Output:
 %   outData :
-%       - STANDARD MODE: corrected data array [Y, X, T]
-%       - LOW-RAM MODE : full path to corrected .dat file
+%       - STANDARD MODE: corrected data array, same size as the input
+%       - LOW-RAM MODE : full path to corrected .dat file ("GSR.dat" in
+%                        SaveFolder) with the same axes as the input
 %
 % Notes:
 %   - All data inputs are assumed to be single precision.
 %   - Invalid traces are identified from the first frame only. A NaN in
 %     frame 1 indicates that the whole pixel trace is invalid across time.
+%   - For event-split data (E axis), every E slice is regressed as an
+%     independent Y-X-T recording: its own dataset mean, global signal and
+%     invalid traces (first frame of that slice). The mask is shared by all
+%     E slices. Ignored event instances are processed like the rest, so the
+%     E axis of a .dat output still matches events.mat.
 
 % -------------------------------------------------------------------------
 % pipelineInfo query
@@ -59,7 +67,7 @@ end
 % -------------------------------------------------------------------------
 p = inputParser;
 addRequired(p, 'data', @(x) ...
-    (isa(x, 'single') && ndims(x) == 3) || ...
+    (isa(x, 'single') && (ndims(x) == 3 || ndims(x) == 4)) || ...
     ischar(x) || (isstring(x) && isscalar(x)));
 addRequired(p, 'SaveFolder', @isfolder);
 addParameter(p, 'UseMask', false, @(x) islogical(x) && isscalar(x));
@@ -79,7 +87,7 @@ bLowRAM = ischar(dataIn) || (isstring(dataIn) && isscalar(dataIn));
 if bLowRAM
     dataFile = localResolveDataFile(char(string(dataIn)), SaveFolder);
     metaData = loadMetaData(dataFile);
-    assertDatLayout(metaData, {{'Y','X','T'}}, 'GSR');
+    assertDatLayout(metaData, {{'Y','X','T'}, {'Y','X','T','E'}}, 'GSR');
 
     assert(strcmpi(metaData.dataClass, 'single'), ...
         'Umitoolbox:GSR:InvalidInput', ...
@@ -122,8 +130,9 @@ disp('Finished GSR.');
         info = PipelineManager.addInput( ...
             info, ...
             'data', ...
-            {'UnknownDataType','ImageTimeSeries'}, ...
-            'Input image time series. Accepts in-memory data or a file-backed .dat input.', ...
+            {'UnknownDataType','ImageTimeSeries','ProcessedData'}, ...
+            ['Input image time series (YXT or YXTE). Accepts in-memory data ' ...
+             'or a file-backed .dat input.'], ...
             'kind', 'input', ...
             'position', 1, ...
             'callType', 'positional', ...
@@ -154,7 +163,7 @@ disp('Finished GSR.');
         info = PipelineManager.addOutput( ...
             info, ...
             'outData', ...
-            'ImageTimeSeries', ...
+            {'ImageTimeSeries','ProcessedData'}, ...
             'data', ...
             'GSR-corrected data.', ...
             'GSR.dat', ...
@@ -244,64 +253,16 @@ end
 function outData = GSR_standardMode(data, logical_mask)
 % GSR_STANDARDMODE In-memory Global Signal Regression.
 %
-% Note: This version mirrors the low-RAM mode more closely by using the same
-% sum/count approach for dataset mean and global-signal estimation.
+% Note: This version mirrors the low-RAM mode by using the same
+% sum/count approach for dataset mean and global-signal estimation (shared
+% helpers). Every E slice of a Y x X x T x E array is regressed as an
+% independent Y x X x T recording.
 
-szData = size(data);
-
-% Identify invalid traces from the first frame only
-idx_invalid_trace = isnan(data(:,:,1));
-
-% Compute global mean from original data using sum/count
-dataSum = sum(double(data(:)), 'omitnan');
-dataCount = sum(~isnan(data(:)));
-
-if dataCount == 0
-    error('Umitoolbox:GSR:InvalidInput', ...
-        'Input data contain only NaN values.');
-end
-
-mData = single(dataSum / dataCount);
-
-% Reshape to [pixels x time]
-data = reshape(data, [], szData(3));
-idx_invalid_trace = idx_invalid_trace(:);
-
-% Build valid mask for global-signal estimation
-maskIdx = logical_mask(:) & ~idx_invalid_trace;
-assert(any(maskIdx), ...
-    'Umitoolbox:GSR:InvalidInput', ...
-    'Logical mask does not contain any valid pixels for GSR.');
-
-% Replace invalid traces with zeros before regression
-data(idx_invalid_trace, :) = 0;
-
-% Compute global signal using sum/count
 disp('Calculating Global Signal Regression...');
-globalSum = sum(double(data(maskIdx, :)), 1);
-globalCount = sum(maskIdx);
+stats = iAccumulateStats(data, logical_mask);
+[mData, Sig] = iFinalizeStats(stats);
 
-Sig = single(globalSum ./ globalCount);
-
-sigMean = mean(Sig);
-assert(isfinite(sigMean) && sigMean ~= 0, ...
-    'Umitoolbox:GSR:InvalidInput', ...
-    'Global signal mean is zero or invalid. Cannot normalize signal.');
-Sig = Sig ./ sigMean;
-
-% Regression
-X = [ones(szData(3),1,'single'), Sig(:)];
-A = X * (X \ data');
-data = data - A';
-
-% Restore mean
-data = data + mData;
-
-% Restore invalid traces
-data(idx_invalid_trace, :) = NaN;
-
-% Reshape back
-outData = reshape(data, szData);
+outData = iRegressSlab(data, Sig, mData);
 end
 
 
@@ -310,6 +271,7 @@ function outFileName = GSR_lowRAMmode(dataFile, SaveFolder, metaData, logical_ma
 %
 % This function performs GSR using a low-RAM, two-pass strategy:
 %   1) First pass computes the dataset mean and global signal over time
+%      (per E slice for event-split data)
 %   2) Second pass regresses it out chunk-by-chunk
 %
 % The numerical intent matches GSR_standardMode.
@@ -320,8 +282,12 @@ function outFileName = GSR_lowRAMmode(dataFile, SaveFolder, metaData, logical_ma
 Ny = datAxisSize(metaData, 'Y');
 Nx = datAxisSize(metaData, 'X');
 Nt = datAxisSize(metaData, 'T');
+Ne = 1;
+if any(strcmp(cellstr(string(metaData.dimNames)), 'E'))
+    Ne = datAxisSize(metaData, 'E');
+end
 
-dataBytes = Ny * Nx * Nt * 4;
+dataBytes = Ny * Nx * Nt * Ne * 4;
 nChunks = calculateMaxChunkSize(dataBytes, 3, .1);
 
 chunkSizePixels = ceil(Nx / nChunks);
@@ -337,14 +303,6 @@ outFileName = fullfile(SaveFolder, 'GSR.dat');
 slabOut = spatialSlabIO('create', outFileName, datHeaderFromInfo(metaData, 'GSR'));
 c_out = onCleanup(@() spatialSlabIO('close', slabOut));
 
-% -------------------------------------------------------------------------
-% Prepare accumulators
-% -------------------------------------------------------------------------
-globalSum   = zeros(1, Nt, 'double');
-globalCount = zeros(1, Nt, 'double');
-dataSum     = 0;
-dataCount   = 0;
-
 h = waitbar(0, 'GSR: computing global signal (pass 1)...');
 h.Name = 'GSR (pass 1/2)';
 cleanupWaitbar = onCleanup(@() iCloseWaitbarSafely(h));
@@ -352,6 +310,8 @@ cleanupWaitbar = onCleanup(@() iCloseWaitbarSafely(h));
 % =====================================================================
 % PASS 1 - Compute dataset mean and global signal
 % =====================================================================
+stats = iZeroStats(Nt, Ne);
+
 for ii = 1:nChunks
     waitbar(ii / nChunks, h, 'GSR: computing global signal...');
 
@@ -359,62 +319,13 @@ for ii = 1:nChunks
     pxEnd   = min(ii * chunkSizePixels, Nx);
     idxX    = pxStart:pxEnd;
 
-    % Read slab
     slab = spatialSlabIO('read', slabIn, idxX);
+    stats = iAddStats(stats, iAccumulateStats(slab, logical_mask(:, idxX)));
 
-    % Accumulate global mean from original data
-    dataSum   = dataSum + sum(double(slab(:)), 'omitnan');
-    dataCount = dataCount + sum(~isnan(slab(:)));
-
-    % Identify invalid traces from first frame only
-    idx_invalid_trace = isnan(slab(:,:,1));
-
-    % Reshape slab to [pixels x time]
-    slab = reshape(slab, [], Nt);
-    idx_invalid_trace = idx_invalid_trace(:);
-
-    % Build valid mask for global-signal estimation
-    maskSlab = logical_mask(:, idxX);
-    maskIdx  = maskSlab(:) & ~idx_invalid_trace;
-
-    if any(maskIdx)
-        validData = double(slab(maskIdx, :));
-        globalSum   = globalSum + sum(validData, 1);
-        globalCount = globalCount + sum(maskIdx);
-        clear validData
-    end
-
-    clear slab idx_invalid_trace maskSlab maskIdx
+    clear slab
 end
 
-if dataCount == 0
-    if isgraphics(h), close(h); end
-    error('Umitoolbox:GSR:InvalidInput', ...
-        'Input data contain only NaN values.');
-end
-
-if ~any(globalCount > 0)
-    if isgraphics(h), close(h); end
-    error('Umitoolbox:GSR:InvalidInput', ...
-        'Logical mask does not contain any valid pixels for GSR.');
-end
-
-mData = single(dataSum / dataCount);
-Sig   = single(globalSum ./ globalCount);
-
-sigMean = mean(Sig);
-if ~isfinite(sigMean) || sigMean == 0
-    if isgraphics(h), close(h); end
-    error('Umitoolbox:GSR:InvalidInput', ...
-        'Global signal mean is zero or invalid. Cannot normalize signal.');
-end
-Sig = Sig ./ sigMean;
-
-% -------------------------------------------------------------------------
-% Regression design matrix (constant + global signal)
-% -------------------------------------------------------------------------
-X = [ones(Nt,1,'single'), Sig(:)];
-clear Sig
+[mData, Sig] = iFinalizeStats(stats);
 
 % =====================================================================
 % PASS 2 - Regress global signal chunk-by-chunk
@@ -428,41 +339,129 @@ for ii = 1:nChunks
     pxEnd   = min(ii * chunkSizePixels, Nx);
     idxX    = pxStart:pxEnd;
 
-    % Read slab
     slab = spatialSlabIO('read', slabIn, idxX);
-
-    % Identify invalid traces from first frame only
-    idx_invalid_trace = isnan(slab(:,:,1));
-    slabSz = size(slab);
-
-    % Reshape slab to [pixels x time]
-    slab = reshape(slab, [], Nt);
-    idx_invalid_trace = idx_invalid_trace(:);
-
-    % Replace invalid traces before regression
-    slab(idx_invalid_trace, :) = 0;
-
-    % Regression
-    A = X * (X \ slab');
-    slab = slab - A';
-
-    % Restore mean
-    slab = slab + mData;
-
-    % Restore invalid traces
-    slab(idx_invalid_trace, :) = NaN;
-
-    % Reshape back and write corrected slab
-    slab = reshape(slab, slabSz);
+    slab = iRegressSlab(slab, Sig, mData);
     spatialSlabIO('write', slabOut, idxX, slab);
 
-    clear slab A idx_invalid_trace
+    clear slab
 end
 
 spatialSlabIO('finalize', slabOut);
+end
 
-if isgraphics(h)
-    close(h);
+% =========================================================================
+% Helpers shared by standard and low-RAM mode
+% =========================================================================
+function stats = iZeroStats(Nt, Ne)
+%IZEROSTATS Empty accumulators: one column per E slice.
+
+stats = struct( ...
+    'dataSum',     zeros(1, Ne), ...
+    'dataCount',   zeros(1, Ne), ...
+    'globalSum',   zeros(Nt, Ne), ...
+    'globalCount', zeros(1, Ne));
+end
+
+function stats = iAccumulateStats(slab, maskSlab)
+%IACCUMULATESTATS Sums behind the dataset mean and the global signal.
+%
+% SLAB is Y x X x T (x E); MASKSLAB is the logical Y x X mask of the same
+% columns. Every E slice is accumulated on its own. Invalid traces are
+% identified from the first frame of the slice, and excluded from the
+% global signal.
+
+Nt = size(slab, 3);
+Ne = size(slab, 4);
+stats = iZeroStats(Nt, Ne);
+
+for iE = 1:Ne
+    trial = slab(:,:,:,iE);
+
+    stats.dataSum(iE)   = sum(double(trial(:)), 'omitnan');
+    stats.dataCount(iE) = sum(~isnan(trial(:)));
+
+    idx_invalid_trace = isnan(trial(:,:,1));
+    maskIdx = maskSlab(:) & ~idx_invalid_trace(:);
+
+    if any(maskIdx)
+        trial2D = reshape(trial, [], Nt);
+        stats.globalSum(:, iE) = sum(double(trial2D(maskIdx, :)), 1).';
+        stats.globalCount(iE)  = sum(maskIdx);
+    end
+end
+end
+
+function stats = iAddStats(stats, chunkStats)
+%IADDSTATS Add the accumulators of one chunk.
+
+stats.dataSum     = stats.dataSum     + chunkStats.dataSum;
+stats.dataCount   = stats.dataCount   + chunkStats.dataCount;
+stats.globalSum   = stats.globalSum   + chunkStats.globalSum;
+stats.globalCount = stats.globalCount + chunkStats.globalCount;
+end
+
+function [mData, Sig] = iFinalizeStats(stats)
+%IFINALIZESTATS Dataset mean (1 x E) and normalized global signal (T x E).
+
+Ne = numel(stats.dataSum);
+Nt = size(stats.globalSum, 1);
+mData = zeros(1, Ne, 'single');
+Sig = zeros(Nt, Ne, 'single');
+
+for iE = 1:Ne
+    where = '';
+    if Ne > 1
+        where = sprintf(' (E slice %d)', iE);
+    end
+
+    if stats.dataCount(iE) == 0
+        error('Umitoolbox:GSR:InvalidInput', ...
+            'Input data contain only NaN values%s.', where);
+    end
+
+    if stats.globalCount(iE) == 0
+        error('Umitoolbox:GSR:InvalidInput', ...
+            'Logical mask does not contain any valid pixels for GSR%s.', where);
+    end
+
+    mData(iE) = single(stats.dataSum(iE) / stats.dataCount(iE));
+    thisSig   = single(stats.globalSum(:, iE) ./ stats.globalCount(iE));
+
+    sigMean = mean(thisSig);
+    if ~isfinite(sigMean) || sigMean == 0
+        error('Umitoolbox:GSR:InvalidInput', ...
+            'Global signal mean is zero or invalid. Cannot normalize signal%s.', where);
+    end
+
+    Sig(:, iE) = thisSig ./ sigMean;
+end
+end
+
+function slab = iRegressSlab(slab, Sig, mData)
+%IREGRESSSLAB Regress the global signal out of a Y x X x T (x E) array.
+%
+% Each E slice uses its own signal (column of SIG) and dataset mean (entry
+% of MDATA). Invalid traces (NaN in the first frame) are zeroed for the
+% regression and restored to NaN afterwards.
+
+slabSz = size(slab);
+Nt = slabSz(3);
+constantTerm = ones(Nt, 1, 'single');
+
+for iE = 1:size(slab, 4)
+    trial2D = reshape(slab(:,:,:,iE), [], Nt);
+    idx_invalid_trace = isnan(trial2D(:, 1));
+
+    trial2D(idx_invalid_trace, :) = 0;
+
+    X = [constantTerm, Sig(:, iE)];
+    A = X * (X \ trial2D');
+    trial2D = trial2D - A';
+
+    trial2D = trial2D + mData(iE);
+    trial2D(idx_invalid_trace, :) = NaN;
+
+    slab(:,:,:,iE) = reshape(trial2D, slabSz(1), slabSz(2), Nt);
 end
 end
 

@@ -1,24 +1,27 @@
-function [outData, metaData] = genAmplitudeMaps(data, SaveFolder, varargin)
-%GENAMPLITUDEMAPS Compute event-wise response amplitude maps from imaging data.
+function outData = genAmplitudeMaps(data, SaveFolder, varargin)
+%GENAMPLITUDEMAPS Compute event-wise response amplitude maps from event-split data.
 %
 %   outData = genAmplitudeMaps(data, SaveFolder)
-%   [outData, metaData] = genAmplitudeMaps(data, SaveFolder, 'BaselineMeasure', value, ...)
+%   outData = genAmplitudeMaps(data, SaveFolder, 'BaselineMeasure', value, ...)
 %
 %   This function computes response amplitude maps by subtracting an
 %   aggregate baseline value from an aggregate response value along the time
 %   dimension for each event condition.
 %
-%   Supported inputs:
-%       1) Numeric image time series with dimensions YXT
-%       2) Raw .dat filename containing continuous YXT data
-%       3) UMT structure
-%       4) .umt filename
+%   Supported input:
+%       Event-split .dat file with axes Y-X-T-E (for example the output of
+%       split_data_by_event). Continuous Y-X-T data must be split first;
+%       arrays, UMT structs, and .umt files are not supported.
 %
 %   Event handling:
-%       - For continuous non-UMT inputs, an "events.mat" file must be
-%         available in SaveFolder.
-%       - For event-split UMT image inputs (YXTE), top-level UMT eventInfo
-%         is used directly.
+%       The E axis of the file is matched to the events.mat in SaveFolder
+%       (resolveDatEventMapping):
+%         - one slice per event instance: the instances of each condition
+%           are pooled into one map (ignored instances are excluded);
+%         - one slice per condition (an aggregated file): one map per slice.
+%       An E axis that cannot be matched to events.mat is rejected. Without
+%       an events.mat every slice is treated as a repetition of one
+%       condition, with a default baseline of 7 frames.
 %
 %   Name-Value parameters:
 %       'BaselineMeasure' - Aggregate function applied to baseline frames:
@@ -34,19 +37,15 @@ function [outData, metaData] = genAmplitudeMaps(data, SaveFolder, varargin)
 %                               [startSec endSec]
 %                           Default: 'all'
 %       'FrameRateHz'     - Frame rate of DATA (Hz). PipelineManager injects
-%                           it from the data; a .dat input's header provides
-%                           it otherwise, and a UMT entry's meta.FrameRateHz.
-%                           In-RAM arrays need it explicitly; AcqInfos.mat is
-%                           not used.
+%                           it from the data; the .dat header provides it
+%                           otherwise. AcqInfos.mat is not used.
 %
 %   Output:
-%       - Continuous inputs (numeric YXT, .dat, UMT YXT entry): numeric
-%         Y x X x E array, one amplitude map per event condition, saved as
-%         .dat by PipelineManager; metaData holds dimNames {'Y','X','E'}.
-%         The .dat stores no labels: resolveDatEventMapping matches its E
-%         axis to events.mat (one slice per condition).
-%       - Event-split UMT inputs: UMT struct with the aggregated eventInfo
-%         (selected, durationSec, nInstances); metaData is an empty struct.
+%       outData - Full path of the .dat output ("amplitudeMap.dat" in
+%                 SaveFolder): axes Y-X-E, one amplitude map per event
+%                 condition. The .dat stores no labels: its E axis is
+%                 matched to events.mat by resolveDatEventMapping (one slice
+%                 per condition).
 %
 %   Notes:
 %       - Conditions follow EventsManager.conditionAggregationPlan (.dat
@@ -58,15 +57,12 @@ function [outData, metaData] = genAmplitudeMaps(data, SaveFolder, varargin)
 %         averaged-across-trials. With the default ResponseMeasure='max',
 %         this means the single largest response-window value across all
 %         trials of a condition, not the mean of each trial's own peak.
-%       - Raw .dat input is processed in spatial X slabs. Slab width is
-%         derived from the baseline/response frame counts and the largest
-%         condition repetition count, so both trial buffers stay within the
-%         calculated scratch-memory budget. The final Y x X x E amplitude
-%         map remains resident in RAM.
+%       - The file is streamed in X slabs and only the baseline and response
+%         frames of each trial are read; the output is written slab by slab
+%         (Low-RAM mode is always on; the slab width follows the available
+%         RAM).
 
-% Legacy pipeline placeholder
-default_Output = 'amplitudeMap.umt';
-metaData = struct();
+default_Output = 'amplitudeMap.dat';
 
 if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) ...
         && strcmpi(strtrim(char(string(data))), 'pipelineInfo')
@@ -103,47 +99,32 @@ assert(iValidateTimeWindowInput(timeWindowSec), ...
     'Umitoolbox:genAmplitudeMaps:invalidTimeWindow', ...
     'TimeWindow_sec must be "all" or a numeric [start end] vector.');
 
-src = iResolveInput(data, SaveFolder);
+dataFile = iResolveDatFile(data, SaveFolder);
+Info = loadMetaData(dataFile);
+assertDatLayout(Info, {{'Y','X','T','E'}}, 'genAmplitudeMaps');
 
 % Frame rate of the data itself: the explicit FrameRateHz (injected by
-% PipelineManager), else the .dat header or the UMT entry's
-% meta.FrameRateHz. AcqInfos.mat is not used (resolveDataInfoValue).
-rateData = [];
-if src.isRawDat
-    rateData = src.fileName;
-end
-ownRate = [];
-if isstruct(src.entry) && isfield(src.entry, 'meta') && isstruct(src.entry.meta) && ...
-        isfield(src.entry.meta, 'FrameRateHz')
-    ownRate = src.entry.meta.FrameRateHz;
-end
-frameRateHz = resolveDataInfoValue('frameRateHz', p.Results.FrameRateHz, rateData, ...
-    mfilename, 'OwnValue', ownRate, 'OwnSource', 'the UMT entry meta.FrameRateHz');
+% PipelineManager), else the .dat header. AcqInfos.mat is not used.
+frameRateHz = resolveDataInfoValue('frameRateHz', p.Results.FrameRateHz, dataFile, mfilename);
 
-if src.isRawDat
-    outData = iRunChunkedDat(src, baselineMeasure, responseMeasure, timeWindowSec, SaveFolder, frameRateHz);
-else
-    outData = iRunStandard(src, baselineMeasure, responseMeasure, timeWindowSec, SaveFolder, frameRateHz);
-end
-if isnumeric(outData)
-    % One map per condition: saved as .dat (Phase 8c).
-    metaData = struct('dimNames', {{'Y','X','E'}});
-end
+outData = iRunChunkedDat(dataFile, Info, baselineMeasure, responseMeasure, ...
+    timeWindowSec, SaveFolder, frameRateHz, default_Output);
 
     function info = localPipelineInfo()
         info = PipelineManager.createPipelineInfo( ...
             mfilename, ...
             ['Compute response amplitude maps by subtracting an ' ...
              'aggregate baseline from an aggregate response period.']);
+        info.version = '2.0.0';
 
         info = PipelineManager.addInput( ...
             info, ...
             'data', ...
             {'ImageTimeSeries','ProcessedData'}, ...
-            'Input imaging data. Supports numeric YXT, raw .dat, UMT struct, and .umt.', ...
+            'Event-split .dat file with axes Y-X-T-E.', ...
             'isData', true, ...
             'supportsFile', true, ...
-            'dataMode', 'either', ...
+            'dataMode', 'file', ...
             'position', 1, ...
             'callType', 'positional');
 
@@ -151,7 +132,7 @@ end
             info, ...
             'SaveFolder', ...
             'SaveFolder', ...
-            'Folder containing events.mat.', ...
+            'Folder containing events.mat and receiving the .dat output.', ...
             'isData', false, ...
             'position', 2, ...
             'callType', 'positional');
@@ -203,166 +184,135 @@ end
             'outData', ...
             'ProcessedData', ...
             'data', ...
-            ['YXE amplitude maps, one per event condition: .dat for continuous ' ...
-             'inputs, UMT for event-split UMT inputs.'], ...
+            'Y-X-E amplitude maps (.dat), one per event condition.', ...
             default_Output, ...
             1, ...
             'isData', true);
-
-        info = PipelineManager.addOutput( ...
-            info, ...
-            'metaData', ...
-            'metaData', ...
-            'data', ...
-            'Axes of the .dat output.', ...
-            '', ...
-            2, ...
-            'isData', false);
     end
 end
 
-function outData = iRunStandard(src, baselineMeasure, responseMeasure, timeWindowSec, SaveFolder, frameRateHz)
+function dataFile = iResolveDatFile(dataIn, SaveFolder)
+%IRESOLVEDATFILE Resolve the input to an existing .dat path.
+assert(ischar(dataIn) || (isstring(dataIn) && isscalar(dataIn)), ...
+    'Umitoolbox:genAmplitudeMaps:unsupportedInput', ...
+    'Unsupported input type. Use the name or path of an event-split ".dat" file.');
 
-switch src.representation
-    case 'continuous'
-        if isfield(src, 'data') && isnumeric(src.data) && ~isempty(src.data)
-            dataYXT = single(src.data);
-        elseif isfield(src, 'entry') && isstruct(src.entry) && ...
-                isfield(src.entry, 'value') && isnumeric(src.entry.value)
-            dataYXT = single(src.entry.value);
-        elseif isfield(src, 'isRawDat') && src.isRawDat
-            dataYXT = loadData(src.fileName);
-        else
-            error('Umitoolbox:genAmplitudeMaps:missingContinuousData', ...
-                'Continuous input data could not be resolved.');
-        end
-
-        assert(isfile(fullfile(SaveFolder, 'events.mat')), ...
-            'Umitoolbox:genAmplitudeMaps:missingEventsFile', ...
-            'The file "events.mat" was not found in SaveFolder.');
-
-        ev = EventsManager(SaveFolder);
-        % Every instance is split; the plan excludes ignored ones (8c).
-        dataYXTE = single(ev.splitDataByEvents(dataYXT, 'FrameRateHz', frameRateHz, ...
-            'IncludeIgnored', true));
-        plan = EventsManager.conditionAggregationPlan( ...
-            ev.exportEventInfo('FrameRateHz', frameRateHz, 'IncludeIgnored', true));
-
-        baselineFrames = 1:round(double(ev.baselinePeriod) * frameRateHz);
-        [baselineFrames, responseFrames] = iResolveAnalysisFrames( ...
-            size(dataYXTE, 3), baselineFrames, frameRateHz, timeWindowSec);
-
-        outData = iConditionsToE(EventsManager.reduceByCondition(dataYXTE, plan, ...
-            iAmplitudeReducer(baselineFrames, responseFrames, baselineMeasure, responseMeasure), 4));
-        return
-
-    case 'eventsplit'
-        entry = src.entry;
-        dataYXTE = single(entry.value);
-
-        assert(isfield(src.UMT, 'eventInfo') && ~isempty(fieldnames(src.UMT.eventInfo)), ...
-            'Umitoolbox:genAmplitudeMaps:missingUMTEventInfo', ...
-            'Event-split UMT input must contain top-level eventInfo.');
-
-        eventInfo = src.UMT.eventInfo;
-        requiredFields = {'eventID','repetitionIndex','eventName','eventAxisMode'};
-        assert(all(isfield(eventInfo, requiredFields)), ...
-            'Umitoolbox:genAmplitudeMaps:invalidUMTEventInfo', ...
-            'UMT eventInfo is missing required fields.');
-
-        if isfield(eventInfo, 'baselinePeriod') && ~isempty(eventInfo.baselinePeriod)
-            baselineFrames = 1:round(double(eventInfo.baselinePeriod) * frameRateHz);
-        else
-            baselineFrames = 1:min(7, size(dataYXTE, 3));
-        end
-
-        [baselineFrames, responseFrames] = iResolveAnalysisFrames( ...
-            size(dataYXTE, 3), baselineFrames, frameRateHz, timeWindowSec);
-
-        axisMode = char(string(eventInfo.eventAxisMode));
-
-        if strcmpi(axisMode, 'aggregated_repetitions')
-            % Already one slice per condition: one map per row.
-            eventIDs = double(eventInfo.eventID(:));
-            ampMap = iComputeAmplitudeFromYXTE( ...
-                dataYXTE, baselineFrames, responseFrames, ...
-                baselineMeasure, responseMeasure, (1:numel(eventIDs)).');
-            eventInfoOut = eventInfo;
-        elseif strcmpi(axisMode, 'instances')
-            plan = EventsManager.conditionAggregationPlan(eventInfo);
-            ampMap = iConditionsToE(EventsManager.reduceByCondition(dataYXTE, plan, ...
-                iAmplitudeReducer(baselineFrames, responseFrames, baselineMeasure, responseMeasure), 4));
-            eventInfoOut = plan.eventInfoOut;
-        else
-            error('Umitoolbox:genAmplitudeMaps:unsupportedEventAxisMode', ...
-                'Unsupported eventAxisMode "%s".', axisMode);
-        end
-
-    otherwise
-        error('Umitoolbox:genAmplitudeMaps:unknownRepresentation', ...
-            'Unknown input representation "%s".', src.representation);
+dataFile = char(string(dataIn));
+if ~isfile(dataFile)
+    altPath = fullfile(SaveFolder, dataFile);
+    assert(isfile(altPath), ...
+        'Umitoolbox:genAmplitudeMaps:inputFileNotFound', ...
+        'Input file "%s" was not found.', char(string(dataIn)));
+    dataFile = altPath;
 end
 
-outData = iBuildOutputUMT( ...
-    ampMap, eventInfoOut, baselineMeasure, responseMeasure, timeWindowSec);
-
+[~, ~, ext] = fileparts(dataFile);
+assert(strcmpi(ext, '.dat'), ...
+    'Umitoolbox:genAmplitudeMaps:unsupportedExtension', ...
+    'Unsupported file extension "%s". Only .dat files are supported.', ext);
 end
 
-function outData = iRunChunkedDat(src, baselineMeasure, responseMeasure, timeWindowSec, SaveFolder, frameRateHz)
-%IRUNCHUNKEDDAT Amplitude maps of a YXT .dat, read in X slabs (Phase 8c plan).
-Info = src.Info;
+function outFile = iRunChunkedDat(dataFile, Info, baselineMeasure, responseMeasure, timeWindowSec, SaveFolder, frameRateHz, defaultOutput)
+%IRUNCHUNKEDDAT Amplitude maps of a Y-X-T-E .dat, read and written in X slabs.
+
 Ny = datAxisSize(Info, 'Y');
 Nx = datAxisSize(Info, 'X');
 Nt = datAxisSize(Info, 'T');
+Ne = datAxisSize(Info, 'E');
 
-ev = EventsManager(SaveFolder);
-[frMat, conditionIDlist] = ev.getFrameMatrix(Nt, 'FrameRateHz', frameRateHz, 'IncludeIgnored', true);
-if isempty(frMat)
-    error('Umitoolbox:genAmplitudeMaps:noFrames', ...
-        'No event frames were returned by EventsManager.getFrameMatrix.');
+mapping = resolveDatEventMapping(Info, SaveFolder);
+assert(~strcmpi(mapping.status, 'mismatch'), ...
+    'Umitoolbox:genAmplitudeMaps:eventMappingMismatch', ...
+    'The E axis of "%s" cannot be matched to events.mat: %s', dataFile, mapping.message);
+if strcmpi(mapping.status, 'noEvents')
+    warning('Umitoolbox:genAmplitudeMaps:eventsNotMatched', '%s', mapping.message);
 end
-evInfo = ev.exportEventInfo('FrameRateHz', frameRateHz, 'IncludeIgnored', true);
-assert(isequal(double(evInfo.eventID(:)), double(conditionIDlist(:))), ...
-    'Umitoolbox:genAmplitudeMaps:eventAxisMismatch', ...
-    'The event list does not match the split trials.');
-plan = EventsManager.conditionAggregationPlan(evInfo);
 
-baselineFrames = 1:round(double(ev.baselinePeriod) * frameRateHz);
+if isfield(mapping.eventInfo, 'baselinePeriod') && ~isempty(mapping.eventInfo.baselinePeriod)
+    baselineFrames = 1:round(double(mapping.eventInfo.baselinePeriod) * frameRateHz);
+else
+    baselineFrames = 1:min(7, Nt);
+end
 [baselineFrames, responseFrames] = iResolveAnalysisFrames( ...
-    size(frMat, 2), baselineFrames, frameRateHz, timeWindowSec);
+    Nt, baselineFrames, frameRateHz, timeWindowSec);
 
-% Only the baseline and response columns of each trial are read.
+% Only the baseline and response frames of each trial are read: the frames
+% of slice e are (e-1)*Nt + t, as E is the last axis.
 usedCols = [baselineFrames, responseFrames];
-frUsed = frMat(:, usedCols);
-frUsed(frUsed < 1 | frUsed > Nt) = NaN;
-needed = unique(frUsed(isfinite(frUsed)));
+nUsed = numel(usedCols);
+frameIdx = usedCols(:) + (0:Ne-1) * Nt;   % [nUsed, Ne]
 nB = numel(baselineFrames);
-reducer = iAmplitudeReducer(1:nB, nB + (1:numel(responseFrames)), ...
-    baselineMeasure, responseMeasure);
+bIdx = 1:nB;
+rIdx = nB + (1:numel(responseFrames));
 
-nInst = size(frMat, 1);
-nCond = numel(plan.conditionID);
-outData = zeros(Ny, Nx, nCond, 'single');
+if strcmpi(mapping.status, 'aggregated')
+    % One slice per condition already: one map per slice.
+    nOut = Ne;
+    reduceSlab = @(slabE) iPerSliceAmplitude(slabE, bIdx, rIdx, baselineMeasure, responseMeasure);
+else
+    plan = EventsManager.conditionAggregationPlan(mapping.eventInfo);
+    nOut = numel(plan.conditionID);
+    reducer = iAmplitudeReducer(bIdx, rIdx, baselineMeasure, responseMeasure);
+    reduceSlab = @(slabE) iConditionsToE(EventsManager.reduceByCondition(slabE, plan, reducer, 4));
+end
 
-slabIn = spatialSlabIO('open', src.fileName, 'Info', Info);
-cleanupFid = onCleanup(@() spatialSlabIO('close', slabIn));
+slabIn = spatialSlabIO('open', dataFile, 'Info', Info);
+cIn = onCleanup(@() spatialSlabIO('close', slabIn));
 
-scratchBytes = double(Ny) * double(Nx) * ...
-    (double(numel(usedCols)) * double(nInst) + double(numel(needed))) * ...
+% Write through a scratch file so the output only appears once the run has
+% completed, and so the input can be the very file the output replaces.
+outFile = fullfile(SaveFolder, defaultOutput);
+[~, outStem, outExt] = fileparts(outFile);
+tmpFile = fullfile(SaveFolder, [outStem, '_writing', outExt]);
+cTmp = onCleanup(@() iDeleteIfExists(tmpFile));
+slabOut = spatialSlabIO('create', tmpFile, datHeaderFromInfo(Info, outStem, ...
+    'dataClass', 'single', 'dimNames', {'Y','X','E'}, ...
+    'dimSizes', [Ny, Nx, nOut], 'frameRateHz', NaN));
+cOut = onCleanup(@() spatialSlabIO('close', slabOut));
+
+% Scratch per X column: the frames read and their per-instance copy.
+scratchBytes = double(Ny) * double(Nx) * double(nUsed) * double(Ne) * 2 * ...
     double(getByteSize('single'));
-nChunks = max(1, calculateMaxChunkSize(scratchBytes, 1, 0.2));
-chunkX = ceil(Nx / nChunks);
+nChunks = calculateMaxChunkSize(scratchBytes, 1, 0.2);
+chunkX = max(1, ceil(Nx / nChunks));
+nChunks = ceil(Nx / chunkX);
 
-for xStart = 1:chunkX:Nx
-    xIdx = xStart:min(xStart + chunkX - 1, Nx);
-    frames = single(spatialSlabIO('read', slabIn, xIdx, needed(:).'));
-    slabE = nan(Ny, numel(xIdx), numel(usedCols), nInst, 'single');
-    for iInst = 1:nInst
-        valid = isfinite(frUsed(iInst, :));
-        [~, loc] = ismember(frUsed(iInst, valid), needed);
-        slabE(:, :, valid, iInst) = frames(:, :, loc);
-    end
-    outData(:, xIdx, :) = iConditionsToE(EventsManager.reduceByCondition(slabE, plan, reducer, 4));
+for c = 1:nChunks
+    xIdx = ((c-1) * chunkX + 1):min(c * chunkX, Nx);
+
+    fprintf('Chunk %i/%i [Reading file ...]\n', c, nChunks)
+    frames = single(spatialSlabIO('read', slabIn, xIdx, frameIdx(:).'));
+    slabE = reshape(frames, Ny, numel(xIdx), nUsed, Ne);
+
+    fprintf('Chunk %i/%i [Computing amplitude maps ...]\n', c, nChunks)
+    amp = reduceSlab(slabE);
+
+    fprintf('Chunk %i/%i [Writing to file ...]\n', c, nChunks)
+    spatialSlabIO('write', slabOut, xIdx, reshape(single(amp), Ny, numel(xIdx), nOut));
+    fprintf('Chunk %i/%i [Completed]\n', c, nChunks)
+end
+
+spatialSlabIO('finalize', slabOut);
+clear cIn cOut; % close both files before the move below
+
+[moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
+assert(moveOk, 'Umitoolbox:genAmplitudeMaps:outputMoveFailed', ...
+    'Failed to move "%s" onto "%s": %s', tmpFile, outFile, moveMsg);
+end
+
+function iDeleteIfExists(filePath)
+%IDELETEIFEXISTS Remove a scratch file left by a failed run.
+if isfile(filePath)
+    delete(filePath);
+end
+end
+
+function ampMap = iPerSliceAmplitude(slabE, baselineIdx, responseIdx, baselineMeasure, responseMeasure)
+%IPERSLICEAMPLITUDE One amplitude map per E slice (an already aggregated file).
+ampMap = zeros(size(slabE, 1), size(slabE, 2), size(slabE, 4), 'single');
+for iSlice = 1:size(slabE, 4)
+    ampMap(:, :, iSlice) = iAmplitudeOfTrials(slabE(:, :, :, iSlice), ...
+        baselineIdx, responseIdx, baselineMeasure, responseMeasure);
 end
 end
 
@@ -383,133 +333,6 @@ responseVals = reshape(x(:, :, responseFrames, :), size(x, 1), size(x, 2), []);
 ampMap = iApplyAggFcnND(responseVals, responseMeasure) - iApplyAggFcnND(baselineVals, baselineMeasure);
 end
 
-function src = iResolveInput(dataIn, SaveFolder)
-src = struct();
-src.UMT = [];
-src.entry = [];
-src.fileName = '';
-src.Info = [];
-src.isRawDat = false;
-
-if isnumeric(dataIn)
-    validateattributes(dataIn, {'numeric'}, {'nonempty'}, 'genAmplitudeMaps', 'data');
-    assert(ndims(dataIn) == 3, ...
-        'Umitoolbox:genAmplitudeMaps:invalidNumericInput', ...
-        'Numeric input must be a YXT array.');
-    src.representation = 'continuous';
-    src.data = single(dataIn);
-    return
-end
-
-if ischar(dataIn) || (isstring(dataIn) && isscalar(dataIn))
-    fileName = char(string(dataIn));
-    if ~isfile(fileName)
-        altPath = fullfile(SaveFolder, fileName);
-        if isfile(altPath)
-            fileName = altPath;
-        end
-    end
-    [~,~,ext] = fileparts(fileName);
-    ext = lower(ext);
-    if strcmp(ext, '.dat')
-        src.representation = 'continuous';
-        src.fileName = fileName;
-        src.Info = loadMetaData(fileName);
-        assertDatLayout(src.Info, {{'Y','X','T'}}, 'genAmplitudeMaps');
-        src.isRawDat = true;
-        src.data = [];
-        return
-    elseif strcmp(ext, '.umt')
-        loadedData = loadData(fileName);
-        src.UMT = loadedData;
-        [entry, rep] = iSelectUMTImageEntry(loadedData, SaveFolder);
-        src.entry = entry;
-        src.representation = rep;
-        return
-    else
-        error('Umitoolbox:genAmplitudeMaps:unsupportedExtension', ...
-            'Unsupported file extension "%s".', ext);
-    end
-end
-
-if isstruct(dataIn) && iLooksLikeUMT(dataIn)
-    validateUMTStruct(dataIn, 'requireEventInfo', false);
-    src.UMT = dataIn;
-    [entry, rep] = iSelectUMTImageEntry(dataIn, SaveFolder);
-    src.entry = entry;
-    src.representation = rep;
-    return
-end
-
-error('Umitoolbox:genAmplitudeMaps:unsupportedInput', ...
-    ['Unsupported input type. Use numeric YXT, raw ".dat", UMT struct, ' ...
-     'or ".umt" file.']);
-end
-
-function [entry, representation] = iSelectUMTImageEntry(umt, SaveFolder)
-entryNames = fieldnames(umt.data);
-validIdx = false(size(entryNames));
-reps = strings(size(entryNames));
-for i = 1:numel(entryNames)
-    thisEntry = umt.data.(entryNames{i});
-    if ~isstruct(thisEntry) || ~isscalar(thisEntry) || ...
-            ~isfield(thisEntry, 'value') || ~isfield(thisEntry, 'dimNames')
-        continue
-    end
-    dimNames = cellstr(string(thisEntry.dimNames));
-    if isequal(dimNames, {'Y','X','T','E'})
-        validIdx(i) = true;
-        reps(i) = "eventsplit";
-    elseif isequal(dimNames, {'Y','X','T'})
-        validIdx(i) = true;
-        reps(i) = "continuous";
-    end
-end
-matchNames = entryNames(validIdx);
-assert(~isempty(matchNames), ...
-    'Umitoolbox:genAmplitudeMaps:noCompatibleUMTEntry', ...
-    ['No compatible image entry was found in the UMT input. Supported ' ...
-     'dimNames are YXT and YXTE.']);
-assert(isscalar(matchNames), ...
-    'Umitoolbox:genAmplitudeMaps:multipleCompatibleUMTEntries', ...
-    ['Multiple compatible UMT entries were found. The current version ' ...
-     'supports exactly one compatible image entry.']);
-entry = umt.data.(matchNames{1});
-representation = char(reps(find(validIdx, 1, 'first')));
-if strcmp(representation, 'continuous')
-    assert(isfile(fullfile(SaveFolder, 'events.mat')), ...
-        'Umitoolbox:genAmplitudeMaps:missingEventsFile', ...
-        ['UMT continuous YXT input requires an "events.mat" file in ' ...
-         'SaveFolder.']);
-end
-end
-
-function ampMap = iComputeAmplitudeFromYXTE(dataYXTE, baselineFrames, responseFrames, baselineMeasure, responseMeasure, eventIDs)
-validateattributes(dataYXTE, {'numeric'}, {'nonempty'}, 'iComputeAmplitudeFromYXTE', 'dataYXTE');
-assert(ndims(dataYXTE) == 4, ...
-    'Umitoolbox:genAmplitudeMaps:invalidEventSplitData', ...
-    'Event-split input must have dimensions YXTE.');
-
-eventIDs = double(eventIDs(:));
-assert(numel(eventIDs) == size(dataYXTE, 4), ...
-    'Umitoolbox:genAmplitudeMaps:eventAxisMismatch', ...
-    'Number of event IDs must match the E dimension.');
-
-uniqueIDs = unique(eventIDs, 'stable');
-ampMap = zeros(size(dataYXTE,1), size(dataYXTE,2), numel(uniqueIDs), 'single');
-for iEv = 1:numel(uniqueIDs)
-    idxE = eventIDs == uniqueIDs(iEv);
-    thisData = dataYXTE(:,:,:,idxE);
-    baselineVals = thisData(:,:,baselineFrames,:);
-    responseVals = thisData(:,:,responseFrames,:);
-    baselineVals = reshape(baselineVals, size(thisData,1), size(thisData,2), []);
-    responseVals = reshape(responseVals, size(thisData,1), size(thisData,2), []);
-    baselineMap = iApplyAggFcnND(baselineVals, baselineMeasure);
-    responseMap = iApplyAggFcnND(responseVals, responseMeasure);
-    ampMap(:,:,iEv) = responseMap - baselineMap;
-end
-end
-
 function out = iApplyAggFcnND(vals, aggfcn)
 switch lower(char(string(aggfcn)))
     case 'mean'
@@ -525,28 +348,6 @@ switch lower(char(string(aggfcn)))
             'Unknown aggregate function "%s".', char(string(aggfcn)));
 end
 out = single(out);
-end
-
-function outData = iBuildOutputUMT(ampMap, eventInfoOut, baselineMeasure, responseMeasure, timeWindowSec)
-meta = struct();
-meta.BaselineMeasure = char(string(baselineMeasure));
-meta.ResponseMeasure = char(string(responseMeasure));
-if ischar(timeWindowSec) || (isstring(timeWindowSec) && isscalar(timeWindowSec))
-    meta.TimeWindow_sec = char(string(timeWindowSec));
-else
-    meta.TimeWindow_sec = double(timeWindowSec(:).');
-end
-
-outData = genUMTStruct( ...
-    single(ampMap), ...
-    'kind', 'image', ...
-    'entryName', 'AmplitudeMap', ...
-    'dimNames', {'Y','X','E'}, ...
-    'meta', meta);
-
-outData = appendUMTEventInfo(outData, ...
-    'eventInfo', eventInfoOut, ...
-    'overwrite', true);
 end
 
 function tf = iValidateAggName(x)
@@ -605,9 +406,4 @@ end
 assert(~isempty(responseFrames), ...
     'Umitoolbox:genAmplitudeMaps:emptyResponseFrames', ...
     'No response frames were selected for amplitude-map calculation.');
-end
-
-function tf = iLooksLikeUMT(x)
-tf = isstruct(x) && isscalar(x) && ...
-    isfield(x, 'version') && isfield(x, 'kind') && isfield(x, 'data');
 end

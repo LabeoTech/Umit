@@ -1,22 +1,21 @@
 function varargout = applyRegistrationTformOnFolder(SaveFolder, varargin)
-%APPLYREGISTRATIONTFORMONFOLDER Apply stored registration to all .dat files in a folder.
+%APPLYREGISTRATIONTFORMONFOLDER Apply stored registration to all image data in a folder.
 %
 %   applyRegistrationTformOnFolder(SaveFolder)
 %   applyRegistrationTformOnFolder(SaveFolder, 'Name', Value, ...)
 %   info = applyRegistrationTformOnFolder('pipelineInfo')
 %
 %   This function reads the currently stored registration transform from the
-%   folder DataParams file and destructively applies it to all .dat files
-%   in the folder.
+%   folder DataParams file and destructively applies it to all image data in
+%   the folder: every .dat file and every image .umt file.
 %
 %   IMPORTANT:
-%       This operation rewrites the folder .dat files in place.
+%       This operation rewrites the folder's image files in place.
 %       Due to interpolation and potential out-of-frame data loss, the
 %       change should be considered irreversible in practice.
 %
 %   Inputs:
-%       SaveFolder - Folder containing DataParams.mat and the target .dat
-%                    files.
+%       SaveFolder - Folder containing DataParams.mat and the image data.
 %
 %   Name-Value parameters:
 %       RequireUserConfirmation   - Logical scalar. If true, the saved QC
@@ -30,9 +29,21 @@ function varargout = applyRegistrationTformOnFolder(SaveFolder, varargin)
 %                                   errors when the folder is already marked
 %                                   as registered. Default: false
 %
+%   Image data:
+%       The transform is 2-D, so it is applied to every Y-X plane of data
+%       that has Y and X as its first two axes, whatever follows them:
+%         - .dat files with any such layout (Y-X, Y-X-T, Y-X-E, Y-X-F,
+%           Y-X-T-E). Planes are the flattened trailing axes. A .dat whose
+%           first two axes are not Y, X is rejected.
+%         - .umt files of kind "image": every entry whose dimNames start
+%           with Y, X is transformed; other entries are left as they are.
+%           .umt files of another kind (for example roi) are not image data
+%           and are left untouched.
+%       Every target is validated before any file is touched.
+%
 %   File effects:
-%       - Every .dat file in SaveFolder is rewritten in place.
-%       - DataParams.mat is updated after all .dat replacements succeed.
+%       - Every image .dat and .umt file in SaveFolder is rewritten in place.
+%       - DataParams.mat is updated after all replacements succeed.
 %
 %   Notes:
 %       - This function has no normal runtime output. PipelineManager treats
@@ -90,16 +101,19 @@ if DataParams.registration.isRegistered && ~allowReapply
          'by default because the operation is destructive.']);
 end
 
-datList = dir(fullfile(SaveFolder, '*.dat'));
+datList = [dir(fullfile(SaveFolder, '*.dat')); dir(fullfile(SaveFolder, '*.umt'))];
 assert(~isempty(datList), ...
     'Umitoolbox:applyRegistrationTformOnFolder:NoDatFiles', ...
-    'No .dat files were found in "%s".', SaveFolder);
+    'No .dat or .umt image files were found in "%s".', SaveFolder);
 
 % Validate every target before touching any of them, and before prompting.
 % This operation is destructive, so it must be all-or-nothing: gating inside
 % the rewrite loop would abort partway, leaving some files transformed,
 % others not, and DataParams still marked unregistered.
 datPlan = iPreflightDatFiles(datList, SaveFolder, DataParams);
+assert(~isempty(datPlan), ...
+    'Umitoolbox:applyRegistrationTformOnFolder:NoImageData', ...
+    'No image data (.dat with Y-X axes, or image .umt) was found in "%s".', SaveFolder);
 
 if requireUserConfirmation
     if openQCFigure && isfield(DataParams.registration, 'qcFigureFile') && ...
@@ -115,7 +129,7 @@ if requireUserConfirmation
         end
     end
 
-    msg = sprintf(['Registration will irreversibly rewrite all .dat files in:\n\n%s\n\n' ...
+    msg = sprintf(['Registration will irreversibly rewrite all image data in:\n\n%s\n\n' ...
         'Continue?'], SaveFolder);
     choice = questdlg(msg, 'Apply registration?', 'Continue', 'Cancel', 'Cancel');
     if ~strcmp(choice, 'Continue')
@@ -136,9 +150,15 @@ for iFile = 1:numel(datPlan)
     fileName = datPlan(iFile).name;
     datPath = datPlan(iFile).path;
 
+    if strcmp(datPlan(iFile).kind, 'umt')
+        iRegisterUMTFile(datPath, SaveFolder, tform, datPlan(iFile));
+        modifiedFiles{end+1,1} = fileName; %#ok<AGROW>
+        continue
+    end
+
     ny = datPlan(iFile).ny;
     nx = datPlan(iFile).nx;
-    nt = datPlan(iFile).nt;
+    nFrames = datPlan(iFile).nFrames;
     Rfixed = imref2d([ny nx]);
 
     % The registered file is headered with the input's class, sizes, rate,
@@ -152,16 +172,15 @@ for iFile = 1:numel(datPlan)
             datHeaderFromInfo(datPlan(iFile).info, channelName));
         cOut = onCleanup(@() spatialSlabIO('close', slabOut));
 
-        firstFrame = reshape(spatialSlabIO('read', slabIn, 1:nx, 1), ny, nx);
-        nanMask = isnan(firstFrame);
-        nanMaskWarped = imwarp(nanMask, tform, 'nearest', 'OutputView', Rfixed);
-
-        for t = 1:nt
-            frame = reshape(spatialSlabIO('read', slabIn, 1:nx, t), ny, nx);
-            frame(nanMask) = 0;
-            frame = imwarp(frame, tform, 'nearest', 'OutputView', Rfixed);
-            frame(nanMaskWarped) = NaN;
-            spatialSlabIO('write', slabOut, 1:nx, frame, t);
+        % Planes are the flattened trailing axes (T for Y-X-T, T then E for
+        % Y-X-T-E, one for Y-X), all registered with the same 2-D transform.
+        % NaN pixels (outside the field of view, or the padding of short
+        % trials) are zeroed for the interpolation and restored through the
+        % warped mask.
+        for f = 1:nFrames
+            frame = reshape(spatialSlabIO('read', slabIn, 1:nx, f), ny, nx);
+            frame = iWarpPlane(frame, tform, Rfixed);
+            spatialSlabIO('write', slabOut, 1:nx, frame, f);
         end
         spatialSlabIO('finalize', slabOut);
     catch ME
@@ -186,7 +205,7 @@ DataParams.registration.confirmationMode = confirmationMode;
 saveDataParams(SaveFolder, DataParams);
 
 fprintf('\nRegistration applied to folder:\n%s\n', SaveFolder);
-fprintf('Modified .dat files:\n');
+fprintf('Modified image files:\n');
 for iFile = 1:numel(modifiedFiles)
     fprintf('  - %s\n', modifiedFiles{iFile});
 end
@@ -196,21 +215,46 @@ fprintf('  - %s\n\n', dataParamsPath);
 end
 
 function datPlan = iPreflightDatFiles(datList, SaveFolder, DataParams)
-%IPREFLIGHTDATFILES Validate every target .dat before any file is rewritten.
+%IPREFLIGHTDATFILES Validate every target before any file is rewritten.
 %
-% Returns one struct per file carrying the metadata the rewrite loop needs,
-% so loadMetaData is not called twice per file. Any unsupported file aborts
-% the whole operation: this path rewrites data in place, so a partial run is
-% worse than no run.
+% Returns one struct per image file (.dat with leading Y-X axes, or image
+% .umt) carrying the metadata the rewrite loop needs, so loadMetaData is not
+% called twice per file. Any unsupported image file aborts the whole
+% operation: this path rewrites data in place, so a partial run is worse than
+% no run. A .umt that is not image data (another kind) is not a target.
 
 refSizeYX = iResolveReferenceSizeYX(DataParams);
 
-datPlan = struct('name', {}, 'path', {}, 'ny', {}, 'nx', {}, 'nt', {}, ...
-    'info', {});
+datPlan = struct('name', {}, 'path', {}, 'kind', {}, 'ny', {}, 'nx', {}, ...
+    'nFrames', {}, 'info', {});
 
 for iFile = 1:numel(datList)
     fileName = datList(iFile).name;
     datPath = fullfile(SaveFolder, fileName);
+    [~, ~, ext] = fileparts(fileName);
+
+    if strcmpi(ext, '.umt')
+        umt = loadData(datPath);
+        if ~(isstruct(umt) && isscalar(umt) && isfield(umt, 'kind') && ...
+                strcmpi(char(string(umt.kind)), 'image'))
+            continue
+        end
+        entryNames = fieldnames(umt.data);
+        for iEntry = 1:numel(entryNames)
+            entry = umt.data.(entryNames{iEntry});
+            dims = cellstr(string(entry.dimNames));
+            dims = dims(:).';
+            if numel(dims) < 2 || ~isequal(dims(1:2), {'Y','X'})
+                continue
+            end
+            szYX = double(size(entry.value, [1 2]));
+            iAssertReferenceSize(fileName, szYX, refSizeYX);
+        end
+        datPlan(end+1) = struct('name', fileName, 'path', datPath, ...
+            'kind', 'umt', 'ny', 0, 'nx', 0, 'nFrames', 0, 'info', []); %#ok<AGROW>
+        continue
+    end
+
     md = loadMetaData(datPath);
 
     if ~all(isfield(md, {'dimNames', 'dimSizes', 'dataClass'}))
@@ -221,42 +265,97 @@ for iFile = 1:numel(datList)
     % The file's own class is kept: reads return it and the output header
     % stores it (datHeaderFromInfo), so nothing here assumes single.
 
-    % Layout gate. Event-split .dat is unsupported on this path: frames are
-    % indexed along T only, so other trailing axes would be rewritten
-    % incorrectly.
+    % Layout gate: the 2-D transform is applied to every Y-X plane, so the
+    % first two axes must be Y and X; the trailing axes (T, E, F) only
+    % enumerate planes.
     dimNames = cellstr(string(md.dimNames));
-    if ~isequal(dimNames(:).', {'Y','X','T'})
+    dimNames = dimNames(:).';
+    if numel(dimNames) < 2 || ~isequal(dimNames(1:2), {'Y','X'})
         error('Umitoolbox:applyRegistrationTformOnFolder:UnsupportedLayout', ...
-            ['File "%s" has dimensions {%s}. Folder registration only ' ...
-             'supports continuous Y-X-T .dat files; event-split .dat data ' ...
-             'are not supported on this path.'], ...
-            fileName, strjoin(dimNames(:).', ','));
+            ['File "%s" has dimensions {%s}. Folder registration needs image ' ...
+             'data whose first two axes are Y and X.'], ...
+            fileName, strjoin(dimNames, ','));
     end
 
     ny = datAxisSize(md, 'Y');
     nx = datAxisSize(md, 'X');
-
-    % Size gate. createRegistrationTform resizes the moving image to the
-    % reference before estimating, so the stored transform is expressed in
-    % reference pixel units. Applying it at a different native size would
-    % silently shift and scale the data by the wrong amount.
-    if ~isequal([ny nx], refSizeYX)
-        error('Umitoolbox:applyRegistrationTformOnFolder:ReferenceSizeMismatch', ...
-            ['File "%s" is %dx%d, but the stored transform was estimated ' ...
-             'against a %dx%d reference. Re-run createRegistrationTform for ' ...
-             'this folder before applying.'], ...
-            fileName, ny, nx, refSizeYX(1), refSizeYX(2));
-    end
+    iAssertReferenceSize(fileName, [ny nx], refSizeYX);
 
     datPlan(end+1) = struct( ...
         'name', fileName, ...
         'path', datPath, ...
+        'kind', 'dat', ...
         'ny', ny, ...
         'nx', nx, ...
-        'nt', datAxisSize(md, 'T'), ...
+        'nFrames', prod(double(md.dimSizes(3:end))), ...
         'info', md); %#ok<AGROW>
 end
 
+end
+
+function iAssertReferenceSize(fileName, sizeYX, refSizeYX)
+%IASSERTREFERENCESIZE Size gate against the frame size of the stored transform.
+%
+% createRegistrationTform resizes the moving image to the reference before
+% estimating, so the stored transform is expressed in reference pixel units.
+% Applying it at a different native size would silently shift and scale the
+% data by the wrong amount.
+if ~isequal(sizeYX, refSizeYX)
+    error('Umitoolbox:applyRegistrationTformOnFolder:ReferenceSizeMismatch', ...
+        ['File "%s" is %dx%d, but the stored transform was estimated ' ...
+         'against a %dx%d reference. Re-run createRegistrationTform for ' ...
+         'this folder before applying.'], ...
+        fileName, sizeYX(1), sizeYX(2), refSizeYX(1), refSizeYX(2));
+end
+end
+
+function plane = iWarpPlane(plane, tform, Rfixed)
+%IWARPPLANE Register one Y-X plane; NaN pixels are restored after warping.
+nanMask = isnan(plane);
+if any(nanMask, 'all')
+    plane(nanMask) = 0;
+    plane = imwarp(plane, tform, 'nearest', 'OutputView', Rfixed);
+    nanMaskWarped = imwarp(nanMask, tform, 'nearest', 'OutputView', Rfixed);
+    plane(nanMaskWarped) = NaN;
+else
+    plane = imwarp(plane, tform, 'nearest', 'OutputView', Rfixed);
+end
+end
+
+function iRegisterUMTFile(umtPath, saveFolder, tform, plan)
+%IREGISTERUMTFILE Register every Y-X entry of an image .umt file in place.
+
+umt = loadData(umtPath);
+entryNames = fieldnames(umt.data);
+for iEntry = 1:numel(entryNames)
+    entry = umt.data.(entryNames{iEntry});
+    dims = cellstr(string(entry.dimNames));
+    dims = dims(:).';
+    if numel(dims) < 2 || ~isequal(dims(1:2), {'Y','X'})
+        continue
+    end
+    szIn = size(entry.value);
+    ny = szIn(1);
+    nx = szIn(2);
+    Rfixed = imref2d([ny nx]);
+    planes = reshape(entry.value, ny, nx, []);
+    for k = 1:size(planes, 3)
+        planes(:, :, k) = iWarpPlane(planes(:, :, k), tform, Rfixed);
+    end
+    umt.data.(entryNames{iEntry}).value = reshape(planes, szIn);
+end
+
+[~, stem] = fileparts(plan.name);
+tmpPath = fullfile(saveFolder, [stem '_registering.umt']);
+try
+    saveData(tmpPath, umt);
+catch ME
+    if isfile(tmpPath)
+        delete(tmpPath);
+    end
+    rethrow(ME);
+end
+iReplaceFileSafely(tmpPath, umtPath);
 end
 
 function refSizeYX = iResolveReferenceSizeYX(DataParams)
@@ -324,13 +423,13 @@ function info = localPipelineInfo()
 
 info = PipelineManager.createPipelineInfo( ...
     mfilename, ...
-    'Destructively apply the stored registration transform to all .dat files in a folder.');
+    'Destructively apply the stored registration transform to all image data (.dat and image .umt) in a folder.');
 
 info = PipelineManager.addInput( ...
     info, ...
     'SaveFolder', ...
     'SaveFolder', ...
-    'Folder containing DataParams.mat and the target .dat files.', ...
+    'Folder containing DataParams.mat and the target image data (.dat and image .umt files).', ...
     'kind', 'input', ...
     'position', 1, ...
     'callType', 'positional', ...
@@ -371,7 +470,9 @@ info = PipelineManager.addOutput( ...
     'rewrittenDatFiles', ...
     {'ImageTimeSeries','ProcessedData'}, ...
     'file', ...
-    'Every .dat file in SaveFolder, rewritten in place with the registration applied.', ...
+    ['Every .dat file in SaveFolder, rewritten in place with the registration applied. ' ...
+     'Image .umt files are rewritten too; they are not declared as a separate output ' ...
+     'because a non-returning file output cannot be optional.'], ...
     '*.dat', ...
     1, ...
     'isData', false, ...
