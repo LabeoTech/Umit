@@ -48,18 +48,25 @@ grand_parent: Functions
     <h3 id="description">Description</h3>
     <hr>
     <p>
-      This function uses the raw LSCI data stored in a speckle <samp>.dat</samp> file (typically <samp>speckle.dat</samp>) and calculates flow of imaged blood vessels (in arbitrary units). The algorithm used in this function is described in <a href="#references">[1]</a>. The function always works file-to-file: the file is read, processed and written in chunks, so the whole recording is never loaded into memory.
+      This function uses the raw LSCI data stored in a speckle <samp>.dat</samp> file (typically <samp>speckle.dat</samp>) and calculates flow of imaged blood vessels (in arbitrary units). The algorithm used in this function is described in <a href="#references">[1]</a>. The input selects the execution mode: a file is read, processed and written in chunks, so the whole recording is never loaded into memory (Low-RAM mode), while an array is processed in memory (Standard mode).
     </p>
     <h3>Input</h3>
     <hr>
     <p>
-      The name of a <samp>.dat</samp> file in the save folder containing the raw LSCI image time series, with dimensions Y,X,T. Numeric arrays, other file types and other dimension layouts are not supported. The layout is checked before processing, so a rejected file produces no output.
+      The raw LSCI image time series, with dimensions Y,X,T, in one of two forms:
+    </p>
+    <ul>
+      <li>The name (or path) of a <samp>.dat</samp> file. A bare name is looked up in the save folder. The layout is checked before processing, so a rejected file produces no output. The frame rate and the speckle exposure are read from the file header.</li>
+      <li>A numeric Y,X,T array with at least 2 frames. It carries no metadata, so <samp>FrameRateHz</samp> and <samp>ExposureMsec</samp> must be given (a pipeline provides them from the data).</li>
+    </ul>
+    <p>
+      Other file types and other dimension layouts are not supported.
     </p>
     <h3>Output</h3>
     <hr>
     <p>
-      The file <samp>Flow.dat</samp>, written in the save folder: a single-precision image time series with dimensions Y,X,T containing blood-flow values in
-      arbitrary units. It has the same axes, sampling rate and exposure as the input file.
+      For a file input, the file <samp>Flow.dat</samp>, written in the save folder: a single-precision image time series with dimensions Y,X,T containing blood-flow values in
+      arbitrary units. It has the same axes, sampling rate and exposure as the input file. For an array input, the single-precision Y,X,T array of blood-flow values.
     </p>
     <h3 id="parameters">Parameters</h3>
     <hr>
@@ -71,6 +78,26 @@ grand_parent: Functions
     <div class="content">
       <p>
         If <b>true</b>, the function normalizes the blood flow values of each pixel by its temporal average.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>FrameRateHz</b></samp> - Frame rate<br>
+      <span class="title-desc"><i> positive number (default: from the file header) </i></span>
+    </button>
+    <div class="content">
+      <p>
+        Frame rate of the input data, in Hz. It sets the width of the temporal median filter. A <samp>.dat</samp> file provides it in its header; an array needs it. If given for a file, the value overrides the header (with a warning when they differ).
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>ExposureMsec</b></samp> - Speckle exposure time<br>
+      <span class="title-desc"><i> positive number, in ms (default: from the file header) </i></span>
+    </button>
+    <div class="content">
+      <p>
+        Exposure time of the speckle camera, in milliseconds. It is used to convert the speckle contrast into flow. The same rules as for <samp>FrameRateHz</samp> apply.
       </p>
     </div>
     <h3 id="references">References</h3>
