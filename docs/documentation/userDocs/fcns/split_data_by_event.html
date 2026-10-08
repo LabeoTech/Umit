@@ -48,80 +48,65 @@ grand_parent: Functions
     <h3 id="description">Description</h3>
     <hr>
     <p>
-      This function is used to separate a recording into trials. The information about the trials (timestamps, condition name etc) is stored in an <samp>events.mat</samp> file. The creation of the <samp>events.mat</samp> file is not covered here.
+      This function is used to separate a recording into trials: an E (event instance) axis is appended after the T axis. The information about the trials (timestamps, condition name etc) is stored in an <samp>events.mat</samp> file, which must exist in the SaveFolder. The creation of the <samp>events.mat</samp> file is not covered here.
     </p>
     <p>
-      The function uses the <b>onset</b> timestamps (<samp>state == 1</samp>) of each trial in the <samp>events.mat</samp> file as a temporal reference of the trial. Here, we refer to this temporal reference as an <b>"event"</b>. Then the trial size is computed as a period before (<samp>preEventTime_sec</samp>) and after (<samp>postEventTime_sec</samp>) the event as:
+      The function uses the <b>onset</b> timestamps (<samp>state == 1</samp>) of each trial in the <samp>events.mat</samp> file as a temporal reference of the trial. Here, we refer to this temporal reference as an <b>"event"</b>. Each trial starts one baseline period (defined in the events information) before its event, runs until the start of the next trial (the last one runs to the end of the recording), and all trials are then cropped to the length of the shortest one so they stack along E.
     </p>
-    <div class="codeinput">
-      <code>trial_length = preEventTime_sec + postEventTime_sec;</code>
-    </div>
 
     <h3>Input</h3>
     <hr>
     <p>
-      This function accepts only image time series (with dimensions Y,X,T) as input.
+      This function accepts data with a time (T) axis as its last axis, given as one of:
+    </p>
+    <ul>
+      <li>a <samp>.dat</samp> file with a continuous image time series (dimensions Y,X,T);</li>
+      <li>a UMT structure, image or non-image, with a single entry that has T as its last axis (for example Y,X,T or ROI,T);</li>
+      <li>a <samp>.umt</samp> file containing such a UMT structure.</li>
+    </ul>
+    <p>
+      Arrays are not supported, and data that are already split by events are rejected. A <samp>.dat</samp> input is streamed: the continuous recording is never loaded whole and each trial is read and written in slabs (Low-RAM mode is always on).
     </p>
     <h3>Output</h3>
     <hr>
     <p>
-      The output of this function is a 4D numerical array with dimensions E,Y,X,T. Thus, there is an image time series for each trial in <b>E</b>. The trials are organized in chronological order. The list of trial identifiers (i.e. condition index) and condition names are stored in the meta data <samp>.mat</samp> file associated with the output data in the variables <samp>eventID</samp> and <samp>eventNameList</samp>, respectively.
+      The output follows the input format.
+    </p>
+    <ul>
+      <li><b><samp>.dat</samp> input:</b> a <samp>.dat</samp> file with dimensions Y,X,T,E named <samp>dataByEv.dat</samp>, written in the SaveFolder. There is an image time series for each trial in <b>E</b>.</li>
+      <li><b>UMT or <samp>.umt</samp> input:</b> a UMT structure of the same kind, saved as a <samp>.umt</samp> file, whose entry keeps its name and gets an E axis appended (Y,X,T becomes Y,X,T,E; ROI,T becomes ROI,T,E), together with the event information. Labels of the other axes are kept; T labels are dropped because the trial length differs.</li>
+    </ul>
+    <p>
+      The trials are organized in chronological order, with one slice per event instance of <samp>events.mat</samp>. The <samp>.dat</samp> file stores no labels: its E axis is matched to <samp>events.mat</samp>, which provides the condition of each trial.
     </p>
     <p>
-      For ROI response features, continue with <a href="getDataFromROI.html"><samp>getDataFromROI</samp></a> and then <a href="calculateResponseFeatures.html"><samp>calculateResponseFeatures</samp></a>; the event metadata created here is required downstream.
+      For ROI response features, continue with <a href="getDataFromROI.html"><samp>getDataFromROI</samp></a> and then <a href="calculateResponseFeatures.html"><samp>calculateResponseFeatures</samp></a>.
     </p>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <b>More details</b>
+    </button>
+    <div class="content">
+      <h4>Ignored events</h4>
+      <p>
+        Every event instance of <samp>events.mat</samp> is saved, including the ones that were removed (ignored), so the E axis maps one to one onto <samp>events.mat</samp>. Removing an event affects display and processing, not saving: functions that reduce the output over events, such as <a href="./genAmplitudeMaps.html">genAmplitudeMaps</a>, exclude the ignored instances.
+      </p>
+      <h4>Trial length</h4>
+      <p>
+        If trials have unequal lengths, the output is cropped to the shortest trial. UMT inputs are processed in RAM and keep a UMT output.
+      </p>
+    </div>
 
     <h3 id="parameters">Parameters</h3>
     <hr>
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
-      <samp><b>preEventTime_sec</b></samp> - Time before event<br>
-      <span class="title-desc"><i>'auto' (default) | positive number</i></span>
+      <samp><b>FrameRateHz</b></samp> - Frame rate of the data<br>
+      <span class="title-desc"><i>positive number</i></span>
     </button>
     <div class="content">
       <p>
-        Time (in seconds) before the temporal reference point of the trial (i.e. event).
-      </p>
-      <p>
-        If set to "auto": the function will use the value stored in the variable <samp>preEventTime_sec</samp> in the input's meta data file. If this information is missing, the function will then calculate the pre <b>AND</b> post-event times as 20 and 80% of the maximum trial size, respectively. In this case, the maximum trial size is calculated as the average time between two consecutive <b>events</b>.
-      </p>
-      <div class="infonote">
-        <p><strong>Note</strong><br>
-          Note that if the "auto" option is selected for this parameter <b>OR</b> for the parameter <samp>postEventTime_sec</samp>, both parameters will be set automatically. Thus, if <samp>preEventTime_sec</samp> is set to "auto" and <samp>postEventTime_sec</samp> is set to a number, the latter will be ignored.
-        </p>
-      </div>
-    </div>
-
-    <button title="click to expand" type="button" class="mycollapsible">
-      <span class="iconplus"></span>
-      <samp><b>postEventTime_sec</b></samp> - Time after event<br>
-      <span class="title-desc"><i>'auto' (default) | positive number</i></span>
-    </button>
-    <div class="content">
-      <p>
-        <p>
-          Time (in seconds) after the temporal reference point of the trial (i.e. event).
-        </p>
-        <p>
-          For the "auto" option, the function behaves the same was as described in the <samp>preEventTime_sec</samp> parameter (see text box above for details).
-        </p>
-      </p>
-    </div>
-
-    <button title="click to expand" type="button" class="mycollapsible">
-      <span class="iconplus"></span>
-      <samp><b>PadWith</b></samp> - Trial padding value<br>
-      <span class="title-desc"><i>'mean' (default) | NaN | number</i></span>
-    </button>
-    <div class="content">
-      <p>
-        Value for padding the data.
-      </p>
-      <p>
-        In the eventuality that the calculated length of the last trial is longer than the input data, this function will add frames (i.e. padding) with the value set for this parameter.
-      </p>
-      <p>
-        If set to <b>mean</b>, the padding values will be the temporal average value for the trial. Alternatively, one can type <b>"NaN"</b> to pad with NaNs or give any number to use as padding.
+        Frame rate (in Hz) of the input data, used to convert the event times into frames. It is provided automatically by the pipeline, by the <samp>.dat</samp> header or, for UMT inputs, by the entry's <samp>meta.FrameRateHz</samp>. <samp>AcqInfos.mat</samp> is not used.
       </p>
     </div>
     <!-- JavaScript code to collapse sections -->

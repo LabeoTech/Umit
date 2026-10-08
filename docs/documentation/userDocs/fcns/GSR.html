@@ -54,7 +54,10 @@ nav_order: 1
     <h3>Input</h3>
     <hr>
     <p>
-      This function accepts only image time series as input with dimensions Y, X and T.
+      This function accepts image time series with dimensions Y, X and T, or image time series split by events with dimensions Y, X, T and E, either as a single-precision array or as a <samp>.dat</samp> file. UMT structs and <samp>.umt</samp> files are not supported.
+    </p>
+    <p>
+      When the input is a <samp>.dat</samp> file, it is processed in spatial chunks directly from disk (Low-RAM mode), so the recording is never loaded whole.
     </p>
     <h3> The algorithm</h3>
     <hr>
@@ -93,37 +96,31 @@ nav_order: 1
     <h3>Output</h3>
     <hr>
     <p>
-      The output of this function is a numerical matrix with dimensions Y,X and T containing the filtered data.
+      The output has the same axes and size as the input and the same representation: a numeric array for an array input, or the <samp>GSR.dat</samp> file (saved in the save folder) for a <samp>.dat</samp> input.
     </p>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        For event-split data, every E slice is regressed as an independent Y-X-T recording, with its own mean, global signal and invalid pixel traces; the mask is shared by all E slices. Ignored event instances are processed like the others, so the E axis of the output still matches <samp>events.mat</samp>. Invalid pixel traces are identified from the first frame only: a NaN in the first frame marks the whole pixel trace as invalid.
+      </p>
+    </div>
     <h3 id="parameters">Parameters</h3>
     <hr>
     <p>The parameters of this function are the following:</p>
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
-      <samp><b>b_UseMask</b></samp> - enable use of logical mask <br>
+      <samp><b>UseMask</b></samp> - enable use of logical mask <br>
       <span class="title-desc"><i>true | false (default)</i></span>
     </button>
     <div class="content">
       <p>
-        If set to <b>true</b>, the function will use the logical mask stored in the <samp>MaskFile</samp> parameter to calculate the global signal based on the pixels inside the mask. If set to <b>false</b>, all pixels from the image will be used to calculate the global signal.
+        If set to <b>true</b>, the function will use the logical mask stored in the <samp>DataParams.mat</samp> file of the save folder (<samp>DataParams.mask.logical</samp>) to calculate the global signal based on the pixels inside the mask. If set to <b>false</b>, all pixels from the image will be used to calculate the global signal.
       </p>
       <p>
-        Normally, if the image contains areas that are not a region of interest (e.g. the brain surface), it is advisable to create and use a logical mask to exclude these areas. A logical mask is created using the <samp>ROImanager</samp> app. Read the <a href="../apps/ROImanager.html">app's documentation</a> to learn how to create a logical mask and export it to a <samp>MaskFile</samp>.
-      </p>
-    </div>
-
-    <button title="click to expand" type="button" class="mycollapsible">
-      <span class="iconplus"></span>
-      <samp><b>MaskFile</b></samp> - the name of the <samp>.mat</samp> file with the logical mask <br>
-      <span class="title-desc"><i>"ImagingReferenceFrame.mat" (default) | string</i></span>
-    </button>
-    <div class="content">
-      <p>
-        This is the name of the <i>Imaging Reference file</i> created in the <a href="../apps/ROImanager.html">ROImanager</a> app. The logical mask is stored in the variable named <samp>logical_mask</samp>. The mask is a 2D logical matrix with the same size as the frame (Y and X dimensions) of the input file to this function.
+        Normally, if the image contains areas that are not a region of interest (e.g. the brain surface), it is advisable to create and use a logical mask to exclude these areas. A logical mask is created using the <samp>ROImanager</samp> app. Read the <a href="../apps/ROImanager.html">app's documentation</a> to learn how to create a logical mask.
       </p>
       <div class="infonote">
         <p><strong>Note</strong><br>
-          If this function is called from the <b>umIToolbox</b> app, it will look for the <i>Imaging Reference file</i> in the subject's folder. In contrast, if the function is called directly from the <b>DataViewer</b> app, it will look for the <samp>.mat</samp> file in the same directory as the data displayed in the app.
+          If <samp>DataParams.mat</samp> is missing, or if the stored mask is empty or all true, a warning is raised and the function falls back to using the full frame.
         </p>
       </div>
     </div>

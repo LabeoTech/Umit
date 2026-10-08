@@ -48,7 +48,7 @@ grand_parent: Functions
     <h3 id="description">Description</h3>
     <hr>
     <p>
-      This function reads the raw speckle data stored in `speckle.dat` file and calculates the temporal average of the speckle contrast defined by the equation below:
+      This function reads the raw speckle data stored in a channel <samp>.dat</samp> file (typically <samp>speckle.dat</samp>) and calculates the temporal average of the speckle contrast defined by the equation below:
     </p>
     <p align="center">
     <img alt = "Speckle equation" src="../../assets/img/speckle_Eq.png"/>
@@ -59,12 +59,12 @@ grand_parent: Functions
     <h3>Input</h3>
     <hr>
     <p>
-      This function accepts image time series with dimensions Y,X,T containing LSCI data.
+      The name of a channel <samp>.dat</samp> file in the save folder, containing an image time series with dimensions Y,X,T (LSCI data). The file name must be a channel name: <samp>fluo_475</samp>, <samp>fluo</samp>, <samp>red</samp>, <samp>green</samp>, <samp>yellow</samp> or <samp>speckle</samp>. Numeric arrays, other file types, other dimension layouts and files outside the save folder are not supported. The data are processed in chunks, so the whole recording is never loaded into memory.
     </p>
     <h3>Output</h3>
     <hr>
     <p>
-      This function creates a <samp>.dat</samp> file containing the speckle contrast map of the input data with dimensions Y,X.
+      A UMT image containing the speckle contrast map of the input data, as a single Y,X entry named <samp>SpeckleMap</samp>.
     </p>
     <h3 id="parameters">Parameters</h3>
     <hr>
@@ -80,12 +80,12 @@ grand_parent: Functions
     </div>
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
-      <samp><b>channel</b></samp> - File name<br>
-      <span class="title-desc"><i> speckle (default) | fluo_475 | fluo | red | green | yellow </i></span>
+      <samp><b>channel</b></samp> - Channel name<br>
+      <span class="title-desc"><i> auto (default) | speckle | fluo_475 | fluo | red | green | yellow </i></span>
     </button>
     <div class="content">
       <p>
-        Name of the <samp>.dat</samp> file containing the LSCI raw data. The available options are default file names from the function <a href="./run_ImagesClassification.html"> <samp>run_ImagesClassification</samp></a> function.
+        Channel name of the input <samp>.dat</samp> file. With <i>auto</i>, the channel is taken from the input file name. If a channel is set explicitly, it must match the input file name, otherwise the function returns an error. The available options are default file names from the function <a href="./run_ImagesClassification.html"> <samp>run_ImagesClassification</samp></a> function.
       </p>
     </div>
     <button title="click to expand" type="button" class="mycollapsible">

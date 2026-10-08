@@ -58,7 +58,7 @@ grand_parent: Functions
     <hr>
     <ul>
       <li>
-        <samp>retinotopyUMT</samp> - A scalar UMIT data object containing <samp>AzimuthMap</samp> and <samp>ElevationMap</samp> entries. Each entry must have dimensions <samp>{'Y','X','F'}</samp> with two frames: amplitude in frame 1 and phase in frame 2.
+        <samp>retinotopyUMT</samp> - Name or path of the <samp>.umt</samp> file written by <a href="genRetinotopyMaps.html"><samp>genRetinotopyMaps</samp></a> (default <samp>retinotopyMaps.umt</samp>); a bare name is also looked up in <samp>SaveFolder</samp>. Only that output is accepted: an image UMT with exactly two entries, <samp>AzimuthMap</samp> and <samp>ElevationMap</samp>, each with dimensions <samp>{'Y','X','F'}</samp> and two slices: amplitude in slice 1 and phase in slice 2. UMT structs in memory, numeric arrays and other files are not supported, and maps created with <samp>Direction</samp> set to <samp>Azimuth_only</samp> or <samp>Elevation_only</samp> cannot be used.
       </li>
       <li>
         <samp>SaveFolder</samp> - Folder used to resolve input masks and save the generated ROI file.
@@ -74,7 +74,7 @@ grand_parent: Functions
     <hr>
     <ul>
       <li>
-        <samp>outData</samp> - An image UMIT data object containing the VSM with dimensions <samp>{'Y','X'}</samp>. The default pipeline output filename is <samp>visualSignMap.umt</samp>.
+        <samp>outData</samp> - An image UMT containing a single entry named <samp>VSM</samp> with dimensions <samp>{'Y','X'}</samp>. The default pipeline output filename is <samp>visualSignMap.umt</samp>. The output is derived exclusively from the retinotopy UMT input.
       </li>
       <li>
         <samp>roiFile</samp> - The folder-relative name of the created <samp>.roi</samp> file. The default is <samp>VisualCtxAreas.roi</samp>. If no patches are detected, the function issues a warning, returns an empty character vector, and does not create or overwrite an ROI file.

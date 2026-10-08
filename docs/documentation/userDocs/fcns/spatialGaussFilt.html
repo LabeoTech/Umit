@@ -54,7 +54,10 @@ nav_order: 3
     <h3>Input</h3>
     <hr>
     <p>
-      This function accepts only image time series as input with dimensions Y, X and T.
+      This function accepts image time series with dimensions Y, X and T, or image time series split by events with dimensions Y, X, T and E, either as a numeric array or as a <samp>.dat</samp> file. UMT structs and <samp>.umt</samp> files are not supported.
+    </p>
+    <p>
+      A <samp>.dat</samp> input is read, filtered and written in blocks of whole frames (Low-RAM mode), so the recording is never loaded whole. Progress is printed to the command window.
     </p>
     <h3> The algorithm</h3>
     <hr>
@@ -83,8 +86,13 @@ nav_order: 3
     <h3>Output</h3>
     <hr>
     <p>
-      The output of this function is a numerical matrix with dimensions Y,X and T containing the smoothed data.
+      The output has the same axes and sizes as the input and the same representation: a numeric array for an array input (single or double as the input; integer and logical arrays are converted to single), or the <samp>spatialGaussFilt.dat</samp> file (saved in the save folder) for a <samp>.dat</samp> input.
     </p>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        Every Y by X frame is filtered on its own; frames are never mixed along T or E. NaN values are replaced by zero before filtering and restored afterwards. NaN masks are tracked per frame, so a pixel that is NaN in one frame does not discard valid data in other frames.
+      </p>
+    </div>
     <h3 id="parameters">Parameters</h3>
     <hr>
     <p>The parameter of this function is the following:</p>

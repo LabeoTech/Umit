@@ -48,12 +48,12 @@ grand_parent: Functions
     <h3 id="description">Description</h3>
     <hr>
     <p>
-      This function removes linear tends from the time domain of image time series (dimensions Y,X,T) or image time series split by events (dimensions E,Y,X,T) data. In the first case, the linear trend will be calculated from the whole recording whereas in the second, the trends will be calculated for each trial.
+      This function removes linear trends from the time domain of image time series (dimensions Y,X,T) or image time series split by events (dimensions Y,X,T,E) data. In the first case, the linear trend will be calculated from the whole recording whereas in the second, the trends will be calculated for each trial.
     </p>
     <h3>Input</h3>
     <hr>
     <p>
-      This function accepts only image time series (with dimensions Y,X,T) or image time series split by events (with dimensions E,Y,X,T).
+      This function accepts only image time series (with dimensions Y,X,T) or image time series split by events (with dimensions Y,X,T,E), given as a <samp>.dat</samp> file or as a numeric array. UMT structures and <samp>.umt</samp> files are not supported. A <samp>.dat</samp> file is read, detrended and written in slabs, so the recording is never loaded whole in memory (Low-RAM mode is always on).
     </p>
     <h3>The algorithm</h3>
     <hr>
@@ -76,8 +76,22 @@ grand_parent: Functions
     <h3>Output</h3>
     <hr>
     <p>
-      The output of this function is the detrended data with the same dimensions as the input data.
+      The output of this function is the detrended data with the same dimensions as the input data and the same representation: a <samp>.dat</samp> input gives the file <samp>data_detrended.dat</samp> in the SaveFolder, and a numeric array input gives a numeric array.
     </p>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <b>More details</b>
+    </button>
+    <div class="content">
+      <h4>Baseline window</h4>
+      <p>
+        If an <samp>events.mat</samp> file exists in the SaveFolder and contains a baseline period, that period is converted to a number of frames and used as the detrend window. Otherwise, a default of 7 frames is used. The conversion uses the frame rate of the data, which is read from the <samp>.dat</samp> header (a numeric array input needs the <samp>FrameRateHz</samp> parameter when the baseline period is defined).
+      </p>
+      <h4>Event-split data</h4>
+      <p>
+        For data split by events (E axis), every trial is detrended on its own along T, including ignored event instances, so the E axis of the output still matches <samp>events.mat</samp>.
+      </p>
+    </div>
     <!-- JavaScript code to collapse sections -->
     <script src="../../collapsible_behaviour.js"></script>
   </body>

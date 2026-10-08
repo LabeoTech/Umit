@@ -50,17 +50,20 @@ nav_order: 4
     <h3 id="description">Description</h3>
     <hr>
     <p>
-      This function calculates the relative response change from the median value of the frames from a baseline time period at the beginning of the recording (for image time series) or trial (for image time series split by events). The baseline time period is set by the parameter <i>baseline_sec</i>.
+      This function calculates the relative response change from the median value of the frames from a baseline time period at the beginning of the recording (for image time series) or trial (for image time series split by events). The baseline time period is set by the parameters <samp>normalizationMode</samp> and <samp>baselineMode</samp>.
     </p>
     <h3>Input</h3>
     <hr>
     <p>
-      This function accepts image time series with dimensions Y,X,T or image time series split by events with dimensions E, Y, X and T as input.
+      This function accepts a <samp>.dat</samp> file with axes Y,X,T (image time series) or Y,X,T,E (image time series split by events, e.g. the output of <samp>split_data_by_event</samp>). Arrays, UMT structs and <samp>.umt</samp> files are not supported.
+    </p>
+    <p>
+      The file is streamed in X slabs sized from the available RAM and the output is written slab by slab (Low-RAM mode is always on). Continuous data are not split by this function: to normalize by trial, split the data first with <samp>split_data_by_event</samp>.
     </p>
     <h3> The algorithm</h3>
     <hr>
     <p>
-      For each trial (or the whole recording, for image time series), the function calculates the response amplitude as the pixel values over time minus the baseline (&Delta;R). Then this result is divided by the baseline resulting in pixel values expressed as &Delta;R/R. Here, the baseline corresponds to the median value of the pre-event period. The pre-event period is a value (in seconds) stored in the parameter <samp>baseline_sec</samp>.
+      For each trial (or the whole recording, for image time series), the function calculates the response amplitude as the pixel values over time minus the baseline (&Delta;R). Then this result is divided by the baseline resulting in pixel values expressed as &Delta;R/R. Here, the baseline corresponds to the median value of the baseline frames, omitting NaN values; a zero baseline is replaced by 1. The baseline period is defined by the parameters <samp>normalizationMode</samp> and <samp>baselineMode</samp>.
     </p>
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
@@ -83,28 +86,48 @@ nav_order: 4
     <h3>Output</h3>
     <hr>
     <p>
-      The output of this function is a numerical matrix with the same dimensions of the input data containing the normalized data.
+      The output is the <samp>normBSLN.dat</samp> file (saved in the save folder) with the same axes and sizes as the input, in single precision. A Y,X,T,E file keeps its E axis: every trial is normalized on its own, ignored event instances included, so the E axis still matches <samp>events.mat</samp>.
     </p>
     <h3 id="parameters">Parameters</h3>
     <hr>
 
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
-      <samp><b>baseline_sec</b></samp> - Baseline time period (in seconds)<br>
-      <span class="title-desc"><i> "auto" | positive number</i></span>
+      <samp><b>normalizationMode</b></samp> - Where the baseline is taken from<br>
+      <span class="title-desc"><i> "recording" (default) | "trial"</i></span>
     </button>
     <div class="content">
       <p>
-        For the <b>auto</b> setting, this function calculates the baseline time period  differently depending on the type of input data. If the input data is an image time series, the baseline time period corresponds to the first frames encompassing 20% of the recording duration. However, if the input data is an image time series split by events, this function will use the time period stored in the <samp>preEventTime_sec</samp> variable and use it as baseline.
+        In <b>recording</b> mode, the baseline is taken from the start of the recording (Y,X,T data) or from the start of every trial (Y,X,T,E data).
       </p>
       <p>
-        If this parameter is set to a number, the value will be used to calculate the number of frames to be used as baseline.
+        In <b>trial</b> mode, which requires Y,X,T,E data, the baseline of every trial is the baseline (pre-event) period stored in <samp>events.mat</samp>, found in the save folder.
       </p>
-      <div class="warnnote">
-        <p><strong>Important</strong><br>
-            If the input data is an image time series split by events and this parameter is set to a number, the meta data's variables <samp>preEventTime_sec</samp> will be updated to the value of <samp>baseline_sec</samp> as well as the <samp>postEventTime_sec</samp> as the trial duration minus the baseline time period.
-        </p>
-      </div>
+    </div>
+
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>baselineMode</b></samp> - Baseline time period (in seconds)<br>
+      <span class="title-desc"><i> "auto" (default) | positive number</i></span>
+    </button>
+    <div class="content">
+      <p>
+        In <b>recording</b> mode, the <b>auto</b> setting uses the first frames encompassing 20% of T, while a number sets the baseline as the first <samp>baselineMode</samp> seconds.
+      </p>
+      <p>
+        In <b>trial</b> mode, this parameter must be <b>auto</b>: the baseline is the baseline period of <samp>events.mat</samp>.
+      </p>
+    </div>
+
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>FrameRateHz</b></samp> - Frame rate of the data<br>
+      <span class="title-desc"><i>positive scalar (set automatically in most cases)</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Frame rate (in Hertz) of the data, needed to convert a numeric <samp>baselineMode</samp> and the trial-mode baseline into frames. When the function runs in a pipeline, the value is taken from the data flowing into the step; otherwise it is read from the <samp>.dat</samp> header.
+      </p>
     </div>
 
     <button title="click to expand" type="button" class="mycollapsible">

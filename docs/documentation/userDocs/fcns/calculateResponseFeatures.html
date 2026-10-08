@@ -61,17 +61,18 @@ grand_parent: Functions
         <li>Peak latency</li>         
         <li>Onset amplitude</li>
         <li>Onset latency</li>
+        <li>Time-window average amplitude</li>
         <li>Area under the curve (AUC) amplitude</li>
-    </ul>    
+    </ul>
     <p>
-        The response peak is the maximum - or minimum if the response polarity is negative - in the time window post-event set in the parameters. The onset value is the point where the signal crosses the threshold, set in the parameters as a multiple of the standard deviation of the signal in the pre-event time.
+        The response peak is the maximum - or minimum if the response polarity is negative - in the time window post-event set in the parameters. The onset value is the first point where the signal crosses the threshold, set in the parameters as a multiple of the standard deviation of the signal in the pre-event time.
     </p>
     <p>
-        The peak and onset amplitudes are calculated as their values minus the average of the pre-event period. The latencies are calculated as the time delay of the Peak response from the event onset time in seconds.
+        The peak, onset and time-window average amplitudes are calculated as their values minus the baseline level, which is the <b>median</b> of the pre-event period. The latencies are calculated in seconds from the first post-event frame (time 0), so a response peaking on that frame has a latency of 0 s. The onset and peak latencies are defined only for ROIs that cross the threshold; otherwise they are <samp>NaN</samp>.
     </p>
     <p>
-        The AUC amplitude is calculated as the AUC in the post-event time window minus the AUC in the pre-event period.
-    </p>    
+        The AUC amplitude is calculated as the area under the baseline-corrected response in the post-event time window, ignoring <samp>NaN</samp> samples. The peak amplitude and the AUC amplitude are reported for every ROI, even when the response does not cross the threshold. With negative polarity, the trace is sign-flipped before the features are computed, so the amplitudes report the positive magnitude of the negative-going response.
+    </p>
     <p style="text-align: center;">
         <img src="../../assets/img/calculateResponseFeatures_fig1.png" alt="calculateResponseFeatures" width="440"><br>
         <i>Response features</i>
@@ -86,16 +87,16 @@ grand_parent: Functions
         <code>split_data_by_event &rarr; getDataFromROI &rarr; calculateResponseFeatures</code>
     </div>
     <ol>
-        <li><a href="split_data_by_event.html"><samp>split_data_by_event</samp></a> normally creates the event-split image UMT. It carries the shared <samp>eventInfo</samp>, including <samp>eventAxisMode='instances'</samp> and the <samp>baselinePeriod</samp> configured in <em>Events Manager</em>.</li>
-        <li><a href="getDataFromROI.html"><samp>getDataFromROI</samp></a> extracts and spatially aggregates each ROI while preserving the event metadata and entry <samp>FrameRateHz</samp>. Use any <samp>SpatialAggFcn</samp> except <samp>'none'</samp>, because <samp>calculateResponseFeatures</samp> rejects entries that retain the <samp>Pixel</samp> dimension.</li>
-        <li><samp>calculateResponseFeatures</samp> uses the baseline period and frame rate to convert the baseline and response windows from seconds to frames and calculate the requested features.</li>
+        <li><a href="split_data_by_event.html"><samp>split_data_by_event</samp></a> normally creates the event-split data. For a <samp>.dat</samp> input, the output is a Y-X-T-E <samp>.dat</samp> file with one slice per event instance of <samp>events.mat</samp>. The <samp>.dat</samp> file stores no event labels; they are taken from <samp>events.mat</samp> in the Save Folder in the next step.</li>
+        <li><a href="getDataFromROI.html"><samp>getDataFromROI</samp></a> extracts and spatially aggregates each ROI and returns a <samp>.umt</samp> file. For an event-split <samp>.dat</samp> input, it builds the shared <samp>eventInfo</samp> (including <samp>eventAxisMode='instances'</samp> and the <samp>baselinePeriod</samp> configured in <em>Events Manager</em>) from <samp>events.mat</samp> and records <samp>FrameRateHz</samp> in the entry metadata. Use any <samp>SpatialAggFcn</samp> except <samp>'none'</samp>, because <samp>calculateResponseFeatures</samp> rejects entries that retain the <samp>Pixel</samp> dimension.</li>
+        <li><samp>calculateResponseFeatures</samp> reads that <samp>.umt</samp> file, uses the baseline period and frame rate to convert the baseline and response windows from seconds to frames and calculates the requested features.</li>
     </ol>
     <p>
-        The final input must be a <samp>kind='roi'</samp> UMT with entry dimensions <samp>{'ROI','T','E'}</samp>, top-level <samp>eventInfo.eventAxisMode='instances'</samp> and <samp>eventInfo.baselinePeriod</samp>, and <samp>entry.meta.FrameRateHz</samp>. The function cannot derive or accept substitutes for missing event metadata.
+        The final input must be a <samp>.umt</samp> file holding a <samp>kind='roi'</samp> UMT with entry dimensions <samp>{'ROI','T','E'}</samp>, top-level <samp>eventInfo.eventAxisMode='instances'</samp> and <samp>eventInfo.baselinePeriod</samp>, and <samp>entry.meta.FrameRateHz</samp>. The function cannot derive or accept substitutes for missing event metadata.
     </p>
     <div class="infonote">
         <p><strong>Alternative event-splitting producers</strong><br>
-            <samp>split_data_by_event</samp> is the usual producer, not a hard dependency. Any producer of a valid event-split image UMT with the required metadata can start the chain. <samp>getDataFromROI</samp> also accepts continuous image data, but it cannot create event metadata that is absent from its input.
+            <samp>split_data_by_event</samp> is the usual producer, not a hard dependency. Any producer of valid event-split image data (a <samp>.dat</samp> file with a matching <samp>events.mat</samp>, or an image UMT with the required metadata) can start the chain. <samp>getDataFromROI</samp> also accepts continuous image data, but it cannot create event metadata that is absent from its input.
         </p>
     </div>
     <p>
@@ -104,15 +105,15 @@ grand_parent: Functions
     <h3>Input</h3>
     <hr>
     <p>
-        This function accepts a ROI UMT produced by the required workflow above, with one entry using dimensions <samp>{'ROI','T','E'}</samp>.
+        This function accepts only the name or path of a <samp>.umt</samp> file holding a ROI UMT produced by the required workflow above, with one entry using dimensions <samp>{'ROI','T','E'}</samp>. UMT structs in memory, numeric arrays and other file types are not supported. The file is loaded fully into memory, which is small compared with the image data it was reduced from.
     </p>
     <h3>Output</h3>
     <hr>
     <p>
-        The output is a ROI UMT containing the response features stated in the description, with dimensions <samp>{'ROI','Measure','E'}</samp>.
+        The output is a ROI UMT, saved as a <samp>.umt</samp> file (default name <samp>RespFeatures.umt</samp>), containing the response features stated in the description, with dimensions <samp>{'ROI','Measure','E'}</samp>. Each E slice is one event instance and is analyzed independently; repetitions are not averaged by this function.
     </p>
     <p>
-        For additional details on the data structure of the output file, please click <a href="../other/mat-files-organization.html">here</a>.
+        For additional details on the data structure of the output file, please click <a href="../other/umt-files-organization.html">here</a>.
     </p>
     <h3 id="parameters">Parameters</h3>
     <hr>
@@ -144,7 +145,7 @@ grand_parent: Functions
     </button>
     <div class="content">
         <p>
-            Time window in which the response features (peak, onset and AUC) will be calculated. If set to "all" (default), all period post-event onset will be used. Otherwise, provide a pair of values separated by a semicolon representing the start and end of the time period from the event ontset. For instance, if you want to calculate the response in a time window of 2 seconds but ignore the first 0.5 seconds of the response, the TimeWindow_sec value is set as <span class = code-inline> 0.5;2.5</span>.
+            Time window in which the response features (peak, onset and AUC) will be calculated. If set to "all" (default), all period post-event onset will be used. Otherwise, provide a pair of values <samp>[start end]</samp>, in seconds, representing the start and end of the time period relative to the first frame after the baseline period (time 0). For instance, if you want to calculate the response in a time window of 2 seconds but ignore the first 0.5 seconds of the response, the TimeWindow_sec value is set as <span class = code-inline> [0.5 2.5]</span>.
         </p>
     </div>
     <!-- JavaScript code to collapse sections -->
