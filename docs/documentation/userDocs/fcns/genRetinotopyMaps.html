@@ -53,7 +53,13 @@ grand_parent: Functions
     <h3>Input</h3>
     <hr>
     <p>
-      This function accepts only image time series as input with dimensions Y, X and T. The input data must contain the cortical responses to at least <b>two</b> opposite directions in order to calculate either the azimuth or elevation maps. The directions of the visual stimuli are encoded in degrees where the cardinal directions left-right, bottom-up, right-left and top-down correspond to 0&deg;, 90&deg;, 180&deg; and 270&deg;, respectively. This information should be stored in a <samp>events.mat</samp> file located in the same directory of the input data.
+      This function accepts only continuous image time series with dimensions Y, X and T, stored in a <samp>.dat</samp> file. UMT structs and <samp>.umt</samp> files are not supported. When called directly from MATLAB, a numeric Y x X x T array is also accepted; in that case the frame rate must be given explicitly with the <samp>FrameRateHz</samp> parameter.
+    </p>
+    <p>
+      The input data must contain the cortical responses to at least <b>two</b> opposite directions in order to calculate either the azimuth or elevation maps. The directions of the visual stimuli are encoded in degrees where the cardinal directions left-right, bottom-up, right-left and top-down correspond to 0&deg;, 90&deg;, 180&deg; and 270&deg;, respectively. This information should be stored in an <samp>events.mat</samp> file located in the Save Folder (it must contain <samp>eventID</samp>, <samp>timestamps</samp>, <samp>state</samp> and <samp>eventNameList</samp>). If the events use generic names instead of the standard direction labels, the function standardizes them according to the <samp>Direction</samp> parameter in memory (without modifying the file on disk) and issues a warning.
+    </p>
+    <p>
+      For <samp>.dat</samp> input, the Fourier transform is computed in blocks of image columns, so the recording is never loaded whole into memory. Only the final Y x X amplitude and phase maps are kept in memory.
     </p>
 
     <h3 id="the-algorithm"> The algorithm</h3>
@@ -91,14 +97,14 @@ grand_parent: Functions
     <h3>Output</h3>
     <hr>
     <p>
-      The <samp>genRetinotopyMaps</samp> function creates the following <samp>.dat</samp> files:
+      The <samp>genRetinotopyMaps</samp> function creates a single <samp>.umt</samp> file (default name <samp>retinotopyMaps.umt</samp>) containing the following entries:
     </p>
     <ul>
       <li>AzimuthMap</li>
       <li>ElevationMap</li>
     </ul>
     <p>
-      Each file contains the amplitude and phase Y,X maps. If the phase map is not rescaled to visual angle, the phase values will range between 0 and 2&pi;. If the screen sizes and visual distance are provided, the ouput will be rescaled to match the visual angle in degrees (see below for the necessary criteria). In this case, the visual angle origin (0,0) will be placed at the center of the screen.
+      Each entry has dimensions <samp>{'Y','X','F'}</samp>, where F has two slices: amplitude (first) and phase (second). Only the entries of the selected <samp>Direction</samp> are created. See <a href="../other/umt-files-organization.html">Organization of .umt files</a> for the file format. The output can be used directly by <a href="genVSM.html"><samp>genVSM</samp></a>. If the phase map is not rescaled to visual angle, the phase values will range between 0 and 2&pi;. If the screen sizes and visual distance are provided, the ouput will be rescaled to match the visual angle in degrees (see below for the necessary criteria). In this case, the visual angle origin (0,0) will be placed at the center of the screen.
     </p>
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
@@ -119,12 +125,12 @@ grand_parent: Functions
     <p>The parameters of this function are the following:</p>
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
-      <samp><b>nSweeps</b></samp> - number of stimulus sweeps <br>
-      <span class="title-desc"><i> positive integer</i></span>
+      <samp><b>Direction</b></samp> - stimulus directions to process <br>
+      <span class="title-desc"><i> 'All' (default) | 'Azimuth_only' | 'Elevation_only'</i></span>
     </button>
     <div class="content">
       <p>
-        Number of times that the visual stimulus was presented. This value is used to select the first harmonic.
+        Selects which maps are created. <i>All</i> creates both the azimuth and elevation maps, while <i>Azimuth_only</i> and <i>Elevation_only</i> create only the corresponding map. The number of stimulus sweeps, which is used to select the first harmonic, is derived automatically from the events in <samp>events.mat</samp>; it is not a parameter.
       </p>
     </div>
 
@@ -138,8 +144,13 @@ grand_parent: Functions
         This is used in <a href="#refs">[4]</a> to calculate the azimuth and elevation maps. Set this parameter to <b>true</b> to preprocess each direction movie as the average of each trial normalized by the median of an inter-trial period. To make this work, the trigger timestamps of each trial must be stored in the <samp>events.mat</samp> file and an inter-trial time period between trial must exist.
       </p>
       <p>
-        If the average movie is used, the value of the <samp>nSweeps</samp> parameter is set to 1 sweep, given that each trial represents a single sweep of the visual stimulus.
+        If the average movie is used, a single sweep is analyzed, given that each trial represents a single sweep of the visual stimulus.
       </p>
+      <div class="infonote">
+        <p><strong>Note</strong><br>
+          When this parameter is <b>false</b>, only the stimulus-on to stimulus-off epochs are concatenated before the Fourier transform; the inter-stimulus gaps are excluded. This introduces discontinuities between epochs, and the maps are not numerically comparable with those of previous releases, which transformed one contiguous span from the first onset to the last offset.
+        </p>
+      </div>
     </div>
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
@@ -169,6 +180,16 @@ grand_parent: Functions
     <div class="content">
       <p>
         This corresponds to the vertical length of the screen in centimeters. This measure is used to rescale the phase maps to visual angle in degrees. If set to zero, no rescaling is applied.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>FrameRateHz</b></samp> - Frame rate <br>
+      <span class="title-desc"><i> positive number</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Frame rate of the input data in Hz. When the function runs in a pipeline, the value is taken from the data automatically, and a <samp>.dat</samp> file otherwise provides it in its header. An explicit value overrides the header (a warning is issued if they differ). It is required for numeric array input.
       </p>
     </div>
     <h3>References</h3>

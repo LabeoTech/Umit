@@ -62,19 +62,19 @@ grand_parent: Functions
     </p>
     <ul>
       <li><samp>SaveFolder</samp> contains <samp>AcqInfos.mat</samp> and the imported reflectance channels.</li>
-      <li><samp>data</samp> selects the execution mode; its pixel values are not processed directly. A numeric Y-X-T array selects standard mode, while a <samp>.dat</samp> filename selects RAM-safe mode.</li>
+      <li><samp>data</samp> is the name of one of the illumination channel <samp>.dat</samp> files in the SaveFolder (for example <samp>red.dat</samp>), as wired into the pipeline step. It must be one of the channel files resolved from <samp>AcqInfos.mat</samp> and the Rig optical configuration (see below), otherwise the function returns an error. Numeric arrays, other file types and other dimension layouts are not supported.</li>
     </ul>
     <p>
-      HemoCompute reads the two or three channels selected by <samp>Illuminations</samp> from the
-      SaveFolder. Supported canonical names are <samp>red</samp>, <samp>green</samp>, and
+      HemoCompute reads all the channels selected by <samp>Illuminations</samp> from the
+      SaveFolder, not only the file passed in <samp>data</samp>. Supported canonical names are <samp>red</samp>, <samp>green</samp>, and
       <samp>yellow</samp>; the historical name <samp>amber</samp> is normalized to
       <samp>yellow</samp>. Imported channel filenames and timebases are resolved from
-      <samp>AcqInfos.mat</samp>. Four-dimensional event-split input is not supported.
+      <samp>AcqInfos.mat</samp>. Every resolved channel file must be an image time series with dimensions Y,X,T. Four-dimensional event-split input is not supported.
     </p>
     <h3>Output</h3>
     <hr>
     <p>
-      Every execution mode writes <samp>HbO.dat</samp> and <samp>HbR.dat</samp> in the SaveFolder.
+      The function writes the Y,X,T files <samp>HbO.dat</samp> and <samp>HbR.dat</samp> in the SaveFolder.
       With one requested output, the wrapper returns the manifest
       <samp>{'HbO.dat','HbR.dat'}</samp>. With two requested outputs, it returns those two
       filenames individually; it does not return numeric arrays.
@@ -82,10 +82,6 @@ grand_parent: Functions
     <pre><code>files = run_HemoCompute(saveFolder, data);
 [hbOFile, hbRFile] = run_HemoCompute(saveFolder, data);
 hbO = loadData(fullfile(saveFolder, hbOFile));</code></pre>
-    <p>
-      Call the lower-level <samp>HemoCompute</samp> function directly when its numeric standard-mode
-      arrays are required instead of file-backed wrapper outputs.
-    </p>
     <h3 id="parameters">Parameters</h3>
     <hr>
 

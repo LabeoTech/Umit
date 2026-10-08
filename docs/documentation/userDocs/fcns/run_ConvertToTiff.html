@@ -49,28 +49,33 @@ nav_order: 4
     <h3 id="description">Description</h3>
     <hr>
     <p>
-      This function exports imaging data created in <b><i>umIT</i></b> to a  multi-frame .TIF file. For 3D datasets, the function will create a single .TIF file containing the image series. For image time series split by trials (4D arrays with dimensions E,Y,X,T), a .TIF file will be created for each trial. This function does not have optional parameters.
+      This function exports imaging data created in <b><i>umIT</i></b> to a  multi-frame .TIF file. For image time series (dimensions Y,X,T), the function will create a single .TIF file containing the image series, with one page per frame. For image time series split by trials (dimensions Y,X,T,E), a .TIF file will be created for each trial. This function does not have optional parameters.
+    </p>
+    <h3>Input</h3>
+    <hr>
+    <p>
+      A <samp>.dat</samp> file (name or path; a bare name is also looked up in the SaveFolder) with dimensions Y,X,T, Y,X,T,E or a single Y,X frame. Arrays, UMT structures and <samp>.umt</samp> files are not supported. The file is streamed in blocks of frames, so its size is limited by the disk, not by the RAM (Low-RAM mode is always on).
     </p>
     <h3>Output</h3>
     <hr>
-    <p> For 3D data:<br>
+    <p> For Y,X,T (or Y,X) data:<br>
       A  multi-frame .TIF file will be created in the SaveFolder with the name of the <samp>.dat</samp> file prepended with the string <span class="stringformat">'img_'</span>. For instance, the .TIF file from the file <samp>fluo.dat</samp> will be named <samp>img_fluo.tif</samp>.
     </p>
-    <p>For 4D data:<br>
-      One multi-frame .TIF file will be created in the SaveFolder for each trial. the filename will be appended with the condition (C) and repetition(R) indices as so: <span class="stringformat">'img_&lt;FILENAME&gt;_C&lt;index&gt;_R&lt;index&gt;.tif'</span>. For example, for a recording with name <samp>DF_F.dat</samp> with one condition and 10 repetitions the TIF files will be created as so: img_DF_F_C1_R1.tif, img_DF_F_C1_R2.tif, ..., img_DF_F_C1_R10.tif.
+    <p>For Y,X,T,E data:<br>
+      One multi-frame .TIF file will be created in the SaveFolder for each trial (E slice). the filename will be appended with the condition (C) and repetition(R) indices as so: <span class="stringformat">'img_&lt;FILENAME&gt;_C&lt;index&gt;_R&lt;index&gt;.tif'</span>. For example, for a recording with name <samp>DF_F.dat</samp> with one condition and 10 repetitions the TIF files will be created as so: img_DF_F_C1_R1.tif, img_DF_F_C1_R2.tif, ..., img_DF_F_C1_R10.tif. A companion text file, <samp>img_&lt;FILENAME&gt;_info.txt</samp>, is also created in CSV format; it lists the generated TIF file name, the condition name and the repetition index.
     </p>
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
       <b>More details</b>
     </button>
     <div class="content">
-      <h4>Default output file name</h4>
+      <h4>Event labels</h4>
       <p>
-        The output file name of this function is extracted from the variable <samp>datFile</samp> stored in the <samp>.mat</samp> meta data file associated with the <samp>.dat</samp> file. In the eventuality that this variable is empty, a default filename <span class="stringformat">'img_out.tif'</span> will be used.
+        For Y,X,T,E data, the E axis is labeled from the <samp>events.mat</samp> file located in the folder of the <samp>.dat</samp> file. Without an <samp>events.mat</samp>, the slices are labeled as repetitions 1 to E of a single condition. An E axis that cannot be matched to <samp>events.mat</samp> is rejected, because the file names would carry wrong labels.
       </p>
-      <h4>The algorithm</h4>
+      <h4>File format</h4>
       <p>
-        This function uses the code from <a href="https://github.com/rharkes/Fast_Tiff_Write">this Git repo</a> to write to TIF files. As stated in their documentation: the algorithm writes <i>"the image data first, and end the file with IFD's"</i>. The accepted data formats are: <b>uint8</b>, <b>uint16</b> and <b>single</b> precision. No compression is applied.
+        Pages are written as 32-bit floating-point (<b>single</b>) values and no compression is applied. A file larger than 3.9 GB is written as BigTIFF.
       </p>
     </div>
     <!-- JavaScript code to collapse sections -->

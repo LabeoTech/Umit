@@ -49,17 +49,20 @@ nav_order: 6
     <h3 id="description">Description</h3>
     <hr>
     <p>
-      This function normalizes image series with dimensions Y,X,T to have zero mean and unit standard deviation over the time domain. This function has no parameters.
+      This function normalizes image series to have zero mean and unit standard deviation over the time domain. This function has no parameters.
     </p>
     <h3>Input</h3>
     <hr>
     <p>
-      This function accepts <b>only</b> image time series as input with dimensions Y, X and T.
+      This function accepts image time series with dimensions Y, X and T, or image time series split by events with dimensions Y, X, T and E, either as a numeric array or as a <samp>.dat</samp> file. UMT structs and <samp>.umt</samp> files are not supported.
+    </p>
+    <p>
+      When the input is a <samp>.dat</samp> file, it is streamed in slabs (Low-RAM mode), so the recording is never loaded whole.
     </p>
     <h3> The algorithm</h3>
     <hr>
     <p>
-      For each pixel, the z-score is calculated as the pixel value minus it's time average divided by the standard deviation.
+      For each pixel, the z-score is calculated as the pixel value minus it's time average divided by the standard deviation. For event-split data, the statistics are computed separately for every event instance (E slice), so each trial is normalized over its own frames.
     </p>
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
@@ -88,8 +91,13 @@ nav_order: 6
     <h3>Output</h3>
     <hr>
     <p>
-      Image time series data with temporal mean equal to zero and unit standard deviation.
+      Image time series data with temporal mean equal to zero and unit standard deviation, with the same axes and sizes as the input. The output has the same representation as the input: a numeric array for an array input, or the <samp>normZ.dat</samp> file (saved in the save folder) for a <samp>.dat</samp> input.
     </p>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        NaN values are ignored when computing the mean and standard deviation. For a constant time trace, the standard deviation is set to 1 to avoid a division by zero. Every E slice is normalized, including ignored event instances, so the E axis of the output still matches <samp>events.mat</samp>.
+      </p>
+    </div>
     <!-- JavaScript code to collapse sections -->
     <script src="../../collapsible_behaviour.js"></script> 
   </body>

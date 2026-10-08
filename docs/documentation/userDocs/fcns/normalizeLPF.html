@@ -54,7 +54,10 @@ nav_order: 5
     <h3>Input</h3>
     <hr>
     <p>
-      This function accepts only image time series as input with dimensions Y, X and T.
+      This function accepts image time series with dimensions Y, X and T, or image time series split by events with dimensions Y, X, T and E, either as a numeric array or as a <samp>.dat</samp> file. UMT structs and <samp>.umt</samp> files are not supported.
+    </p>
+    <p>
+      A <samp>.dat</samp> input is streamed in slabs (Low-RAM mode), so the recording is never loaded whole. Event-split data are filtered trial by trial along T and keep their E dimension unchanged.
     </p>
     <h3 id="the-algorithm"> The algorithm</h3>
     <hr>
@@ -82,41 +85,46 @@ nav_order: 5
     <h3>Output</h3>
     <hr>
     <p>
-      The output of this function is a numerical matrix with dimensions Y,X and T containing the data filtered and normalized.
+      The output has the same axes and sizes as the input and the same representation: a numeric array for an array input, or the <samp>normLPF.dat</samp> file (saved in the save folder) for a <samp>.dat</samp> input.
     </p>
+    <div class="infonote">
+      <p><strong>Note</strong><br>
+        For arrays held in RAM, NaN pixels are replaced by zero before filtering and restored afterwards. This biases the low-pass baseline near mask borders and, with <samp>Normalize</samp> set to <b>true</b>, can produce a near-zero divisor there. <samp>.dat</samp> inputs do not use this replacement.
+      </p>
+    </div>
     <h3 id="parameters">Parameters</h3>
     <hr>
     <p>The parameter of this function are the following:</p>
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
-      <samp><b>LowCutOffHz</b></samp> -Low frequency cut-off <br>
+      <samp><b>BaselineCutoffHz</b></samp> -Low frequency cut-off (slow baseline) <br>
       <span class="title-desc"><i>0.0083 (default) | nonnegative scalar</i></span>
     </button>
     <div class="content">
       <p>
-        Sets the value (in Hertz) of the low frequency cut-off.
+        Sets the value (in Hertz) of the low frequency cut-off, used to estimate the slow baseline component.
       </p>
       <p>
-        The <samp>LowCutOffHz</samp> value ranges from <b>zero</b> to the <b>Nyquist</b> (half the sample rate).
+        The <samp>BaselineCutoffHz</samp> value ranges from <b>zero</b> to the <b>Nyquist</b> (half the sample rate).
       </p>
       <div class="infonote">
         <p><strong>Note</strong><br>
-          If this value is set to <b>zero</b>, the output will be a low-passed signal at cut-off frequency <samp>HighCutOffHz</samp>.
+          If this value is set to <b>zero</b>, the output will be a low-passed signal at cut-off frequency <samp>SignalCutoffHz</samp>.
         </p>
       </div>
     </div>
 
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
-      <samp><b>HighCutOffHz</b></samp> -High frequency cut-off <br>
+      <samp><b>SignalCutoffHz</b></samp> -High frequency cut-off (signal) <br>
       <span class="title-desc"><i>1 (default) | positive scalar</i></span>
     </button>
     <div class="content">
       <p>
-        Sets the value (in Hertz) of the high frequency cut-off.
+        Sets the value (in Hertz) of the high frequency cut-off, used to preserve the signal component.
       </p>
       <p>
-        The <samp>HighCutOffHz</samp> value must be a positive number between the <samp>LowCutOffHz</samp> value and the <b>Nyquist</b> (half the sample rate).
+        The <samp>SignalCutoffHz</samp> value must be a positive number between the <samp>BaselineCutoffHz</samp> value and the <b>Nyquist</b> (half the sample rate).
       </p>
     </div>
     <button title="click to expand" type="button" class="mycollapsible">
@@ -137,6 +145,19 @@ nav_order: 5
     <div class="content">
       <p>
         Set this parameter to <b>True</b> to apply a double exponential fit to the input signal prior to the filtering. In the majority of cases, this is not necessary. However, in cases where the temperature of the illumination source of the imaging system is poorly managed, a signal decay may occur. Thus, the exponential fit can be applied to fix this issue.
+      </p>
+      <p>
+        For event-split data, each trial gets its own exponential fit.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>FrameRateHz</b></samp> - Frame rate of the data<br>
+      <span class="title-desc"><i>positive scalar (set automatically in most cases)</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Frame rate (in Hertz) of the input data, needed to design the filters. When the function runs in a pipeline, the value is taken from the data flowing into the step, and a <samp>.dat</samp> input provides it through its header. It must be given explicitly only for numeric array inputs.
       </p>
     </div>
     <!-- JavaScript code to collapse sections -->

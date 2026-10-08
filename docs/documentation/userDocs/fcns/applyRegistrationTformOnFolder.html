@@ -10,21 +10,23 @@ nav_order: 2
 .mycollapsible{background-color:#eee;color:#000;cursor:pointer;padding:18px;width:100%;border:0;text-align:left;font-size:15px;margin-bottom:10px}.mycollapsible:hover{background-color:#888}.content{padding:0 18px;display:none;overflow:hidden;background:#fff;border:1px solid #000;margin-bottom:10px}
 </style><title>applyRegistrationTformOnFolder</title></head><body>
 <h2>applyRegistrationTformOnFolder</h2><hr>
-<p>Apply the registration transform stored in a Save Folder to every <samp>.dat</samp> file in that folder.</p>
-<div class="warnnote"><p><strong>Destructive and effectively irreversible</strong><br>This function rewrites every <samp>.dat</samp> file in place. Interpolation and pixels moved outside the frame cannot be recovered reliably. Back up the folder and inspect the quality-control image before continuing.</p></div>
+<p>Apply the registration transform stored in a Save Folder to all image data in that folder: every image <samp>.dat</samp> file and every image <samp>.umt</samp> file.</p>
+<div class="warnnote"><p><strong>Destructive and effectively irreversible</strong><br>This function rewrites every image <samp>.dat</samp> and image <samp>.umt</samp> file in place. Interpolation and pixels moved outside the frame cannot be recovered reliably. Back up the folder and inspect the quality-control image before continuing.</p></div>
 <h3 id="description">Description</h3><hr>
-<p>The function loads <samp>DataParams.registration.tform</samp>, streams each frame through the transform, writes a temporary file, and then replaces the original <samp>.dat</samp>. It updates registration status in <samp>DataParams.mat</samp>. Reapplication is blocked by default when the folder is already marked registered.</p>
+<p>The function loads <samp>DataParams.registration.tform</samp>, streams each image plane through the transform, writes a temporary file, and then replaces the original. It updates registration status in <samp>DataParams.mat</samp> after all files have been replaced. Reapplication is blocked by default when the folder is already marked registered.</p>
+<p>The transform is 2-D, so it is applied to every Y-X plane of data whose first two axes are Y and X, whatever follows them. Every target is validated before any file is rewritten; if one image file is unsupported or does not match the size of the stored transform, the whole operation stops and nothing is modified. <samp>NaN</samp> pixels (for example outside the field of view or the padding of short trials) are handled per plane: they are excluded from the interpolation and restored as <samp>NaN</samp> after warping.</p>
 <h3>Files modified</h3><hr>
 <table><tr><th>File type</th><th>Effect</th></tr>
-<tr><td>Every <samp>.dat</samp> file in the Save Folder</td><td>Every frame is geometrically transformed and the original binary file is replaced.</td></tr>
+<tr><td>Every <samp>.dat</samp> file whose first two axes are Y and X (Y-X, Y-X-T, Y-X-E, Y-X-F, Y-X-T-E)</td><td>Every Y-X plane is geometrically transformed and the original binary file is replaced. Planes are the flattened trailing axes. A <samp>.dat</samp> whose first two axes are not Y and X is rejected and stops the operation before any file is changed.</td></tr>
+<tr><td>Every image <samp>.umt</samp> file</td><td>Every entry whose dimensions start with Y, X is transformed in place; other entries of the file are left as they are.</td></tr>
 <tr><td><samp>DataParams.mat</samp></td><td><samp>DataParams.registration</samp> is updated with the applied status, time, confirmation mode, transform information, and application note.</td></tr>
 <tr><td><samp>AcqInfos.mat</samp></td><td>Not modified by this function.</td></tr>
-<tr><td><samp>.umt</samp> and <samp>.roi</samp></td><td>Not modified. Their images, masks, or coordinates are not automatically brought into the transformed space.</td></tr>
+<tr><td><samp>.umt</samp> files of other kinds (for example <samp>roi</samp>) and <samp>.roi</samp> files</td><td>Not modified. Their masks or coordinates are not automatically brought into the transformed space.</td></tr>
 <tr><td><samp>events.mat</samp>, processing history/logs, and project resources</td><td>Not modified.</td></tr></table>
 <h3>Input</h3><hr>
-<p><samp>SaveFolder</samp> must contain a valid DataParams file, a stored transform, the acquisition metadata required to read the images, and at least one <samp>.dat</samp> file.</p>
+<p><samp>SaveFolder</samp> must contain a valid DataParams file, a stored transform, the acquisition metadata required to read the images, and at least one image file (a <samp>.dat</samp> with Y and X as its first two axes, or an image <samp>.umt</samp>). Each image must have the frame size of the reference used to estimate the transform.</p>
 <h3>Output</h3><hr>
-<p>There is no normal data output. The modified filenames and updated DataParams path are printed to the MATLAB command window.</p>
+<p>There is no normal data output. The modified image filenames and updated DataParams path are printed to the MATLAB command window.</p>
 <h3 id="parameters">Parameters</h3><hr>
 <button type="button" class="mycollapsible"><span class="iconplus"></span><samp><b>DataParamsFile</b></samp> - metadata filename<br><span class="title-desc"><i>DataParams.mat (default) | filename</i></span></button>
 <div class="content"><p>Selects the MAT-file containing the scalar <samp>DataParams</samp> structure.</p></div>

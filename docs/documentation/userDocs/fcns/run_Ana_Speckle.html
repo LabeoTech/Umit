@@ -48,40 +48,29 @@ grand_parent: Functions
     <h3 id="description">Description</h3>
     <hr>
     <p>
-      This function uses the raw LSCI data stored in the file <samp>speckle.dat</samp> and calculates flow of imaged blood vessels (in arbitrary units). The algorithm used in this function is described in <a href="#references">[1]</a>.
+      This function uses the raw LSCI data stored in a speckle <samp>.dat</samp> file (typically <samp>speckle.dat</samp>) and calculates flow of imaged blood vessels (in arbitrary units). The algorithm used in this function is described in <a href="#references">[1]</a>. The function always works file-to-file: the file is read, processed and written in chunks, so the whole recording is never loaded into memory.
     </p>
     <h3>Input</h3>
     <hr>
     <p>
-      A <samp>.dat</samp> file containing image time series (with dimensions Y,X,T) with raw LSCI data.
+      The name of a <samp>.dat</samp> file in the save folder containing the raw LSCI image time series, with dimensions Y,X,T. Numeric arrays, other file types and other dimension layouts are not supported. The layout is checked before processing, so a rejected file produces no output.
     </p>
     <h3>Output</h3>
     <hr>
     <p>
-      A single-precision image time series with dimensions Y,X,T containing blood-flow values in
-      arbitrary units. Standard in-memory operation returns the numeric array. RAM-safe operation
-      returns the full path to the raw <samp>Flow.dat</samp> file containing the same Y,X,T data.
+      The file <samp>Flow.dat</samp>, written in the save folder: a single-precision image time series with dimensions Y,X,T containing blood-flow values in
+      arbitrary units. It has the same axes, sampling rate and exposure as the input file.
     </p>
     <h3 id="parameters">Parameters</h3>
     <hr>
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
       <samp><b>bNormalize</b></samp> - Normalize output<br>
-      <span class="title-desc"><i> true (default) | false </i></span>
+      <span class="title-desc"><i> false (default) | true </i></span>
     </button>
     <div class="content">
       <p>
         If <b>true</b>, the function normalizes the blood flow values of each pixel by its temporal average.
-      </p>
-    </div>
-    <button title="click to expand" type="button" class="mycollapsible">
-      <span class="iconplus"></span>
-      <samp><b>SpeckleFileName</b></samp> - Name of speckle file<br>
-      <span class="title-desc"><i> speckle (default) | string </i></span>
-    </button>
-    <div class="content">
-      <p>
-        Name of the <samp>.dat</samp> file containing the raw LSCI data.
       </p>
     </div>
     <h3 id="references">References</h3>

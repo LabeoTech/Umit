@@ -10,14 +10,18 @@ grand_parent: Functions
 </style><title>genAmplitudeMaps</title></head><body>
 <h2>genAmplitudeMaps</h2><hr><p>Calculate one response-minus-baseline image for each event condition.</p>
 <h3 id="description">Description</h3><hr>
-<p>For every condition, the function aggregates baseline samples and response samples, subtracts the baseline map from the response map, and aggregates repetitions. Continuous data uses Save Folder <samp>events.mat</samp>. Event-split UMT data uses its top-level <samp>eventInfo</samp>.</p>
+<p>For every condition, the function aggregates baseline samples and response samples, subtracts the baseline map from the response map, and aggregates repetitions. The file is streamed in X slabs and only the baseline and response frames of each trial are read, so the data are never loaded whole (Low-RAM mode is always on).</p>
 <h3>Input</h3><hr>
-<table><tr><th>Input</th><th>Requirements</th></tr>
-<tr><td>Numeric Y-X-T</td><td>Continuous data; valid <samp>events.mat</samp> in <samp>SaveFolder</samp>.</td></tr>
-<tr><td><samp>.dat</samp> filename</td><td>Continuous data; uses low-RAM spatial slabs and <samp>events.mat</samp>.</td></tr>
-<tr><td>UMT structure or <samp>.umt</samp> file</td><td>Exactly one compatible image entry with Y-X-T or Y-X-T-E dimensions. Continuous Y-X-T also requires <samp>events.mat</samp>; Y-X-T-E requires valid <samp>eventInfo</samp> and <samp>FrameRateHz</samp>.</td></tr></table>
+<p>An event-split <samp>.dat</samp> file with axes Y-X-T-E, for example the output of <a href="./split_data_by_event.html">split_data_by_event</a>. Continuous Y-X-T data must be split first. Arrays, UMT structures and <samp>.umt</samp> files are not supported.</p>
+<p>The E axis of the file is matched to the <samp>events.mat</samp> in <samp>SaveFolder</samp>:</p>
+<ul>
+<li>one slice per event instance: the instances of each condition are pooled into one map (ignored instances are excluded);</li>
+<li>one slice per condition (an aggregated file): one map per slice.</li></ul>
+<p>An E axis that cannot be matched to <samp>events.mat</samp> is rejected. Without an <samp>events.mat</samp>, every slice is treated as a repetition of one condition, with a default baseline of 7 frames.</p>
 <h3>Output</h3><hr>
-<p>A validated image UMT with entry <samp>AmplitudeMap</samp>, dimensions Y-X-E, aggregated event information, and the selected measures/time window in entry metadata. PipelineManager manages the default <samp>amplitudeMap.umt</samp> persistence.</p>
+<p>A <samp>.dat</samp> file, <samp>amplitudeMap.dat</samp>, written in <samp>SaveFolder</samp> with axes Y-X-E: one amplitude map per event condition, ordered by first appearance. The file stores no labels; its E axis is matched to <samp>events.mat</samp> (one slice per condition).</p>
+<button type="button" class="mycollapsible"><span class="iconplus"></span><b>More details</b></button>
+<div class="content"><p>Ignored instances are excluded, and a condition whose instances are all ignored gives a NaN map. <samp>BaselineMeasure</samp> and <samp>ResponseMeasure</samp> are applied jointly across frames <b>and</b> trials within each condition, not per trial and then averaged across trials. With the default <samp>ResponseMeasure</samp> = <samp>max</samp>, the response is the single largest response-window value across all trials of a condition, not the mean of each trial's own peak.</p></div>
 <h3 id="parameters">Parameters</h3><hr>
 <button type="button" class="mycollapsible"><span class="iconplus"></span><samp><b>BaselineMeasure</b></samp> - aggregate baseline samples<br><span class="title-desc"><i>median (default) | mean | min | max</i></span></button>
 <div class="content"><p>The result becomes the baseline map for each event condition.</p></div>
@@ -25,5 +29,7 @@ grand_parent: Functions
 <div class="content"><p>The response map is calculated across the selected response frames and repetitions before baseline subtraction.</p></div>
 <button type="button" class="mycollapsible"><span class="iconplus"></span><samp><b>TimeWindow_sec</b></samp> - post-baseline response window<br><span class="title-desc"><i>all (default) | [start end]</i></span></button>
 <div class="content"><p><samp>all</samp> uses every frame after the baseline. A numeric non-negative interval is measured in seconds after the baseline and must fit inside each trial.</p></div>
+<button type="button" class="mycollapsible"><span class="iconplus"></span><samp><b>FrameRateHz</b></samp> - frame rate of the data<br><span class="title-desc"><i>positive number</i></span></button>
+<div class="content"><p>Frame rate (in Hz) of the input data. It is provided automatically by the pipeline or by the <samp>.dat</samp> header. <samp>AcqInfos.mat</samp> is not used.</p></div>
 <script src="../../collapsible_behaviour.js"></script>
 </body></html>
