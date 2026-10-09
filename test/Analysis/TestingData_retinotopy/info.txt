@@ -1,0 +1,28 @@
+Scan info
+DateTime: 20230315_191731
+Version: 4.3.0   2D Optogen plugin version: 3.2
+Camera Model: CS2100M
+FrameRateHz: 10.000000
+Width: 512
+Height: 512
+Binning: 1
+ExposureMsec: 18.000000
+ExposureFluoMsec: 18.000000
+ExposureSpeckleMsec: 18.000000
+Rotation: 0
+Delay first stim: 10.000000
+AISampleRate: 10000
+AINChannels: 11
+AICh1: CameraTrig
+AICh2: StimDig
+AICh3: Optogen
+AICh4: AI1
+AICh5: AI2
+AICh6: AI3
+AICh7: AI4
+AICh8: AI5
+AICh9: AI6
+AICh10: AI7
+AICh11: AI8
+Illumination1: Fluo
+Stimulation: 0
