@@ -228,8 +228,8 @@ classdef TestRunImagesClassification < matlab.unittest.TestCase
                 'AbsTol', max(1e-9, abs(2 * baseFreq) * 1e-9));
 
             Info = loadMetaData(fullfile(testCase.TempSaveFolder, repeatedDatFile));
-            testCase.verifyEqual(double(Info.Length), 2 * baseLength);
-            testCase.verifyEqual(double(Info.FrameRateHz), 2 * baseFreq, ...
+            testCase.verifyEqual(datAxisSize(Info, 'T'), 2 * baseLength);
+            testCase.verifyEqual(double(Info.frameRateHz), 2 * baseFreq, ...
                 'AbsTol', max(1e-9, abs(2 * baseFreq) * 1e-9));
         end
     end
