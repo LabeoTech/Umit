@@ -1,5 +1,5 @@
 <deployment-project plugin="plugin.toolbox" plugin-version="1.0">
-  <configuration build-checksum="3403560805" file="C:\Users\bofsp\Documents\PostDoc_UdeM\LabeoTech\Umit\Umit.prj" location="C:\Users\bofsp\Documents\PostDoc_UdeM\LabeoTech\Umit" name="Umit" target="target.toolbox" target-name="Package Toolbox">
+  <configuration build-checksum="3403560805" file="C:\Users\bofsp\Documents\Umit\Umit.prj" location="C:\Users\bofsp\Documents\Umit" name="Umit" target="target.toolbox" target-name="Package Toolbox">
     <param.appname>Umit</param.appname>
     <param.authnamewatermark>LabeoTech</param.authnamewatermark>
     <param.email>info@labeotech.com</param.email>
@@ -52,11 +52,6 @@ test</param.exclude.filters>
     <param.examples>&lt;?xml version="1.0" encoding="utf-8"?&gt;
 &lt;examples&gt;
    &lt;exampleCategory name="Templates"&gt;
-      &lt;example name="Protocol function template" type="html"&gt;
-         &lt;file type="source"/&gt;
-         &lt;file type="main"&gt;/protocolFcn_template.m&lt;/file&gt;
-         &lt;file type="thumbnail"/&gt;
-      &lt;/example&gt;
       &lt;example name="Analysis function template" type="html"&gt;
          &lt;file type="source"/&gt;
          &lt;file type="main"&gt;/Analysis/funcTemplate.m&lt;/file&gt;
@@ -67,11 +62,9 @@ test</param.exclude.filters>
     <param.demosxml />
     <param.apps />
     <param.registered.apps>
-      <file>${PROJECT_ROOT}\GUI\umIToolbox.mlapp</file>
-      <file>${PROJECT_ROOT}\GUI\DataViz\DataViewer.mlapp</file>
-      <file>${PROJECT_ROOT}\GUI\DataViz\ROImanager.mlapp</file>
+      <file>${PROJECT_ROOT}\GUI\DataViewer\DataViewer.mlapp</file>
     </param.registered.apps>
-    <param.docs>${PROJECT_ROOT}\info.xml</param.docs>
+    <param.docs />
     <param.getting.started.guide />
     <param.matlabpath.excludes />
     <param.javaclasspath.excludes />
@@ -99,6 +92,7 @@ test</param.exclude.filters>
       <param.exclude.pcodedmfiles />
       <param.demosxml />
       <param.apps />
+      <param.docs />
       <param.getting.started.guide />
       <param.matlabpath.excludes />
       <param.javaclasspath.excludes />
@@ -123,46 +117,26 @@ test</param.exclude.filters>
     <fileset.rootfiles>
       <file>${PROJECT_ROOT}\Analysis</file>
       <file>${PROJECT_ROOT}\classes</file>
-      <file>${PROJECT_ROOT}\DesktopToolset.xml</file>
       <file>${PROJECT_ROOT}\docs</file>
+      <file>${PROJECT_ROOT}\ensureUMITPath.m</file>
       <file>${PROJECT_ROOT}\GUI</file>
-      <file>${PROJECT_ROOT}\info.xml</file>
       <file>${PROJECT_ROOT}\IOIAnalysis</file>
       <file>${PROJECT_ROOT}\LICENSE</file>
-      <file>${PROJECT_ROOT}\Main.m</file>
-      <file>${PROJECT_ROOT}\protocolFcn_template.m</file>
+      <file>${PROJECT_ROOT}\ProjectManagement</file>
       <file>${PROJECT_ROOT}\README.md</file>
+      <file>${PROJECT_ROOT}\RigManagement</file>
       <file>${PROJECT_ROOT}\subFunc</file>
     </fileset.rootfiles>
     <fileset.depfun.included />
     <fileset.depfun.excluded />
     <fileset.package />
     <build-deliverables>
-      <file location="${PROJECT_ROOT}" name="Umit.mltbx" optional="false">C:\Users\bofsp\Documents\PostDoc_UdeM\LabeoTech\Umit\Umit.mltbx</file>
+      <file location="${PROJECT_ROOT}" name="Umit.mltbx" optional="false">C:\Users\bofsp\Documents\Umit\Umit.mltbx</file>
     </build-deliverables>
     <workflow />
     <matlab>
-      <root>C:\Program Files\MATLAB\R2019a</root>
-      <toolboxes>
-        <toolbox name="matlabcoder" />
-        <toolbox name="gpucoder" />
-        <toolbox name="neuralnetwork" />
-      </toolboxes>
-      <toolbox>
-        <matlabcoder>
-          <enabled>true</enabled>
-        </matlabcoder>
-      </toolbox>
-      <toolbox>
-        <gpucoder>
-          <enabled>true</enabled>
-        </gpucoder>
-      </toolbox>
-      <toolbox>
-        <neuralnetwork>
-          <enabled>true</enabled>
-        </neuralnetwork>
-      </toolbox>
+      <root>C:\Program Files\MATLAB\R2024b</root>
+      <toolboxes />
     </matlab>
     <platform>
       <unix>false</unix>
