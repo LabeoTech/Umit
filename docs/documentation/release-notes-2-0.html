@@ -48,6 +48,13 @@ sidecars or reprocess from raw data when this occurs.</p>
   <li><strong>Retinotopy:</strong> non-average mode concatenates only stimulus ON-to-OFF epochs
   before the FFT; inter-stimulus gaps are excluded. The previous release transformed one contiguous
   span. Amplitude, phase, azimuth, elevation, and visual-sign maps can all change.</li>
+  <li><strong>Retinotopy visual angle and smoothing:</strong> when the screen geometry is given, the
+  fixed phase range 0 to 2&pi; (not the observed minimum and maximum of each map) is mapped linearly
+  onto the visual-angle range, so degree maps no longer depend on which phase values a recording
+  contains. In <samp>genVSM</samp>, radian phase maps are smoothed through
+  <samp>exp(i&middot;phase)</samp> instead of directly, which is correct across the 0/2&pi; wrap.
+  Degree maps, visual-sign maps, and ROIs from the previous release are not numerically
+  comparable.</li>
   <li><strong>Response features:</strong> the current path treats event-axis slices individually;
   the baseline statistic changed from mean to median, AUC is computed from the baseline-corrected
   response window, the <samp>all</samp> window reaches the end of the record, and latency starts at
