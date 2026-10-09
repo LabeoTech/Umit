@@ -4,13 +4,19 @@
   <meta charset="utf-8">
   <title>Pipeline Graph</title>
   <style>
-    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: auto; background: #f4f5f7; font-family: Arial, Helvetica, sans-serif; }
-    #root { width: 100%; height: 100%; }
-    #canvas { position: relative; min-width: 1000px; min-height: 700px; }
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #f4f5f7; font-family: Arial, Helvetica, sans-serif; }
+    #root { position: relative; width: 100%; height: 100%; overflow: hidden; cursor: grab; }
+    #root.panning { cursor: grabbing; user-select: none; }
+    #canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
     #edges { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; z-index: 0; }
     #nodeLayer { position: absolute; inset: 0; z-index: 1; }
     #edgeLabels { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
     #hint { position: absolute; top: 18px; left: 18px; color: #7a7a7a; font-size: 13px; z-index: 3; }
+    #viewControls { position: absolute; right: 12px; bottom: 12px; z-index: 1100; display: none; align-items: center; gap: 4px; background: #ffffff; border: 1px solid #cfd5dc; border-radius: 999px; box-shadow: 0 2px 8px rgba(0,0,0,0.12); padding: 3px 6px; font-size: 12px; color: #2f3440; cursor: default; user-select: none; }
+    #viewControls button { border: 1px solid transparent; background: transparent; border-radius: 999px; min-width: 26px; height: 24px; padding: 0 8px; font-size: 14px; line-height: 1; cursor: pointer; color: #2f3440; }
+    #viewControls button:hover { background: #eef4ff; border-color: #cfd5dc; }
+    #viewControls #fitBtn { font-size: 12px; }
+    #zoomLabel { min-width: 40px; text-align: center; color: #5f6368; font-variant-numeric: tabular-nums; }
     #hoverCard { position: fixed; z-index: 1200; max-width: 420px; background: #ffffff; border: 1px solid #cfd5dc; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.18); padding: 10px 12px; display: none; pointer-events: none; white-space: pre-wrap; font-size: 12px; color: #2f3440; line-height: 1.35; }
     #modeBanner { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1250; display: none; align-items: center; gap: 12px; background: #ffffff; border: 1px solid #cfd5dc; border-radius: 999px; box-shadow: 0 6px 20px rgba(0,0,0,0.16); padding: 8px 12px; font-size: 12px; color: #2f3440; }
     #modeBanner button { border: 1px solid #cfd5dc; background: #f8f9fb; border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
@@ -136,13 +142,18 @@
       <svg id="edges"></svg>
       <div id="nodeLayer"></div>
       <div id="edgeLabels"></div>
-      <div id="hint">No pipeline loaded.</div>
+    </div>
+    <div id="hint">No pipeline loaded.</div>
+    <div id="viewControls">
+      <button id="zoomOutBtn" type="button" title="Zoom out" onclick="zoomByStep(1 / 1.25)">&minus;</button>
+      <span id="zoomLabel">100%</span>
+      <button id="zoomInBtn" type="button" title="Zoom in" onclick="zoomByStep(1.25)">+</button>
+      <button id="fitBtn" type="button" title="Restore view: fit the whole pipeline (or double-click the background)" onclick="restoreView()">Fit</button>
     </div>
     <div id="menu">
       <div id="menuRemoveStep" class="menuItem" onclick="menuAction('removeStep')">Remove step</div>
       <div id="menuReconnectStep" class="menuItem" onclick="menuAction('reconnectStep')">Reconnect inputs</div>
       <div id="menuConfigureSaveOutputs" class="menuItem" onclick="menuAction('configureSaveOutputs')">Save Outputs</div>
-      <div id="menuEditParameters" class="menuItem" onclick="menuAction('editParameters')">Edit parameters</div>
     </div>
     <div id="hoverCard"></div>
     <div id="modeBanner">
@@ -160,11 +171,21 @@
     let hoverTimer = null;
     const hoverDelayMs = 450;
 
+    // Viewport (pan/zoom) state. While userAdjusted is false the graph is re-fitted
+    // automatically (data change, window resize); a manual pan/zoom freezes the view
+    // until the layout changes or the user restores it.
+    const MIN_SCALE = 0.1;
+    const MAX_SCALE = 2.5;
+    const FIT_MARGIN = 16;
+    const view = { scale: 1, tx: 0, ty: 0, userAdjusted: false, contentW: 0, contentH: 0, signature: "" };
+    let panState = null;
+
     function setup(component) {
       htmlComponent = component;
       htmlComponent.addEventListener("DataChanged", function() { applyData(); });
       document.addEventListener("click", function() { if (interactionIsLocked()) { return; } hideMenu(); hideChoicePopup(); });
       document.addEventListener("scroll", function() { hideHover(); hideChoicePopup(); }, true);
+      setupViewInteraction();
       applyData();
       htmlComponent.sendEventToMATLAB("htmlReady", { component: "graph" });
     }
@@ -194,10 +215,13 @@
       model.reconnectGhost = d.reconnectGhost || null;
       model.runtime = d.runtime || {};
 
-      if (d.command === "resetView") {
-        document.documentElement.scrollTop = 0;
-        document.documentElement.scrollLeft = 0;
+      // A different node set/layout (step added, removed, moved) re-fits the view;
+      // selection and runtime updates keep whatever pan/zoom the user chose.
+      const signature = model.nodes.map(function(n) { return [n.id, n.x, n.y].join(":"); }).join("|");
+      if (d.command === "resetView" || signature !== view.signature) {
+        view.userAdjusted = false;
       }
+      view.signature = signature;
 
       render();
 
@@ -366,26 +390,32 @@
         modeBannerText.textContent = "";
       }
 
+      const viewControls = document.getElementById("viewControls");
+
       if (!model.nodes.length) {
         hint.style.display = "block";
+        viewControls.style.display = "none";
+        view.contentW = 0;
+        view.contentH = 0;
         return;
       }
 
       hint.style.display = "none";
+      viewControls.style.display = "flex";
 
       const nodeMap = {};
-      let maxX = 1000;
-      let maxY = 700;
+      let maxX = 0;
+      let maxY = 0;
 
       if (model.reconnectMode && model.reconnectGhost) {
-        maxX = Math.max(maxX, (model.reconnectGhost.x || 0) + (model.reconnectGhost.width || 170) + 80);
-        maxY = Math.max(maxY, (model.reconnectGhost.y || 0) + (model.reconnectGhost.height || 64) + 80);
+        maxX = Math.max(maxX, (model.reconnectGhost.x || 0) + (model.reconnectGhost.width || 170) + 40);
+        maxY = Math.max(maxY, (model.reconnectGhost.y || 0) + (model.reconnectGhost.height || 64) + 40);
       }
 
       model.nodes.forEach(function(n) {
         nodeMap[n.id] = n;
-        maxX = Math.max(maxX, (n.x || 0) + (n.width || 190) + 80);
-        maxY = Math.max(maxY, (n.y || 0) + (n.height || 76) + 80);
+        maxX = Math.max(maxX, (n.x || 0) + (n.width || 190) + 40);
+        maxY = Math.max(maxY, (n.y || 0) + (n.height || 76) + 40);
 
         const el = document.createElement("div");
         const runtimeState = getNodeRuntimeState(n);
@@ -512,8 +542,10 @@
       }
 
       const canvas = document.getElementById("canvas");
-      canvas.style.minWidth = maxX + "px";
-      canvas.style.minHeight = maxY + "px";
+      canvas.style.width = maxX + "px";
+      canvas.style.height = maxY + "px";
+      view.contentW = maxX;
+      view.contentH = maxY;
       svg.setAttribute("width", maxX);
       svg.setAttribute("height", maxY);
       svg.style.width = maxX + "px";
@@ -554,6 +586,126 @@
         pill.title = `${e.sourceLabel || ""} → ${e.targetLabel || ""}`;
         edgeLabels.appendChild(pill);
       });
+
+      if (view.userAdjusted) {
+        applyViewTransform();
+      } else {
+        fitToView();
+      }
+    }
+
+    // ---- Viewport: fit, zoom, pan ------------------------------------------------
+
+    function clamp(v, lo, hi) {
+      return Math.min(hi, Math.max(lo, v));
+    }
+
+    function applyViewTransform() {
+      const canvas = document.getElementById("canvas");
+      canvas.style.transform = `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`;
+      document.getElementById("zoomLabel").textContent = Math.round(view.scale * 100) + "%";
+    }
+
+    function fitToView() {
+      const rect = document.getElementById("root").getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0 || view.contentW <= 0 || view.contentH <= 0) {
+        return;
+      }
+
+      // Never enlarge beyond 100% when fitting: small graphs keep their natural size.
+      const fitScale = Math.min(
+        1,
+        (rect.width - 2 * FIT_MARGIN) / view.contentW,
+        (rect.height - 2 * FIT_MARGIN) / view.contentH);
+      view.scale = clamp(fitScale, MIN_SCALE, 1);
+
+      const w = view.contentW * view.scale;
+      const h = view.contentH * view.scale;
+      // Centre when it fits; otherwise anchor to the top-left margin (graph beyond MIN_SCALE).
+      view.tx = w <= rect.width ? (rect.width - w) / 2 : FIT_MARGIN;
+      view.ty = h <= rect.height ? (rect.height - h) / 2 : FIT_MARGIN;
+      applyViewTransform();
+    }
+
+    function restoreView() {
+      view.userAdjusted = false;
+      fitToView();
+    }
+
+    function zoomAt(factor, cx, cy) {
+      const next = clamp(view.scale * factor, MIN_SCALE, MAX_SCALE);
+      if (next === view.scale) { return; }
+      const ratio = next / view.scale;
+      view.tx = cx - (cx - view.tx) * ratio;
+      view.ty = cy - (cy - view.ty) * ratio;
+      view.scale = next;
+      view.userAdjusted = true;
+      applyViewTransform();
+    }
+
+    function zoomByStep(factor) {
+      if (interactionIsLocked()) { return; }
+      hideHover();
+      const rect = document.getElementById("root").getBoundingClientRect();
+      zoomAt(factor, rect.width / 2, rect.height / 2);
+    }
+
+    function setupViewInteraction() {
+      const root = document.getElementById("root");
+
+      root.addEventListener("wheel", function(ev) {
+        if (interactionIsLocked() || !view.contentW) { return; }
+        ev.preventDefault();
+        hideHover();
+        hideMenu();
+        const rect = root.getBoundingClientRect();
+        const unit = ev.deltaMode === 1 ? 0.05 : 0.0015;
+        zoomAt(Math.exp(-ev.deltaY * unit), ev.clientX - rect.left, ev.clientY - rect.top);
+      }, { passive: false });
+
+      root.addEventListener("mousedown", function(ev) {
+        if (ev.button !== 0 || interactionIsLocked() || !view.contentW) { return; }
+        if (ev.target.closest(".node, #viewControls, #menu, #choicePopup, #modeBanner")) { return; }
+        panState = { x: ev.clientX, y: ev.clientY, tx: view.tx, ty: view.ty, moved: false };
+      });
+
+      window.addEventListener("mousemove", function(ev) {
+        if (!panState) { return; }
+        const dx = ev.clientX - panState.x;
+        const dy = ev.clientY - panState.y;
+        if (!panState.moved && Math.abs(dx) < 3 && Math.abs(dy) < 3) { return; }
+        if (!panState.moved) {
+          panState.moved = true;
+          root.classList.add("panning");
+          hideHover();
+          hideMenu();
+        }
+        view.tx = panState.tx + dx;
+        view.ty = panState.ty + dy;
+        view.userAdjusted = true;
+        applyViewTransform();
+      });
+
+      window.addEventListener("mouseup", function() {
+        if (!panState) { return; }
+        panState = null;
+        root.classList.remove("panning");
+      });
+
+      root.addEventListener("dblclick", function(ev) {
+        if (interactionIsLocked() || !view.contentW) { return; }
+        if (ev.target.closest(".node, #viewControls, #menu, #choicePopup, #modeBanner")) { return; }
+        restoreView();
+      });
+
+      window.addEventListener("resize", function() {
+        if (view.userAdjusted) { applyViewTransform(); } else { fitToView(); }
+      });
+      if (typeof ResizeObserver !== "undefined") {
+        new ResizeObserver(function() {
+          if (!view.userAdjusted) { fitToView(); }
+        }).observe(root);
+      }
     }
 
     function cubicPoint(p0, p1, p2, p3, t) {
@@ -682,7 +834,7 @@
     }
 
     function scheduleHover(text, x, y) {
-      if (interactionIsLocked()) { return; }
+      if (interactionIsLocked() || panState) { return; }
       cancelHover();
       if (!text) {
         return;

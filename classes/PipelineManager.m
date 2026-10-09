@@ -305,22 +305,53 @@ classdef PipelineManager < handle
             end
         end
 
-        function state = setParameters(obj, stepName)
+        function state = setParameters(obj, stepName, container, varargin)
             %SETPARAMETERS Edit parameter values of a step in the pipeline.
             %
             %   state = obj.setParameters()
             %   state = obj.setParameters(stepName)
+            %   obj.setParameters(stepName, container)
+            %   obj.setParameters(stepName, container, 'AppliedFcn', fcn)
             %
             %   Inputs:
-            %       stepName - Optional step tag. If omitted, the user is prompted
-            %                  to choose one from the current pipeline.
+            %       stepName  - Optional step tag. If omitted (without a
+            %                   container), the user is prompted to choose one
+            %                   from the current pipeline.
+            %       container - Optional UI container handle (uipanel,
+            %                   uigridlayout, ...). When given, the editable
+            %                   parameter controls are built inside it, with
+            %                   Apply and Reset buttons, and the call returns
+            %                   immediately (non-blocking). The container shows
+            %                   "No parameters" for steps without parameters
+            %                   and "No step selected" when stepName is empty.
+            %                   When omitted, a dedicated uifigure dialog is
+            %                   shown and the call waits for it.
+            %       'AppliedFcn' - Container mode only. Function handle called
+            %                   as fcn(stepTag) after Apply stored valid values.
             %
             %   Output:
-            %       state - True if the parameter dialog was completed and the
-            %               values were applied. False if the operation was
+            %       state - Dialog mode: true if the parameter dialog was
+            %               completed and the values were applied; false if
             %               cancelled or no editable parameters exist.
+            %               Container mode: always false (values are applied
+            %               later, by the Apply button).
 
             state = false;
+
+            if nargin < 3
+                container = [];
+            end
+
+            % ---------------------------------------
+            % Embedded editor
+            % ---------------------------------------
+            if ~isempty(container)
+                if nargin < 2
+                    stepName = '';
+                end
+                obj.populateParameterContainer(container, stepName, varargin{:});
+                return
+            end
 
             if isempty(obj.nodes)
                 error('Pipeline is empty.');
@@ -372,19 +403,7 @@ classdef PipelineManager < handle
             % ---------------------------------------
             % Validate and save values
             % ---------------------------------------
-            candidateParams = node.info.parameters;
-            for i = 1:numel(candidateParams)
-                candidateParams(i).value = out{i};
-            end
-
-            paramErrors = obj.validateParameterStructArray(candidateParams, node.name);
-            if ~isempty(paramErrors)
-                error('PipelineManager:setParameters:InvalidParameters', ...
-                    '%s', strjoin(paramErrors, newline));
-            end
-
-            obj.nodes(idx).info.parameters = candidateParams;
-            obj.nodes(idx).runtime.b_paramsSet = true;
+            obj.commitParameterValues(idx, out);
 
             fprintf('Parameters updated for step: %s\n', node.name);
         end
@@ -14626,13 +14645,14 @@ classdef PipelineManager < handle
             end
         end
 
-        %%%%%%--- Helper of "setParameters" -------------------------------
+        %%%%%%--- Helpers of "setParameters" ------------------------------
         function [values,state] = buildParameterDialog(obj, node)
             %BUILDPARAMETERDIALOG Build and show the parameter editing dialog.
             %
-            %   [values, state] = buildParameterDialog(obj, node) creates the UI
-            %   used by setParameters and returns the edited values.
-
+            %   [values, state] = buildParameterDialog(obj, node) creates the
+            %   dedicated uifigure used by setParameters when no container is
+            %   passed, and returns the edited values. The controls come from the
+            %   same builders as the embedded editor (populateParameterContainer).
 
             params = node.info.parameters;
             n = numel(params);
@@ -14640,32 +14660,10 @@ classdef PipelineManager < handle
             state  = false;
             values = cell(n,1);
 
-            rowH = 28;
             btnH = 36;
-            choiceRowH = 26;
-            panelChromeH = 28;
-            maxVisibleChoices = 6;
             rowSpacing = 6;
             dialogPadding = [15 15 15 10];
-            rowHeights = repmat({rowH}, 1, n);
-
-            % Multi-select parameters need enough vertical space for their
-            % checkbox grid. Keep long lists bounded; their panel remains
-            % scrollable for choices beyond the visible estimate.
-            for i = 1:n
-                p = params(i);
-                isTextChoice = ~obj.isUnrestrictedAllowedSpec(p.allowed) && ...
-                    iscell(p.allowed) && ...
-                    all(cellfun(@(x) ischar(x) || ...
-                    (isstring(x) && isscalar(x)), p.allowed));
-                isMultiSelect = strcmpi(p.type, 'char') && ...
-                    isTextChoice && ~isrow(p.allowed);
-                if isMultiSelect
-                    visibleChoices = min(numel(p.allowed), maxVisibleChoices);
-                    rowHeights{i} = max(rowH, ...
-                        visibleChoices * choiceRowH + panelChromeH);
-                end
-            end
+            rowHeights = obj.getParameterRowHeights(params);
 
             % Include every vertical contribution made by the grid layout.
             % Omitting the n inter-row gaps places the nested action row below
@@ -14684,11 +14682,282 @@ classdef PipelineManager < handle
             gl.RowSpacing  = rowSpacing;
             gl.Padding     = dialogPadding;
 
-            controls = gobjects(n,1);
+            controls = obj.createParameterControls(gl, params, []);
 
             % ---------------------------------------------------------
-            % Create controls
+            % Nested button layout
             % ---------------------------------------------------------
+            btnPanel = uigridlayout(gl,[1 2]);
+            btnPanel.Layout.Row = n+1;
+            btnPanel.Layout.Column = [1 2];
+            btnPanel.ColumnWidth = {'1x','1x'};
+            btnPanel.Padding = [0 5 0 0];
+            btnPanel.ColumnSpacing = 10;
+
+            uibutton(btnPanel, ...
+                'Text','OK', ...
+                'ButtonPushedFcn',@onSave);
+
+            uibutton(btnPanel, ...
+                'Text','Reset', ...
+                'ButtonPushedFcn',@onReset,...
+                'Tooltip','Reset Parameters to default values');
+
+            uiwait(dlg);
+
+            function onSave(~,~)
+                values = obj.readParameterControls(params, controls);
+                state = true;
+                delete(dlg);
+            end
+
+            function onReset(~,~)
+                obj.resetParameterControls(params, controls);
+            end
+        end
+
+        function populateParameterContainer(obj, container, stepName, varargin)
+            %POPULATEPARAMETERCONTAINER Build the editable parameters of a step in a container.
+            %
+            %   obj.populateParameterContainer(container, stepName)
+            %   obj.populateParameterContainer(container, stepName, 'AppliedFcn', fcn)
+            %
+            %   Replaces the content of CONTAINER (a uipanel, uigridlayout, ...)
+            %   with the parameter controls of STEPNAME plus Apply and Reset
+            %   buttons. Non-blocking. Apply validates and stores the values
+            %   (commitParameterValues) and then calls fcn(stepTag). A label is
+            %   shown instead when no step is given or the step has no parameters.
+
+            parser = inputParser;
+            addParameter(parser, 'AppliedFcn', [], @(x) isempty(x) || isa(x, 'function_handle'));
+            parse(parser, varargin{:});
+            appliedFcn = parser.Results.AppliedFcn;
+
+            if ~isscalar(container) || ~isgraphics(container)
+                error('PipelineManager:setParameters:InvalidContainer', ...
+                    'The parameter container must be a valid UI container handle.');
+            end
+
+            delete(container.Children);
+
+            idx = [];
+            if ~isempty(stepName) && ~isempty(obj.nodes)
+                idx = find(strcmpi(char(string(stepName)), {obj.nodes.name}), 1);
+            end
+
+            if isempty(idx)
+                obj.showParameterMessage(container, 'No step selected');
+                return
+            end
+
+            node = obj.nodes(idx);
+
+            if ~strcmpi(node.kind, 'stream') || ~isfield(node.info, 'parameters') || ...
+                    isempty(node.info.parameters)
+                obj.showParameterMessage(container, 'No parameters');
+                return
+            end
+
+            params = node.info.parameters;
+            n = numel(params);
+            nodeID = node.id;
+
+            outer = uigridlayout(container, [3 1]);
+            outer.RowHeight = {20, '1x', 30};
+            outer.RowSpacing = 5;
+            outer.Padding = [5 5 5 5];
+
+            statusLabel = uilabel(outer, ...
+                'Text', obj.parameterStatusText(node), ...
+                'FontAngle', 'italic');
+            statusLabel.Layout.Row = 1;
+
+            body = uigridlayout(outer, [n 2]);
+            body.Layout.Row = 2;
+            body.RowHeight = obj.getParameterRowHeights(params);
+            body.ColumnWidth = {'1x', '1.2x'};
+            body.RowSpacing = 6;
+            body.Padding = [0 0 0 0];
+            body.Scrollable = 'on';
+
+            try
+                controls = obj.createParameterControls(body, params, @onEdited);
+            catch ME
+                delete(container.Children);
+                obj.showParameterMessage(container, ...
+                    sprintf('Parameters cannot be edited here: %s', ME.message));
+                return
+            end
+
+            buttons = uigridlayout(outer, [1 2]);
+            buttons.Layout.Row = 3;
+            buttons.ColumnWidth = {'1x', '1x'};
+            buttons.ColumnSpacing = 10;
+            buttons.Padding = [0 0 0 0];
+
+            applyButton = uibutton(buttons, ...
+                'Text', 'Apply', ...
+                'Tooltip', 'Apply the parameter values to this step', ...
+                'ButtonPushedFcn', @onApply);
+            applyButton.Layout.Column = 1;
+
+            resetButton = uibutton(buttons, ...
+                'Text', 'Reset', ...
+                'Tooltip', 'Reset parameters to their default values', ...
+                'ButtonPushedFcn', @onReset);
+            resetButton.Layout.Column = 2;
+
+            function onEdited(~, ~)
+                applyButton.Text = 'Apply *';
+            end
+
+            function onReset(~, ~)
+                obj.resetParameterControls(params, controls);
+                applyButton.Text = 'Apply *';
+            end
+
+            function onApply(~, ~)
+                idxNow = [];
+                if ~isempty(obj.nodes)
+                    idxNow = find([obj.nodes.id] == nodeID, 1);
+                end
+                if isempty(idxNow)
+                    obj.alertParameterError(container, 'The step no longer exists.');
+                    return
+                end
+
+                try
+                    values = obj.readParameterControls(params, controls);
+                    obj.commitParameterValues(idxNow, values);
+                catch ME
+                    obj.alertParameterError(container, ME.message);
+                    return
+                end
+
+                statusLabel.Text = obj.parameterStatusText(obj.nodes(idxNow));
+                applyButton.Text = 'Apply';
+
+                if ~isempty(appliedFcn)
+                    appliedFcn(obj.nodes(idxNow).name);
+                end
+            end
+        end
+
+        function showParameterMessage(~, container, msg)
+            %SHOWPARAMETERMESSAGE Fill a container with a single centered label.
+
+            gl = uigridlayout(container, [1 1]);
+            gl.Padding = [5 5 5 5];
+            uilabel(gl, ...
+                'Text', msg, ...
+                'HorizontalAlignment', 'center', ...
+                'WordWrap', 'on', ...
+                'FontColor', [0.5 0.5 0.5]);
+        end
+
+        function alertParameterError(~, container, msg)
+            %ALERTPARAMETERERROR Report an invalid parameter value without throwing.
+
+            fig = ancestor(container, 'figure');
+            try
+                uialert(fig, msg, 'Invalid parameters');
+            catch
+                warning('PipelineManager:setParameters:InvalidParameters', '%s', msg);
+            end
+        end
+
+        function typeKey = parameterEditorType(~, p)
+            %PARAMETEREDITORTYPE Control family used to edit one parameter.
+            %
+            %   'double' and 'single' are numeric parameters (the validator
+            %   already treats them so); other types are returned lower-cased.
+
+            typeKey = lower(char(string(p.type)));
+            if ismember(typeKey, {'double', 'single'})
+                typeKey = 'numeric';
+            end
+        end
+
+        function txt = parameterStatusText(~, node)
+            %PARAMETERSTATUSTEXT One-line "parameters set / not set" status of a step.
+
+            isSet = isfield(node, 'runtime') && isstruct(node.runtime) && ...
+                isfield(node.runtime, 'b_paramsSet') && ~isempty(node.runtime.b_paramsSet) && ...
+                logical(node.runtime.b_paramsSet(1));
+
+            if isSet
+                txt = 'Parameters: set';
+            else
+                txt = 'Parameters: not set (defaults will be used)';
+            end
+        end
+
+        function commitParameterValues(obj, idx, values)
+            %COMMITPARAMETERVALUES Validate and store edited values on one node.
+            %
+            %   Raises PipelineManager:setParameters:InvalidParameters, leaving
+            %   the node unchanged, when any value is invalid.
+
+            node = obj.nodes(idx);
+
+            candidateParams = node.info.parameters;
+            for i = 1:numel(candidateParams)
+                candidateParams(i).value = values{i};
+            end
+
+            paramErrors = obj.validateParameterStructArray(candidateParams, node.name);
+            if ~isempty(paramErrors)
+                error('PipelineManager:setParameters:InvalidParameters', ...
+                    '%s', strjoin(paramErrors, newline));
+            end
+
+            obj.nodes(idx).info.parameters = candidateParams;
+            obj.nodes(idx).runtime.b_paramsSet = true;
+        end
+
+        function rowHeights = getParameterRowHeights(obj, params)
+            %GETPARAMETERROWHEIGHTS Row heights (cell row) of a parameter grid.
+
+            n = numel(params);
+            rowH = 28;
+            choiceRowH = 26;
+            panelChromeH = 28;
+            maxVisibleChoices = 6;
+            rowHeights = repmat({rowH}, 1, n);
+
+            % Multi-select parameters need enough vertical space for their
+            % checkbox grid. Keep long lists bounded; their panel remains
+            % scrollable for choices beyond the visible estimate.
+            for i = 1:n
+                p = params(i);
+                isTextChoice = ~obj.isUnrestrictedAllowedSpec(p.allowed) && ...
+                    iscell(p.allowed) && ...
+                    all(cellfun(@(x) ischar(x) || ...
+                    (isstring(x) && isscalar(x)), p.allowed));
+                isMultiSelect = strcmpi(obj.parameterEditorType(p), 'char') && ...
+                    isTextChoice && ~isrow(p.allowed);
+                if isMultiSelect
+                    visibleChoices = min(numel(p.allowed), maxVisibleChoices);
+                    rowHeights{i} = max(rowH, ...
+                        visibleChoices * choiceRowH + panelChromeH);
+                end
+            end
+        end
+
+        function controls = createParameterControls(obj, gl, params, changedFcn)
+            %CREATEPARAMETERCONTROLS Create one label + editor per parameter in a grid.
+            %
+            %   controls = obj.createParameterControls(gl, params, changedFcn)
+            %
+            %   GL is a uigridlayout with one row per parameter and two columns.
+            %   CHANGEDFCN ([] for none) is attached as ValueChangedFcn of every
+            %   editor. Returns one control handle per parameter (a uipanel for
+            %   multi-select parameters).
+
+            n = numel(params);
+            choiceRowH = 26;
+            controls = gobjects(n,1);
+
             for i = 1:n
 
                 p = params(i);
@@ -14699,7 +14968,7 @@ classdef PipelineManager < handle
                 lbl.Layout.Row = i;
                 lbl.Layout.Column = 1;
 
-                switch lower(p.type)
+                switch obj.parameterEditorType(p)
 
                     % ---------------- LOGICAL ----------------
                     case 'logical'
@@ -14767,9 +15036,12 @@ classdef PipelineManager < handle
                                 gl2.Padding = [5 5 5 5];
 
                                 for k = 1:numel(p.allowed)
-                                    uicheckbox(gl2, ...
+                                    chk = uicheckbox(gl2, ...
                                         'Text', p.allowed{k}, ...
                                         'Value', ismember(p.allowed{k}, p.value));
+                                    if ~isempty(changedFcn)
+                                        chk.ValueChangedFcn = changedFcn;
+                                    end
                                 end
                             end
 
@@ -14785,116 +15057,219 @@ classdef PipelineManager < handle
                 c.Layout.Column = 2;
                 c.Tooltip = p.description;
 
-                controls(i) = c;
-            end
-
-            % ---------------------------------------------------------
-            % Nested button layout
-            % ---------------------------------------------------------
-            btnPanel = uigridlayout(gl,[1 2]);
-            btnPanel.Layout.Row = n+1;
-            btnPanel.Layout.Column = [1 2];
-            btnPanel.ColumnWidth = {'1x','1x'};
-            btnPanel.Padding = [0 5 0 0];
-            btnPanel.ColumnSpacing = 10;
-
-            btnOK = uibutton(btnPanel, ...
-                'Text','OK', ...
-                'ButtonPushedFcn',@onSave);
-
-            btnReset = uibutton(btnPanel, ...
-                'Text','Reset', ...
-                'ButtonPushedFcn',@onReset,...
-                'Tooltip','Reset Parameters to default values');
-
-            uiwait(dlg);
-
-            % =========================================================
-            % Save Callback
-            % =========================================================
-            function onSave(~,~)
-
-                for ii = 1:n
-                    p = params(ii);
-                    ctrl = controls(ii);
-
-                    switch lower(p.type)
-
-                        case 'logical'
-                            values{ii} = logical(ctrl.Value);
-
-                        case 'numeric'
-                            if isa(ctrl,'matlab.ui.control.DropDown')
-                                values{ii} = str2double(ctrl.Value);
-                            else
-                                values{ii} = ctrl.Value;
-                            end
-
-                        case 'char'
-
-                            if isa(ctrl,'matlab.ui.control.DropDown')
-                                values{ii} = ctrl.Value;
-
-                            elseif isa(ctrl,'matlab.ui.container.Panel')
-                                checks = ctrl.Children.Children;
-                                sel = arrayfun(@(x) x.Value, checks);
-                                labels = arrayfun(@(x) x.Text, checks, 'UniformOutput',false);
-                                values{ii} = labels(sel);
-
-                            else
-                                values{ii} = char(ctrl.Value);
-                            end
-                    end
+                if ~isempty(changedFcn) && ~isa(c, 'matlab.ui.container.Panel')
+                    c.ValueChangedFcn = changedFcn;
                 end
 
-                state = true;
-                delete(dlg);
+                controls(i) = c;
             end
+        end
 
-            % =========================================================
-            % Reset Callback
-            % =========================================================
-            function onReset(~,~)
+        function values = readParameterControls(obj, params, controls)
+            %READPARAMETERCONTROLS Read the edited values from controls built by createParameterControls.
 
-                for ii = 1:n
+            n = numel(params);
+            values = cell(n,1);
 
-                    p = params(ii);
-                    ctrl = controls(ii);
+            for ii = 1:n
+                p = params(ii);
+                ctrl = controls(ii);
 
-                    switch lower(p.type)
+                switch obj.parameterEditorType(p)
 
-                        case 'logical'
-                            ctrl.Value = logical(p.default);
+                    case 'logical'
+                        values{ii} = logical(ctrl.Value);
 
-                        case 'numeric'
-                            if isa(ctrl,'matlab.ui.control.DropDown')
-                                ctrl.Value = num2str(p.default);
-                            else
-                                ctrl.Value = p.default;
+                    case 'numeric'
+                        if isa(ctrl,'matlab.ui.control.DropDown')
+                            values{ii} = str2double(ctrl.Value);
+                        else
+                            values{ii} = ctrl.Value;
+                        end
+
+                    case 'char'
+
+                        if isa(ctrl,'matlab.ui.control.DropDown')
+                            values{ii} = ctrl.Value;
+
+                        elseif isa(ctrl,'matlab.ui.container.Panel')
+                            checks = ctrl.Children.Children;
+                            sel = arrayfun(@(x) x.Value, checks);
+                            labels = arrayfun(@(x) x.Text, checks, 'UniformOutput',false);
+                            values{ii} = labels(sel);
+
+                        else
+                            values{ii} = char(ctrl.Value);
+                        end
+                end
+            end
+        end
+
+        function resetParameterControls(obj, params, controls)
+            %RESETPARAMETERCONTROLS Put every control back to its parameter's default.
+
+            for ii = 1:numel(params)
+
+                p = params(ii);
+                ctrl = controls(ii);
+
+                switch obj.parameterEditorType(p)
+
+                    case 'logical'
+                        ctrl.Value = logical(p.default);
+
+                    case 'numeric'
+                        if isa(ctrl,'matlab.ui.control.DropDown')
+                            ctrl.Value = num2str(p.default);
+                        else
+                            ctrl.Value = p.default;
+                        end
+
+                    case 'char'
+
+                        if isa(ctrl,'matlab.ui.control.DropDown')
+                            ctrl.Value = p.default;
+
+                        elseif isa(ctrl,'matlab.ui.container.Panel')
+                            checks = ctrl.Children.Children;
+                            for kk = 1:numel(checks)
+                                checks(kk).Value = ismember(checks(kk).Text, p.default);
                             end
 
-                        case 'char'
-
-                            if isa(ctrl,'matlab.ui.control.DropDown')
-                                ctrl.Value = p.default;
-
-                            elseif isa(ctrl,'matlab.ui.container.Panel')
-                                checks = ctrl.Children.Children;
-                                for kk = 1:numel(checks)
-                                    checks(kk).Value = ismember(checks(kk).Text, p.default);
-                                end
-
-                            else
-                                ctrl.Value = p.default;
-                            end
-                    end
+                        else
+                            ctrl.Value = p.default;
+                        end
                 end
             end
         end
 
     end
 
+    methods (Static, Access = private)
+
+        function [detail, nFailedFolders] = firstRunFailureDetail(result)
+            %FIRSTRUNFAILUREDETAIL First short error message and failed-folder count of a result.
+
+            detail = '';
+            nFailedFolders = 0;
+
+            if ~isstruct(result) || ~isscalar(result) || ~isfield(result, 'globalPipeLog') || ...
+                    ~istable(result.globalPipeLog)
+                return
+            end
+
+            logTable = result.globalPipeLog;
+            if ~all(ismember({'Status', 'Messages_short'}, logTable.Properties.VariableNames))
+                return
+            end
+
+            statusVals = lower(strtrim(string(logTable.Status)));
+            failedRows = find(statusVals == "failed" | statusVals == "partially executed");
+            nFailedFolders = numel(failedRows);
+
+            for iRow = failedRows(:)'
+                msgs = string(logTable.Messages_short(iRow));
+                msgs = strtrim(msgs(1));
+                if ismissing(msgs) || strlength(msgs) == 0 || strcmpi(msgs, "No Errors")
+                    continue
+                end
+                firstMsg = strtrim(extractBefore(msgs + " | ", " | "));
+                detail = PipelineManager.shortenRunMessage(firstMsg);
+                if ~isempty(detail)
+                    return
+                end
+            end
+        end
+
+        function txt = shortenRunMessage(msg)
+            %SHORTENRUNMESSAGE Single-line, function/line-free, length-limited error text.
+
+            maxChars = 200;
+
+            txt = char(strtrim(string(msg)));
+            txt = regexprep(txt, '\s*\(Function:[^)]*\)\s*$', '');
+            txt = regexprep(txt, '\s+', ' ');
+            txt = strtrim(txt);
+
+            if numel(txt) > maxChars
+                txt = [strtrim(txt(1:maxChars - 3)) '...'];
+            end
+        end
+    end
+
     methods (Static)
+
+        function info = describeExecutionResult(resultOrError)
+            %DESCRIBEEXECUTIONRESULT One-sentence outcome of a pipeline run, for dialogs.
+            %
+            %   info = PipelineManager.describeExecutionResult(result)
+            %   info = PipelineManager.describeExecutionResult(ME)
+            %
+            %   RESULT is the struct returned by executePipeline; ME is an
+            %   MException thrown by it. INFO has the fields
+            %       severity - 'success' | 'warning' | 'error' | 'info'
+            %       message  - Single short sentence. Failures carry the first
+            %                  error message (function/line detail removed,
+            %                  whitespace collapsed, truncated to 200 characters).
+            %   Never throws: unknown or incomplete results yield an 'info'
+            %   message that names the status.
+
+            info = struct('severity', 'info', 'message', 'Pipeline finished.');
+
+            if isa(resultOrError, 'MException')
+                info.severity = 'error';
+                info.message = ['Pipeline failed: ' ...
+                    PipelineManager.shortenRunMessage(resultOrError.message)];
+                return
+            end
+
+            statusText = "unknown";
+            if isstruct(resultOrError) && isscalar(resultOrError) && isfield(resultOrError, 'status') && ...
+                    ~isempty(resultOrError.status)
+                statusText = lower(strtrim(string(resultOrError.status(1))));
+            end
+
+            [detail, nFailedFolders] = PipelineManager.firstRunFailureDetail(resultOrError);
+            if nFailedFolders > 1
+                suffix = sprintf(' (%d folders failed)', nFailedFolders);
+            else
+                suffix = '';
+            end
+
+            switch statusText
+                case "completed"
+                    info.severity = 'success';
+                    info.message = 'Pipeline completed successfully.';
+
+                case "skipped"
+                    info.severity = 'info';
+                    info.message = 'Nothing to run: every step was skipped (outputs already exist).';
+
+                case "cancelled"
+                    info.severity = 'warning';
+                    info.message = 'Pipeline was cancelled.';
+
+                case "failed"
+                    info.severity = 'error';
+                    if isempty(detail)
+                        info.message = ['Pipeline failed.' suffix];
+                    else
+                        info.message = ['Pipeline failed: ' detail suffix];
+                    end
+
+                case "completed_with_errors"
+                    info.severity = 'warning';
+                    if isempty(detail)
+                        info.message = ['Pipeline finished with errors.' suffix];
+                    else
+                        info.message = ['Pipeline finished with errors: ' detail suffix];
+                    end
+
+                otherwise
+                    info.severity = 'info';
+                    info.message = sprintf('Pipeline finished (status: %s).', char(statusText));
+            end
+        end
 
         function transferDataHistoryEntry(saveFolder, sourceFile, targetFile, mode)
             %TRANSFERDATAHISTORYENTRY Carry a file's provenance to a renamed or copied file.
