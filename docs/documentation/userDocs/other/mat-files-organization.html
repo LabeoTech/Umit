@@ -9,12 +9,12 @@ nav_order: 2
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Save Folder metadata files</title></head><body>
 <h1>Save Folder metadata files</h1>
 <p>A Save Folder keeps imaging data and recording-specific information together. Project information and managed image references or transforms are held in the user's central umIT folder, but <samp>UMITProjectBinding.umitlink</samp> links the Save Folder to its project, subject, and session.</p>
-<p>All <samp>.dat</samp> files in one Save Folder share the same image height and width. Those dimensions, together with the information needed to read the binary data, are stored in <samp>AcqInfos.mat</samp>. Files whose dimensions differ use the <a href="umt-files-organization.html"><samp>.umt</samp> format</a>.</p>
-<div class="warnnote"><p><strong>Do not remove AcqInfos.mat</strong><br>Without <samp>AcqInfos.mat</samp>, the toolbox cannot reliably reconstruct the images in the Save Folder's <samp>.dat</samp> files. Removing it renders those files unreadable to umIT.</p></div>
+<p>Each <samp>.dat</samp> file describes itself: its <a href="dat-files-organization.html">512-byte header</a> records the size of every axis, the numeric class, the frame rate, and the exposure, so the files in a Save Folder may have different shapes and frame rates. <samp>AcqInfos.mat</samp> does not describe the imported <samp>.dat</samp> files. It describes the <strong>raw acquisition</strong> they came from. Results that are not images use the <a href="umt-files-organization.html"><samp>.umt</samp> format</a>.</p>
+<div class="warnnote"><p><strong>Do not remove AcqInfos.mat</strong><br>The <samp>.dat</samp> files remain readable without it, but <samp>AcqInfos.mat</samp> holds the facts of the original acquisition, such as the camera and illumination layout, the hardware binning, and the import settings. Dual-camera coregistration and several tools rely on them, and they cannot be rebuilt without the raw recording.</p></div>
 
 <h2>Summary</h2>
 <table><tr><th>File</th><th>Purpose</th><th>Use this interface</th></tr>
-<tr><td><samp>AcqInfos.mat</samp></td><td>Image dimensions, frame rate, channels, exposure, and other facts recorded at import.</td><td>Data Import functions or a controlled migration.</td></tr>
+<tr><td><samp>AcqInfos.mat</samp></td><td>Facts of the raw acquisition (original frame size, frame rate, exposure, cameras, illuminations), the import settings, and a manifest of the imported <samp>.dat</samp> files. It does not describe the imported data itself; each <samp>.dat</samp> header does.</td><td>Data Import functions or a controlled migration.</td></tr>
 <tr><td><samp>DataParams.mat</samp></td><td>Display calibration, logical mask, Raw Folder location, and image-registration state.</td><td><em>DataViewer</em>, alignment tools, and DataParams helper functions.</td></tr>
 <tr><td><samp>events.mat</samp></td><td>Analog traces, event timing, condition names, repetitions, and saved ignored-trial flags.</td><td><a href="../tools/events-manager_tool.html"><em>Events Manager</em></a> or the <em>EventsManager</em> class.</td></tr>
 <tr><td><samp>dataHistory.mat</samp></td><td>Processing steps and parameters that produced each saved output file.</td><td><a href="../tools/pipeline_configuration_tool.html"><em>Pipeline Manager</em></a>.</td></tr>
@@ -22,15 +22,16 @@ nav_order: 2
 <tr><td><samp>UMITProjectBinding.umitlink</samp></td><td>Link from this folder to one project, subject, session, and folder role.</td><td><a href="../tools/project-management-folder-binding.html"><em>Project Binding Manager</em></a>.</td></tr></table>
 <div class="infonote"><p><strong>Use the interface that owns each file</strong><br>These files are coordinated with other application state. Do not hand-edit them unless you understand the validation and update rules; use the app, class, or helper listed above.</p></div>
 
-<h2>AcqInfos.mat</h2>
-<p>The file contains one scalar structure named <samp>AcqInfoStream</samp>. Import functions create it from the source recording. Its exact optional fields depend on the importer and hardware, but current readers use these groups:</p>
+<h2 id="acqinfosmat">AcqInfos.mat</h2>
+<p>The file contains one scalar structure named <samp>AcqInfoStream</samp>. Import functions create it from the source recording. It describes the <strong>raw acquisition</strong>: its values are those reported by the acquisition system (<samp>info.txt</samp> or the TIFF files), before any binning or channel separation applied at import. Its exact optional fields depend on the importer and hardware, but current readers use these groups:</p>
 <table><tr><th>Fields</th><th>Meaning</th></tr>
-<tr><td><samp>Height</samp>, <samp>Width</samp>, <samp>Length</samp></td><td>Shared Y-X image size and imported time length. Readers also verify the actual file size before trusting a frame count.</td></tr>
-<tr><td><samp>FrameRateHz</samp>, <samp>ExposureMsec</samp></td><td>Imaging time base and acquisition exposure.</td></tr>
-<tr><td><samp>Datatype</samp></td><td>Binary sample type when supplied. Current imported <samp>.dat</samp> imaging files use 32-bit single precision.</td></tr>
-<tr><td><samp>ImportedChannels</samp></td><td>Per-file channel records used to match a <samp>.dat</samp> filename to its channel and timeline.</td></tr>
-<tr><td><samp>MultiCam</samp> and camera/channel fields</td><td>Dual-camera acquisition layout, rotations, flips, binning, and channel associations when present.</td></tr>
-<tr><td>Hardware/importer-specific fields</td><td>Additional facts preserved by the importer, such as analog channel names or source acquisition information.</td></tr></table>
+<tr><td><samp>Height</samp>, <samp>Width</samp></td><td>Frame size as acquired, before spatial binning at import. They do not give the size of the imported <samp>.dat</samp> files.</td></tr>
+<tr><td><samp>FrameRateHz</samp>, <samp>ExposureMsec</samp></td><td>Frame rate and exposure of the acquisition, before temporal binning and before the illuminations were separated into channels. The frame rate of each imported file is stored in its own header.</td></tr>
+<tr><td><samp>BinningSpatial</samp>, <samp>BinningTemp</samp></td><td>Settings chosen at import. They relate the imported files to the raw data; the imported size and rate are in each <samp>.dat</samp> header.</td></tr>
+<tr><td><samp>ImportedChannels</samp></td><td>Manifest of the <samp>.dat</samp> files created by the import: file name, channel tag, illumination color, and camera, used to match a file to its illumination and camera. The size, class, frame rate, and exposure of each file are always read from the file's own header.</td></tr>
+<tr><td><samp>MultiCam</samp> and camera/channel fields</td><td>Dual-camera acquisition layout, rotations, flips, hardware binning, camera model, and illumination sequence when present.</td></tr>
+<tr><td>Hardware/importer-specific fields</td><td>Additional facts preserved by the importer, such as analog channel names, the acquisition date and time, or source acquisition information.</td></tr></table>
+<div class="infonote"><p><strong>Older Save Folders</strong><br>Folders imported with an earlier development version may hold an <samp>AcqInfos.mat</samp> whose <samp>Height</samp>, <samp>Width</samp>, <samp>Length</samp>, or <samp>Datatype</samp> fields describe the imported files. umIT does not read those fields as facts about imported data, and the file is not migrated. New imports no longer write <samp>Length</samp> or <samp>Datatype</samp>.</p></div>
 
 <h2>DataParams.mat</h2>
 <p>The file contains one scalar <samp>DataParams</samp> structure. It is created and validated independently from acquisition metadata; it cannot replace <samp>AcqInfos.mat</samp>.</p>
