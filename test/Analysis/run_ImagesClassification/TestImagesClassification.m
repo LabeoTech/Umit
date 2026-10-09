@@ -217,25 +217,21 @@ classdef TestImagesClassification < matlab.unittest.TestCase
 
             Info = loadMetaData(fullfile(listing(1).folder, listing(1).name));
 
-            % .dat header Phase 4d: channel files are headered, so Info is the
-            % .dat schema plus the compatibility names of a headered file
-            % (CamIdx and TimelineSource exist only for AcqInfos-bound files).
+            % .dat header Phase 8a: channel files are headered, so Info is
+            % exactly the .dat schema. The former compatibility names
+            % (Height, Length, FrameRateHz, MetadataSource, ...) are gone.
             expectedFields = {'filePath', 'format', 'dataOffset', 'dataClass', ...
                 'dimNames', 'dimSizes', 'frameRateHz', 'exposureMsec', ...
-                'datFile', 'folderPath', 'FileType', 'Height', 'Width', ...
-                'Length', 'FrameRateHz', 'Datatype', 'dim_names', 'datSize', ...
-                'datLength', 'Freq', 'ExposureMsec', 'MetadataSource'};
+                'channelName', 'writeComplete'};
             testCase.verifyEqual(Info.format, 'header');
-            testCase.verifyEqual(Info.MetadataSource, 'header');
-
-            for iField = 1:numel(expectedFields)
-                testCase.verifyTrue(isfield(Info, expectedFields{iField}), ...
-                    ['Missing Info field: ' expectedFields{iField}]);
-            end
+            testCase.verifyEqual(sort(fieldnames(Info)), sort(expectedFields(:)), ...
+                'Info of a headered file must hold exactly the .dat schema fields.');
 
             rejectedFields = {'fileName', 'ImportedChannels', 'Illumination1', ...
                 'AISampleRate', 'Acquisition_Duration', 'OriginalLength', ...
-                'Tag', 'Color'};
+                'Tag', 'Color', 'MetadataSource', 'Length', 'FrameRateHz', ...
+                'Height', 'Width', 'Datatype', 'datLength', 'datSize', ...
+                'dim_names', 'Freq', 'ExposureMsec'};
 
             for iField = 1:numel(rejectedFields)
                 testCase.verifyFalse(isfield(Info, rejectedFields{iField}), ...
@@ -289,8 +285,8 @@ classdef TestImagesClassification < matlab.unittest.TestCase
 
             repPath = fullfile(testCase.TempSaveFolder, repeatedDatFile);
             Info = loadMetaData(repPath);
-            testCase.verifyEqual(double(Info.Length), 2 * baseLength);
-            testCase.verifyEqual(double(Info.FrameRateHz), 2 * baseFreq, ...
+            testCase.verifyEqual(datAxisSize(Info, 'T'), 2 * baseLength);
+            testCase.verifyEqual(double(Info.frameRateHz), 2 * baseFreq, ...
                 'AbsTol', max(1e-9, abs(2 * baseFreq) * 1e-9));
         end
 
