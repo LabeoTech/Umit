@@ -1,0 +1,32 @@
+Scan info
+DateTime: 20240117_105615
+Version: 4.4.7
+Camera Model: CS2100M
+FrameRateHz: 10.000000
+Width: 1024
+Height: 1024
+Binning: 1
+ExposureMsec: 21.000000
+ExposureFluoMsec: 21.000000
+ExposureSpeckleMsec: 24.000000
+Rotation: 0
+X Offset: 0
+Y Offset: 0
+Delay first stim: 10.000000
+AISampleRate: 10000
+AINChannels: 12
+AICh1: CameraTrig
+AICh2: StimAna1
+AICh3: StimAna2
+AICh4: StimDig
+AICh5: AI1
+AICh6: AI2
+AICh7: AI3
+AICh8: AI4
+AICh9: AI5
+AICh10: AI6
+AICh11: AI7
+AICh12: AI8
+Illumination1: Speckle
+Acquisition Duration: 120.000000
+Stimulation: 0

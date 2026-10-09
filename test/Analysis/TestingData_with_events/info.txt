@@ -1,0 +1,45 @@
+Scan info
+DateTime: 20230421_142936
+Version: 4.3.4   2D Optogen plugin version: 3.3
+Camera Model: CS2100M
+FrameRateHz: 60.000000
+Width: 112
+Height: 112
+Binning: 8
+ExposureMsec: 0.833300
+ExposureFluoMsec: 0.833300
+ExposureSpeckleMsec: 0.833300
+Rotation: 0
+Delay first stim: 5.000000
+AISampleRate: 10000
+AINChannels: 12
+AICh1: CameraTrig
+AICh2: StimAna1
+AICh3: StimAna2
+AICh4: AI1
+AICh5: AI2
+AICh6: AI3
+AICh7: AI4
+AICh8: AI5
+AICh9: AI6
+AICh10: AI7
+AICh11: AI8
+AICh12: CameraTrig2
+Illumination1: Red
+Illumination2: Amber
+Illumination3: Green
+Stimulation: 1
+Stimulation1 Name: Main
+Stimulation1 Period: 333
+Stimulation1 Duration: 5
+Stimulation1 Pulse Width: 167
+Stimulation1 Burst Repeat: 1
+Stimulation1 Burst Delay: 0
+Stimulation1 Amplitude: 10
+Stimulation1 Biphasic: 0
+Stimulation1 Inter Stim: 10
+Stimulation1 N Repeat: 3
+Stimulation1 Jitter: 3
+Stimulation1 Output Channel: 1
+Stimulation1 Test Run: 0
+Stimulation2: 0
