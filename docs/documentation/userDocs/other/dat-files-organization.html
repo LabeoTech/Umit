@@ -8,25 +8,70 @@ nav_order: 3
 ---
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Organization of .dat files</title></head><body>
 <h1>Organization of .dat files</h1>
-<p>Imaging datasets are stored in binary files with the extension <samp>.dat</samp>. Each <samp>.dat</samp> file contains only a single channel. For example, in a recording where a fluorescence channel was acquired with red and green illuminations, each channel is stored separately in a dedicated <samp>.dat</samp> file. These files are created using one of the available Data Import functions. The binary files store only imaging data as 4-byte (32-bit) floating-point values (single precision).</p>
-<p>The file contains no header or dimensions. umIT reconstructs it using <samp>AcqInfos.mat</samp> in the same Save Folder, and all <samp>.dat</samp> files in that folder share the recorded height and width.</p>
-<h2>Ordering</h2>
-<pre>MATLAB array: data(Y, X, T)
-Serialized order:
-  frame 1: column X=1 from Y=1..Height, then X=2, ...
-  frame 2: same Y-X order
-  ...
-  frame T</pre>
-<p>This is MATLAB column-major Y-X-T order. The byte offset for pixel column <samp>x</samp> in frame <samp>t</samp> follows the same order; each value uses four bytes.</p>
-<h2>Metadata and file naming</h2>
-<p><samp>AcqInfos.mat</samp> provides Height, Width, Length/frame count, frame rate, channels, and multi-camera facts. File names identify logical channels or processing results, but names alone do not define dimensions.</p>
+<p>Imaging data is stored in binary files with the extension <samp>.dat</samp>. Each <samp>.dat</samp> file holds a single channel and begins with a fixed 512-byte header that describes the data that follows: its numeric class, frame rate, exposure, channel name, and the size of each axis. A file can therefore be opened and reshaped from its own contents alone, without <samp>AcqInfos.mat</samp> or <samp>events.mat</samp>.</p>
+<p>For example, in a recording where a fluorescence channel was acquired with red and green illuminations, each channel is stored in its own <samp>.dat</samp> file, and each file carries its own frame rate and size. The Data Import functions create these files, and so do the processing functions that save image results.</p>
+<div class="infonote"><p><strong>AcqInfos.mat does not describe .dat files</strong><br>The shape, class, frame rate, and exposure of a <samp>.dat</samp> file come only from its header. <samp>AcqInfos.mat</samp> describes the raw acquisition, not the imported files; see <a href="mat-files-organization.html#acqinfosmat">Save Folder metadata files</a>.</p></div>
+
+<h2>What a .dat file can hold</h2>
+<p>A <samp>.dat</samp> file holds image data and always has the axes Y and X (image rows and columns). It can also have:</p>
+<table><tr><th>Axis</th><th>Meaning</th></tr>
+<tr><td><samp>Y</samp>, <samp>X</samp></td><td>Image rows and columns. Always present.</td></tr>
+<tr><td><samp>T</samp></td><td>Time (frames).</td></tr>
+<tr><td><samp>E</samp></td><td>Events: one slice per event instance, or one slice per condition after averaging over events.</td></tr>
+<tr><td><samp>F</samp></td><td>Frequency.</td></tr></table>
+<p>The file can therefore be a single frame (Y-X), a time series (Y-X-T), an event-split array (Y-X-T-E or Y-X-E), or a frequency map (for example Y-X-F). Results that are not images, or that combine several named measurements, are saved as <a href="umt-files-organization.html"><samp>.umt</samp> files</a> instead. Authors of custom functions can find the rules for choosing between the two formats in <a href="how-to-create-custom-functions.html#choosing-the-output-format">Choosing the output format</a>.</p>
+
+<h2>The header</h2>
+<p>The header has a constant size of 512 bytes and every field is at a fixed position, so data always begins at byte 512, whatever the shape of the file.</p>
+<table><tr><th>Section</th><th>Contents</th></tr>
+<tr><td>Identification (16 bytes)</td><td>A signature that marks the file as a umIT <samp>.dat</samp> file, the byte order, the header version, a <em>write complete</em> flag, and the position where the data starts.</td></tr>
+<tr><td>Channel information (464 bytes)</td><td>Numeric class of the values, frame rate (Hz), exposure (ms), and channel name (up to 31 characters). Most of this section is reserved for future channel-level information.</td></tr>
+<tr><td>Dimension table (32 bytes)</td><td>The size of the Y, X, T, E, and F axes. A size of 0 means the axis is absent. Three further slots are reserved.</td></tr></table>
+<p>The frame rate is a property of each file: channels of one recording can run at different rates, and processing steps that change the rate (for example temporal binning at import) write the new rate to the file they create. A file without a T axis stores no frame rate.</p>
+<p>The write complete flag is set only after the last data value has been written. If umIT opens a file in which it is not set, it warns that the file may be incomplete, for example after an interrupted processing step.</p>
+<p>Supported numeric classes are <samp>single</samp>, <samp>double</samp>, <samp>uint8</samp>, <samp>uint16</samp>, <samp>int16</samp>, <samp>uint32</samp>, and <samp>int32</samp>. Imported data and the files written by <samp>saveData</samp> use 32-bit single precision.</p>
+
+<h2>Ordering of the data</h2>
+<pre>MATLAB array: data(Y, X, T, E, F)   (only the axes present in the file)
+Serialized order, starting at byte 512:
+  Y varies fastest (column X=1 from Y=1..Height), then X, then T, then E, then F</pre>
+<p>This is MATLAB column-major order over the axes that are present, taken in the order Y, X, T, E, F. An absent axis contributes nothing: a file with the axes Y, X, and E has the same layout as a Y-by-X-by-E array. Each value uses the number of bytes of the file's numeric class.</p>
+
+<h2>Event-split files</h2>
+<p>A <samp>.dat</samp> file split by event has an E axis whose size is the only event-related information in the file. It stores no event names or identities. umIT matches the E axis to <samp>events.mat</samp> in the same Save Folder by size: as many slices as there are events means one slice per event instance, and as many slices as there are conditions means one slice per condition after averaging. If neither matches, DataViewer shows E as repetitions of a single condition and warns. For this reason, do not purge events from <samp>events.mat</samp> while event-split files exist in the folder; the Events Manager prevents it.</p>
+
 <h2>How DataViewer reads data</h2>
-<p><samp>DatImageSource</samp> validates file size against metadata, uses direct <samp>fseek</samp>/<samp>fread</samp> frame and pixel reads, and maintains an optional spatial-temporal cache. DataViewer does not require the whole recording in RAM. The lower-level <samp>mapDat</samp> helper is available for suitable programmatic workflows, but mapped size and type must still come from validated metadata.</p>
-<h2>Processing lifecycle</h2>
-<p>Analysis functions can return arrays for PipelineManager to persist, or accept a filename and stream spatial slabs for low-RAM processing. New outputs receive processing provenance in <samp>dataHistory.mat</samp>. Image data split by event (an additional E axis) can be saved as <samp>.dat</samp>; results that do not fit the <samp>.dat</samp> dimensions are saved as <samp>.umt</samp>.</p>
+<p><samp>DatImageSource</samp> opens files with the axes Y-X, Y-X-T, Y-X-E, and Y-X-T-E, reads frames and pixels directly from the file, and maintains an optional spatial-temporal cache. DataViewer does not require the whole recording in RAM.</p>
+
+<h2>Files from previous releases</h2>
+<p>Older <samp>.dat</samp> files have no header. Files created by previous releases of umIT, which are described by their own companion <samp>.mat</samp> file with the same base name (or <samp>&lt;name&gt;_info.mat</samp>), can still be opened. Their data starts at byte 0 and the companion file provides the size, class, and frame rate.</p>
+<p>Headerless files that were described only by the <samp>AcqInfos.mat</samp> of their Save Folder, an intermediate format used in development versions, can no longer be read. umIT reports that the file must be re-imported from the raw data.</p>
+
 <h2>Programmatic access</h2>
+<p>Only four functions read the bytes of a <samp>.dat</samp> file, and every other part of the toolbox goes through them:</p>
+<table><tr><th>Function</th><th>Use</th></tr>
+<tr><td><samp>loadMetaData</samp></td><td>Describes any readable <samp>.dat</samp> file (header or companion file).</td></tr>
+<tr><td><samp>loadData</samp></td><td>Loads the file into a MATLAB array. Use it when the data fits in memory.</td></tr>
+<tr><td><samp>mapDat</samp></td><td>Memory-maps the file for suitable programmatic workflows.</td></tr>
+<tr><td><samp>spatialSlabIO</samp></td><td>Streams a file in parts (spatial slabs or selected frames), so files larger than the computer's memory can be processed.</td></tr></table>
+<p><samp>loadMetaData</samp> returns a structure with these fields, for every kind of readable <samp>.dat</samp> file:</p>
+<table><tr><th>Field</th><th>Meaning</th></tr>
+<tr><td><samp>filePath</samp></td><td>Full path of the file.</td></tr>
+<tr><td><samp>format</samp></td><td><samp>'header'</samp> for files with a header, or <samp>'legacySidecar'</samp> for files described by a companion file.</td></tr>
+<tr><td><samp>dataOffset</samp></td><td>Byte position where the data starts (512 for files with a header, 0 otherwise).</td></tr>
+<tr><td><samp>dataClass</samp></td><td>MATLAB class of the values.</td></tr>
+<tr><td><samp>dimNames</samp>, <samp>dimSizes</samp></td><td>Names and sizes of the axes present, in storage order.</td></tr>
+<tr><td><samp>frameRateHz</samp>, <samp>exposureMsec</samp></td><td>Frame rate and exposure of this file (NaN when unknown or not applicable).</td></tr>
+<tr><td><samp>channelName</samp></td><td>Channel label stored in the file.</td></tr>
+<tr><td><samp>writeComplete</samp></td><td>Whether the file was completely written.</td></tr></table>
 <pre><code>info = loadMetaData("C:\save\green.dat");
-data = loadData("C:\save\green.dat");      % use when it fits in memory
+info.dimNames                            % for example {'Y','X','T'}
+nFrames = datAxisSize(info, "T");        % size of an axis, or 0 when absent
+data = loadData("C:\save\green.dat");    % use when it fits in memory
 % For large files, use DatImageSource or spatialSlabIO.</code></pre>
-<div class="warnnote"><p><strong>Never edit bytes or metadata independently.</strong><br>Do not change precision, reshape assumptions, file length, <samp>AcqInfos.mat</samp>, or one camera file without the controlled importer/analysis operation that owns the change.</p></div>
+<p>Likewise, only two functions write the bytes of a <samp>.dat</samp> file: <samp>saveData</samp> (whole arrays and appending along the last axis) and <samp>spatialSlabIO</samp> (streamed writes). Both always write the header. Details for function authors are in the <a href="how-to-create-custom-functions.html#reading-and-writing-dat-files">custom functions guide</a>.</p>
+
+<h2>File naming</h2>
+<p>File names identify logical channels or processing results (for example <samp>green.dat</samp> or <samp>HbO.dat</samp>). Names never define the dimensions: those come from the header. Processing provenance is recorded in <samp>dataHistory.mat</samp>.</p>
+<div class="warnnote"><p><strong>Never edit bytes independently</strong><br>The header and the data belong together. Do not change precision, reshape assumptions, or file length with external tools, and do not replace or rename the files of one channel of a dual-camera recording individually. Use the importer or analysis function that owns the change.</p></div>
 </body></html>
