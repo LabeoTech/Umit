@@ -27,3 +27,6 @@ LEGACY_HEMOCOMPUTE_SPECTRAL_WORKFLOW.md
 docs/dev/dat-header-impact-inventory.md
 docs/dev/dat-header-spec.md
 docs/dev/
+
+# Archive of deprecated legacy code (2026-10-09 clean-up)
+umIT_DEPRECATED_*.zip
