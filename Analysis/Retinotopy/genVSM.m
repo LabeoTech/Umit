@@ -23,8 +23,15 @@ function [outData, roiFile] = genVSM(retinotopyUMT, SaveFolder, varargin)
 %       SaveFolder    - Folder where the visual-area ROI file is saved.
 %
 %   Name-Value parameters:
-%       PhaseMapFilter_Sigma - Gaussian sigma for phase-map smoothing.
-%                              Default: 0
+%       PhaseMapFilter_Sigma - Gaussian sigma for phase-map smoothing, in
+%                              pixels. Radian phase maps (all finite values
+%                              in [0, 2*pi]) are smoothed through
+%                              exp(1i*phase): the real and imaginary parts
+%                              are filtered separately and re-angled to
+%                              [0, 2*pi), so smoothing is correct across the
+%                              0/2*pi wrap. Maps calibrated to degrees of
+%                              visual angle have no known period and are
+%                              filtered directly. Default: 0
 %       VSMFilter_Sigma      - Gaussian sigma for VSM smoothing.
 %                              Default: 0
 %       ROIFileName          - Output UMIT ROI filename.
@@ -43,6 +50,13 @@ function [outData, roiFile] = genVSM(retinotopyUMT, SaveFolder, varargin)
 %
 %   Notes:
 %       - The output is derived exclusively from the retinotopy UMT input.
+%       - NaN phase pixels are replaced by 1000 before smoothing (as an
+%         angle, 1000 rad equals about 0.97 rad after the 2*pi wrap).
+%       - Previous releases smoothed the raw wrapped phase with a plain
+%         Gaussian filter, which blurred across the 0/2*pi discontinuity.
+%         With PhaseMapFilter_Sigma > 0 the phase maps, and therefore the VSM
+%         and ROIs, differ from earlier releases (an output-affecting
+%         change). With PhaseMapFilter_Sigma = 0 the result is unchanged.
 %       - Each connected patch is saved as CtxArea_<index>.
 
 % Default output for pipeline management.
@@ -107,13 +121,18 @@ elMap = single(retinotopyUMT.data.ElevationMap.value);
 phaseAz = azMap(:,:,2);
 phaseEl = elMap(:,:,2);
 
+% Radian phase maps are periodic, so they are smoothed through exp(1i*phase).
+% The decision uses the values before NaN substitution.
+isRadAz = iIsRadianPhase(phaseAz);
+isRadEl = iIsRadianPhase(phaseEl);
+
 phaseAz(isnan(phaseAz)) = 1000;
 phaseEl(isnan(phaseEl)) = 1000;
 
 if opts.PhaseMapFilter_Sigma > 0
     disp('Filtering phase maps...')
-    phaseAz = imgaussfilt(phaseAz, opts.PhaseMapFilter_Sigma);
-    phaseEl = imgaussfilt(phaseEl, opts.PhaseMapFilter_Sigma);
+    phaseAz = iSmoothPhase(phaseAz, isRadAz, opts.PhaseMapFilter_Sigma);
+    phaseEl = iSmoothPhase(phaseEl, isRadEl, opts.PhaseMapFilter_Sigma);
 end
 
 disp('Calculating visual sign map...');
@@ -168,7 +187,9 @@ roiFile = genVAmask(vsm, size(vsm), SaveFolder, opts);
         info = PipelineManager.addInput(info, ...
             'PhaseMapFilter_Sigma', ...
             'parameter', ...
-            'Gaussian sigma for phase-map smoothing.', ...
+            ['Gaussian sigma for phase-map smoothing. Radian phase maps are ' ...
+             'smoothed through exp(1i*phase), so smoothing is correct across ' ...
+             'the 0/2*pi wrap.'], ...
             'kind', 'parameter', ...
             'position', 3, ...
             'callType', 'namevalue', ...
@@ -237,6 +258,36 @@ roiFile = genVAmask(vsm, size(vsm), SaveFolder, opts);
             'isData', false, ...
             'isRequired', false);
     end
+end
+
+function tf = iIsRadianPhase(phase)
+%IISRADIANPHASE True when all finite phase values lie in [0, 2*pi].
+%   genRetinotopyMaps writes radians in that fixed range unless it was given
+%   the screen geometry, in which case the values are degrees of visual angle
+%   (symmetric about 0, so they leave [0, 2*pi]).
+
+finiteVals = phase(isfinite(phase));
+tol = 1e-5;
+tf = ~isempty(finiteVals) && min(finiteVals) >= -tol && ...
+    max(finiteVals) <= 2*pi + tol;
+end
+
+function phase = iSmoothPhase(phase, isRadian, sigma)
+%ISMOOTHPHASE Gaussian-smooth a phase map.
+%   Radian maps are smoothed as exp(1i*phase): the real and imaginary parts
+%   are filtered separately and the result is re-angled and returned in
+%   [0, 2*pi), so values on either side of the 0/2*pi wrap are averaged
+%   correctly. Degree maps have no known period and are filtered directly.
+
+if ~isRadian
+    phase = imgaussfilt(phase, sigma);
+    return
+end
+
+z = exp(1i .* phase);
+re = imgaussfilt(real(z), sigma);
+im = imgaussfilt(imag(z), sigma);
+phase = mod(atan2(im, re), 2*pi);
 end
 
 function umt = iLoadRetinotopyUMT(input, SaveFolder)

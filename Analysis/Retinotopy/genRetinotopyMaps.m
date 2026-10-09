@@ -20,6 +20,9 @@ function outData = genRetinotopyMaps(data, SaveFolder, varargin)
 %       ViewingDist_cm    - Viewing distance in cm. Default: 0
 %       ScreenXsize_cm    - Screen width in cm. Default: 0
 %       ScreenYsize_cm    - Screen height in cm. Default: 0
+%                           When all three are > 0 the Phase slice is given
+%                           in degrees of visual angle instead of radians
+%                           (see Notes).
 %       FrameRateHz       - Frame rate of DATA (Hz). PipelineManager injects
 %                           it from the data; a .dat input's header provides
 %                           it otherwise. Numeric input needs it explicitly;
@@ -43,6 +46,20 @@ function outData = genRetinotopyMaps(data, SaveFolder, varargin)
 %         concatenated window, at the cost of discontinuities between epochs.
 %         Previous releases transformed one contiguous first-onset-to-last-
 %         offset span, so their maps are not numerically comparable.
+%       - The Phase slice of each map is pi + (phase(first) - phase(second))/2
+%         of the opposite sweep directions, which lies in the fixed range
+%         [0, 2*pi] (pi = screen centre). Without a screen geometry it is
+%         returned in radians in that range.
+%       - Visual-angle calibration (ViewingDist_cm, ScreenXsize_cm and
+%         ScreenYsize_cm all > 0) maps the theoretical phase range [0, 2*pi]
+%         linearly onto [-VA, +VA], with VA = atand(ScreenSize_cm /
+%         (2*ViewingDist_cm)) for the azimuth (X) and elevation (Y) axes. Phase
+%         pi therefore maps to 0 degrees, and a pixel's visual angle does not
+%         depend on which other pixels or phase values are present in the
+%         recording. Previous releases rescaled the observed minimum and
+%         maximum of each map onto [-VA, +VA], so degree maps from earlier
+%         releases are not numerically comparable (an output-affecting
+%         change).
 %       - For raw .dat input, both FFT paths process spatial X slabs. The
 %         final Y x X amplitude and phase maps remain resident in RAM, while
 %         average-movie and baseline scratch storage scales with slab width.
@@ -515,15 +532,21 @@ if all(idxEl)
 end
 
 if all([opts.ViewingDist_cm, opts.ScreenXsize_cm, opts.ScreenYsize_cm] > 0)
+    % The combined phase maps lie in the fixed range [0, 2*pi] (pi is the
+    % screen centre), so the degree calibration maps that theoretical range,
+    % not the observed extrema, onto the visual-angle range.
+    phaseRange = [0 2*pi];
     if isfield(mapStruct, 'AzimuthMap')
         va_az = atand(opts.ScreenXsize_cm/(2*opts.ViewingDist_cm));
         va_az = [-va_az va_az];
-        mapStruct.AzimuthMap(:,:,2) = rescale(mapStruct.AzimuthMap(:,:,2), va_az(1), va_az(2));
+        mapStruct.AzimuthMap(:,:,2) = rescale(mapStruct.AzimuthMap(:,:,2), ...
+            va_az(1), va_az(2), 'InputMin', phaseRange(1), 'InputMax', phaseRange(2));
     end
     if isfield(mapStruct, 'ElevationMap')
         va_el = atand(opts.ScreenYsize_cm/(2*opts.ViewingDist_cm));
         va_el = [-va_el va_el];
-        mapStruct.ElevationMap(:,:,2) = rescale(mapStruct.ElevationMap(:,:,2), va_el(1), va_el(2));
+        mapStruct.ElevationMap(:,:,2) = rescale(mapStruct.ElevationMap(:,:,2), ...
+            va_el(1), va_el(2), 'InputMin', phaseRange(1), 'InputMax', phaseRange(2));
     end
 elseif any([opts.ViewingDist_cm, opts.ScreenXsize_cm, opts.ScreenYsize_cm] > 0)
     warning('Umitoolbox:genRetinotopyMaps:VisualAngleIncomplete', ...
