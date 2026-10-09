@@ -9,7 +9,11 @@ nav_order: 6
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Creating analysis functions for PipelineManager</title></head><body>
 <h1>Creating analysis functions for PipelineManager</h1>
 <p>A compatible analysis function declares what it accepts and produces, then follows that contract at run time. PipelineManager uses the declaration to discover the function, check graph connections, display editable options, plan RAM use, and save outputs.</p>
-<h2>Choose an authoritative template</h2>
+<ul>
+<li>Deciding whether an output is saved as <samp>.dat</samp> or <samp>.umt</samp>: <a href="#choosing-the-output-format">Choosing the output format</a>.</li>
+<li>Function written for an earlier release and no longer listed by PipelineManager: <a href="#updating-custom-functions-for-pipelinemanager">Updating custom functions for PipelineManager</a>.</li>
+</ul>
+<h2 id="choose-an-authoritative-template">Choose an authoritative template</h2>
 <table><tr><th>Template</th><th>Use it when</th></tr>
 <tr><td><a href="https://github.com/labeotech/Umit/blob/master/Analysis/funcTemplate.m"><samp>funcTemplate.m</samp></a></td><td>The function receives and returns numeric data in RAM.</td></tr>
 <tr><td><a href="https://github.com/labeotech/Umit/blob/master/Analysis/funcTemplateUMT.m"><samp>funcTemplateUMT.m</samp></a></td><td>The function returns a validated UMT structure.</td></tr>
@@ -23,12 +27,12 @@ nav_order: 6
 <li>Keep the one-argument <samp>'pipelineInfo'</samp> query before normal input parsing.</li>
 <li>Declare each positional data input and the supplied Save Folder in the same position as the function signature.</li>
 <li>Declare user options as name-value <samp>parameter</samp> inputs. Keep defaults, accepted values, data types, and runtime validators consistent.</li>
-<li>Declare every output with semantic type, output mode (<samp>data</samp> or <samp>file</samp>), position, and a unique managed filename where applicable.</li>
+<li>Declare every output with semantic type, output mode (<samp>data</samp> or <samp>file</samp>), position, and a unique managed filename where applicable. Decide whether the output is a <samp>.dat</samp> or a <samp>.umt</samp> file (see <a href="#choosing-the-output-format">Choosing the output format</a>) and give the filename the matching extension.</li>
 <li>Implement the scientific calculation. Resolve required metadata from the concrete file being processed; do not choose an arbitrary file from the Save Folder.</li>
 <li>If input dimensions change, explicitly update UMT <samp>dimNames</samp>, labels, event information, and entry metadata.</li>
 <li>Test the function directly, query <samp>pipelineInfo</samp>, and confirm it appears in Pipeline Manager under the intended category.</li>
 </ol>
-<h2>Annotated contract excerpts</h2>
+<h2 id="annotated-contract-excerpts">Annotated contract excerpts</h2>
 <pre><code>% Discovery query: preserve this behavior.
 if nargin == 1 && strcmpi(string(data),'pipelineInfo')
     outData = localGetPipelineInfo();
@@ -43,6 +47,71 @@ info = PipelineManager.addInput(info,'data','ImageTimeSeries', ...
 % outputMode='data' means return the value; PipelineManager manages persistence.
 info = PipelineManager.addOutput(info,'outData','ImageTimeSeries','data', ...
     'Scaled output.','scaleImage.dat',1,'isData',true);</code></pre>
+<h2 id="choosing-the-output-format">Choosing the output format</h2>
+<p>An analysis function's output is saved either as a <a href="dat-files-organization.html"><samp>.dat</samp> file</a> or as a <a href="umt-files-organization.html"><samp>.umt</samp> file</a>. This section tells you which formats are possible for your output, which one to prefer, and how your function produces each of them.</p>
+<div class="warnnote"><p><strong>The format is your decision, and it is final for everyone who runs your function</strong><br>The people who run a pipeline cannot choose or change the format in which a function saves its output. The format you choose here therefore decides how quickly, and whether, everyone using your function can open and process its results.</p></div>
+
+<h3>The two formats</h3>
+<p><strong><samp>.dat</samp> files.</strong> A <samp>.dat</samp> file is a binary format optimized for large imaging data. It allows data to be read in parts (frames, trials) rather than loaded into memory all at once. This makes it much faster and lighter than <samp>.umt</samp> for image stacks, and it keeps very large recordings usable even when they exceed the computer's memory.</p>
+<p>An output can be saved as <samp>.dat</samp> only if both conditions are true:</p>
+<ol>
+<li><strong>Every dimension of the data is one of the <samp>.dat</samp> dimensions:</strong> Y and X (image rows and columns), T (time), E (events or trials, or one slice per event condition after averaging), and F (frequency).</li>
+<li><strong>The data comes from a single recording.</strong> A recording created by umIT's concatenation tool counts as a single recording. Data combined across recordings, such as averages across sessions, runs or animals, does not.</li>
+</ol>
+<p>If either condition is false, the output <strong>must</strong> be saved as <samp>.umt</samp>.</p>
+<p><strong><samp>.umt</samp> files.</strong> A <samp>.umt</samp> file can hold any of the dimensions listed in <a href="umt-files-organization.html">Organization of .umt files</a> (for example ROI, Pixel, and Measure, besides Y, X, T, E and F), several named entries, labels, and event information. A <samp>.umt</samp> file is always read completely into memory.</p>
+<p><strong>Recommended use.</strong> Raw imaging data imported into umIT is stored as <samp>.dat</samp>. Functions whose output remains large image data, typically preprocessing steps like filtering or normalization that keep the full image stack, should also save as <samp>.dat</samp>. Saving such outputs as <samp>.umt</samp> is possible but can make them slow to open and, for long recordings, impossible to load. <samp>.umt</samp> remains appropriate for eligible outputs that are small, or that belong together with other results such as ROI labels or related measurements.</p>
+
+<h3>Examples</h3>
+<table><tr><th>Output</th><th>Dimensions</th><th>Recordings</th><th>Format</th></tr>
+<tr><td>Filtered or normalized image stack</td><td>Y, X, T</td><td>one</td><td><samp>.dat</samp> or <samp>.umt</samp></td></tr>
+<tr><td>Trial-sorted image stack</td><td>Y, X, T, E</td><td>one</td><td><samp>.dat</samp> or <samp>.umt</samp></td></tr>
+<tr><td>Trial-averaged response</td><td>Y, X, T</td><td>one</td><td><samp>.dat</samp> or <samp>.umt</samp></td></tr>
+<tr><td>Pixel-wise power spectrum</td><td>Y, X, F</td><td>one</td><td><samp>.dat</samp> or <samp>.umt</samp></td></tr>
+<tr><td>Correlation map from a single seed</td><td>Y, X</td><td>one</td><td><samp>.dat</samp> or <samp>.umt</samp></td></tr>
+<tr><td>Correlation maps from several seeds</td><td>Y, X, Seed</td><td>one</td><td><samp>.umt</samp> only</td></tr>
+<tr><td>ROI time courses</td><td>ROI, T</td><td>one</td><td><samp>.umt</samp> only</td></tr>
+<tr><td>Average image stack across animals</td><td>Y, X, T</td><td>several</td><td><samp>.umt</samp> only</td></tr></table>
+<p>A seed is not a <samp>.dat</samp> dimension, so maps from several seeds cannot be stored in one <samp>.dat</samp> file. The toolbox's own <samp>genCorrelationMatrix</samp> stores them in one <samp>.umt</samp> file with one Y-X entry per seed.</p>
+
+<h3>Technical rules for .dat output</h3>
+<ul>
+<li>The axes of a <samp>.dat</samp> file always start with Y and X, followed by those of T, E and F that the data have, always in the order T, E, F. Examples of valid layouts are Y-X, Y-X-T, Y-X-E, Y-X-F and Y-X-T-E.</li>
+<li>Values are saved in single precision. <samp>saveData</samp> refuses any other numeric class, so convert the result with <samp>single</samp> before returning or saving it.</li>
+<li>Data with a T axis need a frame rate, which the file stores in its header. Data without a T axis store none.</li>
+<li>Not every tool opens every layout. <em>DataViewer</em> currently opens <samp>.dat</samp> files with the axes Y-X, Y-X-T, Y-X-E and Y-X-T-E; it does not open a Y-X-F <samp>.dat</samp> file. Check the layout against the tools your users will use before choosing <samp>.dat</samp> for such an output.</li>
+</ul>
+
+<h3>Event-split data in .dat files</h3>
+<p>An event-split <samp>.dat</samp> file stores no event labels. Its E axis is matched to the recording's <samp>events.mat</samp> by size: one slice per event instance, or one slice per condition after averaging. For that matching to work, a function that saves an average over events as <samp>.dat</samp> must:</p>
+<ul>
+<li>keep one slice for every condition, using NaN when all of its events were excluded;</li>
+<li>order the slices by each condition's first appearance in time.</li>
+</ul>
+<p>Do not implement these rules yourself. The toolbox's aggregation helpers, <samp>EventsManager.conditionAggregationPlan</samp> and <samp>EventsManager.reduceByCondition</samp>, apply them; use them to reduce data over E (see their help text, <samp>help EventsManager.conditionAggregationPlan</samp>). Event information of <samp>.umt</samp> files is described in <a href="umt-files-organization.html#event-information">Organization of .umt files</a>.</p>
+
+<h3>How a function saves each format</h3>
+<p>A function does not choose the format with a setting: the format follows from what the function produces. A function whose output has output mode <samp>data</samp> returns the value, and PipelineManager saves it with the toolbox function <samp>saveData</samp>, which writes a single-precision numeric array as <samp>.dat</samp> and a UMT structure as <samp>.umt</samp>. If the file extension in the declared default filename differs from the format actually written, PipelineManager keeps the real one, but declare the matching extension so that the pipeline description is accurate.</p>
+<table><tr><th>To save a ...</th><th>Return ...</th><th>Declare the default filename as ...</th></tr>
+<tr><td><samp>.dat</samp> file</td><td>a single-precision numeric array (or, for a function that streams its output to disk, the name of the <samp>.dat</samp> file it wrote)</td><td><samp>'myOutput.dat'</samp></td></tr>
+<tr><td><samp>.umt</samp> file</td><td>a UMT structure made with <samp>genUMTStruct</samp></td><td><samp>'myOutput.umt'</samp></td></tr></table>
+<pre><code>% .dat: return the array. See Analysis/funcTemplate.m.
+outData = single(result);                       % PipelineManager saves it as myOutput.dat
+
+% .umt: return a validated UMT structure. See Analysis/funcTemplateUMT.m.
+outData = genUMTStruct(result, 'kind', 'image', 'entryName', 'MeanImage', ...
+    'dimNames', {'Y','X'});                     % PipelineManager saves it as myOutput.umt</code></pre>
+<p>When PipelineManager saves a returned array as <samp>.dat</samp>, it takes the axis names from the metadata of the input data if the output has the same layout, and otherwise from the declared semantic type of the output: <samp>ImageTimeSeries</samp> gives Y-X-T for a three-dimensional array and Y-X-T-E for a four-dimensional one; <samp>Image</samp> gives Y-X for a two-dimensional array and Y-X-E for a three-dimensional one. Other layouts, such as Y-X-F, cannot be inferred. In that case write the file yourself with <samp>saveData</samp> and name the axes.</p>
+<p>A function can also write files itself, for example in file mode or to save an additional result. Use the same <samp>saveData</samp> function:</p>
+<pre><code>% .dat: the axes are always named by you ('DimNames' is required).
+saveData(fullfile(SaveFolder, 'myOutput.dat'), single(result), ...
+    'DimNames', {'Y','X','T'}, 'FrameRateHz', frameRateHz);
+
+% .umt: pass a UMT structure. It is validated before it is written.
+saveData(fullfile(SaveFolder, 'myOutput.umt'), umtStruct);</code></pre>
+<p>Instead of <samp>'FrameRateHz'</samp> you can pass <samp>'Info', info</samp>, the metadata of the input file returned by <samp>loadMetaData</samp>, so that the output inherits its frame rate and exposure. Data with a T axis and neither of the two are refused (<samp>Umitoolbox:saveData:missingFrameRate</samp>).</p>
+<p>A <samp>.dat</samp> output that is too large for the computer's memory cannot be built as one array. Write it in pieces instead, with <samp>spatialSlabIO('create')</samp>, <samp>'write'</samp> and <samp>'finalize'</samp>, and return the name of the file. <samp>Analysis/Filters/normalizeZScore.m</samp> and <samp>Analysis/Imaging/split_data_by_event.m</samp> are working examples. The functions for describing, reading, and writing <samp>.dat</samp> files are explained in <a href="#reading-and-writing-dat-files">Reading and writing .dat files</a>.</p>
+
 <h2>Initialize a fresh Save Folder</h2>
 <p>PipelineManager normally requires current acquisition metadata before executing a pipeline. A function can opt into the fresh-folder import gate by declaring one of two narrowly scoped roles. Ordinary analysis functions keep the default <samp>freshSaveFolderRole='none'</samp>.</p>
 <table><tr><th>Role</th><th>Contract</th></tr>
@@ -90,22 +159,211 @@ addParameter(p,'Scale',1,@(x)isnumeric(x)&&isscalar(x)&&x>=0);
 parse(p,data,SaveFolder,varargin{:});
 outData = p.Results.data .* cast(p.Results.Scale,'like',p.Results.data);
 end</code></pre>
-<h2>Test before using real data</h2>
+<h2 id="test-before-using-real-data">Test before using real data</h2>
 <pre><code>info = scaleImage('pipelineInfo');
 data = single(reshape(1:24,[2 3 4]));
 result = scaleImage(data,tempdir,'Scale',2);
 assert(isequal(size(result),size(data)));
 pm = PipelineManager(tempdir,'Missing');  % then inspect pm.funcList</code></pre>
+<h2 id="updating-custom-functions-for-pipelinemanager">Updating custom functions for PipelineManager</h2>
+<p>This section is for you if you wrote an analysis function for an earlier release and PipelineManager no longer lists it. When PipelineManager scans the <samp>Analysis</samp> folders, it now skips such a function and prints a warning (<samp>PipelineManager:createFcnList:NoPipelineInfo</samp>). The function itself is not damaged: it has to be rewritten to the current contract, which takes a few well-defined steps.</p>
+
+<h3>Why the old style no longer works</h3>
+<ul>
+<li><strong>Functions are no longer recognized by their argument names.</strong> Earlier releases identified a function by names in its signature (<samp>data</samp>, <samp>metaData</samp>, <samp>SaveFolder</samp>, <samp>RawFolder</samp>, <samp>opts</samp>, <samp>outFile</samp>) and by the lines <samp>default_Output</samp>, <samp>default_opts</samp> and <samp>opts_values</samp> that PipelineManager read as text. A function is now listed only if it answers the query <samp>myFunction('pipelineInfo')</samp> with a declaration of its inputs, parameters, and outputs.</li>
+<li><strong>The <samp>metaData</samp> argument is gone.</strong> The frame rate, the axes, and the exposure describe the data, not the pipeline. A data file now carries them in its own header, and PipelineManager passes them to the functions that ask for them.</li>
+<li><strong>Metadata are no longer taken from <samp>AcqInfos.mat</samp>.</strong> That file describes the raw acquisition. Imported data can differ from it (for example, temporal binning during import changes the frame rate), so reading the frame rate or image size from it would be a guess.</li>
+</ul>
+
+<h3>Update steps</h3>
+<ol>
+<li>Start from the template that fits your output (<a href="#choose-an-authoritative-template">see the table above</a>) and move your calculation into it. Use the argument order <samp>(data, SaveFolder, ...)</samp>.</li>
+<li>Declare the function with <samp>pipelineInfo</samp>: <samp>PipelineManager.createPipelineInfo</samp>, then <samp>PipelineManager.addInput</samp> for each input and parameter and <samp>PipelineManager.addOutput</samp> for each output (<a href="#annotated-contract-excerpts">examples above</a>).</li>
+<li>Replace every use of <samp>metaData</samp> as described in the next two sections.</li>
+<li>Replace the <samp>opts</samp> structure by name-value parameters (<samp>default_opts</samp> and <samp>opts_values</samp> become the <samp>'default'</samp> and <samp>'allowed'</samp> values of <samp>addInput</samp>), and <samp>default_Output</samp> by the default filename of <samp>addOutput</samp>. A function that creates its own files and returned their names in <samp>outFile</samp> uses an output of mode <samp>file</samp> (template <samp>funcTemplateFileManifest.m</samp>). The arguments <samp>RawFolder</samp> and <samp>object</samp> have no counterpart in the templates.</li>
+<li>Read and write <samp>.dat</samp> files only with the functions listed under <a href="#reading-and-writing-dat-files">Reading and writing .dat files</a>.</li>
+<li>Check the result (<a href="#checking-the-updated-function">Checking the updated function</a>).</li>
+</ol>
+
+<h3 id="old-metadata-fields">Replacing metaData fields</h3>
+<p>The metadata of a <samp>.dat</samp> file, as returned by <samp>loadMetaData</samp>, has a new, fixed set of fields. The old field names no longer exist in it.</p>
+<table><tr><th>Old field of <samp>metaData</samp></th><th>Now</th><th>Notes</th></tr>
+<tr><td><samp>Freq</samp>, <samp>FrameRateHz</samp></td><td><samp>info.frameRateHz</samp></td><td>NaN when the file has no T axis. Inside a function use a <samp>'FrameRateHz'</samp> <samp>sourceInfo</samp> input (see below).</td></tr>
+<tr><td><samp>ExposureMsec</samp></td><td><samp>info.exposureMsec</samp></td><td>NaN when unknown.</td></tr>
+<tr><td><samp>dim_names</samp></td><td><samp>info.dimNames</samp></td><td>For example <samp>{'Y','X','T'}</samp>. Inside a function use a <samp>'DimNames'</samp> <samp>sourceInfo</samp> input.</td></tr>
+<tr><td><samp>Height</samp></td><td><samp>datAxisSize(info, 'Y')</samp></td><td>Number of image rows.</td></tr>
+<tr><td><samp>Width</samp></td><td><samp>datAxisSize(info, 'X')</samp></td><td>Number of image columns.</td></tr>
+<tr><td><samp>Length</samp>, <samp>datLength</samp></td><td><samp>datAxisSize(info, 'T')</samp></td><td>Number of frames. The function returns 0 when the file has no such axis.</td></tr>
+<tr><td><samp>datSize</samp></td><td><samp>[datAxisSize(info, 'Y'), datAxisSize(info, 'X')]</samp></td><td>The full shape of the file is <samp>info.dimSizes</samp>, in the order of <samp>info.dimNames</samp>.</td></tr>
+<tr><td><samp>Datatype</samp></td><td><samp>info.dataClass</samp></td><td>For example <samp>'single'</samp>.</td></tr></table>
+<p>The other fields of the new metadata are <samp>filePath</samp>, <samp>format</samp>, <samp>dataOffset</samp>, <samp>channelName</samp>, and <samp>writeComplete</samp>. Read only these fields. For <samp>.umt</samp> files <samp>loadMetaData</samp> still returns its own UMT field names; for them, read the entries of the UMT structure itself (see <a href="umt-files-organization.html">Organization of .umt files</a>).</p>
+
+<h3 id="sourceinfo-inputs">Receiving frame rate, axes, and exposure: sourceInfo inputs</h3>
+<p>A function that needs the frame rate, the axis names, or the exposure of its data declares them as <samp>sourceInfo</samp> inputs. PipelineManager then reads the value from the data that flows into the step and passes it to the function as a name-value pair. These inputs never appear among the options that users edit. Only three exist:</p>
+<table><tr><th>Name-value name</th><th><samp>sourceField</samp> to declare</th><th>Meaning</th></tr>
+<tr><td><samp>'FrameRateHz'</samp></td><td><samp>'frameRateHz'</samp></td><td>Frame rate of the data in hertz (a positive number).</td></tr>
+<tr><td><samp>'DimNames'</samp></td><td><samp>'dimNames'</samp></td><td>Axis names of the data, such as <samp>{'Y','X','T'}</samp>.</td></tr>
+<tr><td><samp>'ExposureMsec'</samp></td><td><samp>'exposureMsec'</samp></td><td>Camera exposure in milliseconds.</td></tr></table>
+<pre><code>% In the pipelineInfo block:
+info = PipelineManager.addInput(info, 'FrameRateHz', 'sourceInfo', ...
+    'Frame rate of the input data (Hz).', ...
+    'kind', 'sourceInfo', 'sourceField', 'frameRateHz');
+
+% In the function body (the parameter is declared with addParameter(p,'FrameRateHz',[])):
+frameRateHz = resolveDataInfoValue('frameRateHz', p.Results.FrameRateHz, data, mfilename);</code></pre>
+<p><samp>resolveDataInfoValue</samp> applies one rule everywhere: a value you pass explicitly is used first; otherwise, if <samp>data</samp> is the name of a <samp>.dat</samp> file, the value in the file's header is used; otherwise the function stops with an error (<samp>Umitoolbox:&lt;function&gt;:missingFrameRateHz</samp> for the frame rate) that tells the caller which name-value pair to pass. It never reads <samp>AcqInfos.mat</samp>. When you call your function directly from MATLAB with an array, pass the value yourself, for example <samp>myFunction(data, saveFolder, 'FrameRateHz', 10)</samp>.</p>
+<p>By default (<samp>'required'</samp> is true) PipelineManager reports an error before the pipeline runs if a <samp>sourceInfo</samp> value cannot be found in the data. Pass <samp>'required', false</samp> for a value that your function can do without. By default the value comes from the first data input; <samp>'sourceInput'</samp> selects another data input.</p>
+
+<h3 id="reading-and-writing-dat-files">Reading and writing .dat files</h3>
+<p>A <samp>.dat</samp> file begins with a header that describes its contents, so it must not be opened with <samp>fopen</samp>, <samp>fread</samp>, <samp>fseek</samp>, or <samp>memmapfile</samp>. Use only the following functions:</p>
+<table><tr><th>Task</th><th>Function</th></tr>
+<tr><td>Describe a file (axes, sizes, class, frame rate, exposure)</td><td><samp>loadMetaData(file)</samp></td></tr>
+<tr><td>Load a whole file into memory</td><td><samp>loadData(file)</samp></td></tr>
+<tr><td>Read or write a large file in pieces</td><td><samp>spatialSlabIO</samp> (<samp>'open'</samp>, <samp>'read'</samp>, <samp>'close'</samp>; <samp>'create'</samp>, <samp>'write'</samp>, <samp>'finalize'</samp>)</td></tr>
+<tr><td>Write a whole array (or append along the last axis)</td><td><samp>saveData(file, array, 'DimNames', names, ...)</samp></td></tr></table>
+<pre><code>dataFile = fullfile(SaveFolder, dataFileName);        % the file being processed
+info = loadMetaData(dataFile);
+assertDatLayout(info, { {'Y','X','T'} }, mfilename);  % see "Checking the layout" below
+nFrames = datAxisSize(info, 'T');
+
+% Read columns xIdx of all frames (all Y) without loading the whole file ...
+slabIn = spatialSlabIO('open', dataFile, 'Info', info);
+cIn = onCleanup(@() spatialSlabIO('close', slabIn));
+slab = single(spatialSlabIO('read', slabIn, xIdx));              % Y x numel(xIdx) x T
+% ... or only some frames: spatialSlabIO('read', slabIn, xIdx, frameIdx)
+
+% Write the result piece by piece. The output inherits axes, sizes, and rate from info.
+slabOut = spatialSlabIO('create', outFile, datHeaderFromInfo(info, 'myOutput'));
+cOut = onCleanup(@() spatialSlabIO('close', slabOut));
+spatialSlabIO('write', slabOut, xIdx, slab);
+spatialSlabIO('finalize', slabOut);</code></pre>
+<ul>
+<li><samp>'DimNames'</samp> is required whenever <samp>saveData</samp> writes an array. It never guesses the axes. Pass the names of the axes of the array, for example <samp>{'Y','X','T'}</samp> (see <a href="#choosing-the-output-format">Choosing the output format</a>).</li>
+<li>The frame rate of an output with a T axis comes from <samp>'FrameRateHz'</samp> or from <samp>'Info'</samp>, the <samp>loadMetaData</samp> result of the input file. It is never taken from <samp>AcqInfos.mat</samp>; without either, <samp>saveData</samp> stops with <samp>Umitoolbox:saveData:missingFrameRate</samp>.</li>
+<li>A file may be written only once it is complete: always end a piece-by-piece write with <samp>'finalize'</samp>. A file that was only closed is marked incomplete, and loading it prints a warning.</li>
+<li>Describe every file with <samp>loadMetaData</samp>, and use the file that belongs to the data being processed, not the first file found in the Save Folder.</li>
+</ul>
+
+<h3 id="checking-the-layout">Checking the layout</h3>
+<p>A <samp>.dat</samp> file can have several axis layouts (Y-X, Y-X-T, Y-X-T-E, Y-X-E, Y-X-F). A function written for Y-X-T data would silently mis-shape the others. Call <samp>assertDatLayout</samp> on the metadata before reading or writing anything:</p>
+<pre><code>assertDatLayout(info, { {'Y','X','T'}, {'Y','X','T','E'} }, mfilename);</code></pre>
+<p>The second argument lists every layout your function supports. For any other layout, the function stops with the error <samp>Umitoolbox:&lt;function&gt;:unsupportedLayout</samp>, whose message names the file, its axes, and the layouts accepted. The check also works on a list of axis names alone: <samp>assertDatLayout(struct('dimNames', {dimNames}), layouts, mfilename)</samp>.</p>
+
+<h3>Worked example: updating one function</h3>
+<p>The function below smooths an image time series with a moving average along time. The window is given in seconds, so the function needs the frame rate. First, the old style:</p>
+<pre><code>% BEFORE (earlier release; no longer listed by PipelineManager)
+function [outData, metaData] = smoothInTime(data, metaData, varargin)
+% SMOOTHINTIME Moving-average smoothing of an image time series along T.
+
+% Defaults (PipelineManager read these lines as text):
+default_Output = 'smoothed.dat';
+default_opts = struct('WindowSec', 1);
+opts_values = struct('WindowSec', [eps, Inf]);
+
+p = inputParser;
+addRequired(p, 'data', @(x) isnumeric(x) &amp;&amp; ndims(x) == 3);
+addRequired(p, 'metaData', @isstruct);
+addOptional(p, 'opts', default_opts, @isstruct);
+parse(p, data, metaData, varargin{:});
+opts = p.Results.opts;
+
+assert(isequal(metaData.dim_names, {'Y','X','T'}), 'Data must be Y-X-T.');
+windowFrames = max(1, round(opts.WindowSec * metaData.Freq));
+outData = movmean(data, windowFrames, 3);
+end</code></pre>
+<p>The updated function. Every difference from the old one is explained below the code.</p>
+<pre><code>% AFTER (current contract)
+function outData = smoothInTime(data, SaveFolder, varargin)
+% SMOOTHINTIME Moving-average smoothing of an image time series along T.
+
+if nargin == 1 &amp;&amp; strcmpi(string(data), 'pipelineInfo')
+    outData = localGetPipelineInfo();
+    return
+end
+
+p = inputParser;
+p.FunctionName = mfilename;
+addRequired(p, 'data', @(x) isnumeric(x) &amp;&amp; ~isempty(x));
+addRequired(p, 'SaveFolder', @isfolder);
+addParameter(p, 'WindowSec', 1, @(x) isnumeric(x) &amp;&amp; isscalar(x) &amp;&amp; isfinite(x) &amp;&amp; x &gt; 0);
+addParameter(p, 'FrameRateHz', []);   % injected by PipelineManager
+addParameter(p, 'DimNames', []);      % injected by PipelineManager
+parse(p, data, SaveFolder, varargin{:});
+
+% Axes and frame rate of the data: explicit value, else the data's own file.
+dimNames = resolveDataInfoValue('dimNames', p.Results.DimNames, data, mfilename);
+assertDatLayout(struct('dimNames', {dimNames}), { {'Y','X','T'} }, mfilename);
+frameRateHz = resolveDataInfoValue('frameRateHz', p.Results.FrameRateHz, data, mfilename);
+
+windowFrames = max(1, round(p.Results.WindowSec * frameRateHz));
+outData = movmean(data, windowFrames, 3);
+end
+
+function info = localGetPipelineInfo()
+info = PipelineManager.createPipelineInfo('smoothInTime', ...
+    'Smooth an image time series with a moving average along T.');
+
+info = PipelineManager.addInput(info, 'data', 'ImageTimeSeries', ...
+    'Numeric Y-X-T image time series held in RAM.', ...
+    'kind', 'input', 'position', 1, 'callType', 'positional', ...
+    'isData', true, 'supportsFile', false, 'dataMode', 'ram');
+
+info = PipelineManager.addInput(info, 'SaveFolder', 'SaveFolder', ...
+    'Folder of the current dataset.', ...
+    'kind', 'input', 'position', 2, 'callType', 'positional', 'isData', false);
+
+info = PipelineManager.addInput(info, 'WindowSec', 'parameter', ...
+    'Length of the moving-average window, in seconds.', ...
+    'kind', 'parameter', 'callType', 'namevalue', ...
+    'default', 1, 'allowed', [eps Inf], 'dataType', 'double');
+
+% Per-data metadata: PipelineManager reads it from the data and passes it in.
+info = PipelineManager.addInput(info, 'FrameRateHz', 'sourceInfo', ...
+    'Frame rate of the input data (Hz).', ...
+    'kind', 'sourceInfo', 'sourceField', 'frameRateHz');
+info = PipelineManager.addInput(info, 'DimNames', 'sourceInfo', ...
+    'Axis names of the input data.', ...
+    'kind', 'sourceInfo', 'sourceField', 'dimNames');
+
+info = PipelineManager.addOutput(info, 'outData', 'ImageTimeSeries', 'data', ...
+    'Smoothed Y-X-T image time series.', 'smoothed.dat', 1, ...
+    'isData', true, 'saveFileName', 'smoothed.dat');
+end</code></pre>
+<table><tr><th>Before</th><th>After</th></tr>
+<tr><td><samp>[outData, metaData] = smoothInTime(data, metaData, varargin)</samp></td><td><samp>outData = smoothInTime(data, SaveFolder, varargin)</samp>: the data come first and the Save Folder second. The function no longer receives or returns <samp>metaData</samp>.</td></tr>
+<tr><td><samp>default_Output</samp>, <samp>default_opts</samp>, <samp>opts_values</samp></td><td>The default filename of <samp>addOutput</samp>, and the <samp>'default'</samp> and <samp>'allowed'</samp> values of the <samp>WindowSec</samp> parameter. The one-argument <samp>'pipelineInfo'</samp> query returns them.</td></tr>
+<tr><td><samp>opts.WindowSec</samp> in an <samp>opts</samp> structure</td><td><samp>'WindowSec'</samp>, an ordinary name-value parameter.</td></tr>
+<tr><td><samp>metaData.dim_names</samp></td><td>The <samp>'DimNames'</samp> <samp>sourceInfo</samp> input, resolved with <samp>resolveDataInfoValue</samp> and checked with <samp>assertDatLayout</samp>.</td></tr>
+<tr><td><samp>metaData.Freq</samp></td><td>The <samp>'FrameRateHz'</samp> <samp>sourceInfo</samp> input, resolved with <samp>resolveDataInfoValue</samp>.</td></tr></table>
+<p>The function takes its data in memory, and PipelineManager passes it both <samp>sourceInfo</samp> values. A function that also accepts the name of a <samp>.dat</samp> file declares <samp>'supportsFile', true</samp> and <samp>'dataMode', 'either'</samp> and reads that file with the functions in <a href="#reading-and-writing-dat-files">Reading and writing .dat files</a>; <samp>Analysis/Filters/normalizeLPF.m</samp> is a complete example.</p>
+<p>The output is a single-precision array (the input is single precision, and <samp>movmean</samp> keeps its class), so PipelineManager saves it as <samp>smoothed.dat</samp> with the axes and frame rate of the input data.</p>
+<p>Calling the updated function directly, as in <a href="#test-before-using-real-data">Test before using real data</a>, needs the two values that PipelineManager would otherwise supply:</p>
+<pre><code>data = single(reshape(1:24, [2 3 4]));
+out = smoothInTime(data, tempdir, 'WindowSec', 0.2, ...
+    'FrameRateHz', 10, 'DimNames', {'Y','X','T'});</code></pre>
+
+<h3 id="checking-the-updated-function">Checking the updated function</h3>
+<ol>
+<li>Query the declaration: <samp>info = smoothInTime('pipelineInfo')</samp> must return a structure without an error. A function whose query fails is reported as broken when PipelineManager scans the folders, not skipped.</li>
+<li>Copy the function to <samp>Analysis/&lt;Category&gt;/</samp> and open <em>Pipeline Manager</em>. The function must appear under that category. If it does not, read the warning that PipelineManager printed in the MATLAB Command Window when it scanned the folders: <samp>NoPipelineInfo</samp> means that the function does not answer the <samp>'pipelineInfo'</samp> query.</li>
+<li>Add the function to a pipeline on a small Save Folder and run the pipeline check that PipelineManager performs before it executes (the preflight). It reports an error if a required <samp>sourceInfo</samp> value cannot be found in the data.</li>
+<li>Run the pipeline and open the saved output in <em>DataViewer</em>.</li>
+</ol>
+
 <h2>Troubleshooting</h2>
 <table><tr><th>Symptom</th><th>Likely cause and fix</th></tr>
-<tr><td>Function is not listed</td><td>Name/file mismatch, invalid <samp>pipelineInfo</samp>, excluded folder, or parser error. Query it directly and inspect the error.</td></tr>
+<tr><td>Function is not listed</td><td>Name/file mismatch, invalid <samp>pipelineInfo</samp>, excluded folder, or parser error. Query it directly and inspect the error. A function written for an earlier release is skipped with the warning <samp>NoPipelineInfo</samp>: see <a href="#updating-custom-functions-for-pipelinemanager">Updating custom functions for PipelineManager</a>.</td></tr>
 <tr><td>Connection is unavailable</td><td>Semantic types do not match. Correct the declared type; do not weaken it merely to force a connection.</td></tr>
 <tr><td>Filename input fails</td><td><samp>supportsFile</samp> was declared without a tested file branch. Set it false or implement and test file streaming.</td></tr>
 <tr><td>Output is not saved</td><td>Check output mode, managed filename, leaf policy, and whether a file-manifest function returned actual relative filenames.</td></tr>
 <tr><td>UMT validation fails</td><td>Value dimensions, <samp>dimNames</samp>, labels, kind, or event information disagree.</td></tr>
+<tr><td><samp>Umitoolbox:saveData:missingDimNames</samp> or <samp>Umitoolbox:saveData:missingFrameRate</samp></td><td>A direct <samp>saveData</samp> call for numeric data must name the axes with <samp>'DimNames'</samp> and, for data with a T axis, pass <samp>'FrameRateHz'</samp> or <samp>'Info'</samp>.</td></tr>
+<tr><td><samp>Umitoolbox:PipelineManager:unresolvedDimNames</samp></td><td>PipelineManager cannot infer the axes of a returned array (for example Y-X-F). Write the file with <samp>saveData</samp> and <samp>'DimNames'</samp>, or return a UMT structure.</td></tr>
+<tr><td><samp>Umitoolbox:&lt;function&gt;:unsupportedLayout</samp></td><td>The <samp>.dat</samp> input has axes that the function does not support. Check the layouts listed in its <samp>assertDatLayout</samp> call.</td></tr>
+<tr><td><samp>Umitoolbox:&lt;function&gt;:missingFrameRateHz</samp></td><td>The data carry no frame rate and none was passed. Declare a <samp>'FrameRateHz'</samp> <samp>sourceInfo</samp> input, or pass <samp>'FrameRateHz'</samp> in a direct call.</td></tr>
 <tr><td>Wrong metadata is used</td><td>Resolve metadata from the exact data file, not the first file found in the Save Folder.</td></tr>
 <tr><td>Fresh-folder configuration is rejected</td><td>Confirm the folder is empty, the DAG has exactly one root initializer, companions are roots, and all other stream nodes descend from the initializer.</td></tr>
 <tr><td>Fresh initialization fails at run time</td><td>The initializer failed or returned without a valid current <samp>AcqInfos.mat</samp>. Fix the importer; do not create metadata in PipelineManager or a companion.</td></tr></table>
 <h2>Final checklist</h2>
-<ul><li>Function name, filename, discovery name, and output filenames are unique and consistent.</li><li>Input positions and name-value options match the MATLAB signature.</li><li>RAM/file support describes implemented behavior.</li><li>Semantic types and output modes are accurate.</li><li>Dimensions and UMT metadata describe the returned value.</li><li><samp>freshSaveFolderRole</samp> is changed from <samp>none</samp> only for a true initializer or companion.</li><li>No authoritative metadata is edited by an ordinary processing or companion function.</li><li>Direct test, discovery test, and a small PipelineManager run pass.</li></ul>
+<ul><li>Function name, filename, discovery name, and output filenames are unique and consistent.</li><li>Input positions and name-value options match the MATLAB signature.</li><li>RAM/file support describes implemented behavior.</li><li>Semantic types and output modes are accurate.</li><li>Dimensions and UMT metadata describe the returned value.</li><li>The output is saved as <samp>.dat</samp> only if all its dimensions are Y, X, T, E, or F and it comes from a single recording; otherwise it is a <samp>.umt</samp> file (<a href="#choosing-the-output-format">Choosing the output format</a>).</li><li>Frame rate, axes, and exposure come from <samp>sourceInfo</samp> inputs or the data file, never from <samp>AcqInfos.mat</samp>; <samp>.dat</samp> files are read and written only through <samp>loadMetaData</samp>, <samp>loadData</samp>, <samp>spatialSlabIO</samp>, and <samp>saveData</samp>.</li><li><samp>freshSaveFolderRole</samp> is changed from <samp>none</samp> only for a true initializer or companion.</li><li>No authoritative metadata is edited by an ordinary processing or companion function.</li><li>Direct test, discovery test, and a small PipelineManager run pass.</li></ul>
 </body></html>

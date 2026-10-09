@@ -23,7 +23,7 @@ Serialized order:
 <h2>How DataViewer reads data</h2>
 <p><samp>DatImageSource</samp> validates file size against metadata, uses direct <samp>fseek</samp>/<samp>fread</samp> frame and pixel reads, and maintains an optional spatial-temporal cache. DataViewer does not require the whole recording in RAM. The lower-level <samp>mapDat</samp> helper is available for suitable programmatic workflows, but mapped size and type must still come from validated metadata.</p>
 <h2>Processing lifecycle</h2>
-<p>Analysis functions can return arrays for PipelineManager to persist, or accept a filename and stream spatial slabs for low-RAM processing. New outputs receive processing provenance in <samp>dataHistory.mat</samp>. Event-aligned additional dimensions are normally stored in UMT rather than changing the raw binary contract.</p>
+<p>Analysis functions can return arrays for PipelineManager to persist, or accept a filename and stream spatial slabs for low-RAM processing. New outputs receive processing provenance in <samp>dataHistory.mat</samp>. Image data split by event (an additional E axis) can be saved as <samp>.dat</samp>; results that do not fit the <samp>.dat</samp> dimensions are saved as <samp>.umt</samp>.</p>
 <h2>Programmatic access</h2>
 <pre><code>info = loadMetaData("C:\save\green.dat");
 data = loadData("C:\save\green.dat");      % use when it fits in memory
