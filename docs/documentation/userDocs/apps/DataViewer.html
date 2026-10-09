@@ -18,7 +18,7 @@ DataViewer("FilePath","C:\data\session\result.umt");</code></pre>
 <h2>Supported files</h2>
 <table><tr><th>Source</th><th>Required information</th><th>Behavior</th></tr>
 <tr><td><a href="../other/dat-files-organization.html"><samp>.dat</samp></a></td><td><samp>AcqInfos.mat</samp> in the Save Folder</td><td>Stores one continuous image channel. Every <samp>.dat</samp> file in the same Save Folder has the dimensions recorded in <samp>AcqInfos.mat</samp>.</td></tr>
-<tr><td>Image-kind <a href="../other/umt-files-organization.html"><samp>.umt</samp></a></td><td>A compatible image entry</td><td>Stores processed or reduced results whose dimensions can differ from the original recording. The file carries the metadata needed to describe each entry.</td></tr></table>
+<tr><td>Image-kind <a href="../other/umt-files-organization.html"><samp>.umt</samp></a></td><td>A compatible image entry</td><td>Stores results whose dimensions or origin do not fit a <samp>.dat</samp> file, such as one map per condition or data combined across recordings. The file carries the metadata needed to describe each entry.</td></tr></table>
 <p>This two-file framework keeps large, equally sized continuous channels simple while allowing smaller processed results—such as amplitude maps or event averages—to describe their own dimensions and labels.</p>
 <h2>Application data flow</h2>
 <pre>Save Folder (.dat/.umt + metadata)
