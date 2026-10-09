@@ -3,7 +3,7 @@ docs/helpsearch-v3/_0.cfe
 docs/helpsearch-v3/_0.cfs
 docs/helpsearch-v3/_0.si
 docs/documentation/userDocs/userdocs_template.html
-test/
+test/**/failed_tests.txt
 classes/Protocol_classes/Protocol_BACKUP_1599.m
 classes/PipelineManager.asv
 IOIAnalysis/SystemOpticalParams/LEDs.mat
