@@ -102,6 +102,7 @@ classdef PipelineManager < handle
         currentTempSessionTag char = '' % per-run tag used for PMTMP_* outputs
         executionTrace
         executionProgressLog struct = struct([]) % Progress events emitted during the latest execution.
+        cachedLeafFiles struct = struct('saveFolder', {}, 'nodeID', {}, 'fileName', {}) % Leaf results reused from dataHistory (skipped steps) in the latest execution.
         currentExecutionWasCancelled logical = false % TRUE when the latest executePipeline run was cancelled by request.
         metaData
     end
@@ -1423,6 +1424,7 @@ classdef PipelineManager < handle
             obj.currentLeafOutputPolicy = runLeafPolicy;
             obj.currentTempSessionTag = obj.makeTempSessionTag();
             obj.executionProgressLog = struct([]);
+            obj.cachedLeafFiles = struct('saveFolder', {}, 'nodeID', {}, 'fileName', {});
             obj.currentExecutionWasCancelled = false;
 
             executionStartedOn = datetime('now');
@@ -1687,6 +1689,7 @@ classdef PipelineManager < handle
 
                             elseif obj.b_skipSteps
                                 obj.matchHistoryAndSetPreload(saveFolder);
+                                obj.recordCachedLeafFiles(saveFolder);
                             else
                                 fprintf('[CACHE] Step skipping disabled. Existing files will be ignored for execution planning.\n');
                             end
@@ -4109,6 +4112,85 @@ classdef PipelineManager < handle
             end
         end
 
+        function tf = isCachedResultOfPipeline(obj, filePath)
+            %ISCACHEDRESULTOFPIPELINE True when a file is a stored result of this pipeline.
+            %
+            %   tf = obj.isCachedResultOfPipeline(filePath)
+            %
+            %   A file qualifies when its dataHistory entry (kept in its own folder,
+            %   which must be one of the pipeline's SaveFolders) is a prefix match of
+            %   the candidate provenance of a branch of the current graph, that is,
+            %   when running the pipeline would reuse the file instead of recomputing
+            %   those steps (see b_skipSteps). DataViewer-managed tools use this to
+            %   keep the pipeline's original input when the viewer shows an output the
+            %   pipeline itself produced, so a re-run skips the finished steps.
+            %
+            %   Nothing is executed and the in-memory history state is left untouched.
+            %   Returns false for files without a history entry, for entries written
+            %   by a different pipeline version, and for anything it cannot resolve.
+
+            tf = false;
+
+            filePath = char(string(filePath));
+            if isempty(strtrim(filePath)) || ~isfile(filePath) || isempty(obj.nodes)
+                return
+            end
+
+            [folder, name, ext] = fileparts(filePath);
+            fileName = [name ext];
+
+            idxSF = find(strcmpi(folder, obj.SaveFolderList), 1, 'first');
+            if isempty(idxSF)
+                return
+            end
+
+            rawFolder = '';
+            if idxSF <= numel(obj.RawFolderList)
+                rawFolder = obj.RawFolderList{idxSF};
+            end
+
+            savedHistory = obj.dataHistory;
+
+            try
+                obj.loadDataHistory(folder);
+
+                histEntry = [];
+                for iHist = 1:numel(obj.dataHistory)
+                    if isfield(obj.dataHistory(iHist), 'file') && ...
+                            strcmpi(char(string(obj.dataHistory(iHist).file)), fileName)
+                        histEntry = obj.dataHistory(iHist);
+                        break
+                    end
+                end
+
+                if ~isempty(histEntry) && isfield(histEntry, 'pipelineVersion') && ...
+                        isequal(histEntry.pipelineVersion, obj.pipelineVersion)
+
+                    leafIDs = obj.getLeafNodeIDs();
+                    for iLeaf = 1:numel(leafIDs)
+                        [candidateSteps, candidateNodeIDs, candidateStepIsNode] = ...
+                            obj.getCandidatePath(leafIDs(iLeaf), folder, rawFolder);
+
+                        if isempty(candidateSteps) || isempty(candidateNodeIDs)
+                            continue
+                        end
+
+                        [isMatch, nStepsMatched] = obj.isHistoryMatch( ...
+                            candidateSteps, candidateStepIsNode, histEntry, folder, rawFolder);
+
+                        if isMatch && nStepsMatched > 0
+                            tf = true;
+                            break
+                        end
+                    end
+                end
+            catch
+                tf = false;
+            end
+
+            obj.dataHistory = savedHistory;
+        end
+
         %%%%%%--Pipeline Visualization  -----------------------------------
         function varargout = viewExecutionPlan(obj, varargin)
             %VIEWEXECUTIONPLAN Print a user-facing execution plan.
@@ -5022,6 +5104,16 @@ classdef PipelineManager < handle
                         existsFlag = false;
                     end
 
+                    % A leaf skipped because dataHistory already holds its result is
+                    % reported with that existing file, not with the planned name of a
+                    % file this run did not write.
+                    cachedFile = obj.cachedFileForOutputRow(char(saveFolder), outputPlan, iRow);
+                    if strlength(cachedFile) > 0
+                        actualPath = string(fullfile(char(saveFolder), char(cachedFile)));
+                        actualName = cachedFile;
+                        existsFlag = true;
+                    end
+
                     actualPersist = string(outputPlan.plannedPersistence(iRow));
                     if ~existsFlag && actualPersist == "already_file"
                         actualPersist = "not_produced";
@@ -5071,6 +5163,73 @@ classdef PipelineManager < handle
                 'OutputName','OutputMode','OutputTypes','IsRequired','IsFinalOutput','PlannedPersistence', ...
                 'ActualPersistence','PlannedFileName','ActualFileName','FilePath','FileExists', ...
                 'IsTemporary','IsViewerCompatible','CompatibilityReason'});
+        end
+
+        function recordCachedLeafFiles(obj, saveFolder)
+            %RECORDCACHEDLEAFFILES Remember leaves fully satisfied by dataHistory in this folder.
+            %
+            %   Called right after matchHistoryAndSetPreload. A leaf whose
+            %   runtime.leafCachedFile is set is skipped by the run; the file is kept
+            %   so the output manifest can report it instead of an unwritten file.
+
+            for iNode = 1:numel(obj.nodes)
+                if ~isfield(obj.nodes(iNode), 'runtime') || ~isstruct(obj.nodes(iNode).runtime) || ...
+                        ~isfield(obj.nodes(iNode).runtime, 'leafCachedFile')
+                    continue
+                end
+
+                cached = string(obj.nodes(iNode).runtime.leafCachedFile);
+                if isempty(cached) || ismissing(cached(1)) || strlength(cached(1)) == 0
+                    continue
+                end
+
+                obj.cachedLeafFiles(end+1) = struct( ...
+                    'saveFolder', char(string(saveFolder)), ...
+                    'nodeID', obj.nodes(iNode).id, ...
+                    'fileName', char(cached(1)));
+            end
+        end
+
+        function fileName = cachedFileForOutputRow(obj, saveFolder, outputPlan, iRow)
+            %CACHEDFILEFOROUTPUTROW Existing file that stands in for a skipped leaf output.
+            %
+            %   Returns "" unless this planned output is the single persisted final
+            %   output of a leaf whose result was reused from dataHistory in
+            %   SAVEFOLDER and that file still exists.
+
+            fileName = "";
+
+            if isempty(obj.cachedLeafFiles)
+                return
+            end
+
+            persistedStates = ["saved_explicit", "saved_final", "saved_temp", "saved_leaf"];
+            thisState = string(outputPlan.plannedPersistence(iRow));
+            if ~any(thisState == persistedStates)
+                return
+            end
+
+            if ismember('isFinalOutput', outputPlan.Properties.VariableNames) && ...
+                    ~logical(outputPlan.isFinalOutput(iRow))
+                return
+            end
+
+            nodeID = outputPlan.nodeID(iRow);
+            sameNode = outputPlan.nodeID == nodeID;
+            if nnz(sameNode & ismember(string(outputPlan.plannedPersistence), persistedStates)) ~= 1
+                return
+            end
+
+            hit = find(strcmpi({obj.cachedLeafFiles.saveFolder}, saveFolder) & ...
+                [obj.cachedLeafFiles.nodeID] == nodeID, 1, 'last');
+            if isempty(hit)
+                return
+            end
+
+            candidate = obj.cachedLeafFiles(hit).fileName;
+            if isfile(fullfile(saveFolder, candidate))
+                fileName = string(candidate);
+            end
         end
 
         function [actualPath, actualName, existsFlag] = resolveActualOutputFile(~, saveFolder, plannedFile)
@@ -13565,10 +13724,18 @@ classdef PipelineManager < handle
             ord = ord(ord > 0);
             nodesPath = nodesPath(ord);
 
-            maskStream = strcmpi({nodesPath.kind}, 'stream');
+            % Keep stream nodes AND file-source proxy nodes. generateDataHistoryEntry
+            % records the proxy of a source file that has no history of its own as the
+            % leading provenance step, so the candidate path must start with the same
+            % step to match it. A proxy whose file already has a history is replaced by
+            % that history in the loop below (and then contributes no node ID).
+            maskStream = strcmpi({nodesPath.kind}, 'stream') | ...
+                arrayfun(@(n) obj.isHistoryProxyNode(n), nodesPath);
             nodesPath  = nodesPath(maskStream);
 
-            if isempty(nodesPath)
+            % A path without any processing step (a bare file source) has nothing to
+            % match against history.
+            if isempty(nodesPath) || ~any(strcmpi({nodesPath.kind}, 'stream'))
                 return
             end
 
