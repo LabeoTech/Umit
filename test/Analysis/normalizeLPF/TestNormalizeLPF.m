@@ -80,7 +80,7 @@ classdef TestNormalizeLPF < matlab.unittest.TestCase
             % test double so every comparison in this class is reproducible.
             projectRoot = extractBefore(mfilename('fullpath'), [filesep 'test' filesep]);
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile( ...
-                projectRoot, 'test', 'IOIAnalysis', 'NormalisationFiltering', 'mocks')));
+                projectRoot, 'test', 'Analysis', 'normalizeLPF', 'mocks')));
             testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture( ...
                 'UMIT_TEST_MOCK_RNG_MODE', 'fixed'));
 
@@ -219,7 +219,7 @@ classdef TestNormalizeLPF < matlab.unittest.TestCase
             testCase.assumeEqual(computer, 'PCWIN64', ...
                 'Chunk forcing relies on shadowing the PCWIN64 memory() built-in.');
             testCase.applyFixture(matlab.unittest.fixtures.PathFixture(fullfile( ...
-                testCase.ProjectRoot, 'test', 'IOIAnalysis', 'NormalisationFiltering', 'mocks')));
+                testCase.ProjectRoot, 'test', 'Analysis', 'normalizeLPF', 'mocks')));
             testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture( ...
                 'UMIT_TEST_MOCK_RNG_MODE', 'fixed'));
 
@@ -307,6 +307,168 @@ classdef TestNormalizeLPF < matlab.unittest.TestCase
                 'bApplyExpFit', false, ...
                 'FrameRateHz', 2 * headerRateHz), ...
                 'Umitoolbox:normalizeLPF:sourceInfoConflict');
+        end
+
+        function testDatInputFiltersWithTheExplicitFrameRate(testCase)
+            % The explicit rate is the one used to design the filters, for a
+            % .dat input as for an array (it used to be the header rate).
+            testCase.applyFixture(matlab.unittest.fixtures.SuppressedWarningsFixture( ...
+                {'Umitoolbox:normalizeLPF:sourceInfoConflict', ...
+                 'Umitoolbox:normalizeLPF:BaselineCutoffRaised'}));
+            [data, folder] = iSyntheticRecording(testCase.SaveFolder, 10);
+            args = {'BaselineCutoffHz', 0.1, 'SignalCutoffHz', 2, ...
+                'Normalize', true, 'bApplyExpFit', false};
+
+            fromDat = loadData(normalizeLPF('synthetic.dat', folder, args{:}, ...
+                'FrameRateHz', 20));
+            fromArray = normalizeLPF(data, folder, args{:}, 'FrameRateHz', 20);
+            fromHeaderRate = normalizeLPF(data, folder, args{:}, 'FrameRateHz', 10);
+
+            testCase.verifyEqual(fromDat, fromArray, 'AbsTol', single(1e-6));
+            testCase.verifyGreaterThan(max(abs(fromDat(:) - fromHeaderRate(:))), 1e-3);
+        end
+
+        function testZeroSignalCutoffKeepsTheSignalUnfiltered(testCase)
+            % SignalCutoffHz = 0 disables the signal low-pass: the legacy
+            % filter with highFreq = 0, for arrays and .dat files alike.
+            [data, folder] = iSyntheticRecording(testCase.SaveFolder, 10);
+            args = {'BaselineCutoffHz', 0.1, 'SignalCutoffHz', 0, ...
+                'Normalize', true, 'bApplyExpFit', false};
+
+            fromArray = normalizeLPF(data, folder, args{:}, 'FrameRateHz', 10);
+            fromDat = loadData(normalizeLPF('synthetic.dat', folder, args{:}));
+
+            testCase.verifyEqual(fromArray, legacyNormFiltDirect(data, 0.1, 0, true, false, 10));
+            testCase.verifyEqual(fromDat, fromArray, 'AbsTol', single(1e-6));
+        end
+
+        function testNegativeSignalCutoffRejected(testCase)
+            [data, folder] = iSyntheticRecording(testCase.SaveFolder, 10);
+
+            testCase.verifyError(@() normalizeLPF(data, folder, ...
+                'SignalCutoffHz', -1, 'FrameRateHz', 10), ...
+                'normalizeLPF:InvalidCutoff');
+        end
+
+        function testShortRecordingRaisesTheBaselineCutoffWithAWarning(testCase)
+            % 200 frames at 10 Hz = 20 s, shorter than the 1/0.0083 = 120 s
+            % baseline period: the cutoff becomes 1/(2 x 20 s) = 0.025 Hz,
+            % as the legacy filter did silently.
+            [data, folder] = iSyntheticRecording(testCase.SaveFolder, 10);
+            args = {'BaselineCutoffHz', 0.0083, 'SignalCutoffHz', 1, ...
+                'Normalize', true, 'bApplyExpFit', false, 'FrameRateHz', 10};
+
+            out = testCase.verifyWarning(@() normalizeLPF(data, folder, args{:}), ...
+                'Umitoolbox:normalizeLPF:BaselineCutoffRaised');
+
+            testCase.verifyEqual(out, legacyNormFiltDirect(data, 0.0083, 1, true, false, 10));
+        end
+
+        function testBaselineCutoffWithinTheRecordingDoesNotWarn(testCase)
+            [data, folder] = iSyntheticRecording(testCase.SaveFolder, 10);
+
+            testCase.verifyWarningFree(@() normalizeLPF(data, folder, ...
+                'BaselineCutoffHz', 0.1, 'SignalCutoffHz', 1, 'FrameRateHz', 10));
+        end
+
+        function testRaisedBaselineAboveSignalCutoffIsReported(testCase)
+            % 200 frames at 10 Hz = 20 s: a 0.01 Hz baseline is raised to
+            % 0.025 Hz, above the 0.02 Hz signal cutoff.
+            [data, folder] = iSyntheticRecording(testCase.SaveFolder, 10);
+
+            lastwarn('');
+            normalizeLPF(data, folder, 'BaselineCutoffHz', 0.01, ...
+                'SignalCutoffHz', 0.02, 'FrameRateHz', 10);
+            [msg, id] = lastwarn();
+
+            testCase.verifyEqual(id, 'Umitoolbox:normalizeLPF:BaselineCutoffRaised');
+            testCase.verifySubstring(msg, 'above SignalCutoffHz');
+        end
+
+        function testExpFitWithMaskedPixelsMatchesForArrayAndDat(testCase)
+            % A third of the image is NaN on every other frame. Both paths
+            % fit the decay to the NaN-safe mean trace, so they agree; the
+            % array path used to average the masked zeros in.
+            [data, folder] = iSyntheticRecording(testCase.SaveFolder, 10, 'everyOtherFrame');
+            args = {'BaselineCutoffHz', 0.1, 'SignalCutoffHz', 1, ...
+                'Normalize', true, 'bApplyExpFit', true};
+
+            fromArray = normalizeLPF(data, folder, args{:}, 'FrameRateHz', 10);
+            fromDat = loadData(normalizeLPF('synthetic.dat', folder, args{:}));
+
+            testCase.verifyEqual(isnan(fromArray), isnan(data));
+            testCase.verifyEqual(fromDat, fromArray, 'AbsTol', single(1e-5));
+        end
+
+        function testMaskedPixelsStayNaNAndDoNotAffectTheOthers(testCase)
+            % Pixels NaN over the whole recording (a mask) are not filtered.
+            % With bApplyExpFit they used to stop the run (0/0 reaching
+            % filtfilt). The other pixels match a run without the masked
+            % columns, for arrays and .dat files.
+            [data, folder] = iSyntheticRecording(testCase.SaveFolder, 10, 'wholeRecording');
+            for bExpFit = [false true]
+                args = {'BaselineCutoffHz', 0.1, 'SignalCutoffHz', 1, ...
+                    'Normalize', true, 'bApplyExpFit', bExpFit};
+
+                fromArray = normalizeLPF(data, folder, args{:}, 'FrameRateHz', 10);
+                fromDat = loadData(normalizeLPF('synthetic.dat', folder, args{:}));
+                unmasked = normalizeLPF(data(:, 3:end, :), folder, args{:}, ...
+                    'FrameRateHz', 10);
+
+                testCase.verifyEqual(isnan(fromArray), isnan(data));
+                testCase.verifyEqual(isnan(fromDat), isnan(data));
+                testCase.verifyEqual(fromArray(:, 3:end, :), unmasked, 'AbsTol', single(1e-6));
+                testCase.verifyEqual(fromDat, fromArray, 'AbsTol', single(1e-5));
+            end
+        end
+
+        function testZeroPixelsAreSkippedLikeMaskedPixels(testCase)
+            % Pixels that are 0 over the whole recording are not filtered.
+            % With bApplyExpFit they used to stop the run (0/0 reaching
+            % filtfilt). They give what the filter gives a zero trace
+            % without the fit: NaN with Normalize=true (0/0), else 0.
+            [data, folder] = iSyntheticRecording(testCase.SaveFolder, 10, 'zeroColumns');
+            for bNormalize = [true false]
+                if bNormalize
+                    expectedZero = NaN(8, 2, 200, 'single');
+                else
+                    expectedZero = zeros(8, 2, 200, 'single');
+                end
+                for bExpFit = [false true]
+                    args = {'BaselineCutoffHz', 0.1, 'SignalCutoffHz', 1, ...
+                        'Normalize', bNormalize, 'bApplyExpFit', bExpFit};
+
+                    fromArray = normalizeLPF(data, folder, args{:}, 'FrameRateHz', 10);
+                    fromDat = loadData(normalizeLPF('synthetic.dat', folder, args{:}));
+
+                    testCase.verifyEqual(fromArray(:, 1:2, :), expectedZero);
+                    testCase.verifyEqual(fromDat, fromArray, 'AbsTol', single(1e-5));
+                    if ~bExpFit
+                        % Without the fit, the legacy filter's own result.
+                        testCase.verifyEqual(fromArray, legacyNormFiltDirect( ...
+                            data, 0.1, 1, bNormalize, false, 10));
+                    end
+                end
+            end
+        end
+
+        function testDatInputMayBeItsOwnOutput(testCase)
+            % Re-running on normLPF.dat reads the file the run overwrites:
+            % the output is written to normLPF_writing.dat, then moved.
+            [~, folder] = iSyntheticRecording(testCase.SaveFolder, 10);
+            args = {'BaselineCutoffHz', 0.1, 'SignalCutoffHz', 1, ...
+                'Normalize', false, 'bApplyExpFit', false};
+
+            firstFile = normalizeLPF('synthetic.dat', folder, args{:});
+            firstPass = loadData(firstFile);
+            secondFile = normalizeLPF('normLPF.dat', folder, args{:});
+
+            testCase.verifyEqual(secondFile, firstFile);
+            testCase.verifyEqual(loadData(secondFile), ...
+                normalizeLPF(firstPass, folder, args{:}, 'FrameRateHz', 10), ...
+                'AbsTol', single(1e-6));
+            testCase.verifyFalse(isfile(fullfile(folder, 'normLPF_writing.dat')));
+            testCase.verifyEqual(readDatHeader(secondFile).channelName, 'normLPF');
         end
     end
 
@@ -408,8 +570,7 @@ classdef TestNormalizeLPF < matlab.unittest.TestCase
                 workArray(idxNaN) = 0;
             end
 
-            out = NormalisationFiltering( ...
-                pwd, workArray, ...
+            out = legacyNormFiltDirect(workArray, ...
                 baselineCutoffHz, ...
                 signalCutoffHz, ...
                 bNormalize, ...
@@ -447,4 +608,38 @@ function deleteIfExists(filePath)
 if isfile(filePath)
     delete(filePath);
 end
+end
+
+function [data, folder] = iSyntheticRecording(saveFolder, frameRateHz, maskMode)
+%ISYNTHETICRECORDING Small Y-X-T recording (200 frames) and its headered .dat.
+%
+% Slow exponential decay, a 0.5 Hz and a 3 Hz component, and a spatial
+% gradient. MASKMODE 'everyOtherFrame' makes a third of the image (two X
+% columns) NaN on every other frame, 'wholeRecording' on every frame
+% (masked pixels); 'zeroColumns' makes them 0 on every frame; 'none'
+% (default) keeps every value. The .dat is
+% SYNTHETIC.DAT in a subfolder of SAVEFOLDER, with FRAMERATEHZ in its header.
+if nargin < 3
+    maskMode = 'none';
+end
+Ny = 8;
+Nx = 6;
+Nt = 200;
+[y, x, t] = ndgrid(single(1:Ny), single(1:Nx), single(0:Nt-1) / frameRateHz);
+data = single(1 + 0.2 * exp(-t / 5) + 0.01 * sin(2*pi*0.5*t) ...
+    + 0.005 * sin(2*pi*3*t) + 0.01 * y + 0.02 * x);
+switch maskMode
+    case 'everyOtherFrame'
+        data(:, 1:2, 1:2:end) = NaN;
+    case 'wholeRecording'
+        data(:, 1:2, :) = NaN;
+    case 'zeroColumns'
+        data(:, 1:2, :) = 0;
+end
+
+folder = fullfile(saveFolder, 'synthetic');
+if ~isfolder(folder)
+    mkdir(folder);
+end
+writeTestDat(fullfile(folder, 'synthetic.dat'), data, frameRateHz, 5);
 end

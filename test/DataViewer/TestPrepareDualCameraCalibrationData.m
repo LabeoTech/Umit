@@ -113,8 +113,8 @@ classdef TestPrepareDualCameraCalibrationData < matlab.unittest.TestCase
         end
 
         function testDefaultImplementationUsesRequiredInterfaces(testCase)
-            % classifyUnregisteredData deliberately calls the legacy,
-            % Rig-independent ImagesClassification (not run_ImagesClassification)
+            % classifyUnregisteredData deliberately calls ImagesClassification
+            % with ApplyRig = false (no Rig binding or coregistration)
             % so calibration source data is never coregistered against an
             % active transform, even when the default Rig has one. See
             % commit a14c260 ("(fix) minor fixes with analysis functions and
@@ -125,7 +125,7 @@ classdef TestPrepareDualCameraCalibrationData < matlab.unittest.TestCase
             testCase.verifyNotEmpty(regexp(source, ...
                 'ClassificationFcn[^\n]*=\s*@classifyUnregisteredData', 'once'));
             testCase.verifyNotEmpty(regexp(source, ...
-                'classifiedFiles\s*=\s*ImagesClassification\(rawFolder,\s*saveFolder,\s*1,\s*1,\s*0\)', ...
+                'classifiedFiles\s*=\s*ImagesClassification\(rawFolder,\s*saveFolder,\s*''ApplyRig'',\s*false\)', ...
                 'once'));
         end
     end

@@ -13,8 +13,9 @@ if nargin < 1 || isempty(outputRoot)
     outputRoot = fullfile(fileparts(mfilename('fullpath')), 'resources', 'library');
 end
 if nargin < 2 || isempty(legacyRoot)
-    repoRoot = fileparts(fileparts(mfilename('fullpath')));
-    legacyRoot = fullfile(repoRoot, 'IOIAnalysis', 'SystemOpticalParams');
+    % The legacy IOI optical MAT files (formerly IOIAnalysis/SystemOpticalParams).
+    legacyRoot = fullfile(fileparts(mfilename('fullpath')), 'resources', ...
+        'legacyOpticalParams');
 end
 
 source = load(fullfile(legacyRoot, 'SysSpect.mat'));

@@ -19,7 +19,7 @@ function [isLegacy, message] = isLegacySchemaFolder(saveFolder)
 %   processing while leaving viewing/inspection unaffected.
 %
 %   When ImportedChannels is absent, this check attempts the same
-%   resolveImportedChannelFallback inference that run_HemoCompute's own
+%   resolveImportedChannelFallback inference that HemoCompute's own
 %   preflight already relies on. A dataset is only reported as legacy when
 %   that fallback cannot infer any channel (no usable legacy IlluminationN
 %   metadata or canonical red/green/yellow .dat files) or the available

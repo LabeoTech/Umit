@@ -89,7 +89,7 @@ classdef PipelineManager < handle
         maxLogRows = 100 % Maximum number of rows in the folderLog table. If exeeded, older entries will be erased.
         current_outFile cell % List of file names created as output from some of the analysis functions.
         % It can be the name of an existing file, or "outFile" for a function
-        %  that creates a file such as "run_ImagesClassification".
+        %  that creates a file such as "ImagesClassification".
         timeTag % timestamp used as "tag" for temporary files created during the pipeline execution.
         b_pipeIsValid logical = false % TRUE, if the pipeline passed all validations and is ready to execution.
         SaveFolderList_truncated cell % Truncated version of the save folder list for better display in Global Pipeline Summary.
@@ -7122,7 +7122,7 @@ classdef PipelineManager < handle
             %   FUNCNAME = GETNODEFUNCTIONNAME(~, NODELOCAL) prefers the modern
             %   pipelineInfo function name. If unavailable, it strips only a final
             %   numeric step suffix, preserving function names that contain
-            %   underscores such as run_HemoCorrection_1.
+            %   underscores such as apply_detrend_1.
 
             funcName = '';
 

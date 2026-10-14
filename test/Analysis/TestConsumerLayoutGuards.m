@@ -5,8 +5,8 @@ classdef TestConsumerLayoutGuards < matlab.unittest.TestCase
     %   Y-X-T checks the axes of its .dat input and raises
     %   Umitoolbox:<fn>:unsupportedLayout before reading data or writing
     %   outputs. Each consumer is given a Y-X-T-E file and a Y-X-E file; the
-    %   SaveFolder must be left unchanged. run_ConvertToTiff accepts Y-X-T-E
-    %   (one TIFF per event, see TestRunConvertToTiff) and exports a
+    %   SaveFolder must be left unchanged. ConvertToTiff accepts Y-X-T-E
+    %   (one TIFF per event, see TestConvertToTiff) and exports a
     %   single-frame Y-X file as one TIFF page.
 
     properties
@@ -24,7 +24,7 @@ classdef TestConsumerLayoutGuards < matlab.unittest.TestCase
             'normalizeZScore', {{'normalizeZScore', @(f, sv) normalizeZScore(f, sv)}}, ...
             'apply_detrend', {{'apply_detrend', @(f, sv) apply_detrend(f, sv)}}, ...
             'normalizeBSLN', {{'normalizeBSLN', @(f, sv) normalizeBSLN(f, sv)}}, ...
-            'run_ConvertToTiff', {{'run_ConvertToTiff', @(f, sv) run_ConvertToTiff(f, sv)}})
+            'ConvertToTiff', {{'ConvertToTiff', @(f, sv) ConvertToTiff(f, sv)}})
         layout = struct( ...
             'YXTE', struct('names', {{'Y', 'X', 'T', 'E'}}, 'size', [6 5 4 2]), ...
             'YXE', struct('names', {{'Y', 'X', 'E'}}, 'size', [6 5 3]))
@@ -80,7 +80,7 @@ classdef TestConsumerLayoutGuards < matlab.unittest.TestCase
             img = reshape(single(1:30), 6, 5);
             writeTestDat(f, img, 10, 'DimNames', {'Y', 'X'});
 
-            outFile = run_ConvertToTiff(f, testCase.Folder);
+            outFile = ConvertToTiff(f, testCase.Folder);
 
             testCase.verifyEqual(outFile, {'img_frame.tif'});
             tifPath = fullfile(testCase.Folder, 'img_frame.tif');
