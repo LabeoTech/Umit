@@ -120,7 +120,6 @@ test</param.exclude.filters>
       <file>${PROJECT_ROOT}\docs</file>
       <file>${PROJECT_ROOT}\ensureUMITPath.m</file>
       <file>${PROJECT_ROOT}\GUI</file>
-      <file>${PROJECT_ROOT}\IOIAnalysis</file>
       <file>${PROJECT_ROOT}\LICENSE</file>
       <file>${PROJECT_ROOT}\ProjectManagement</file>
       <file>${PROJECT_ROOT}\README.md</file>

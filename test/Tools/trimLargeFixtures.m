@@ -22,7 +22,7 @@ function summary = trimLargeFixtures(backupRoot, action)
 %   channel built from the full img_00000.bin, and TestGetEvents builds
 %   events from the full 54 s ai_00000.bin trace.
 %
-%   File layouts (as read by IOIAnalysis/ImagesClassification and
+%   File layouts (as read by ImagesClassification and
 %   EventsManager.setAnalogIN):
 %     img_*.bin  5 int32 header, then frames of [3 uint64; nx*ny uint16]
 %     ai_*.bin   5 int32 header, then 1e4-sample blocks of nChan doubles

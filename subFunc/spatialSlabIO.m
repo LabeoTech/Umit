@@ -72,7 +72,7 @@ function varargout = spatialSlabIO(mode, varargin)
 %   frame (chosen from the Phase 3a slab I/O benchmark).
 %
 % Positional form (DEPRECATED for new code; kept unchanged for existing
-% callers, including IOIAnalysis):
+% callers):
 %
 %   slab = SPATIALSLABIO('read', fid, Ny, Nx, Nt, xIdx, precision)
 %   SPATIALSLABIO('write', fid, Ny, Nx, Nt, xIdx, precision, slab)

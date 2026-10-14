@@ -57,23 +57,19 @@ classdef TestUMITRigOptics < matlab.unittest.TestCase
                 'cameraResponse', repmat(camera.response', 3, 1), ...
                 'excitationResponse', ones(1, 301), ...
                 'emissionResponse', ones(1, 301));
-            actual = ioi_epsilon_pathlength('Hillman', 100, 60, 40, optical);
-            legacy = ioi_epsilon_pathlength( ...
-                'Hillman', 100, 60, 40, 'none', 'D1024');
+            % The expected values are those of the legacy IOI MAT optics
+            % (filter set 'none', camera D1024); the legacy lookup itself was
+            % removed when HemoCompute absorbed IOIAnalysis (2026-10-14).
+            actual = hemooptics.ioi_epsilon_pathlength('Hillman', 100, 60, 40, optical);
             expected = [607.4858 4677.0937; 3317.8867 3753.0432; 2450.6303 5176.1897];
             testCase.verifyEqual(actual, expected, 'AbsTol', 1e-3);
-            testCase.verifyEqual(legacy, expected, 'AbsTol', 1e-3);
-            testCase.verifyEqual(actual, legacy, 'AbsTol', 1e-10);
-            testCase.verifyError(@() ioi_epsilon_pathlength( ...
-                'Hillman', 100, 60, 40, 'none', 'UnknownCamera'), ...
-                'Umitoolbox:ioi_epsilon_pathlength:UnknownCamera');
         end
 
         function testLegacyMigrationProducesExpectedRepertoire(testCase)
             outputRoot = fullfile(testCase.TempRoot, 'migratedLibrary');
             report = migrateLegacyOpticalLibrary(outputRoot, ...
                 fullfile(fileparts(fileparts(fileparts(mfilename('fullpath')))), ...
-                'IOIAnalysis', 'SystemOpticalParams'));
+                'RigManagement', 'resources', 'legacyOpticalParams'));
             testCase.verifyEqual(report.spectrumCount, 16);
             testCase.verifyEqual(report.filterSetCount, 3);
             values = readmatrix(fullfile(outputRoot, 'spectra', ...

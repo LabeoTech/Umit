@@ -1,6 +1,6 @@
 classdef TestRunImagesClassificationCoregistration < matlab.unittest.TestCase
 %TESTRUNIMAGESCLASSIFICATIONCOREGISTRATION Functional tests for
-%run_ImagesClassification.m's dual-camera coregistration path added this
+%ImagesClassification.m's dual-camera coregistration path added this
 %session: preferring the rig's active cameraCoregistration managed resource
 %over the legacy flat tform file, and correctly recording resourceUUID/rigID.
 %
@@ -55,7 +55,7 @@ classdef TestRunImagesClassificationCoregistration < matlab.unittest.TestCase
 
             testCase.RigRootsToClean = {};
 
-            % DFR-20260819-010: run_ImagesClassification resolves its Rig via
+            % DFR-20260819-010: ImagesClassification resolves its Rig via
             % UMITRigStore.getOrCreateDefaultRig(), which requires exactly
             % one Active Rig. Guarantee that regardless of ambient state,
             % and restore whatever was Active before in teardown.
@@ -94,7 +94,7 @@ classdef TestRunImagesClassificationCoregistration < matlab.unittest.TestCase
             saveFolder = fullfile(testCase.TempRoot, 'Save1');
             mkdir(saveFolder);
 
-            classifiedFiles = run_ImagesClassification( ...
+            classifiedFiles = ImagesClassification( ...
                 testCase.RawFolder, saveFolder, 'backupOpts', 'ERASE');
             testCase.trackNewRigs(rigsBefore);
 
@@ -110,7 +110,7 @@ classdef TestRunImagesClassificationCoregistration < matlab.unittest.TestCase
 
         function testPrefersActiveRigResourceOverLegacyFallback(testCase)
         %TESTPREFERSACTIVERIGRESOURCEOVERLEGACYFALLBACK Core regression test
-        %for this session's run_ImagesClassification.m fix: when the rig has
+        %for this session's ImagesClassification.m fix: when the rig has
         %an active cameraCoregistration resource, import must use it (and
         %record its real resourceUUID/rigID), not the legacy flat file.
 
@@ -131,7 +131,7 @@ classdef TestRunImagesClassificationCoregistration < matlab.unittest.TestCase
             saveFolder = fullfile(testCase.TempRoot, 'Save2');
             mkdir(saveFolder);
 
-            classifiedFiles = run_ImagesClassification( ...
+            classifiedFiles = ImagesClassification( ...
                 testCase.RawFolder, saveFolder, 'backupOpts', 'ERASE'); %#ok<NASGU>
 
             S = load(fullfile(saveFolder, 'DataParams.mat'));
@@ -140,7 +140,7 @@ classdef TestRunImagesClassificationCoregistration < matlab.unittest.TestCase
             testCase.verifyTrue(cc.isCoregistered);
             testCase.verifyEqual(cc.resourceUUID, resourceUUID);
             testCase.verifyEqual(cc.rigID, rigInfo.rigID);
-            testCase.verifyEqual(cc.method, 'run_ImagesClassification');
+            testCase.verifyEqual(cc.method, 'ImagesClassification');
             testCase.verifyEqual(cc.confirmationMode, 'automatic-import-application');
 
             % Confirm the transform was actually applied to Camera 2 data:
