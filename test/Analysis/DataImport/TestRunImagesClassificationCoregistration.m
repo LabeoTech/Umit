@@ -55,8 +55,8 @@ classdef TestRunImagesClassificationCoregistration < matlab.unittest.TestCase
 
             testCase.RigRootsToClean = {};
 
-            % DFR-20260819-010: ImagesClassification resolves its Rig via
-            % UMITRigStore.getOrCreateDefaultRig(), which requires exactly
+            % DFR-20260819-010: dual-camera ImagesClassification uses the
+            % Active Rig (UMITRigStore.getActiveRig), which requires exactly
             % one Active Rig. Guarantee that regardless of ambient state,
             % and restore whatever was Active before in teardown.
             testCase.RigFixture = setupIsolatedActiveRigFixture();
@@ -94,18 +94,27 @@ classdef TestRunImagesClassificationCoregistration < matlab.unittest.TestCase
             saveFolder = fullfile(testCase.TempRoot, 'Save1');
             mkdir(saveFolder);
 
-            classifiedFiles = ImagesClassification( ...
-                testCase.RawFolder, saveFolder, 'backupOpts', 'ERASE');
+            % Decision Q1: no active transform -> uncoregistered import, an
+            % explicit "no rig" ledger and a clear warning.
+            [classifiedFiles, rigResolution] = testCase.verifyWarning( ...
+                @() ImagesClassification(testCase.RawFolder, saveFolder, 'backupOpts', 'ERASE'), ...
+                'Umitoolbox:ImagesClassification:ImportedWithoutCoregistration');
             testCase.trackNewRigs(rigsBefore);
 
             testCase.verifyNotEmpty(classifiedFiles);
             testCase.verifyTrue(isfile(fullfile(saveFolder, 'AcqInfos.mat')));
             testCase.verifyTrue(isfile(fullfile(saveFolder, 'DataParams.mat')));
+            testCase.verifyEqual(height(UMITRigStore.listRigs()), height(rigsBefore));
 
             S = load(fullfile(saveFolder, 'DataParams.mat'));
             testCase.verifyEqual(S.DataParams.folders.RawFolder, testCase.RawFolder);
             testCase.verifyFalse(S.DataParams.cameraCoregistration.isCoregistered);
             testCase.verifyEqual(S.DataParams.cameraCoregistration.resourceUUID, '');
+
+            testCase.verifyEqual(UMITRigLedger.read(saveFolder).state, 'NoRig');
+            testCase.verifyEqual(rigResolution.ledgerState, 'NoRig');
+            testCase.verifyEqual(rigResolution.cameraCoregistration.skipReason, 'noActiveResource');
+            testCase.verifyFalse(isfile(fullfile(saveFolder, 'tformDualCam.mat')));
         end
 
         function testPrefersActiveRigResourceOverLegacyFallback(testCase)
@@ -151,14 +160,142 @@ classdef TestRunImagesClassificationCoregistration < matlab.unittest.TestCase
             appliedT = load(fullfile(saveFolder, 'tformDualCam.mat'));
             testCase.verifyClass(appliedT.tform, 'affine2d');
             testCase.verifyEqual(appliedT.tform.T, expectedTform.T, 'AbsTol', 1e-9);
+
+            % The folder rig ledger is bound to the rig's snapshots and the
+            % applied transform is committed; AcqInfos.mat holds no rig.
+            ledger = UMITRigLedger.read(saveFolder);
+            expectedBinding = UMITRigLedger.bindingFromRig(rigStore);
+            testCase.verifyEqual(ledger.state, 'BoundCommitted');
+            testCase.verifyEqual(ledger.binding.sourceRig.uuid, rigStore.getRigInfo().uuid);
+            testCase.verifyEqual(ledger.binding.opticsHash, expectedBinding.optics.hash);
+            testCase.verifyEqual(ledger.commitments.coregistration, ...
+                expectedBinding.coregistration.hash);
+            testCase.verifyEmpty(ledger.commitments.optics);
+            acq = load(fullfile(saveFolder, 'AcqInfos.mat'), 'AcqInfoStream');
+            testCase.verifyFalse(any(isfield(acq.AcqInfoStream, {'rigUUID', 'rigID'})));
+        end
+
+        function testReimportWithSameRigRecommitsCoregistration(testCase)
+            rigStore = testCase.createCoregisteredRig({'LED_632nm', 'LED_521nm'}, [3 -2]);
+            saveFolder = fullfile(testCase.TempRoot, 'SaveSame');
+            mkdir(saveFolder);
+
+            ImagesClassification(testCase.RawFolder, saveFolder, 'backupOpts', 'ERASE');
+            ImagesClassification(testCase.RawFolder, saveFolder, 'backupOpts', 'ERASE');
+
+            ledger = UMITRigLedger.read(saveFolder);
+            types = cellfun(@(e) e.type, ledger.events, 'UniformOutput', false);
+            testCase.verifyEqual(types, {'bind', 'commit', 'reimport', 'commit'});
+            testCase.verifyEqual(ledger.state, 'BoundCommitted');
+            testCase.verifyEqual(ledger.commitments.coregistration, ...
+                UMITRigLedger.bindingFromRig(rigStore).coregistration.hash);
+        end
+
+        function testReimportWithDifferentRigBeforeOpticsCommitRebinds(testCase)
+            testCase.createCoregisteredRig({'LED_632nm', 'LED_521nm'}, [3 -2]);
+            saveFolder = fullfile(testCase.TempRoot, 'SaveRebind');
+            mkdir(saveFolder);
+            ImagesClassification(testCase.RawFolder, saveFolder, 'backupOpts', 'ERASE');
+
+            rigB = testCase.createCoregisteredRig({'LED_593nm', 'LED_521nm'}, [1 1]);
+            [~, rigResolution] = ImagesClassification(testCase.RawFolder, saveFolder, ...
+                'backupOpts', 'ERASE');
+
+            ledger = UMITRigLedger.read(saveFolder);
+            expected = UMITRigLedger.bindingFromRig(rigB);
+            types = cellfun(@(e) e.type, ledger.events, 'UniformOutput', false);
+            testCase.verifyEqual(types, {'bind', 'commit', 'reimport', 'rebind', 'commit'});
+            testCase.verifyEqual(ledger.state, 'BoundCommitted');
+            testCase.verifyFalse(ledger.hadConflict);
+            testCase.verifyEqual(ledger.binding.opticsHash, expected.optics.hash);
+            testCase.verifyEqual(ledger.commitments.coregistration, expected.coregistration.hash);
+            testCase.verifyEqual(rigResolution.rigUUID, rigB.getRigInfo().uuid);
+        end
+
+        function testReimportWithDifferentOpticsAfterCommitIsRefused(testCase)
+            rigA = testCase.createCoregisteredRig({'LED_632nm', 'LED_521nm'}, [3 -2]);
+            saveFolder = fullfile(testCase.TempRoot, 'SaveConflict');
+            mkdir(saveFolder);
+            ImagesClassification(testCase.RawFolder, saveFolder, 'backupOpts', 'ERASE');
+            % Simulate an optics consumer (HemoCompute, Phase 4).
+            UMITRigLedger.commit(saveFolder, 'optics', ...
+                UMITRigLedger.bindingFromRig(rigA).optics.hash, 'Origin', 'test');
+            ledgerBefore = fileread(UMITRigLedger.filePath(saveFolder));
+            datBefore = dir(fullfile(saveFolder, '*.dat'));
+
+            testCase.createCoregisteredRig({'LED_593nm', 'LED_521nm'}, [1 1]);
+            try
+                ImagesClassification(testCase.RawFolder, saveFolder, 'backupOpts', 'ERASE');
+                testCase.verifyFail('Expected a re-import conflict error.');
+            catch ME
+                testCase.verifyEqual(ME.identifier, 'Umitoolbox:RigLedger:reimportConflict');
+                testCase.verifySubstring(ME.message, saveFolder);
+                testCase.verifySubstring(ME.message, rigA.getRigInfo().displayName);
+            end
+
+            % Refused before any file was touched.
+            testCase.verifyEqual(fileread(UMITRigLedger.filePath(saveFolder)), ledgerBefore);
+            datAfter = dir(fullfile(saveFolder, '*.dat'));
+            testCase.verifyEqual({datAfter.name}, {datBefore.name});
+            testCase.verifyEqual([datAfter.datenum], [datBefore.datenum]);
+        end
+
+        function testReimportWithoutActiveResourceKeepsOpticsBinding(testCase)
+        %TESTREIMPORTWITHOUTACTIVERESOURCEKEEPSOPTICSBINDING Decision Q1 on a
+        %re-import: the folder keeps its optics binding without coregistration.
+
+            rigStore = testCase.createCoregisteredRig({'LED_632nm', 'LED_521nm'}, [3 -2]);
+            saveFolder = fullfile(testCase.TempRoot, 'SaveDrop');
+            mkdir(saveFolder);
+            ImagesClassification(testCase.RawFolder, saveFolder, 'backupOpts', 'ERASE');
+            opticsHash = UMITRigLedger.read(saveFolder).binding.opticsHash;
+
+            rigStore.clearActiveCameraCoregistration();
+            [~, rigResolution] = testCase.verifyWarning( ...
+                @() ImagesClassification(testCase.RawFolder, saveFolder, 'backupOpts', 'ERASE'), ...
+                'Umitoolbox:ImagesClassification:ImportedWithoutCoregistration');
+
+            ledger = UMITRigLedger.read(saveFolder);
+            types = cellfun(@(e) e.type, ledger.events, 'UniformOutput', false);
+            testCase.verifyEqual(types, {'bind', 'commit', 'reimport', 'rebind'});
+            testCase.verifyEqual(ledger.binding.opticsHash, opticsHash);
+            testCase.verifyEmpty(ledger.binding.coregistrationHash);
+            testCase.verifyEqual(ledger.state, 'BoundUncommitted');
+            testCase.verifyEqual(rigResolution.cameraCoregistration.skipReason, 'noActiveResource');
         end
     end
 
     methods (Access = private)
+        function rigStore = createCoregisteredRig(testCase, illuminationSpectra, shiftXY)
+        %CREATECOREGISTEREDRIG Create, activate and coregister a test rig.
+        %   ILLUMINATIONSPECTRA gives the red and green spectrum IDs, so two
+        %   rigs differ in optics when the IDs differ.
+
+            suffix = strrep(char(java.util.UUID.randomUUID()), '-', '');
+            rigStore = UMITRigStore.create(struct( ...
+                'rigID', ['UnitTestRig_' suffix(1:12)], ...
+                'displayName', ['Coreg Test Rig ' suffix(1:6)], ...
+                'cameras', struct('index', {1, 2}, 'displayName', {'Cam 1', 'Cam 2'}, ...
+                    'manufacturer', {'', ''}, 'model', {'D1024', 'D1024'}, ...
+                    'serialNumber', {'', ''}, 'spectrumID', {'PF1024', 'PF1024'}), ...
+                'illuminations', struct('name', {'red', 'green'}, ...
+                    'displayName', {'Red', 'Green'}, 'manufacturer', {'', ''}, ...
+                    'model', {'', ''}, 'spectrumID', illuminationSpectra)));
+            testCase.RigRootsToClean{end+1} = rigStore.RigRoot;
+            UMITRigStore.setDefaultRig(rigStore.getRigInfo().uuid);
+
+            tform = affine2d([1 0 0; 0 1 0; shiftXY 1]);
+            tformInfo = struct('Binning', 1, 'BinningSpatial', 1);
+            tformFile = fullfile(testCase.TempRoot, ['tform_' suffix(1:8) '.mat']);
+            save(tformFile, 'tform', 'tformInfo', '-mat');
+            rigStore.importAndActivateCameraCoregistration(tformFile, ...
+                struct('displayName', 'Unit test coregistration'));
+        end
+
         function trackNewRigs(testCase, rigsBefore)
         %TRACKNEWRIGS Diff listRigs() against a prior snapshot and track any
-        %newly-appeared rig folder(s) for teardown cleanup (covers
-        %getOrCreateDefaultRig auto-provisioning a real rig on this machine).
+        %newly-appeared rig folder(s) for teardown cleanup (a safety net:
+        %import never creates a rig).
 
             rigsAfter = UMITRigStore.listRigs();
             if isempty(rigsBefore)

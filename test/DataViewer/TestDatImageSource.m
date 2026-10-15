@@ -1,9 +1,10 @@
 classdef TestDatImageSource < matlab.unittest.TestCase
     %TESTDATIMAGESOURCE Focused regression tests for DatImageSource.
     %
-    %   Covers the non-blocking Rig-association behavior added so an
-    %   unresolvable stored Rig UUID/ID (deleted Rig, dataset moved from
-    %   another install, etc.) never aborts a .dat load.
+    %   Covers the rig behaviour of loading (rig-ledger redesign, Phase 5):
+    %   opening a .dat never writes rig data (no AcqInfos.mat stamping, no
+    %   ledger creation), and an invalid folder rig ledger is reported on
+    %   RigAssociationIssue without blocking the load.
 
     properties
         TempRoot
@@ -29,22 +30,39 @@ classdef TestDatImageSource < matlab.unittest.TestCase
             testCase.verifyEmpty(src.RigAssociationIssue);
         end
 
-        function testUnresolvableRigUUIDDoesNotBlockLoad(testCase)
-            % An AcqInfos.mat pointing at a Rig UUID that UMITRigStore
-            % cannot resolve must not abort the load: the constructor
-            % catches the failure, records it on RigAssociationIssue, and
-            % still finishes building a usable DatImageSource.
+        function testLoadingNeverWritesRigData(testCase)
+            % A folder with AcqInfos.mat but no rig association and no
+            % ledger used to be stamped with the Active rig on open.
             [datFile, folderPath] = testCase.writeContinuousDatFixture(3, 4, 5, 10);
-            AcqInfoStream = struct('rigUUID', char(java.util.UUID.randomUUID()));
-            save(fullfile(folderPath, 'AcqInfos.mat'), 'AcqInfoStream', '-mat');
+            AcqInfoStream = struct('Width', 4, 'Height', 3);
+            acqPath = fullfile(folderPath, 'AcqInfos.mat');
+            save(acqPath, 'AcqInfoStream', '-mat');
+            before = dir(folderPath);
+
+            src = testCase.verifyWarningFree(@() testCase.constructSource(datFile));
+
+            testCase.verifyEqual(src.getSize(), [3, 4, 5, 1]);
+            testCase.verifyEmpty(src.RigAssociationIssue);
+            loaded = load(acqPath, 'AcqInfoStream');
+            testCase.verifyFalse(any(isfield(loaded.AcqInfoStream, {'rigUUID', 'rigID'})));
+            testCase.verifyFalse(UMITRigLedger.exists(folderPath));
+            after = dir(folderPath);
+            testCase.verifyEqual({after.name}, {before.name});
+            testCase.verifyEqual([after.datenum], [before.datenum]);
+        end
+
+        function testInvalidRigLedgerIsReportedWithoutBlockingLoad(testCase)
+            [datFile, folderPath] = testCase.writeContinuousDatFixture(3, 4, 5, 10);
+            fid = fopen(UMITRigLedger.filePath(folderPath), 'w');
+            fprintf(fid, '{not json');
+            fclose(fid);
 
             testCase.verifyWarning(@() testCase.constructSource(datFile), ...
-                'Umitoolbox:DatImageSource:rigAssociationSkipped');
+                'Umitoolbox:DatImageSource:invalidRigLedger');
 
             src = testCase.constructSource(datFile);
             testCase.verifyEqual(src.getSize(), [3, 4, 5, 1]);
-            testCase.verifyNotEmpty(src.RigAssociationIssue);
-            testCase.verifySubstring(src.RigAssociationIssue, 'could not be resolved');
+            testCase.verifySubstring(src.RigAssociationIssue, 'rig ledger');
         end
     end
 

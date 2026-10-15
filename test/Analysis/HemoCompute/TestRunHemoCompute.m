@@ -28,9 +28,9 @@ classdef TestRunHemoCompute < matlab.unittest.TestCase
             mkdir(testCase.TempFolder);
 
             iCreateSyntheticHemoDataset(testCase.TempFolder, false);
-            rigStore = iCreateConfiguredRig();
-            testCase.RigRoot = rigStore.RigRoot;
-            iBindDatasetToRig(testCase.TempFolder, rigStore);
+            % Bound through the folder rig ledger; no library rig needed.
+            iBindDatasetToRig(testCase.TempFolder, iConfiguredRigInfo());
+            testCase.RigRoot = '';
         end
     end
 
@@ -64,7 +64,7 @@ classdef TestRunHemoCompute < matlab.unittest.TestCase
             repeatedFolder = fullfile(testCase.TempFolder, 'repeatedTimeline');
             mkdir(repeatedFolder);
             iCreateSyntheticHemoDataset(repeatedFolder, true);
-            rigStore = UMITRigStore.openByRigID(iCurrentRigID(testCase.TempFolder));
+            rigStore = iConfiguredRigInfo();
             iBindDatasetToRig(repeatedFolder, rigStore);
 
             out = HemoCompute(repeatedFolder, 'green.dat', ...
@@ -271,7 +271,7 @@ classdef TestRunHemoCompute < matlab.unittest.TestCase
         end
 
         function testPipelineManagerExecutesAllRamScenarios(testCase)
-            rigStore = UMITRigStore.openByRigID(iCurrentRigID(testCase.TempFolder));
+            rigStore = iConfiguredRigInfo();
             prepareFcn = @() iPreparePMHemoFolder(testCase.TempFolder, rigStore);
             outputs = pmCollectScenarioOutputs(prepareFcn, 'HemoCompute', ...
                 'Input', 'red.dat');
@@ -401,34 +401,120 @@ classdef TestRunHemoCompute < matlab.unittest.TestCase
             testCase.verifyNotEmpty(report.errors);
         end
 
-        function testUnboundDatasetUsesActiveDefaultRig(testCase)
-            acqPath = fullfile(testCase.TempFolder, 'AcqInfos.mat');
-            loaded = load(acqPath, 'AcqInfoStream');
-            rigStore = UMITRigStore.open(loaded.AcqInfoStream.rigUUID);
-            rigFixture = activateRigTemporarily(rigStore.getRigInfo().uuid);
-            defaultCleanup = onCleanup(@() deactivateRigTemporarily(rigFixture));
+        function testPipelineSkipsOnlyTheFolderFailingRigPreflight(testCase)
+            %TESTPIPELINESKIPSONLYTHEFOLDERFAILINGRIGPREFLIGHT A rig-guard
+            %preflight error stops only its folder, which is logged as Failed;
+            %the batch still runs. When every folder fails, the run aborts.
 
-            AcqInfoStream = rmfield(loaded.AcqInfoStream, {'rigUUID','rigID'});
+            goodFolder = fullfile(testCase.TempFolder, 'boundFolder');
+            badFolder = fullfile(testCase.TempFolder, 'unboundFolder');
+            mkdir(goodFolder);
+            mkdir(badFolder);
+            iCreateSyntheticHemoDataset(goodFolder, false);
+            iBindDatasetToRig(goodFolder, iConfiguredRigInfo());
+            iCreateSyntheticHemoDataset(badFolder, false);
+
+            pm = PipelineManager({goodFolder, badFolder});
+            pm.b_skipSteps = false;
+            pm.addStep('HemoCompute', 'input', 'red.dat');
+            report = pm.diagnosePipeline('verbose', false);
+            testCase.verifyTrue(report.isValid, strjoin(report.errors, ' | '));
+            testCase.verifyTrue(any(contains(string(report.warnings), 'will be skipped')));
+
+            testCase.verifyWarning(@() pm.executePipeline(), ...
+                'PipelineManager:executePipeline:FolderFailed');
+            testCase.verifyTrue(isfile(fullfile(goodFolder, 'HbO.dat')));
+            testCase.verifyFalse(isfile(fullfile(badFolder, 'HbO.dat')));
+            testCase.verifyEqual(string(pm.globalPipeLog.Status), ["Completed"; "Failed"]);
+            testCase.verifySubstring(char(pm.globalPipeLog.Messages_short{2}), 'no rig ledger');
+            testCase.verifyEqual(UMITRigLedger.read(goodFolder).state, 'BoundCommitted');
+            testCase.verifyFalse(UMITRigLedger.exists(badFolder));
+
+            pmAllBad = PipelineManager({badFolder});
+            pmAllBad.addStep('HemoCompute', 'input', 'red.dat');
+            testCase.verifyError(@() pmAllBad.executePipeline(), ...
+                'PipelineManager:validateNodePreflight:Failed');
+            testCase.verifyFalse(pmAllBad.diagnosePipeline('verbose', false).isValid);
+        end
+
+        function testAcknowledgedConflictForcesRecomputationWhenSkipping(testCase)
+            %TESTACKNOWLEDGEDCONFLICTFORCESRECOMPUTATIONWHENSKIPPING Step
+            %skipping never reuses a HemoCompute output computed before the
+            %folder's latest acknowledged rig conflict; later outputs are reused.
+
+            % HemoCompute -> spatialGaussFilt: re-running an unchanged pipeline
+            % reuses the whole branch (HemoCompute is skipped). A lone
+            % HemoCompute step is never skipped: its two outputs make the
+            % leaf match ambiguous.
+            folder = testCase.TempFolder;
+            hboPath = fullfile(folder, 'HbO.dat');
+            pm = PipelineManager({folder});
+            pm.b_skipSteps = true;
+            hemoTag = pm.addStep('HemoCompute', 'input', fullfile(folder, 'red.dat'));
+            pm.addStep('spatialGaussFilt', 'input', sprintf('%s:HbO', hemoTag));
+            runArgs = {'LeafOutputPolicy', 'saveLeaves', 'PrintSummary', false};
+
+            pm.executePipeline(runArgs{:});
+            hboBefore = loadData(hboPath);
+            stampBefore = iModifiedMs(hboPath);
+            pause(0.05);
+            pm.executePipeline(runArgs{:});
+            testCase.assertEqual(iModifiedMs(hboPath), stampBefore, ...
+                'Precondition: an unchanged folder reuses the HemoCompute branch.');
+
+            otherInfo = iConfiguredRigInfo('LED_593nm');
+            otherInfo.uuid = 'other-run-test-rig';
+            UMITRigLedger.rebind(folder, UMITRigLedger.makeBinding( ...
+                UMITRigLedger.sourceRigFromRigInfo(otherInfo), ...
+                UMITRigLedger.buildOpticsSnapshot(otherInfo), []), 'Origin', 'test');
+            UMITRigLedger.acknowledgeConflict(folder, 'Origin', 'test');
+            pause(0.05);
+
+            pm.executePipeline(runArgs{:});
+            testCase.verifyNotEqual(iModifiedMs(hboPath), stampBefore);
+            testCase.verifyNotEqual(loadData(hboPath), hboBefore, ...
+                'HbO must be recomputed with the acknowledged optics.');
+            testCase.verifyTrue(UMITRigLedger.read(folder).hadConflict);
+
+            stampAfter = iModifiedMs(hboPath);
+            pause(0.05);
+            pm.executePipeline(runArgs{:});
+            testCase.verifyEqual(iModifiedMs(hboPath), stampAfter, ...
+                'Outputs computed after the acknowledgement are reused again.');
+        end
+
+        function testUnboundDatasetIsRefusedNotDefaulted(testCase)
+            %TESTUNBOUNDDATASETISREFUSEDNOTDEFAULTED No Active-rig fallback:
+            %a folder without a rig ledger is an error, even when AcqInfos.mat
+            %still names a rig and an Active rig exists, and nothing is written.
+
+            acqPath = fullfile(testCase.TempFolder, 'AcqInfos.mat');
+            delete(UMITRigLedger.filePath(testCase.TempFolder));
+            loaded = load(acqPath, 'AcqInfoStream');
+            AcqInfoStream = loaded.AcqInfoStream;
+            AcqInfoStream.rigUUID = 'legacy-rig-uuid';
+            AcqInfoStream.rigID = 'LegacyRig';
             saveMatAtomic(acqPath, 'AcqInfoStream', AcqInfoStream);
+            acqBefore = dir(acqPath);
 
             info = HemoCompute('pipelineInfo');
             parameters = info.parameters;
             for iParameter = 1:numel(parameters)
                 parameters(iParameter).value = parameters(iParameter).default;
             end
-
-            testCase.verifyWarning(@() HemoCompute( ...
+            testCase.verifyError(@() HemoCompute( ...
                 'preflight', testCase.TempFolder, parameters), ...
-                'Umitoolbox:HemoCompute:MissingRigUsingActiveRig');
+                'Umitoolbox:RigLedger:noLedger');
 
             pm = PipelineManager({testCase.TempFolder});
             pm.addStep('HemoCompute', 'input', 'red.dat');
             [isValid, report] = pm.validateNodePreflight('throwOnError', false);
-            testCase.verifyTrue(isValid, strjoin(report.errors, ' | '));
+            testCase.verifyFalse(isValid);
+            testCase.verifyTrue(any(contains(string(report.errors), 'no rig ledger')));
 
-            persisted = load(acqPath, 'AcqInfoStream');
-            testCase.verifyFalse(isfield(persisted.AcqInfoStream, 'rigUUID'));
-            testCase.verifyFalse(isfield(persisted.AcqInfoStream, 'rigID'));
+            acqAfter = dir(acqPath);
+            testCase.verifyEqual(acqAfter.datenum, acqBefore.datenum);
+            testCase.verifyFalse(UMITRigLedger.exists(testCase.TempFolder));
         end
     end
 end
@@ -440,8 +526,11 @@ iCreateSyntheticHemoDataset(folder, true);
 iBindDatasetToRig(folder, rigStore);
 end
 
-function store = iCreateConfiguredRig()
-suffix = strrep(char(java.util.UUID.randomUUID()), '-', '');
+function rigInfo = iConfiguredRigInfo(redSpectrumID)
+%ICONFIGUREDRIGINFO RigInfo-shaped rig definition over built-in spectra.
+if nargin < 1
+    redSpectrumID = 'LED_632nm';
+end
 cameras = struct( ...
     'index', 1, ...
     'displayName', 'Test Camera', ...
@@ -454,26 +543,23 @@ illuminations = struct( ...
     'displayName', {'Red','Green','Yellow'}, ...
     'manufacturer', {'','',''}, ...
     'model', {'','',''}, ...
-    'spectrumID', {'LED_632nm','LED_521nm','LED_593nm'});
-store = UMITRigStore.create(struct( ...
-    'rigID', ['HemoTest_' suffix(1:10)], ...
-    'displayName', 'HemoCompute Test Rig', ...
-    'cameras', cameras, ...
-    'illuminations', illuminations));
+    'spectrumID', {redSpectrumID,'LED_521nm','LED_593nm'});
+rigInfo = struct('uuid', 'hemo-run-test-rig', 'rigID', 'HemoRunTestRig', ...
+    'displayName', 'HemoCompute Test Rig', 'modifiedOn', datetime(2026, 10, 1), ...
+    'cameras', cameras, 'illuminations', illuminations);
 end
 
-function iBindDatasetToRig(folderPath, store)
-loaded = load(fullfile(folderPath, 'AcqInfos.mat'), 'AcqInfoStream');
-AcqInfoStream = loaded.AcqInfoStream;
-rigInfo = store.getRigInfo();
-AcqInfoStream.rigUUID = rigInfo.uuid;
-AcqInfoStream.rigID = rigInfo.rigID;
-save(fullfile(folderPath, 'AcqInfos.mat'), 'AcqInfoStream', '-mat');
+function stamp = iModifiedMs(filePath)
+%IMODIFIEDMS File modification time in milliseconds (finer than dir's datenum).
+file = java.io.File(filePath);
+stamp = file.lastModified();
 end
 
-function rigID = iCurrentRigID(folderPath)
-loaded = load(fullfile(folderPath, 'AcqInfos.mat'), 'AcqInfoStream');
-rigID = loaded.AcqInfoStream.rigID;
+function iBindDatasetToRig(folderPath, rigInfo)
+%IBINDDATASETTORIG Bind FOLDERPATH's rig ledger to a RigInfo struct.
+UMITRigLedger.bind(folderPath, UMITRigLedger.makeBinding( ...
+    UMITRigLedger.sourceRigFromRigInfo(rigInfo), ...
+    UMITRigLedger.buildOpticsSnapshot(rigInfo), []), 'Origin', 'TestRunHemoCompute');
 end
 
 function iCreateSyntheticHemoDataset(folderPath, repeatedRed)

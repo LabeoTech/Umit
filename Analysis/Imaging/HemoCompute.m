@@ -10,10 +10,21 @@ function varargout = HemoCompute(SaveFolder, data, varargin)
 %   and deoxygenated (HbR) hemoglobin from two or three intrinsic imaging
 %   wavelengths, and writes them as HbO.dat and HbR.dat in SaveFolder. The
 %   channels are streamed in X slabs (low-RAM). It normalizes stable
-%   canonical illumination names and resolves the acquisition/Rig optical
-%   information through UMITRigStore. If AcqInfos does not identify a Rig,
-%   the existing active default Rig is used with a warning; the acquisition
-%   metadata is not modified.
+%   canonical illumination names and resolves the optics ONLY from the
+%   folder rig ledger (UMITRigLedger.json, see UMITRigLedger): the camera
+%   and illumination spectra come from the ledger's optics snapshot, never
+%   from the rig library or the Active rig. The filter set comes from the
+%   library, or, with the warning Umitoolbox:HemoCompute:FilterSetFromLedger,
+%   from the folder's committed snapshot when the library no longer has it.
+%
+%   Rig guards (errors, never warnings; preflight runs the same guards):
+%       - no ledger, a "no rig" ledger, a Conflicted or an invalid ledger
+%         is an error whose message explains how to bind a rig, resolve the
+%         conflict or repair the folder;
+%       - a filter-set ID committed in this folder with different content
+%         (modified in the library) is an error.
+%   After a successful computation the optics and filter-set snapshots are
+%   committed in the ledger (only when not already committed).
 %
 %   If the selected channels have different temporal sampling rates or
 %   lengths, higher-frequency channels are anti-aliased and resampled to
@@ -106,10 +117,6 @@ addParameter(p, 'Illuminations', {'red','green','yellow'}, ...
     (isstring(x) && (isempty(x) || isvector(x))));
 addParameter(p, 'HbT_concentration_uM', 100, @(x) isnumeric(x) && isscalar(x) && isfinite(x) && x > 0);
 addParameter(p, 'StO2perc', 60, @iValidateStO2Percentage);
-% Internal: an already resolved optical configuration (the structure
-% returned by UMITRigStore.resolveOpticalConfiguration). When given, no Rig
-% lookup is made. Not declared in pipelineInfo.
-addParameter(p, 'OpticalInfo', [], @(x) isempty(x) || (isstruct(x) && isscalar(x)));
 parse(p, SaveFolder, data, varargin{:});
 
 SaveFolder = char(string(p.Results.SaveFolder));
@@ -128,10 +135,7 @@ assert(numel(illumination) >= 2, ...
 
 % The wired-in file: a Y-X-T .dat in SaveFolder.
 dataName = localResolveDataFile(data, SaveFolder);
-opticalInfo = p.Results.OpticalInfo;
-if isempty(opticalInfo)
-    opticalInfo = localResolveOpticalInfo(SaveFolder, illumination, filterSet);
-end
+[opticalInfo, commitPlan] = localResolveOpticalInfo(SaveFolder, illumination, filterSet);
 
 % The illumination channels are read from SaveFolder, so the wired file
 % must be one of them and every channel file must be Y-X-T.
@@ -141,6 +145,7 @@ iComputeHb(SaveFolder, illumination, b_normalize, HbT_uM, O2_sat, ...
     opticalInfo, default_Output);
 
 writtenOutputs = localConfirmWrittenOutputs(SaveFolder, default_Output);
+localCommitConsumedSnapshots(SaveFolder, commitPlan);
 if nargout <= 1
     varargout{1} = writtenOutputs;
 elseif nargout == 2
@@ -256,6 +261,9 @@ fprintf('Finished HemoCompute.\n');
             'isData', true);
 
         info.supportsPreflight = true;
+        % Results depend on the folder's committed optics: step skipping must
+        % not reuse outputs computed before an acknowledged rig conflict.
+        info.rigDependent = true;
     end
 end
 
@@ -347,11 +355,22 @@ localResolveOpticalInfo( ...
     saveFolder, parameters(illuminationIdx).value, parameters(filterSetIdx).value);
 end
 
-function [opticalInfo, acqInfo, rigStore] = localResolveOpticalInfo( ...
+function [opticalInfo, commitPlan] = localResolveOpticalInfo( ...
         saveFolder, illuminations, filterSet)
-%LOCALRESOLVEOPTICALINFO Resolve dataset, Rig, and filter-set optics.
+%LOCALRESOLVEOPTICALINFO Resolve optics from the folder rig ledger.
+%   Runs the ledger guards first (no ledger, NoRig, Conflicted, invalid and
+%   modified filter set are errors), then maps the acquired channels to the
+%   ledger's optics snapshot. Never reads the rig library's rigs or the
+%   Active rig, and never writes. COMMITPLAN lists what a successful run
+%   must commit.
 
 saveFolder = char(string(saveFolder));
+operation = 'HemoCompute';
+opticsUse = UMITRigLedger.assertCanUseOptics(saveFolder, 'Operation', operation);
+filterSetSnapshot = localFilterSetSnapshot(saveFolder, filterSet);
+filterSetNeedsCommit = UMITRigLedger.assertCanUseFilterSet( ...
+    saveFolder, filterSetSnapshot, 'Operation', operation);
+
 acqFile = fullfile(saveFolder, 'AcqInfos.mat');
 if ~isfile(acqFile)
     error('Umitoolbox:HemoCompute:MissingAcqInfos', ...
@@ -367,45 +386,56 @@ acqInfo = loaded.AcqInfoStream;
 [acqInfo, ~] = resolveImportedChannelFallback(acqInfo, saveFolder, ...
     'RequiredChannels', illuminations);
 
-if isfield(acqInfo, 'rigUUID') && ~isempty(acqInfo.rigUUID)
-    rigStore = UMITRigStore.open(acqInfo.rigUUID);
-elseif isfield(acqInfo, 'rigID') && ~isempty(acqInfo.rigID)
-    rigStore = UMITRigStore.openByRigID(acqInfo.rigID);
-else
-    rigStore = localResolveActiveRig();
-    rigInfo = rigStore.getRigInfo();
-    warning('Umitoolbox:HemoCompute:MissingRigUsingActiveRig', ...
-        ['AcqInfoStream does not identify a Rig. Using active Rig "%s" ' ...
-        'for HemoCompute without modifying AcqInfos.mat.'], rigInfo.rigID);
+opticalInfo = UMITRigStore.opticalConfigurationFromSnapshots( ...
+    opticsUse.snapshot, filterSetSnapshot, acqInfo, illuminations, saveFolder);
+opticalInfo.rigUUID = opticsUse.sourceRig.uuid;
+opticalInfo.rigID = opticsUse.sourceRig.rigID;
+
+commitPlan = struct( ...
+    'opticsHash', opticsUse.hash, ...
+    'opticsNeedsCommit', opticsUse.needsCommit, ...
+    'filterSet', filterSetSnapshot, ...
+    'filterSetNeedsCommit', filterSetNeedsCommit);
 end
 
-opticalInfo = rigStore.resolveOpticalConfiguration( ...
-    acqInfo, illuminations, filterSet, saveFolder);
+function snapshot = localFilterSetSnapshot(saveFolder, filterSetID)
+%LOCALFILTERSETSNAPSHOT Library filter set, or the folder's committed copy.
+%   The library definition is used when it exists, so a modified set is
+%   detected by the ledger guard. When the library no longer has the set
+%   (another machine, removed user set), the snapshot this folder committed
+%   to is used instead.
+
+try
+    snapshot = UMITRigLedger.buildFilterSetSnapshot(filterSetID);
+catch ME
+    if ~ismember(ME.identifier, {'Umitoolbox:UMITRigStore:filterSetNotFound', ...
+            'Umitoolbox:UMITRigStore:spectrumNotFound'})
+        rethrow(ME)
+    end
+    snapshot = UMITRigLedger.committedFilterSet(saveFolder, filterSetID);
+    if isempty(snapshot)
+        rethrow(ME)
+    end
+    warning('Umitoolbox:HemoCompute:FilterSetFromLedger', ...
+        ['Filter set "%s" could not be loaded from this machine''s rig library (%s). ' ...
+        'HemoCompute uses the copy committed in the rig ledger of "%s". ' ...
+        'To use the library again, import the filter set (with its spectra) into ' ...
+        'the rig library under the same ID and content.'], ...
+        snapshot.id, ME.message, saveFolder);
+end
 end
 
-function rigStore = localResolveActiveRig()
-%LOCALRESOLVEACTIVERIG Resolve an existing active Rig without creating one.
+function localCommitConsumedSnapshots(saveFolder, commitPlan)
+%LOCALCOMMITCONSUMEDSNAPSHOTS Commit the optics and filter set just used.
 
-rigStore = UMITRigStore.getDefaultRig();
-if ~isempty(rigStore)
-    return
+if commitPlan.opticsNeedsCommit
+    UMITRigLedger.commit(saveFolder, 'optics', commitPlan.opticsHash, ...
+        'Origin', 'HemoCompute', 'FirstUsedBy', 'HemoCompute');
 end
-
-rigs = UMITRigStore.listRigs();
-candidates = rigs(rigs.Status == "active" & rigs.IsReadable, :);
-if height(candidates) == 1
-    rigStore = UMITRigStore.open(char(candidates.RigUUID(1)));
-    return
+if commitPlan.filterSetNeedsCommit
+    UMITRigLedger.commit(saveFolder, 'filterSet', commitPlan.filterSet, ...
+        'Origin', 'HemoCompute', 'FirstUsedBy', 'HemoCompute');
 end
-
-if isempty(candidates)
-    detail = 'No active readable Rig exists.';
-else
-    detail = 'Multiple active Rigs exist and none is selected as default.';
-end
-error('Umitoolbox:HemoCompute:MissingRig', ...
-    ['AcqInfoStream does not identify a Rig. %s Select an active default ' ...
-    'Rig before running HemoCompute.'], detail);
 end
 
 % =========================================================================

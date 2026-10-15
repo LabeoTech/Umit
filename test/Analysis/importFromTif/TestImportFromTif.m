@@ -7,29 +7,14 @@ classdef TestImportFromTif < matlab.unittest.TestCase
 
     properties (Access = private)
         TempFolder char = ''
-        RigRoot char = ''
-        RigActivationFixture = struct()
     end
 
     methods (TestMethodSetup)
         function createTempFolder(testCase)
+            % importFromTif resolves no rig, so no rig-library fixture is
+            % needed (rig-ledger redesign, Phase 3).
             fx = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
             testCase.TempFolder = fx.Folder;
-
-            suffix = strrep(char(java.util.UUID.randomUUID()), '-', '');
-            rigStore = UMITRigStore.create(struct('rigID', ['TifImport_' suffix(1:8)]));
-            testCase.RigRoot = rigStore.RigRoot;
-            testCase.RigActivationFixture = ...
-                activateRigTemporarily(rigStore.getRigInfo().uuid);
-        end
-    end
-
-    methods (TestMethodTeardown)
-        function removeRigFixture(testCase)
-            deactivateRigTemporarily(testCase.RigActivationFixture);
-            if ~isempty(testCase.RigRoot) && isfolder(testCase.RigRoot)
-                rmdir(testCase.RigRoot, 's');
-            end
         end
     end
 
@@ -133,9 +118,9 @@ classdef TestImportFromTif < matlab.unittest.TestCase
             testCase.verifyTrue(isfile(fullfile(saveFolder, 'AcqInfos.mat')));
 
             AcqInfoStream = localLoadAcqInfo(fullfile(saveFolder, 'AcqInfos.mat'));
-            testCase.verifyEqual(AcqInfoStream.rigUUID, rigResolution.rigUUID);
-            testCase.verifyEqual(AcqInfoStream.rigID, rigResolution.rigID);
-            testCase.verifyFalse(rigResolution.wasCreated);
+            testCase.verifyFalse(any(isfield(AcqInfoStream, {'rigUUID', 'rigID'})));
+            testCase.verifyEqual(rigResolution.ledgerState, 'NoRig');
+            testCase.verifyEqual(UMITRigLedger.read(saveFolder).state, 'NoRig');
 
             testCase.verifyEqual(AcqInfoStream.Width, size(data,2));
             testCase.verifyEqual(AcqInfoStream.Height, size(data,1));
@@ -399,6 +384,88 @@ classdef TestImportFromTif < matlab.unittest.TestCase
             testCase.verifyEqual(AcqInfoStream.Height, 4);
             localVerifyRawScope(testCase, AcqInfoStream);
             testCase.verifyEqual(AcqInfoStream.FrameRateHz, 18.0);
+        end
+
+        function testSecondImportDropsLegacyRigFieldsAndKeepsLedger(testCase)
+            %TESTSECONDIMPORTDROPSLEGACYRIGFIELDSANDKEEPSLEDGER AcqInfos.mat
+            %stores no rig information, and an existing ledger is untouched.
+
+            saveFolder = fullfile(testCase.TempFolder, 'Save_legacyRig');
+            rawFolder1 = fullfile(testCase.TempFolder, 'Raw_legacyRig_1');
+            rawFolder2 = fullfile(testCase.TempFolder, 'Raw_legacyRig_2');
+            mkdir(saveFolder);
+            mkdir(rawFolder1);
+            mkdir(rawFolder2);
+            localWriteMultipageTif(fullfile(rawFolder1, 'img_red.tif'), ...
+                reshape(uint16(1:4*5*3), [4, 5, 3]));
+            localWriteInfoJson(rawFolder1, struct('DateTime', '20260411_120500'), ...
+                struct('filename', 'img_red.tif', 'FrameRateHz', 18.0, ...
+                'ExposureMsec', 0.4, 'IlluminationColor', 'Red'));
+            importFromTif(rawFolder1, saveFolder);
+            ledgerBefore = fileread(UMITRigLedger.filePath(saveFolder));
+
+            acqInfoPath = fullfile(saveFolder, 'AcqInfos.mat');
+            AcqInfoStream = localLoadAcqInfo(acqInfoPath);
+            AcqInfoStream.rigUUID = 'legacy-uuid';
+            AcqInfoStream.rigID = 'LegacyRig';
+            save(acqInfoPath, 'AcqInfoStream');
+
+            localWriteMultipageTif(fullfile(rawFolder2, 'img_green.tif'), ...
+                reshape(uint16(1000 + (1:4*5*3)), [4, 5, 3]));
+            localWriteInfoJson(rawFolder2, struct('DateTime', '20260411_120501'), ...
+                struct('filename', 'img_green.tif', 'FrameRateHz', 18.0, ...
+                'ExposureMsec', 0.4, 'IlluminationColor', 'Green'));
+            [~, rigResolution] = importFromTif(rawFolder2, saveFolder);
+
+            AcqInfoStream = localLoadAcqInfo(acqInfoPath);
+            testCase.verifyFalse(any(isfield(AcqInfoStream, {'rigUUID', 'rigID'})));
+            testCase.verifyEqual(fileread(UMITRigLedger.filePath(saveFolder)), ledgerBefore);
+            testCase.verifyEqual(rigResolution.ledgerState, 'NoRig');
+        end
+
+        function testImportIntoBoundFolderLeavesLedgerUnchanged(testCase)
+            saveFolder = fullfile(testCase.TempFolder, 'Save_bound');
+            rawFolder = fullfile(testCase.TempFolder, 'Raw_bound');
+            mkdir(saveFolder);
+            mkdir(rawFolder);
+            rigInfo = struct('uuid', 'tif-test-rig', 'rigID', 'TifTestRig', ...
+                'displayName', 'Tif Test Rig', 'modifiedOn', datetime(2026, 10, 1), ...
+                'cameras', struct('index', 1, 'spectrumID', 'PF1024', 'model', 'D1024'), ...
+                'illuminations', struct('name', 'red', 'spectrumID', 'LED_632nm'));
+            UMITRigLedger.bind(saveFolder, UMITRigLedger.makeBinding( ...
+                UMITRigLedger.sourceRigFromRigInfo(rigInfo), ...
+                UMITRigLedger.buildOpticsSnapshot(rigInfo), []), 'Origin', 'test');
+            ledgerBefore = fileread(UMITRigLedger.filePath(saveFolder));
+
+            localWriteMultipageTif(fullfile(rawFolder, 'img_red.tif'), ...
+                reshape(uint16(1:4*5*3), [4, 5, 3]));
+            localWriteInfoJson(rawFolder, struct('DateTime', '20260411_120500'), ...
+                struct('filename', 'img_red.tif', 'FrameRateHz', 18.0, ...
+                'ExposureMsec', 0.4, 'IlluminationColor', 'Red'));
+            [~, rigResolution] = importFromTif(rawFolder, saveFolder);
+
+            testCase.verifyEqual(fileread(UMITRigLedger.filePath(saveFolder)), ledgerBefore);
+            testCase.verifyEqual(rigResolution.ledgerState, 'BoundUncommitted');
+        end
+
+        function testInvalidLedgerBlocksImportBeforeWriting(testCase)
+            saveFolder = fullfile(testCase.TempFolder, 'Save_invalidLedger');
+            rawFolder = fullfile(testCase.TempFolder, 'Raw_invalidLedger');
+            mkdir(saveFolder);
+            mkdir(rawFolder);
+            fid = fopen(UMITRigLedger.filePath(saveFolder), 'w');
+            fprintf(fid, '{not json');
+            fclose(fid);
+            localWriteMultipageTif(fullfile(rawFolder, 'img_red.tif'), ...
+                reshape(uint16(1:4*5*3), [4, 5, 3]));
+            localWriteInfoJson(rawFolder, struct('DateTime', '20260411_120500'), ...
+                struct('filename', 'img_red.tif', 'FrameRateHz', 18.0, ...
+                'ExposureMsec', 0.4, 'IlluminationColor', 'Red'));
+
+            testCase.verifyError(@() importFromTif(rawFolder, saveFolder), ...
+                'Umitoolbox:RigLedger:invalidLedger');
+            testCase.verifyFalse(isfile(fullfile(saveFolder, 'red.dat')));
+            testCase.verifyFalse(isfile(fullfile(saveFolder, 'AcqInfos.mat')));
         end
 
         function testExistingAcqInfosMismatchErrors(testCase)

@@ -55,14 +55,15 @@ DataParams = createDataParams(rootFolder, 'overwrite', true);
 DataParams.view.pixelSize_px_per_mm = 1;
 saveDataParams(rootFolder, DataParams);
 
-% DFR-20260819-010: pin an isolated fixture Rig to this dataset before
-% addSession runs, so UMITRigStore.ensureDatasetRigAssociation resolves the
-% pinned rigUUID instead of falling through to getActiveRig() -- the
-% fixture never depends on (or mutates) which Rig is ambiently Active.
+% Bind an isolated fixture Rig in this dataset's rig ledger before
+% addSession runs, so the session mirrors it -- the fixture never depends on
+% (or mutates) which Rig is ambiently Active.
 rigInfo = struct('rigID', ['ImgRegTestRig_' ...
     strrep(char(java.util.UUID.randomUUID()), '-', '')]);
 rigStore = UMITRigStore.create(rigInfo);
-UMITRigStore.assignDatasetRig(rootFolder, rigStore.getRigInfo().uuid);
+UMITRigLedger.bind(rootFolder, ...
+    UMITRigLedger.bindingFromRig(rigStore, 'IncludeCoregistration', false), ...
+    'Origin', 'setupSyntheticRegistrationFolder');
 
 projectInfo = struct( ...
     'projectName', ['Image Registration Test ' ...

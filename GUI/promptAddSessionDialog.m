@@ -12,19 +12,9 @@ function sessionInfo = promptAddSessionDialog(callerFigure, subjectInfo, saveFol
 
 sessionInfo = [];
 inferredDate = getSessionAcquisitionDatePrefill(saveFolder);
-[previewRigUUID, previewRigID] = ...
-    UMITRigStore.readDatasetRigAssociation(saveFolder);
-if isempty(previewRigID)
-    try
-        previewRigInfo = UMITRigStore.getActiveRig().getRigInfo();
-        previewRigUUID = previewRigInfo.uuid;
-        previewRigID = previewRigInfo.rigID;
-    catch
-        previewRigUUID = '';
-        previewRigID = '';
-    end
-end
-rigPreviewText = resolveRigDisplayName(previewRigUUID, previewRigID);
+% The session's rig mirrors the rig bound in the SaveFolder's rig ledger
+% (read-only preview; no Active-rig fallback).
+rigPreviewText = describeFolderRigLedger(saveFolder).displayText;
 
 dialogFigure = uifigure( ...
     'Name', sprintf('Add Session to %s', subjectInfo.subjectID), ...
@@ -75,9 +65,9 @@ rigLabel.Layout.Row = 5;
 rigLabel.Layout.Column = 1;
 rigField = uieditfield(grid, 'text', ...
     'Value', rigPreviewText, 'Editable', 'off', ...
-    'Tooltip', ['Rig assignment is resolved automatically when the ' ...
-    'session is created. Change it afterward via DataViewer''s ' ...
-    'Assign Rig menu or RigManagerTool.']);
+    'Tooltip', ['The session records the rig bound in this SaveFolder''s ' ...
+    'rig ledger (empty when the folder is not bound). Bind or rebind it ' ...
+    'in DataViewer: Management > Rig > Folder Rig.']);
 rigField.Layout.Row = 5;
 rigField.Layout.Column = 2;
 

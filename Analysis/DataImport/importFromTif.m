@@ -29,8 +29,10 @@ function [outFile, rigResolution] = importFromTif(RawFolder, SaveFolder, varargi
 %                    consecutive frames.
 %                    Allowed values: 1:8
 %
-% Output:
-%   outFile     - Cell array containing the names of the saved .dat files.
+% Outputs:
+%   outFile       - Cell array containing the names of the saved .dat files.
+%   rigResolution - Struct with field ledgerState: the folder rig-ledger
+%                   state after the import (see UMITRigLedger).
 %
 % Notes:
 %   - This function creates data outputs as file-backed .dat files, so its
@@ -42,6 +44,11 @@ function [outFile, rigResolution] = importFromTif(RawFolder, SaveFolder, varargi
 %     frame rate / BinningTemp, exposure) is described by each .dat header.
 %   - Per-file imported-channel metadata are stored in
 %     AcqInfoStream.ImportedChannels.
+%   - No rig is resolved. A folder without a rig ledger gets an explicit
+%     "no rig" ledger (UMITRigLedger.json); an existing ledger is left
+%     unchanged, and an invalid one is an error raised before any file is
+%     written. AcqInfos.mat stores no rig information (legacy rigUUID/rigID
+%     fields are dropped when the file is rewritten).
 %   - All imported channels within the same SaveFolder must have identical
 %     raw dimensions, number of frames, and acquisition timing. When the
 %     SaveFolder already holds an "AcqInfos.mat", its raw Width, Height,
@@ -130,29 +137,10 @@ if isfile(acqInfoPath)
         'The existing "AcqInfos.mat" file in "%s" does not contain a valid acquisition-info structure.', SaveFolder);
 end
 
-if ~isempty(AcqInfoStream) && ...
-        ((isfield(AcqInfoStream, 'rigUUID') && ~isempty(AcqInfoStream.rigUUID)) || ...
-         (isfield(AcqInfoStream, 'rigID') && ~isempty(AcqInfoStream.rigID)))
-    [rigInfo, wasMigrated] = UMITRigStore.ensureDatasetRigAssociation(SaveFolder);
-    UMITRigStore.open(rigInfo.uuid); % validates the associated rig still resolves
-    if strcmpi(rigInfo.status, 'archived')
-        error('Umitoolbox:importFromTif:ArchivedRig', ...
-            'Archived Rig "%s" cannot receive new imaging data.', rigInfo.rigID);
-    end
-    wasCreated = false;
-    resolution = 'existingAcquisitionRig';
-    if wasMigrated
-        resolution = 'completedAcquisitionRigAssociation';
-    end
-else
-    [rigStore, wasCreated, resolution] = UMITRigStore.getOrCreateDefaultRig();
-    rigInfo = rigStore.getRigInfo();
-end
-rigResolution = struct( ...
-    'rigUUID', rigInfo.uuid, ...
-    'rigID', rigInfo.rigID, ...
-    'wasCreated', wasCreated, ...
-    'resolution', resolution);
+% No rig is resolved: TIFF imports record an explicit "no rig" in the folder
+% rig ledger (only when the folder has no ledger yet). Reading the ledger
+% now rejects an invalid ledger before any file is written.
+UMITRigLedger.read(SaveFolder);
 
 extraInfo = rmfield(tif_metadata, 'Tiffiles');
 coreFields = intersect(fieldnames(extraInfo), {'Width','Height','Length','FrameRateHz','ExposureMsec'});
@@ -334,9 +322,18 @@ end
 % -------------------------------------------------------------------------
 % Save folder-level acquisition metadata
 % -------------------------------------------------------------------------
-AcqInfoStream.rigUUID = rigInfo.uuid;
-AcqInfoStream.rigID = rigInfo.rigID;
+% AcqInfos.mat no longer stores rig information; stale legacy fields are
+% dropped when the file is rewritten.
+legacyRigFields = intersect(fieldnames(AcqInfoStream), {'rigUUID', 'rigID'});
+if ~isempty(legacyRigFields)
+    AcqInfoStream = rmfield(AcqInfoStream, legacyRigFields);
+end
 saveMatAtomic(acqInfoPath, 'AcqInfoStream', AcqInfoStream);
+
+if ~UMITRigLedger.exists(SaveFolder)
+    UMITRigLedger.writeNoRig(SaveFolder, 'Origin', 'importFromTif');
+end
+rigResolution = struct('ledgerState', UMITRigLedger.read(SaveFolder).state);
 
 % Import has fully succeeded by this point (any failure above asserts/errors,
 % aborting the function before reaching here). Ensure DataParams.mat exists
@@ -420,7 +417,7 @@ function info = localGetPipelineInfo()
         'rigResolution', ...
         'UnknownDataType', ...
         'data', ...
-        'Rig/optical resolution metadata for the imported data (rigUUID, rigID, wasCreated, resolution).', ...
+        'Folder rig-ledger state after the import (ledgerState).', ...
         '', ...
         2, ...
         'isData', false);

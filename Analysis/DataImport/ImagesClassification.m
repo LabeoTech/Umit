@@ -9,9 +9,22 @@ function [classifiedFiles, rigResolution] = ImagesClassification(RawFolder, Save
 %   This function reads raw interlaced .bin files produced by the LabeoTech
 %   IOS systems, separates the illumination sequence into one .dat file per
 %   unique output channel, and writes one shared AcqInfos.mat file in
-%   SaveFolder. The imported acquisition is bound to the default Rig and,
-%   for dual-camera acquisitions, the Rig's active camera-coregistration
-%   resource is applied when one is configured.
+%   SaveFolder. Rig information is recorded only in the folder rig ledger
+%   (UMITRigLedger.json; see UMITRigLedger), never in AcqInfos.mat:
+%       - Single-camera data resolve no rig. A first import records an
+%         explicit "no rig"; a re-import keeps the existing ledger state.
+%       - Dual-camera data use the Active Rig and its active
+%         camera-coregistration resource. The transform is applied, the
+%         folder is bound to the Rig's snapshots and the coregistration is
+%         committed. Without an Active Rig or an active resource (or if the
+%         transform cannot be applied), the data are imported WITHOUT
+%         coregistration, with a warning: a new folder records "no rig", a
+%         bound folder keeps its optics binding without a coregistration.
+%       - Re-importing into a folder that has a ledger records a reimport
+%         event first, which resets the coregistration commitment. A
+%         dual-camera re-import whose Active Rig optics differ from the
+%         folder's committed optics is refused before any file is touched
+%         (Umitoolbox:RigLedger:reimportConflict).
 %
 %   Repeated illumination entries are supported within each camera sequence.
 %   For example, Red-Green-Red creates red.dat and green.dat; red.dat stores
@@ -59,23 +72,27 @@ function [classifiedFiles, rigResolution] = ImagesClassification(RawFolder, Save
 %                        Default: false
 %
 %       ApplyRig       - false classifies the raw data only: no Rig is
-%                        resolved, no Rig binding or camera coregistration is
-%                        applied, DataParams.mat is not touched, and
-%                        rigResolution is empty. Used by calibration
-%                        workflows that need unregistered source data. Not
-%                        exposed to PipelineManager.
+%                        resolved, the rig ledger is not read or written,
+%                        no camera coregistration is applied, DataParams.mat
+%                        is not touched, and rigResolution is empty. Used by
+%                        calibration workflows that need unregistered source
+%                        data. Not exposed to PipelineManager.
 %                        Default: true
 %
 %   Outputs:
 %       classifiedFiles - SaveFolder-relative file manifest of outputs saved
 %                        in SaveFolder.
-%       rigResolution  - Struct containing rigUUID, rigID, wasCreated, the
-%                        default-Rig resolution path, and a nested
-%                        cameraCoregistration struct. The nested struct
-%                        reports status ('applied' or 'skipped'),
-%                        wasApplied, skipReason, resourceUUID, displayName,
-%                        fileName, managedFilePath, rigUUID, rigID, and
-%                        whether DataParams provenance was recorded.
+%       rigResolution  - Folder rig-ledger summary after the import:
+%                        ledgerState, rigUUID, rigID, rigDisplayName,
+%                        opticsHash and coregistrationHash (empty when the
+%                        folder is not bound), and a nested
+%                        cameraCoregistration struct reporting status
+%                        ('applied' or 'skipped'), wasApplied, skipReason
+%                        ('singleCameraAcquisition', 'noActiveRig',
+%                        'noActiveResource' or 'applicationFailed'),
+%                        resourceUUID, displayName, fileName,
+%                        managedFilePath, and whether DataParams provenance
+%                        was recorded.
 %
 %   Notes:
 %       - The returned file manifest uses SaveFolder-relative names.
@@ -87,8 +104,9 @@ function [classifiedFiles, rigResolution] = ImagesClassification(RawFolder, Save
 %         coregistration.
 %       - Invalid active-resource metadata or a missing managed file is an
 %         error; import never silently substitutes another resource.
-%       - A warning is raised when no default Rig was selected and the
-%         import binds to a Rig that was created or promoted automatically.
+%       - Several Active Rigs, or an invalid folder rig ledger, are errors
+%         raised before SaveFolder is touched. No Rig is ever created.
+%       - AcqInfos.mat is written atomically.
 %
 %   Examples:
 %       classifiedFiles = ImagesClassification(rawFolder, saveFolder);
@@ -142,156 +160,81 @@ if ~p.Results.ApplyRig
     return
 end
 
-% Resolve an active Rig before classification mutates SaveFolder.
-[defaultRigStore, wasCreated, resolution] = UMITRigStore.getOrCreateDefaultRig();
-defaultRigInfo = defaultRigStore.getRigInfo();
-rigResolution = struct( ...
-    'rigUUID', defaultRigInfo.uuid, ...
-    'rigID', defaultRigInfo.rigID, ...
-    'wasCreated', wasCreated, ...
-    'resolution', resolution, ...
-    'cameraCoregistration', localEmptyCoregistrationResolution(defaultRigInfo));
-if ~strcmp(resolution, 'existingDefault')
-    warning('Umitoolbox:ImagesClassification:DefaultRigAutoResolved', ...
-        ['No default Rig was selected, so the import is bound to Rig "%s" (%s), ' ...
-         'which was %s. Check that this Rig recorded the data, or select the ' ...
-         'correct default Rig before importing.'], ...
-        defaultRigInfo.rigID, defaultRigInfo.uuid, localDescribeResolution(resolution));
+% Rig information is recorded only in the folder rig ledger
+% (UMITRigLedger.json), never in AcqInfos.mat. Everything rig-related is
+% resolved and checked before classification touches SaveFolder.
+ledgerOrigin = 'ImagesClassification';
+rawInfo = ReadInfoFile(RawFolder);
+isMultiCamera = isfield(rawInfo, 'MultiCam') && isscalar(rawInfo.MultiCam) && ...
+    logical(rawInfo.MultiCam);
+isReimport = UMITRigLedger.read(SaveFolder).exists; % throws for an invalid ledger
+rigResolution = localNewRigResolution();
+
+binding = [];
+uncoregisteredReason = '';
+if isMultiCamera
+    [binding, activeResource, tformFile, tformPayload, uncoregisteredReason, ...
+        rigResolution.cameraCoregistration.skipReason] = localResolveDualCameraRig();
+    UMITRigLedger.assertCanReimport(SaveFolder, binding, ...
+        'Operation', 'Re-importing dual-camera data');
 end
 
-% Resolve and validate the active pointer before classification changes the
-% destination folder. getActiveCameraCoregistration deliberately returns
-% empty when no pointer is configured and throws for inconsistent pointers
-% or missing managed files; those errors must not be converted into a skip.
-try
-    activeResource = defaultRigStore.getActiveCameraCoregistration();
-    if ~isempty(activeResource)
-        tformFile = defaultRigStore.resolveResourcePath(activeResource.uuid);
-        tformPayload = localLoadCoregistrationResource(tformFile);
-        rigResolution.cameraCoregistration = localResourceResolution( ...
-            rigResolution.cameraCoregistration, activeResource, tformFile);
-    end
-catch ME
-    coregError = MException( ...
-        'Umitoolbox:ImagesClassification:InvalidActiveCameraCoregistration', ...
-        ['The active camera-coregistration resource for Rig "%s" (%s) ' ...
-         'could not be validated: %s'], ...
-        defaultRigInfo.rigID, defaultRigInfo.uuid, ME.message);
-    coregError = addCause(coregError, ME);
-    throwAsCaller(coregError)
+% A re-import overwrites the raw-derived files: the coregistration
+% commitment is reset before anything is overwritten.
+if isReimport
+    UMITRigLedger.recordReimport(SaveFolder, 'Origin', ledgerOrigin);
 end
 
 classifiedFiles = iClassifyRawBinaries(RawFolder, SaveFolder, ...
     BinningSpatial, BinningTemp, b_SubROI, backupOpts);
-defaultRigID = defaultRigInfo.rigID;
-
 if ~iscell(classifiedFiles)
     classifiedFiles = {};
 end
-
-% Bind the imported acquisition to the resolved Rig, then apply its active
-% camera-coregistration resource to compatible dual-camera data.
-acqInfoPath = fullfile(SaveFolder, 'AcqInfos.mat');
-if ~isfile(acqInfoPath)
+if ~isfile(fullfile(SaveFolder, 'AcqInfos.mat'))
     error('Umitoolbox:ImagesClassification:InvalidAcqInfos', ...
         'Classification did not produce AcqInfos.mat.');
 end
 
-info = load(acqInfoPath, 'AcqInfoStream');
-if ~isfield(info, 'AcqInfoStream') || ~isstruct(info.AcqInfoStream) || ...
-        ~isscalar(info.AcqInfoStream)
-    error('Umitoolbox:ImagesClassification:InvalidAcqInfos', ...
-        'Classification did not produce a scalar AcqInfoStream.');
-end
-info.AcqInfoStream.rigUUID = defaultRigInfo.uuid;
-info.AcqInfoStream.rigID = defaultRigInfo.rigID;
-saveMatAtomic(acqInfoPath, 'AcqInfoStream', info.AcqInfoStream);
-
-isMultiCamera = isfield(info.AcqInfoStream, 'MultiCam') && ...
-    isscalar(info.AcqInfoStream.MultiCam) && logical(info.AcqInfoStream.MultiCam);
 if isMultiCamera
     disp('Dual Camera data found!')
-    if isempty(activeResource)
-        rigResolution.cameraCoregistration.status = 'skipped';
-        rigResolution.cameraCoregistration.skipReason = 'noActiveResource';
-        fprintf(['No active camera-coregistration resource is configured for ' ...
-            'Rig "%s" (%s); import will continue without coregistration.\n'], ...
-            defaultRigInfo.rigID, defaultRigInfo.uuid);
-    else
-        fprintf(['Applying camera coregistration "%s" from managed file "%s" ' ...
-            '(resource UUID %s), owned by Rig "%s" (UUID %s).\n'], ...
-            activeResource.displayName, activeResource.fileName, activeResource.uuid, ...
-            defaultRigInfo.rigID, defaultRigInfo.uuid);
+    if ~isempty(binding)
+        fprintf(['Applying camera coregistration "%s" (resource UUID %s, managed file ' ...
+            '"%s") from Rig "%s" (%s, UUID %s).\n'], ...
+            activeResource.displayName, activeResource.uuid, activeResource.fileName, ...
+            binding.sourceRig.displayName, binding.sourceRig.rigID, binding.sourceRig.uuid);
         [status, warnmsg] = applyTform2Cams( ...
             SaveFolder, tformPayload.tform, tformPayload.tformInfo);
-        if ~status
-            rigResolution.cameraCoregistration.status = 'skipped';
-            rigResolution.cameraCoregistration.skipReason = 'applicationFailed';
-            warning('Umitoolbox:ImagesClassification:cameraCoregistrationFailed', ...
-                ['Coregistration failed; data import will resume without ' ...
-                 'coregistration. %s'], warnmsg);
-        else
+        if status
+            disp('Done!')
+            localBindCoregisteredFolder(binding);
             rigResolution.cameraCoregistration.status = 'applied';
             rigResolution.cameraCoregistration.wasApplied = true;
-            disp('Done!')
-
-            % Record this application in the imported SaveFolder's
-            % DataParams.mat. Best-effort: a failure here must not undo an
-            % otherwise-successful coregistration.
-            try
-                if ~isfile(fullfile(SaveFolder, 'DataParams.mat'))
-                    createDataParams(SaveFolder);
-                end
-
-                DataParams = loadDataParams(SaveFolder);
-                cc = DataParams.cameraCoregistration;
-
-                cc.isCoregistered = true;
-                cc.isReviewed = false;
-                cc.tform = tformPayload.tform;
-                cc.resourceUUID = activeResource.uuid;
-                cc.rigID = defaultRigID;
-                cc.method = 'ImagesClassification';
-                cc.sourceFile = tformFile;
-                if isfield(tformPayload.tformInfo, 'SavedOn')
-                    cc.sourceFileTimestamp = char(tformPayload.tformInfo.SavedOn);
-                else
-                    cc.sourceFileTimestamp = '';
-                end
-                cc.createdOn = char(datetime('now'));
-                cc.source = SaveFolder;
-                cc.appliedOn = char(datetime('now'));
-                cc.appliedBy = 'ImagesClassification';
-                cc.confirmationMode = 'automatic-import-application';
-                cc.notes = ['Dual-camera coregistration automatically applied during ' ...
-                    'raw data import using the rig''s active camera coregistration.'];
-
-                % getTformQCMetrics normalises the premultiply/postmultiply
-                % convention, so the recorded metrics do not depend on which
-                % transform class the saved resource happens to hold.
-                tformQC = getTformQCMetrics(tformPayload.tform);
-                cc.transformType = tformQC.transformType;
-                cc.qcMetrics.translationXY_px = tformQC.translationXY;
-                cc.qcMetrics.rotationDeg = tformQC.rotationDeg;
-                cc.qcMetrics.scaleXY = tformQC.scaleXY;
-                cc.qcMetrics.determinant = tformQC.determinant;
-
-                DataParams.cameraCoregistration = cc;
-                DataParams.lastModified = datetime('now');
-
-                saveDataParams(SaveFolder, DataParams);
-                rigResolution.cameraCoregistration.dataParamsRecorded = true;
-            catch ME
-                warning('Umitoolbox:ImagesClassification:cameraCoregistrationDataParamsFailed', ...
-                    ['Coregistration succeeded, but DataParams.cameraCoregistration could not ' ...
-                    'be recorded: %s'], ME.message);
-            end
+            rigResolution.cameraCoregistration.resourceUUID = activeResource.uuid;
+            rigResolution.cameraCoregistration.displayName = activeResource.displayName;
+            rigResolution.cameraCoregistration.fileName = activeResource.fileName;
+            rigResolution.cameraCoregistration.managedFilePath = tformFile;
+            rigResolution.cameraCoregistration.dataParamsRecorded = ...
+                localRecordCoregistrationProvenance(binding, activeResource, tformFile, tformPayload);
+        else
+            rigResolution.cameraCoregistration.skipReason = 'applicationFailed';
+            uncoregisteredReason = sprintf( ...
+                'applying the camera-coregistration transform failed (%s)', warnmsg);
         end
+    end
+    if ~rigResolution.cameraCoregistration.wasApplied
+        rigResolution.cameraCoregistration.status = 'skipped';
+        localRecordUncoregisteredFolder(uncoregisteredReason);
     end
 else
     rigResolution.cameraCoregistration.status = 'skipped';
     rigResolution.cameraCoregistration.skipReason = 'singleCameraAcquisition';
+    % A first single-camera import records an explicit "no rig"; a
+    % re-import keeps the existing binding (only the reimport event above).
+    if ~isReimport
+        UMITRigLedger.writeNoRig(SaveFolder, 'Origin', ledgerOrigin);
+    end
 end
+rigResolution = localSummarizeLedger(rigResolution);
 
 % Classification has fully succeeded by this point (any failure above throws
 % or asserts, aborting the function before reaching here). Ensure DataParams.mat
@@ -346,8 +289,8 @@ classifiedFiles = unique(classifiedFiles, 'stable');
             default_Output, 1, 'isData', true, 'saveFileName', '');
 
         info = PipelineManager.addOutput(info, 'rigResolution', 'UnknownDataType', 'data', ...
-            ['Rig/optical resolution metadata for the classified data (rigUUID, rigID, ' ...
-             'wasCreated, resolution, cameraCoregistration).'], ...
+            ['Folder rig-ledger summary after the import (ledgerState, rigUUID, rigID, ' ...
+             'rigDisplayName, opticsHash, coregistrationHash, cameraCoregistration).'], ...
             '', 2, 'isData', false);
     end
 
@@ -363,29 +306,191 @@ classifiedFiles = unique(classifiedFiles, 'stable');
         end
     end
 
-    function result = localEmptyCoregistrationResolution(rigInfo)
-        %LOCALEMPTYCOREGISTRATIONRESOLUTION Create a stable caller-facing result.
+    function result = localNewRigResolution()
+        %LOCALNEWRIGRESOLUTION Create a stable caller-facing ledger summary.
 
         result = struct( ...
-            'status', 'pending', ...
-            'wasApplied', false, ...
-            'skipReason', '', ...
-            'resourceUUID', '', ...
-            'displayName', '', ...
-            'fileName', '', ...
-            'managedFilePath', '', ...
-            'rigUUID', rigInfo.uuid, ...
-            'rigID', rigInfo.rigID, ...
-            'dataParamsRecorded', false);
+            'ledgerState', '', ...
+            'rigUUID', '', ...
+            'rigID', '', ...
+            'rigDisplayName', '', ...
+            'opticsHash', '', ...
+            'coregistrationHash', '', ...
+            'cameraCoregistration', struct( ...
+                'status', 'pending', ...
+                'wasApplied', false, ...
+                'skipReason', '', ...
+                'resourceUUID', '', ...
+                'displayName', '', ...
+                'fileName', '', ...
+                'managedFilePath', '', ...
+                'dataParamsRecorded', false));
     end
 
-    function result = localResourceResolution(result, resource, resourcePath)
-        %LOCALRESOURCERESOLUTION Copy active managed-resource identity.
+    function [rigBinding, resource, resourcePath, payload, reasonText, skipCode] = ...
+            localResolveDualCameraRig()
+        %LOCALRESOLVEDUALCAMERARIG Snapshot the Active Rig and its transform.
+        %   An empty rigBinding means the data are imported without
+        %   coregistration (no Active Rig, or no active transform). Several
+        %   Active Rigs or an invalid active resource are errors.
 
-        result.resourceUUID = resource.uuid;
-        result.displayName = resource.displayName;
-        result.fileName = resource.fileName;
-        result.managedFilePath = resourcePath;
+        rigBinding = [];
+        resource = [];
+        resourcePath = '';
+        payload = [];
+        reasonText = '';
+        skipCode = '';
+        if UMITRigStore.validateLifecycle().activeCount == 0
+            skipCode = 'noActiveRig';
+            reasonText = 'no Rig is Active in the rig library';
+            return
+        end
+        activeStore = UMITRigStore.getActiveRig();
+        activeInfo = activeStore.getRigInfo();
+        % getActiveCameraCoregistration returns empty when no pointer is
+        % configured and throws for inconsistent pointers or missing managed
+        % files; those errors must not be converted into a skip.
+        try
+            resource = activeStore.getActiveCameraCoregistration();
+            if ~isempty(resource)
+                resourcePath = activeStore.resolveResourcePath(resource.uuid);
+                payload = localLoadCoregistrationResource(resourcePath);
+            end
+        catch ME
+            coregError = MException( ...
+                'Umitoolbox:ImagesClassification:InvalidActiveCameraCoregistration', ...
+                ['The active camera-coregistration resource for Rig "%s" (%s) ' ...
+                 'could not be validated: %s'], activeInfo.rigID, activeInfo.uuid, ME.message);
+            coregError = addCause(coregError, ME);
+            throw(coregError)
+        end
+        if isempty(resource)
+            skipCode = 'noActiveResource';
+            reasonText = sprintf(['the Active Rig "%s" (%s) has no active ' ...
+                'camera-coregistration resource'], activeInfo.displayName, activeInfo.rigID);
+            return
+        end
+        rigBinding = UMITRigLedger.bindingFromRig(activeStore);
+    end
+
+    function localBindCoregisteredFolder(rigBinding)
+        %LOCALBINDCOREGISTEREDFOLDER Bind the folder and commit the transform.
+
+        ledgerState = UMITRigLedger.read(SaveFolder).state;
+        if ismember(ledgerState, {'Unknown', 'NoRig'})
+            UMITRigLedger.bind(SaveFolder, rigBinding, 'Origin', ledgerOrigin);
+        else
+            % assertCanReimport and the reimport event rule out a conflict.
+            rebindConflict = UMITRigLedger.rebind(SaveFolder, rigBinding, 'Origin', ledgerOrigin);
+            if rebindConflict.hasConflict
+                error('Umitoolbox:ImagesClassification:RigConflict', ...
+                    'The re-import created a rig conflict in "%s":\n%s', ...
+                    SaveFolder, rebindConflict.message);
+            end
+        end
+        UMITRigLedger.commit(SaveFolder, 'coregistration', rigBinding.coregistration.hash, ...
+            'Origin', ledgerOrigin, 'FirstUsedBy', ledgerOrigin);
+        fprintf(['Folder rig ledger: bound to Rig "%s" (%s) and committed its camera ' ...
+            'coregistration.\n'], rigBinding.sourceRig.displayName, rigBinding.sourceRig.rigID);
+    end
+
+    function localRecordUncoregisteredFolder(reasonText)
+        %LOCALRECORDUNCOREGISTEREDFOLDER Ledger state for uncoregistered data.
+        %   A new folder records "no rig"; a bound folder keeps its optics
+        %   binding without a coregistration.
+
+        ledgerState = UMITRigLedger.read(SaveFolder).state;
+        switch ledgerState
+            case 'Unknown'
+                UMITRigLedger.writeNoRig(SaveFolder, 'Origin', ledgerOrigin);
+                ledgerNote = 'an explicit "no rig"';
+            case 'NoRig'
+                ledgerNote = 'an explicit "no rig"';
+            otherwise
+                dropConflict = UMITRigLedger.dropCoregistrationBinding( ...
+                    SaveFolder, 'Origin', ledgerOrigin);
+                if dropConflict.hasConflict
+                    error('Umitoolbox:ImagesClassification:RigConflict', ...
+                        'The re-import created a rig conflict in "%s":\n%s', ...
+                        SaveFolder, dropConflict.message);
+                end
+                ledgerNote = 'its existing optics binding, without a camera coregistration';
+        end
+        warning('Umitoolbox:ImagesClassification:ImportedWithoutCoregistration', ...
+            ['Dual-camera data were imported into "%s" WITHOUT camera coregistration ' ...
+            'because %s. The folder rig ledger records %s. To coregister, set an ' ...
+            'Active Rig with an active camera-coregistration resource in the Rig ' ...
+            'Manager, then re-import the raw data.'], SaveFolder, reasonText, ledgerNote);
+    end
+
+    function recorded = localRecordCoregistrationProvenance(rigBinding, resource, resourcePath, payload)
+        %LOCALRECORDCOREGISTRATIONPROVENANCE Record the application in
+        %DataParams.mat. Best-effort: a failure here must not undo an
+        %otherwise-successful coregistration.
+
+        recorded = false;
+        try
+            if ~isfile(fullfile(SaveFolder, 'DataParams.mat'))
+                createDataParams(SaveFolder);
+            end
+
+            DataParams = loadDataParams(SaveFolder);
+            cc = DataParams.cameraCoregistration;
+
+            cc.isCoregistered = true;
+            cc.isReviewed = false;
+            cc.tform = payload.tform;
+            cc.resourceUUID = resource.uuid;
+            cc.rigID = rigBinding.sourceRig.rigID;
+            cc.method = 'ImagesClassification';
+            cc.sourceFile = resourcePath;
+            if isfield(payload.tformInfo, 'SavedOn')
+                cc.sourceFileTimestamp = char(payload.tformInfo.SavedOn);
+            else
+                cc.sourceFileTimestamp = '';
+            end
+            cc.createdOn = char(datetime('now'));
+            cc.source = SaveFolder;
+            cc.appliedOn = char(datetime('now'));
+            cc.appliedBy = 'ImagesClassification';
+            cc.confirmationMode = 'automatic-import-application';
+            cc.notes = ['Dual-camera coregistration automatically applied during ' ...
+                'raw data import using the rig''s active camera coregistration.'];
+
+            % getTformQCMetrics normalises the premultiply/postmultiply
+            % convention, so the recorded metrics do not depend on which
+            % transform class the saved resource happens to hold.
+            tformQC = getTformQCMetrics(payload.tform);
+            cc.transformType = tformQC.transformType;
+            cc.qcMetrics.translationXY_px = tformQC.translationXY;
+            cc.qcMetrics.rotationDeg = tformQC.rotationDeg;
+            cc.qcMetrics.scaleXY = tformQC.scaleXY;
+            cc.qcMetrics.determinant = tformQC.determinant;
+
+            DataParams.cameraCoregistration = cc;
+            DataParams.lastModified = datetime('now');
+
+            saveDataParams(SaveFolder, DataParams);
+            recorded = true;
+        catch provenanceError
+            warning('Umitoolbox:ImagesClassification:cameraCoregistrationDataParamsFailed', ...
+                ['Coregistration succeeded, but DataParams.cameraCoregistration could not ' ...
+                'be recorded: %s'], provenanceError.message);
+        end
+    end
+
+    function result = localSummarizeLedger(result)
+        %LOCALSUMMARIZELEDGER Copy the folder ledger state into the result.
+
+        ledgerInfo = UMITRigLedger.read(SaveFolder);
+        result.ledgerState = ledgerInfo.state;
+        if ~isempty(ledgerInfo.binding)
+            result.rigUUID = ledgerInfo.binding.sourceRig.uuid;
+            result.rigID = ledgerInfo.binding.sourceRig.rigID;
+            result.rigDisplayName = ledgerInfo.binding.sourceRig.displayName;
+            result.opticsHash = ledgerInfo.binding.opticsHash;
+            result.coregistrationHash = ledgerInfo.binding.coregistrationHash;
+        end
     end
 
     function payload = localLoadCoregistrationResource(resourcePath)
@@ -448,20 +553,6 @@ classifiedFiles = unique(classifiedFiles, 'stable');
         tform = affine2d(matrix.');
     end
 
-    function txt = localDescribeResolution(resolution)
-        %LOCALDESCRIBERESOLUTION Describe a non-default Rig resolution path.
-
-        switch resolution
-            case 'createdDefault'
-                txt = 'created automatically from the built-in default definition';
-            case 'promotedExisting'
-                txt = 'made the default because it is the only active Rig';
-            case 'promotedLegacyDefault'
-                txt = 'made the default from a legacy default-Rig marker';
-            otherwise
-                txt = sprintf('resolved as "%s"', resolution);
-        end
-    end
 end
 
 function outFile = iClassifyRawBinaries(DataFolder, SaveFolder, BinningSpatial, BinningTemp, b_SubROI, backupOpts)
@@ -689,7 +780,7 @@ for ind = 1:numel(channelInfo)
     AcqInfoStream = appendImportedChannelInfo(AcqInfoStream, importedInfo, 'Overwrite', true);
 end
 
-save([SaveFolder 'AcqInfos.mat'], 'AcqInfoStream');
+saveMatAtomic([SaveFolder 'AcqInfos.mat'], 'AcqInfoStream', AcqInfoStream);
 outFile = [outFile, {channelInfo.datFile}];
 
     function channelInfoOut = ChannelsSort(fList, colors)

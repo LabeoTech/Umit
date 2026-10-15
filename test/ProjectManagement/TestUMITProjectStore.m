@@ -100,8 +100,8 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
         %
         %   If the fixture Rig is still the store's default, repoint the
         %   default to another existing Rig first. Deleting a default Rig's
-        %   folder without repointing leaves UMITRigStore.getDefaultRig /
-        %   getOrCreateDefaultRig permanently broken for every later caller,
+        %   folder without repointing leaves UMITRigStore.getDefaultRig
+        %   permanently broken for every later caller,
         %   not just this test. If no other Rig exists to repoint to, leave
         %   the folder in place rather than corrupt the default pointer.
 
@@ -367,30 +367,44 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
                 testCase.issueMessages(report.errors));
         end
 
-        function testNewSessionRequiresAssignableRig(testCase)
-        %TESTNEWSESSIONREQUIRESASSIGNABLERIG Auto-resolve the Active Rig when
-        %the caller supplies none, and reject caller-supplied Rig fields
-        %outright -- UMITRigStore is the sole owner of Rig assignment, so
-        %addSession never accepts or validates a caller-asserted Rig anymore.
-        %(The Archived-Rig-rejection scenario previously tested here now
-        %belongs to UMITRigStore.assignDatasetRig -- see
-        %test/RigManagement/TestUMITRigStore.m,
-        %testAssignDatasetRigRejectsArchivedRig.)
+        function testNewSessionMirrorsFolderRigLedger(testCase)
+        %TESTNEWSESSIONMIRRORSFOLDERRIGLEDGER Rig-ledger redesign (Phase 6):
+        %a session's rig is a read-only mirror of the rig bound in its
+        %SaveFolder's rig ledger -- empty for an unbound folder, never the
+        %Active rig -- and addSession writes no rig data to the folder.
+        %Caller-supplied rig fields are still rejected outright.
 
             store = testCase.createProject();
             store.addSubject(struct('subjectID', 'Mouse_104'));
             saveFolderA = fullfile(testCase.TempRoot, 'RigRequiredSaveFolderA');
             mkdir(saveFolderA);
             testCase.writeValidAcqInfos(saveFolderA);
-
-            activeRigInfo = UMITRigStore.getActiveRig().getRigInfo();
+            acqBefore = load(fullfile(saveFolderA, 'AcqInfos.mat'));
 
             store.addSession('Mouse_104', struct( ...
                 'sessionID', 'Session_01', ...
                 'processedDataFolder', saveFolderA));
             SessionInfo = store.getSessionInfo('Mouse_104', 'Session_01');
-            testCase.verifyEqual(SessionInfo.rigUUID, activeRigInfo.uuid);
-            testCase.verifyEqual(SessionInfo.rigID, activeRigInfo.rigID);
+            testCase.verifyEmpty(SessionInfo.rigUUID);
+            testCase.verifyEmpty(SessionInfo.rigID);
+            testCase.verifyEqual(load(fullfile(saveFolderA, 'AcqInfos.mat')), acqBefore);
+            testCase.verifyFalse(UMITRigLedger.exists(saveFolderA));
+            report = store.validate('Mode', 'full');
+            testCase.verifyTrue(report.isValid, testCase.issueMessages(report.errors));
+
+            boundRig = UMITRigStore.create(struct('rigID', ...
+                ['MirroredRig_' strrep(char(java.util.UUID.randomUUID()), '-', '')]));
+            testCase.RigRoot2 = boundRig.RigRoot;
+            saveFolderBound = fullfile(testCase.TempRoot, 'RigBoundSaveFolder');
+            testCase.writeValidAcqInfos(saveFolderBound);
+            testCase.bindFolderRig(saveFolderBound, boundRig);
+            store.addSession('Mouse_104', struct( ...
+                'sessionID', 'Session_03', ...
+                'processedDataFolder', saveFolderBound));
+            SessionInfo = store.getSessionInfo('Mouse_104', 'Session_03');
+            testCase.verifyEqual(SessionInfo.rigUUID, boundRig.getRigInfo().uuid);
+            testCase.verifyEqual(SessionInfo.rigID, boundRig.getRigInfo().rigID);
+            activeRigInfo = boundRig.getRigInfo();
 
             saveFolderB = fullfile(testCase.TempRoot, 'RigRequiredSaveFolderB');
             mkdir(saveFolderB);
@@ -1150,33 +1164,38 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
         end
 
         function testMigrateSessionRigAssignmentRepairsLegacySession(testCase)
-        %TESTMIGRATESESSIONRIGASSIGNMENTREPAIRSLEGACYSESSION DFR-20260818-002:
-        %a session with blank rigUUID/rigID (pre-dating Rig ownership) is
-        %exactly the case migrateSessionRigAssignment exists to repair, and
-        %must actually succeed against it -- not be rejected by the same
-        %full-validation gate it is trying to fix.
+        %TESTMIGRATESESSIONRIGASSIGNMENTREPAIRSLEGACYSESSION Rig-ledger
+        %redesign (Phase 6): a session with a blank rig pointer is valid; once
+        %its SaveFolder is bound to a rig, migrateSessionRigAssignment copies
+        %that binding into the session mirror -- read-only towards the folder
+        %(never the Active rig, no AcqInfos.mat write).
 
             store = testCase.createProject();
             store.addSubject(struct('subjectID', 'Mouse_104'));
             sessionUUID = testCase.addSession(store, 'Mouse_104', struct( ...
                 'sessionID', 'Session_01'));
-
-            sessionMatPath = fullfile(testCase.ProjectRoot, 'subjects', ...
-                'Mouse_104', 'sessions', 'Session_01', 'session.mat');
             SessionInfo = store.getSessionInfoByUUID(sessionUUID);
-            SessionInfo.rigUUID = '';
-            SessionInfo.rigID = '';
-            save(sessionMatPath, 'SessionInfo', '-mat');
+            saveFolder = SessionInfo.processedDataFolder;
+            testCase.verifyEmpty(SessionInfo.rigUUID);
 
             preRepairReport = store.validate('Mode', 'full');
-            testCase.verifyFalse(preRepairReport.isValid);
-            testCase.verifyTrue(any(strcmp( ...
-                {preRepairReport.errors.code}, 'session_rig_required')));
+            testCase.verifyTrue(preRepairReport.isValid, ...
+                testCase.issueMessages(preRepairReport.errors));
 
-            activeRigUUID = UMITRigStore.getActiveRig().getRigInfo().uuid;
+            unchanged = store.migrateSessionRigAssignment('Mouse_104', 'Session_01');
+            testCase.verifyEmpty(unchanged.rigUUID, 'An unbound folder leaves the mirror empty.');
+            testCase.verifyFalse(UMITRigLedger.exists(saveFolder));
+
+            boundRig = UMITRigStore.create(struct('rigID', ...
+                ['MigratedRig_' strrep(char(java.util.UUID.randomUUID()), '-', '')]));
+            testCase.RigRoot2 = boundRig.RigRoot;
+            testCase.bindFolderRig(saveFolder, boundRig);
+            acqBefore = load(fullfile(saveFolder, 'AcqInfos.mat'));
+
             repaired = store.migrateSessionRigAssignment('Mouse_104', 'Session_01');
-            testCase.verifyEqual(repaired.rigUUID, activeRigUUID);
-            testCase.verifyNotEmpty(repaired.rigID);
+            testCase.verifyEqual(repaired.rigUUID, boundRig.getRigInfo().uuid);
+            testCase.verifyEqual(repaired.rigID, boundRig.getRigInfo().rigID);
+            testCase.verifyEqual(load(fullfile(saveFolder, 'AcqInfos.mat')), acqBefore);
 
             postRepairReport = store.validate('Mode', 'full');
             testCase.verifyTrue(postRepairReport.isValid, ...
@@ -1198,6 +1217,12 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
             sessionMatPath = fullfile(testCase.ProjectRoot, 'subjects', ...
                 'Mouse_104', 'sessions', 'Session_01', 'session.mat');
             SessionInfo = store.getSessionInfoByUUID(sessionUUID);
+            % Bind the folder so the migration has a rig to copy and reaches
+            % the mutation-health gate.
+            boundRig = UMITRigStore.create(struct('rigID', ...
+                ['BlockedMigrationRig_' strrep(char(java.util.UUID.randomUUID()), '-', '')]));
+            testCase.RigRoot2 = boundRig.RigRoot;
+            testCase.bindFolderRig(SessionInfo.processedDataFolder, boundRig);
             SessionInfo.rigUUID = '';
             SessionInfo.rigID = '';
             SessionInfo.sessionID = 'Session_01_Renamed';
@@ -2401,13 +2426,12 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
                 testCase, store, subjectID, sessionInfo)
         %ADDSESSION Create a dataset-backed session fixture.
         %
-        %   Rig assignment is owned exclusively by UMITRigStore -- addSession
-        %   itself now rejects caller-supplied rigID/rigUUID and always
-        %   auto-resolves via UMITRigStore.ensureDatasetRigAssociation. A
-        %   caller of this fixture that wants a SPECIFIC (non-Active) Rig
-        %   pinned assigns it to the SaveFolder first via
-        %   UMITRigStore.assignDatasetRig, then lets auto-resolution pick up
-        %   that existing association.
+        %   addSession rejects caller-supplied rigID/rigUUID: the session's
+        %   rig mirrors the rig bound in the SaveFolder's rig ledger. A
+        %   caller of this fixture that wants a rig recorded binds it in the
+        %   SaveFolder's ledger first (UMITRigLedger.bind), which addSession
+        %   then mirrors. Without rig fields the folder stays unbound and the
+        %   session's rig is empty.
 
             if ~isfield(sessionInfo, 'processedDataFolder')
                 saveFolder = fullfile(testCase.TempRoot, ...
@@ -2422,17 +2446,26 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
                 {'rigID', 'rigUUID'});
             if ~isempty(requestedRigFields)
                 if isfield(sessionInfo, 'rigUUID')
-                    targetRigUUID = sessionInfo.rigUUID;
+                    rigStore = UMITRigStore.open(sessionInfo.rigUUID);
                 else
-                    targetRigUUID = UMITRigStore.openByRigID( ...
-                        sessionInfo.rigID).getRigInfo().uuid;
+                    rigStore = UMITRigStore.openByRigID(sessionInfo.rigID);
                 end
-                UMITRigStore.assignDatasetRig( ...
-                    sessionInfo.processedDataFolder, targetRigUUID);
+                testCase.bindFolderRig(sessionInfo.processedDataFolder, rigStore);
                 sessionInfo = rmfield(sessionInfo, requestedRigFields);
             end
 
             sessionUUID = store.addSession(subjectID, sessionInfo);
+        end
+
+        function bindFolderRig(~, saveFolder, rigStore)
+        %BINDFOLDERRIG Bind (or rebind) a SaveFolder's rig ledger to a library rig.
+
+            binding = UMITRigLedger.bindingFromRig(rigStore, 'IncludeCoregistration', false);
+            if UMITRigLedger.exists(saveFolder)
+                UMITRigLedger.rebind(saveFolder, binding, 'Origin', 'TestUMITProjectStore');
+            else
+                UMITRigLedger.bind(saveFolder, binding, 'Origin', 'TestUMITProjectStore');
+            end
         end
 
         function writeValidAcqInfos(~, saveFolder)

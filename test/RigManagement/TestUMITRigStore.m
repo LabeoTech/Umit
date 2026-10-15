@@ -10,9 +10,6 @@ classdef TestUMITRigStore < matlab.unittest.TestCase
 %   test/ProjectManagement/TestUMITProjectStore.m, these tests create real rigs
 %   under that real root and track the exact RigRoot/RigUUID created so teardown
 %   can remove precisely that folder -- never anything else under the root.
-%   getOrCreateDefaultRig tests additionally guard with assumeTrue against the
-%   real environment already having rigs, so they self-skip rather than
-%   interfere with real user rigs if run on a machine that already has some.
 
     properties
         TempRoot
@@ -20,6 +17,8 @@ classdef TestUMITRigStore < matlab.unittest.TestCase
         RigRoot2
         OriginalActiveRigUUID
         SourceFolder
+        ExtraRigRoots = {}
+        UserLibraryFiles = {}
     end
 
     methods (TestMethodSetup)
@@ -67,6 +66,16 @@ classdef TestUMITRigStore < matlab.unittest.TestCase
             end
             if ~isempty(testCase.RigRoot2) && isfolder(testCase.RigRoot2)
                 rmdir(testCase.RigRoot2, 's');
+            end
+            for iRoot = 1:numel(testCase.ExtraRigRoots)
+                if isfolder(testCase.ExtraRigRoots{iRoot})
+                    rmdir(testCase.ExtraRigRoots{iRoot}, 's');
+                end
+            end
+            for iFile = 1:numel(testCase.UserLibraryFiles)
+                if isfile(testCase.UserLibraryFiles{iFile})
+                    delete(testCase.UserLibraryFiles{iFile});
+                end
             end
             if isfolder(testCase.TempRoot)
                 rmdir(testCase.TempRoot, 's');
@@ -296,96 +305,6 @@ classdef TestUMITRigStore < matlab.unittest.TestCase
             testCase.verifyNotEmpty(idx);
             testCase.verifyTrue(rigs.IsReadable(idx));
             testCase.verifyEqual(char(rigs.RigRoot(idx)), testCase.RigRoot);
-        end
-
-        function testGetOrCreateDefaultRigCreatesWhenNoneExist(testCase)
-        %TESTGETORCREATEDEFAULTRIGCREATESWHENNONEEXIST Verify auto-provisioning.
-        %
-        %   Guarded: only runs if the real environment currently has zero
-        %   rigs, since getOrCreateDefaultRig operates on the real,
-        %   non-redirectable root.
-
-            existingRigs = UMITRigStore.listRigs();
-            testCase.assumeTrue(height(existingRigs) == 0, ...
-                ['Skipped: real environment already has rig(s); ' ...
-                'this scenario is not safely testable without disturbing them.']);
-
-            [store, wasCreated, resolution] = UMITRigStore.getOrCreateDefaultRig();
-            testCase.RigRoot = store.RigRoot;
-
-            RigInfo = store.getRigInfo();
-            testCase.verifyTrue(wasCreated);
-            testCase.verifyEqual(resolution, 'createdDefault');
-            testCase.verifyEqual(RigInfo.displayName, 'OiS200 LightTrack Imaging System');
-
-            rigs = UMITRigStore.listRigs();
-            testCase.verifyEqual(height(rigs), 1);
-            testCase.verifyTrue(rigs.IsDefault(1));
-        end
-
-        function testGetOrCreateDefaultRigReusesCreatedDefault(testCase)
-        %TESTGETORCREATE... Verify a second imaging-resolution request reuses
-        %the default created by the first request.
-
-            existingRigs = UMITRigStore.listRigs();
-            testCase.assumeTrue(height(existingRigs) == 0, ...
-                ['Skipped: real environment already has rig(s); ' ...
-                 'this clean-store scenario is not safely testable without ' ...
-                 'disturbing them.']);
-
-            [firstStore, firstWasCreated] = UMITRigStore.getOrCreateDefaultRig();
-            testCase.RigRoot = firstStore.RigRoot;
-            firstInfo = firstStore.getRigInfo();
-
-            [secondStore, secondWasCreated, secondResolution] = ...
-                UMITRigStore.getOrCreateDefaultRig();
-            secondInfo = secondStore.getRigInfo();
-
-            testCase.verifyTrue(firstWasCreated);
-            testCase.verifyFalse(secondWasCreated);
-            testCase.verifyEqual(secondResolution, 'existingDefault');
-            testCase.verifyEqual(secondInfo.uuid, firstInfo.uuid);
-            testCase.verifyEqual(height(UMITRigStore.listRigs()), 1);
-        end
-
-        function testGetOrCreateDefaultRigPromotesSingleExisting(testCase)
-        %TESTGETORCREATEDEFAULTRIGPROMOTESSINGLEEXISTING Verify promotion of
-        %the sole existing rig to default.
-        %
-        %   Guarded: only runs if the real environment currently has zero
-        %   rigs (so that, after creating exactly one, it is guaranteed to
-        %   be the sole rig getOrCreateDefaultRig sees).
-
-            existingRigs = UMITRigStore.listRigs();
-            testCase.assumeTrue(height(existingRigs) == 0, ...
-                'Skipped: real environment already has rig(s).');
-
-            testCase.createRig();
-            [promoted, wasCreated, resolution] = UMITRigStore.getOrCreateDefaultRig();
-            testCase.verifyEqual(promoted.RigRoot, testCase.RigRoot);
-            testCase.verifyFalse(wasCreated);
-            testCase.verifyEqual(resolution, 'promotedExisting');
-            testCase.verifyEqual(UMITRigStore.getDefaultRig().RigRoot, testCase.RigRoot);
-        end
-
-        function testGetOrCreateDefaultRigErrorsWithMultipleNonDefault(testCase)
-        %TESTGETORCREATEDEFAULTRIGERRORSWITHMULTIPLENONDEFAULT Verify ambiguity
-        %error when >1 rig exists and none is marked default.
-        %
-        %   Guarded: only runs if the real environment currently has zero
-        %   rigs (so that, after creating exactly two, the "multiple, none
-        %   default" precondition is unambiguous).
-
-            existingRigs = UMITRigStore.listRigs();
-            testCase.assumeTrue(height(existingRigs) == 0, ...
-                'Skipped: real environment already has rig(s).');
-
-            store1 = testCase.createRig();
-            store2 = testCase.createRig(2);
-            testCase.verifyNotEqual(store1.getRigInfo().uuid, store2.getRigInfo().uuid);
-
-            testCase.verifyError(@() UMITRigStore.getOrCreateDefaultRig(), ...
-                'Umitoolbox:UMITRigStore:noDefaultRig');
         end
 
         function testAddCameraCoregistrationAutoActivatesFirst(testCase)
@@ -819,113 +738,6 @@ classdef TestUMITRigStore < matlab.unittest.TestCase
             testCase.verifyEqual(replacement.getRigInfo().status, 'available');
         end
 
-        function testLegacyDatasetRigMigrationIsOneTime(testCase)
-        %TESTLEGACYDATASETRIGMIGRATIONIS ONETIME Verify UUID persistence.
-
-            active = testCase.createRig();
-            dataFolder = fullfile(testCase.TempRoot, 'LegacyDat');
-            mkdir(dataFolder);
-            AcqInfoStream = struct();
-            save(fullfile(dataFolder, 'AcqInfos.mat'), ...
-                'AcqInfoStream', '-mat');
-
-            [firstInfo, migrated] = ...
-                UMITRigStore.ensureDatasetRigAssociation(dataFolder);
-            testCase.verifyTrue(migrated);
-            testCase.verifyEqual(firstInfo.uuid, active.getRigInfo().uuid);
-
-            second = testCase.createRig(2);
-            second.activateRig();
-            [secondInfo, migratedAgain] = ...
-                UMITRigStore.ensureDatasetRigAssociation(dataFolder);
-            testCase.verifyFalse(migratedAgain);
-            testCase.verifyEqual(secondInfo.uuid, firstInfo.uuid);
-
-            persisted = load(fullfile(dataFolder, 'AcqInfos.mat'), ...
-                'AcqInfoStream', '-mat');
-            testCase.verifyEqual(persisted.AcqInfoStream.rigUUID, firstInfo.uuid);
-        end
-
-        function testAssignDatasetRigOverwritesExistingAssociation(testCase)
-        %TESTASSIGNDATASETRIGOVERWRITESEXISTINGASSOCIATION Verify the explicit
-        %(re)assignment primitive, unlike ensureDatasetRigAssociation, always
-        %overwrites -- and that readDatasetRigAssociation/
-        %ensureDatasetRigAssociation both observe the pinned Rig afterward.
-
-            first = testCase.createRig();
-            second = testCase.createRig(2);
-            dataFolder = fullfile(testCase.TempRoot, 'AssignedDataset');
-            mkdir(dataFolder);
-            AcqInfoStream = struct();
-            save(fullfile(dataFolder, 'AcqInfos.mat'), ...
-                'AcqInfoStream', '-mat');
-
-            firstInfo = UMITRigStore.ensureDatasetRigAssociation(dataFolder);
-            testCase.verifyEqual(firstInfo.uuid, first.getRigInfo().uuid);
-
-            secondInfo = UMITRigStore.assignDatasetRig( ...
-                dataFolder, second.getRigInfo().uuid);
-            testCase.verifyEqual(secondInfo.uuid, second.getRigInfo().uuid);
-
-            [rigUUID, rigID] = UMITRigStore.readDatasetRigAssociation(dataFolder);
-            testCase.verifyEqual(rigUUID, second.getRigInfo().uuid);
-            testCase.verifyEqual(rigID, second.getRigInfo().rigID);
-
-            % A subsequent ensure-call must preserve the explicit assignment,
-            % not silently fall back to whichever Rig is Active.
-            [preservedInfo, wasMigrated] = ...
-                UMITRigStore.ensureDatasetRigAssociation(dataFolder);
-            testCase.verifyFalse(wasMigrated);
-            testCase.verifyEqual(preservedInfo.uuid, second.getRigInfo().uuid);
-        end
-
-        function testAssignDatasetRigRejectsArchivedRig(testCase)
-        %TESTASSIGNDATASETRIGREJECTSARCHIVEDRIG Verify an Archived Rig cannot
-        %be (re)assigned to a dataset. (Relocated from the equivalent
-        %addSession-level scenario in TestUMITProjectStore, now that
-        %UMITProjectStore no longer accepts caller-supplied Rig fields at all
-        %-- UMITRigStore.assignDatasetRig is the only place left where a
-        %caller supplies an explicit target Rig.)
-
-            active = testCase.createRig();
-            archived = testCase.createRig(2);
-            archived.archiveRig(active.getRigInfo().uuid);
-            archivedUUID = archived.getRigInfo().uuid;
-
-            dataFolder = fullfile(testCase.TempRoot, 'ArchivedAssignmentDataset');
-            mkdir(dataFolder);
-            AcqInfoStream = struct();
-            save(fullfile(dataFolder, 'AcqInfos.mat'), ...
-                'AcqInfoStream', '-mat');
-
-            testCase.verifyError(@() UMITRigStore.assignDatasetRig( ...
-                dataFolder, archivedUUID), ...
-                'Umitoolbox:UMITRigStore:archivedRigAssignment');
-        end
-
-        function testReadDatasetRigAssociationHandlesMissingOrEmptyDataset(testCase)
-        %TESTREADDATASETRIGASSOCIATIONHANDLESMISSINGOREMPTYDATASET Verify the
-        %read-only accessor never errors: it returns empty for a folder with
-        %no AcqInfos.mat, and empty for one with no Rig association yet.
-
-            missingFolder = fullfile(testCase.TempRoot, 'NoAcqInfosHere');
-            mkdir(missingFolder);
-            [rigUUID, rigID] = ...
-                UMITRigStore.readDatasetRigAssociation(missingFolder);
-            testCase.verifyEqual(rigUUID, '');
-            testCase.verifyEqual(rigID, '');
-
-            unassociatedFolder = fullfile(testCase.TempRoot, 'UnassociatedDataset');
-            mkdir(unassociatedFolder);
-            AcqInfoStream = struct();
-            save(fullfile(unassociatedFolder, 'AcqInfos.mat'), ...
-                'AcqInfoStream', '-mat');
-            [rigUUID, rigID] = ...
-                UMITRigStore.readDatasetRigAssociation(unassociatedFolder);
-            testCase.verifyEqual(rigUUID, '');
-            testCase.verifyEqual(rigID, '');
-        end
-
         function testRigExistsForLiveRig(testCase)
         %TESTRIGEXISTSFORLIVERIG Verify rigExists resolves both by rigID
         %(what DataParams.cameraCoregistration.rigID stores) and by UUID.
@@ -959,33 +771,6 @@ classdef TestUMITRigStore < matlab.unittest.TestCase
             testCase.verifyFalse(UMITRigStore.rigExists(randomUUID));
             testCase.verifyFalse(UMITRigStore.rigExists(''));
             testCase.verifyFalse(UMITRigStore.rigExists(123));
-        end
-
-        function testGetOrCreateDefaultRigSkipsArchivedRig(testCase)
-        %TESTGETORCREATEDEFAULTRIGSKIPSARCHIVEDRIG Verify an archived rig is
-        %never auto-selected as the default. With only an archived rig on
-        %disk, getOrCreateDefaultRig treats that as "no rig exists" and
-        %auto-provisions a fresh default rig rather than promoting the
-        %archived one.
-        %
-        %   Guarded: only runs if the real environment currently has zero
-        %   rigs, like the other getOrCreateDefaultRig tests.
-
-            existingRigs = UMITRigStore.listRigs();
-            testCase.assumeTrue(height(existingRigs) == 0, ...
-                'Skipped: real environment already has rig(s).');
-
-            store = testCase.createRig();
-            replacement = testCase.createRig(2);
-            store.archiveRig(replacement.getRigInfo().uuid);
-
-            [newDefault, wasCreated] = UMITRigStore.getOrCreateDefaultRig();
-            testCase.RigRoot2 = newDefault.RigRoot;
-
-            newInfo = newDefault.getRigInfo();
-            testCase.verifyFalse(wasCreated);
-            testCase.verifyEqual(newInfo.status, 'active');
-            testCase.verifyEqual(newInfo.uuid, replacement.getRigInfo().uuid);
         end
 
         function testValidationRejectsEscapingManagedResourcePath(testCase)
@@ -1081,6 +866,8 @@ classdef TestUMITRigStore < matlab.unittest.TestCase
             RigInfo.schemaVersion = 1;
             RigInfo = rmfield(RigInfo, ...
                 {'status', 'archivedOn', 'metadata', 'cameras', 'illuminations'});
+            % The legacy default marker identified the rig in use.
+            RigInfo.isDefault = true;
             rigFile = fullfile(store.RigRoot, schema.files.rigMetadata);
             save(rigFile, 'RigInfo', '-mat');
 
@@ -1101,9 +888,217 @@ classdef TestUMITRigStore < matlab.unittest.TestCase
             report = reopened.validate('Mode', 'full');
             testCase.verifyTrue(report.isValid, testCase.issueMessages(report.errors));
         end
+
+        %% Phase 2 (rig-ledger redesign): store hardening
+        function testLegacyRigWithoutStatusLoadsAvailable(testCase)
+        %TESTLEGACYRIGWITHOUTSTATUSLOADSAVAILABLE A record without status and
+        %without the legacy default marker must not become a second Active rig.
+
+            createdBefore = UMITRigStore.validateLifecycle().activeCount;
+            store = testCase.createRig(2);
+            schema = getUMITRigSchema();
+            rigFile = fullfile(store.RigRoot, schema.files.rigMetadata);
+            loaded = load(rigFile, schema.metadataVariables.rig, '-mat');
+            RigInfo = rmfield(loaded.(schema.metadataVariables.rig), 'status');
+            save(rigFile, 'RigInfo', '-mat');
+
+            rigs = UMITRigStore.listRigs();
+            row = strcmp(rigs.RigRoot, string(store.RigRoot));
+            testCase.verifyEqual(rigs.Status(row), "available");
+            testCase.verifyEqual(store.getRigInfo().status, 'available');
+            testCase.verifyEqual(UMITRigStore.validateLifecycle().activeCount, createdBefore);
+        end
+
+        function testListRigsToleratesMalformedDefaultPointer(testCase)
+        %TESTLISTRIGSTOLERATESMALFORMEDDEFAULTPOINTER A corrupt defaultRig.mat
+        %must not break enumeration; getDefaultRig still reports it.
+
+            schema = getUMITRigSchema();
+            internalFolder = fullfile(UMITRigStore.getRigsRoot(), schema.store.internalFolder);
+            defaultFile = fullfile(internalFolder, schema.store.defaultFile);
+            backupFile = fullfile(testCase.TempRoot, 'defaultRig.backup.mat');
+            if isfile(defaultFile)
+                copyfile(defaultFile, backupFile);
+                testCase.addTeardown(@() copyfile(backupFile, defaultFile, 'f'));
+            else
+                if ~isfolder(internalFolder)
+                    mkdir(internalFolder);
+                end
+                testCase.addTeardown(@() delete(defaultFile));
+            end
+            DefaultRig = 'not a struct';
+            save(defaultFile, 'DefaultRig', '-mat');
+
+            rigs = UMITRigStore.listRigs();
+            testCase.verifyFalse(any(rigs.IsDefault));
+            UMITRigStore.validateLifecycle();
+            testCase.verifyError(@() UMITRigStore.getDefaultRig(), ...
+                'Umitoolbox:UMITRigStore:invalidDefaultRig');
+        end
+
+        function testStaleStoreLockCanBeCleared(testCase)
+        %TESTSTALESTORELOCKCANBECLEARED A leftover store.lock blocks
+        %store-level operations until clearStaleStoreLock removes it, and a
+        %young lock is never cleared without an explicit MinimumAge.
+
+            testCase.assumeFalse(UMITRigStore.getStoreLockInfo().exists, ...
+                'Skipped: a real store lock is present on this machine.');
+            schema = getUMITRigSchema();
+            lockFolder = fullfile(UMITRigStore.getRigsRoot(), ...
+                schema.store.internalFolder, schema.store.lockFolder);
+            mkdir(lockFolder);
+            testCase.addTeardown(@() testCase.removeFolder(lockFolder));
+            LockInfo = struct('operation', 'crashedOperation', ...
+                'createdOn', datetime('now') - hours(2), 'processID', 0);
+            save(fullfile(lockFolder, schema.store.lockMetadata), 'LockInfo', '-mat');
+
+            try
+                testCase.createRig(2);
+                testCase.verifyFail('Expected the store lock to block rig creation.');
+            catch ME
+                testCase.verifyEqual(ME.identifier, 'Umitoolbox:UMITRigStore:storeLocked');
+                testCase.verifySubstring(ME.message, 'crashedOperation');
+                testCase.verifySubstring(ME.message, 'clearStaleStoreLock');
+            end
+            info = UMITRigStore.getStoreLockInfo();
+            testCase.verifyTrue(info.exists);
+            testCase.verifyGreaterThan(info.age, hours(1));
+
+            testCase.verifyTrue(UMITRigStore.clearStaleStoreLock());
+            testCase.verifyFalse(isfolder(lockFolder));
+            testCase.verifyFalse(UMITRigStore.clearStaleStoreLock());
+            testCase.createRig(2);
+
+            mkdir(lockFolder);
+            LockInfo = struct('operation', 'runningOperation', ...
+                'createdOn', datetime('now'), 'processID', 0);
+            save(fullfile(lockFolder, schema.store.lockMetadata), 'LockInfo', '-mat');
+            testCase.verifyError(@() UMITRigStore.clearStaleStoreLock(), ...
+                'Umitoolbox:UMITRigStore:storeLockNotStale');
+            testCase.verifyTrue(isfolder(lockFolder));
+            testCase.verifyTrue(UMITRigStore.clearStaleStoreLock('MinimumAge', seconds(0)));
+        end
+
+        function testExportImportRoundTripIsSelfContained(testCase)
+        %TESTEXPORTIMPORTROUNDTRIPISSELFCONTAINED Export carries the rig
+        %record, spectra and coregistration resources; import preserves the
+        %resource identities, so ledger snapshots are unchanged.
+
+            source = testCase.createConfiguredRigForDuplication(2);
+            firstUUID = source.addCameraCoregistration( ...
+                testCase.createTformSource('coreg-a.mat', 1), struct('displayName', 'A'));
+            source.importAndActivateCameraCoregistration( ...
+                testCase.createTformSource('coreg-b.mat', 2), struct('displayName', 'B'));
+            source.archiveResource(firstUUID);
+            sourceInfo = source.getRigInfo();
+
+            exportFile = source.exportRig(fullfile(testCase.TempRoot, 'rigExport'));
+            testCase.verifyEqual(exportFile, fullfile(testCase.TempRoot, 'rigExport.umitrig'));
+            testCase.verifyError(@() UMITRigStore.importRig(exportFile), ...
+                'Umitoolbox:UMITRigStore:importRigExists');
+
+            suffix = strrep(char(java.util.UUID.randomUUID()), '-', '');
+            imported = UMITRigStore.importRig(exportFile, ...
+                'RigID', ['Imported_' suffix(1:8)], 'NewIdentity', true);
+            testCase.ExtraRigRoots{end+1} = imported.RigRoot;
+            importedInfo = imported.getRigInfo();
+
+            testCase.verifyNotEqual(importedInfo.uuid, sourceInfo.uuid);
+            testCase.verifyEqual(importedInfo.status, 'available');
+            testCase.verifyEqual(importedInfo.displayName, sourceInfo.displayName);
+            testCase.verifyEqual(importedInfo.cameras, sourceInfo.cameras);
+            testCase.verifyEqual(importedInfo.illuminations, sourceInfo.illuminations);
+            testCase.verifyEqual(importedInfo.activeCoregistrationUUID, ...
+                sourceInfo.activeCoregistrationUUID);
+            testCase.verifyEqual({importedInfo.resourceRegistry.uuid}, ...
+                {sourceInfo.resourceRegistry.uuid});
+            testCase.verifyEqual({importedInfo.resourceRegistry.checksum}, ...
+                {sourceInfo.resourceRegistry.checksum});
+            testCase.verifyEqual({importedInfo.resourceRegistry.status}, ...
+                {sourceInfo.resourceRegistry.status});
+            report = imported.validate('Mode', 'full');
+            testCase.verifyTrue(report.isValid, testCase.issueMessages(report.errors));
+
+            testCase.verifyEqual(UMITRigLedger.buildOpticsSnapshot(imported).hash, ...
+                UMITRigLedger.buildOpticsSnapshot(source).hash);
+            testCase.verifyEqual(UMITRigLedger.buildCoregistrationSnapshot(imported).hash, ...
+                UMITRigLedger.buildCoregistrationSnapshot(source).hash);
+
+            testCase.verifyError(@() UMITRigStore.importRig(exportFile, ...
+                'RigID', ['Imported_' suffix(1:8)], 'NewIdentity', true), ...
+                'Umitoolbox:UMITRigStore:importRigIDExists');
+        end
+
+        function testImportRestoresMissingUserSpectrumAndRejectsConflicts(testCase)
+        %TESTIMPORTRESTORESMISSINGUSERSPECTRUMANDREJECTSCONFLICTS A rig using
+        %a user spectrum imports on a library without it; a same-ID spectrum
+        %with different content is refused and nothing is installed.
+
+            spectrumSource = fullfile(testCase.TempRoot, 'camera.csv');
+            writematrix([(400:700)' linspace(0.2, 1, 301)'], spectrumSource);
+            suffix = strrep(char(java.util.UUID.randomUUID()), '-', '');
+            spectrumID = ['ExportCam_' suffix(1:8)];
+            spectrum = UMITRigStore.importSpectrum(spectrumSource, 'camera', ...
+                spectrumID, struct('displayName', 'Export Camera'));
+            testCase.UserLibraryFiles{end+1} = spectrum.file;
+
+            source = testCase.createConfiguredRigForDuplication(1);
+            cameras = source.getRigInfo().cameras;
+            cameras.spectrumID = spectrumID;
+            source.setCameras(cameras);
+            opticsHash = UMITRigLedger.buildOpticsSnapshot(source).hash;
+            exportFile = source.exportRig(fullfile(testCase.TempRoot, 'userSpectrum.umitrig'));
+
+            % Same-ID spectrum with different content: refused, nothing installed.
+            delete(spectrum.file);
+            writematrix([(400:700)' linspace(1, 0.2, 301)'], spectrumSource);
+            conflicting = UMITRigStore.importSpectrum(spectrumSource, 'camera', ...
+                spectrumID, struct('displayName', 'Other Camera'));
+            rigCount = height(UMITRigStore.listRigs());
+            testCase.verifyError(@() UMITRigStore.importRig(exportFile, ...
+                'RigID', ['Conflict_' suffix(1:8)], 'NewIdentity', true), ...
+                'Umitoolbox:UMITRigStore:importSpectrumConflict');
+            testCase.verifyEqual(height(UMITRigStore.listRigs()), rigCount);
+
+            % Missing spectrum: restored into the user library from the export.
+            delete(conflicting.file);
+            imported = UMITRigStore.importRig(exportFile, ...
+                'RigID', ['UserSpec_' suffix(1:8)], 'NewIdentity', true);
+            testCase.ExtraRigRoots{end+1} = imported.RigRoot;
+            restored = UMITRigStore.getSpectrum('camera', spectrumID);
+            testCase.verifyEqual(restored.response, spectrum.response, 'AbsTol', 1e-12);
+            testCase.verifyEqual(restored.metadata.displayName, 'Export Camera');
+            testCase.verifyEqual(UMITRigLedger.buildOpticsSnapshot(imported).hash, opticsHash);
+        end
+
+        function testExportRejectsInvalidRigAndImportRejectsForeignFile(testCase)
+            notAnExport = fullfile(testCase.TempRoot, 'foreign.umitrig');
+            payload = 1;
+            save(notAnExport, 'payload', '-mat');
+            testCase.verifyError(@() UMITRigStore.importRig(notAnExport), ...
+                'Umitoolbox:UMITRigStore:invalidRigExport');
+            testCase.verifyError(@() UMITRigStore.importRig( ...
+                fullfile(testCase.TempRoot, 'missing.umitrig')), ...
+                'Umitoolbox:UMITRigStore:invalidRigExport');
+
+            store = testCase.createRig(2);
+            resourceUUID = store.addCameraCoregistration( ...
+                testCase.createTformSource('broken.mat', 1), struct());
+            delete(store.resolveResourcePath(resourceUUID));
+            testCase.verifyError(@() store.exportRig( ...
+                fullfile(testCase.TempRoot, 'broken.umitrig')), ...
+                'Umitoolbox:UMITRigStore:exportRigFailed');
+            testCase.verifyFalse(isfile(fullfile(testCase.TempRoot, 'broken.umitrig')));
+        end
     end
 
     methods (Access = private)
+        function removeFolder(~, folder)
+            if isfolder(folder)
+                rmdir(folder, 's');
+            end
+        end
+
         function store = createConfiguredRigForDuplication(testCase, cameraCount)
         %CREATECONFIGUREDRIGFORDUPLICATION Create one optical Rig fixture.
 
