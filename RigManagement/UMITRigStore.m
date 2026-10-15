@@ -4,7 +4,7 @@ classdef UMITRigStore < handle
     %   store = UMITRigStore.create(rigInfo)
     %   store = UMITRigStore.open(rigUUID)
     %   store = UMITRigStore.openByRigID(rigID)
-    %   store = UMITRigStore.getOrCreateDefaultRig()
+    %   store = UMITRigStore.getActiveRig()
     %   rigs  = UMITRigStore.listRigs()
     %
     %   UMITRigStore is the only supported write interface for centralized
@@ -28,7 +28,6 @@ classdef UMITRigStore < handle
     %       getActiveRig
     %       listAssignableRigs
     %       validateLifecycle
-    %       getOrCreateDefaultRig
     %       normalizeIlluminationName
     %       getSpectrum / listSpectra / importSpectrum / removeSpectrum
     %       getFilterSet / listFilterSets / importFilterSet
@@ -37,7 +36,7 @@ classdef UMITRigStore < handle
     %       duplicate
     %       setCameras
     %       setIlluminations
-    %       resolveOpticalConfiguration
+    %       resolveOpticalConfiguration / opticalConfigurationFromSnapshots
     %       updateRigMetadata
     %       renameRigID
     %       archiveRig
@@ -56,6 +55,8 @@ classdef UMITRigStore < handle
     %       resolveResourcePath
     %       getLockInfo
     %       clearStaleLock
+    %       getStoreLockInfo / clearStaleStoreLock
+    %       exportRig / importRig
     %       validate
     %
     %   Design rules:
@@ -71,8 +72,8 @@ classdef UMITRigStore < handle
     %       - A rig itself is soft-deleted via archiveRig (status ->
     %         'archived'), never removed -- sessions that reference a
     %         rigID/rigUUID by value keep resolving via open/openByRigID/
-    %         rigExists. Archived rigs are excluded from
-    %         getOrCreateDefaultRig's candidate pool. Default selection is
+    %         rigExists. Archived rigs can never be Active or be
+    %         newly bound to a folder. Default selection is
     %         represented once at store level, never as editable per-Rig
     %         metadata.
     %       - Cameras and canonical illumination definitions are concise,
@@ -381,7 +382,14 @@ classdef UMITRigStore < handle
                 RigRoot(end+1, 1) = string(candidateRoot); %#ok<AGROW>
             end
 
-            defaultUUID = UMITRigStore.iReadDefaultRigUUID();
+            % A malformed defaultRig.mat must not break enumeration (and with
+            % it validateLifecycle, getActiveRig and the Rig Manager list).
+            % getDefaultRig still reports the malformed pointer explicitly.
+            try
+                defaultUUID = UMITRigStore.iReadDefaultRigUUID();
+            catch
+                defaultUUID = '';
+            end
             if ~isempty(defaultUUID)
                 IsDefault = IsReadable & strcmpi(RigUUID, string(defaultUUID));
             end
@@ -441,137 +449,6 @@ classdef UMITRigStore < handle
             rigs = UMITRigStore.listRigs();
             rigs = rigs(rigs.IsReadable & ...
                 ismember(lower(rigs.Status), ["active", "available"]), :);
-        end
-
-        function [rigInfo, wasMigrated] = ensureDatasetRigAssociation(dataFolder)
-            %ENSUREDATASETRIGASSOCIATION Resolve and persist one dataset Rig.
-            %
-            %   Existing UUID/ID associations are preserved, including
-            %   Archived historical Rigs. A missing association is assigned
-            %   the current Active Rig exactly once.
-
-            errID = 'Umitoolbox:UMITRigStore:datasetRigMigrationFailed';
-            if ~(ischar(dataFolder) || (isstring(dataFolder) && isscalar(dataFolder)))
-                error(errID, '"dataFolder" must be a character vector or string scalar.');
-            end
-            dataFolder = char(string(dataFolder));
-
-            [loaded, metadataName] = UMITRigStore.iLoadAcqInfoStream(dataFolder, errID);
-            metadata = loaded.(metadataName);
-
-            hasUUID = isfield(metadata, 'rigUUID') && ...
-                ~isempty(strtrim(char(string(metadata.rigUUID))));
-            hasID = isfield(metadata, 'rigID') && ...
-                ~isempty(strtrim(char(string(metadata.rigID))));
-
-            if hasUUID
-                try
-                    rigStore = UMITRigStore.open(metadata.rigUUID);
-                catch ME
-                    error(errID, 'Existing Rig UUID could not be resolved: %s', ME.message);
-                end
-            elseif hasID
-                try
-                    rigStore = UMITRigStore.openByRigID(metadata.rigID);
-                catch ME
-                    error(errID, 'Existing Rig ID could not be resolved: %s', ME.message);
-                end
-            else
-                rigStore = UMITRigStore.getActiveRig();
-            end
-
-            rigInfo = rigStore.getRigInfo();
-            if hasUUID && hasID && ...
-                    ~strcmpi(char(string(metadata.rigUUID)), rigInfo.uuid)
-                error(errID, 'Existing rigID and rigUUID identify different Rigs.');
-            end
-            if ~hasUUID || ~hasID
-                metadata.rigUUID = rigInfo.uuid;
-                metadata.rigID = rigInfo.rigID;
-                loaded.(metadataName) = metadata;
-                acqPath = fullfile(dataFolder, 'AcqInfos.mat');
-                UMITRigStore.iSaveLoadedMatAtomic(acqPath, loaded);
-                wasMigrated = true;
-            else
-                wasMigrated = false;
-            end
-        end
-
-        function rigInfo = assignDatasetRig(dataFolder, rigUUID)
-            %ASSIGNDATASETRIG Explicitly (re)assign one Rig to a dataset.
-            %
-            %   Unlike ensureDatasetRigAssociation (which only fills a blank
-            %   association and never overwrites), this is the explicit,
-            %   caller-driven reassignment primitive: it overwrites any
-            %   existing Rig pointer in the SaveFolder's AcqInfos.mat with
-            %   the specified Rig. This is the only supported way to change
-            %   which Rig owns a dataset -- UMITProjectStore has no write
-            %   path of its own and only mirrors whatever is resolved here.
-            %
-            %   Only Active/Available Rigs may be assigned.
-
-            errID = 'Umitoolbox:UMITRigStore:datasetRigAssignmentFailed';
-            if ~(ischar(dataFolder) || (isstring(dataFolder) && isscalar(dataFolder)))
-                error(errID, '"dataFolder" must be a character vector or string scalar.');
-            end
-            if ~(ischar(rigUUID) || (isstring(rigUUID) && isscalar(rigUUID))) || ...
-                    isempty(strtrim(char(string(rigUUID))))
-                error(errID, '"rigUUID" must be a non-empty character vector or string scalar.');
-            end
-            dataFolder = char(string(dataFolder));
-
-            try
-                rigStore = UMITRigStore.open(rigUUID);
-            catch ME
-                error(errID, 'Rig UUID was not found: %s (%s)', rigUUID, ME.message);
-            end
-
-            rigInfo = rigStore.getRigInfo();
-            if ~ismember(lower(string(rigInfo.status)), ["active", "available"])
-                error('Umitoolbox:UMITRigStore:archivedRigAssignment', ...
-                    'Rig "%s" is %s and cannot be assigned.', ...
-                    rigInfo.rigID, rigInfo.status);
-            end
-
-            [loaded, metadataName] = UMITRigStore.iLoadAcqInfoStream(dataFolder, errID);
-            metadata = loaded.(metadataName);
-            metadata.rigUUID = rigInfo.uuid;
-            metadata.rigID = rigInfo.rigID;
-            loaded.(metadataName) = metadata;
-
-            acqPath = fullfile(dataFolder, 'AcqInfos.mat');
-            UMITRigStore.iSaveLoadedMatAtomic(acqPath, loaded);
-        end
-
-        function [rigUUID, rigID] = readDatasetRigAssociation(dataFolder)
-            %READDATASETRIGASSOCIATION Read-only probe of a dataset's Rig pointer.
-            %
-            %   Returns empty rigUUID/rigID when AcqInfos.mat is missing,
-            %   invalid, or has no Rig association yet. Never bootstraps,
-            %   never writes -- callers that need a guaranteed association
-            %   should use ensureDatasetRigAssociation instead.
-
-            rigUUID = '';
-            rigID = '';
-            if ~(ischar(dataFolder) || (isstring(dataFolder) && isscalar(dataFolder)))
-                return
-            end
-            dataFolder = char(string(dataFolder));
-
-            try
-                [loaded, metadataName] = UMITRigStore.iLoadAcqInfoStream( ...
-                    dataFolder, 'Umitoolbox:UMITRigStore:readDatasetRigAssociationFailed');
-            catch
-                return
-            end
-            metadata = loaded.(metadataName);
-
-            if isfield(metadata, 'rigUUID')
-                rigUUID = char(string(metadata.rigUUID));
-            end
-            if isfield(metadata, 'rigID')
-                rigID = char(string(metadata.rigID));
-            end
         end
 
         function tf = rigExists(rigID)
@@ -1029,80 +906,355 @@ classdef UMITRigStore < handle
             end
         end
 
-        function [obj, wasCreated, resolution] = getOrCreateDefaultRig()
-            %GETORCREATEDEFAULTRIG Resolve "the" rig for this machine.
+        function optical = opticalConfigurationFromSnapshots(opticsSnapshot, filterSetSnapshot, ...
+                acqInfo, requestedIlluminations, dataFolder)
+            %OPTICALCONFIGURATIONFROMSNAPSHOTS Resolve optics from ledger snapshots.
             %
-            %   obj = UMITRigStore.getOrCreateDefaultRig()
+            %   optical = UMITRigStore.opticalConfigurationFromSnapshots( ...
+            %       opticsSnapshot, filterSetSnapshot, acqInfo, ...
+            %       requestedIlluminations, dataFolder)
             %
-            %   Intended for entry points (e.g. raw-data import) that need a
-            %   rig but have no way to ask the user which one. Resolution
-            %   order:
-            %       1) The active Rig named by the store-level pointer.
-            %       2) If exactly one active Rig exists, it is promoted to default
-            %          (the store pointer is persisted) and returned -- a single rig
-            %          per machine is the common case.
-            %       3) If no rig exists at all, one is created automatically,
-            %          from the built-in OiS200 definition and selected.
-            %       4) If multiple active Rigs exist and none is selected,
-            %          this is genuinely ambiguous and throws -- mark one as
-            %          default via setDefaultRig, or open a specific rig
-            %          by rigID/rigUUID instead.
-            %
-            %   Archived rigs are excluded from every resolution branch --
-            %   an archived rig can still be opened explicitly (openByRigID/
-            %   open/rigExists), but is never auto-selected for new work.
+            %   Pure computation over UMITRigLedger optics and filter-set
+            %   snapshots (no rig library access): maps each requested
+            %   illumination to its acquired channel (AcqInfoStream
+            %   ImportedChannels Color/Tag/DatFile and CamIdx) and to the
+            %   snapshot's camera and illumination spectra. DATAFOLDER, when
+            %   nonempty, is checked for each resolved channel file.
+            %   rigUUID/rigID are returned empty (snapshots carry no rig
+            %   identity); callers fill them in.
 
-            errID = 'Umitoolbox:UMITRigStore:noDefaultRig';
-            wasCreated = false;
-            resolution = 'existingDefault';
-            storeLock = UMITRigStore.iAcquireStoreLock('getOrCreateDefaultRig'); %#ok<NASGU>
-
-            lifecycle = UMITRigStore.validateLifecycle();
-            if lifecycle.activeCount > 1
-                error(errID, 'Multiple Active Rigs exist. Activate one explicitly.');
+            if nargin < 5
+                dataFolder = '';
+            end
+            if ~isstruct(acqInfo) || ~isscalar(acqInfo) || ...
+                    ~isfield(acqInfo, 'ImportedChannels') || ...
+                    ~isstruct(acqInfo.ImportedChannels)
+                error('Umitoolbox:UMITRigStore:invalidAcqInfos', ...
+                    'AcqInfoStream must contain ImportedChannels metadata.');
+            end
+            if ischar(requestedIlluminations) || isstring(requestedIlluminations)
+                requestedIlluminations = cellstr(requestedIlluminations);
+            end
+            if ~iscell(requestedIlluminations) || isempty(requestedIlluminations)
+                error('Umitoolbox:UMITRigStore:invalidIlluminationName', ...
+                    'Requested illuminations must be a nonempty text list.');
+            end
+            requested = cellfun(@UMITRigStore.normalizeIlluminationName, ...
+                requestedIlluminations, 'UniformOutput', false);
+            if numel(unique(requested)) < 2
+                error('Umitoolbox:UMITRigStore:insufficientIlluminations', ...
+                    'At least two different illuminations are required.');
             end
 
-            obj = UMITRigStore.getDefaultRig();
-            if ~isempty(obj)
-                return
-            end
+            schema = getUMITRigSchema();
+            cameras = opticsSnapshot.cameras;
+            rigIlluminations = opticsSnapshot.illuminations;
+            rowNames = schema.canonicalIlluminations;
+            nRows = numel(rowNames);
+            nSamples = numel(opticsSnapshot.wavelengthNm);
+            optical = struct();
+            optical.wavelengthNm = opticsSnapshot.wavelengthNm(:);
+            optical.rowNames = rowNames;
+            optical.activeRows = false(nRows, 1);
+            optical.illuminationResponse = nan(nRows, nSamples);
+            optical.cameraResponse = nan(nRows, nSamples);
+            optical.excitationResponse = filterSetSnapshot.excitationResponse(:)';
+            optical.emissionResponse = filterSetSnapshot.emissionResponse(:)';
+            optical.filterSet = rmfield(filterSetSnapshot, ...
+                {'excitationResponse', 'emissionResponse'});
+            optical.opticsHash = opticsSnapshot.hash;
+            optical.rigUUID = '';
+            optical.rigID = '';
+            optical.channels = struct('name', {}, 'datFile', {}, 'camIdx', {});
 
-            legacyDefaultUUID = UMITRigStore.iFindLegacyDefaultUUID();
-            if ~isempty(legacyDefaultUUID)
-                obj = UMITRigStore.open(legacyDefaultUUID);
-                UMITRigStore.iWriteDefaultRigUUID(legacyDefaultUUID);
-                resolution = 'promotedLegacyDefault';
-                return
-            end
-
-            rigs = UMITRigStore.listRigs();
-            readableRigs = rigs(rigs.IsReadable, :);
-
-            if lifecycle.activeCount == 1
-                obj = UMITRigStore.getActiveRig();
-                UMITRigStore.iWriteDefaultRigUUID(obj.getRigInfo().uuid);
-                resolution = 'promotedExisting';
-                return
-            end
-
-            if isempty(readableRigs) || all(readableRigs.Status == "archived")
-                definition = UMITRigStore.iLoadDefaultRigDefinition();
-                if isfolder(fullfile(UMITRigStore.getRigsRoot(), definition.rigID))
-                    definition.rigID = [definition.rigID '_' ...
-                        strrep(UMITRigStore.iGenerateUUID(), '-', '')];
-                    definition.rigID = definition.rigID( ...
-                        1:min(64, numel(definition.rigID)));
+            imported = acqInfo.ImportedChannels;
+            importedNames = cell(1, numel(imported));
+            for iChannel = 1:numel(imported)
+                sourceName = '';
+                if isfield(imported, 'Color') && ~isempty(imported(iChannel).Color)
+                    sourceName = imported(iChannel).Color;
+                elseif isfield(imported, 'Tag') && ~isempty(imported(iChannel).Tag)
+                    sourceName = imported(iChannel).Tag;
+                elseif isfield(imported, 'DatFile')
+                    [~, sourceName] = fileparts(imported(iChannel).DatFile);
                 end
-                obj = UMITRigStore.create(definition, 'InternalStoreLockHeld', true);
-                UMITRigStore.iWriteDefaultRigUUID(obj.getRigInfo().uuid);
-                wasCreated = true;
-                resolution = 'createdDefault';
-                return
+                try
+                    importedNames{iChannel} = UMITRigStore.normalizeIlluminationName(sourceName);
+                catch
+                    importedNames{iChannel} = '';
+                end
             end
 
-            error(errID, ...
-                ['No Active Rig exists. Restore or activate an Available Rig ' ...
-                'before requesting the default.']);
+            for iRequested = 1:numel(requested)
+                name = requested{iRequested};
+                channelIdx = find(strcmp(importedNames, name));
+                if isempty(channelIdx)
+                    error('Umitoolbox:UMITRigStore:illuminationNotAcquired', ...
+                        'Requested illumination "%s" was not acquired.', name);
+                elseif numel(channelIdx) > 1
+                    error('Umitoolbox:UMITRigStore:ambiguousAcquisitionChannel', ...
+                        'Requested illumination "%s" maps to multiple imported channels.', name);
+                end
+                channel = imported(channelIdx);
+                if ~isfield(channel, 'DatFile') || isempty(channel.DatFile)
+                    error('Umitoolbox:UMITRigStore:invalidAcqInfos', ...
+                        'Acquisition channel "%s" has no DatFile.', name);
+                end
+                if ~isfield(channel, 'CamIdx') || isempty(channel.CamIdx) || ...
+                        ~isnumeric(channel.CamIdx) || ~isscalar(channel.CamIdx) || ...
+                        ~ismember(channel.CamIdx, [1 2])
+                    error('Umitoolbox:UMITRigStore:invalidCameraIndex', ...
+                        'Acquisition channel "%s" has no valid CamIdx.', name);
+                end
+                camIdx = double(channel.CamIdx);
+                cameraRecord = [];
+                if ~isempty(cameras)
+                    cameraRecord = cameras([cameras.index] == camIdx);
+                end
+                if isempty(cameraRecord)
+                    error('Umitoolbox:UMITRigStore:cameraNotConfigured', ...
+                        'The bound rig optics do not define camera %d.', camIdx);
+                end
+                if isempty(cameraRecord.spectrumID) || isempty(cameraRecord.response)
+                    error('Umitoolbox:UMITRigStore:missingCameraSpectrum', ...
+                        'Camera %d has no spectral profile configured.', camIdx);
+                end
+
+                illuminationRecord = [];
+                if ~isempty(rigIlluminations)
+                    illuminationRecord = rigIlluminations(strcmp({rigIlluminations.name}, name));
+                end
+                if isempty(illuminationRecord) || isempty(illuminationRecord.spectrumID) || ...
+                        isempty(illuminationRecord.response)
+                    error('Umitoolbox:UMITRigStore:missingIlluminationSpectrum', ...
+                        'The bound rig optics do not define a spectrum for illumination "%s".', ...
+                        name);
+                end
+                row = find(strcmp(rowNames, name), 1);
+                optical.activeRows(row) = true;
+                optical.illuminationResponse(row, :) = illuminationRecord.response(:)';
+                optical.cameraResponse(row, :) = cameraRecord.response(:)';
+                optical.channels(end+1) = struct( ... %#ok<AGROW>
+                    'name', name, 'datFile', char(string(channel.DatFile)), 'camIdx', camIdx);
+                if ~isempty(dataFolder) && ...
+                        ~isfile(fullfile(char(string(dataFolder)), char(string(channel.DatFile))))
+                    error('Umitoolbox:UMITRigStore:missingChannelFile', ...
+                        'Resolved channel file was not found: %s', ...
+                        fullfile(char(string(dataFolder)), char(string(channel.DatFile))));
+                end
+            end
+        end
+
+        function lockInfo = getStoreLockInfo()
+            %GETSTORELOCKINFO Describe the store-level lock, if any.
+            %
+            %   lockInfo = UMITRigStore.getStoreLockInfo()
+            %
+            %   Read-only. Returns a struct with fields exists, operation,
+            %   createdOn and age (duration). When lockInfo.mat is missing
+            %   or unreadable, the lock folder's timestamp is used.
+
+            lockFolder = UMITRigStore.iStoreLockFolder();
+            lockInfo = struct('exists', isfolder(lockFolder), 'operation', '', ...
+                'createdOn', NaT, 'age', seconds(0));
+            if ~lockInfo.exists
+                return
+            end
+            schema = getUMITRigSchema();
+            try
+                loaded = load(fullfile(lockFolder, schema.store.lockMetadata), 'LockInfo', '-mat');
+                lockInfo.operation = char(string(loaded.LockInfo.operation));
+                lockInfo.createdOn = loaded.LockInfo.createdOn;
+            catch
+                lockInfo.operation = 'unknown';
+            end
+            if isnat(lockInfo.createdOn)
+                listing = dir(lockFolder);
+                lockInfo.createdOn = datetime(listing(1).datenum, 'ConvertFrom', 'datenum');
+            end
+            lockInfo.age = datetime('now') - lockInfo.createdOn;
+        end
+
+        function wasCleared = clearStaleStoreLock(varargin)
+            %CLEARSTALESTORELOCK Remove a leftover store-level lock.
+            %
+            %   wasCleared = UMITRigStore.clearStaleStoreLock()
+            %   wasCleared = UMITRigStore.clearStaleStoreLock('MinimumAge', minutes(30))
+            %
+            %   Removes <rigsRoot>\.umit\store.lock when it is at least
+            %   MinimumAge old (default 10 minutes); a younger lock may
+            %   belong to a running operation and throws
+            %   Umitoolbox:UMITRigStore:storeLockNotStale. Returns false when
+            %   no lock exists.
+
+            p = inputParser;
+            p.FunctionName = 'clearStaleStoreLock';
+            addParameter(p, 'MinimumAge', minutes(10), @(x) isduration(x) && isscalar(x));
+            parse(p, varargin{:});
+
+            wasCleared = false;
+            lockInfo = UMITRigStore.getStoreLockInfo();
+            if ~lockInfo.exists
+                return
+            end
+            if lockInfo.age < p.Results.MinimumAge
+                error('Umitoolbox:UMITRigStore:storeLockNotStale', ...
+                    ['The Rig-store lock ("%s") is only %s old and may belong to a ' ...
+                    'running operation. Retry later, or pass a smaller MinimumAge if ' ...
+                    'you are certain no other UMIT process is running.'], ...
+                    lockInfo.operation, char(lockInfo.age, 'hh:mm:ss'));
+            end
+            UMITRigStore.iRemoveFolderIfPresent(UMITRigStore.iStoreLockFolder());
+            wasCleared = true;
+        end
+
+        function obj = importRig(filePath, varargin)
+            %IMPORTRIG Install a rig from a self-contained .umitrig export.
+            %
+            %   store = UMITRigStore.importRig(filePath)
+            %   store = UMITRigStore.importRig(filePath, 'RigID', newRigID)
+            %   store = UMITRigStore.importRig(filePath, 'NewIdentity', true)
+            %
+            %   The export (see exportRig) carries the rig record, the
+            %   content of every referenced spectrum and every managed
+            %   coregistration resource. The rig keeps its UUID, timestamps
+            %   and resource UUIDs/checksums unless NewIdentity is true (a
+            %   fresh rig UUID; for a second copy on the same machine).
+            %   Spectra missing from the library are added to the user
+            %   library; a spectrum ID that exists with different content
+            %   is an error (spectrum IDs are immutable). The imported rig
+            %   becomes Active only when no Active rig exists, otherwise
+            %   Available. Nothing is installed when any check fails.
+
+            errID = 'Umitoolbox:UMITRigStore:importRigFailed';
+            p = inputParser;
+            p.FunctionName = 'UMITRigStore.importRig';
+            addRequired(p, 'filePath', @(x) ischar(x) || (isstring(x) && isscalar(x)));
+            addParameter(p, 'RigID', '', @(x) ischar(x) || (isstring(x) && isscalar(x)));
+            addParameter(p, 'NewIdentity', false, @(x) islogical(x) && isscalar(x));
+            parse(p, filePath, varargin{:});
+            filePath = UMITRigStore.iAbsolutePath(char(string(p.Results.filePath)));
+            schema = getUMITRigSchema();
+
+            exported = UMITRigStore.iLoadRigExport(filePath);
+            RigInfo = exported.rig;
+
+            rigID = char(string(p.Results.RigID));
+            if isempty(rigID)
+                rigID = RigInfo.rigID;
+            end
+            rigID = UMITRigStore.iNormalizeManagedID(schema, rigID, 'rigID');
+            if p.Results.NewIdentity
+                RigInfo.uuid = UMITRigStore.iGenerateUUID();
+            elseif UMITRigStore.rigExists(RigInfo.uuid)
+                error('Umitoolbox:UMITRigStore:importRigExists', ...
+                    ['Rig "%s" (UUID %s) is already in this rig library. Use the existing ' ...
+                    'rig, or import a separate copy with ''NewIdentity'', true.'], ...
+                    RigInfo.rigID, RigInfo.uuid);
+            end
+
+            % Preflight every spectrum before anything is written.
+            toWrite = false(1, numel(exported.spectra));
+            for iSpectrum = 1:numel(exported.spectra)
+                spectrum = exported.spectra(iSpectrum);
+                try
+                    existing = UMITRigStore.getSpectrum(spectrum.category, spectrum.id);
+                catch ME
+                    if ~strcmp(ME.identifier, 'Umitoolbox:UMITRigStore:spectrumNotFound')
+                        rethrow(ME)
+                    end
+                    toWrite(iSpectrum) = true;
+                    continue
+                end
+                if max(abs(existing.response(:) - spectrum.response(:))) > 1e-9
+                    error('Umitoolbox:UMITRigStore:importSpectrumConflict', ...
+                        ['Spectrum "%s" (%s) already exists in this library with different ' ...
+                        'content. Spectrum IDs are immutable; import cannot replace it.'], ...
+                        spectrum.id, spectrum.category);
+                end
+            end
+
+            storeLock = UMITRigStore.iAcquireStoreLock('importRig'); %#ok<NASGU>
+            rigsRoot = UMITRigStore.getRigsRoot();
+            existingEntries = dir(rigsRoot);
+            existingEntries = existingEntries([existingEntries.isdir]);
+            if any(strcmpi({existingEntries.name}, rigID))
+                error('Umitoolbox:UMITRigStore:importRigIDExists', ...
+                    'Rig ID "%s" already exists in this library. Pass ''RigID'' to import under another ID.', ...
+                    rigID);
+            end
+            lifecycle = UMITRigStore.validateLifecycle();
+            if ~lifecycle.isValid && lifecycle.activeCount ~= 0
+                error(errID, 'Rig lifecycle is invalid: %s', ...
+                    UMITRigStore.iJoinIssueMessages(lifecycle.errors));
+            end
+
+            transactionPath = tempname(rigsRoot);
+            mkdir(transactionPath);
+            cleanupStage = onCleanup(@() UMITRigStore.iRemoveFolderIfPresent(transactionPath));
+            stagedRigPath = fullfile(transactionPath, rigID);
+            UMITRigStore.iCreateRigFolders(schema, stagedRigPath);
+            stagedStore = UMITRigStore(stagedRigPath, schema, true);
+            for iResource = 1:numel(exported.resources)
+                record = exported.resources(iResource).record;
+                destination = stagedStore.iResolveRelativePath(record.relativePath);
+                UMITRigStore.iEnsureParentFolder(destination, errID);
+                fid = fopen(destination, 'w');
+                if fid == -1
+                    error(errID, 'Could not stage resource file: %s', destination);
+                end
+                fwrite(fid, exported.resources(iResource).bytes, 'uint8');
+                fclose(fid);
+                if ~strcmpi(computeFileChecksum(destination), record.checksum)
+                    error(errID, 'Resource %s does not match its exported checksum.', record.uuid);
+                end
+            end
+
+            RigInfo.schemaVersion = schema.version;
+            RigInfo.rigID = rigID;
+            if lifecycle.activeCount == 0
+                RigInfo.status = 'active';
+            else
+                RigInfo.status = 'available';
+            end
+            RigInfo.archivedOn = NaT;
+            saveMatAtomic(fullfile(stagedRigPath, schema.files.rigMetadata), ...
+                schema.metadataVariables.rig, RigInfo);
+
+            report = stagedStore.validate('Mode', 'quick');
+            if ~report.isValid
+                error(errID, 'Imported rig is invalid: %s', ...
+                    UMITRigStore.iJoinIssueMessages(report.errors));
+            end
+
+            for iSpectrum = find(toWrite)
+                spectrum = exported.spectra(iSpectrum);
+                folder = UMITRigStore.iUserSpectrumFolder(spectrum.category);
+                if ~isfolder(folder)
+                    mkdir(folder);
+                end
+                UMITRigStore.iWriteSpectrumFile(fullfile(folder, [spectrum.id '.txt']), ...
+                    schema.spectrum.wavelengthNm(:), spectrum.response(:), spectrum.metadata);
+            end
+
+            rigPath = fullfile(rigsRoot, rigID);
+            [ok, message] = movefile(stagedRigPath, rigPath, 'f');
+            if ~ok
+                error(errID, 'Could not install imported rig folder: %s', message);
+            end
+            clear cleanupStage
+
+            obj = UMITRigStore(rigPath, schema, false);
+            report = obj.validate('Mode', 'full');
+            if ~report.isValid
+                UMITRigStore.iRemoveFolderIfPresent(rigPath);
+                error(errID, 'Imported rig failed full validation and was removed: %s', ...
+                    UMITRigStore.iJoinIssueMessages(report.errors));
+            end
+            if strcmp(RigInfo.status, 'active')
+                UMITRigStore.iWriteDefaultRigUUID(RigInfo.uuid);
+            end
+            obj.iAppendLog('importRig', RigInfo.uuid, 'completed');
         end
     end
 
@@ -1230,129 +1382,23 @@ classdef UMITRigStore < handle
             %RESOLVEOPTICALCONFIGURATION Preflight acquisition and Rig optics.
             %
             %   Resolves acquisition-specific channel files and CamIdx values
-            %   against this Rig's physical illumination/camera spectra and
-            %   one shared filter-set definition. Archived Rigs remain valid
-            %   for analysis of historical data.
+            %   against this Rig's CURRENT library optics and one library
+            %   filter set. Analysis code must not use this: it resolves
+            %   optics from the folder rig ledger instead (see
+            %   opticalConfigurationFromSnapshots and UMITRigLedger). This
+            %   method snapshots the library rig and delegates, so both paths
+            %   share one implementation.
 
             if nargin < 5
                 dataFolder = '';
             end
-            if ~isstruct(acqInfo) || ~isscalar(acqInfo) || ...
-                    ~isfield(acqInfo, 'ImportedChannels') || ...
-                    ~isstruct(acqInfo.ImportedChannels)
-                error('Umitoolbox:UMITRigStore:invalidAcqInfos', ...
-                    'AcqInfoStream must contain ImportedChannels metadata.');
-            end
-            if ischar(requestedIlluminations) || isstring(requestedIlluminations)
-                requestedIlluminations = cellstr(requestedIlluminations);
-            end
-            if ~iscell(requestedIlluminations) || isempty(requestedIlluminations)
-                error('Umitoolbox:UMITRigStore:invalidIlluminationName', ...
-                    'Requested illuminations must be a nonempty text list.');
-            end
-            requested = cellfun(@UMITRigStore.normalizeIlluminationName, ...
-                requestedIlluminations, 'UniformOutput', false);
-            if numel(unique(requested)) < 2
-                error('Umitoolbox:UMITRigStore:insufficientIlluminations', ...
-                    'At least two different illuminations are required.');
-            end
-
             RigInfo = obj.iLoadRigInfo();
-            cameras = UMITRigStore.iValidateCameraRecords(obj.Schema, RigInfo.cameras, true);
-            rigIlluminations = UMITRigStore.iValidateIlluminationRecords( ...
-                obj.Schema, RigInfo.illuminations, true);
-            filterSet = UMITRigStore.getFilterSet(filterSetID);
-            excitation = UMITRigStore.iResolveFilterSpectrum(filterSet.excitationSpectrumID);
-            emission = UMITRigStore.iResolveFilterSpectrum(filterSet.emissionSpectrumID);
-
-            rowNames = obj.Schema.canonicalIlluminations;
-            nRows = numel(rowNames);
-            nSamples = numel(obj.Schema.spectrum.wavelengthNm);
-            optical = struct();
-            optical.wavelengthNm = obj.Schema.spectrum.wavelengthNm;
-            optical.rowNames = rowNames;
-            optical.activeRows = false(nRows, 1);
-            optical.illuminationResponse = nan(nRows, nSamples);
-            optical.cameraResponse = nan(nRows, nSamples);
-            optical.excitationResponse = excitation(:)';
-            optical.emissionResponse = emission(:)';
-            optical.filterSet = filterSet;
+            optical = UMITRigStore.opticalConfigurationFromSnapshots( ...
+                UMITRigLedger.buildOpticsSnapshot(RigInfo), ...
+                UMITRigLedger.buildFilterSetSnapshot(filterSetID), ...
+                acqInfo, requestedIlluminations, dataFolder);
             optical.rigUUID = RigInfo.uuid;
             optical.rigID = RigInfo.rigID;
-            optical.channels = struct('name', {}, 'datFile', {}, 'camIdx', {});
-
-            imported = acqInfo.ImportedChannels;
-            importedNames = cell(1, numel(imported));
-            for iChannel = 1:numel(imported)
-                sourceName = '';
-                if isfield(imported, 'Color') && ~isempty(imported(iChannel).Color)
-                    sourceName = imported(iChannel).Color;
-                elseif isfield(imported, 'Tag') && ~isempty(imported(iChannel).Tag)
-                    sourceName = imported(iChannel).Tag;
-                elseif isfield(imported, 'DatFile')
-                    [~, sourceName] = fileparts(imported(iChannel).DatFile);
-                end
-                try
-                    importedNames{iChannel} = UMITRigStore.normalizeIlluminationName(sourceName);
-                catch
-                    importedNames{iChannel} = '';
-                end
-            end
-
-            for iRequested = 1:numel(requested)
-                name = requested{iRequested};
-                channelIdx = find(strcmp(importedNames, name));
-                if isempty(channelIdx)
-                    error('Umitoolbox:UMITRigStore:illuminationNotAcquired', ...
-                        'Requested illumination "%s" was not acquired.', name);
-                elseif numel(channelIdx) > 1
-                    error('Umitoolbox:UMITRigStore:ambiguousAcquisitionChannel', ...
-                        'Requested illumination "%s" maps to multiple imported channels.', name);
-                end
-                channel = imported(channelIdx);
-                if ~isfield(channel, 'DatFile') || isempty(channel.DatFile)
-                    error('Umitoolbox:UMITRigStore:invalidAcqInfos', ...
-                        'Acquisition channel "%s" has no DatFile.', name);
-                end
-                if ~isfield(channel, 'CamIdx') || isempty(channel.CamIdx) || ...
-                        ~isnumeric(channel.CamIdx) || ~isscalar(channel.CamIdx) || ...
-                        ~ismember(channel.CamIdx, [1 2])
-                    error('Umitoolbox:UMITRigStore:invalidCameraIndex', ...
-                        'Acquisition channel "%s" has no valid CamIdx.', name);
-                end
-                camIdx = double(channel.CamIdx);
-                cameraRecord = cameras([cameras.index] == camIdx);
-                if isempty(cameraRecord)
-                    error('Umitoolbox:UMITRigStore:cameraNotConfigured', ...
-                        'Rig "%s" does not define camera %d.', RigInfo.rigID, camIdx);
-                end
-                if isempty(cameraRecord.spectrumID)
-                    error('Umitoolbox:UMITRigStore:missingCameraSpectrum', ...
-                        'Camera %d has no spectral profile configured.', camIdx);
-                end
-                cameraSpectrum = UMITRigStore.getSpectrum('camera', cameraRecord.spectrumID);
-
-                illuminationRecord = rigIlluminations(strcmp({rigIlluminations.name}, name));
-                if isempty(illuminationRecord) || isempty(illuminationRecord.spectrumID)
-                    error('Umitoolbox:UMITRigStore:missingIlluminationSpectrum', ...
-                        'Rig "%s" does not define a spectrum for illumination "%s".', ...
-                        RigInfo.rigID, name);
-                end
-                illuminationSpectrum = UMITRigStore.getSpectrum( ...
-                    'illumination', illuminationRecord.spectrumID);
-                row = find(strcmp(rowNames, name), 1);
-                optical.activeRows(row) = true;
-                optical.illuminationResponse(row, :) = illuminationSpectrum.response(:)';
-                optical.cameraResponse(row, :) = cameraSpectrum.response(:)';
-                optical.channels(end+1) = struct( ... %#ok<AGROW>
-                    'name', name, 'datFile', char(string(channel.DatFile)), 'camIdx', camIdx);
-                if ~isempty(dataFolder) && ...
-                        ~isfile(fullfile(char(string(dataFolder)), char(string(channel.DatFile))))
-                    error('Umitoolbox:UMITRigStore:missingChannelFile', ...
-                        'Resolved channel file was not found: %s', ...
-                        fullfile(char(string(dataFolder)), char(string(channel.DatFile))));
-                end
-            end
         end
 
         function updateRigMetadata(obj, updates)
@@ -1532,8 +1578,8 @@ classdef UMITRigStore < handle
             %   Nothing is deleted or moved. Sessions that reference this
             %   rig's rigID/rigUUID (e.g. DataParams.cameraCoregistration.
             %   rigID) keep resolving via openByRigID/open/rigExists.
-            %   Archived rigs are excluded from getOrCreateDefaultRig's
-            %   candidate pool, so they stop being selected for new work.
+            %   Archived rigs cannot be Active or be newly bound to a folder,
+            %   so they stop being selected for new work.
             %   An Active Rig requires replacementRigUUID. The replacement
             %   becomes Active as part of the same lifecycle transition.
 
@@ -2191,6 +2237,83 @@ classdef UMITRigStore < handle
 
             report.isValid = isempty(report.errors);
         end
+
+        function filePath = exportRig(obj, filePath)
+            %EXPORTRIG Write this rig to a self-contained .umitrig file.
+            %
+            %   filePath = store.exportRig(filePath)
+            %
+            %   The file (MAT format, variable UMITRigExport) holds the rig
+            %   record, the content and metadata of every spectrum its
+            %   cameras and illuminations reference, and the bytes of every
+            %   managed coregistration resource. It can be installed on
+            %   another machine with UMITRigStore.importRig. Filter sets are
+            %   not part of a rig and are not exported. The rig must pass
+            %   full validation. The '.umitrig' extension is added when
+            %   missing.
+
+            errID = 'Umitoolbox:UMITRigStore:exportRigFailed';
+            if ~(ischar(filePath) || (isstring(filePath) && isscalar(filePath)))
+                error(errID, '"filePath" must be a character vector or string scalar.');
+            end
+            filePath = UMITRigStore.iAbsolutePath(char(string(filePath)));
+            [folder, ~, extension] = fileparts(filePath);
+            if ~strcmpi(extension, '.umitrig')
+                filePath = [filePath '.umitrig'];
+            end
+            if ~isfolder(folder)
+                error(errID, 'Destination folder does not exist: %s', folder);
+            end
+
+            report = obj.validate('Mode', 'full');
+            if ~report.isValid
+                error(errID, 'Rig validation failed: %s', ...
+                    UMITRigStore.iJoinIssueMessages(report.errors));
+            end
+            RigInfo = obj.iLoadRigInfo();
+
+            spectra = struct('category', {}, 'id', {}, 'metadata', {}, 'response', {});
+            references = [ ...
+                cellfun(@(id) {'camera', id}, {RigInfo.cameras.spectrumID}, 'UniformOutput', false), ...
+                cellfun(@(id) {'illumination', id}, {RigInfo.illuminations.spectrumID}, 'UniformOutput', false)];
+            for iReference = 1:numel(references)
+                [category, spectrumID] = references{iReference}{:};
+                if isempty(spectrumID) || any(strcmp({spectra.category}, category) & ...
+                        strcmp({spectra.id}, spectrumID))
+                    continue
+                end
+                spectrum = UMITRigStore.getSpectrum(category, spectrumID);
+                entry = struct('category', category, 'id', spectrum.id, ...
+                    'metadata', spectrum.metadata, 'response', spectrum.response(:));
+                spectra(end+1) = entry; %#ok<AGROW>
+            end
+
+            resources = struct('record', {}, 'bytes', {});
+            for iRecord = 1:numel(RigInfo.resourceRegistry)
+                record = RigInfo.resourceRegistry(iRecord);
+                fid = fopen(obj.iResolveRelativePath(record.relativePath), 'r');
+                bytes = fread(fid, Inf, '*uint8');
+                fclose(fid);
+                resources(end+1) = struct('record', record, 'bytes', bytes); %#ok<AGROW>
+            end
+
+            UMITRigExport = struct( ...
+                'format', 'umit-rig-export', ...
+                'schemaVersion', 1, ...
+                'exportedOn', datetime('now'), ...
+                'rig', RigInfo, ...
+                'spectra', spectra, ...
+                'resources', resources);
+            stagedPath = [tempname(folder) '.mat'];
+            cleanupStage = onCleanup(@() UMITRigStore.iDeleteFileIfPresent(stagedPath));
+            save(stagedPath, 'UMITRigExport', '-mat', '-v7');
+            UMITRigStore.iLoadRigExport(stagedPath);
+            [ok, message] = movefile(stagedPath, filePath, 'f');
+            if ~ok
+                error(errID, 'Could not install export file "%s": %s', filePath, message);
+            end
+            clear cleanupStage
+        end
     end
 
     methods (Access = private)
@@ -2755,71 +2878,6 @@ classdef UMITRigStore < handle
             end
         end
 
-        function [loaded, metadataName] = iLoadAcqInfoStream(dataFolder, errID)
-            %ILOADACQINFOSTREAM Load and validate one dataset's AcqInfos.mat.
-            %
-            %   Shared by ensureDatasetRigAssociation, assignDatasetRig, and
-            %   readDatasetRigAssociation so the acquisition-metadata
-            %   load/parse/validate logic exists in exactly one place.
-
-            acqPath = fullfile(dataFolder, 'AcqInfos.mat');
-            if ~isfolder(dataFolder) || ~isfile(acqPath)
-                error(errID, 'AcqInfos.mat is required for Rig association: %s', dataFolder);
-            end
-
-            loaded = load(acqPath);
-            names = fieldnames(loaded);
-            if isempty(names)
-                error(errID, 'AcqInfos.mat contains no acquisition metadata: %s', acqPath);
-            end
-            metadataName = 'AcqInfoStream';
-            if isfield(loaded, metadataName)
-                metadata = loaded.(metadataName);
-            elseif isfield(loaded, 'AcqInfos')
-                metadataName = 'AcqInfos';
-                metadata = loaded.(metadataName);
-            else
-                metadataName = names{1};
-                metadata = loaded.(metadataName);
-            end
-            if ~isstruct(metadata) || ~isscalar(metadata)
-                error(errID, 'AcqInfos.mat does not contain scalar acquisition metadata.');
-            end
-        end
-
-        function iSaveLoadedMatAtomic(filePath, loaded)
-            %ISAVELOADEDMATATOMIC Preserve all legacy MAT variables while
-            % replacing one updated acquisition metadata payload.
-
-            folder = fileparts(filePath);
-            stagedPath = [tempname(folder) '.mat'];
-            cleanupStage = onCleanup(@() UMITRigStore.iDeleteFileIfPresent(stagedPath));
-            save(stagedPath, '-mat', '-struct', 'loaded');
-            verify = load(stagedPath, '-mat'); %#ok<NASGU>
-            backupPath = [tempname(folder) '.bak.mat'];
-            backupCreated = false;
-            if isfile(filePath)
-                [ok, message] = movefile(filePath, backupPath, 'f');
-                if ~ok
-                    error('Umitoolbox:UMITRigStore:datasetRigMigrationFailed', ...
-                        'Could not back up AcqInfos.mat: %s', message);
-                end
-                backupCreated = true;
-            end
-            [ok, message] = movefile(stagedPath, filePath, 'f');
-            if ~ok
-                if backupCreated && isfile(backupPath)
-                    movefile(backupPath, filePath, 'f');
-                end
-                error('Umitoolbox:UMITRigStore:datasetRigMigrationFailed', ...
-                    'Could not install migrated AcqInfos.mat: %s', message);
-            end
-            if backupCreated && isfile(backupPath)
-                delete(backupPath);
-            end
-            clear cleanupStage
-        end
-
         function iValidateRigIdentity(schema, RigInfo, rigRoot)
             %IVALIDATERIGIDENTITY Validate immutable identity and folder binding.
 
@@ -2923,7 +2981,15 @@ classdef UMITRigStore < handle
                 RigInfo.metadata = struct();
             end
             if ~isfield(RigInfo, 'status') || isempty(RigInfo.status)
-                RigInfo.status = 'active';
+                % Pre-v2 records have no lifecycle status. Only the legacy
+                % default marker identified the rig in use; every other
+                % legacy rig loads as Available so that loading never
+                % creates several Active rigs.
+                if isfield(RigInfo, 'isDefault') && isequal(RigInfo.isDefault, true)
+                    RigInfo.status = 'active';
+                else
+                    RigInfo.status = 'available';
+                end
             end
             if ~isfield(RigInfo, 'archivedOn')
                 RigInfo.archivedOn = NaT;
@@ -3217,6 +3283,47 @@ classdef UMITRigStore < handle
             response = spectrum.response(:)';
         end
 
+        function exported = iLoadRigExport(filePath)
+            %ILOADRIGEXPORT Load and structurally validate a .umitrig file.
+
+            errID = 'Umitoolbox:UMITRigStore:invalidRigExport';
+            if ~isfile(filePath)
+                error(errID, 'Rig export file does not exist: %s', filePath);
+            end
+            try
+                loaded = load(filePath, 'UMITRigExport', '-mat');
+            catch ME
+                error(errID, 'Rig export file cannot be read (%s): %s', filePath, ME.message);
+            end
+            if ~isfield(loaded, 'UMITRigExport')
+                error(errID, 'File is not a UMIT rig export: %s', filePath);
+            end
+            exported = loaded.UMITRigExport;
+            required = {'format', 'schemaVersion', 'rig', 'spectra', 'resources'};
+            if ~isstruct(exported) || ~isscalar(exported) || ...
+                    ~all(isfield(exported, required)) || ...
+                    ~strcmp(exported.format, 'umit-rig-export')
+                error(errID, 'File is not a UMIT rig export: %s', filePath);
+            end
+            if exported.schemaVersion ~= 1
+                error(errID, 'Unsupported rig export schemaVersion %g.', exported.schemaVersion);
+            end
+            RigInfo = exported.rig;
+            if ~isstruct(RigInfo) || ~isscalar(RigInfo) || ...
+                    ~all(isfield(RigInfo, {'uuid', 'rigID', 'resourceRegistry'}))
+                error(errID, 'Rig export has no valid rig record: %s', filePath);
+            end
+            exported.rig = UMITRigStore.iUpgradeRigInfo(RigInfo);
+            nSamples = numel(getUMITRigSchema().spectrum.wavelengthNm);
+            for iSpectrum = 1:numel(exported.spectra)
+                response = exported.spectra(iSpectrum).response;
+                if numel(response) ~= nSamples || any(~isfinite(response))
+                    error(errID, 'Exported spectrum "%s" is malformed.', ...
+                        exported.spectra(iSpectrum).id);
+                end
+            end
+        end
+
         function definition = iLoadDefaultRigDefinition()
             definitionFile = fullfile(fileparts(mfilename('fullpath')), ...
                 'resources', 'defaultRigs', 'OiS200.json');
@@ -3312,56 +3419,42 @@ classdef UMITRigStore < handle
                 schema.store.defaultVariable, DefaultRig);
         end
 
-        function rigUUID = iFindLegacyDefaultUUID()
-            schema = getUMITRigSchema();
-            entries = dir(UMITRigStore.getRigsRoot());
-            entries = entries([entries.isdir] & ~ismember({entries.name}, {'.', '..', '.umit', 'library'}));
-            matches = {};
-            for iEntry = 1:numel(entries)
-                rigFile = fullfile(entries(iEntry).folder, entries(iEntry).name, ...
-                    schema.files.rigMetadata);
-                if ~isfile(rigFile)
-                    continue
-                end
-                try
-                    loaded = load(rigFile, schema.metadataVariables.rig, '-mat');
-                    info = loaded.(schema.metadataVariables.rig);
-                    isActive = ~isfield(info, 'status') || strcmp(info.status, 'active');
-                    if isfield(info, 'isDefault') && isequal(info.isDefault, true) && isActive
-                        matches{end+1} = info.uuid; %#ok<AGROW>
-                    end
-                catch
-                end
-            end
-            if numel(matches) > 1
-                error('Umitoolbox:UMITRigStore:multipleLegacyDefaults', ...
-                    'Multiple legacy Rigs are marked as default. Select one explicitly.');
-            elseif isempty(matches)
-                rigUUID = '';
-            else
-                rigUUID = matches{1};
-            end
-        end
-
         function cleanupObj = iAcquireStoreLock(operation)
             schema = getUMITRigSchema();
             internalFolder = fullfile(UMITRigStore.getRigsRoot(), schema.store.internalFolder);
             if ~isfolder(internalFolder)
                 mkdir(internalFolder);
             end
-            lockFolder = fullfile(internalFolder, schema.store.lockFolder);
-            if isfolder(lockFolder)
+            lockFolder = UMITRigStore.iStoreLockFolder();
+            % java.io.File.mkdir is atomic: exactly one caller creates it.
+            lockDirectory = java.io.File(lockFolder);
+            if ~lockDirectory.mkdir()
+                if ~isfolder(lockFolder)
+                    error('Umitoolbox:UMITRigStore:storeLockFailed', ...
+                        'Could not acquire Rig-store lock: %s', lockFolder);
+                end
+                lockInfo = UMITRigStore.getStoreLockInfo();
                 error('Umitoolbox:UMITRigStore:storeLocked', ...
-                    'The Rig store is locked by another operation.');
+                    ['The Rig store is locked by another operation ("%s", lock age %s). ' ...
+                    'If no other UMIT process is running, clear it with ' ...
+                    'UMITRigStore.clearStaleStoreLock().'], ...
+                    lockInfo.operation, char(lockInfo.age, 'hh:mm:ss'));
             end
-            [ok, message] = mkdir(lockFolder);
-            if ~ok
-                error('Umitoolbox:UMITRigStore:storeLockFailed', ...
-                    'Could not acquire Rig-store lock: %s', message);
+            try
+                LockInfo = struct('operation', operation, ...
+                    'createdOn', datetime('now'), 'processID', feature('getpid'));
+                save(fullfile(lockFolder, schema.store.lockMetadata), 'LockInfo', '-mat');
+            catch ME
+                UMITRigStore.iRemoveFolderIfPresent(lockFolder);
+                rethrow(ME)
             end
-            LockInfo = struct('operation', operation, 'createdOn', datetime('now'));
-            save(fullfile(lockFolder, schema.store.lockMetadata), 'LockInfo', '-mat');
             cleanupObj = onCleanup(@() UMITRigStore.iRemoveFolderIfPresent(lockFolder));
+        end
+
+        function lockFolder = iStoreLockFolder()
+            schema = getUMITRigSchema();
+            lockFolder = fullfile(UMITRigStore.getRigsRoot(), ...
+                schema.store.internalFolder, schema.store.lockFolder);
         end
 
         function iWriteJSON(filePath, value)
@@ -3506,21 +3599,6 @@ classdef UMITRigStore < handle
             mkdir(fullfile(coregBase, schema.folders.active));
             mkdir(fullfile(coregBase, schema.folders.archive));
 
-        end
-
-        function rigID = iMakeDefaultRigID()
-            %IMAKEDEFAULTRIGID Build a rig ID for the auto-created default rig.
-
-            hostName = UMITRigStore.iGetEnvironmentValue({'COMPUTERNAME', 'HOSTNAME'}, '');
-            safeName = matlab.lang.makeValidName(hostName, 'ReplacementStyle', 'underscore');
-            safeName = regexprep(safeName, '_+', '_');
-            safeName = regexprep(safeName, '^_+|_+$', '');
-
-            if isempty(safeName)
-                rigID = 'DefaultRig';
-            else
-                rigID = ['Rig_', safeName];
-            end
         end
 
         function value = iGetTextField(info, fieldName, defaultValue, allowEmpty, errID)

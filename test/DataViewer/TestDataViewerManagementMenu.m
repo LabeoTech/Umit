@@ -22,8 +22,10 @@ classdef TestDataViewerManagementMenu < matlab.unittest.TestCase
                 app.ProjectMenu);
 
             testCase.verifyEqual(app.RigMenu.Parent, app.ManagementMenu);
-            testCase.verifyEqual(app.AssignRigMenu.Parent, app.RigMenu);
-            testCase.verifyEqual(app.AssignRigMenu.Text, 'Assign Rig');
+            testCase.verifyEqual(app.FolderRigMenu.Parent, app.RigMenu);
+            testCase.verifyEqual(app.FolderRigMenu.Text, 'Folder Rig');
+            % The Folder Rig actions are built only for loaded data.
+            testCase.verifyEmpty(app.FolderRigMenu.Children);
             testCase.verifyEqual(app.RigManagerMenu.Parent, app.RigMenu);
 
             testCase.verifyEqual(app.PreferencesMenu.Parent, app.FileMenu);

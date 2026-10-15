@@ -10,7 +10,6 @@ classdef TestRunImagesClassification < matlab.unittest.TestCase
         FixtureFolder
         TempSaveFolder
         TempRawFolder
-        RigFixture
     end
 
     methods (TestMethodSetup)
@@ -28,17 +27,14 @@ classdef TestRunImagesClassification < matlab.unittest.TestCase
             testCase.TempSaveFolder = fullfile(tempdir, ['TestRunImagesClassification_' char(java.util.UUID.randomUUID)]);
             testCase.TempRawFolder = fullfile(tempdir, ['TestRunImagesClassificationRaw_' char(java.util.UUID.randomUUID)]);
             mkdir(testCase.TempSaveFolder);
-
-            % DFR-20260819-010: ImagesClassification resolves its Rig via
-            % UMITRigStore.getOrCreateDefaultRig(), which requires exactly one
-            % Active Rig. Guarantee that regardless of ambient state.
-            testCase.RigFixture = setupIsolatedActiveRigFixture();
+            % The fixture is single-camera data: ImagesClassification
+            % resolves no rig for it, so no rig-library fixture is needed
+            % (rig-ledger redesign, Phase 3).
         end
     end
 
     methods (TestMethodTeardown)
         function teardown(testCase)
-            teardownIsolatedActiveRigFixture(testCase.RigFixture);
             if isfolder(testCase.TempSaveFolder)
                 rmdir(testCase.TempSaveFolder, 's');
             end
@@ -93,10 +89,13 @@ classdef TestRunImagesClassification < matlab.unittest.TestCase
 
             testCase.verifyTrue(iscell(outFile));
             testCase.verifyTrue(isfile(fullfile(testCase.TempSaveFolder, 'AcqInfos.mat')));
-            testCase.verifyFalse(isempty(rigResolution.rigUUID));
+            testCase.verifyEqual(rigResolution.ledgerState, 'NoRig');
+            testCase.verifyEmpty(rigResolution.rigUUID);
+            testCase.verifyEqual(rigResolution.cameraCoregistration.skipReason, ...
+                'singleCameraAcquisition');
             info = load(fullfile(testCase.TempSaveFolder, 'AcqInfos.mat'), 'AcqInfoStream');
-            testCase.verifyEqual(info.AcqInfoStream.rigUUID, rigResolution.rigUUID);
-            testCase.verifyEqual(info.AcqInfoStream.rigID, rigResolution.rigID);
+            testCase.verifyFalse(any(isfield(info.AcqInfoStream, {'rigUUID', 'rigID'})));
+            testCase.verifyEqual(UMITRigLedger.read(testCase.TempSaveFolder).state, 'NoRig');
             testCase.verifyTrue(all(endsWith(outFile, '.dat')), ...
                 'ImagesClassification should return imported .dat outputs only.');
             for iFile = 1:numel(outFile)
@@ -252,23 +251,65 @@ classdef TestRunImagesClassification < matlab.unittest.TestCase
             testCase.verifyFalse(isfield(S.AcqInfoStream, 'rigUUID'));
             testCase.verifyFalse(isfield(S.AcqInfoStream, 'rigID'));
             testCase.verifyFalse(isfile(fullfile(testCase.TempSaveFolder, 'DataParams.mat')));
+            testCase.verifyFalse(UMITRigLedger.exists(testCase.TempSaveFolder));
         end
 
-        function testExplicitDefaultRigRaisesNoAutoResolveWarning(testCase)
-            %TESTEXPLICITDEFAULTRIGRAISESNOAUTORESOLVEWARNING Selected default is silent.
+        function testSingleCameraImportLeavesRigLibraryUntouched(testCase)
+            %TESTSINGLECAMERAIMPORTLEAVESRIGLIBRARYUNTOUCHED No rig is
+            %resolved, created or activated for single-camera data.
 
-            warnID = 'Umitoolbox:ImagesClassification:DefaultRigAutoResolved';
-            oldState = warning('query', warnID);
-            warning('error', warnID);
-            restoreWarning = onCleanup(@() warning(oldState));
-
-            [~, rigResolution] = ImagesClassification( ...
-                testCase.FixtureFolder, ...
-                testCase.TempSaveFolder, ...
+            rigsBefore = UMITRigStore.listRigs();
+            ImagesClassification(testCase.FixtureFolder, testCase.TempSaveFolder, ...
                 'backupOpts', 'ERASE');
-            clear restoreWarning
+            rigsAfter = UMITRigStore.listRigs();
 
-            testCase.verifyEqual(rigResolution.resolution, 'existingDefault');
+            testCase.verifyEqual(rigsAfter(:, {'RigUUID', 'Status', 'IsDefault'}), ...
+                rigsBefore(:, {'RigUUID', 'Status', 'IsDefault'}));
+        end
+
+        function testSingleCameraReimportKeepsBinding(testCase)
+            %TESTSINGLECAMERAREIMPORTKEEPSBINDING A re-import into a bound
+            %folder writes only a reimport event (decision Q3).
+
+            binding = testCase.makeLedgerBinding();
+            UMITRigLedger.bind(testCase.TempSaveFolder, binding, 'Origin', 'test');
+            UMITRigLedger.commit(testCase.TempSaveFolder, 'optics', ...
+                binding.optics.hash, 'Origin', 'test');
+
+            [~, rigResolution] = ImagesClassification(testCase.FixtureFolder, ...
+                testCase.TempSaveFolder, 'backupOpts', 'ERASE');
+
+            ledger = UMITRigLedger.read(testCase.TempSaveFolder);
+            types = cellfun(@(e) e.type, ledger.events, 'UniformOutput', false);
+            testCase.verifyEqual(types, {'bind', 'commit', 'reimport'});
+            testCase.verifyEqual(ledger.state, 'BoundCommitted');
+            testCase.verifyEqual(ledger.binding.opticsHash, binding.optics.hash);
+            testCase.verifyEqual(rigResolution.ledgerState, 'BoundCommitted');
+            testCase.verifyEqual(rigResolution.rigID, 'ClassificationTestRig');
+        end
+
+        function testRepeatedSingleCameraImportRecordsReimport(testCase)
+            ImagesClassification(testCase.FixtureFolder, testCase.TempSaveFolder, ...
+                'backupOpts', 'ERASE');
+            ImagesClassification(testCase.FixtureFolder, testCase.TempSaveFolder, ...
+                'backupOpts', 'ERASE');
+
+            ledger = UMITRigLedger.read(testCase.TempSaveFolder);
+            types = cellfun(@(e) e.type, ledger.events, 'UniformOutput', false);
+            testCase.verifyEqual(types, {'noRig', 'reimport'});
+            testCase.verifyEqual(ledger.state, 'NoRig');
+        end
+
+        function testInvalidLedgerBlocksImportBeforeClassifying(testCase)
+            fid = fopen(UMITRigLedger.filePath(testCase.TempSaveFolder), 'w');
+            fprintf(fid, '{not json');
+            fclose(fid);
+
+            testCase.verifyError(@() ImagesClassification(testCase.FixtureFolder, ...
+                testCase.TempSaveFolder, 'backupOpts', 'ERASE'), ...
+                'Umitoolbox:RigLedger:invalidLedger');
+            testCase.verifyEmpty(dir(fullfile(testCase.TempSaveFolder, '*.dat')));
+            testCase.verifyFalse(isfile(fullfile(testCase.TempSaveFolder, 'AcqInfos.mat')));
         end
 
         function testMissingCameraModelWarnsAndAssumesD1024(testCase)
@@ -342,6 +383,20 @@ classdef TestRunImagesClassification < matlab.unittest.TestCase
     end
 
     methods (Static, Access = private)
+        function binding = makeLedgerBinding()
+            %MAKELEDGERBINDING Ledger binding from a RigInfo struct (no library rig).
+
+            rigInfo = struct('uuid', 'classification-test-rig', ...
+                'rigID', 'ClassificationTestRig', 'displayName', 'Classification Test Rig', ...
+                'modifiedOn', datetime(2026, 10, 1), ...
+                'cameras', struct('index', 1, 'spectrumID', 'PF1024', 'model', 'D1024'), ...
+                'illuminations', struct('name', {'red', 'green'}, ...
+                    'spectrumID', {'LED_632nm', 'LED_521nm'}));
+            binding = UMITRigLedger.makeBinding( ...
+                UMITRigLedger.sourceRigFromRigInfo(rigInfo), ...
+                UMITRigLedger.buildOpticsSnapshot(rigInfo), []);
+        end
+
         function dTag = getDatTagFromColor(colorName)
             %GETDATTAGFROMCOLOR Match ImagesClassification output naming.
 

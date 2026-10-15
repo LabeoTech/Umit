@@ -69,10 +69,10 @@ classdef DatImageSource < handle
         BytesPerSample double = 4
         FrameRateHz double = NaN
 
-        % Non-empty when the dataset's stored Rig UUID/ID could not be
-        % resolved against UMITRigStore at load time (e.g. deleted Rig,
-        % dataset moved from another install). Holds the failure reason;
-        % callers use this to surface a non-blocking warning to the user.
+        % Non-empty when the folder's rig ledger (UMITRigLedger.json) fails
+        % integrity validation at load time. Holds the reason; callers use
+        % it to surface a non-blocking warning. Loading never writes rig
+        % data (a missing or "no rig" ledger is not an issue here).
         RigAssociationIssue char = ''
     end
 
@@ -137,23 +137,20 @@ classdef DatImageSource < handle
             obj.MaxCacheBytes = p.Results.maxCacheBytes;
             obj.setCacheMode(p.Results.cacheMode);
 
+            % Opening data never writes (rig-ledger redesign, brief 1.8): the
+            % folder's rig is only read from its rig ledger, and only to
+            % report a ledger that fails integrity validation. Reading pixel
+            % data does not depend on the rig, so this never blocks the load.
             dataFolder = fileparts(obj.FilePath);
-            if isfile(fullfile(dataFolder, 'AcqInfos.mat')) && ...
-                    exist('UMITRigStore', 'class') == 8
-                % Legacy .dat folders acquire the current Active Rig once;
-                % existing UUID/ID associations, including archived history,
-                % are preserved by the backend. This is a best-effort
-                % convenience step, not a precondition for reading pixel
-                % data, so an unresolvable/stale Rig reference (deleted
-                % Rig, dataset moved from another install, etc.) must not
-                % block the load.
-                try
-                    UMITRigStore.ensureDatasetRigAssociation(dataFolder);
-                catch ME
-                    obj.RigAssociationIssue = ME.message;
-                    warning('Umitoolbox:DatImageSource:rigAssociationSkipped', ...
-                        'Could not resolve/assign a Rig for "%s": %s', ...
-                        dataFolder, ME.message);
+            if exist('UMITRigLedger', 'class') == 8
+                ledgerReport = UMITRigLedger.validate(dataFolder);
+                if ~ledgerReport.isValid
+                    obj.RigAssociationIssue = sprintf( ...
+                        'The folder rig ledger (%s) is invalid: %s', ...
+                        UMITRigLedger.FileName, strjoin(ledgerReport.issues, ' | '));
+                    warning('Umitoolbox:DatImageSource:invalidRigLedger', ...
+                        'The rig ledger of "%s" is invalid: %s', ...
+                        dataFolder, strjoin(ledgerReport.issues, ' | '));
                 end
             end
             obj.Info = loadMetaData(obj.FilePath);

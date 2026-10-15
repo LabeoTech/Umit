@@ -286,12 +286,12 @@ switch version
             'sex', 'dateOfBirth', 'ageAtProjectEntry', 'ageReference', ...
             'weight_g', 'housing', 'diet', 'healthStatus', 'earTag', 'rfid', ...
             'notes'};
-        % rigUUID/rigID are intentionally excluded: UMITRigStore is the sole
-        % owner of Rig assignment. Session Rig identity is required (see
-        % requiredSessionFields below) but is never independently editable
-        % through UMITProjectStore -- it is mirrored from the SaveFolder's
-        % AcqInfos.mat via UMITRigStore.ensureDatasetRigAssociation/
-        % assignDatasetRig, never accepted as caller input here.
+        % rigUUID/rigID are intentionally excluded: they are a read-only
+        % mirror of the rig bound in the session SaveFolder's rig ledger
+        % (UMITRigLedger; empty when the folder is not bound), written only
+        % by addSession/migrateSessionRigAssignment and never accepted as
+        % caller input here. The fields stay in requiredSessionFields below
+        % (they may be empty).
         schema.editableFields.session = { ...
             'displayName', ...
             'description', ...

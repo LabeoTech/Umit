@@ -206,7 +206,7 @@ classdef MLAppDelta_tests < matlab.unittest.TestCase
 
             expectedComponents = ["ManagementMenu", "SetRawFolderMenu", ...
                 "ProjectMenu", "BindCurrentSessionMenu", "ProjectManagerMenu", ...
-                "RigMenu", "AssignRigMenu", "RigManagerMenu"];
+                "RigMenu", "FolderRigMenu", "RigManagerMenu"];
             testCase.verifyTrue(all(ismember(expectedComponents, codeNames)), ...
                 'App Designer metadata must contain the complete Management hierarchy.');
             testCase.verifyFalse(any(ismember( ...
@@ -223,7 +223,7 @@ classdef MLAppDelta_tests < matlab.unittest.TestCase
 
             callbackNames = string({codeData.Callbacks.Name});
             expectedCallbacks = ["ManagementMenuSelected", ...
-                "AssignRigMenuSelected", "BindCurrentSessionMenuSelected", ...
+                "FolderRigMenuSelected", "BindCurrentSessionMenuSelected", ...
                 "ProjectManagerMenuSelected", "RigManagerMenuSelected"];
             testCase.verifyTrue(all(ismember(expectedCallbacks, callbackNames)));
             testCase.verifyFalse(ismember( ...
@@ -234,6 +234,9 @@ classdef MLAppDelta_tests < matlab.unittest.TestCase
                 ["function refreshRigAssignmentMenu", ...
                 "function SelectRigMenuSelected", ...
                 "function openProjectManagerTool"])));
+            % The component was renamed to FolderRigMenu; no method body may
+            % still reference the old name.
+            testCase.verifyFalse(contains(editableText, "AssignRigMenu"));
         end
 
         function testDataViewerGraphicalCallbacksAreBound(testCase)
@@ -245,7 +248,6 @@ classdef MLAppDelta_tests < matlab.unittest.TestCase
             testCase.verifyEmpty(report.UnboundCallbacks);
             testCase.verifyEmpty(report.UnknownBindings);
             testCase.verifyEmpty(report.DuplicateCallbackOwners);
-            testCase.verifyEqual(report.BindingCount, report.CallbackCount);
 
             bindings = string({report.Bindings.Component}) + "." + ...
                 string({report.Bindings.Property}) + "=" + ...
@@ -269,8 +271,19 @@ classdef MLAppDelta_tests < matlab.unittest.TestCase
                 "RepetitionDropDown.ValueChangedFcn=RepetitionDropDownValueChanged"
                 "DeleteConditionButton.ButtonPushedFcn=DeleteConditionButtonPushed"
                 "DeleteRepetitionButton.ButtonPushedFcn=DeleteRepetitionButtonPushed"
-                "RestoreButton.ButtonPushedFcn=RestoreButtonPushed"];
+                "RestoreButton.ButtonPushedFcn=RestoreButtonPushed"
+                "BatchPipelineMenu.MenuSelectedFcn=BatchPipelineMenuSelected"
+                "PipeLauncherBatchMenu.MenuSelectedFcn=BatchPipelineMenuSelected"];
             testCase.verifyTrue(all(ismember(expected, bindings)));
+
+            % BatchPipelineMenuSelected is deliberately shared by the File
+            % menu entry and the pipeline launcher context menu, so there is
+            % exactly one more binding than there are callbacks.
+            sharedCallbacks = "BatchPipelineMenuSelected";
+            callbackOfBinding = string({report.Bindings.Callback});
+            testCase.verifyEqual(report.BindingCount, ...
+                report.CallbackCount + nnz(callbackOfBinding == sharedCallbacks) - 1, ...
+                'Only BatchPipelineMenuSelected may be bound by several components.');
         end
 
         function testSafeMlappSaveIsIdempotent(testCase)
@@ -361,7 +374,7 @@ classdef MLAppDelta_tests < matlab.unittest.TestCase
             loadBody = testCase.getDataViewerMethodBody( ...
                 'loadDataSource', 'loadDataParamsForCurrentFile');
             switchBody = testCase.getDataViewerMethodBody( ...
-                'reconcileROIsForNewDataSize', 'promptROIDataSwitchSizeAction');
+                'reconcileROIsForNewDataSize', 'roiVerticesExtendOutsideImage');
 
             testCase.verifySubstring(loadBody, 'previousSizeYX');
             testCase.verifySubstring(loadBody, ...
@@ -372,13 +385,17 @@ classdef MLAppDelta_tests < matlab.unittest.TestCase
             testCase.verifySubstring(switchBody, 'report.nSkipped');
         end
 
-        function testDataViewerROISelectionDisablesProjectManagerTool(testCase)
-        %TESTDATAVIEWERROISELECTIONDISABLESPROJECTMANAGERTOOL Guard edit-mode UI state.
+        function testDataViewerROISelectionGatesLaunchersOnIdle(testCase)
+        %TESTDATAVIEWERROISELECTIONGATESLAUNCHERSONIDLE Guard edit-mode UI state.
 
             guiBody = testCase.getDataViewerMethodBody( ...
                 'updateGUIEnabledState', 'setContainerEnabled');
 
-            testCase.verifySubstring(guiBody, 'app.ProjectManagerToolButton');
+            % The Project Manager launcher button was removed; the launchers
+            % that remain must still be gated on the idle state.
+            testCase.verifyFalse(contains(guiBody, 'ProjectManagerToolButton'));
+            testCase.verifySubstring(guiBody, ...
+                'app.setComponentEnabled(app.BatchPipelineMenu, isIdle)');
             testCase.verifySubstring(guiBody, 'caps.hasData && isIdle');
         end
 
@@ -394,12 +411,15 @@ classdef MLAppDelta_tests < matlab.unittest.TestCase
             rebuildBody = testCase.getDataViewerMethodBody( ...
                 'rebuildOneLoadedROIForCurrentImage', 'normalizeLoadedROIRecord');
             boundsBody = testCase.getDataViewerMethodBody( ...
-                'roiVerticesExtendOutsideImage', 'clipROIMaskToActiveLogicalMask');
+                'roiVerticesExtendOutsideImage', 'alertNoSupportedROIImport');
 
-            testCase.verifySubstring(createBody, 'app.roiVerticesExtendOutsideImage');
-            testCase.verifySubstring(editBody, 'app.roiVerticesExtendOutsideImage');
-            testCase.verifySubstring(groupBody, 'app.roiVerticesExtendOutsideImage');
-            testCase.verifySubstring(rebuildBody, 'app.roiVerticesExtendOutsideImage');
+            % ROI creation/edit/rebuild paths rasterize into image coordinates
+            % and clip through the active logical mask; they no longer call
+            % roiVerticesExtendOutsideImage directly.
+            testCase.verifySubstring(createBody, 'app.clipROIMaskToActiveLogicalMask');
+            testCase.verifySubstring(editBody, 'app.clipROIMaskToActiveLogicalMask');
+            testCase.verifySubstring(groupBody, 'app.clipROIMaskToActiveLogicalMask');
+            testCase.verifySubstring(rebuildBody, 'app.clipROIMaskToActiveLogicalMask');
             testCase.verifySubstring(boundsBody, 'xBounds = [0.5');
             testCase.verifySubstring(boundsBody, 'yBounds = [0.5');
         end

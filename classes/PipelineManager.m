@@ -1451,7 +1451,21 @@ classdef PipelineManager < handle
 
             % Validate configured parameter values before any folder-level work.
             obj.validateNodeParameters('throwOnError', true);
-            obj.validateNodePreflight('throwOnError', true);
+            % A folder-specific preflight error (e.g. a rig-ledger guard:
+            % no ledger, Conflicted, modified filter set) stops only that
+            % folder: it is skipped and logged as Failed below, and the
+            % other folders run. Any other preflight error, or every folder
+            % failing, still aborts the run before any work starts.
+            [~, preflightReport] = obj.validateNodePreflight('throwOnError', false);
+            preflightFolderMessages = {preflightReport.folderErrors.message};
+            nonFolderPreflightErrors = preflightReport.errors( ...
+                ~ismember(preflightReport.errors, preflightFolderMessages));
+            preflightFailedFolders = unique({preflightReport.folderErrors.saveFolder}, 'stable');
+            if ~isempty(nonFolderPreflightErrors) || (~isempty(preflightFailedFolders) && ...
+                    all(ismember(obj.SaveFolderList, preflightFailedFolders)))
+                error('PipelineManager:validateNodePreflight:Failed', ...
+                    '%s', strjoin(preflightReport.errors, newline));
+            end
 
             obj.updateTopoOrder();
 
@@ -1634,6 +1648,20 @@ classdef PipelineManager < handle
                             'rawFolder', rawFolder, ...
                             'status', 'skipped', ...
                             'message', char(folderSkipMsg));
+
+                    elseif ismember(saveFolder, preflightFailedFolders)
+                        % ---------------------------------------------------------
+                        % 3b) Folder-specific preflight failure: no step runs
+                        % for this folder; it is logged as Failed.
+                        % ---------------------------------------------------------
+                        folderPreflightMessages = preflightFolderMessages( ...
+                            strcmp({preflightReport.folderErrors.saveFolder}, saveFolder));
+                        folderFatalME = MException( ...
+                            'PipelineManager:executePipeline:PreflightFailed', ...
+                            '%s', strjoin(folderPreflightMessages, newline));
+                        warning('PipelineManager:executePipeline:FolderFailed', ...
+                            'Execution failed for folder: %s\n%s', ...
+                            saveFolder, folderFatalME.message);
 
                     else
                         % ---------------------------------------------------------
@@ -2004,11 +2032,16 @@ classdef PipelineManager < handle
             %   fcn('preflight', saveFolder, parameters). Preflights run for
             %   every configured SaveFolder before any node executes and
             %   report through the existing pipeline diagnostic surface.
+            %   report.folderErrors (fields saveFolder, message) lists the
+            %   errors raised by an analysis function's own preflight for
+            %   one folder (e.g. a rig-ledger guard); executePipeline skips
+            %   only those folders. Every message is also in report.errors.
 
             p = inputParser;
             addParameter(p, 'throwOnError', false, @(x)islogical(x)&&isscalar(x));
             parse(p, varargin{:});
-            report = struct('errors', {{}}, 'warnings', {{}});
+            report = struct('errors', {{}}, 'warnings', {{}}, ...
+                'folderErrors', struct('saveFolder', {}, 'message', {}));
 
             % 'sourceInfo' inputs: a required field that cannot be resolved
             % from the data is an error; values set by an upstream metaData
@@ -2066,6 +2099,9 @@ classdef PipelineManager < handle
                         report.errors{end+1} = sprintf( ... %#ok<AGROW>
                             'Node "%s" preflight failed for "%s": %s', ...
                             node.name, obj.SaveFolderList{iFolder}, ME.message);
+                        report.folderErrors(end+1) = struct( ...
+                            'saveFolder', obj.SaveFolderList{iFolder}, ...
+                            'message', report.errors{end});
                     end
                 end
             end
@@ -2116,7 +2152,8 @@ classdef PipelineManager < handle
 
             [tfGraph, graphReport] = obj.validateGraph('throwOnError', false);
             [tfParams, paramReport] = obj.validateNodeParameters('throwOnError', false);
-            [tfPreflight, preflightReport] = obj.validateNodePreflight('throwOnError', false);
+            [~, preflightReport] = obj.validateNodePreflight('throwOnError', false);
+            [tfPreflight, preflightReport] = obj.demoteFolderPreflightErrors(preflightReport);
             paramReport.errors = [paramReport.errors, preflightReport.errors];
             paramReport.warnings = [paramReport.warnings, preflightReport.warnings];
 
@@ -4410,6 +4447,88 @@ classdef PipelineManager < handle
 
     methods (Access = private)
 
+        function acknowledgedOn = rigAcknowledgementTime(obj, folder)
+            %RIGACKNOWLEDGEMENTTIME Latest acknowledged rig conflict of FOLDER.
+            %
+            %   NaT when the pipeline has no rig-dependent step (the ledger is
+            %   then not read at all) or the folder never acknowledged a
+            %   conflict. When the ledger cannot be read, every output of a
+            %   rig-dependent step is treated as stale (the time is "now"),
+            %   so the step runs and its own rig guard reports the problem.
+
+            acknowledgedOn = NaT;
+            if ~any(arrayfun(@(node) obj.isRigDependentNode(node), obj.nodes))
+                return
+            end
+            try
+                acknowledgedOn = UMITRigLedger.lastAcknowledgementTime(folder);
+            catch
+                acknowledgedOn = datetime('now');
+            end
+        end
+
+        function tf = historyPredatesRigAcknowledgement(obj, histEntry, matchedNodeIDs, acknowledgedOn)
+            %HISTORYPREDATESRIGACKNOWLEDGEMENT True when a history match must
+            %not be reused: it covers a rig-dependent step and was produced
+            %before the folder's latest acknowledged rig conflict. Only the
+            %two timestamps are compared; dataHistory stores no rig data.
+
+            tf = false;
+            if isnat(acknowledgedOn)
+                return
+            end
+            coversRigStep = false;
+            for iNode = 1:numel(matchedNodeIDs)
+                node = obj.nodes(obj.getNodeIndexByID(matchedNodeIDs(iNode)));
+                coversRigStep = coversRigStep || obj.isRigDependentNode(node);
+            end
+            if ~coversRigStep
+                return
+            end
+            producedOn = NaT;
+            if isfield(histEntry, 'timestamp') && isdatetime(histEntry.timestamp)
+                producedOn = histEntry.timestamp;
+                producedOn.TimeZone = '';
+            end
+            % An undated output is treated as stale.
+            tf = isnat(producedOn) || producedOn < acknowledgedOn;
+            if tf
+                fprintf(['[CACHE] Not reusing "%s": it was computed before the folder''s ' ...
+                    'acknowledged rig conflict (%s), so a rig-dependent step will run again.\n'], ...
+                    char(string(histEntry.file)), char(acknowledgedOn));
+            end
+        end
+
+        function tf = isRigDependentNode(~, node)
+            %ISRIGDEPENDENTNODE True when the node's pipelineInfo declares rigDependent.
+
+            tf = isfield(node, 'info') && isstruct(node.info) && ...
+                isfield(node.info, 'rigDependent') && isequal(node.info.rigDependent, true);
+        end
+
+        function [tf, report] = demoteFolderPreflightErrors(obj, report)
+            %DEMOTEFOLDERPREFLIGHTERRORS Report skippable folders as warnings.
+            %
+            %   executePipeline skips only the folders whose own preflight
+            %   failed (report.folderErrors) as long as another folder can
+            %   still run. For validation surfaces (diagnosePipeline,
+            %   autoValidate) those errors are therefore warnings, so a
+            %   single unusable folder does not block the whole batch. When
+            %   every folder fails, they stay errors.
+
+            folderMessages = {report.folderErrors.message};
+            failedFolders = unique({report.folderErrors.saveFolder});
+            if ~isempty(folderMessages) && ...
+                    ~all(ismember(obj.SaveFolderList, failedFolders))
+                isFolderError = ismember(report.errors, folderMessages);
+                skipped = cellfun(@(message) sprintf( ...
+                    'This folder will be skipped and logged as Failed: %s', message), ...
+                    report.errors(isFolderError), 'UniformOutput', false);
+                report.warnings = [report.warnings, skipped];
+                report.errors = report.errors(~isFolderError);
+            end
+            tf = isempty(report.errors);
+        end
 
         function policy = resolveLeafOutputPolicy(~, policyIn)
             %RESOLVELEAFOUTPUTPOLICY Validate and normalize a leaf-output policy.
@@ -7900,7 +8019,8 @@ classdef PipelineManager < handle
 
             [tfGraph, graphReport] = obj.validateGraph('throwOnError', false);
             [tfParams, paramReport] = obj.validateNodeParameters('throwOnError', false);
-            [tfPreflight, preflightReport] = obj.validateNodePreflight('throwOnError', false);
+            [~, preflightReport] = obj.validateNodePreflight('throwOnError', false);
+            [tfPreflight, preflightReport] = obj.demoteFolderPreflightErrors(preflightReport);
             paramReport.errors = [paramReport.errors, preflightReport.errors];
             paramReport.warnings = [paramReport.warnings, preflightReport.warnings];
 
@@ -13341,6 +13461,11 @@ classdef PipelineManager < handle
                 rawFolder = obj.RawFolderList{idxSF};
             end
 
+            % Outputs of rig-dependent steps (pipelineInfo rigDependent) that
+            % predate the folder's latest acknowledged rig conflict were made
+            % with the optics committed before the conflict: never reused.
+            rigAcknowledgedOn = obj.rigAcknowledgementTime(folder);
+
             % -------------------------------------------------------------
             % Per-leaf matching
             % -------------------------------------------------------------
@@ -13398,6 +13523,11 @@ classdef PipelineManager < handle
                             ['isHistoryMatch returned %d matched node step(s), but the ' ...
                             'candidate path only has %d node(s).'], ...
                             nStepsMatched, numel(candidateNodeIDs));
+                    end
+
+                    if obj.historyPredatesRigAcknowledgement(histEntry, ...
+                            candidateNodeIDs(1:nStepsMatched), rigAcknowledgedOn)
+                        continue
                     end
 
                     if nStepsMatched > bestLen
@@ -15783,6 +15913,11 @@ classdef PipelineManager < handle
             info.version     = '1.0.0';
             info.description = char(string(description));
             info.supportsPreflight = false;
+            % true for steps whose results depend on the folder rig ledger's
+            % committed optics (e.g. HemoCompute). Their saved outputs are not
+            % reused by step skipping when they predate the folder's latest
+            % acknowledged rig conflict (see matchHistoryAndSetPreload).
+            info.rigDependent = false;
             info.freshSaveFolderRole = 'none';
 
             % Legacy analysis functions may use a single positional opts struct instead

@@ -3,8 +3,8 @@ function fixture = setupIsolatedActiveRigFixture()
 %
 %   fixture = setupIsolatedActiveRigFixture()
 %
-%   DFR-20260819-010: UMITRigStore.getActiveRig/getOrCreateDefaultRig
-%   require exactly one Active Rig and error otherwise. Ambient state on a
+%   DFR-20260819-010: UMITRigStore.getActiveRig requires exactly one
+%   Active Rig and errors otherwise. Ambient state on a
 %   given machine, or leftover corruption from an earlier test in the same
 %   batch, can leave that invariant broken (zero Active Rigs). This creates
 %   a throwaway Rig and makes it the sole Active/Default Rig regardless of

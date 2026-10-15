@@ -30,9 +30,10 @@ classdef TestHemoCompute < matlab.unittest.TestCase
             mkdir(testCase.TempFolder);
 
             iCreateSyntheticHemoDataset(testCase.TempFolder, false);
-            rigStore = iCreateConfiguredRig();
-            testCase.RigRoot = rigStore.RigRoot;
-            iBindDatasetToRig(testCase.TempFolder, rigStore);
+            % The folder is bound through its rig ledger from a plain
+            % RigInfo struct: HemoCompute never needs a library rig.
+            iBindDatasetToRig(testCase.TempFolder, iConfiguredRigInfo());
+            testCase.RigRoot = '';
             s = load(fullfile(testCase.TempFolder, 'AcqInfos.mat'), 'AcqInfoStream');
             testCase.AcqInfo = s.AcqInfoStream;
         end
@@ -63,31 +64,160 @@ classdef TestHemoCompute < matlab.unittest.TestCase
             testCase.verifyTrue(isfile(fullfile(testCase.TempFolder, 'HbR.dat')));
         end
 
-        function testExplicitResolvedOpticalInfo(testCase)
-            rigStore = UMITRigStore.open(testCase.AcqInfo.rigUUID);
-            opticalInfo = rigStore.resolveOpticalConfiguration( ...
-                testCase.AcqInfo, {'red','green'}, 'none', testCase.TempFolder);
+        %% Rig ledger (rig-ledger redesign, Phase 4)
+        function testCommitsOpticsAndFilterSetOnce(testCase)
+            iRunHb(testCase.TempFolder, 'Illuminations', {'red','green'});
+            info = UMITRigLedger.read(testCase.TempFolder);
+            testCase.verifyEqual(info.state, 'BoundCommitted');
+            testCase.verifyEqual(info.commitments.optics, info.binding.opticsHash);
+            testCase.verifyEqual({info.commitments.filterSets.id}, {'none'});
+            testCase.verifyEqual(info.events{end}.firstUsedBy, 'HemoCompute');
 
-            [HbO, HbR] = iRunHb(testCase.TempFolder, 'Illuminations', {'red','green'}, ...
-                'OpticalInfo', opticalInfo);
-
-            testCase.verifyTrue(isnumeric(HbO));
-            testCase.verifyTrue(isnumeric(HbR));
-            testCase.verifySize(HbO, ...
-                [testCase.AcqInfo.Height, testCase.AcqInfo.Width, testCase.AcqInfo.Length]);
+            iRunHb(testCase.TempFolder, 'Illuminations', {'red','green'});
+            testCase.verifyEqual(iEventTypes(testCase.TempFolder), ...
+                {'bind', 'commit', 'commit'});
         end
 
-        function testRejectsMismatchedOpticalInfoActiveRows(testCase)
-            rigStore = UMITRigStore.open(testCase.AcqInfo.rigUUID);
-            opticalInfo = rigStore.resolveOpticalConfiguration( ...
-                testCase.AcqInfo, {'red','green'}, 'none', testCase.TempFolder);
-            opticalInfo.activeRows = [true; false; true];
+        function testUnboundFoldersAreErrors(testCase)
+            unbound = fullfile(testCase.TempFolder, 'unbound');
+            mkdir(unbound);
+            iCreateSyntheticHemoDataset(unbound, false);
+            try
+                HemoCompute(unbound, 'red.dat', 'Illuminations', {'red','green'});
+                testCase.verifyFail('Expected a missing-ledger error.');
+            catch ME
+                testCase.verifyEqual(ME.identifier, 'Umitoolbox:RigLedger:noLedger');
+                testCase.verifySubstring(ME.message, 'HemoCompute was refused');
+                testCase.verifySubstring(ME.message, 'Bind a library rig');
+            end
+            testCase.verifyFalse(isfile(fullfile(unbound, 'HbO.dat')));
+            testCase.verifyFalse(UMITRigLedger.exists(unbound));
+
+            UMITRigLedger.writeNoRig(unbound, 'Origin', 'test');
+            testCase.verifyError(@() HemoCompute(unbound, 'red.dat', ...
+                'Illuminations', {'red','green'}), 'Umitoolbox:RigLedger:noRigBound');
+            testCase.verifyError(@() HemoCompute('preflight', unbound, ...
+                iPreflightParameters('none')), 'Umitoolbox:RigLedger:noRigBound');
+        end
+
+        function testArchivedLibraryRigStillAnalyses(testCase)
+            folder = fullfile(testCase.TempFolder, 'archivedRig');
+            mkdir(folder);
+            iCreateSyntheticHemoDataset(folder, false);
+            store = iCreateLibraryRig(testCase);
+            iBindDatasetToRig(folder, store);
+            store.archiveRig();
+            testCase.assertEqual(store.getRigInfo().status, 'archived');
+
+            [HbO, ~] = iRunHb(folder, 'Illuminations', {'red','green'});
+            testCase.verifyTrue(all(isfinite(HbO(:))));
+
+            % Self-contained: the library rig folder is not needed at all.
+            rmdir(store.RigRoot, 's');
+            delete(fullfile(folder, 'Hb*.dat'));
+            [HbO2, ~] = iRunHb(folder, 'Illuminations', {'red','green'});
+            testCase.verifyEqual(HbO2, HbO);
+        end
+
+        function testLibraryEditAfterCommitHasNoEffect(testCase)
+            folder = fullfile(testCase.TempFolder, 'editedRig');
+            mkdir(folder);
+            iCreateSyntheticHemoDataset(folder, false);
+            store = iCreateLibraryRig(testCase);
+            iBindDatasetToRig(folder, store);
+            [HbO, HbR] = iRunHb(folder, 'Illuminations', {'red','green'});
+            ledgerBefore = UMITRigLedger.read(folder);
+
+            illuminations = store.getRigInfo().illuminations;
+            illuminations(strcmp({illuminations.name}, 'red')).spectrumID = 'LED_593nm';
+            store.setIlluminations(illuminations);
+            testCase.assertNotEqual(UMITRigLedger.buildOpticsSnapshot(store).hash, ...
+                ledgerBefore.binding.opticsHash);
+
+            [HbO2, HbR2] = iRunHb(folder, 'Illuminations', {'red','green'});
+            testCase.verifyEqual(HbO2, HbO);
+            testCase.verifyEqual(HbR2, HbR);
+            ledgerAfter = UMITRigLedger.read(folder);
+            testCase.verifyEqual(ledgerAfter.binding.opticsHash, ledgerBefore.binding.opticsHash);
+            testCase.verifyEqual(numel(ledgerAfter.events), numel(ledgerBefore.events));
+        end
+
+        function testModifiedFilterSetErrorsAndNewFilterSetIsAllowed(testCase)
+            filterSetID = iCreateUserFilterSet(testCase, 'FF01496LP');
+            iRunHb(testCase.TempFolder, 'Illuminations', {'red','green'}, 'FilterSet', filterSetID);
+
+            % A new filter-set ID is allowed and committed.
+            iRunHb(testCase.TempFolder, 'Illuminations', {'red','green'}, 'FilterSet', 'none');
+            info = UMITRigLedger.read(testCase.TempFolder);
+            testCase.verifyEqual(sort({info.commitments.filterSets.id}), sort({filterSetID, 'none'}));
+
+            % The same ID modified in the library is an error, before computing.
+            UMITRigStore.updateFilterSet(filterSetID, struct('id', filterSetID, ...
+                'displayName', 'Modified', 'excitationSpectrumID', '', ...
+                'emissionSpectrumID', 'FF01512630'));
+            hbFile = dir(fullfile(testCase.TempFolder, 'HbO.dat'));
+            try
+                HemoCompute(testCase.TempFolder, 'red.dat', ...
+                    'Illuminations', {'red','green'}, 'FilterSet', filterSetID);
+                testCase.verifyFail('Expected a modified-filter-set error.');
+            catch ME
+                testCase.verifyEqual(ME.identifier, 'Umitoolbox:RigLedger:filterSetModified');
+                testCase.verifySubstring(ME.message, filterSetID);
+            end
+            hbFileAfter = dir(fullfile(testCase.TempFolder, 'HbO.dat'));
+            testCase.verifyEqual(hbFileAfter.datenum, hbFile.datenum);
+            testCase.verifyError(@() HemoCompute('preflight', testCase.TempFolder, ...
+                iPreflightParameters(filterSetID)), 'Umitoolbox:RigLedger:filterSetModified');
+        end
+
+        function testCommittedFilterSetMissingFromLibraryIsUsed(testCase)
+            filterSetID = iCreateUserFilterSet(testCase, 'FF01496LP');
+            [HbO, ~] = iRunHb(testCase.TempFolder, 'Illuminations', {'red','green'}, ...
+                'FilterSet', filterSetID);
+            UMITRigStore.removeFilterSet(filterSetID);
+
+            delete(fullfile(testCase.TempFolder, 'Hb*.dat'));
+            testCase.verifyWarning(@() HemoCompute(testCase.TempFolder, 'red.dat', ...
+                'Illuminations', {'red','green'}, 'FilterSet', filterSetID), ...
+                'Umitoolbox:HemoCompute:FilterSetFromLedger');
+            testCase.verifyEqual(loadData(fullfile(testCase.TempFolder, 'HbO.dat')), HbO);
+            testCase.verifyWarning(@() HemoCompute('preflight', testCase.TempFolder, ...
+                iPreflightParameters(filterSetID)), 'Umitoolbox:HemoCompute:FilterSetFromLedger');
+
+            % A library filter set never triggers the warning.
+            testCase.verifyWarningFree(@() HemoCompute(testCase.TempFolder, 'red.dat', ...
+                'Illuminations', {'red','green'}, 'FilterSet', 'none', 'b_normalize', false));
+        end
+
+        function testConflictedFolderBlocksAndAcknowledgementUnblocks(testCase)
+            iRunHb(testCase.TempFolder, 'Illuminations', {'red','green'});
+            otherInfo = iConfiguredRigInfo('LED_593nm');
+            otherInfo.uuid = 'other-hemo-rig';
+            otherInfo.rigID = 'OtherHemoRig';
+            UMITRigLedger.rebind(testCase.TempFolder, UMITRigLedger.makeBinding( ...
+                UMITRigLedger.sourceRigFromRigInfo(otherInfo), ...
+                UMITRigLedger.buildOpticsSnapshot(otherInfo), []), 'Origin', 'test');
 
             testCase.verifyError(@() HemoCompute(testCase.TempFolder, 'red.dat', ...
-                'Illuminations', {'red','green'}, 'OpticalInfo', opticalInfo), ...
-                'Umitoolbox:HemoCompute:OpticalInfoChannelMismatch');
-            testCase.verifyFalse(isfile(fullfile(testCase.TempFolder, 'HbO.dat')));
-            testCase.verifyFalse(isfile(fullfile(testCase.TempFolder, 'HbR.dat')));
+                'Illuminations', {'red','green'}), 'Umitoolbox:RigLedger:conflicted');
+            testCase.verifyError(@() HemoCompute('preflight', testCase.TempFolder, ...
+                iPreflightParameters('none')), 'Umitoolbox:RigLedger:conflicted');
+
+            UMITRigLedger.acknowledgeConflict(testCase.TempFolder, 'Origin', 'test', ...
+                'Comment', 'Red LED was replaced before this acquisition.');
+            HemoCompute('preflight', testCase.TempFolder, iPreflightParameters('none'));
+            [HbO, ~] = iRunHb(testCase.TempFolder, 'Illuminations', {'red','green'});
+            testCase.verifyTrue(all(isfinite(HbO(:))));
+            info = UMITRigLedger.read(testCase.TempFolder);
+            testCase.verifyEqual(info.state, 'BoundCommitted');
+            testCase.verifyTrue(info.hadConflict);
+        end
+
+        function testOpticalInfoBypassIsRemoved(testCase)
+            % Optics can no longer be injected around the ledger guards.
+            testCase.verifyError(@() HemoCompute(testCase.TempFolder, 'red.dat', ...
+                'Illuminations', {'red','green'}, 'OpticalInfo', struct()), ...
+                'MATLAB:InputParser:UnmatchedParameter');
         end
 
         function testThreeChannel(testCase)
@@ -110,8 +240,7 @@ classdef TestHemoCompute < matlab.unittest.TestCase
             repeatedFolder = fullfile(testCase.TempFolder, 'repeatedTimeline');
             mkdir(repeatedFolder);
             iCreateSyntheticHemoDataset(repeatedFolder, true);
-            iBindDatasetToRig(repeatedFolder, ...
-                UMITRigStore.openByRigID(iCurrentRigID(testCase.TempFolder)));
+            iBindDatasetToRig(repeatedFolder, iConfiguredRigInfo());
 
             [HbO, HbR] = iRunHb(repeatedFolder, 'Illuminations', {'red','green'});
 
@@ -133,8 +262,7 @@ classdef TestHemoCompute < matlab.unittest.TestCase
             repeatedFolder = fullfile(testCase.TempFolder, 'repeatedTimelineRAMSafe');
             mkdir(repeatedFolder);
             iCreateSyntheticHemoDataset(repeatedFolder, true);
-            iBindDatasetToRig(repeatedFolder, ...
-                UMITRigStore.openByRigID(iCurrentRigID(testCase.TempFolder)));
+            iBindDatasetToRig(repeatedFolder, iConfiguredRigInfo());
 
             [HbO, HbR] = HemoCompute(repeatedFolder, 'red.dat', ...
                 'Illuminations', {'red','green'});
@@ -306,8 +434,7 @@ classdef TestHemoCompute < matlab.unittest.TestCase
             lowRateFolder = fullfile(testCase.TempFolder, 'lowRate');
             mkdir(lowRateFolder);
             iCreateSyntheticHemoDataset(lowRateFolder, false, 2, 40, 1000);
-            iBindDatasetToRig(lowRateFolder, ...
-                UMITRigStore.openByRigID(iCurrentRigID(testCase.TempFolder)));
+            iBindDatasetToRig(lowRateFolder, iConfiguredRigInfo());
 
             testCase.verifyWarning(@() HemoCompute(lowRateFolder, 'red.dat', ...
                 'Illuminations', {'red','green'}, 'b_normalize', true), ...
@@ -324,8 +451,7 @@ classdef TestHemoCompute < matlab.unittest.TestCase
             lowRateFolder = fullfile(testCase.TempFolder, 'lowRateNormalized');
             mkdir(lowRateFolder);
             iCreateSyntheticHemoDataset(lowRateFolder, false, 2, 40, 1);
-            iBindDatasetToRig(lowRateFolder, ...
-                UMITRigStore.openByRigID(iCurrentRigID(testCase.TempFolder)));
+            iBindDatasetToRig(lowRateFolder, iConfiguredRigInfo());
 
             testCase.verifyWarningFree(@() HemoCompute(lowRateFolder, 'red.dat', ...
                 'Illuminations', {'red','green'}, 'b_normalize', false));
@@ -352,8 +478,11 @@ HbO = loadData(fullfile(folder, hboFile));
 HbR = loadData(fullfile(folder, hbrFile));
 end
 
-function store = iCreateConfiguredRig()
-suffix = strrep(char(java.util.UUID.randomUUID()), '-', '');
+function rigInfo = iConfiguredRigInfo(redSpectrumID)
+%ICONFIGUREDRIGINFO RigInfo-shaped rig definition over built-in spectra.
+if nargin < 1
+    redSpectrumID = 'LED_632nm';
+end
 cameras = struct( ...
     'index', 1, 'displayName', 'Test Camera', 'manufacturer', '', ...
     'model', 'D1024', 'serialNumber', '', 'spectrumID', 'PF1024');
@@ -361,24 +490,66 @@ illuminations = struct( ...
     'name', {'red','green','yellow'}, ...
     'displayName', {'Red','Green','Yellow'}, ...
     'manufacturer', {'','',''}, 'model', {'','',''}, ...
-    'spectrumID', {'LED_632nm','LED_521nm','LED_593nm'});
+    'spectrumID', {redSpectrumID,'LED_521nm','LED_593nm'});
+rigInfo = struct('uuid', 'hemo-test-rig', 'rigID', 'HemoTestRig', ...
+    'displayName', 'Hemo Test Rig', 'modifiedOn', datetime(2026, 10, 1), ...
+    'cameras', cameras, 'illuminations', illuminations);
+end
+
+function store = iCreateLibraryRig(testCase)
+%ICREATELIBRARYRIG A real library rig, removed at teardown.
+suffix = strrep(char(java.util.UUID.randomUUID()), '-', '');
+definition = iConfiguredRigInfo();
 store = UMITRigStore.create(struct( ...
     'rigID', ['HemoCore_' suffix(1:10)], ...
-    'cameras', cameras, 'illuminations', illuminations));
+    'displayName', 'Hemo Library Rig', ...
+    'cameras', definition.cameras, 'illuminations', definition.illuminations));
+rigRoot = store.RigRoot;
+testCase.addTeardown(@() iRemoveFolder(rigRoot));
 end
 
-function iBindDatasetToRig(folderPath, store)
-loaded = load(fullfile(folderPath, 'AcqInfos.mat'), 'AcqInfoStream');
-AcqInfoStream = loaded.AcqInfoStream;
-rigInfo = store.getRigInfo();
-AcqInfoStream.rigUUID = rigInfo.uuid;
-AcqInfoStream.rigID = rigInfo.rigID;
-save(fullfile(folderPath, 'AcqInfos.mat'), 'AcqInfoStream', '-mat');
+function iBindDatasetToRig(folderPath, rigSource)
+%IBINDDATASETTORIG Bind FOLDERPATH's rig ledger (RigInfo struct or library rig).
+if isa(rigSource, 'UMITRigStore')
+    binding = UMITRigLedger.bindingFromRig(rigSource, 'IncludeCoregistration', false);
+else
+    binding = UMITRigLedger.makeBinding(UMITRigLedger.sourceRigFromRigInfo(rigSource), ...
+        UMITRigLedger.buildOpticsSnapshot(rigSource), []);
+end
+UMITRigLedger.bind(folderPath, binding, 'Origin', 'TestHemoCompute');
 end
 
-function rigID = iCurrentRigID(folderPath)
-loaded = load(fullfile(folderPath, 'AcqInfos.mat'), 'AcqInfoStream');
-rigID = loaded.AcqInfoStream.rigID;
+function filterSetID = iCreateUserFilterSet(testCase, emissionSpectrumID)
+%ICREATEUSERFILTERSET A user-library filter set, removed at teardown.
+suffix = strrep(char(java.util.UUID.randomUUID()), '-', '');
+filterSetID = ['HemoTestSet_' suffix(1:8)];
+UMITRigStore.importFilterSet(struct('id', filterSetID, 'displayName', 'Hemo Test Set', ...
+    'excitationSpectrumID', '', 'emissionSpectrumID', emissionSpectrumID));
+testCase.addTeardown(@() iRemoveUserFilterSet(filterSetID));
+end
+
+function iRemoveUserFilterSet(filterSetID)
+try
+    UMITRigStore.removeFilterSet(filterSetID);
+catch
+    % Already removed by the test.
+end
+end
+
+function parameters = iPreflightParameters(filterSetID)
+parameters = struct('name', {'Illuminations', 'FilterSet'}, ...
+    'value', {{'red', 'green'}, filterSetID});
+end
+
+function iRemoveFolder(folderPath)
+if isfolder(folderPath)
+    rmdir(folderPath, 's');
+end
+end
+
+function types = iEventTypes(folderPath)
+info = UMITRigLedger.read(folderPath);
+types = cellfun(@(e) e.type, info.events, 'UniformOutput', false);
 end
 
 function iCreateSyntheticHemoDataset(folderPath, repeatedRed, baseFreq, baseLength, scale)

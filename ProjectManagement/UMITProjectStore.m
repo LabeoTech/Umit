@@ -1136,13 +1136,14 @@ classdef UMITProjectStore < handle
             %       acquisitionDate
             %
             %   Rig identity is never supplied by the caller: rigID/rigUUID
-            %   are rejected as sessionInfo fields, since UMITRigStore is the
-            %   sole owner of Rig assignment. The session's Rig is always
-            %   auto-resolved from the SaveFolder's AcqInfos.mat via
-            %   UMITRigStore.ensureDatasetRigAssociation (Active Rig, or a
-            %   previously assigned Rig if the dataset already has one --
-            %   assign a specific Rig with UMITRigStore.assignDatasetRig
-            %   before calling addSession to pin a non-Active Rig).
+            %   are rejected as sessionInfo fields. The session's rigUUID/
+            %   rigID are a read-only MIRROR of the rig bound in the
+            %   SaveFolder's rig ledger (UMITRigLedger), and empty when the
+            %   folder is not bound. Nothing is written to the SaveFolder for
+            %   the rig (rig-ledger redesign: no AcqInfos.mat stamping, no
+            %   Active-rig fallback). Bind the folder's rig in DataViewer
+            %   (Management > Rig > Folder Rig) before calling addSession to
+            %   record it in the session.
             %
             %   The session registry entry, SessionInfo, and SaveFolder
             %   UMITProjectBinding.umitlink are installed as one rollback-safe
@@ -1171,8 +1172,9 @@ classdef UMITProjectStore < handle
                 {'rigID', 'rigUUID'});
             if ~isempty(forbiddenRigFields)
                 error('Umitoolbox:UMITProjectStore:rigAssignmentNotSupported', ...
-                    ['Rig assignment is owned by UMITRigStore. Assign the Rig ' ...
-                     'to the SaveFolder (e.g. via UMITRigStore.assignDatasetRig) ' ...
+                    ['A session''s rig is not assigned through the project: it ' ...
+                     'mirrors the rig bound in the SaveFolder''s rig ledger. Bind ' ...
+                     'the folder''s rig (DataViewer: Management > Rig > Folder Rig) ' ...
                      'before creating the session.']);
             end
 
@@ -1232,9 +1234,7 @@ classdef UMITProjectStore < handle
             obj.iAssertUniqueRegistryID( ...
                 SubjectInfo.sessionRegistry, sessionID, 'session');
 
-            rigInfo = UMITRigStore.ensureDatasetRigAssociation(saveFolder);
-            rigUUID = rigInfo.uuid;
-            rigID = rigInfo.rigID;
+            [rigUUID, rigID] = UMITProjectStore.iFolderLedgerRig(saveFolder);
 
             sessionUUID = UMITProjectStore.iGenerateUUID();
             sessionRel = UMITProjectStore.iJoinRelative( ...
@@ -1895,10 +1895,10 @@ classdef UMITProjectStore < handle
             %
             %   Data-folder paths and binding UUIDs are managed only through
             %   bindRawDataFolder, bindProcessedDataFolder, and the matching
-            %   unbind methods. rigID/rigUUID are rejected here as well --
-            %   UMITRigStore is the sole owner of Rig assignment; change a
-            %   session's Rig via UMITRigStore.assignDatasetRig on its
-            %   SaveFolder instead.
+            %   unbind methods. rigID/rigUUID are rejected here as well: they
+            %   mirror the rig bound in the SaveFolder's rig ledger. Change
+            %   the folder's rig in DataViewer (Management > Rig > Folder
+            %   Rig), then refresh the mirror with migrateSessionRigAssignment.
 
             errID = 'Umitoolbox:UMITProjectStore:updateSessionFailed';
             obj.iAssertUpdateStruct(updates, errID);
@@ -1916,10 +1916,11 @@ classdef UMITProjectStore < handle
                 {'rigID', 'rigUUID'});
             if ~isempty(forbiddenRigFields)
                 error('Umitoolbox:UMITProjectStore:rigAssignmentNotSupported', ...
-                    ['Rig assignment is owned by UMITRigStore and cannot be ' ...
-                     'changed through updateSessionMetadata. Use ' ...
-                     'UMITRigStore.assignDatasetRig on the session''s ' ...
-                     'SaveFolder instead.']);
+                    ['A session''s rig cannot be changed through ' ...
+                     'updateSessionMetadata: it mirrors the rig bound in the ' ...
+                     'SaveFolder''s rig ledger. Change the folder''s rig in ' ...
+                     'DataViewer (Management > Rig > Folder Rig), then call ' ...
+                     'migrateSessionRigAssignment to refresh the mirror.']);
             end
 
             obj.iAssertWritable();
@@ -1973,29 +1974,32 @@ classdef UMITProjectStore < handle
         end
 
         function SessionInfo = migrateSessionRigAssignment(obj, subjectID, sessionID)
-            %MIGRATESESSIONRIGASSIGNMENT Assign Active Rig to one legacy Session.
+            %MIGRATESESSIONRIGASSIGNMENT Refresh a Session's rig mirror.
             %
-            %   Existing Session Rig references are never replaced. This is
-            %   intended for legacy SaveFolders whose AcqInfos.mat lacks a
-            %   Rig association.
+            %   Copies the rig bound in the session SaveFolder's rig ledger
+            %   (UMITRigLedger) into the session's rigUUID/rigID mirror.
+            %   Read-only towards the SaveFolder: nothing is written there
+            %   (no AcqInfos.mat stamping, no Active-rig fallback). A session
+            %   whose mirror already matches, or whose folder is not bound,
+            %   is returned unchanged.
 
             errID = 'Umitoolbox:UMITProjectStore:sessionRigMigrationFailed';
             [~, ~, ~, SessionInfo] = obj.iResolveSession(subjectID, sessionID);
-            hasUUID = isfield(SessionInfo, 'rigUUID') && ...
-                ~isempty(strtrim(char(string(SessionInfo.rigUUID))));
-            hasID = isfield(SessionInfo, 'rigID') && ...
-                ~isempty(strtrim(char(string(SessionInfo.rigID))));
-            if hasUUID && hasID
-                return
-            end
             if ~isfield(SessionInfo, 'processedDataFolder') || ...
                     isempty(SessionInfo.processedDataFolder)
-                error(errID, 'Legacy Session has no available SaveFolder.');
+                error(errID, 'Session has no available SaveFolder.');
             end
 
-            [rigInfo, ~] = UMITRigStore.ensureDatasetRigAssociation( ...
+            [rigUUID, rigID] = UMITProjectStore.iFolderLedgerRig( ...
                 SessionInfo.processedDataFolder);
-            obj.iStampSessionRig(subjectID, sessionID, rigInfo.uuid, rigInfo.rigID);
+            currentUUID = '';
+            if isfield(SessionInfo, 'rigUUID')
+                currentUUID = strtrim(char(string(SessionInfo.rigUUID)));
+            end
+            if isempty(rigUUID) || strcmpi(currentUUID, rigUUID)
+                return
+            end
+            obj.iStampSessionRig(subjectID, sessionID, rigUUID, rigID);
             SessionInfo = obj.getSessionInfo(subjectID, sessionID);
         end
 
@@ -5682,6 +5686,9 @@ classdef UMITProjectStore < handle
             % pointer is internally well-formed -- it deliberately does not
             % resolve the external rig store here, to avoid coupling a
             % project's own validation to another store's availability.
+            % The pointer mirrors the SaveFolder's rig ledger and is empty
+            % when the folder is not bound to a rig (rig-ledger redesign):
+            % an empty pointer is valid, a half-filled one is not.
             hasRigUUID = isfield(SessionInfo, 'rigUUID') && ~isempty(SessionInfo.rigUUID);
             hasRigID = isfield(SessionInfo, 'rigID') && ~isempty(SessionInfo.rigID);
             if hasRigUUID && ~hasRigID
@@ -5692,10 +5699,6 @@ classdef UMITProjectStore < handle
                 report = obj.iAddIssue(report, 'error', ...
                     'session_rig_incomplete', 'session', sessionRel, ...
                     'Session has rigID but no rigUUID.', false);
-            elseif ~hasRigID && ~hasRigUUID
-                report = obj.iAddIssue(report, 'error', ...
-                    'session_rig_required', 'session', sessionRel, ...
-                    'Imaging Session has no Rig assignment.', false);
             end
 
             bindingRoles = { ...
@@ -6567,6 +6570,27 @@ classdef UMITProjectStore < handle
     end
 
     methods (Static, Access = private)
+        function [rigUUID, rigID] = iFolderLedgerRig(saveFolder)
+            %IFOLDERLEDGERRIG Rig bound in a SaveFolder's rig ledger, read-only.
+            %
+            %   Returns empty values when the folder has no rig ledger, is
+            %   recorded as "no rig", or its ledger is invalid: the session
+            %   pointer is only a mirror, and project operations must not
+            %   depend on (or write) the folder's rig data.
+
+            rigUUID = '';
+            rigID = '';
+            try
+                report = UMITRigLedger.validate(saveFolder);
+            catch
+                return
+            end
+            if report.isValid && ~isempty(report.info.binding)
+                rigUUID = report.info.binding.sourceRig.uuid;
+                rigID = report.info.binding.sourceRig.rigID;
+            end
+        end
+
         function metadata = iAddMetadataDefaults(metadata, entityType)
             %IADDMETADATADEFAULTS Add optional metadata fields missing from old files.
 
