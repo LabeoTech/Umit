@@ -1,4 +1,4 @@
-classdef TestMapDat < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestMapDat < matlab.unittest.TestCase
     %TESTMAPDAT Characterization tests for mapDat on headerless .dat files.
     %
     %   Records mapDat behavior on headerless files so that the .dat header

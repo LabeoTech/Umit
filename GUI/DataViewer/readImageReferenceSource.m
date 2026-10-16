@@ -28,6 +28,14 @@ function [referenceImage, sourceInfo] = readImageReferenceSource(sourceFile, opt
 %   Name-Value options:
 %       maxFramesToAverage - Maximum number of pages/frames to average.
 %                            Default: 100.
+%       Variable           - MAT variable to read (MAT files with several
+%                            2D numeric variables). Default: '' (prompt).
+%       Entry              - UMT entry to read (UMT files with several
+%                            entries). Default: '' (prompt).
+%       Interactive        - false never opens a selection dialog: several
+%                            candidates without Variable/Entry are an error
+%                            (readImageReferenceSource:AmbiguousSource).
+%                            Pipelines use false. Default: true.
 %
 %   Outputs:
 %       referenceImage - 2D single reference image.
@@ -43,6 +51,9 @@ function [referenceImage, sourceInfo] = readImageReferenceSource(sourceFile, opt
 arguments
     sourceFile (1,1) string
     opts.maxFramesToAverage (1,1) double {mustBePositive, mustBeInteger} = 100
+    opts.Variable (1,1) string = ""
+    opts.Entry (1,1) string = ""
+    opts.Interactive (1,1) logical = true
 end
 
 sourceFile = strtrim(sourceFile);
@@ -63,10 +74,10 @@ switch ext
         [referenceImage, sourceInfo] = iReadDatSource(sourceFile, opts.maxFramesToAverage);
 
     case '.umt'
-        [referenceImage, sourceInfo] = iReadUmtSource(sourceFile, opts.maxFramesToAverage);
+        [referenceImage, sourceInfo] = iReadUmtSource(sourceFile, opts.maxFramesToAverage, opts);
 
     case '.mat'
-        [referenceImage, sourceInfo] = iReadMatSource(sourceFile);
+        [referenceImage, sourceInfo] = iReadMatSource(sourceFile, opts);
 
     otherwise
         error('readImageReferenceSource:UnsupportedFileType', ...
@@ -142,7 +153,7 @@ sourceInfo.processingNotes = sprintf( ...
 
 end
 
-function [referenceImage, sourceInfo] = iReadUmtSource(umtFile, maxFramesToAverage)
+function [referenceImage, sourceInfo] = iReadUmtSource(umtFile, maxFramesToAverage, opts)
 %IREADUMTSOURCE Read a UMT image source as one reference image.
 
 if exist('UMTImageSource', 'class') ~= 8
@@ -157,10 +168,20 @@ if isempty(entrySummary) || height(entrySummary) == 0
         'No readable UMT entries were found.');
 end
 
-if height(entrySummary) == 1
+if strlength(opts.Entry) > 0
+    selectedEntry = char(opts.Entry);
+    if ~any(strcmp(string(entrySummary.Name), opts.Entry))
+        error('readImageReferenceSource:UnknownSourceEntry', ...
+            'UMT file "%s" has no entry "%s".', umtFile, selectedEntry);
+    end
+elseif height(entrySummary) == 1
     selectedEntry = char(entrySummary.Name(1));
-else
+elseif opts.Interactive
     selectedEntry = iSelectUMTEntry(entrySummary);
+else
+    error('readImageReferenceSource:AmbiguousSource', ...
+        'UMT file "%s" has several entries (%s); name one with ''Entry''.', ...
+        umtFile, strjoin(cellstr(string(entrySummary.Name)), ', '));
 end
 
 src = UMTImageSource(char(umtFile), selectedEntry);
@@ -178,7 +199,7 @@ sourceInfo.processingNotes = sprintf( ...
 
 end
 
-function [referenceImage, sourceInfo] = iReadMatSource(matFile)
+function [referenceImage, sourceInfo] = iReadMatSource(matFile, opts)
 %IREADMATSOURCE Read selected 2D numeric variable from a MAT file.
 
 vars = whos('-file', matFile);
@@ -196,10 +217,20 @@ if isempty(candidateVars)
         'MAT file contains no 2D numeric array variables.');
 end
 
-if numel(candidateVars) == 1
+if strlength(opts.Variable) > 0
+    selectedVariable = char(opts.Variable);
+    if ~any(strcmp({candidateVars.name}, selectedVariable))
+        error('readImageReferenceSource:UnknownSourceEntry', ...
+            'MAT file "%s" has no 2D numeric variable "%s".', matFile, selectedVariable);
+    end
+elseif isscalar(candidateVars)
     selectedVariable = candidateVars(1).name;
-else
+elseif opts.Interactive
     selectedVariable = iSelectMatVariable(candidateVars);
+else
+    error('readImageReferenceSource:AmbiguousSource', ...
+        'MAT file "%s" has several 2D numeric variables (%s); name one with ''Variable''.', ...
+        matFile, strjoin({candidateVars.name}, ', '));
 end
 
 S = load(matFile, selectedVariable);
@@ -336,7 +367,7 @@ end
 
 img = single(img);
 
-if ndims(img) == 2
+if ismatrix(img)
     return
 end
 
@@ -364,7 +395,7 @@ if issparse(img)
     img = full(img);
 end
 
-if ~(isnumeric(img) || islogical(img)) || ndims(img) ~= 2 || isempty(img)
+if ~(isnumeric(img) || islogical(img)) || ~ismatrix(img) || isempty(img)
     error('readImageReferenceSource:InvalidReferenceImage', ...
         'Reference image must be a non-empty 2D numeric or logical array.');
 end
@@ -510,7 +541,7 @@ end
 function sourceFrame = iScalarSourceFrame(frameIdx)
 %ISCALARSOURCEFRAME Return sourceFrame only when exactly one frame was used.
 
-if numel(frameIdx) == 1
+if isscalar(frameIdx)
     sourceFrame = frameIdx;
 else
     sourceFrame = [];

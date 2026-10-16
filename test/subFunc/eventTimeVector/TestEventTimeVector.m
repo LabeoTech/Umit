@@ -1,4 +1,4 @@
-classdef TestEventTimeVector < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventTimeVector < matlab.unittest.TestCase
     %TESTEVENTTIMEVECTOR Event-locked time axis (.dat header Phase 8b).
     %
     %   Time 0 is column round(baselinePeriod * frameRateHz), the onset

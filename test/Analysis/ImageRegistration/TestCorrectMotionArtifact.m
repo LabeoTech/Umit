@@ -1,4 +1,4 @@
-classdef TestCorrectMotionArtifact < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestCorrectMotionArtifact < matlab.unittest.TestCase
     %TESTCORRECTMOTIONARTIFACT Unit tests for correctMotionArtifact.
     %
     % The function returns the corrected data (array in -> array out, .dat in

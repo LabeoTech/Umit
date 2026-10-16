@@ -1,4 +1,4 @@
-classdef TestGetTformQCMetrics < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGetTformQCMetrics < matlab.unittest.TestCase
     %TESTGETTFORMQCMETRICS Unit tests for the shared transform QC helper.
     %
     %   The helper exists because MATLAB exposes two incompatible matrix

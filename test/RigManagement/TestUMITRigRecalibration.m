@@ -1,4 +1,4 @@
-classdef TestUMITRigRecalibration < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestUMITRigRecalibration < matlab.unittest.TestCase
     %TESTUMITRIGRECALIBRATION Focused active-resource transition tests.
 
     properties

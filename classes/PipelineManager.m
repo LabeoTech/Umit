@@ -9709,6 +9709,18 @@ classdef PipelineManager < handle
                 try
                     [consumedKeys, createdFiles] = executeAndRegisterStep(node, saveFolder, rawFolder);
 
+                    if isfield(node, 'info') && isstruct(node.info) && ...
+                            isfield(node.info, 'freshSaveFolderRole') && ...
+                            strcmp(char(string(node.info.freshSaveFolderRole)), ...
+                            'acquisition-initializer')
+                        % A re-import is a fresh import that deleted the
+                        % previous dataHistory.mat with the data it described
+                        % (prepareFreshImport). Reload it so the history
+                        % loaded before the import is not written back;
+                        % entries of deleted files are pruned on load.
+                        obj.loadDataHistory(saveFolder);
+                    end
+
                     if nodeID == freshInitializerNodeID
                         [metadataStillInvalid, metadataMessage] = isLegacySchemaFolder(saveFolder);
                         if metadataStillInvalid

@@ -1,4 +1,4 @@
-classdef TestRetinotopyFFTWindow < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestRetinotopyFFTWindow < matlab.unittest.TestCase
     methods (TestClassSetup)
         function addProjectPath(testCase)
             thisFile = mfilename('fullpath');

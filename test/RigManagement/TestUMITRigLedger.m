@@ -1,8 +1,8 @@
-classdef TestUMITRigLedger < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestUMITRigLedger < matlab.unittest.TestCase
     %TESTUMITRIGLEDGER Phase-1 tests of the folder-bound rig ledger.
     %
     %   Covers state transitions, canonical hashing, filter-set rules,
-    %   re-import reset, conflicts, acknowledgement, hadConflict
+    %   fresh-import reset, conflicts, acknowledgement, hadConflict
     %   permanence, integrity failures and atomic-write behaviour. Rigs are
     %   plain RigInfo structs over built-in spectra, so the tests never
     %   touch the per-machine rig library.
@@ -247,9 +247,9 @@ classdef TestUMITRigLedger < matlab.unittest.TestCase
         end
     end
 
-    %% Re-import
+    %% Fresh import
     methods (Test)
-        function testReimportResetsOnlyCoregistration(testCase)
+        function testFreshImportResetsAllCommitmentsAndKeepsBinding(testCase)
             binding = testCase.binding('A', 'LED_632nm', 1);
             UMITRigLedger.bind(testCase.Folder, binding, 'Origin', 'test');
             UMITRigLedger.commit(testCase.Folder, 'optics', binding.optics.hash, 'Origin', 'test');
@@ -257,71 +257,85 @@ classdef TestUMITRigLedger < matlab.unittest.TestCase
                 binding.coregistration.hash, 'Origin', 'test');
             filterSet = UMITRigLedger.buildFilterSetSnapshot('GCaMP');
             UMITRigLedger.commit(testCase.Folder, 'filterSet', filterSet, 'Origin', 'test');
+            eventsBefore = numel(UMITRigLedger.read(testCase.Folder).events);
 
-            UMITRigLedger.recordReimport(testCase.Folder, 'Origin', 'ImagesClassification');
-
-            info = UMITRigLedger.read(testCase.Folder);
-            testCase.verifyEmpty(info.commitments.coregistration);
-            testCase.verifyEqual(info.commitments.optics, binding.optics.hash);
-            testCase.verifyEqual({info.commitments.filterSets.id}, {'GCaMP'});
-
-            % A new transform can now be bound and committed without conflict.
-            newCoreg = testCase.binding('A', 'LED_632nm', 3);
-            conflict = UMITRigLedger.rebind(testCase.Folder, newCoreg, 'Origin', 'test');
-            testCase.verifyFalse(conflict.hasConflict);
-            testCase.verifyTrue(UMITRigLedger.commit(testCase.Folder, 'coregistration', ...
-                newCoreg.coregistration.hash, 'Origin', 'test'));
-            testCase.verifyEqual(UMITRigLedger.read(testCase.Folder).state, 'BoundCommitted');
-
-            % Different optics after a re-import remain a conflict.
-            UMITRigLedger.recordReimport(testCase.Folder, 'Origin', 'ImagesClassification');
-            preview = UMITRigLedger.previewRebind(testCase.Folder, ...
-                testCase.binding('A', 'LED_593nm', 3));
-            testCase.verifyEqual(preview.parts, {'optics'});
-        end
-
-        function testReimportResolvesCoregistrationOnlyConflict(testCase)
-            binding = testCase.binding('A', 'LED_632nm', 1);
-            UMITRigLedger.bind(testCase.Folder, binding, 'Origin', 'test');
-            UMITRigLedger.commit(testCase.Folder, 'coregistration', ...
-                binding.coregistration.hash, 'Origin', 'test');
-            UMITRigLedger.rebind(testCase.Folder, testCase.binding('A', 'LED_632nm', 2), 'Origin', 'test');
-            testCase.verifyEqual(UMITRigLedger.read(testCase.Folder).state, 'Conflicted');
-
-            UMITRigLedger.recordReimport(testCase.Folder, 'Origin', 'test');
+            UMITRigLedger.recordFreshImport(testCase.Folder, 'Origin', 'ImagesClassification');
 
             info = UMITRigLedger.read(testCase.Folder);
             testCase.verifyEqual(info.state, 'BoundUncommitted');
-            testCase.verifyTrue(info.hadConflict);
+            testCase.verifyEmpty(info.commitments.optics);
+            testCase.verifyEmpty(info.commitments.coregistration);
+            testCase.verifyEmpty(info.commitments.filterSets);
+            testCase.verifyEqual(info.binding.opticsHash, binding.optics.hash);
+            testCase.verifyEqual(info.binding.coregistrationHash, binding.coregistration.hash);
+            % History is retained; the event records what was reset.
+            testCase.verifyNumElements(info.events, eventsBefore + 1);
+            event = info.events{end};
+            testCase.verifyEqual(event.type, 'freshImport');
+            testCase.verifyEqual(event.previousOpticsHash, binding.optics.hash);
+            testCase.verifyEqual(event.previousCoregistrationHash, binding.coregistration.hash);
+            testCase.verifyEqual(event.previousFilterSets.id, 'GCaMP');
+            testCase.verifySubstring(regexprep(fileread(UMITRigLedger.filePath(testCase.Folder)), ...
+                '\s', ''), '"previousFilterSets":[{');
+
+            % Different optics, a new transform and a modified filter set are
+            % all allowed afterwards, without conflict.
+            other = testCase.binding('B', 'LED_593nm', 3);
+            conflict = UMITRigLedger.rebind(testCase.Folder, other, 'Origin', 'test');
+            testCase.verifyFalse(conflict.hasConflict);
+            testCase.verifyTrue(UMITRigLedger.commit(testCase.Folder, 'optics', ...
+                other.optics.hash, 'Origin', 'test'));
+            testCase.verifyTrue(UMITRigLedger.commit(testCase.Folder, 'coregistration', ...
+                other.coregistration.hash, 'Origin', 'test'));
+            modified = filterSet;
+            modified.emissionResponse(100) = 0.5;
+            modified.hash = UMITRigLedger.computeHash(modified);
+            testCase.verifyTrue(UMITRigLedger.assertCanUseFilterSet(testCase.Folder, modified));
+            testCase.verifyEqual(UMITRigLedger.read(testCase.Folder).state, 'BoundCommitted');
+            testCase.verifyFalse(UMITRigLedger.read(testCase.Folder).hadConflict);
         end
 
-        function testAssertCanReimportChecksOnlyCommittedOptics(testCase)
-            sameOptics = testCase.binding('A', 'LED_632nm', 1);
-            otherOptics = testCase.binding('B', 'LED_593nm', 2);
-            % No ledger, or nothing committed: always allowed.
-            UMITRigLedger.assertCanReimport(testCase.Folder, otherOptics);
-            UMITRigLedger.bind(testCase.Folder, sameOptics, 'Origin', 'test');
-            UMITRigLedger.commit(testCase.Folder, 'coregistration', ...
-                sameOptics.coregistration.hash, 'Origin', 'test');
-            UMITRigLedger.assertCanReimport(testCase.Folder, otherOptics);
+        function testFreshImportEndsConflictButHadConflictStays(testCase)
+            % Decision (Bruno, 2026-10-15): hadConflict stays true by history.
+            testCase.bindAndCommitOptics('A');
+            UMITRigLedger.rebind(testCase.Folder, testCase.binding('B', 'LED_593nm'), 'Origin', 'test');
+            testCase.verifyEqual(UMITRigLedger.read(testCase.Folder).state, 'Conflicted');
 
-            UMITRigLedger.commit(testCase.Folder, 'optics', sameOptics.optics.hash, 'Origin', 'test');
-            before = fileread(UMITRigLedger.filePath(testCase.Folder));
-            % Same optics with another transform: allowed (re-import resets it).
-            UMITRigLedger.assertCanReimport(testCase.Folder, ...
-                testCase.binding('A', 'LED_632nm', 3));
-            UMITRigLedger.assertCanReimport(testCase.Folder, []);
-            try
-                UMITRigLedger.assertCanReimport(testCase.Folder, otherOptics, ...
-                    'Operation', 'Re-importing dual-camera data');
-                testCase.verifyFail('Expected a re-import conflict.');
-            catch ME
-                testCase.verifyEqual(ME.identifier, 'Umitoolbox:RigLedger:reimportConflict');
-                testCase.verifySubstring(ME.message, 'Re-importing dual-camera data was refused');
-                testCase.verifySubstring(ME.message, 'Rig A');
-                testCase.verifySubstring(ME.message, 'Rig B');
-            end
-            testCase.verifyEqual(fileread(UMITRigLedger.filePath(testCase.Folder)), before);
+            UMITRigLedger.recordFreshImport(testCase.Folder, 'Origin', 'test');
+
+            info = UMITRigLedger.read(testCase.Folder);
+            testCase.verifyEqual(info.state, 'BoundUncommitted');
+            testCase.verifyEqual(info.binding.sourceRig.rigID, 'B');
+            testCase.verifyEmpty(info.conflictParts);
+            testCase.verifyTrue(info.hadConflict);
+            result = UMITRigLedger.assertCanUseOptics(testCase.Folder);
+            testCase.verifyTrue(result.needsCommit);
+        end
+
+        function testFreshImportOfNoRigFolderStaysNoRig(testCase)
+            UMITRigLedger.writeNoRig(testCase.Folder, 'Origin', 'test');
+
+            UMITRigLedger.recordFreshImport(testCase.Folder, 'Origin', 'test');
+
+            info = UMITRigLedger.read(testCase.Folder);
+            testCase.verifyEqual(info.state, 'NoRig');
+            testCase.verifyEqual(cellfun(@(e) e.type, info.events, 'UniformOutput', false), ...
+                {'noRig', 'freshImport'});
+        end
+
+        function testLegacyReimportEventIsInvalid(testCase)
+            % Decision (Bruno, 2026-10-15): pre-release, no migration. A
+            % ledger holding the retired 'reimport' event is invalid.
+            UMITRigLedger.writeNoRig(testCase.Folder, 'Origin', 'test');
+            UMITRigLedger.recordFreshImport(testCase.Folder, 'Origin', 'test');
+            path = UMITRigLedger.filePath(testCase.Folder);
+            testCase.writeText(path, strrep(fileread(path), '"freshImport"', '"reimport"'));
+
+            report = UMITRigLedger.validate(testCase.Folder);
+            testCase.verifyFalse(report.isValid);
+            testCase.verifySubstring(strjoin(report.issues, ' '), 'unknown event type');
+            testCase.verifyError(@() UMITRigLedger.read(testCase.Folder), ...
+                'Umitoolbox:RigLedger:invalidLedger');
         end
 
         function testDropCoregistrationBindingKeepsOptics(testCase)
@@ -329,7 +343,7 @@ classdef TestUMITRigLedger < matlab.unittest.TestCase
             UMITRigLedger.bind(testCase.Folder, binding, 'Origin', 'test');
             UMITRigLedger.commit(testCase.Folder, 'coregistration', ...
                 binding.coregistration.hash, 'Origin', 'test');
-            UMITRigLedger.recordReimport(testCase.Folder, 'Origin', 'test');
+            UMITRigLedger.recordFreshImport(testCase.Folder, 'Origin', 'test');
 
             conflict = UMITRigLedger.dropCoregistrationBinding(testCase.Folder, 'Origin', 'test');
             info = UMITRigLedger.read(testCase.Folder);
@@ -345,9 +359,10 @@ classdef TestUMITRigLedger < matlab.unittest.TestCase
             testCase.verifyEqual(fileread(UMITRigLedger.filePath(testCase.Folder)), before);
         end
 
-        function testReimportRequiresLedger(testCase)
-            testCase.verifyError(@() UMITRigLedger.recordReimport(testCase.Folder, ...
+        function testFreshImportRequiresLedger(testCase)
+            testCase.verifyError(@() UMITRigLedger.recordFreshImport(testCase.Folder, ...
                 'Origin', 'test'), 'Umitoolbox:RigLedger:noLedger');
+            testCase.verifyEmpty(testCase.folderEntries());
         end
     end
 
@@ -475,7 +490,7 @@ classdef TestUMITRigLedger < matlab.unittest.TestCase
                 'Umitoolbox:RigLedger:invalidLedger');
             testCase.verifyError(@() UMITRigLedger.assertCanUseOptics(testCase.Folder), ...
                 'Umitoolbox:RigLedger:invalidLedger');
-            testCase.verifyError(@() UMITRigLedger.recordReimport(testCase.Folder, 'Origin', 'test'), ...
+            testCase.verifyError(@() UMITRigLedger.recordFreshImport(testCase.Folder, 'Origin', 'test'), ...
                 'Umitoolbox:RigLedger:invalidLedger');
         end
 

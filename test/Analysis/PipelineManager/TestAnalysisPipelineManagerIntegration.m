@@ -1,4 +1,4 @@
-classdef TestAnalysisPipelineManagerIntegration < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestAnalysisPipelineManagerIntegration < matlab.unittest.TestCase
     %TESTANALYSISPIPELINEMANAGERINTEGRATION PM execution of Analysis nodes.
     %
     % Direct Analysis unit tests do not exercise PipelineManager's source

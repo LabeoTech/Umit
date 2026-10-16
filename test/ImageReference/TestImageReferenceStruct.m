@@ -1,4 +1,4 @@
-classdef TestImageReferenceStruct < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestImageReferenceStruct < matlab.unittest.TestCase
 %TESTIMAGEREFERENCESTRUCT Unit tests for canonical ImageReference payloads.
 
     methods (Test)

@@ -1,4 +1,4 @@
-classdef TestNormalizeBSLN < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestNormalizeBSLN < matlab.unittest.TestCase
     %TESTNORMALIZEBSLN Unit tests for normalizeBSLN.
     %
     % Contract: .dat input only (Y-X-T or event-split Y-X-T-E), a .dat

@@ -1,4 +1,4 @@
-classdef TestPipelineManagerLegacySchemaGuard < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestPipelineManagerLegacySchemaGuard < matlab.unittest.TestCase
     %TESTPIPELINEMANAGERLEGACYSCHEMAGUARD Validate the legacy-schema processing block.
     %
     %   Covers isLegacySchemaFolder and PipelineManager.executePipeline's

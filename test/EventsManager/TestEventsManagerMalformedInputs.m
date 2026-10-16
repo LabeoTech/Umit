@@ -1,4 +1,4 @@
-classdef TestEventsManagerMalformedInputs < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventsManagerMalformedInputs < matlab.unittest.TestCase
     %TESTEVENTSMANAGERMALFORMEDINPUTS Malformed-input handling tests.
 
     properties

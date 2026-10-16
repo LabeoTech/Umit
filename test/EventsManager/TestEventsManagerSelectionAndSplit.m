@@ -1,4 +1,4 @@
-classdef TestEventsManagerSelectionAndSplit < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventsManagerSelectionAndSplit < matlab.unittest.TestCase
     %TESTEVENTSMANAGERSELECTIONANDSPLIT Tests for event selection and splitting.
 
     properties

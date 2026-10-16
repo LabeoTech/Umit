@@ -1,4 +1,4 @@
-classdef TestSaveDataHeader < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestSaveDataHeader < matlab.unittest.TestCase
     %TESTSAVEDATAHEADER saveData writes headered .dat files.
     %
     %   .dat header Phase 4c-1, updated in Phase 6a: covers the header of

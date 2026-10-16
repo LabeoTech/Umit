@@ -1,4 +1,4 @@
-classdef TestRunAnaSpeckle < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestRunAnaSpeckle < matlab.unittest.TestCase
     properties
         ProjectRoot
         SampleDataFolder

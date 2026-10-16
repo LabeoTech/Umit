@@ -1,4 +1,4 @@
-classdef TestResolveDatEventMapping < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestResolveDatEventMapping < matlab.unittest.TestCase
     %TESTRESOLVEDATEVENTMAPPING E axis of an event-split .dat onto events.mat.
     %
     %   .dat header Phase 8b: the mapping is used only when the E size equals

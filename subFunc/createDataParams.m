@@ -155,41 +155,7 @@ DataParams.folders.RawFolderSetBy = '';
 % -------------------------------------------------------------------------
 % Registration metadata
 % -------------------------------------------------------------------------
-DataParams.registration = struct();
-
-DataParams.registration.isRegistered = false;
-DataParams.registration.isReviewed = false;
-DataParams.registration.tform = [];
-DataParams.registration.resourceUUID = '';
-
-DataParams.registration.transformType = '';
-DataParams.registration.method = '';
-DataParams.registration.referenceDescription = '';
-DataParams.registration.referenceFile = '';
-DataParams.registration.referenceImage = [];
-DataParams.registration.imageReferenceUUID = '';
-DataParams.registration.imageReferenceChecksum = '';
-DataParams.registration.createdOn = '';
-DataParams.registration.source = '';
-
-DataParams.registration.qcStatus = '';
-DataParams.registration.qcWarning = '';
-DataParams.registration.qcFigureFile = '';
-DataParams.registration.qcPreviewImageFile = '';
-
-DataParams.registration.appliedOn = '';
-DataParams.registration.appliedBy = '';
-DataParams.registration.confirmationMode = '';
-DataParams.registration.notes = '';
-
-DataParams.registration.qcMetrics = struct();
-DataParams.registration.qcMetrics.MIBefore = [];
-DataParams.registration.qcMetrics.MIAfter = [];
-DataParams.registration.qcMetrics.MIDelta = [];
-DataParams.registration.qcMetrics.translationXY_px = [];
-DataParams.registration.qcMetrics.rotationDeg = [];
-DataParams.registration.qcMetrics.scaleXY = [];
-DataParams.registration.qcMetrics.determinant = [];
+DataParams.registration = newRegistrationRecord();
 
 % -------------------------------------------------------------------------
 % Dual-camera coregistration metadata
@@ -306,26 +272,14 @@ DataParams.folders.RawFolder = char(string(DataParams.folders.RawFolder));
 DataParams.folders.RawFolderStatus = char(string(DataParams.folders.RawFolderStatus));
 DataParams.folders.RawFolderSetBy = char(string(DataParams.folders.RawFolderSetBy));
 
-if ~isfield(DataParams, 'registration') || ...
-        ~isstruct(DataParams.registration) || ...
-        ~isscalar(DataParams.registration)
+if ~isfield(DataParams, 'registration')
     DataParams.registration = struct();
 end
-
-registrationDefaults = struct( ...
-    'imageReferenceUUID', '', ...
-    'imageReferenceChecksum', '');
-registrationFields = fieldnames(registrationDefaults);
-for k = 1:numel(registrationFields)
-    fieldName = registrationFields{k};
-    if ~isfield(DataParams.registration, fieldName)
-        DataParams.registration.(fieldName) = ...
-            registrationDefaults.(fieldName);
-    else
-        DataParams.registration.(fieldName) = char(string( ...
-            DataParams.registration.(fieldName)));
-    end
+viewInfo = struct();
+if isfield(DataParams, 'view')
+    viewInfo = DataParams.view;
 end
+DataParams.registration = upgradeRegistrationRecord(DataParams.registration, viewInfo);
 
 end
 

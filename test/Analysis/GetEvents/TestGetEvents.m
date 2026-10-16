@@ -1,4 +1,4 @@
-classdef TestGetEvents < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGetEvents < matlab.unittest.TestCase
     %TESTGETEVENTS PipelineManager integration coverage for getEvents.
 
     properties

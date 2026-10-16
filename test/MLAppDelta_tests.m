@@ -1,4 +1,4 @@
-classdef MLAppDelta_tests < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) MLAppDelta_tests < matlab.unittest.TestCase
 %MLAPPDELTA_TESTS Unit tests for the .mlapp delta-tracking tool chain
 % (_mlapp_tools/exportMlappToM, parseMatlabExport, diffMatlabBlocks,
 % generateDeltaFile, confirmAndUpdateReference, exportMatlabAppToDelta).
@@ -422,6 +422,98 @@ classdef MLAppDelta_tests < matlab.unittest.TestCase
             testCase.verifySubstring(rebuildBody, 'app.clipROIMaskToActiveLogicalMask');
             testCase.verifySubstring(boundsBody, 'xBounds = [0.5');
             testCase.verifySubstring(boundsBody, 'yBounds = [0.5');
+        end
+
+        function testParserBalancesNestingAroundTrickyConstructs(testCase)
+        %TESTPARSERBALANCESNESTINGAROUNDTRICKYCONSTRUCTS Regression: one-line
+        % blocks (`if c; return; end`) used to leave an unclosed block, so every
+        % method after them (most of DataViewer) was silently dropped.
+
+            src = {
+                'classdef Tricky'
+                '    properties (Access = public)'
+                '        Items cell = {1, ''end''}'
+                '    end'
+                '    methods (Access = private)'
+                '        function oneLiner(app, h)'
+                '            if strcmp(h.Color,''none'');return;end'
+                '            for k = 1:3, app.Items{end+1} = k; end'
+                '            try, x = 1; catch, x = 2; end'
+                '        end'
+                '        function endIndexAndStrings(app, v)'
+                '            last = v(end);'
+                '            f = @(q) q(end);'
+                '            fprintf(''100% if for end while'');'
+                '            s = "if end switch";  % end trailing comment'
+                '            w = v'';  % transpose then quote'
+                '            m = [1 2 ...'
+                '                 3 end];'
+                '        end'
+                '        function withArguments(app, a)'
+                '            arguments'
+                '                app'
+                '                a (1,1) double = 0'
+                '            end'
+                '            switch a'
+                '                case 1'
+                '                    disp(1)'
+                '                otherwise'
+                '                    disp(0)'
+                '            end'
+                '        end'
+                '%{'
+                'end end end'
+                '%}'
+                '        function lastOne(app)'
+                '            while true, break, end'
+                '        end'
+                '    end'
+                'end'};
+            mPath = testCase.newTempFile('.m');
+            fid = fopen(mPath, 'w');
+            fwrite(fid, strjoin(src, newline));
+            fclose(fid);
+
+            parsed = parseMatlabExport(mPath);
+
+            testCase.verifyEmpty(parsed.warnings, ...
+                'Tricky but valid constructs must not trigger unbalanced-nesting warnings.');
+            names = cellfun(@(m) m.name, parsed.methods, 'UniformOutput', false);
+            testCase.verifyEqual(names, ...
+                {'oneLiner', 'endIndexAndStrings', 'withArguments', 'lastOne'});
+            testCase.verifyEqual(numel(parsed.properties), 1);
+        end
+
+        function testExportKeepsXmlEntitiesInCdataVerbatim(testCase)
+        %TESTEXPORTKEEPSXMLENTITIESINCDATAVERBATIM Regression: CDATA is literal,
+        % so `strrep(t, '&', '&amp;')` must not be decoded to `'&', '&'`
+        % (an unterminated-string corruption that broke parsing downstream).
+
+            workDir = tempname;
+            mkdir(fullfile(workDir, 'matlab'));
+            cleanup = onCleanup(@() rmdir(workDir, 's'));
+            code = sprintf(['classdef E\n    methods\n        function f(app, t)\n' ...
+                '            t = strrep(t, ''&'', ''&amp;'');\n        end\n' ...
+                '        function g(app)\n        end\n    end\nend\n']);
+            fid = fopen(fullfile(workDir, 'matlab', 'document.xml'), 'w');
+            fwrite(fid, ['<w:document><![CDATA[' code ']]></w:document>']);
+            fclose(fid);
+            zipPath = [tempname '.zip'];
+            zip(zipPath, 'matlab', workDir);
+            mlappPath = [tempname '.mlapp'];
+            movefile(zipPath, mlappPath);
+            testCase.TempFiles{end+1} = mlappPath;
+
+            exported = exportMlappToM(mlappPath);
+
+            testCase.verifySubstring(exported, '''&amp;''');
+            mPath = testCase.newTempFile('.m');
+            fid = fopen(mPath, 'w');
+            fwrite(fid, exported);
+            fclose(fid);
+            parsed = parseMatlabExport(mPath);
+            testCase.verifyEmpty(parsed.warnings);
+            testCase.verifyEqual(numel(parsed.methods), 2);
         end
     end
 

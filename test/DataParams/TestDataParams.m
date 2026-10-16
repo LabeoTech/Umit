@@ -1,4 +1,4 @@
-classdef TestDataParams < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestDataParams < matlab.unittest.TestCase
 %TESTDATAPARAMS Focused persistence and invariant tests for DataParams.
 
     properties
@@ -109,24 +109,71 @@ classdef TestDataParams < matlab.unittest.TestCase
             testCase.verifyEqual(loaded.folders.RawFolderStatus, 'invalid');
         end
 
-        function testRegistrationProvenanceRequiresCompletePair(testCase)
+        function testRegistrationRecordVersion2Layout(testCase)
+            % Project redesign Phase 2: DataParams.registration is the
+            % version-2 record {version, reference, estimate, apply}; the
+            % version-1 provenance fields are gone.
             DataParams = createDataParams(testCase.TempFolder);
-            DataParams.registration.imageReferenceUUID = ...
-                '550e8400-e29b-41d4-a716-446655440000';
+            registration = DataParams.registration;
 
-            testCase.verifyError(@() saveDataParams( ...
-                testCase.TempFolder, DataParams), ...
-                'validateDataParams:IncompleteImageReferenceProvenance');
+            testCase.verifyEqual(registration.version, 2);
+            testCase.verifyEmpty(registration.reference);
+            testCase.verifyEmpty(registration.estimate);
+            testCase.verifyFalse(registration.apply.isRegistered);
+            testCase.verifyEqual(sort(fieldnames(registration))', ...
+                sort({'version', 'reference', 'estimate', 'apply'}));
 
-            DataParams.registration.imageReferenceChecksum = repmat('a', 1, 64);
-            testCase.verifyWarningFree(@() saveDataParams( ...
-                testCase.TempFolder, DataParams));
+            DataParams.registration.imageReferenceUUID = '550e8400-e29b-41d4-a716-446655440000';
+            testCase.verifyError(@() saveDataParams(testCase.TempFolder, DataParams), ...
+                'validateDataParams:InvalidRegistration');
+        end
 
-            loaded = loadDataParams(testCase.TempFolder);
-            testCase.verifyEqual(loaded.registration.imageReferenceUUID, ...
-                DataParams.registration.imageReferenceUUID);
-            testCase.verifyEqual(loaded.registration.imageReferenceChecksum, ...
-                DataParams.registration.imageReferenceChecksum);
+        function testRegistrationRecordRules(testCase)
+            DataParams = createDataParams(testCase.TempFolder);
+            [~, referenceTemplate, estimateTemplate] = newRegistrationRecord();
+            image = single(magic(6));
+            reference = referenceTemplate;
+            [reference.contentHash, reference.image] = computeImageContentHash(image);
+            reference.imageSizeYX = [6 6];
+            reference.name = 'test';
+            reference.source = referenceSourceDescriptor('file', 'C:\ref.tif');
+            estimate = estimateTemplate;
+            estimate.tform = affine2d(eye(3));
+            estimate.referenceHash = reference.contentHash;
+            DataParams.registration.reference = reference;
+            DataParams.registration.estimate = estimate;
+            testCase.verifyWarningFree(@() saveDataParams(testCase.TempFolder, DataParams));
+
+            % Apply fields only once aligned.
+            bad = DataParams;
+            bad.registration.apply.appliedOn = '2026-10-15 10:00:00';
+            testCase.verifyError(@() validateDataParams(bad), ...
+                'validateDataParams:AppliedFieldWithoutRegistration');
+
+            % Aligned: the commitment must equal the reference hash.
+            aligned = DataParams;
+            aligned.view.imageSizeYX = [6 6];
+            aligned.mask.logical = true(6);
+            aligned.registration.apply.isRegistered = true;
+            aligned.registration.apply.appliedReferenceHash = reference.contentHash;
+            testCase.verifyWarningFree(@() validateDataParams(aligned));
+            wrongHash = aligned;
+            wrongHash.registration.apply.appliedReferenceHash = ['sha256:' repmat('0', 1, 64)];
+            testCase.verifyError(@() validateDataParams(wrongHash), ...
+                'validateDataParams:AppliedReferenceMismatch');
+            noEstimate = aligned;
+            noEstimate.registration.estimate = [];
+            testCase.verifyError(@() validateDataParams(noEstimate), ...
+                'validateDataParams:MissingTform');
+
+            badHash = DataParams;
+            badHash.registration.reference.contentHash = 'abc';
+            testCase.verifyError(@() validateDataParams(badHash), ...
+                'validateDataParams:InvalidContentHash');
+            badSource = DataParams;
+            badSource.registration.reference.source = rmfield(reference.source, 'warning');
+            testCase.verifyError(@() validateDataParams(badSource), ...
+                'validateDataParams:InvalidReferenceSource');
         end
 
         function testRejectsMaskSizeMismatch(testCase)

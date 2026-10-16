@@ -1,4 +1,4 @@
-classdef TestPipelineManagerHistoryTransfer < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestPipelineManagerHistoryTransfer < matlab.unittest.TestCase
     %TESTPIPELINEMANAGERHISTORYTRANSFER Validate PipelineManager.transferDataHistoryEntry.
     %
     %   dataHistory.mat is keyed by file name, so provenance must follow a

@@ -1,4 +1,4 @@
-classdef TestROIFilePersistence < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestROIFilePersistence < matlab.unittest.TestCase
 %TESTROIFILEPERSISTENCE Persistence, schema, and migration tests for ROI files.
 
     properties

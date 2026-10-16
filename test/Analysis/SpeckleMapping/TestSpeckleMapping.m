@@ -1,4 +1,4 @@
-classdef TestSpeckleMapping < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestSpeckleMapping < matlab.unittest.TestCase
     %TESTSPECKLEMAPPING Unit tests for SpeckleMapping.
     %
     % Uses the real fixture folder:

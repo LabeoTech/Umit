@@ -1,4 +1,4 @@
-classdef TestSpatialGaussFilt < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestSpatialGaussFilt < matlab.unittest.TestCase
     %TESTSPATIALGAUSSFILT Unit tests for spatialGaussFilt.
     %
     % Coverage:

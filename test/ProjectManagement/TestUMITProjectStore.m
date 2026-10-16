@@ -1,4 +1,4 @@
-classdef TestUMITProjectStore < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestUMITProjectStore < matlab.unittest.TestCase
 %TESTUMITPROJECTSTORE Unit tests for centralized UMIT project management.
 
     properties
@@ -47,8 +47,8 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
         %REMOVETEMPORARYFOLDERS Remove all files created by a test.
         %
         %   Every step below is best-effort and independently guarded: this
-        %   teardown runs against the real, non-redirectable Rig store (see
-        %   createTemporaryFolders), so one locked/failed removal must never
+        %   the temporary UMIT root (UMITTemporaryRootFixture) is shared by
+        %   consecutive test classes, so one locked/failed removal must never
         %   abort the remaining cleanup steps and leave other fixtures behind.
 
             if ~isempty(testCase.OriginalActiveRigUUID) && ...
@@ -96,7 +96,7 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
     methods (Access = private)
         function removeRigFixture(~, rigRoot)
         %REMOVERIGFIXTURE Best-effort removal of one fixture Rig this test
-        %created on the real Rig store.
+        %created in the (temporary) Rig store.
         %
         %   If the fixture Rig is still the store's default, repoint the
         %   default to another existing Rig first. Deleting a default Rig's
@@ -191,26 +191,35 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
                 testCase.ProjectRoot);
         end
 
-        function testNormalizeSubjectAndSessionIDsToValidMATLABNames(testCase)
-        %TESTNORMALIZESUBJECTANDSESSIONIDSTOVALIDMATLABNAMES Sanitize IDs.
+        function testInvalidIDsAreReportedNotRewritten(testCase)
+        %TESTINVALIDIDSAREREPORTEDNOTREWRITTEN Audit item 24: a new or
+        %renamed ID that is not a valid name is refused with the valid form
+        %in the message, never rewritten silently. Lookups still tolerate
+        %unnormalized input.
 
             store = testCase.createProject();
-            subjectUUID = store.addSubject(struct('subjectID', 'Mouse 104'));
-            SubjectInfo = store.getSubjectInfo('Mouse 104');
-            testCase.verifyEqual(SubjectInfo.uuid, subjectUUID);
-            testCase.verifyEqual(SubjectInfo.subjectID, 'Mouse104');
+            message = testCase.errorMessage(@() store.addSubject( ...
+                struct('subjectID', 'Mouse 104')), ...
+                'Umitoolbox:UMITProjectStore:invalidID');
+            testCase.verifySubstring(message, 'Use "Mouse104" instead');
+            testCase.verifyEmpty(store.getProjectInfo().subjectRegistry);
 
-            sessionUUID = testCase.addSession(store, 'Mouse 104', struct( ...
-                'sessionID', '2026-07-10 Session-01'));
-            SessionInfo = store.getSessionInfo( ...
-                'Mouse104', '2026-07-10 Session-01');
-            testCase.verifyEqual(SessionInfo.uuid, sessionUUID);
-            testCase.verifyEqual(SessionInfo.sessionID, ...
-                'x2026_07_10Session_01');
+            subjectUUID = store.addSubject(struct('subjectID', 'Mouse104'));
+            testCase.verifyEqual(store.getSubjectInfo('Mouse 104').uuid, subjectUUID, ...
+                'lookups normalize their input');
 
+            message = testCase.errorMessage(@() testCase.addSession(store, 'Mouse104', ...
+                struct('sessionID', '2026-07-10 Session-01')), ...
+                'Umitoolbox:UMITProjectStore:invalidID');
+            testCase.verifySubstring(message, 'x2026_07_10Session_01');
+            testCase.verifyError(@() store.renameSubjectID('Mouse104', 'Mouse 105'), ...
+                'Umitoolbox:UMITProjectStore:invalidID');
             testCase.verifyError(@() store.addSubject( ...
                 struct('subjectID', 'CON')), ...
                 'Umitoolbox:UMITProjectStore:invalidID');
+            testCase.verifyError(@() store.addSubject( ...
+                struct('subjectID', 'Mouse105', 'colour', 'brown')), ...
+                'Umitoolbox:UMITProjectStore:unsupportedField');
 
             report = store.validate('Mode', 'full');
             testCase.verifyTrue(report.isValid, ...
@@ -321,120 +330,47 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
                 testCase.issueMessages(report.errors));
         end
 
-        function testSessionRigPointerIsUUIDBackedAcrossExternalRigRename(testCase)
-        %TESTSESSIONRIGPOINTERISUUIDBACKEDACROSSEXTERNALRIGRENAME Verify a
-        %session's rig pointer survives an external rig rename.
-        %
-        %   Rigs are independent of any project (UMITRigStore), so
-        %   UMITProjectStore has no way to cascade-update a session's cached
-        %   rigID when the rig is renamed externally -- only the immutable
-        %   rigUUID is guaranteed current. This is an accepted limitation:
-        %   the UUID remains authoritative and can always re-resolve the
-        %   rig's current human-readable ID via UMITRigStore.
-
-            rigStore = UMITRigStore.create(struct('rigID', 'WidefieldRig01'));
-            testCase.RigRoot = rigStore.RigRoot;
-            rigUUID = rigStore.getRigInfo().uuid;
+        function testSessionsKeepNoRig(testCase)
+        %TESTSESSIONSKEEPNORIG Project redesign 1.12 (T1-T5): a session has
+        %no rig fields; the folder's rig lives only in its rig ledger, which
+        %addSession neither reads into the session nor writes. Rig fields
+        %are refused like any unknown field.
 
             store = testCase.createProject();
             store.addSubject(struct('subjectID', 'Mouse_104'));
-            testCase.addSession(store, 'Mouse_104', struct( ...
-                'sessionID', '2026-07-10_S01', ...
-                'rigID', 'WidefieldRig01'));
-
-            SessionInfoBefore = store.getSessionInfo( ...
-                'Mouse_104', '2026-07-10_S01');
-            testCase.verifyEqual(SessionInfoBefore.rigUUID, rigUUID);
-            testCase.verifyEqual(SessionInfoBefore.rigID, 'WidefieldRig01');
-
-            rigStore.renameRigID('WidefieldRig02');
-            % renameRigID updates rigStore.RigRoot in place; refresh the
-            % tracked cleanup path so teardown removes the folder at its
-            % actual (post-rename) location, not the stale pre-rename path.
-            testCase.RigRoot = rigStore.RigRoot;
-
-            SessionInfoAfter = store.getSessionInfo( ...
-                'Mouse_104', '2026-07-10_S01');
-            testCase.verifyEqual(SessionInfoAfter.rigUUID, rigUUID);
-            testCase.verifyEqual(SessionInfoAfter.rigID, 'WidefieldRig01', ...
-                'Cached rigID is not cascade-updated by an external rig rename; only rigUUID is guaranteed current.');
-
-            reresolvedRig = UMITRigStore.open(SessionInfoAfter.rigUUID);
-            testCase.verifyEqual(reresolvedRig.getRigInfo().rigID, 'WidefieldRig02');
-
-            report = store.validate('Mode', 'full');
-            testCase.verifyTrue(report.isValid, ...
-                testCase.issueMessages(report.errors));
-        end
-
-        function testNewSessionMirrorsFolderRigLedger(testCase)
-        %TESTNEWSESSIONMIRRORSFOLDERRIGLEDGER Rig-ledger redesign (Phase 6):
-        %a session's rig is a read-only mirror of the rig bound in its
-        %SaveFolder's rig ledger -- empty for an unbound folder, never the
-        %Active rig -- and addSession writes no rig data to the folder.
-        %Caller-supplied rig fields are still rejected outright.
-
-            store = testCase.createProject();
-            store.addSubject(struct('subjectID', 'Mouse_104'));
-            saveFolderA = fullfile(testCase.TempRoot, 'RigRequiredSaveFolderA');
-            mkdir(saveFolderA);
-            testCase.writeValidAcqInfos(saveFolderA);
-            acqBefore = load(fullfile(saveFolderA, 'AcqInfos.mat'));
+            boundRig = UMITRigStore.create(struct('rigID', ...
+                ['NoMirrorRig_' strrep(char(java.util.UUID.randomUUID()), '-', '')]));
+            testCase.RigRoot2 = boundRig.RigRoot;
+            saveFolder = fullfile(testCase.TempRoot, 'RigBoundSaveFolder');
+            testCase.writeValidAcqInfos(saveFolder);
+            testCase.bindFolderRig(saveFolder, boundRig);
+            ledgerBefore = fileread(UMITRigLedger.filePath(saveFolder));
+            acqBefore = load(fullfile(saveFolder, 'AcqInfos.mat'));
 
             store.addSession('Mouse_104', struct( ...
-                'sessionID', 'Session_01', ...
-                'processedDataFolder', saveFolderA));
+                'sessionID', 'Session_01', 'processedDataFolder', saveFolder));
             SessionInfo = store.getSessionInfo('Mouse_104', 'Session_01');
-            testCase.verifyEmpty(SessionInfo.rigUUID);
-            testCase.verifyEmpty(SessionInfo.rigID);
-            testCase.verifyEqual(load(fullfile(saveFolderA, 'AcqInfos.mat')), acqBefore);
-            testCase.verifyFalse(UMITRigLedger.exists(saveFolderA));
+            testCase.verifyFalse(any(isfield(SessionInfo, {'rigUUID', 'rigID', ...
+                'activeRegistrationTransformUUID'})));
+            testCase.verifyEqual(fileread(UMITRigLedger.filePath(saveFolder)), ledgerBefore);
+            testCase.verifyEqual(load(fullfile(saveFolder, 'AcqInfos.mat')), acqBefore);
+            context = store.findSessionByDataFolder(saveFolder);
+            testCase.verifyFalse(any(isfield(context, {'rigUUID', 'rigID'})));
+            testCase.verifyFalse(ismethod(store, 'migrateSessionRigAssignment'));
+
+            otherFolder = fullfile(testCase.TempRoot, 'OtherSaveFolder');
+            testCase.writeValidAcqInfos(otherFolder);
+            testCase.verifyError(@() store.addSession('Mouse_104', struct( ...
+                'sessionID', 'Session_02', 'rigID', boundRig.getRigInfo().rigID, ...
+                'processedDataFolder', otherFolder)), ...
+                'Umitoolbox:UMITProjectStore:unsupportedField');
+            testCase.verifyError(@() store.updateSessionMetadata( ...
+                'Mouse_104', 'Session_01', struct('notes', 'x', ...
+                'rigUUID', boundRig.getRigInfo().uuid)), ...
+                'Umitoolbox:UMITProjectStore:updateSessionFailed');
+
             report = store.validate('Mode', 'full');
             testCase.verifyTrue(report.isValid, testCase.issueMessages(report.errors));
-
-            boundRig = UMITRigStore.create(struct('rigID', ...
-                ['MirroredRig_' strrep(char(java.util.UUID.randomUUID()), '-', '')]));
-            testCase.RigRoot2 = boundRig.RigRoot;
-            saveFolderBound = fullfile(testCase.TempRoot, 'RigBoundSaveFolder');
-            testCase.writeValidAcqInfos(saveFolderBound);
-            testCase.bindFolderRig(saveFolderBound, boundRig);
-            store.addSession('Mouse_104', struct( ...
-                'sessionID', 'Session_03', ...
-                'processedDataFolder', saveFolderBound));
-            SessionInfo = store.getSessionInfo('Mouse_104', 'Session_03');
-            testCase.verifyEqual(SessionInfo.rigUUID, boundRig.getRigInfo().uuid);
-            testCase.verifyEqual(SessionInfo.rigID, boundRig.getRigInfo().rigID);
-            activeRigInfo = boundRig.getRigInfo();
-
-            saveFolderB = fullfile(testCase.TempRoot, 'RigRequiredSaveFolderB');
-            mkdir(saveFolderB);
-            testCase.writeValidAcqInfos(saveFolderB);
-
-            testCase.verifyError(@() store.addSession('Mouse_104', struct( ...
-                'sessionID', 'Session_02', ...
-                'rigID', activeRigInfo.rigID, ...
-                'processedDataFolder', saveFolderB)), ...
-                'Umitoolbox:UMITProjectStore:rigAssignmentNotSupported');
-        end
-
-        function testArchivedHistoricalSessionReferenceRemainsValid(testCase)
-        %TESTARCHIVEDHISTORICALSESSIONREFERENCEREMAINSVALID Preserve history.
-
-            store = testCase.createProject();
-            store.addSubject(struct('subjectID', 'Mouse_104'));
-            historical = UMITRigStore.getActiveRig();
-            replacement = UMITRigStore.create(struct('rigID', ...
-                ['ReplacementHistory_' strrep(char(java.util.UUID.randomUUID()), '-', '')]));
-            testCase.RigRoot2 = replacement.RigRoot;
-            sessionUUID = testCase.addSession(store, 'Mouse_104', struct( ...
-                'sessionID', 'Session_01', ...
-                'rigID', historical.getRigInfo().rigID));
-
-            historical.archiveRig(replacement.getRigInfo().uuid);
-            SessionInfo = store.getSessionInfoByUUID(sessionUUID);
-            testCase.verifyEqual(SessionInfo.rigUUID, ...
-                historical.getRigInfo().uuid);
-            testCase.verifyTrue(UMITRigStore.rigExists(SessionInfo.rigUUID));
         end
 
         function testChecksumCorruptionIsDetected(testCase)
@@ -464,6 +400,80 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
                 {fullReport.errors.code}, 'resource_checksum_mismatch')));
         end
 
+        function testBrokenSessionBlocksOnlyItself(testCase)
+        %TESTBROKENSESSIONBLOCKSONLYITSELF Brief 1.11: errors in one session
+        %block mutations of that session only; the project stays writable.
+
+            store = testCase.createProject();
+            store.addSubject(struct('subjectID', 'Mouse_104'));
+            store.addSubject(struct('subjectID', 'Mouse_105'));
+            brokenFolder = fullfile(testCase.TempRoot, 'BrokenFolder');
+            testCase.addSession(store, 'Mouse_104', struct( ...
+                'sessionID', 'Broken', 'processedDataFolder', brokenFolder));
+            testCase.addSession(store, 'Mouse_104', struct('sessionID', 'Healthy'));
+            delete(fullfile(brokenFolder, 'AcqInfos.mat'));
+
+            reopened = UMITProjectStore.open(testCase.ProjectUUID);
+            report = reopened.LastValidationReport;
+            testCase.verifyFalse(report.isValid);
+            testCase.verifyFalse(reopened.IsReadOnly);
+            broken = report.errors(strcmp({report.errors.code}, 'not_a_dataset'));
+            testCase.verifyNotEmpty(broken);
+            testCase.verifyFalse(any([broken.storeLevel]));
+
+            reopened.updateSessionMetadata('Mouse_104', 'Healthy', struct('notes', 'ok'));
+            reopened.updateSubjectMetadata('Mouse_104', struct('notes', 'ok'));
+            reopened.addSubject(struct('subjectID', 'Mouse_106'));
+            reopened.updateProjectMetadata(struct('notes', 'ok'));
+            testCase.verifyError(@() reopened.updateSessionMetadata( ...
+                'Mouse_104', 'Broken', struct('notes', 'blocked')), ...
+                'Umitoolbox:UMITProjectStore:invalidTarget');
+            testCase.verifyFalse(reopened.IsReadOnly);
+
+            % Narrow repair: removing the broken session is allowed.
+            reopened.removeSessionFromProject('Mouse_104', 'Broken');
+            testCase.verifyTrue(reopened.validate('Mode', 'full').isValid);
+        end
+
+        function testMutationsValidateOnlyWhatTheyTouch(testCase)
+        %TESTMUTATIONSVALIDATEONLYWHATTHEYTOUCH Brief 1.11: mutations run a
+        %quick validation scoped to their subject/session, so a damaged
+        %resource elsewhere (found only by a full checksum pass) does not
+        %block them.
+
+            store = testCase.createProject();
+            store.addSubject(struct('subjectID', 'Mouse_104'));
+            store.addSubject(struct('subjectID', 'Mouse_105'));
+            resourceUUID = store.addImageReference('Mouse_104', ...
+                testCase.createMATSource('reference.mat', 1), struct());
+            resource = store.getResource(resourceUUID);
+            tampered = 42;
+            save(resource.absolutePath, 'tampered', '-append');
+            testCase.verifyFalse(store.validate('Mode', 'full').isValid);
+
+            store.updateSubjectMetadata('Mouse_105', struct('notes', 'ok'));
+            store.updateSubjectMetadata('Mouse_104', struct('notes', 'ok'));
+            testCase.verifyEqual(store.getSubjectInfo('Mouse_105').notes, 'ok');
+            testCase.verifyFalse(store.IsReadOnly);
+        end
+
+        function testHeaderedDatIsADatasetWithoutAcqInfos(testCase)
+        %TESTHEADEREDDATISADATASETWITHOUTACQINFOS Audit 12.1 item 5: the
+        %"is a dataset" test is format-neutral (isUmitDataset).
+
+            saveFolder = fullfile(testCase.TempRoot, 'HeaderOnly');
+            mkdir(saveFolder);
+            writeTestDat(fullfile(saveFolder, 'green.dat'), ones(4, 5, 3, 'single'), 10, 5);
+            testCase.verifyTrue(isUmitDataset(saveFolder));
+            store = testCase.createProject();
+            store.addSubject(struct('subjectID', 'Mouse_104'));
+            store.addSession('Mouse_104', struct( ...
+                'sessionID', 'Session_01', 'processedDataFolder', saveFolder));
+            report = store.validate('Mode', 'quick');
+            testCase.verifyTrue(report.isValid, testCase.issueMessages(report.errors));
+            testCase.verifyFalse(isfile(fullfile(saveFolder, 'AcqInfos.mat')));
+        end
+
         function testUnregisteredFolderOpensReadOnly(testCase)
         %TESTUNREGISTEREDFOLDEROPENSREADONLY Detect direct folder edits.
 
@@ -476,9 +486,11 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
             reopened = UMITProjectStore.open(testCase.ProjectUUID);
             testCase.verifyTrue(reopened.IsReadOnly);
             testCase.verifyFalse(reopened.LastValidationReport.isValid);
-            testCase.verifyTrue(any(strcmp( ...
-                {reopened.LastValidationReport.errors.code}, ...
-                'unregistered_folder')));
+            errors = reopened.LastValidationReport.errors;
+            unregistered = errors(strcmp({errors.code}, 'unregistered_folder'));
+            testCase.verifyNotEmpty(unregistered);
+            testCase.verifyTrue(all([unregistered.storeLevel]), ...
+                'a folder that belongs to no registered subject is store-level');
         end
 
         function testDeleteInvalidReadOnlyProject(testCase)
@@ -606,31 +618,54 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
                 sort({uuid1, uuid2}));
         end
 
-        function testListSessionResources(testCase)
-        %TESTLISTSESSIONRESOURCES Verify session-owned resource queries.
+        function testRetiredTransformResourcesAreTolerated(testCase)
+        %TESTRETIREDTRANSFORMRESOURCESARETOLERATED Section 4 Q5/Q9: the
+        %registration-transform API is gone; records written before stay
+        %valid (a warning), are never listed, and new sessions have no
+        %transforms folder.
 
             store = testCase.createProject();
             store.addSubject(struct('subjectID', 'Mouse_104'));
-            testCase.addSession(store, 'Mouse_104', struct('sessionID', '2026-07-10_S01'));
+            sessionUUID = testCase.addSession(store, 'Mouse_104', ...
+                struct('sessionID', '2026-07-10_S01'));
+            sessionRel = 'subjects/Mouse_104/sessions/2026-07-10_S01';
+            sessionPath = testCase.resolveRelative(sessionRel);
+            testCase.verifyFalse(isfolder(fullfile(sessionPath, 'transforms')));
+            for name = {'addRegistrationTransform', 'setActiveRegistrationTransform', ...
+                    'getActiveRegistrationTransform'}
+                testCase.verifyFalse(ismethod(store, name{1}), name{1});
+            end
 
-            transformSource = testCase.createMATSource( ...
-                'registration.mat', 1);
-            transformUUID = store.addRegistrationTransform( ...
-                'Mouse_104', '2026-07-10_S01', ...
-                transformSource, struct());
+            % A legacy session written before the retirement.
+            legacyRel = [sessionRel '/transforms/registration/active/SessionToReference_1.mat'];
+            mkdir(fileparts(testCase.resolveRelative(legacyRel)));
+            payload = 1;
+            save(testCase.resolveRelative(legacyRel), 'payload');
+            sessionMat = fullfile(sessionPath, 'session.mat');
+            loaded = load(sessionMat, 'SessionInfo');
+            SessionInfo = loaded.SessionInfo;
+            legacyUUID = lower(char(java.util.UUID.randomUUID()));
+            SessionInfo.activeRegistrationTransformUUID = legacyUUID;
+            SessionInfo.resourceRegistry = struct('uuid', legacyUUID, ...
+                'type', 'registrationTransform', 'fileName', 'SessionToReference_1.mat', ...
+                'relativePath', legacyRel, 'displayName', 'legacy', 'description', '', ...
+                'createdOn', datetime('now'), 'modifiedOn', datetime('now'), ...
+                'status', 'active', 'archivedOn', NaT, 'checksum', '', 'sourceFile', '');
+            save(sessionMat, 'SessionInfo');
 
-            sessionResources = store.listSessionResources( ...
-                'Mouse_104', '2026-07-10_S01');
-            testCase.verifyEqual(numel(sessionResources), 1);
-            testCase.verifyEqual(sessionResources.uuid, transformUUID);
-            testCase.verifyEqual(sessionResources.ownerType, 'session');
+            report = store.validate('Mode', 'full');
+            testCase.verifyTrue(report.isValid, testCase.issueMessages(report.errors));
+            testCase.verifyTrue(any(strcmp({report.warnings.code}, 'retired_resource_type')));
+            testCase.verifyEmpty(store.listSessionResources('Mouse_104', '2026-07-10_S01'));
+            store.updateSessionMetadata('Mouse_104', '2026-07-10_S01', struct('notes', 'still writable'));
+            testCase.verifyEqual(store.getSessionInfoByUUID(sessionUUID).notes, 'still writable');
         end
 
         function testRigResourcesLiveInUMITRigStoreNotProject(testCase)
         %TESTRIGRESOURCESLIVEINUMITRIGSTORENOTPROJECT Verify rig resources
         %(cameraCoregistration) are owned by the
         %independent UMITRigStore, not by UMITProjectStore, and that a
-        %session merely keeps a rigID/rigUUID pointer to that external rig.
+        %session keeps no pointer to it (the folder's rig ledger does).
 
             rigStore = UMITRigStore.create(struct('rigID', 'WidefieldRig01'));
             testCase.RigRoot = rigStore.RigRoot;
@@ -653,8 +688,8 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
             testCase.verifyEqual(coregResources.uuid, coregUUID);
 
             SessionInfo = store.getSessionInfo('Mouse_104', '2026-07-10_S01');
-            testCase.verifyEqual(SessionInfo.rigID, 'WidefieldRig01');
-            testCase.verifyEqual(SessionInfo.rigUUID, rigStore.getRigInfo().uuid);
+            testCase.verifyFalse(any(isfield(SessionInfo, {'rigID', 'rigUUID'})), ...
+                'Sessions keep no rig (project redesign 1.12).');
         end
 
         function testGetResourceAndResolvePath(testCase)
@@ -747,24 +782,15 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
 
             testCase.verifyEmpty( ...
                 store.getActiveImageReference('Mouse_104'));
-            testCase.verifyEmpty( ...
-                store.getActiveRegistrationTransform( ...
-                'Mouse_104', '2026-07-10_S01'));
 
             referenceUUID = store.addImageReference( ...
                 'Mouse_104', ...
                 testCase.createMATSource('reference.mat', 1), struct());
-            transformUUID = store.addRegistrationTransform( ...
-                'Mouse_104', '2026-07-10_S01', ...
-                testCase.createMATSource('registration.mat', 2), struct());
 
             activeReference = ...
                 store.getActiveImageReference('Mouse_104');
-            activeTransform = store.getActiveRegistrationTransform( ...
-                'Mouse_104', '2026-07-10_S01');
 
             testCase.verifyEqual(activeReference.uuid, referenceUUID);
-            testCase.verifyEqual(activeTransform.uuid, transformUUID);
         end
 
         function testRigActiveResourceGetters(testCase)
@@ -806,7 +832,7 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
         end
 
         function testFindSessionByRawAndProcessedFolder(testCase)
-        %TESTFINDSESSIONBYRAWANDPROCESSEDFOLDER Resolve .umitlink context.
+        %TESTFINDSESSIONBYRAWANDPROCESSEDFOLDER Resolve project-ledger context.
 
             rawFolder = fullfile(testCase.TempRoot, 'RawData');
             processedFolder = fullfile(testCase.TempRoot, 'ProcessedData');
@@ -834,7 +860,7 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
             rawContext = store.findSessionByDataFolder(rawFolder);
             testCase.verifyEqual(rawContext.subjectID, 'Mouse_104');
             testCase.verifyEqual(rawContext.sessionID, '2026-07-10_S01');
-            testCase.verifyEqual(rawContext.rigID, 'WidefieldRig01');
+            testCase.verifyFalse(isfield(rawContext, 'rigID'));
             testCase.verifyEqual(rawContext.matchedField, 'rawDataFolder');
 
             processedContext = ...
@@ -846,6 +872,57 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
 
             testCase.verifyEmpty( ...
                 store.findSessionByDataFolder(unknownFolder));
+        end
+
+        function testProjectLedgersOfRawAndSaveFolders(testCase)
+        %TESTPROJECTLEDGERSOFRAWANDSAVEFOLDERS Brief section 1.9 / Phase 3.
+        %   A RawFolder distinct from the SaveFolder gets its own ledger;
+        %   resolving never writes; an identity that does not match the
+        %   store is detected.
+
+            rawFolder = fullfile(testCase.TempRoot, 'RawData');
+            saveFolder = fullfile(testCase.TempRoot, 'SaveData');
+            mkdir(rawFolder);
+            mkdir(saveFolder);
+            testCase.writeRawDataFile(rawFolder);
+            testCase.writeValidAcqInfos(saveFolder);
+
+            store = testCase.createProject();
+            store.addSubject(struct('subjectID', 'Mouse_104'));
+            testCase.addSession(store, 'Mouse_104', struct('sessionID', 'S01'));
+            store.bindProcessedDataFolder('Mouse_104', 'S01', saveFolder);
+            store.bindRawDataFolder('Mouse_104', 'S01', rawFolder);
+
+            rawLedger = UMITProjectLedger.read(rawFolder);
+            saveLedger = UMITProjectLedger.read(saveFolder);
+            testCase.verifyEqual(rawLedger.binding.folderRole, 'rawDataFolder');
+            testCase.verifyEqual(saveLedger.binding.folderRole, 'processedDataFolder');
+            testCase.verifyEqual(rawLedger.binding.sessionUUID, saveLedger.binding.sessionUUID);
+            testCase.verifyNotEqual(rawLedger.binding.bindingUUID, saveLedger.binding.bindingUUID);
+
+            path = UMITProjectLedger.filePath(saveFolder);
+            before = fileread(path);
+            UMITProjectStore.resolveProjectBinding(saveFolder);
+            store.findSessionByDataFolder(saveFolder);
+            store.validate('Mode', 'full');
+            testCase.verifyEqual(fileread(path), before, 'reading never writes');
+
+            % A structurally valid ledger whose session is not this one.
+            otherSession = lower(char(java.util.UUID.randomUUID()));
+            testCase.writeText(path, strrep(before, saveLedger.binding.sessionUUID, otherSession));
+            testCase.verifyTrue(UMITProjectLedger.validate(saveFolder).isValid);
+            testCase.verifyError(@() UMITProjectStore.resolveProjectBinding(saveFolder), ...
+                ?MException);
+            report = store.validate('Mode', 'quick');
+            testCase.verifySubstring(strjoin({report.errors.code}, ' '), 'invalid_project_binding');
+            testCase.writeText(path, before);
+
+            % Unbinding the raw folder keeps its ledger and history.
+            store.unbindRawDataFolder('Mouse_104', 'S01');
+            rawLedger = UMITProjectLedger.read(rawFolder);
+            testCase.verifyEqual(rawLedger.state, 'Unbound');
+            testCase.verifyEqual(rawLedger.events{end}.type, 'unbind');
+            testCase.verifyEqual(rawLedger.events{end}.reason, 'folderUnbound');
         end
 
         function testRejectBindingFolderAlreadyAssigned(testCase)
@@ -894,7 +971,7 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
         end
 
         function testProjectBindingFileAndSessionReciprocity(testCase)
-        %TESTPROJECTBINDINGFILEANDSESSIONRECIPROCITY Verify .umitlink creation.
+        %TESTPROJECTBINDINGFILEANDSESSIONRECIPROCITY Verify project-ledger binding.
 
             saveFolder = fullfile(testCase.TempRoot, 'SaveFolder');
             mkdir(saveFolder);
@@ -908,19 +985,17 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
             ProjectBinding = store.bindProcessedDataFolder( ...
                 'Mouse_104', 'Session_01', saveFolder);
 
-            schema = getUMITProjectSchema();
-            bindingPath = fullfile(saveFolder, ...
-                schema.files.projectBinding);
-            testCase.verifyTrue(isfile(bindingPath));
-
-            loaded = load(bindingPath, ...
-                schema.metadataVariables.projectBinding, '-mat');
-            testCase.verifyTrue(isfield(loaded, ...
-                schema.metadataVariables.projectBinding));
-            testCase.verifyEqual(loaded.ProjectBinding.bindingUUID, ...
-                ProjectBinding.bindingUUID);
-            testCase.verifyEqual(loaded.ProjectBinding.folderRole, ...
-                'processedDataFolder');
+            % The binding is the folder's project ledger (brief section 1.9).
+            ledger = UMITProjectLedger.read(saveFolder);
+            testCase.verifyEqual(ledger.state, 'Bound');
+            testCase.verifyEqual(ledger.binding.bindingUUID, ProjectBinding.bindingUUID);
+            testCase.verifyEqual(ledger.binding.folderRole, 'processedDataFolder');
+            ProjectInfo = store.getProjectInfo();
+            testCase.verifyEqual(ledger.binding.projectUUID, ProjectInfo.projectUUID);
+            testCase.verifyEqual(ledger.events{end}.type, 'bind');
+            testCase.verifyEqual(ledger.snapshot.subjectID, 'Mouse_104');
+            testCase.verifyEqual(ledger.snapshot.sessionID, 'Session_01');
+            testCase.verifyEqual(ledger.snapshot.project.projectName, ProjectInfo.projectName);
 
             SessionInfo = store.getSessionInfo( ...
                 'Mouse_104', 'Session_01');
@@ -1001,8 +1076,7 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
                 'Mouse_104', 'Session_01');
             testCase.verifyEqual( ...
                 SessionInfo.processedDataFolder, saveFolder);
-            testCase.verifyTrue(isfile(fullfile(saveFolder, ...
-                UMITProjectStore.getProjectBindingFileName())));
+            testCase.verifyTrue(strcmp(UMITProjectStore.getProjectBindingState(saveFolder), 'bound'));
 
             report = store.validate('Mode', 'full');
             testCase.verifyTrue(report.isValid, ...
@@ -1047,7 +1121,7 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
                 'Mouse_104', struct( ...
                 'sessionID', 'Session_01', ...
                 'processedDataFolder', saveFolder)), ...
-                'Umitoolbox:UMITProjectStore:missingAcqInfos');
+                'Umitoolbox:UMITProjectStore:notADataset');
 
             payload = 1;
             save(fullfile(saveFolder, 'AcqInfos.mat'), ...
@@ -1069,8 +1143,7 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
 
             testCase.verifyEmpty( ...
                 store.getSubjectInfo('Mouse_104').sessionRegistry);
-            testCase.verifyFalse(isfile(fullfile(saveFolder, ...
-                UMITProjectStore.getProjectBindingFileName())));
+            testCase.verifyFalse(strcmp(UMITProjectStore.getProjectBindingState(saveFolder), 'bound'));
         end
 
         function testBlankDisplayNamesDefaultToIDs(testCase)
@@ -1163,105 +1236,6 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
                 reopened.getSessionInfoByUUID(sessionUUID), sessionFields)));
         end
 
-        function testMigrateSessionRigAssignmentRepairsLegacySession(testCase)
-        %TESTMIGRATESESSIONRIGASSIGNMENTREPAIRSLEGACYSESSION Rig-ledger
-        %redesign (Phase 6): a session with a blank rig pointer is valid; once
-        %its SaveFolder is bound to a rig, migrateSessionRigAssignment copies
-        %that binding into the session mirror -- read-only towards the folder
-        %(never the Active rig, no AcqInfos.mat write).
-
-            store = testCase.createProject();
-            store.addSubject(struct('subjectID', 'Mouse_104'));
-            sessionUUID = testCase.addSession(store, 'Mouse_104', struct( ...
-                'sessionID', 'Session_01'));
-            SessionInfo = store.getSessionInfoByUUID(sessionUUID);
-            saveFolder = SessionInfo.processedDataFolder;
-            testCase.verifyEmpty(SessionInfo.rigUUID);
-
-            preRepairReport = store.validate('Mode', 'full');
-            testCase.verifyTrue(preRepairReport.isValid, ...
-                testCase.issueMessages(preRepairReport.errors));
-
-            unchanged = store.migrateSessionRigAssignment('Mouse_104', 'Session_01');
-            testCase.verifyEmpty(unchanged.rigUUID, 'An unbound folder leaves the mirror empty.');
-            testCase.verifyFalse(UMITRigLedger.exists(saveFolder));
-
-            boundRig = UMITRigStore.create(struct('rigID', ...
-                ['MigratedRig_' strrep(char(java.util.UUID.randomUUID()), '-', '')]));
-            testCase.RigRoot2 = boundRig.RigRoot;
-            testCase.bindFolderRig(saveFolder, boundRig);
-            acqBefore = load(fullfile(saveFolder, 'AcqInfos.mat'));
-
-            repaired = store.migrateSessionRigAssignment('Mouse_104', 'Session_01');
-            testCase.verifyEqual(repaired.rigUUID, boundRig.getRigInfo().uuid);
-            testCase.verifyEqual(repaired.rigID, boundRig.getRigInfo().rigID);
-            testCase.verifyEqual(load(fullfile(saveFolder, 'AcqInfos.mat')), acqBefore);
-
-            postRepairReport = store.validate('Mode', 'full');
-            testCase.verifyTrue(postRepairReport.isValid, ...
-                testCase.issueMessages(postRepairReport.errors));
-        end
-
-        function testMigrateSessionRigAssignmentBlockedByUnrelatedError(testCase)
-        %TESTMIGRATESESSIONRIGASSIGNMENTBLOCKEDBYUNRELATEDERROR
-        %The narrowed mutation-health gate exempts only the specific
-        %pre-diagnosed rig issue on the targeted session -- an unrelated
-        %error on that same session must still block the repair.
-
-            store = testCase.createProject();
-            store.addSubject(struct('subjectID', 'Mouse_104'));
-            testCase.addSession(store, 'Mouse_104', struct( ...
-                'sessionID', 'Session_01'));
-
-            sessionUUID = store.getSessionInfo('Mouse_104', 'Session_01').uuid;
-            sessionMatPath = fullfile(testCase.ProjectRoot, 'subjects', ...
-                'Mouse_104', 'sessions', 'Session_01', 'session.mat');
-            SessionInfo = store.getSessionInfoByUUID(sessionUUID);
-            % Bind the folder so the migration has a rig to copy and reaches
-            % the mutation-health gate.
-            boundRig = UMITRigStore.create(struct('rigID', ...
-                ['BlockedMigrationRig_' strrep(char(java.util.UUID.randomUUID()), '-', '')]));
-            testCase.RigRoot2 = boundRig.RigRoot;
-            testCase.bindFolderRig(SessionInfo.processedDataFolder, boundRig);
-            SessionInfo.rigUUID = '';
-            SessionInfo.rigID = '';
-            SessionInfo.sessionID = 'Session_01_Renamed';
-            save(sessionMatPath, 'SessionInfo', '-mat');
-
-            testCase.verifyError(@() store.migrateSessionRigAssignment( ...
-                'Mouse_104', 'Session_01'), ...
-                'Umitoolbox:UMITProjectStore:invalidProject');
-        end
-
-        function testUpdateSessionMetadataRejectsRigFields(testCase)
-        %TESTUPDATESESSIONMETADATAREJECTSRIGFIELDS Rig assignment is owned
-        %exclusively by UMITRigStore -- updateSessionMetadata must never
-        %accept rigID/rigUUID, even alongside otherwise-valid updates.
-
-            store = testCase.createProject();
-            store.addSubject(struct('subjectID', 'Mouse_104'));
-            sessionUUID = testCase.addSession(store, 'Mouse_104', struct( ...
-                'sessionID', 'Session_01'));
-            originalRigUUID = store.getSessionInfoByUUID(sessionUUID).rigUUID;
-
-            replacementRig = UMITRigStore.create(struct('rigID', ...
-                ['RejectedRigUpdate_' strrep(char(java.util.UUID.randomUUID()), '-', '')]));
-            testCase.RigRoot2 = replacementRig.RigRoot;
-
-            testCase.verifyError(@() store.updateSessionMetadata( ...
-                'Mouse_104', 'Session_01', struct( ...
-                'rigUUID', replacementRig.getRigInfo().uuid)), ...
-                'Umitoolbox:UMITProjectStore:rigAssignmentNotSupported');
-            testCase.verifyError(@() store.updateSessionMetadata( ...
-                'Mouse_104', 'Session_01', struct( ...
-                'notes', 'Unrelated update', ...
-                'rigID', replacementRig.getRigInfo().rigID)), ...
-                'Umitoolbox:UMITProjectStore:rigAssignmentNotSupported');
-
-            testCase.verifyEqual( ...
-                store.getSessionInfoByUUID(sessionUUID).rigUUID, originalRigUUID);
-        end
-
         function testRelocateSaveFolderPreservesSessionIdentity(testCase)
         %TESTRELOCATESAVEFOLDERPRESERVESSESSIONIDENTITY Rebind atomically.
 
@@ -1290,10 +1264,8 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
             testCase.verifyEqual( ...
                 SessionInfo.processedDataBindingUUID, ...
                 newBinding.bindingUUID);
-            testCase.verifyFalse(isfile(fullfile(oldFolder, ...
-                UMITProjectStore.getProjectBindingFileName())));
-            testCase.verifyTrue(isfile(fullfile(newFolder, ...
-                UMITProjectStore.getProjectBindingFileName())));
+            testCase.verifyFalse(strcmp(UMITProjectStore.getProjectBindingState(oldFolder), 'bound'));
+            testCase.verifyTrue(strcmp(UMITProjectStore.getProjectBindingState(newFolder), 'bound'));
         end
 
         function testRelocateFromUnavailableOldFolder(testCase)
@@ -1377,17 +1349,15 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
 
             testCase.verifyError(@() store.relocateSaveFolder( ...
                 'Mouse_104', 'Session_01', invalidFolder), ...
-                'Umitoolbox:UMITProjectStore:missingAcqInfos');
+                'Umitoolbox:UMITProjectStore:notADataset');
 
             after = store.getSessionInfoByUUID(sessionUUID);
             testCase.verifyEqual(after.processedDataFolder, ...
                 before.processedDataFolder);
             testCase.verifyEqual(after.processedDataBindingUUID, ...
                 before.processedDataBindingUUID);
-            testCase.verifyTrue(isfile(fullfile(oldFolder, ...
-                UMITProjectStore.getProjectBindingFileName())));
-            testCase.verifyFalse(isfile(fullfile(invalidFolder, ...
-                UMITProjectStore.getProjectBindingFileName())));
+            testCase.verifyTrue(strcmp(UMITProjectStore.getProjectBindingState(oldFolder), 'bound'));
+            testCase.verifyFalse(strcmp(UMITProjectStore.getProjectBindingState(invalidFolder), 'bound'));
         end
 
         function testValidationReportsMissingAcqInfos(testCase)
@@ -1408,7 +1378,7 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
 
             testCase.verifyFalse(report.isValid);
             testCase.verifyTrue(any(strcmp( ...
-                {report.errors.code}, 'missing_acq_infos')));
+                {report.errors.code}, 'not_a_dataset')));
         end
 
         function testRelocateRepairsMissingAcqInfosState(testCase)
@@ -1434,10 +1404,8 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
             SessionInfo = store.getSessionInfoByUUID(sessionUUID);
             testCase.verifyEqual( ...
                 SessionInfo.processedDataFolder, newFolder);
-            testCase.verifyTrue(isfile(fullfile(newFolder, ...
-                UMITProjectStore.getProjectBindingFileName())));
-            testCase.verifyFalse(isfile(fullfile(oldFolder, ...
-                UMITProjectStore.getProjectBindingFileName())));
+            testCase.verifyTrue(strcmp(UMITProjectStore.getProjectBindingState(newFolder), 'bound'));
+            testCase.verifyFalse(strcmp(UMITProjectStore.getProjectBindingState(oldFolder), 'bound'));
         end
 
         function testRelocateRawDataFolderIsAtomic(testCase)
@@ -1467,10 +1435,8 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
             testCase.verifyEqual( ...
                 SessionInfo.rawDataBindingUUID, ...
                 newBinding.bindingUUID);
-            testCase.verifyFalse(isfile(fullfile(oldRawFolder, ...
-                UMITProjectStore.getProjectBindingFileName())));
-            testCase.verifyTrue(isfile(fullfile(newRawFolder, ...
-                UMITProjectStore.getProjectBindingFileName())));
+            testCase.verifyFalse(strcmp(UMITProjectStore.getProjectBindingState(oldRawFolder), 'bound'));
+            testCase.verifyTrue(strcmp(UMITProjectStore.getProjectBindingState(newRawFolder), 'bound'));
         end
 
         function testRelocateRawFolderFromUnavailableOldFolder(testCase)
@@ -1536,8 +1502,7 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
             testCase.verifyEqual( ...
                 after.rawDataBindingUUID, ...
                 before.rawDataBindingUUID);
-            testCase.verifyTrue(isfile(fullfile(rawFolderOne, ...
-                UMITProjectStore.getProjectBindingFileName())));
+            testCase.verifyTrue(strcmp(UMITProjectStore.getProjectBindingState(rawFolderOne), 'bound'));
         end
 
         function testRawFolderRequiresRecognizableImagingFile(testCase)
@@ -1618,10 +1583,8 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
                 after.processedDataFolder, newSaveFolder);
             testCase.verifyEqual( ...
                 rawBinding.folderRole, 'rawDataFolder');
-            testCase.verifyTrue(isfile(fullfile(oldSharedFolder, ...
-                UMITProjectStore.getProjectBindingFileName())));
-            testCase.verifyTrue(isfile(fullfile(newSaveFolder, ...
-                UMITProjectStore.getProjectBindingFileName())));
+            testCase.verifyTrue(strcmp(UMITProjectStore.getProjectBindingState(oldSharedFolder), 'bound'));
+            testCase.verifyTrue(strcmp(UMITProjectStore.getProjectBindingState(newSaveFolder), 'bound'));
             report = store.validate('Mode', 'full');
             testCase.verifyTrue(report.isValid, ...
                 testCase.issueMessages(report.errors));
@@ -1674,8 +1637,7 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
                 'Mouse_104', 'Session_01');
             testCase.verifyEqual(removed.uuid, sessionUUID);
             testCase.verifyTrue(isfile(scientificFile));
-            testCase.verifyFalse(isfile(fullfile(saveFolder, ...
-                UMITProjectStore.getProjectBindingFileName())));
+            testCase.verifyFalse(strcmp(UMITProjectStore.getProjectBindingState(saveFolder), 'bound'));
             SubjectInfo = store.getSubjectInfo('Mouse_104');
             testCase.verifyEmpty(SubjectInfo.sessionRegistry);
             testCase.verifyError(@() ...
@@ -1699,8 +1661,7 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
 
             store.removeSessionFromProject('Mouse_104', 'Session_01');
             testCase.verifyTrue(isfolder(parkedFolder));
-            testCase.verifyTrue(isfile(fullfile(parkedFolder, ...
-                UMITProjectStore.getProjectBindingFileName())));
+            testCase.verifyTrue(strcmp(UMITProjectStore.getProjectBindingState(parkedFolder), 'bound'));
             testCase.verifyEmpty( ...
                 store.getSubjectInfo('Mouse_104').sessionRegistry);
         end
@@ -1748,10 +1709,8 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
             testCase.verifyEqual(result.sessionsRemoved, 2);
             testCase.verifyTrue(isfile(scientificFile));
             testCase.verifyTrue(isfolder(saveFolder2));
-            testCase.verifyFalse(isfile(fullfile(saveFolder1, ...
-                UMITProjectStore.getProjectBindingFileName())));
-            testCase.verifyFalse(isfile(fullfile(saveFolder2, ...
-                UMITProjectStore.getProjectBindingFileName())));
+            testCase.verifyFalse(strcmp(UMITProjectStore.getProjectBindingState(saveFolder1), 'bound'));
+            testCase.verifyFalse(strcmp(UMITProjectStore.getProjectBindingState(saveFolder2), 'bound'));
             testCase.verifyEqual(store.getSubjectInfoByUUID(otherUUID).uuid, ...
                 otherUUID);
             report = store.validate('Mode', 'full');
@@ -1777,8 +1736,7 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
                 'Umitoolbox:UMITProjectStore:bindingFolderUnavailable');
             testCase.verifyEqual(store.getSubjectInfoByUUID(subjectUUID).uuid, ...
                 subjectUUID);
-            testCase.verifyTrue(isfile(fullfile(offlineFolder, ...
-                UMITProjectStore.getProjectBindingFileName())));
+            testCase.verifyTrue(strcmp(UMITProjectStore.getProjectBindingState(offlineFolder), 'bound'));
         end
 
         function testDeleteEmptyProject(testCase)
@@ -1838,33 +1796,61 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
             testCase.verifyEqual(result.subjectsRemoved, 2);
             testCase.verifyEqual(result.sessionsRemoved, 2);
             testCase.verifyTrue(isfile(scientificFile));
-            testCase.verifyFalse(isfile(fullfile(saveFolder1, ...
-                UMITProjectStore.getProjectBindingFileName())));
-            testCase.verifyFalse(isfile(fullfile(saveFolder2, ...
-                UMITProjectStore.getProjectBindingFileName())));
+            testCase.verifyFalse(strcmp(UMITProjectStore.getProjectBindingState(saveFolder1), 'bound'));
+            testCase.verifyFalse(strcmp(UMITProjectStore.getProjectBindingState(saveFolder2), 'bound'));
             testCase.verifyEqual(otherStore.getProjectInfo().projectUUID, ...
                 testCase.ProjectUUID2);
         end
 
-        function testDeleteProjectFailureLeavesProjectRecoverable(testCase)
-        %TESTDELETEPROJECTFAILURELEAVESPROJECTRECOVERABLE Reject unavailable link.
+        function testDeleteProjectSkipsOfflineAndBrokenSessions(testCase)
+        %TESTDELETEPROJECTSKIPSOFFLINEANDBROKENSESSIONS Audit item 23:
+        %deleteProject works on corrupted or offline projects. Offline
+        %folders and unreadable sessions are skipped and reported; a skipped
+        %folder keeps its ledger, which then reads as an orphan binding.
+        %Staged-delete leftovers never appear in listings.
 
-            saveFolder = fullfile(testCase.TempRoot, 'SaveFolder');
+            onlineFolder = fullfile(testCase.TempRoot, 'OnlineSaveFolder');
             offlineFolder = fullfile(testCase.TempRoot, 'OfflineSaveFolder');
-            mkdir(saveFolder);
-            testCase.writeValidAcqInfos(saveFolder);
+            movedFolder = fullfile(testCase.TempRoot, 'MovedSaveFolder');
+            brokenFolder = fullfile(testCase.TempRoot, 'BrokenSessionFolder');
             store = testCase.createProject();
             store.addSubject(struct('subjectID', 'Mouse_104'));
             testCase.addSession(store, 'Mouse_104', struct( ...
-                'sessionID', 'Session_01', ...
-                'processedDataFolder', saveFolder));
-            movefile(saveFolder, offlineFolder);
+                'sessionID', 'Online', 'processedDataFolder', onlineFolder));
+            testCase.addSession(store, 'Mouse_104', struct( ...
+                'sessionID', 'Offline', 'processedDataFolder', offlineFolder));
+            testCase.addSession(store, 'Mouse_104', struct( ...
+                'sessionID', 'Broken', 'processedDataFolder', brokenFolder));
+            movefile(offlineFolder, movedFolder);
+            testCase.writeText(testCase.resolveRelative( ...
+                'subjects/Mouse_104/sessions/Broken/session.mat'), 'not a MAT file');
 
-            testCase.verifyError(@() store.deleteProject(testCase.ProjectUUID), ...
-                'Umitoolbox:UMITProjectStore:bindingFolderUnavailable');
-            testCase.verifyTrue(isfolder(testCase.ProjectRoot));
-            testCase.verifyTrue(isfile(fullfile(offlineFolder, ...
-                UMITProjectStore.getProjectBindingFileName())));
+            reopened = UMITProjectStore.open(testCase.ProjectUUID);
+            testCase.verifyFalse(reopened.IsReadOnly, ...
+                'session errors do not make the project read-only');
+            result = reopened.deleteProject(testCase.ProjectUUID);
+
+            testCase.verifyFalse(isfolder(testCase.ProjectRoot));
+            testCase.verifyEqual(numel(result.skipped), 2);
+            testCase.verifyTrue(any(strcmp({result.skipped.folder}, offlineFolder)));
+            testCase.verifyEqual(UMITProjectStore.getProjectBindingState(onlineFolder), 'unbound');
+            testCase.verifyEqual(UMITProjectStore.getProjectBindingState(brokenFolder), 'bound', ...
+                'unreadable session: its folder was not touched');
+            testCase.verifyTrue(UMITProjectStore.isOrphanProjectBinding(movedFolder));
+            testCase.verifyTrue(UMITProjectStore.isOrphanProjectBinding(brokenFolder));
+
+            % A crashed delete leaves a dot-folder: never listed or resolved.
+            leftover = fullfile(UMITProjectStore.getProjectsRoot(), '.deleteProjectStage_test');
+            mkdir(leftover);
+            testCase.addTeardown(@() rmdir(leftover, 's'));
+            ProjectInfo = struct('projectUUID', testCase.ProjectUUID, 'schemaVersion', 1);
+            save(fullfile(leftover, 'project.mat'), 'ProjectInfo');
+            projects = UMITProjectStore.listProjects();
+            testCase.verifyFalse(any(strcmpi(projects.ProjectUUID, testCase.ProjectUUID)));
+            testCase.verifyError(@() UMITProjectStore.resolveProjectRoot(testCase.ProjectUUID), ...
+                'Umitoolbox:UMITProjectStore:resolveProjectFailed');
+            testCase.ProjectRoot = '';
+            testCase.ProjectUUID = '';
         end
 
         function testDetectAndRemoveOrphanProjectBinding(testCase)
@@ -1896,8 +1882,13 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
                 UMITProjectStore.removeOrphanProjectBinding(saveFolder);
             testCase.verifyEqual(removedBinding.bindingUUID, ...
                 originalBinding.bindingUUID);
-            testCase.verifyFalse(isfile(fullfile(saveFolder, ...
-                UMITProjectStore.getProjectBindingFileName())));
+            testCase.verifyFalse(strcmp(UMITProjectStore.getProjectBindingState(saveFolder), 'bound'));
+            % The ledger and its history stay; the removal is an event.
+            ledger = UMITProjectLedger.read(saveFolder);
+            testCase.verifyEqual(ledger.state, 'Unbound');
+            testCase.verifyEqual(ledger.events{end}.type, 'orphanRemoval');
+            testCase.verifyEqual(ledger.events{end}.previousBinding.bindingUUID, ...
+                originalBinding.bindingUUID);
         end
 
         function testRefuseOrphanRemovalWhenProjectIsAvailable(testCase)
@@ -1952,6 +1943,16 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
                 'Mouse_205', 'Session_02', saveFolder), ...
                 'Umitoolbox:UMITProjectStore:bindingConflict');
 
+            % Audit item 13: Session_02 is still healthily bound to its own
+            % SaveFolder, so it cannot take over the orphan folder...
+            testCase.verifyError(@() newStore.bindProcessedDataFolder( ...
+                'Mouse_205', 'Session_02', saveFolder, ...
+                'ReplaceOrphanBinding', true), ...
+                'Umitoolbox:UMITProjectStore:sessionAlreadyBound');
+            % ...until that folder is gone (the data were moved here).
+            ownFolder = newStore.getSessionInfo('Mouse_205', 'Session_02').processedDataFolder;
+            movefile(ownFolder, [ownFolder '_gone']);
+
             newBinding = newStore.bindProcessedDataFolder( ...
                 'Mouse_205', 'Session_02', saveFolder, ...
                 'ReplaceOrphanBinding', true);
@@ -1997,8 +1998,7 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
             SessionInfo = store.getSessionInfoByUUID(sessionUUID);
             testCase.verifyEqual( ...
                 SessionInfo.processedDataFolder, saveFolder);
-            testCase.verifyTrue(isfile(fullfile(saveFolder, ...
-                UMITProjectStore.getProjectBindingFileName())));
+            testCase.verifyTrue(strcmp(UMITProjectStore.getProjectBindingState(saveFolder), 'bound'));
 
             testCase.verifyError(@() store.updateSessionMetadata( ...
                 'Mouse_104', 'Session_01', struct( ...
@@ -2090,6 +2090,52 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
             testCase.verifyTrue(isfield(loaded, 'ImageReference'));
             testCase.verifyWarningFree(@() ...
                 validateImageReferenceStruct(loaded.ImageReference));
+            testCase.verifyEqual(loaded.ImageReference.version, 2);
+        end
+
+        function testImageReferenceImportChecksIdentityAndVersion(testCase)
+        %TESTIMAGEREFERENCEIMPORTCHECKSIDENTITYANDVERSION Audit item 21.
+        %   Identity fields present in the payload must name this project
+        %   and the owner subject; libraries store version 2 only.
+
+            store = testCase.createProject();
+            subjectUUID = store.addSubject(struct('subjectID', 'Mouse_104'));
+            store.addSubject(struct('subjectID', 'Mouse_105'));
+            ProjectInfo = store.getProjectInfo();
+            image = single(magic(5));
+
+            matching = genImageReferenceStruct(image, 'Name', 'own', ...
+                'ProjectUUID', ProjectInfo.projectUUID, 'ProjectName', ProjectInfo.projectName, ...
+                'SubjectUUID', subjectUUID, 'SubjectID', 'Mouse_104');
+            ImageReference = matching;
+            ownFile = fullfile(testCase.SourceFolder, 'own_ref.mat');
+            save(ownFile, 'ImageReference', '-mat');
+            testCase.verifyNotEmpty(store.addImageReference('Mouse_104', ownFile, struct()));
+            % The same payload is refused by another subject of the project.
+            testCase.verifyError(@() store.addImageReference('Mouse_105', ownFile, struct()), ...
+                'Umitoolbox:UMITProjectStore:imageReferenceIdentityMismatch');
+
+            ImageReference = matching;
+            ImageReference.projectUUID = lower(char(java.util.UUID.randomUUID()));
+            ImageReference.subjectUUID = '';
+            ImageReference.subjectID = '';
+            foreignFile = fullfile(testCase.SourceFolder, 'foreign_ref.mat');
+            save(foreignFile, 'ImageReference', '-mat');
+            testCase.verifyError(@() store.addImageReference('Mouse_104', foreignFile, struct()), ...
+                'Umitoolbox:UMITProjectStore:imageReferenceIdentityMismatch');
+            % Cleared identity: accepted (adoption of a foreign reference).
+            testCase.verifyNotEmpty(importImageReferenceFile(store, 'Mouse_104', foreignFile, ...
+                'ClearIdentity', true));
+
+            ImageReference = rmfield(matching, 'contentHash');
+            ImageReference.version = 1;
+            v1File = fullfile(testCase.SourceFolder, 'v1_ref.mat');
+            save(v1File, 'ImageReference', '-mat');
+            testCase.verifyError(@() store.addImageReference('Mouse_104', v1File, struct()), ...
+                'Umitoolbox:UMITProjectStore:imageReferenceVersion');
+
+            report = store.validate('Mode', 'full');
+            testCase.verifyTrue(report.isValid, testCase.issueMessages(report.errors));
         end
 
         function testRenameEntityByUUID(testCase)
@@ -2426,12 +2472,9 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
                 testCase, store, subjectID, sessionInfo)
         %ADDSESSION Create a dataset-backed session fixture.
         %
-        %   addSession rejects caller-supplied rigID/rigUUID: the session's
-        %   rig mirrors the rig bound in the SaveFolder's rig ledger. A
-        %   caller of this fixture that wants a rig recorded binds it in the
-        %   SaveFolder's ledger first (UMITRigLedger.bind), which addSession
-        %   then mirrors. Without rig fields the folder stays unbound and the
-        %   session's rig is empty.
+        %   Sessions keep no rig. A rigID/rigUUID field given to this
+        %   fixture binds that rig in the SaveFolder's rig ledger
+        %   (UMITRigLedger) and is removed before addSession is called.
 
             if ~isfield(sessionInfo, 'processedDataFolder')
                 saveFolder = fullfile(testCase.TempRoot, ...
@@ -2457,6 +2500,19 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
             sessionUUID = store.addSession(subjectID, sessionInfo);
         end
 
+        function message = errorMessage(testCase, fcn, expectedID)
+        %ERRORMESSAGE Run FCN, verify it throws EXPECTEDID, return the message.
+
+            message = '';
+            try
+                fcn();
+                testCase.verifyFail(sprintf('Expected error %s.', expectedID));
+            catch ME
+                testCase.verifyEqual(ME.identifier, expectedID);
+                message = ME.message;
+            end
+        end
+
         function bindFolderRig(~, saveFolder, rigStore)
         %BINDFOLDERRIG Bind (or rebind) a SaveFolder's rig ledger to a library rig.
 
@@ -2477,6 +2533,14 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
             AcqInfoStream = struct();
             save(fullfile(saveFolder, 'AcqInfos.mat'), ...
                 'AcqInfoStream', '-mat');
+        end
+
+        function writeText(~, path, text)
+        %WRITETEXT Overwrite a text file (UTF-8).
+
+            fid = fopen(path, 'w', 'n', 'UTF-8');
+            fprintf(fid, '%s', text);
+            fclose(fid);
         end
 
         function writeRawDataFile(~, rawFolder, extension)
@@ -2545,13 +2609,11 @@ classdef TestUMITProjectStore < matlab.unittest.TestCase
             filePath = fullfile(testCase.SourceFolder, fileName);
 
             if contains(lower(fileName), 'reference')
+                % Identity-less (ImageReference v2): any subject library
+                % accepts it (identity fields, when present, must match).
                 ImageReference = genImageReferenceStruct( ...
                     single(value .* ones(4, 5)), ...
                     'Name', sprintf('Reference %g', value), ...
-                    'ProjectUUID', lower(char(java.util.UUID.randomUUID())), ...
-                    'ProjectName', 'Unit Test Project', ...
-                    'SubjectUUID', lower(char(java.util.UUID.randomUUID())), ...
-                    'SubjectID', 'Mouse_104', ...
                     'SourceType', 'unit-test', ...
                     'CreatedBy', 'TestUMITProjectStore');
                 save(filePath, 'ImageReference', '-mat');

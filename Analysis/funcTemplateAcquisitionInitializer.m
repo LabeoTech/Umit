@@ -149,7 +149,7 @@ function localRequireUninitializedSaveFolder(SaveFolder)
 blockedExtensions = {'.dat', '.umt', '.roi', '.umitlink'};
 blockedNames = { ...
     'AcqInfos.mat', 'DataParams.mat', 'events.mat', 'Text_events.mat', ...
-    'dataHistory.mat', 'pipeLog.mat', 'LogBook.mat'};
+    'dataHistory.mat', 'pipeLog.mat', 'LogBook.mat', 'UMITProjectLedger.json'};
 entries = dir(SaveFolder);
 for iEntry = 1:numel(entries)
     if entries(iEntry).isdir

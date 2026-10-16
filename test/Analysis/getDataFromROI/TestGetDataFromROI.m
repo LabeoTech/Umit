@@ -1,4 +1,4 @@
-classdef TestGetDataFromROI < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGetDataFromROI < matlab.unittest.TestCase
     %TESTGETDATAFROMROI Unit tests for getDataFromROI.
     %
     % Coverage (DFR-20260819-002):

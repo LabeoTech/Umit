@@ -1,4 +1,4 @@
-classdef TestApplyDetrend < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestApplyDetrend < matlab.unittest.TestCase
     %TESTAPPLYDETREND Unit tests for apply_detrend.
     %
     % Coverage:

@@ -1,4 +1,4 @@
-classdef TestImportFromTif < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestImportFromTif < matlab.unittest.TestCase
     % TESTIMPORTFROMTIF Unit tests for importFromTif using synthetic TIFF data.
     %
     % This suite generates synthetic 3-D arrays, writes them as multi-page
@@ -336,63 +336,15 @@ classdef TestImportFromTif < matlab.unittest.TestCase
             testCase.verifyEqual(imported, expected);
         end
 
-        function testExistingAcqInfosAllowsMatchingSecondImport(testCase)
-            saveFolder = fullfile(testCase.TempFolder, 'Save_existingMatch');
-            mkdir(saveFolder);
-
-            % First import
-            rawFolder1 = fullfile(testCase.TempFolder, 'Raw_existingMatch_1');
-            mkdir(rawFolder1);
-
-            data1 = reshape(uint16(1:4*5*3), [4, 5, 3]);
-            localWriteMultipageTif(fullfile(rawFolder1, 'img_red.tif'), data1);
-
-            tiffiles1 = struct( ...
-                'filename', 'img_red.tif', ...
-                'FrameRateHz', 18.0, ...
-                'ExposureMsec', 0.4, ...
-                'IlluminationColor', 'Red');
-
-            localWriteInfoJson(rawFolder1, struct('DateTime', '20260411_120500'), tiffiles1);
-            outFile1 = importFromTif(rawFolder1, saveFolder);
-
-            testCase.verifyEqual(outFile1, {'red.dat'});
-            testCase.verifyTrue(isfile(fullfile(saveFolder, 'AcqInfos.mat')));
-
-            % Second import with matching dimensions/timing
-            rawFolder2 = fullfile(testCase.TempFolder, 'Raw_existingMatch_2');
-            mkdir(rawFolder2);
-
-            data2 = reshape(uint16(1000 + (1:4*5*3)), [4, 5, 3]);
-            localWriteMultipageTif(fullfile(rawFolder2, 'img_green.tif'), data2);
-
-            tiffiles2 = struct( ...
-                'filename', 'img_green.tif', ...
-                'FrameRateHz', 18.0, ...
-                'ExposureMsec', 0.4, ...
-                'IlluminationColor', 'Green');
-
-            localWriteInfoJson(rawFolder2, struct('DateTime', '20260411_120501'), tiffiles2);
-            outFile2 = importFromTif(rawFolder2, saveFolder);
-
-            testCase.verifyEqual(outFile2, {'green.dat'});
-            testCase.verifyTrue(isfile(fullfile(saveFolder, 'red.dat')));
-            testCase.verifyTrue(isfile(fullfile(saveFolder, 'green.dat')));
-
-            AcqInfoStream = localLoadAcqInfo(fullfile(saveFolder, 'AcqInfos.mat'));
-            testCase.verifyEqual(AcqInfoStream.Width, 5);
-            testCase.verifyEqual(AcqInfoStream.Height, 4);
-            localVerifyRawScope(testCase, AcqInfoStream);
-            testCase.verifyEqual(AcqInfoStream.FrameRateHz, 18.0);
-        end
-
-        function testSecondImportDropsLegacyRigFieldsAndKeepsLedger(testCase)
-            %TESTSECONDIMPORTDROPSLEGACYRIGFIELDSANDKEEPSLEDGER AcqInfos.mat
-            %stores no rig information, and an existing ledger is untouched.
-
-            saveFolder = fullfile(testCase.TempFolder, 'Save_legacyRig');
-            rawFolder1 = fullfile(testCase.TempFolder, 'Raw_legacyRig_1');
-            rawFolder2 = fullfile(testCase.TempFolder, 'Raw_legacyRig_2');
+        function testSecondImportIsAFreshImport(testCase)
+            % Project redesign Phase 4 (brief section 1.6; Bruno 2026-10-15,
+            % Q2-c): any import into a folder that already holds an import is
+            % a fresh import: the previous import is replaced, whatever its
+            % channels, sizes or binning (the old AcqInfos.mat is deleted, not
+            % compared).
+            saveFolder = fullfile(testCase.TempFolder, 'Save_second');
+            rawFolder1 = fullfile(testCase.TempFolder, 'Raw_second_1');
+            rawFolder2 = fullfile(testCase.TempFolder, 'Raw_second_2');
             mkdir(saveFolder);
             mkdir(rawFolder1);
             mkdir(rawFolder2);
@@ -402,28 +354,69 @@ classdef TestImportFromTif < matlab.unittest.TestCase
                 struct('filename', 'img_red.tif', 'FrameRateHz', 18.0, ...
                 'ExposureMsec', 0.4, 'IlluminationColor', 'Red'));
             importFromTif(rawFolder1, saveFolder);
-            ledgerBefore = fileread(UMITRigLedger.filePath(saveFolder));
-
             acqInfoPath = fullfile(saveFolder, 'AcqInfos.mat');
             AcqInfoStream = localLoadAcqInfo(acqInfoPath);
             AcqInfoStream.rigUUID = 'legacy-uuid';
-            AcqInfoStream.rigID = 'LegacyRig';
             save(acqInfoPath, 'AcqInfoStream');
 
+            % Different size, binning and channel.
             localWriteMultipageTif(fullfile(rawFolder2, 'img_green.tif'), ...
-                reshape(uint16(1000 + (1:4*5*3)), [4, 5, 3]));
+                reshape(uint16(1000 + (1:6*8*3)), [6, 8, 3]));
             localWriteInfoJson(rawFolder2, struct('DateTime', '20260411_120501'), ...
-                struct('filename', 'img_green.tif', 'FrameRateHz', 18.0, ...
-                'ExposureMsec', 0.4, 'IlluminationColor', 'Green'));
-            [~, rigResolution] = importFromTif(rawFolder2, saveFolder);
+                struct('filename', 'img_green.tif', 'FrameRateHz', 20.0, ...
+                'ExposureMsec', 0.5, 'IlluminationColor', 'Green'));
 
+            [outFile, rigResolution] = importFromTif(rawFolder2, saveFolder, ...
+                'BinningSpatial', 2, 'backupOpts', 'GENBACKUP');
+
+            testCase.verifyEqual(outFile, {'green.dat'});
+            testCase.verifyFalse(isfile(fullfile(saveFolder, 'red.dat')), ...
+                'the previous import is replaced, not extended');
+            testCase.verifyNumElements(dir(fullfile(saveFolder, 'bkp_*.zip')), 1);
             AcqInfoStream = localLoadAcqInfo(acqInfoPath);
+            testCase.verifyEqual(AcqInfoStream.Width, 8);
+            testCase.verifyEqual(AcqInfoStream.Height, 6);
+            testCase.verifyEqual(AcqInfoStream.FrameRateHz, 20.0);
             testCase.verifyFalse(any(isfield(AcqInfoStream, {'rigUUID', 'rigID'})));
-            testCase.verifyEqual(fileread(UMITRigLedger.filePath(saveFolder)), ledgerBefore);
+            ledger = UMITRigLedger.read(saveFolder);
+            testCase.verifyEqual(ledger.events{end}.type, 'freshImport');
             testCase.verifyEqual(rigResolution.ledgerState, 'NoRig');
+            testCase.verifyFalse(UMITProjectLedger.exists(saveFolder));
         end
 
-        function testImportIntoBoundFolderLeavesLedgerUnchanged(testCase)
+        function testMalformedPreviousAcqInfosIsReplaced(testCase)
+            % A malformed or incomplete AcqInfos.mat of a previous import is
+            % deleted by the fresh import instead of being compared.
+            rawFolder = fullfile(testCase.TempFolder, 'Raw_badAcqInfo');
+            mkdir(rawFolder);
+            localWriteMultipageTif(fullfile(rawFolder, 'img_red.tif'), ...
+                reshape(uint16(1:4*5*3), [4, 5, 3]));
+            localWriteInfoJson(rawFolder, struct('DateTime', '20260411_130800'), ...
+                struct('filename', 'img_red.tif', 'FrameRateHz', 20.0, ...
+                'ExposureMsec', 0.2, 'IlluminationColor', 'Red'));
+
+            for kind = {'junk', 'missingFields'}
+                saveFolder = fullfile(testCase.TempFolder, ['Save_' kind{1}]);
+                mkdir(saveFolder);
+                if strcmp(kind{1}, 'junk')
+                    junk = 42;
+                    save(fullfile(saveFolder, 'AcqInfos.mat'), 'junk');
+                else
+                    AcqInfoStream = struct('Width', 5);
+                    save(fullfile(saveFolder, 'AcqInfos.mat'), 'AcqInfoStream');
+                end
+                % Explicit backupOpts: an empty one would open the
+                % confirmation dialog in a desktop MATLAB.
+                outFile = importFromTif(rawFolder, saveFolder, 'backupOpts', 'ERASE');
+                testCase.verifyEqual(outFile, {'red.dat'});
+                AcqInfoStream = localLoadAcqInfo(fullfile(saveFolder, 'AcqInfos.mat'));
+                testCase.verifyEqual(AcqInfoStream.Width, 5);
+            end
+        end
+
+        function testImportIntoRigBoundFolderKeepsTheBinding(testCase)
+            % A folder with a rig ledger is a previous import: the fresh
+            % import resets the commitments and keeps the binding.
             saveFolder = fullfile(testCase.TempFolder, 'Save_bound');
             rawFolder = fullfile(testCase.TempFolder, 'Raw_bound');
             mkdir(saveFolder);
@@ -435,16 +428,19 @@ classdef TestImportFromTif < matlab.unittest.TestCase
             UMITRigLedger.bind(saveFolder, UMITRigLedger.makeBinding( ...
                 UMITRigLedger.sourceRigFromRigInfo(rigInfo), ...
                 UMITRigLedger.buildOpticsSnapshot(rigInfo), []), 'Origin', 'test');
-            ledgerBefore = fileread(UMITRigLedger.filePath(saveFolder));
-
             localWriteMultipageTif(fullfile(rawFolder, 'img_red.tif'), ...
                 reshape(uint16(1:4*5*3), [4, 5, 3]));
             localWriteInfoJson(rawFolder, struct('DateTime', '20260411_120500'), ...
                 struct('filename', 'img_red.tif', 'FrameRateHz', 18.0, ...
                 'ExposureMsec', 0.4, 'IlluminationColor', 'Red'));
-            [~, rigResolution] = importFromTif(rawFolder, saveFolder);
 
-            testCase.verifyEqual(fileread(UMITRigLedger.filePath(saveFolder)), ledgerBefore);
+            [~, rigResolution] = importFromTif(rawFolder, saveFolder, ...
+                'backupOpts', 'ERASE');
+
+            ledger = UMITRigLedger.read(saveFolder);
+            testCase.verifyEqual(cellfun(@(e) e.type, ledger.events, 'UniformOutput', false), ...
+                {'bind', 'freshImport'});
+            testCase.verifyEqual(ledger.binding.sourceRig.rigID, 'TifTestRig');
             testCase.verifyEqual(rigResolution.ledgerState, 'BoundUncommitted');
         end
 
@@ -466,91 +462,6 @@ classdef TestImportFromTif < matlab.unittest.TestCase
                 'Umitoolbox:RigLedger:invalidLedger');
             testCase.verifyFalse(isfile(fullfile(saveFolder, 'red.dat')));
             testCase.verifyFalse(isfile(fullfile(saveFolder, 'AcqInfos.mat')));
-        end
-
-        function testExistingAcqInfosMismatchErrors(testCase)
-            saveFolder = fullfile(testCase.TempFolder, 'Save_existingMismatch');
-            mkdir(saveFolder);
-
-            % First import creates AcqInfos.mat
-            rawFolder1 = fullfile(testCase.TempFolder, 'Raw_existingMismatch_1');
-            mkdir(rawFolder1);
-
-            data1 = reshape(uint16(1:4*5*3), [4, 5, 3]);
-            localWriteMultipageTif(fullfile(rawFolder1, 'img_red.tif'), data1);
-
-            tiffiles1 = struct( ...
-                'filename', 'img_red.tif', ...
-                'FrameRateHz', 18.0, ...
-                'ExposureMsec', 0.4, ...
-                'IlluminationColor', 'Red');
-
-            localWriteInfoJson(rawFolder1, struct('DateTime', '20260411_120600'), tiffiles1);
-            importFromTif(rawFolder1, saveFolder);
-
-            % Second import has mismatched dimensions
-            rawFolder2 = fullfile(testCase.TempFolder, 'Raw_existingMismatch_2');
-            mkdir(rawFolder2);
-
-            data2 = reshape(uint16(1000 + (1:6*5*3)), [6, 5, 3]);
-            localWriteMultipageTif(fullfile(rawFolder2, 'img_green.tif'), data2);
-
-            tiffiles2 = struct( ...
-                'filename', 'img_green.tif', ...
-                'FrameRateHz', 18.0, ...
-                'ExposureMsec', 0.4, ...
-                'IlluminationColor', 'Green');
-
-            localWriteInfoJson(rawFolder2, struct('DateTime', '20260411_120601'), tiffiles2);
-
-            didThrow = false;
-            try
-                importFromTif(rawFolder2, saveFolder);
-            catch ME
-                didThrow = true;
-                testCase.verifyTrue( ...
-                    contains(ME.message, 'must have identical raw Width, Height, FrameRateHz, and ExposureMsec'), ...
-                    'Mismatch import should fail with the shared-dimension validation message.');
-            end
-
-            testCase.verifyTrue(didThrow, ...
-                'A mismatched second import should raise an error.');
-        end
-
-        function testExistingAcqInfosBinningMismatchErrors(testCase)
-            % .dat header Phase 7b: raw values match, but a different
-            % binning would give .dat files of another size.
-            saveFolder = fullfile(testCase.TempFolder, 'Save_binMismatch');
-            mkdir(saveFolder);
-
-            rawFolder1 = fullfile(testCase.TempFolder, 'Raw_binMismatch_1');
-            mkdir(rawFolder1);
-            localWriteMultipageTif(fullfile(rawFolder1, 'img_red.tif'), ...
-                reshape(uint16(1:4*4*2), [4, 4, 2]));
-            localWriteInfoJson(rawFolder1, struct('DateTime', '20260411_120700'), ...
-                struct('filename', 'img_red.tif', 'FrameRateHz', 18.0, ...
-                'ExposureMsec', 0.4, 'IlluminationColor', 'Red'));
-            importFromTif(rawFolder1, saveFolder);
-
-            rawFolder2 = fullfile(testCase.TempFolder, 'Raw_binMismatch_2');
-            mkdir(rawFolder2);
-            localWriteMultipageTif(fullfile(rawFolder2, 'img_green.tif'), ...
-                reshape(uint16(1:4*4*2), [4, 4, 2]));
-            localWriteInfoJson(rawFolder2, struct('DateTime', '20260411_120701'), ...
-                struct('filename', 'img_green.tif', 'FrameRateHz', 18.0, ...
-                'ExposureMsec', 0.4, 'IlluminationColor', 'Green'));
-
-            didThrow = false;
-            try
-                importFromTif(rawFolder2, saveFolder, 'BinningSpatial', 2);
-            catch ME
-                didThrow = true;
-                testCase.verifyTrue(contains(ME.message, 'same BinningSpatial and BinningTemp'), ...
-                    'A binning mismatch should fail with the shared-dimension message.');
-            end
-            testCase.verifyTrue(didThrow, ...
-                'A second import with a different binning should raise an error.');
-            testCase.verifyFalse(isfile(fullfile(saveFolder, 'green.dat')));
         end
 
         function testFrameCountMismatchWithinImportErrors(testCase)
@@ -831,73 +742,6 @@ classdef TestImportFromTif < matlab.unittest.TestCase
                 'Calling importFromTif with non-divisible BinningTemp should raise an error.');
         end
 
-        function testMalformedExistingAcqInfosErrors(testCase)
-            rawFolder = fullfile(testCase.TempFolder, 'Raw_badAcqInfo');
-            saveFolder = fullfile(testCase.TempFolder, 'Save_badAcqInfo');
-            mkdir(rawFolder);
-            mkdir(saveFolder);
-
-            data = reshape(uint16(1:4*5*3), [4, 5, 3]);
-            localWriteMultipageTif(fullfile(rawFolder, 'img_red.tif'), data);
-
-            tiffiles = struct( ...
-                'filename', 'img_red.tif', ...
-                'FrameRateHz', 20.0, ...
-                'ExposureMsec', 0.2, ...
-                'IlluminationColor', 'Red');
-
-            localWriteInfoJson(rawFolder, struct('DateTime', '20260411_130800'), tiffiles);
-
-            junk = 42;
-            save(fullfile(saveFolder, 'AcqInfos.mat'), 'junk');
-
-            didThrow = false;
-            try
-                importFromTif(rawFolder, saveFolder);
-            catch ME
-                didThrow = true;
-                testCase.verifyTrue( ...
-                    contains(ME.message, 'does not contain a valid acquisition-info structure'), ...
-                    'Malformed AcqInfos.mat should raise an informative error.');
-            end
-
-            testCase.verifyTrue(didThrow, ...
-                'Calling importFromTif with malformed AcqInfos.mat should raise an error.');
-        end
-
-        function testExistingAcqInfosMissingRequiredFieldsErrors(testCase)
-            rawFolder = fullfile(testCase.TempFolder, 'Raw_missingAcqFields');
-            saveFolder = fullfile(testCase.TempFolder, 'Save_missingAcqFields');
-            mkdir(rawFolder);
-            mkdir(saveFolder);
-
-            data = reshape(uint16(1:4*5*3), [4, 5, 3]);
-            localWriteMultipageTif(fullfile(rawFolder, 'img_red.tif'), data);
-
-            tiffiles = struct( ...
-                'filename', 'img_red.tif', ...
-                'FrameRateHz', 20.0, ...
-                'ExposureMsec', 0.2, ...
-                'IlluminationColor', 'Red');
-
-            localWriteInfoJson(rawFolder, struct('DateTime', '20260411_130900'), tiffiles);
-
-            AcqInfoStream = struct('Width', 5);
-            save(fullfile(saveFolder, 'AcqInfos.mat'), 'AcqInfoStream');
-
-            didThrow = false;
-            try
-                importFromTif(rawFolder, saveFolder);
-            catch ME
-                didThrow = true;
-                testCase.verifyTrue( ...
-                    contains(ME.message, 'does not contain the required fields'), ...
-                    'AcqInfos.mat missing required fields should raise an informative error.');
-            end
-
-            testCase.verifyTrue(didThrow, ...
-                'Calling importFromTif with incomplete AcqInfos.mat should raise an error.');
-        end
         function testInvalidBinningSpatialThrows(testCase)
             rawFolder = fullfile(testCase.TempFolder, 'Raw_badSpatialParam');
             saveFolder = fullfile(testCase.TempFolder, 'Save_badSpatialParam');

@@ -1,4 +1,4 @@
-classdef TestAssertDatLayout < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestAssertDatLayout < matlab.unittest.TestCase
     %TESTASSERTDATLAYOUT Consumers refuse unsupported .dat layouts (Phase 6b-1).
 
     methods (Test)

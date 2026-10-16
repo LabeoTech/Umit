@@ -54,8 +54,8 @@ for iEvent = 1:numel(info.events)
                 part = 'camera coregistration';
             end
             detail = sprintf('committed %s (first used by %s)', part, event.firstUsedBy);
-        case 'reimport'
-            detail = 'raw data re-imported: coregistration commitment reset';
+        case 'freshImport'
+            detail = 'fresh import of the raw data: all rig commitments reset';
         case 'conflict'
             detail = sprintf('CONFLICT on %s', strjoin(cellstr(event.parts(:)'), ', '));
         case 'acknowledgeConflict'

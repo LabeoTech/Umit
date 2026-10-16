@@ -1,4 +1,4 @@
-classdef TestPrepareDualCameraCalibrationData < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestPrepareDualCameraCalibrationData < matlab.unittest.TestCase
     %TESTPREPAREDUALCAMERACALIBRATIONDATA Focused calibration preparation tests.
 
     properties

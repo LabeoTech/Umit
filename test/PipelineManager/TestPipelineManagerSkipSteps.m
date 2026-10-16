@@ -1,4 +1,4 @@
-classdef TestPipelineManagerSkipSteps < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestPipelineManagerSkipSteps < matlab.unittest.TestCase
     %TESTPIPELINEMANAGERSKIPSTEPS History-based step skipping (b_skipSteps).
     %
     %   Re-running an unchanged pipeline must not execute a step whose result is

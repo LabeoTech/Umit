@@ -1,4 +1,4 @@
-classdef TestSpeckleMappingChunkOverrun < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestSpeckleMappingChunkOverrun < matlab.unittest.TestCase
     %TESTSPECKLEMAPPINGCHUNKOVERRUN Regression: RAM-safe chunk loops must not
     % overrun Nt/Nx when calculateMaxChunkSize's returned nChunks, combined
     % with a ceil()-rounded chunk size, needs fewer chunks than requested.

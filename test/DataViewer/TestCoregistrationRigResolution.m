@@ -1,4 +1,4 @@
-classdef TestCoregistrationRigResolution < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestCoregistrationRigResolution < matlab.unittest.TestCase
     %TESTCOREGISTRATIONRIGRESOLUTION Target rig of DataViewer_Coreg2Cams.
     %
     %   Rig-ledger redesign, Phase 4: the calibration target is the rig bound

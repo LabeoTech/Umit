@@ -1,4 +1,4 @@
-classdef TestPipelineManagerRunMessage < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestPipelineManagerRunMessage < matlab.unittest.TestCase
     %TESTPIPELINEMANAGERRUNMESSAGE One-sentence run outcome for the end-of-run dialog.
     %
     %   PipelineManager.describeExecutionResult(result) turns an executePipeline

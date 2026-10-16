@@ -1,4 +1,4 @@
-classdef TestImagesClassification < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestImagesClassification < matlab.unittest.TestCase
     %TESTIMAGESCLASSIFICATION Unit tests for ImagesClassification.
     %
     %   This suite verifies file generation, backup handling, the shared
@@ -91,7 +91,8 @@ classdef TestImagesClassification < matlab.unittest.TestCase
             writeTestDat(dummyFile, single(1), 1);
 
             testCase.verifyTrue(isfile(dummyFile));
-
+            % Project redesign Phase 4: leftovers make the folder a previous
+            % import; backupOpts ERASE deletes them without a zip.
             ImagesClassification( ...
                 testCase.FixtureFolder, ...
                 testCase.TempSaveFolder, ...
@@ -454,7 +455,7 @@ classdef TestImagesClassification < matlab.unittest.TestCase
 
             fid = fopen(infoPath, 'w');
             testCase.assertNotEqual(fid, -1, 'Failed to open synthetic info.txt for writing.');
-            cleaner = onCleanup(@() fclose(fid)); %#ok<NASGU>
+            cleaner = onCleanup(@() fclose(fid));
             fwrite(fid, txt, 'char');
         end
     end

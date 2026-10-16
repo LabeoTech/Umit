@@ -22,6 +22,9 @@ classdef UMITRigLedger
     %       Conflicted        - a rebind changed a committed part; blocks all
     %                           rig-dependent work until resolved
     %   hadConflict is a permanent mark: true once any conflict occurred.
+    %   A fresh import (re-import of the raw data, recordFreshImport) resets
+    %   every commitment and keeps the binding, so it also ends a conflict;
+    %   hadConflict stays true.
     %
     %   Read-only operations (never write):
     %       exists, read, validate, previewRebind, filePath
@@ -32,12 +35,12 @@ classdef UMITRigLedger
     %
     %   Writers (each takes a mandatory 'Origin' Name-Value):
     %       writeNoRig, bind, rebind, revertBinding,
-    %       dropCoregistrationBinding, commit, recordReimport,
+    %       dropCoregistrationBinding, commit, recordFreshImport,
     %       acknowledgeConflict, clearStaleLock
     %
     %   Guards used by rig-dependent consumers (throw, never warn):
     %       assertCanUseOptics, assertCanUseCoregistration,
-    %       assertCanUseFilterSet, assertCanReimport
+    %       assertCanUseFilterSet
     %
     %   Canonical hash form (computeHash/canonicalJSON):
     %       - SHA-256 over the UTF-8 bytes of a canonical JSON text,
@@ -62,18 +65,24 @@ classdef UMITRigLedger
     %   Error identifiers: Umitoolbox:RigLedger:<condition>. See
     %   IMPLEMENTATION_NOTES_rig_ledger.md for the list and messages.
     %
-    %   See also UMITRigStore, getUMITRigSchema.
+    %   The generic engine (canonical JSON and hashing, header and event
+    %   checks, atomic writes, locking) is UMITLedgerCore, shared with the
+    %   project ledger; this class owns the rig-specific snapshots, events
+    %   and replay.
+    %
+    %   See also UMITLedgerCore, UMITRigStore, getUMITRigSchema.
 
     properties (Constant)
         FileName = 'UMITRigLedger.json'
         LockFolderName = 'UMITRigLedger.lock'
         Format = 'umit-rig-ledger'
         SchemaVersion = 1
-        % Mirrors <param.version> in Umit.prj (no runtime version API exists).
-        ToolboxVersion = '2.0.0'
-        HashPrefix = 'sha256:'
-        SignificantDigits = 6
+        ToolboxVersion = UMITLedgerCore.ToolboxVersion
+        HashPrefix = UMITLedgerCore.HashPrefix
+        SignificantDigits = UMITLedgerCore.SignificantDigits
         Parts = {'optics', 'coregistration', 'filterSet'}
+        % Fields always hashed and encoded as JSON lists.
+        ListFields = {'cameras', 'illuminations'}
     end
 
     %% Read-only API
@@ -203,10 +212,7 @@ classdef UMITRigLedger
             info = UMITRigLedger.read(saveFolder);
             for iEvent = numel(info.events):-1:1
                 if strcmp(info.events{iEvent}.type, 'acknowledgeConflict')
-                    acknowledgedOn = datetime(info.events{iEvent}.timestamp, ...
-                        'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss.SSS''Z''', 'TimeZone', 'UTC');
-                    acknowledgedOn.TimeZone = 'local';
-                    acknowledgedOn.TimeZone = '';
+                    acknowledgedOn = UMITLedgerCore.localTime(info.events{iEvent}.timestamp);
                     return
                 end
             end
@@ -432,33 +438,19 @@ classdef UMITRigLedger
             %   See the class help for the exact canonical form. The
             %   top-level 'hash' field of a struct is excluded.
 
-            if isstruct(value) && isscalar(value) && isfield(value, 'hash')
-                value = rmfield(value, 'hash');
-            end
-            text = UMITRigLedger.iCanonical(value, false);
+            text = UMITLedgerCore.canonicalJSON(value, UMITRigLedger.iHashOptions());
         end
 
         function hash = computeHash(value)
             %COMPUTEHASH 'sha256:<hex>' of canonicalJSON(VALUE).
 
-            text = UMITRigLedger.canonicalJSON(value);
-            digest = java.security.MessageDigest.getInstance('SHA-256');
-            bytes = unicode2native(text, 'UTF-8');
-            digest.update(typecast(uint8(bytes(:)), 'int8'));
-            digestBytes = typecast(digest.digest(), 'uint8');
-            hash = [UMITRigLedger.HashPrefix ...
-                lower(reshape(dec2hex(digestBytes, 2).', 1, []))];
+            hash = UMITLedgerCore.computeHash(value, UMITRigLedger.iHashOptions());
         end
 
         function text = shortHash(hash)
             %SHORTHASH 'sha256:' plus the first 12 hex digits, or '(none)'.
 
-            hash = UMITRigLedger.iHashText(hash);
-            if isempty(hash)
-                text = '(none)';
-            else
-                text = hash(1:min(numel(hash), numel(UMITRigLedger.HashPrefix) + 12));
-            end
+            text = UMITLedgerCore.shortHash(hash);
         end
 
         function message = buildErrorMessage(operation, saveFolder, why, fixes)
@@ -469,16 +461,7 @@ classdef UMITRigLedger
             %
             %   FIXES is a cellstr; each entry becomes one numbered fix.
 
-            if ischar(fixes) || isstring(fixes)
-                fixes = cellstr(fixes);
-            end
-            lines = cell(1, numel(fixes));
-            for iFix = 1:numel(fixes)
-                lines{iFix} = sprintf('  (%d) %s', iFix, fixes{iFix});
-            end
-            message = sprintf('%s was refused for folder "%s".\nWhy: %s\nHow to fix:\n%s', ...
-                char(string(operation)), char(string(saveFolder)), ...
-                char(string(why)), strjoin(lines, newline));
+            message = UMITLedgerCore.buildErrorMessage(operation, saveFolder, why, fixes);
         end
 
         %% Guards
@@ -537,7 +520,7 @@ classdef UMITRigLedger
                         operation, info.folder, sprintf( ...
                         ['the folder already used the camera coregistration of %s, but a ' ...
                         'different transform was requested. A different transform can only ' ...
-                        'be applied through a re-import.'], ...
+                        'be applied through a fresh import (re-import of the raw data).'], ...
                         UMITRigLedger.iDescribeHashSource(info, 'coregistration', committed)), ...
                         {UMITRigLedger.iFixUseCommitted('coregistration'), ...
                         UMITRigLedger.iFixFreshFolder()});
@@ -556,45 +539,6 @@ classdef UMITRigLedger
                 'hash', bound, ...
                 'sourceRig', info.binding.sourceRig, ...
                 'needsCommit', isempty(committed));
-        end
-
-        function assertCanReimport(saveFolder, binding, varargin)
-            %ASSERTCANREIMPORT Preflight a raw re-import that binds BINDING.
-            %
-            %   UMITRigLedger.assertCanReimport(saveFolder, binding, ...
-            %       'Operation', name)
-            %
-            %   Read-only. A re-import resets the coregistration commitment
-            %   but keeps the optics commitment (brief section 1.6), so the
-            %   re-import is refused when the folder committed to optics
-            %   other than BINDING.optics. An empty BINDING (no rig) or a
-            %   folder without a ledger always passes. An invalid ledger
-            %   throws invalidLedger.
-
-            operation = UMITRigLedger.iParseOperation('assertCanReimport', varargin{:});
-            info = UMITRigLedger.read(saveFolder);
-            if isempty(binding) || isempty(info.commitments.optics)
-                return
-            end
-            binding = UMITRigLedger.iValidateBinding(binding);
-            committed = info.commitments.optics;
-            if strcmp(committed, binding.optics.hash)
-                return
-            end
-            UMITRigLedger.iThrow('Umitoolbox:RigLedger:reimportConflict', ...
-                operation, info.folder, sprintf( ...
-                ['the folder already used the optics of %s, but the re-import would ' ...
-                'use %s, whose optics differ. A re-import resets only the coregistration ' ...
-                'commitment, never the optics commitment.'], ...
-                UMITRigLedger.iDescribeHashSource(info, 'optics', committed), ...
-                UMITRigLedger.iDescribeRig(binding.sourceRig)), ...
-                {sprintf(['Activate the library rig whose optics the folder used (%s) ' ...
-                'and re-import.'], ...
-                UMITRigLedger.iDescribeHashSource(info, 'optics', committed)), ...
-                UMITRigLedger.iFixFreshFolder(), ...
-                ['To accept the new optics deliberately, rebind the folder to the new rig ' ...
-                'and acknowledge the conflict (DataViewer: Rig > Bind/Rebind, then ' ...
-                'Acknowledge Conflict), then re-import.']});
         end
 
         function needsCommit = assertCanUseFilterSet(saveFolder, filterSetSnapshot, varargin)
@@ -841,23 +785,33 @@ classdef UMITRigLedger
             wasWritten = true;
         end
 
-        function recordReimport(saveFolder, varargin)
-            %RECORDREIMPORT Record a raw re-import; resets coregistration.
+        function recordFreshImport(saveFolder, varargin)
+            %RECORDFRESHIMPORT Record a fresh import; resets ALL commitments.
             %
-            %   UMITRigLedger.recordReimport(saveFolder, 'Origin', origin)
+            %   UMITRigLedger.recordFreshImport(saveFolder, 'Origin', origin)
             %
-            %   Optics and filter-set commitments are kept. The folder
-            %   must already have a ledger.
+            %   A re-import into an existing save folder is a fresh import:
+            %   the folder becomes equivalent to a first import. The optics,
+            %   coregistration and filter-set commitments are all reset; the
+            %   binding (or "no rig") is kept, so the folder is
+            %   BoundUncommitted (or NoRig) afterwards and an open conflict
+            %   ends. Earlier events stay in the history and hadConflict
+            %   stays true. The previous commitments are recorded in the
+            %   event for information. The folder must already have a ledger.
 
-            origin = UMITRigLedger.iParseOrigin('recordReimport', varargin{:});
+            origin = UMITRigLedger.iParseOrigin('recordFreshImport', varargin{:});
             folder = UMITRigLedger.iExistingFolder(saveFolder);
-            lock = UMITRigLedger.iAcquireLock(folder, 'recordReimport'); %#ok<NASGU>
-            [ledger, info] = UMITRigLedger.iLoadForWrite(folder, 'Recording a re-import');
+            lock = UMITRigLedger.iAcquireLock(folder, 'recordFreshImport'); %#ok<NASGU>
+            operation = 'Recording a fresh import';
+            [ledger, info] = UMITRigLedger.iLoadForWrite(folder, operation);
             if strcmp(info.state, 'Unknown')
-                UMITRigLedger.iThrowNoLedger('Recording a re-import', folder);
+                UMITRigLedger.iThrowNoLedger(operation, folder);
             end
-            event = UMITRigLedger.iNewEvent('reimport', origin);
+            event = UMITRigLedger.iNewEvent('freshImport', origin);
+            event.previousOpticsHash = UMITRigLedger.iNullable(info.commitments.optics);
             event.previousCoregistrationHash = UMITRigLedger.iNullable(info.commitments.coregistration);
+            % A cell keeps a one-element list a JSON array.
+            event.previousFilterSets = num2cell(info.commitments.filterSets(:)');
             ledger = UMITRigLedger.iAppendEvent(ledger, event);
             UMITRigLedger.iWrite(folder, ledger);
         end
@@ -910,20 +864,8 @@ classdef UMITRigLedger
             p.FunctionName = 'clearStaleLock';
             addParameter(p, 'MinimumAge', minutes(10), @(x) isduration(x) && isscalar(x));
             parse(p, varargin{:});
-            folder = UMITRigLedger.iExistingFolder(saveFolder);
-            lockFolder = fullfile(folder, UMITRigLedger.LockFolderName);
-            wasCleared = false;
-            if ~isfolder(lockFolder)
-                return
-            end
-            age = UMITRigLedger.iLockAge(lockFolder);
-            if age < p.Results.MinimumAge
-                error('Umitoolbox:RigLedger:lockNotStale', ...
-                    'The rig-ledger lock of "%s" is only %s old; it may belong to a running operation.', ...
-                    folder, char(age, 'hh:mm:ss'));
-            end
-            rmdir(lockFolder, 's');
-            wasCleared = true;
+            wasCleared = UMITLedgerCore.clearStaleLock(saveFolder, UMITRigLedger.iSpec(), ...
+                p.Results.MinimumAge);
         end
     end
 
@@ -959,16 +901,13 @@ classdef UMITRigLedger
             info.events = ledger.events;
             info.snapshots = ledger.snapshots;
 
+            % Base fields and eventUUID uniqueness are checked beforehand by
+            % UMITLedgerCore.eventIssues (iIntegrityIssues).
             isNoRig = false;
             pendingConflict = {};
-            seenUUIDs = {};
             for iEvent = 1:numel(ledger.events)
                 event = ledger.events{iEvent};
                 where = sprintf('Event %d (%s)', iEvent, event.type);
-                if ismember(event.eventUUID, seenUUIDs)
-                    error('%s reuses eventUUID %s.', where, event.eventUUID);
-                end
-                seenUUIDs{end+1} = event.eventUUID; %#ok<AGROW>
                 if ~isempty(pendingConflict) && ~strcmp(event.type, 'conflict')
                     error('%s follows a conflicting rebind without its conflict event.', where);
                 end
@@ -1050,8 +989,10 @@ classdef UMITRigLedger
                                 error('%s has unknown part "%s".', where, event.part);
                         end
 
-                    case 'reimport'
+                    case 'freshImport'
+                        info.commitments.optics = '';
                         info.commitments.coregistration = '';
+                        info.commitments.filterSets = struct('id', {}, 'hash', {});
 
                     case 'conflict'
                         UMITRigLedger.iRequireFields(event, {'parts'}, where);
@@ -1358,15 +1299,28 @@ classdef UMITRigLedger
         end
 
         %% Ledger file I/O
+        function spec = iSpec()
+            %ISPEC Ledger spec for UMITLedgerCore (file, lock, messages).
+            spec = UMITLedgerCore.makeSpec(struct( ...
+                'fileName', UMITRigLedger.FileName, ...
+                'lockFolderName', UMITRigLedger.LockFolderName, ...
+                'format', UMITRigLedger.Format, ...
+                'schemaVersion', UMITRigLedger.SchemaVersion, ...
+                'errorPrefix', 'Umitoolbox:RigLedger', ...
+                'label', 'rig ledger', ...
+                'clearLockCall', 'UMITRigLedger.clearStaleLock(saveFolder)', ...
+                'bodyFields', {{'snapshots'}}));
+        end
+
+        function hashOptions = iHashOptions()
+            hashOptions = struct('listFields', {UMITRigLedger.ListFields}, ...
+                'errorPrefix', 'Umitoolbox:RigLedger');
+        end
+
         function [ledger, info] = iLoadForWrite(folder, operation)
             if ~UMITRigLedger.exists(folder)
-                ledger = struct( ...
-                    'format', UMITRigLedger.Format, ...
-                    'schemaVersion', UMITRigLedger.SchemaVersion, ...
-                    'ledgerUUID', lower(char(java.util.UUID.randomUUID())), ...
-                    'createdOn', UMITRigLedger.iNow(), ...
-                    'snapshots', struct('optics', {{}}, 'coregistration', {{}}, 'filterSet', {{}}), ...
-                    'events', {{}});
+                ledger = UMITLedgerCore.newLedger(UMITRigLedger.iSpec(), struct('snapshots', ...
+                    struct('optics', {{}}, 'coregistration', {{}}, 'filterSet', {{}})));
                 info = UMITRigLedger.iEmptyInfo(folder);
                 return
             end
@@ -1394,36 +1348,15 @@ classdef UMITRigLedger
         end
 
         function ledger = iDecodeFile(path)
-            fid = fopen(path, 'r', 'n', 'UTF-8');
-            if fid == -1
-                error('Umitoolbox:RigLedger:readFailed', 'Could not read rig ledger: %s', path);
-            end
-            closer = onCleanup(@() fclose(fid));
-            text = fread(fid, [1 Inf], '*char');
-            clear closer
-            try
-                raw = jsondecode(text);
-            catch ME
-                error('Umitoolbox:RigLedger:readFailed', ...
-                    'Rig ledger is not valid JSON (%s): %s', path, ME.message);
-            end
-            ledger = UMITRigLedger.iNormalizeLedger(raw);
+            ledger = UMITRigLedger.iNormalizeLedger( ...
+                UMITLedgerCore.decodeFile(path, UMITRigLedger.iSpec()));
         end
 
         function ledger = iNormalizeLedger(raw)
             %INORMALIZELEDGER Undo jsondecode shape changes (struct arrays,
             %column vectors, null) so the in-memory model is stable.
 
-            if ~isstruct(raw) || ~isscalar(raw)
-                error('Rig ledger top level must be a JSON object.');
-            end
-            required = {'format', 'schemaVersion', 'ledgerUUID', 'createdOn', 'snapshots', 'events'};
-            missing = setdiff(required, fieldnames(raw));
-            if ~isempty(missing)
-                error('Rig ledger is missing field(s): %s.', strjoin(missing, ', '));
-            end
-            ledger = raw;
-            ledger.events = UMITRigLedger.iCellOfStructs(raw.events, 'events');
+            ledger = UMITLedgerCore.normalizeHeader(raw, UMITRigLedger.iSpec());
             if ~isstruct(raw.snapshots) || ~isscalar(raw.snapshots)
                 error('Rig ledger "snapshots" must be an object.');
             end
@@ -1443,15 +1376,7 @@ classdef UMITRigLedger
         end
 
         function list = iCellOfStructs(value, label)
-            if isempty(value)
-                list = {};
-            elseif isstruct(value)
-                list = num2cell(value(:)');
-            elseif iscell(value) && all(cellfun(@(x) isstruct(x) && isscalar(x), value))
-                list = value(:)';
-            else
-                error('Rig ledger "%s" must be a list of objects.', label);
-            end
+            list = UMITLedgerCore.cellOfStructs(value, label, UMITRigLedger.iSpec());
         end
 
         function snapshot = iNormalizeSnapshotShape(part, snapshot)
@@ -1498,18 +1423,7 @@ classdef UMITRigLedger
         function issues = iIntegrityIssues(ledger)
             %IINTEGRITYISSUES Schema and snapshot-hash checks (not events).
 
-            issues = {};
-            if ~strcmp(UMITRigLedger.iMaybeText(ledger.format), UMITRigLedger.Format)
-                issues{end+1} = sprintf('format must be "%s".', UMITRigLedger.Format);
-            end
-            if ~isnumeric(ledger.schemaVersion) || ~isscalar(ledger.schemaVersion) || ...
-                    ledger.schemaVersion ~= UMITRigLedger.SchemaVersion
-                issues{end+1} = sprintf('schemaVersion %s is not supported (expected %d).', ...
-                    mat2str(ledger.schemaVersion), UMITRigLedger.SchemaVersion);
-            end
-            if isempty(UMITRigLedger.iMaybeText(ledger.ledgerUUID))
-                issues{end+1} = 'ledgerUUID is missing.';
-            end
+            issues = UMITLedgerCore.headerIssues(ledger, UMITRigLedger.iSpec());
             for iPart = 1:numel(UMITRigLedger.Parts)
                 part = UMITRigLedger.Parts{iPart};
                 list = ledger.snapshots.(part);
@@ -1526,22 +1440,13 @@ classdef UMITRigLedger
                     end
                 end
             end
-            if isempty(ledger.events)
-                issues{end+1} = 'The ledger has no events.';
-            end
-            base = {'eventUUID', 'type', 'timestamp', 'toolboxVersion', 'origin'};
-            for iEvent = 1:numel(ledger.events)
-                missing = setdiff(base, fieldnames(ledger.events{iEvent}));
-                if ~isempty(missing)
-                    issues{end+1} = sprintf('Event %d is missing field(s): %s.', ...
-                        iEvent, strjoin(missing, ', ')); %#ok<AGROW>
-                end
-            end
+            issues = [issues, UMITLedgerCore.eventIssues(ledger)];
         end
 
         function iWrite(folder, ledger)
-            %IWRITE Atomic replace: temp file, verify by re-reading and
-            %replaying, back up the old file, rename, restore on failure.
+            %IWRITE Atomic replace (UMITLedgerCore.writeLedger): temp file,
+            %verify by re-reading and replaying, back up the old file,
+            %rename, restore on failure.
 
             encoded = ledger;
             for iPart = 1:numel(UMITRigLedger.Parts)
@@ -1552,56 +1457,17 @@ classdef UMITRigLedger
                 end
                 encoded.snapshots.(part) = list;
             end
-            text = jsonencode(encoded, 'PrettyPrint', true);
+            UMITLedgerCore.writeLedger(folder, UMITRigLedger.iSpec(), encoded, ...
+                @(tempPath) UMITRigLedger.iVerifyCandidate(tempPath, folder));
+        end
 
-            target = fullfile(folder, UMITRigLedger.FileName);
-            tempPath = [tempname(folder) '.json'];
-            backupPath = [tempname(folder) '.bak.json'];
-            tempCleanup = onCleanup(@() UMITRigLedger.iDeleteIfPresent(tempPath));
-
-            fid = fopen(tempPath, 'w', 'n', 'UTF-8');
-            if fid == -1
-                error('Umitoolbox:RigLedger:writeFailed', ...
-                    'Could not write a temporary rig ledger in "%s".', folder);
+        function iVerifyCandidate(tempPath, folder)
+            written = UMITRigLedger.iDecodeFile(tempPath);
+            issues = UMITRigLedger.iIntegrityIssues(written);
+            if ~isempty(issues)
+                error('%s', strjoin(issues, ' | '));
             end
-            closer = onCleanup(@() fclose(fid));
-            fprintf(fid, '%s\n', text);
-            clear closer
-
-            try
-                written = UMITRigLedger.iDecodeFile(tempPath);
-                issues = UMITRigLedger.iIntegrityIssues(written);
-                if ~isempty(issues)
-                    error('%s', strjoin(issues, ' | '));
-                end
-                UMITRigLedger.iReplay(written, folder);
-            catch ME
-                error('Umitoolbox:RigLedger:writeFailed', ...
-                    'The new rig ledger for "%s" failed verification and was not installed: %s', ...
-                    folder, ME.message);
-            end
-
-            backupCreated = false;
-            if isfile(target)
-                [ok, message] = movefile(target, backupPath, 'f');
-                if ~ok
-                    error('Umitoolbox:RigLedger:writeFailed', ...
-                        'Could not back up the rig ledger "%s": %s', target, message);
-                end
-                backupCreated = true;
-            end
-            [ok, message] = movefile(tempPath, target, 'f');
-            if ~ok
-                if backupCreated && isfile(backupPath)
-                    movefile(backupPath, target, 'f');
-                end
-                error('Umitoolbox:RigLedger:writeFailed', ...
-                    'Could not install the rig ledger "%s": %s', target, message);
-            end
-            if backupCreated
-                UMITRigLedger.iDeleteIfPresent(backupPath);
-            end
-            clear tempCleanup
+            UMITRigLedger.iReplay(written, folder);
         end
 
         function snapshot = iEncodableSnapshot(snapshot)
@@ -1614,7 +1480,7 @@ classdef UMITRigLedger
         end
 
         function ledger = iAppendEvent(ledger, event)
-            ledger.events{end+1} = event;
+            ledger = UMITLedgerCore.appendEvent(ledger, event);
         end
 
         function ledger = iAddBindingSnapshots(ledger, binding)
@@ -1635,64 +1501,12 @@ classdef UMITRigLedger
         end
 
         function event = iNewEvent(type, origin)
-            event = struct( ...
-                'eventUUID', lower(char(java.util.UUID.randomUUID())), ...
-                'type', type, ...
-                'timestamp', UMITRigLedger.iNow(), ...
-                'toolboxVersion', UMITRigLedger.ToolboxVersion, ...
-                'origin', origin);
+            event = UMITLedgerCore.newEvent(type, origin);
         end
 
         %% Locking
         function cleanupObj = iAcquireLock(folder, operation)
-            lockFolder = fullfile(folder, UMITRigLedger.LockFolderName);
-            lockDirectory = java.io.File(lockFolder);
-            if ~lockDirectory.mkdir()
-                if ~isfolder(lockFolder)
-                    error('Umitoolbox:RigLedger:lockCreationFailed', ...
-                        'Could not create the rig-ledger lock: %s', lockFolder);
-                end
-                age = UMITRigLedger.iLockAge(lockFolder);
-                error('Umitoolbox:RigLedger:ledgerLocked', ...
-                    ['The rig ledger of "%s" is locked by another operation (lock age %s). ' ...
-                    'If no other UMIT process is writing to this folder, clear it with ' ...
-                    'UMITRigLedger.clearStaleLock(saveFolder).'], folder, char(age, 'hh:mm:ss'));
-            end
-            try
-                LockInfo = struct('operation', operation, ...
-                    'createdOn', datetime('now'), 'processID', feature('getpid'));
-                saveMatAtomic(fullfile(lockFolder, 'lockInfo.mat'), 'LockInfo', LockInfo);
-            catch ME
-                UMITRigLedger.iRemoveFolder(lockFolder);
-                rethrow(ME)
-            end
-            cleanupObj = onCleanup(@() UMITRigLedger.iRemoveFolder(lockFolder));
-        end
-
-        function age = iLockAge(lockFolder)
-            createdOn = NaT;
-            try
-                loaded = load(fullfile(lockFolder, 'lockInfo.mat'), 'LockInfo');
-                createdOn = loaded.LockInfo.createdOn;
-            catch
-            end
-            if isnat(createdOn)
-                listing = dir(lockFolder);
-                createdOn = datetime(listing(1).datenum, 'ConvertFrom', 'datenum');
-            end
-            age = datetime('now') - createdOn;
-        end
-
-        function iRemoveFolder(path)
-            if isfolder(path)
-                rmdir(path, 's');
-            end
-        end
-
-        function iDeleteIfPresent(path)
-            if isfile(path)
-                delete(path);
-            end
+            cleanupObj = UMITLedgerCore.acquireLock(folder, UMITRigLedger.iSpec(), operation);
         end
 
         %% Validation of inputs
@@ -1803,11 +1617,7 @@ classdef UMITRigLedger
         end
 
         function origin = iRequireOrigin(origin)
-            origin = char(string(origin));
-            if isempty(origin)
-                error('Umitoolbox:RigLedger:invalidInput', ...
-                    'Every ledger write requires a nonempty ''Origin'' (the calling tool).');
-            end
+            origin = UMITLedgerCore.requireOrigin(origin, UMITRigLedger.iSpec());
         end
 
         function operation = iParseOperation(functionName, varargin)
@@ -1819,21 +1629,11 @@ classdef UMITRigLedger
         end
 
         function folder = iExistingFolder(saveFolder)
-            folder = UMITRigLedger.iFolderText(saveFolder);
-            if ~isfolder(folder)
-                error('Umitoolbox:RigLedger:invalidInput', 'Save folder does not exist: %s', folder);
-            end
+            folder = UMITLedgerCore.existingFolder(saveFolder, UMITRigLedger.iSpec());
         end
 
         function folder = iFolderText(saveFolder)
-            if ~UMITRigLedger.iIsText(saveFolder) || strlength(string(saveFolder)) == 0
-                error('Umitoolbox:RigLedger:invalidInput', ...
-                    'saveFolder must be a nonempty character vector or string scalar.');
-            end
-            folder = char(string(saveFolder));
-            if endsWith(folder, filesep) && numel(folder) > 1
-                folder = folder(1:end-1);
-            end
+            folder = UMITLedgerCore.folderText(saveFolder, UMITRigLedger.iSpec());
         end
 
         %% Snapshot content helpers
@@ -1901,7 +1701,7 @@ classdef UMITRigLedger
         end
 
         function value = iQuantize(value)
-            value = round(double(value), UMITRigLedger.SignificantDigits, 'significant');
+            value = UMITLedgerCore.quantize(value);
         end
 
         function s = iSetListField(s, fieldName, records)
@@ -1911,105 +1711,9 @@ classdef UMITRigLedger
             end
         end
 
-        %% Canonical JSON
-        function text = iCanonical(value, forceList)
-            if isstruct(value)
-                if isscalar(value) && ~forceList
-                    keys = sort(fieldnames(value));
-                    parts = cell(1, numel(keys));
-                    for iKey = 1:numel(keys)
-                        key = keys{iKey};
-                        parts{iKey} = [UMITRigLedger.iCanonicalString(key) ':' ...
-                            UMITRigLedger.iCanonical(value.(key), ...
-                            ismember(key, {'cameras', 'illuminations'}))];
-                    end
-                    text = ['{' strjoin(parts, ',') '}'];
-                else
-                    items = arrayfun(@(x) UMITRigLedger.iCanonical(x, false), value(:)', ...
-                        'UniformOutput', false);
-                    text = ['[' strjoin(items, ',') ']'];
-                end
-            elseif iscell(value)
-                items = cellfun(@(x) UMITRigLedger.iCanonical(x, false), value(:)', ...
-                    'UniformOutput', false);
-                text = ['[' strjoin(items, ',') ']'];
-            elseif ischar(value) || isstring(value)
-                if isstring(value) && ~isscalar(value)
-                    text = UMITRigLedger.iCanonical(cellstr(value), false);
-                elseif isstring(value) && ismissing(value)
-                    text = 'null';
-                else
-                    text = UMITRigLedger.iCanonicalString(char(value));
-                end
-            elseif islogical(value) && isscalar(value)
-                if value
-                    text = 'true';
-                else
-                    text = 'false';
-                end
-            elseif isnumeric(value) || islogical(value)
-                value = double(value);
-                if isempty(value)
-                    text = '[]';
-                elseif isscalar(value) && ~forceList
-                    text = UMITRigLedger.iCanonicalNumber(value);
-                elseif isvector(value)
-                    items = arrayfun(@UMITRigLedger.iCanonicalNumber, value(:)', ...
-                        'UniformOutput', false);
-                    text = ['[' strjoin(items, ',') ']'];
-                elseif ismatrix(value)
-                    rows = cell(1, size(value, 1));
-                    for iRow = 1:size(value, 1)
-                        rows{iRow} = UMITRigLedger.iCanonical(value(iRow, :), true);
-                    end
-                    text = ['[' strjoin(rows, ',') ']'];
-                else
-                    error('Umitoolbox:RigLedger:hashFailed', ...
-                        'N-dimensional arrays cannot be hashed.');
-                end
-            else
-                error('Umitoolbox:RigLedger:hashFailed', ...
-                    'Values of class "%s" cannot be hashed.', class(value));
-            end
-        end
-
-        function text = iCanonicalNumber(value)
-            if ~isfinite(value)
-                error('Umitoolbox:RigLedger:hashFailed', 'NaN and Inf cannot be hashed.');
-            end
-            if value == 0
-                text = '0';
-                return
-            end
-            formatted = sprintf('%.*e', UMITRigLedger.SignificantDigits - 1, value);
-            [mantissa, exponentText] = strtok(formatted, 'e');
-            mantissa = regexprep(mantissa, '0+$', '');
-            mantissa = regexprep(mantissa, '\.$', '');
-            text = sprintf('%se%d', mantissa, str2double(exponentText(2:end)));
-        end
-
-        function text = iCanonicalString(value)
-            value = char(value);
-            value = strrep(value, '\', '\\');
-            value = strrep(value, '"', '\"');
-            control = value < 32;
-            if any(control)
-                pieces = cell(1, numel(value));
-                for iChar = 1:numel(value)
-                    if control(iChar)
-                        pieces{iChar} = sprintf('\\u%04x', double(value(iChar)));
-                    else
-                        pieces{iChar} = value(iChar);
-                    end
-                end
-                value = [pieces{:}];
-            end
-            text = ['"' value '"'];
-        end
-
         %% Small utilities
         function tf = iIsText(value)
-            tf = ischar(value) || (isstring(value) && isscalar(value));
+            tf = UMITLedgerCore.isText(value);
         end
 
         function text = iText(value, label)
@@ -2020,13 +1724,7 @@ classdef UMITRigLedger
         end
 
         function text = iMaybeText(value)
-            if ischar(value)
-                text = value;
-            elseif isstring(value) && isscalar(value) && ~ismissing(value)
-                text = char(value);
-            else
-                text = '';
-            end
+            text = UMITLedgerCore.maybeText(value);
         end
 
         function text = iTextField(s, fieldName)
@@ -2041,33 +1739,15 @@ classdef UMITRigLedger
         end
 
         function value = iNullable(text)
-            if isempty(text)
-                value = string(missing);
-            else
-                value = text;
-            end
+            value = UMITLedgerCore.nullable(text);
         end
 
         function text = iCap(text)
             text = [upper(text(1)) text(2:end)];
         end
 
-        function text = iNow()
-            text = char(datetime('now', 'TimeZone', 'UTC', ...
-                'Format', 'yyyy-MM-dd''T''HH:mm:ss.SSS''Z'''));
-        end
-
         function text = iDateText(value)
-            if isdatetime(value)
-                if isempty(value.TimeZone)
-                    value.TimeZone = 'local';
-                end
-                value.TimeZone = 'UTC';
-                value.Format = 'yyyy-MM-dd''T''HH:mm:ss.SSS''Z''';
-                text = char(value);
-            else
-                text = UMITRigLedger.iMaybeText(value);
-            end
+            text = UMITLedgerCore.dateText(value);
         end
     end
 end

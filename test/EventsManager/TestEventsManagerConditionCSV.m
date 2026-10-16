@@ -1,4 +1,4 @@
-classdef TestEventsManagerConditionCSV < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventsManagerConditionCSV < matlab.unittest.TestCase
     %TESTEVENTSMANAGERCONDITIONCSV Unit tests for CSV condition-file parsing.
 
     properties

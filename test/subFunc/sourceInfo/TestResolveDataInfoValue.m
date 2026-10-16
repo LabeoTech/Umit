@@ -1,4 +1,4 @@
-classdef TestResolveDataInfoValue < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestResolveDataInfoValue < matlab.unittest.TestCase
     %TESTRESOLVEDATAINFOVALUE Precedence explicit > data's own value > error (Phase 6b-2).
 
     properties

@@ -1,4 +1,4 @@
-classdef TestDatImageSourceReading < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestDatImageSourceReading < matlab.unittest.TestCase
     %TESTDATIMAGESOURCEREADING Every DatImageSource read path against loadData.
     %
     %   Runs on copies of the Y-X-T single reference files (headered, legacy

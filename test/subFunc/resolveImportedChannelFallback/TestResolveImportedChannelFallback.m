@@ -1,4 +1,4 @@
-classdef TestResolveImportedChannelFallback < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestResolveImportedChannelFallback < matlab.unittest.TestCase
     methods (TestClassSetup)
         function addProjectPath(testCase)
             thisFile = mfilename('fullpath');

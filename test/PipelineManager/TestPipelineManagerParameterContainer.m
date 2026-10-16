@@ -1,4 +1,4 @@
-classdef TestPipelineManagerParameterContainer < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestPipelineManagerParameterContainer < matlab.unittest.TestCase
     %TESTPIPELINEMANAGERPARAMETERCONTAINER Embedded and dialog parameter editors.
     %
     %   PipelineManager.setParameters(stepTag, container) builds the editable

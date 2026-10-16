@@ -1,4 +1,4 @@
-classdef TestGenImageTimeSeriesUMT < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGenImageTimeSeriesUMT < matlab.unittest.TestCase
     methods (Test)
         function testPipelineInfo(testCase)
             info = genImageTimeSeriesUMT('pipelineInfo'); %#ok<NASGU>

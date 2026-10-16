@@ -1,4 +1,4 @@
-classdef TestDatImageSource < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestDatImageSource < matlab.unittest.TestCase
     %TESTDATIMAGESOURCE Focused regression tests for DatImageSource.
     %
     %   Covers the rig behaviour of loading (rig-ledger redesign, Phase 5):

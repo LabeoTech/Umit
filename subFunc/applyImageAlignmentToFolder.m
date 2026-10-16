@@ -1,33 +1,52 @@
 function report = applyImageAlignmentToFolder(targetFolder, finalTform, opts)
-%APPLYIMAGEALIGNMENTTOFOLDER Apply ImageReference registration to a folder.
+%APPLYIMAGEALIGNMENTTOFOLDER Apply an image alignment to a whole save folder.
 %
 %   report = applyImageAlignmentToFolder(targetFolder, finalTform, ...
 %       'imageReference', ImageReference, ...
 %       'referenceFile', referenceFileRel, ...
 %       'referenceImage', referenceImage)
 %
-%   Applies a folder-level geometric registration to all supported image-space
-%   files in targetFolder.
+%   The single (canonical) apply path of UMIT image alignment. The GUI
+%   (ImageAlignmentTool) calls it directly; the pipeline function
+%   applyRegistrationTformOnFolder is a wrapper around it. Both therefore
+%   produce the same folder state and share the same guards.
 %
 %   Processing steps:
-%       1) Validate target folder, metadata, .dat, .umt, and .roi files.
-%       2) Create a managed-folder backup using genBackupFolder.
-%       3) Transform all .dat files using RAM-safe frame-by-frame I/O.
-%       4) Transform eligible image-kind .umt files.
-%       5) Transform current-format .roi files and force transformed ROIs to
-%          polygon geometry.
-%       6) Update DataParams.mat.
-%       7) Save manualAlignmentReport_<datetime>.mat.
+%       1) Guard: an already-aligned folder is refused
+%          (assertFolderCanBeAligned; Umitoolbox:ImageRegistration:
+%          alreadyAligned). Aligning again would transform the data twice;
+%          only a fresh import of the raw data reopens alignment.
+%       2) Validate the folder, DataParams, every .dat, .umt and .roi file,
+%          and the new DataParams, before any file is written.
+%       3) Stage: write every transformed file (.dat, image .umt, current
+%          .roi) and the alignment report as temporary siblings
+%          (<name>.aligning.tmp). The originals are untouched.
+%       4) Commit: move each original aside (<name>.aligning.bak), install
+%          its transformed copy, then save DataParams.mat through
+%          validateDataParams + atomic saveDataParams. Any failure restores
+%          every original, so the folder is either fully aligned or
+%          unchanged. The .bak files are deleted after a successful commit.
+%       5) No backup zip is written: alignment is irreversible by design,
+%          and a fresh import is the only way back.
 %       AcqInfos.mat is not rewritten: every aligned .dat is headered and
 %       describes its new frame size itself.
 %
 %   Transform convention:
-%       finalTform maps the current raw moving-data coordinate space into
-%       ImageReference coordinate space.
+%       finalTform maps the folder's current image coordinates (the .dat
+%       frame) into reference coordinates; the output frame is the
+%       reference image size.
 %
 %   Name-Value options:
 %       imageReference       - ImageReference struct used as fixed reference.
-%       referenceFile        - Relative ImageReference file path.
+%       referenceFile        - Reference file path, recorded as the path of
+%                              the reference source descriptor when
+%                              referenceSource is not given.
+%       referenceSource      - Source descriptor of the reference
+%                              (referenceSourceDescriptor, e.g. from
+%                              resolveImageReferenceSource). Default: built
+%                              from imageReference/referenceFile ('project'
+%                              when imageReference carries a project
+%                              identity, else 'file').
 %       referenceImage       - Fixed reference image. If empty, this is read
 %                              from imageReference.image.
 %       baseTform            - Automatic/base transform before manual tuning.
@@ -35,31 +54,41 @@ function report = applyImageAlignmentToFolder(targetFolder, finalTform, opts)
 %       manualAdjustment     - Struct with dx/dy/rotation/scale.
 %       movingSourceFile     - File or context used to estimate the transform.
 %       preFlipHorizontally  - Whether the GUI pre-flipped the moving source.
-%       createdBy            - Tool/app name.
-%       resourceUUID         - UUID of the UMITProjectStore registrationTransform
-%                              resource this transform was imported as, when the
-%                              target folder is bound to a project. Stored in
-%                              DataParams.registration.resourceUUID as a pointer
-%                              back to the central resource. Empty by default.
-%       backupChoice         - Backup name or 'GENBACKUP'.
+%       createdBy            - Tool/app name; recorded as appliedBy (and as
+%                              method when keepEstimate is false).
+%       keepEstimate         - true when finalTform IS the transform of
+%                              DataParams.registration.estimate (pipeline
+%                              apply of createRegistrationTform's result):
+%                              the reference and estimate records are kept
+%                              and only the apply record is written; the
+%                              estimate must have been made against the
+%                              recorded reference. false (default, GUI): the
+%                              reference and estimate records are rebuilt
+%                              from these options.
+%       confirmationMode     - Recorded confirmation mode.
+%                              Default: 'user-confirmed-folder-transform'.
+%       isReviewed           - Recorded review flag. Default: true.
+%       resourceUUID         - RETIRED and IGNORED (brief section 4 Q5):
+%                              accepted only until the ImageAlignmentTool
+%                              edit that stops passing it is applied.
 %       transformDat         - Transform .dat files. Default: true.
 %       transformUmt         - Transform eligible image .umt files. Default: true.
 %       transformRoi         - Transform current-format .roi files. Default: true.
 %
 %   Output:
-%       report - Compact operation report.
+%       report - Compact operation report (also saved as
+%                manualAlignmentReport_<datetime>.mat).
 %
 %   Notes:
-%       .dat files must be Y-X-T image time series (headered or headerless)
-%       sharing one frame size; loadMetaData describes each one before any
-%       file is modified. Each aligned file is written with a header: the
-%       new frame size, and the input's class, frame rate, exposure, and
-%       name. The old frame size is the .dat files' own size, else
-%       DataParams.view.imageSizeYX (AcqInfos.mat is not used).
-%
-%       genBackupFolder intentionally ignores raw acquisition files such as
-%       .bin and .tif. This function therefore creates a managed-folder
-%       backup, not a raw-data backup.
+%       .dat files must have Y and X as their first two axes (Y-X, Y-X-T,
+%       Y-X-E, Y-X-T-E, ...) and share one frame size; every Y-X plane is
+%       warped with the same transform (linear interpolation, zero fill).
+%       NaN pixels of floating-point data are zeroed for the interpolation
+%       and restored through the warped NaN mask. Each aligned file is
+%       written with a header: the new frame size, and the input's class,
+%       trailing axes, frame rate, exposure, and name. Image .umt entries
+%       and DataParams.mask must have the same frame size as the .dat files;
+%       DataParams.view.imageSizeYX, when set, must too.
 
 arguments
     targetFolder (1,1) string
@@ -73,8 +102,11 @@ arguments
     opts.movingSourceFile (1,1) string = ""
     opts.preFlipHorizontally (1,1) logical = false
     opts.createdBy (1,1) string = "ImageAlignmentTool"
+    opts.referenceSource = []
+    opts.keepEstimate (1,1) logical = false
+    opts.confirmationMode (1,1) string = "user-confirmed-folder-transform"
+    opts.isReviewed (1,1) logical = true
     opts.resourceUUID (1,1) string = ""
-    opts.backupChoice (1,1) string = "GENBACKUP"
     opts.transformDat (1,1) logical = true
     opts.transformUmt (1,1) logical = true
     opts.transformRoi (1,1) logical = true
@@ -109,7 +141,24 @@ report = iInitializeReport( ...
     newSizeYX, ...
     createdOn);
 
-[DataParams, dataParamsPath] = iLoadDataParams(targetFolder);
+DataParams = iLoadDataParams(targetFolder);
+operation = 'Applying the image alignment';
+if opts.keepEstimate
+    requested = DataParams.registration.reference;
+else
+    requested = struct('name', 'the reference given to the tool', ...
+        'contentHash', computeImageContentHash(referenceImage), ...
+        'source', iReferenceSource(opts));
+    if isstruct(opts.imageReference) && isfield(opts.imageReference, 'name') && ...
+            ~isempty(opts.imageReference.name)
+        requested.name = char(string(opts.imageReference.name));
+    end
+end
+assertFolderCanBeAligned(targetFolder, DataParams, operation, requested);
+if opts.keepEstimate
+    verifyRegistrationReference(targetFolder, DataParams.registration, operation);
+    iAssertEstimateMatchesReference(targetFolder, DataParams.registration, operation);
+end
 AcqInfoStream = iLoadAcqInfos(targetFolder);
 
 datFiles = dir(fullfile(targetFolder, '*.dat'));
@@ -134,122 +183,87 @@ if isempty(datFiles) && isempty(umtFiles)
         'No .dat or .umt image files were found in target folder.');
 end
 
-% Build the complete plan before backup or mutation. This keeps temporary
-% files generated during execution out of the operation list.
+% Build the complete plan before any write.
 iPreflightDataParams(DataParams, oldSizeYX);
 
 datPlan = iPreflightDatFiles(datFiles, datInfos, oldSizeYX, opts.transformDat);
-[umtPlan, umtWarnings] = iPreflightUmtFiles(umtFiles, opts.transformUmt);
-[roiPlan, roiWarnings] = iPreflightRoiFiles(roiFiles, opts.transformRoi);
+[umtPlan, umtWarnings] = iPreflightUmtFiles(umtFiles, oldSizeYX, opts.transformUmt);
+[roiPlan, roiWarnings] = iPreflightRoiFiles(roiFiles, oldSizeYX, opts.transformRoi);
 
 report.warnings = [report.warnings; umtWarnings(:); roiWarnings(:)];
 
-% Precompute mask transformation before touching data files. This catches
-% imwarp/mask errors before any destructive write.
+% The new DataParams is built and validated before any file is written.
 precomputedMask = iPrecomputeTransformedMask( ...
     DataParams, oldSizeYX, finalTform, referenceView);
+updatedView = iBuildUpdatedView(DataParams, opts.imageReference, newSizeYX, scaleInfo, finalTform);
+newDataParams = iUpdateDataParams(DataParams, finalTform, referenceImage, opts, ...
+    precomputedMask, scaleInfo, updatedView);
+validateDataParams(newDataParams);
 
-backupChoice = char(string(opts.backupChoice));
-if strcmpi(backupChoice, 'GENBACKUP')
-    backupChoice = ['alignment_bkp_' dateTag];
-end
-
-try
-    backupPath = genBackupFolder(targetFolder, backupChoice, 'eraseFolder', false);
-catch ME
-    error('ImageAlignmentTool:BackupFailed', ...
-        'Backup failed. No files were modified. Original error: %s', ...
-        ME.message);
-end
-
-report.backupPath = backupPath;
-report.backupCreatedOn = datetime('now');
-
-completed = iInitializeCompletedTracker();
+staged = iNewStagedList();
 
 try
-    % Transform .dat files with RAM-safe direct binary I/O.
-    if opts.transformDat
-        for iFile = 1:numel(datPlan)
-            iTransformDatFile(datPlan(iFile), finalTform, referenceView);
-            report.datFilesTransformed(end+1,1) = string(datPlan(iFile).Name); %#ok<AGROW>
-            completed.datFiles(end+1,1) = string(datPlan(iFile).Name); %#ok<AGROW>
-        end
+    % Stage every transformed file next to its original.
+    for iFile = 1:numel(datPlan)
+        tmpPath = iStagePath(datPlan(iFile).Path);
+        staged = iAddStaged(staged, datPlan(iFile).Path, tmpPath);
+        iTransformDatFile(datPlan(iFile), finalTform, referenceView, tmpPath);
+        report.datFilesTransformed(end+1,1) = string(datPlan(iFile).Name);
     end
 
-    % Transform eligible image-kind .umt files.
-    if opts.transformUmt
-        for iFile = 1:numel(umtPlan)
-            if ~umtPlan(iFile).Transform
-                report.umtFilesSkipped(end+1,1) = ...
-                    string(umtPlan(iFile).Name) + ": " + string(umtPlan(iFile).Reason); %#ok<AGROW>
-                continue
-            end
-
-            iTransformUmtFile(umtPlan(iFile), finalTform, referenceView);
-            report.umtFilesTransformed(end+1,1) = string(umtPlan(iFile).Name); %#ok<AGROW>
-            completed.umtFiles(end+1,1) = string(umtPlan(iFile).Name); %#ok<AGROW>
+    for iFile = 1:numel(umtPlan)
+        if ~umtPlan(iFile).Transform
+            report.umtFilesSkipped(end+1,1) = ...
+                string(umtPlan(iFile).Name) + ": " + string(umtPlan(iFile).Reason);
+            continue
         end
-    end
-    
-    updatedView = iBuildUpdatedView(DataParams, opts.imageReference, newSizeYX, scaleInfo, finalTform);
-
-    % Transform current-format .roi files.
-    if opts.transformRoi
-        for iFile = 1:numel(roiPlan)
-            if ~roiPlan(iFile).Transform
-                report.roiFilesSkipped(end+1,1) = ...
-                    string(roiPlan(iFile).Name) + ": " + string(roiPlan(iFile).Reason); %#ok<AGROW>
-                continue
-            end
-
-            iTransformRoiFile(roiPlan(iFile), finalTform, referenceView, updatedView);
-            report.roiFilesTransformed(end+1,1) = string(roiPlan(iFile).Name); %#ok<AGROW>
-            completed.roiFiles(end+1,1) = string(roiPlan(iFile).Name); %#ok<AGROW>
-        end
+        tmpPath = iStagePath(umtPlan(iFile).Path);
+        staged = iAddStaged(staged, umtPlan(iFile).Path, tmpPath);
+        iTransformUmtFile(umtPlan(iFile), finalTform, referenceView, tmpPath);
+        report.umtFilesTransformed(end+1,1) = string(umtPlan(iFile).Name);
     end
 
-    % Update DataParams after all file transforms succeed.
-    DataParams = iUpdateDataParams( ...
-        DataParams, ...
-        finalTform, ...
-        referenceImage, ...
-        opts.imageReference, ...
-        opts.referenceFile, ...
-        opts.movingSourceFile, ...
-        opts.manualAdjustment, ...
-        opts.createdBy, ...
-        opts.resourceUUID, ...
-        precomputedMask, ...
-        scaleInfo);
+    for iFile = 1:numel(roiPlan)
+        if ~roiPlan(iFile).Transform
+            report.roiFilesSkipped(end+1,1) = ...
+                string(roiPlan(iFile).Name) + ": " + string(roiPlan(iFile).Reason);
+            continue
+        end
+        tmpPath = iStagePath(roiPlan(iFile).Path);
+        staged = iAddStaged(staged, roiPlan(iFile).Path, tmpPath);
+        iTransformRoiFile(roiPlan(iFile), finalTform, referenceView, updatedView, tmpPath);
+        report.roiFilesTransformed(end+1,1) = string(roiPlan(iFile).Name);
+    end
 
-    save(dataParamsPath, 'DataParams', '-mat');
     report.metadataFilesUpdated(end+1,1) = "DataParams.mat";
-    completed.metadataFiles(end+1,1) = "DataParams.mat";
-
-    report.finishedOn = datetime('now');
     reportPath = fullfile(targetFolder, ['manualAlignmentReport_' dateTag '.mat']);
     report.reportPath = reportPath;
-    save(reportPath, 'report', '-mat');
-
+    report.finishedOn = datetime('now');
+    tmpPath = iStagePath(reportPath);
+    staged = iAddStaged(staged, reportPath, tmpPath);
+    save(tmpPath, 'report', '-mat');
 catch ME
-    failureInfo = struct();
-    failureInfo.error = ME;
-    failureInfo.completed = completed;
-    failureInfo.backupPath = backupPath;
-    failureInfo.dateTag = dateTag;
-    failureInfo.report = report;
-
-    [restoreSucceeded, restoreMessage] = iRestoreFromBackup(targetFolder, backupPath);
-
-    failureInfo.restoreAttempted = true;
-    failureInfo.restoreSucceeded = restoreSucceeded;
-    failureInfo.restoreMessage = restoreMessage;
-
-    iWriteFailureReport(targetFolder, failureInfo);
-
+    iDiscardStaged(staged);
+    iWriteFailureReport(targetFolder, iFailureInfo(ME, report, dateTag, ...
+        'staging (no original file was changed)'));
     rethrow(ME);
 end
+
+% Commit: install every staged file, then DataParams. All or nothing.
+installed = iNewStagedList();
+try
+    for iFile = 1:numel(staged)
+        installed = iInstallStaged(installed, staged(iFile));
+    end
+    saveDataParams(targetFolder, newDataParams);
+catch ME
+    restoreMessage = iRollBack(installed);
+    iDiscardStaged(staged);
+    iWriteFailureReport(targetFolder, iFailureInfo(ME, report, dateTag, ...
+        sprintf('commit; originals restored: %s', restoreMessage)));
+    rethrow(ME);
+end
+iDeleteBackups(installed);
 
 end
 
@@ -263,7 +277,7 @@ function report = iInitializeReport(targetFolder, finalTform, opts, newSizeYX, c
 report = struct();
 report.createdOn = createdOn;
 report.finishedOn = NaT;
-report.toolName = 'ImageAlignmentTool';
+report.toolName = char(opts.createdBy);
 report.targetFolder = targetFolder;
 report.referenceFile = char(opts.referenceFile);
 report.referenceImageSizeYX = newSizeYX;
@@ -277,8 +291,6 @@ report.manualAdjustment = opts.manualAdjustment;
 report.movingSourceFile = char(opts.movingSourceFile);
 report.preFlipHorizontally = logical(opts.preFlipHorizontally);
 report.createdBy = char(opts.createdBy);
-report.backupPath = '';
-report.backupCreatedOn = NaT;
 report.reportPath = '';
 report.datFilesTransformed = strings(0,1);
 report.umtFilesTransformed = strings(0,1);
@@ -290,24 +302,15 @@ report.warnings = strings(0,1);
 report.scaleInfo = struct();
 end
 
-function [DataParams, dataParamsPath] = iLoadDataParams(targetFolder)
-%ILOADDATAPARAMS Load required DataParams.mat.
+function DataParams = iLoadDataParams(targetFolder)
+%ILOADDATAPARAMS Load required DataParams.mat (normalized and validated).
 
-dataParamsPath = fullfile(targetFolder, 'DataParams.mat');
-
-if ~isfile(dataParamsPath)
+if ~isfile(fullfile(targetFolder, 'DataParams.mat'))
     error('ImageAlignmentTool:MissingDataParams', ...
         'DataParams.mat is required before applying registration.');
 end
 
-S = load(dataParamsPath, 'DataParams');
-
-if ~isfield(S, 'DataParams')
-    error('ImageAlignmentTool:InvalidDataParamsFile', ...
-        'DataParams.mat does not contain variable DataParams.');
-end
-
-DataParams = S.DataParams;
+DataParams = loadDataParams(targetFolder);
 end
 
 function AcqInfoStream = iLoadAcqInfos(targetFolder)
@@ -336,6 +339,18 @@ end
 
 function iPreflightDataParams(DataParams, oldSizeYX)
 %IPREFLIGHTDATAPARAMS Validate DataParams fields affected by alignment.
+%
+%   DataParams.view and DataParams.mask describe the current image frame,
+%   which alignment replaces; a stale size would give a wrong view or mask.
+
+if isfield(DataParams, 'view') && isstruct(DataParams.view) && ...
+        isfield(DataParams.view, 'imageSizeYX') && ~isempty(DataParams.view.imageSizeYX) && ...
+        ~isequal(double(DataParams.view.imageSizeYX(:).'), double(oldSizeYX))
+    error('ImageAlignmentTool:ViewSizeMismatch', ...
+        ['DataParams.view.imageSizeYX [%s] does not match the folder''s image ' ...
+         'data [%s]. The folder''s DataParams are inconsistent; no file was changed.'], ...
+        num2str(double(DataParams.view.imageSizeYX(:).')), num2str(oldSizeYX));
+end
 
 if isfield(DataParams, 'mask') && isstruct(DataParams.mask) && ...
         isfield(DataParams.mask, 'logical') && ~isempty(DataParams.mask.logical)
@@ -386,18 +401,31 @@ for iFile = 1:numel(datFiles)
         error('ImageAlignmentTool:MissingDatFile', ...
             'DAT file disappeared during preflight: %s', datPath);
     end
-    datInfos{iFile} = loadMetaData(datPath);
+    info = loadMetaData(datPath);
+    dimNames = cellstr(string(info.dimNames));
+    dimNames = dimNames(:).';
+    if numel(dimNames) < 2 || ~isequal(dimNames(1:2), {'Y', 'X'})
+        error('ImageAlignmentTool:UnsupportedLayout', ...
+            ['DAT file "%s" has dimensions {%s}. Alignment needs image data ' ...
+             'whose first two axes are Y and X.'], ...
+            datFiles(iFile).name, strjoin(dimNames, ','));
+    end
+    datInfos{iFile} = info;
 end
 end
 
 function datPlan = iPreflightDatFiles(datFiles, datInfos, oldSizeYX, doTransform)
 %IPREFLIGHTDATFILES Validate every .dat layout and size before any change.
+%
+% Any .dat whose first two axes are Y and X is aligned plane by plane; the
+% trailing axes (T, E, F, ...) only enumerate planes and are kept.
 
 datPlan = struct( ...
     'Name', {}, ...
     'Path', {}, ...
     'OldSizeYX', {}, ...
-    'NFrames', {}, ...
+    'NPlanes', {}, ...
+    'TrailingSizes', {}, ...
     'Info', {});
 
 if ~doTransform
@@ -408,11 +436,13 @@ for iFile = 1:numel(datFiles)
     datPath = fullfile(datFiles(iFile).folder, datFiles(iFile).name);
     info = datInfos{iFile};
 
-    if ~isequal(cellstr(string(info.dimNames)), {'Y', 'X', 'T'})
+    dimNames = cellstr(string(info.dimNames));
+    dimNames = dimNames(:).';
+    if numel(dimNames) < 2 || ~isequal(dimNames(1:2), {'Y', 'X'})
         error('ImageAlignmentTool:UnsupportedLayout', ...
-            ['DAT file "%s" has dimensions {%s}. Alignment supports Y-X-T ' ...
-             'image time series only.'], ...
-            datFiles(iFile).name, strjoin(cellstr(string(info.dimNames)), ','));
+            ['DAT file "%s" has dimensions {%s}. Alignment needs image data ' ...
+             'whose first two axes are Y and X.'], ...
+            datFiles(iFile).name, strjoin(dimNames, ','));
     end
 
     fileSizeYX = [datAxisSize(info, 'Y'), datAxisSize(info, 'X')];
@@ -423,22 +453,26 @@ for iFile = 1:numel(datFiles)
             datFiles(iFile).name, fileSizeYX(1), fileSizeYX(2), oldSizeYX(1), oldSizeYX(2));
     end
 
-    nFrames = datAxisSize(info, 'T');
-    if nFrames < 1
+    dimSizes = double(info.dimSizes(:).');
+    trailingSizes = dimSizes(3:end);
+    nPlanes = prod(trailingSizes);
+    if nPlanes < 1
         error('ImageAlignmentTool:InvalidDatFrameCount', ...
             'DAT file "%s" has no frames.', datFiles(iFile).name);
     end
 
-    datPlan(end+1) = struct( ... %#ok<AGROW>
+    planEntry = struct( ...
         'Name', datFiles(iFile).name, ...
         'Path', datPath, ...
         'OldSizeYX', oldSizeYX, ...
-        'NFrames', nFrames, ...
+        'NPlanes', nPlanes, ...
+        'TrailingSizes', trailingSizes, ...
         'Info', info);
+    datPlan(end+1) = planEntry; %#ok<AGROW>
 end
 end
 
-function [umtPlan, warnings] = iPreflightUmtFiles(umtFiles, doTransform)
+function [umtPlan, warnings] = iPreflightUmtFiles(umtFiles, oldSizeYX, doTransform)
 %IPREFLIGHTUMTFILES Validate and classify UMT files.
 
 umtPlan = struct( ...
@@ -468,26 +502,28 @@ for iFile = 1:numel(umtFiles)
     [umtVarName, umt] = iFindSingleUmtVariable(S, umtFiles(iFile).name);
 
     if isempty(umtVarName)
-        umtPlan(end+1) = struct( ... %#ok<AGROW>
+        planEntry = struct( ...
             'Name', umtFiles(iFile).name, ...
             'Path', umtPath, ...
             'Transform', false, ...
             'Reason', "no UMT structure found", ...
             'UmtVariableName', '', ...
             'EntryNames', {{}});
+        umtPlan(end+1) = planEntry; %#ok<AGROW>
         continue
     end
 
     validateUMTStruct(umt, 'requireEventInfo', false);
 
     if ~isfield(umt, 'kind') || ~strcmpi(char(string(umt.kind)), 'image')
-        umtPlan(end+1) = struct( ... %#ok<AGROW>
+        planEntry = struct( ...
             'Name', umtFiles(iFile).name, ...
             'Path', umtPath, ...
             'Transform', false, ...
             'Reason', "kind is not image", ...
             'UmtVariableName', umtVarName, ...
             'EntryNames', {{}});
+        umtPlan(end+1) = planEntry; %#ok<AGROW>
         continue
     end
 
@@ -502,6 +538,13 @@ for iFile = 1:numel(umtFiles)
         dimNames = iNormalizeDimNamesForPlan(entry.dimNames);
 
         if iIsAllowedImageSpatialPattern(dimNames, schema)
+            entrySizeYX = double([size(entry.value, 1), size(entry.value, 2)]);
+            if ~isequal(entrySizeYX, double(oldSizeYX))
+                error('ImageAlignmentTool:UmtSizeMismatch', ...
+                    ['UMT file "%s" entry "%s" is %d x %d, but the folder''s image ' ...
+                     'size is %d x %d. No file was changed.'], umtFiles(iFile).name, ...
+                    entryName, entrySizeYX(1), entrySizeYX(2), oldSizeYX(1), oldSizeYX(2));
+            end
             transformEntries{end+1} = entryName; %#ok<AGROW>
         else
             skippedEntries(end+1,1) = string(entryName) + " (" + strjoin(string(dimNames), "/") + ")"; %#ok<AGROW>
@@ -509,32 +552,35 @@ for iFile = 1:numel(umtFiles)
     end
 
     if isempty(transformEntries)
-        umtPlan(end+1) = struct( ... %#ok<AGROW>
+        planEntry = struct( ...
             'Name', umtFiles(iFile).name, ...
             'Path', umtPath, ...
             'Transform', false, ...
             'Reason', "no eligible image entries", ...
             'UmtVariableName', umtVarName, ...
             'EntryNames', {{}});
+        umtPlan(end+1) = planEntry; %#ok<AGROW>
     else
         if ~isempty(skippedEntries)
-            warnings(end+1,1) = sprintf( ... %#ok<AGROW>
+            warningText = sprintf( ...
                 'UMT file "%s": skipped unsupported image entries: %s.', ...
                 umtFiles(iFile).name, strjoin(skippedEntries, ', '));
+            warnings(end+1,1) = warningText; %#ok<AGROW>
         end
 
-        umtPlan(end+1) = struct( ... %#ok<AGROW>
+        planEntry = struct( ...
             'Name', umtFiles(iFile).name, ...
             'Path', umtPath, ...
             'Transform', true, ...
             'Reason', "", ...
             'UmtVariableName', umtVarName, ...
             'EntryNames', {transformEntries});
+        umtPlan(end+1) = planEntry; %#ok<AGROW>
     end
 end
 end
 
-function [roiPlan, warnings] = iPreflightRoiFiles(roiFiles, doTransform)
+function [roiPlan, warnings] = iPreflightRoiFiles(roiFiles, oldSizeYX, doTransform)
 %IPREFLIGHTROIFILES Validate and classify ROI files.
 
 roiPlan = struct( ...
@@ -567,16 +613,26 @@ for iFile = 1:numel(roiFiles)
     ROIFile = S.ROIFile;
 
     if ~iIsCurrentRoiFile(ROIFile)
-        warnings(end+1,1) = sprintf( ... %#ok<AGROW>
-            'ROI file "%s" has unsupported legacy schema and will be skipped.', ...
+        warningText = sprintf( ...
+            'ROI file "%s" is not a current UMIT ROI file and will be skipped.', ...
             roiFiles(iFile).name);
+        warnings(end+1,1) = warningText; %#ok<AGROW>
 
-        roiPlan(end+1) = struct( ... %#ok<AGROW>
+        planEntry = struct( ...
             'Name', roiFiles(iFile).name, ...
             'Path', roiPath, ...
             'Transform', false, ...
-            'Reason', "unsupported legacy schema");
+            'Reason', "not a current UMIT ROI file");
+        roiPlan(end+1) = planEntry; %#ok<AGROW>
         continue
+    end
+
+    roiSizeYX = double(ROIFile.imageInfo.imageSizeYX(:).');
+    if ~isequal(roiSizeYX, double(oldSizeYX))
+        error('ImageAlignmentTool:RoiSizeMismatch', ...
+            ['ROI file "%s" was drawn on a %d x %d image, but the folder''s image ' ...
+             'size is %d x %d. No file was changed.'], roiFiles(iFile).name, ...
+            roiSizeYX(1), roiSizeYX(2), oldSizeYX(1), oldSizeYX(2));
     end
 
     ROIs = ROIFile.ROIs;
@@ -599,11 +655,12 @@ for iFile = 1:numel(roiFiles)
         end
     end
 
-    roiPlan(end+1) = struct( ... %#ok<AGROW>
+    planEntry = struct( ...
         'Name', roiFiles(iFile).name, ...
         'Path', roiPath, ...
         'Transform', true, ...
         'Reason', "");
+    roiPlan(end+1) = planEntry; %#ok<AGROW>
 end
 end
 
@@ -611,54 +668,72 @@ end
 % DAT transformation
 % =========================================================================
 
-function iTransformDatFile(plan, tform, referenceView)
-%ITRANSFORMDATFILE Transform one .dat file frame by frame through spatialSlabIO.
+function iTransformDatFile(plan, tform, referenceView, tmpPath)
+%ITRANSFORMDATFILE Write the aligned copy of one .dat file to tmpPath.
 %
-% The aligned file is headered: the reference frame size, and the input's
-% class, frame rate, exposure, and name. Frames stay in the input's class
-% through imwarp.
+% Plane by plane through spatialSlabIO. The aligned file is headered: the
+% reference frame size, the input's trailing axes, class, frame rate,
+% exposure, and name. Planes stay in the input's class through imwarp.
 
 datPath = plan.Path;
 oldSizeYX = plan.OldSizeYX;
-nFrames = plan.NFrames;
 newSizeYX = referenceView.ImageSize;
-dataClass = plan.Info.dataClass;
 
-tmpPath = iMakeTempSiblingPath(datPath);
 [~, channelName] = fileparts(datPath);
 outHeader = datHeaderFromInfo(plan.Info, channelName, ...
-    'dimSizes', [newSizeYX(1), newSizeYX(2), nFrames]);
+    'dimSizes', [newSizeYX(1), newSizeYX(2), plan.TrailingSizes]);
 
-try
-    slabIn = spatialSlabIO('open', datPath, 'Info', plan.Info);
-    cleanupIn = onCleanup(@() spatialSlabIO('close', slabIn));
-    slabOut = spatialSlabIO('create', tmpPath, outHeader);
-    cleanupOut = onCleanup(@() spatialSlabIO('close', slabOut));
+slabIn = spatialSlabIO('open', datPath, 'Info', plan.Info);
+cleanupIn = onCleanup(@() spatialSlabIO('close', slabIn));
+slabOut = spatialSlabIO('create', tmpPath, outHeader);
+cleanupOut = onCleanup(@() spatialSlabIO('close', slabOut));
 
-    for iFrame = 1:nFrames
-        frame = reshape(spatialSlabIO('read', slabIn, 1:oldSizeYX(2), iFrame), oldSizeYX);
+for iPlane = 1:plan.NPlanes
+    plane = reshape(spatialSlabIO('read', slabIn, 1:oldSizeYX(2), iPlane), oldSizeYX);
+    outPlane = iWarpPlane(plane, tform, referenceView);
+    spatialSlabIO('write', slabOut, 1:newSizeYX(2), outPlane, iPlane);
+end
 
-        outFrame = imwarp(frame, tform, ...
-            'OutputView', referenceView, ...
-            'InterpolationMethod', 'linear', ...
-            'FillValues', cast(0, dataClass));
+spatialSlabIO('finalize', slabOut);
+clear cleanupIn cleanupOut
+end
 
-        spatialSlabIO('write', slabOut, 1:newSizeYX(2), outFrame, iFrame);
+function out = iWarpPlane(plane, tform, referenceView)
+%IWARPPLANE Warp one Y-X plane (linear, zero fill, class kept).
+%
+% NaN pixels of floating-point data (outside the field of view, padding of
+% short trials) are zeroed for the interpolation and restored through the
+% nearest-neighbour warp of the NaN mask, so they do not spread.
+
+if islogical(plane)
+    out = imwarp(single(plane), tform, ...
+        'OutputView', referenceView, ...
+        'InterpolationMethod', 'nearest', ...
+        'FillValues', single(0)) > 0.5;
+    return
+end
+
+nanMask = [];
+if isfloat(plane)
+    nanMask = isnan(plane);
+    if any(nanMask, 'all')
+        plane(nanMask) = 0;
+    else
+        nanMask = [];
     end
+end
 
-    spatialSlabIO('finalize', slabOut);
-    clear cleanupIn cleanupOut
+out = imwarp(plane, tform, ...
+    'OutputView', referenceView, ...
+    'InterpolationMethod', 'linear', ...
+    'FillValues', cast(0, class(plane)));
 
-    movefile(tmpPath, datPath, 'f');
-
-catch ME
-    clear cleanupIn cleanupOut
-
-    if isfile(tmpPath)
-        delete(tmpPath);
-    end
-
-    rethrow(ME);
+if ~isempty(nanMask)
+    warpedNaN = imwarp(single(nanMask), tform, ...
+        'OutputView', referenceView, ...
+        'InterpolationMethod', 'nearest', ...
+        'FillValues', single(0)) > 0.5;
+    out(warpedNaN) = NaN;
 end
 end
 
@@ -666,11 +741,16 @@ end
 % UMT transformation
 % =========================================================================
 
-function iTransformUmtFile(plan, tform, referenceView)
-%ITRANSFORMUMTFILE Transform planned entries in one UMT MAT file.
+function iTransformUmtFile(plan, tform, referenceView, tmpPath)
+%ITRANSFORMUMTFILE Write the aligned copy of one UMT MAT file to tmpPath.
 
 S = load(plan.Path,'-mat');
-umt = S.(plan.UmtVariableName);
+isStructLayout = strcmp(plan.UmtVariableName, iStructLayout());
+if isStructLayout
+    umt = S;
+else
+    umt = S.(plan.UmtVariableName);
+end
 
 validateUMTStruct(umt, 'requireEventInfo', false);
 
@@ -687,32 +767,36 @@ umt = iRemoveResizedSpatialLabels(umt);
 
 validateUMTStruct(umt, 'requireEventInfo', false);
 
-S.(plan.UmtVariableName) = umt;
-
-tmpPath = iMakeTempSiblingPath(plan.Path);
-
-try
+if isStructLayout
+    % Same layout and format as saveData (save2umt).
+    save(tmpPath, '-struct', 'umt', '-mat', '-v7.3');
+else
+    S.(plan.UmtVariableName) = umt;
     save(tmpPath, '-struct', 'S', '-mat');
-    movefile(tmpPath, plan.Path, 'f');
-
-catch ME
-    if isfile(tmpPath)
-        delete(tmpPath);
-    end
-    rethrow(ME);
 end
+end
+
+function name = iStructLayout()
+%ISTRUCTLAYOUT Marker for a .umt whose variables are the UMT fields.
+
+name = '<struct>';
 end
 
 function out = iTransformSpatialArrayGeneric(value, dimNames, tform, referenceView)
 %ITRANSFORMSPATIALARRAYGENERIC Warp [Y X trailingDims...] arrays.
+%
+% Same plane warp as the .dat files (iWarpPlane). Numeric values are warped
+% in single and cast back to their class; logical values use nearest.
 
 valueClass = class(value);
 isLogical = islogical(value);
+if ~isLogical
+    value = single(value);
+end
 
 newSizeYX = [referenceView.ImageSize(1), referenceView.ImageSize(2)];
 
-valueSingle = single(value);
-oldSize = size(valueSingle);
+oldSize = size(value);
 nDims = numel(dimNames);
 
 if numel(oldSize) < nDims
@@ -725,21 +809,12 @@ if isempty(trailingSize)
 end
 
 nPages = prod(trailingSize);
-value3D = reshape(valueSingle, oldSize(1), oldSize(2), nPages);
+value3D = reshape(value, oldSize(1), oldSize(2), nPages);
 
-out3D = zeros([newSizeYX, nPages], 'single');
-
-if isLogical
-    interpMethod = 'nearest';
-else
-    interpMethod = 'linear';
-end
+out3D = zeros([newSizeYX, nPages], 'like', value);
 
 for iPage = 1:nPages
-    out3D(:, :, iPage) = imwarp(value3D(:, :, iPage), tform, ...
-        'OutputView', referenceView, ...
-        'InterpolationMethod', interpMethod, ...
-        'FillValues', single(0));
+    out3D(:, :, iPage) = iWarpPlane(value3D(:, :, iPage), tform, referenceView);
 end
 
 if nDims == 2
@@ -748,9 +823,7 @@ else
     out = reshape(out3D, [newSizeYX, trailingSize]);
 end
 
-if isLogical
-    out = out > 0.5;
-else
+if ~isLogical
     out = cast(out, valueClass);
 end
 end
@@ -776,10 +849,20 @@ end
 end
 
 function [varName, umt] = iFindSingleUmtVariable(S, fileName)
-%IFINDSINGLEUMTVARIABLE Find one UMT-looking variable in loaded MAT content.
+%IFINDSINGLEUMTVARIABLE Find the UMT structure in loaded MAT content.
+%
+%   saveData writes a .umt with save -struct, so its variables ARE the UMT
+%   fields; varName is then StructLayout. Older files hold one UMT-looking
+%   variable; varName is its name. '' when no UMT structure is found.
 
 varName = '';
 umt = [];
+
+if all(ismember({'version', 'kind', 'data'}, fieldnames(S)))
+    varName = iStructLayout();
+    umt = S;
+    return
+end
 
 names = fieldnames(S);
 isUMT = false(numel(names), 1);
@@ -838,8 +921,13 @@ end
 % ROI transformation
 % =========================================================================
 
-function iTransformRoiFile(plan, tform, referenceView, updatedView)
-%ITRANSFORMROIFILE Transform current-format ROIFile MAT file.
+function iTransformRoiFile(plan, tform, referenceView, updatedView, tmpPath)
+%ITRANSFORMROIFILE Write the aligned copy of a current-format ROI file to tmpPath.
+%
+% Every ROI becomes a polygon through its transformed vertices; its mask and
+% geometric stats are recomputed at the new frame size. Intensity stats and
+% the stats image refer to the old frame and are cleared. The file follows
+% getROISchema and is checked with validateROIFile before it is written.
 
 S = load(plan.Path, 'ROIFile','-mat');
 ROIFile = S.ROIFile;
@@ -847,11 +935,13 @@ ROIFile = S.ROIFile;
 newSizeYX = [referenceView.ImageSize(1), referenceView.ImageSize(2)];
 ROIs = ROIFile.ROIs;
 
-fieldsToRemove = intersect(fieldnames(ROIs), {'runtime', 'persistent'});
+fieldsToRemove = intersect(fieldnames(ROIs), {'ID', 'runtime'});
 if ~isempty(fieldsToRemove)
     ROIs = rmfield(ROIs, fieldsToRemove);
 end
 
+pixelSize = updatedView.pixelSize_px_per_mm;
+stampOn = datetime('now');
 for iROI = 1:numel(ROIs)
     ROI = ROIs(iROI);
     vertices = double(ROI.geometry.verticesXY_px);
@@ -859,84 +949,67 @@ for iROI = 1:numel(ROIs)
     [xNew, yNew] = transformPointsForward(tform, vertices(:,1), vertices(:,2));
     newVertices = [xNew(:), yNew(:)];
 
+    ROI.type = 'polygon';
+    ROI.modifiedOn = stampOn;
     ROI.geometry.verticesXY_px = newVertices;
     ROI.geometry.polyshape = polyshape(newVertices(:,1), newVertices(:,2), ...
         'Simplify', true);
     ROI.geometry.ROIType = 'polygon';
-    ROI.geometry.ROIParameters = [];
-
+    ROI.geometry.ROIParameters = struct('ROIType', 'polygon', ...
+        'Position', newVertices, 'Vertices', newVertices);
     ROI.mask = poly2mask(newVertices(:,1), newVertices(:,2), ...
         newSizeYX(1), newSizeYX(2));
-
-    ROI.stats = iBuildRoiStats(ROI.mask, newVertices);
-
-    if isfield(ROI, 'type')
-        ROI.type = 'polygon';
-    end
-
-    if isfield(ROI, 'modifiedOn')
-        ROI.modifiedOn = datetime('now');
-    end
+    ROI.stats = iBuildRoiStats(ROI.stats, ROI.mask, pixelSize, stampOn);
 
     ROIs(iROI) = ROI;
 end
 
 ROIFile.ROIs = ROIs;
-ROIFile.imageSizeYX = newSizeYX;
+ROIFile.imageInfo.imageSizeYX = newSizeYX;
+ROIFile.view.originXY_px = double(updatedView.origin_xy_px(:).');
+ROIFile.view.pixelSize_px_per_mm = pixelSize;
+ROIFile.statsImage.image = [];
+ROIFile.modifiedOn = stampOn;
 
-if isfield(ROIFile, 'DataParamsView')
-    ROIFile.DataParamsView = updatedView;
-end
-
-if isfield(ROIFile, 'statsImage')
-    ROIFile.statsImage = [];
-end
-
-if isfield(ROIFile, 'statsImageViewMode')
-    ROIFile.statsImageViewMode = 'registered';
-end
-
-tmpPath = iMakeTempSiblingPath(plan.Path);
-
-try
-    save(tmpPath, 'ROIFile', '-mat');
-    movefile(tmpPath, plan.Path, 'f');
-
-catch ME
-    if isfile(tmpPath)
-        delete(tmpPath);
-    end
-    rethrow(ME);
-end
+validateROIFile(ROIFile);
+save(tmpPath, 'ROIFile', '-mat');
 end
 
 function tf = iIsCurrentRoiFile(ROIFile)
-%IISCURRENTROIFILE True for current supported ROIFile schema.
+%IISCURRENTROIFILE True for a current UMIT ROI file (getROISchema).
 
+schema = getROISchema();
 tf = isstruct(ROIFile) && isscalar(ROIFile) && ...
-    isfield(ROIFile, 'fileType') && strcmpi(char(string(ROIFile.fileType)), 'UMIT_ROI_FILE') && ...
-    isfield(ROIFile, 'ROIs') && isstruct(ROIFile.ROIs);
+    isfield(ROIFile, 'schemaName') && strcmp(char(string(ROIFile.schemaName)), schema.schemaName) && ...
+    isfield(ROIFile, 'imageInfo') && isfield(ROIFile, 'ROIs') && isstruct(ROIFile.ROIs);
 end
 
-function stats = iBuildRoiStats(mask, verticesXY)
-%IBUILDROISTATS Minimal ROI stats after geometric transform.
+function stats = iBuildRoiStats(stats, mask, pixelSize, computedOn)
+%IBUILDROISTATS Geometric ROI stats at the new frame size.
+%
+% Intensity stats (spatial*) and distances from the origin are cleared;
+% the tools that own them recompute them from the aligned data.
 
-stats = struct();
-stats.area_px = nnz(mask);
-stats.verticesXY_px = verticesXY;
-
+stats.computedOn = computedOn;
+stats.NPixels = nnz(mask);
+stats.areaPx2 = nnz(mask);
+stats.areaMM2 = [];
+if isnumeric(pixelSize) && isscalar(pixelSize) && pixelSize > 0
+    stats.areaMM2 = stats.areaPx2 / pixelSize^2;
+end
+stats.centroidXY_px = [];
 if any(mask(:))
     [y, x] = find(mask);
     stats.centroidXY_px = [mean(x), mean(y)];
-    stats.boundingBoxXYWH = [min(x), min(y), max(x)-min(x)+1, max(y)-min(y)+1];
-else
-    stats.centroidXY_px = [NaN NaN];
-    stats.boundingBoxXYWH = [NaN NaN NaN NaN];
+end
+for fieldName = {'centroidXY_mm', 'distanceFromOrigin_px', 'distanceFromOrigin_mm', ...
+        'spatialMean', 'spatialStd', 'spatialMedian', 'spatialMin', 'spatialMax'}
+    stats.(fieldName{1}) = [];
 end
 end
 
 % =========================================================================
-% DataParams / AcqInfos update
+% DataParams update
 % =========================================================================
 
 function updatedView = iBuildUpdatedView(DataParams, ImageReference, newSizeYX, scaleInfo, finalTform)
@@ -983,84 +1056,137 @@ if isfield(updatedView, 'pixelSize_px_per_mm') && ...
 end
 end
 
+function DataParams = iUpdateDataParams(DataParams, finalTform, referenceImage, opts, ...
+    precomputedMask, scaleInfo, updatedView)
+%IUPDATEDATAPARAMS DataParams after alignment (validated, not yet saved).
 
-function DataParams = iUpdateDataParams(DataParams, finalTform, referenceImage, ...
-    ImageReference, referenceFile, movingSourceFile, manualAdjustment, createdBy, ...
-    resourceUUID, precomputedMask, scaleInfo)
-%IUPDATEDATAPARAMS Update folder-level DataParams after registration.
-
-newSizeYX = size(referenceImage);
-
-DataParams.view = iBuildUpdatedView(DataParams, ImageReference, newSizeYX, scaleInfo, finalTform);
+DataParams.view = updatedView;
 
 if ~isempty(precomputedMask)
-    if ~isfield(DataParams, 'mask') || ~isstruct(DataParams.mask)
-        DataParams.mask = struct();
-    end
-
     DataParams.mask.logical = logical(precomputedMask);
     DataParams.mask.space = 'registered';
-    DataParams.mask.source = 'ImageAlignmentTool';
+    DataParams.mask.source = char(opts.createdBy);
 end
 
 DataParams.registration = iUpdateRegistrationStruct( ...
-    DataParams, ...
-    finalTform, ...
-    referenceImage, ...
-    ImageReference, ...
-    referenceFile, ...
-    movingSourceFile, ...
-    manualAdjustment, ...
-    createdBy, ...
-    resourceUUID, ...
-    scaleInfo);
-
-DataParams.lastModified = datetime('now');
+    DataParams.registration, finalTform, referenceImage, opts, scaleInfo);
 end
 
-function registration = iUpdateRegistrationStruct(DataParams, finalTform, referenceImage, ...
-    ImageReference, referenceFile, movingSourceFile, manualAdjustment, createdBy, ...
-    resourceUUID, scaleInfo)
-%IUPDATEREGISTRATIONSTRUCT Preserve and update DataParams.registration.
+function registration = iUpdateRegistrationStruct(registration, finalTform, ...
+    referenceImage, opts, scaleInfo)
+%IUPDATEREGISTRATIONSTRUCT Version-2 record after the apply.
+%
+%   The apply record is always written, committing the folder to the hash
+%   of the reference it was aligned to (appliedReferenceHash). With
+%   keepEstimate (pipeline apply of createRegistrationTform's result), the
+%   reference and estimate records are kept: they describe exactly the
+%   applied transform. Otherwise (GUI) both are rebuilt from the options;
+%   nothing is carried over from an earlier estimate.
 
-if isfield(DataParams, 'registration') && isstruct(DataParams.registration)
-    registration = DataParams.registration;
+appliedOn = char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+createdBy = char(opts.createdBy);
+[~, referenceTemplate, estimateTemplate] = newRegistrationRecord();
+
+if opts.keepEstimate
+    % Checked before any write by iAssertEstimateMatchesReference.
 else
-    registration = struct();
+    reference = referenceTemplate;
+    [reference.contentHash, reference.image] = computeImageContentHash(referenceImage);
+    reference.imageSizeYX = double(size(reference.image));
+    reference.selectedOn = appliedOn;
+    reference.source = iReferenceSource(opts);
+    reference.name = 'Reference';
+    if isstruct(opts.imageReference)
+        if isfield(opts.imageReference, 'name') && ~isempty(opts.imageReference.name)
+            reference.name = char(string(opts.imageReference.name));
+        end
+        if isfield(opts.imageReference, 'description')
+            reference.description = char(string(opts.imageReference.description));
+        end
+        if isfield(opts.imageReference, 'axisConvention') && ...
+                ~isempty(opts.imageReference.axisConvention)
+            reference.axisConvention = char(string(opts.imageReference.axisConvention));
+        end
+    elseif ~isempty(reference.source.path)
+        [~, fileName, fileExt] = fileparts(reference.source.path);
+        reference.name = [fileName fileExt];
+    end
+    registration.reference = reference;
+
+    estimate = estimateTemplate;
+    estimate.tform = finalTform;
+    estimate.transformType = 'similarity';
+    estimate.method = createdBy;
+    estimate.qcMetrics = iBuildTransformQcMetrics(finalTform, scaleInfo);
+    estimate.createdOn = appliedOn;
+    estimate.movingSource = char(opts.movingSourceFile);
+    estimate.referenceHash = reference.contentHash;
+    registration.estimate = estimate;
 end
 
-registration.isRegistered = true;
-registration.isReviewed = true;
-registration.tform = finalTform;
-registration.transformType = 'similarity';
-registration.method = 'ImageAlignmentTool';
-registration.referenceFile = char(string(referenceFile));
-registration.referenceImage = referenceImage;
+apply = registration.apply;
+apply.isRegistered = true;
+apply.isReviewed = logical(opts.isReviewed);
+apply.appliedOn = appliedOn;
+apply.appliedBy = createdBy;
+apply.confirmationMode = char(opts.confirmationMode);
+apply.appliedReferenceHash = registration.estimate.referenceHash;
+if ~opts.keepEstimate
+    apply.manualAdjustment = opts.manualAdjustment;
+end
+apply.notes = sprintf('Folder-level registration applied by %s.', createdBy);
+registration.apply = apply;
+end
 
-if isstruct(ImageReference) && isfield(ImageReference, 'description')
-    registration.referenceDescription = ImageReference.description;
+function iAssertEstimateMatchesReference(folder, registration, operation)
+%IASSERTESTIMATEMATCHESREFERENCE Apply guard (brief section 1.5).
+%   The stored estimate must have been computed against the currently
+%   selected reference; the hashes are compared, never the sources.
+
+if isempty(registration.reference) || isempty(registration.estimate)
+    message = UMITLedgerCore.buildErrorMessage(operation, folder, ...
+        'the folder has no selected reference and estimate to apply.', ...
+        {'Select a reference and estimate the alignment first (createRegistrationTform).'});
+    throwAsCaller(MException('Umitoolbox:ImageRegistration:noEstimate', '%s', message));
+end
+if strcmp(registration.estimate.referenceHash, registration.reference.contentHash)
+    return
+end
+why = sprintf(['the stored transform was estimated against %s, but the selected ' ...
+    'reference is now %s.'], ...
+    describeRegistrationReference([], registration.estimate.referenceHash), ...
+    describeRegistrationReference(registration.reference));
+message = UMITLedgerCore.buildErrorMessage(operation, folder, why, ...
+    {['Estimate the alignment again against the selected reference (free before ' ...
+    'apply), then apply.'], 'Or select again the reference the transform was estimated against.'});
+throwAsCaller(MException('Umitoolbox:ImageRegistration:estimateReferenceMismatch', '%s', message));
+end
+
+function descriptor = iReferenceSource(opts)
+%IREFERENCESOURCE Source descriptor of the GUI-supplied reference.
+
+if isstruct(opts.referenceSource)
+    descriptor = opts.referenceSource;
+    validateReferenceSourceDescriptor(descriptor, 'referenceSource option');
+    return
+end
+ImageReference = opts.imageReference;
+path = char(opts.referenceFile);
+if isstruct(ImageReference) && isfield(ImageReference, 'absolutePath') && ...
+        ~isempty(ImageReference.absolutePath)
+    path = char(string(ImageReference.absolutePath));
+end
+if isstruct(ImageReference) && isfield(ImageReference, 'projectUUID') && ...
+        ~isempty(ImageReference.projectUUID)
+    descriptor = referenceSourceDescriptor('project', path);
+    for fieldName = {'projectUUID', 'projectName', 'subjectUUID', 'subjectID', ...
+            'sessionUUID', 'sessionID', 'resourceUUID'}
+        if isfield(ImageReference, fieldName{1})
+            descriptor.(fieldName{1}) = char(string(ImageReference.(fieldName{1})));
+        end
+    end
 else
-    registration.referenceDescription = '';
-end
-
-registration.source = char(string(movingSourceFile));
-registration.createdOn = char(datetime('now'));
-registration.appliedOn = char(datetime('now'));
-registration.appliedBy = char(string(createdBy));
-registration.confirmationMode = 'user-confirmed-folder-transform';
-registration.notes = 'Folder-level registration applied by ImageAlignmentTool.';
-registration.manualAdjustment = manualAdjustment;
-registration.qcMetrics = iBuildTransformQcMetrics(finalTform, scaleInfo);
-
-% Pointer to the central UMITProjectStore registrationTransform resource, when
-% the folder is bound to a project. Left as-is (not cleared) if this call was
-% made without a resourceUUID, so a later out-of-band store import can still
-% attach one via updateDataParam without re-running the whole transform.
-resourceUUID = char(resourceUUID);
-if ~isempty(resourceUUID)
-    registration.resourceUUID = resourceUUID;
-elseif ~isfield(registration, 'resourceUUID')
-    registration.resourceUUID = '';
+    descriptor = referenceSourceDescriptor('file', path);
 end
 end
 
@@ -1083,90 +1209,102 @@ qc.determinant = det(T(1:2, 1:2));
 end
 
 % =========================================================================
-% Restore / failure report
+% Staged commit / failure report
 % =========================================================================
 
-function completed = iInitializeCompletedTracker()
-%IINITIALIZECOMPLETEDTRACKER Track files modified before failure.
+function staged = iNewStagedList()
+%INEWSTAGEDLIST Empty list of staged (or installed) files.
 
-completed = struct();
-completed.datFiles = strings(0,1);
-completed.umtFiles = strings(0,1);
-completed.roiFiles = strings(0,1);
-completed.metadataFiles = strings(0,1);
+staged = struct('finalPath', {}, 'tmpPath', {}, 'backupPath', {}, 'hadOriginal', {});
 end
 
-function [restoreSucceeded, restoreMessage] = iRestoreFromBackup(targetFolder, backupPath)
-%IRESTOREFROMBACKUP Restore managed files from backup zip.
+function staged = iAddStaged(staged, finalPath, tmpPath)
+%IADDSTAGED Record a staged file before it is written (so it is cleaned up).
 
-restoreSucceeded = false;
-restoreMessage = "";
-
-if isempty(backupPath) || ~isfile(backupPath)
-    restoreMessage = "Backup path is empty or backup file was not found.";
-    return
+staged(end+1) = struct('finalPath', finalPath, 'tmpPath', tmpPath, ...
+    'backupPath', [finalPath '.aligning.bak'], 'hadOriginal', isfile(finalPath));
 end
 
-try
-    iDeleteManagedFilesForRestore(targetFolder, backupPath);
-    unzip(backupPath, targetFolder);
+function tmpPath = iStagePath(finalPath)
+%ISTAGEPATH Temporary sibling of finalPath. Its extension is .tmp, so a
+%leftover is never mistaken for a .dat, .umt or .roi file.
 
-    restoreSucceeded = true;
-    restoreMessage = "Restore completed from backup zip.";
+tmpPath = [finalPath '.aligning.tmp'];
+end
 
-catch ME
-    restoreSucceeded = false;
-    restoreMessage = string(ME.message);
+function installed = iInstallStaged(installed, entry)
+%IINSTALLSTAGED Move the original aside, then install the staged copy.
+
+if entry.hadOriginal
+    [ok, message] = movefile(entry.finalPath, entry.backupPath, 'f');
+    if ~ok
+        error('ImageAlignmentTool:CommitFailed', ...
+            'Could not move "%s" aside before installing its aligned copy: %s', ...
+            entry.finalPath, message);
+    end
+end
+installed(end+1) = entry;
+[ok, message] = movefile(entry.tmpPath, entry.finalPath, 'f');
+if ~ok
+    error('ImageAlignmentTool:CommitFailed', ...
+        'Could not install the aligned copy of "%s": %s', entry.finalPath, message);
 end
 end
 
-function iDeleteManagedFilesForRestore(targetFolder, backupPath)
-%IDELETEMANAGEDFILESFORRESTORE Delete non-raw managed files before restore.
-%
-%   The backup zip itself and all other zip files are protected.
+function message = iRollBack(installed)
+%IROLLBACK Restore every original moved aside by iInstallStaged.
 
-backupPath = char(string(backupPath));
-backupPath = strrep(backupPath, '/', filesep);
-backupPath = strrep(backupPath, '\', filesep);
-
-allFiles = dir(targetFolder);
-allFiles([allFiles.isdir]) = [];
-
-protectedFiles = false(numel(allFiles), 1);
-
-for iFile = 1:numel(allFiles)
-    filePath = fullfile(allFiles(iFile).folder, allFiles(iFile).name);
-    filePath = strrep(filePath, '/', filesep);
-    filePath = strrep(filePath, '\', filesep);
-
-    name = allFiles(iFile).name;
-
-    protectedFiles(iFile) = ...
-        strcmpi(filePath, backupPath) || ...
-        endsWith(name, '.zip', 'IgnoreCase', true) || ...
-        endsWith(name, '.bin', 'IgnoreCase', true) || ...
-        endsWith(name, '.tif', 'IgnoreCase', true) || ...
-        endsWith(name, '.tiff', 'IgnoreCase', true) || ...
-        endsWith(name, 'info.txt', 'IgnoreCase', true) || ...
-        strcmpi(name, 'Comments.txt') || ...
-        (startsWith(name, 'Snapshot', 'IgnoreCase', true) && ...
-         endsWith(name, '.png', 'IgnoreCase', true)) || ...
-        startsWith(name, 'ImageAlignmentFailedReport_', 'IgnoreCase', true);
+problems = {};
+for iFile = numel(installed):-1:1
+    entry = installed(iFile);
+    try
+        if entry.hadOriginal
+            if isfile(entry.backupPath)
+                movefile(entry.backupPath, entry.finalPath, 'f');
+            end
+        elseif isfile(entry.finalPath)
+            delete(entry.finalPath);
+        end
+    catch ME
+        problems{end+1} = sprintf('%s (%s)', entry.finalPath, ME.message); %#ok<AGROW>
+    end
+end
+if isempty(problems)
+    message = 'yes';
+else
+    message = sprintf('NO, failed for: %s', strjoin(problems, '; '));
+end
 end
 
-deleteFiles = allFiles(~protectedFiles);
+function iDiscardStaged(staged)
+%IDISCARDSTAGED Delete staged temporary files that were not installed.
 
-for iFile = 1:numel(deleteFiles)
-    filePath = fullfile(deleteFiles(iFile).folder, deleteFiles(iFile).name);
-
-    if isfile(filePath)
-        delete(filePath);
+for iFile = 1:numel(staged)
+    if isfile(staged(iFile).tmpPath)
+        delete(staged(iFile).tmpPath);
     end
 end
 end
 
+function iDeleteBackups(installed)
+%IDELETEBACKUPS Drop the originals once the commit has succeeded.
+
+for iFile = 1:numel(installed)
+    if installed(iFile).hadOriginal && isfile(installed(iFile).backupPath)
+        delete(installed(iFile).backupPath);
+    end
+end
+end
+
+function failureInfo = iFailureInfo(ME, report, dateTag, stage)
+%IFAILUREINFO Fields of the failure report.
+
+failureInfo = struct('error', ME, 'report', report, 'dateTag', dateTag, ...
+    'stage', stage);
+end
+
 function reportPath = iWriteFailureReport(targetFolder, failureInfo)
-%IWRITEFAILUREREPORT Write human-readable failure report after restore.
+%IWRITEFAILUREREPORT Write a human-readable failure report.
 
 dateTag = failureInfo.dateTag;
 reportPath = fullfile(targetFolder, ['ImageAlignmentFailedReport_' dateTag '.txt']);
@@ -1178,7 +1316,7 @@ if fid < 0
     return
 end
 
-cleanupObj = onCleanup(@() safeFclose(fid)); %#ok<NASGU>
+cleanupObj = onCleanup(@() safeFclose(fid));
 
 ME = failureInfo.error;
 
@@ -1187,21 +1325,17 @@ fprintf(fid, '=============================\n\n');
 
 fprintf(fid, 'Created on: %s\n', char(datetime('now')));
 fprintf(fid, 'Target folder: %s\n', failureInfo.report.targetFolder);
-fprintf(fid, 'Backup path: %s\n', failureInfo.backupPath);
-fprintf(fid, 'Restore attempted: %d\n', failureInfo.restoreAttempted);
-fprintf(fid, 'Restore succeeded: %d\n', failureInfo.restoreSucceeded);
-fprintf(fid, 'Restore message: %s\n\n', char(string(failureInfo.restoreMessage)));
+fprintf(fid, 'Failed during: %s\n\n', failureInfo.stage);
 
 fprintf(fid, 'Reference file: %s\n', failureInfo.report.referenceFile);
 fprintf(fid, 'Old image size [Y X]: %s\n', mat2str(failureInfo.report.oldSizeYX));
 fprintf(fid, 'New image size [Y X]: %s\n\n', mat2str(failureInfo.report.newSizeYX));
 
-fprintf(fid, 'Completed before failure\n');
-fprintf(fid, '------------------------\n');
-iWriteStringList(fid, 'DAT files', failureInfo.completed.datFiles);
-iWriteStringList(fid, 'UMT files', failureInfo.completed.umtFiles);
-iWriteStringList(fid, 'ROI files', failureInfo.completed.roiFiles);
-iWriteStringList(fid, 'Metadata files', failureInfo.completed.metadataFiles);
+fprintf(fid, 'Files staged before the failure\n');
+fprintf(fid, '-------------------------------\n');
+iWriteStringList(fid, 'DAT files', failureInfo.report.datFilesTransformed);
+iWriteStringList(fid, 'UMT files', failureInfo.report.umtFilesTransformed);
+iWriteStringList(fid, 'ROI files', failureInfo.report.roiFilesTransformed);
 
 fprintf(fid, '\nWarnings\n');
 fprintf(fid, '--------\n');
@@ -1241,7 +1375,7 @@ function referenceImage = iValidateReferenceImage(referenceImage)
 %IVALIDATEREFERENCEIMAGE Validate and convert reference image.
 
 if ~(isnumeric(referenceImage) || islogical(referenceImage)) || ...
-        ndims(referenceImage) ~= 2 || isempty(referenceImage)
+        ~ismatrix(referenceImage) || isempty(referenceImage)
     error('ImageAlignmentTool:InvalidReferenceImage', ...
         'referenceImage must be a non-empty 2D numeric/logical image.');
 end
@@ -1370,22 +1504,4 @@ end
 error('ImageAlignmentTool:CouldNotResolveOldSize', ...
     ['Could not resolve old image size from the .dat files or ' ...
      'DataParams.view.imageSizeYX.']);
-end
-
-function tmpPath = iMakeTempSiblingPath(filePath)
-%IMAKETEMPSIBLINGPATH Create unique sibling temp path preserving extension.
-
-[folderName, baseName, ext] = fileparts(filePath);
-
-dateTag = char(datetime('now', 'Format', 'yyyyMMdd_HHmmss'));
-randomTag = sprintf('%06d', randi(999999));
-
-tmpPath = fullfile(folderName, sprintf('%s_%s_%s%s', ...
-    baseName, dateTag, randomTag, ext));
-
-while isfile(tmpPath)
-    randomTag = sprintf('%06d', randi(999999));
-    tmpPath = fullfile(folderName, sprintf('%s_%s_%s%s', ...
-        baseName, dateTag, randomTag, ext));
-end
 end

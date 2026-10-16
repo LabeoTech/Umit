@@ -1,4 +1,4 @@
-classdef TestGUITheme < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGUITheme < matlab.unittest.TestCase
 %TESTGUITHEME Tests for umIT GUI preferences and R2024b theme handling.
 
     properties

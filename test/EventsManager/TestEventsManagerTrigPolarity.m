@@ -1,4 +1,4 @@
-classdef TestEventsManagerTrigPolarity < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventsManagerTrigPolarity < matlab.unittest.TestCase
     %TESTEVENTSMANAGERTRIGPOLARITY Tests for trigPolarity behavior.
 
     properties

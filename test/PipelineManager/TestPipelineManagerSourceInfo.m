@@ -1,4 +1,4 @@
-classdef TestPipelineManagerSourceInfo < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestPipelineManagerSourceInfo < matlab.unittest.TestCase
     %TESTPIPELINEMANAGERSOURCEINFO PipelineManager propagates the source Info.
     %
     %   .dat header Phase 4c-1: .dat files that PipelineManager saves from

@@ -60,6 +60,12 @@ try
 catch ME
     result.message = sprintf('Could not change the folder rig: %s', ME.message);
     result.severity = 'error';
-    uialert(parentFigure, ME.message, 'Bind / Rebind Rig failed', 'Icon', 'error');
+    [~, lockMessage, isLockError] = offerStaleLockClearing(parentFigure, ME, 'Folder', saveFolder);
+    if isLockError
+        result.message = lockMessage;
+        result.severity = 'warning';
+    else
+        uialert(parentFigure, ME.message, 'Bind / Rebind Rig failed', 'Icon', 'error');
+    end
 end
 end

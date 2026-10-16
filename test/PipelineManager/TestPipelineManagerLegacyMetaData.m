@@ -1,4 +1,4 @@
-classdef TestPipelineManagerLegacyMetaData < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestPipelineManagerLegacyMetaData < matlab.unittest.TestCase
     %TESTPIPELINEMANAGERLEGACYMETADATA PipelineManager supports only pipelineInfo functions.
     %
     %   .dat header Phase 8a removed legacy pipeline support (Bruno,

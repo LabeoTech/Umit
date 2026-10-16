@@ -1,4 +1,4 @@
-classdef TestGenCorrelationMatrix < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGenCorrelationMatrix < matlab.unittest.TestCase
     %TESTGENCORRELATIONMATRIX Unit tests for genCorrelationMatrix.
     %
     % Coverage (DFR-20260819-003):

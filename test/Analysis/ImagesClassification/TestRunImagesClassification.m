@@ -1,4 +1,4 @@
-classdef TestRunImagesClassification < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestRunImagesClassification < matlab.unittest.TestCase
     %TESTRUNIMAGESCLASSIFICATION Unit tests for ImagesClassification.
     %
     %   This suite verifies wrapper behavior, backup handling, returned
@@ -123,7 +123,8 @@ classdef TestRunImagesClassification < matlab.unittest.TestCase
             writeTestDat(dummyFile, single(1), 1);
 
             testCase.verifyTrue(isfile(dummyFile));
-
+            % Project redesign Phase 4: leftovers make the folder a previous
+            % import; backupOpts ERASE deletes them without a zip.
             outFile = ImagesClassification( ...
                 testCase.FixtureFolder, ...
                 testCase.TempSaveFolder, ...
@@ -269,7 +270,8 @@ classdef TestRunImagesClassification < matlab.unittest.TestCase
 
         function testSingleCameraReimportKeepsBinding(testCase)
             %TESTSINGLECAMERAREIMPORTKEEPSBINDING A re-import into a bound
-            %folder writes only a reimport event (decision Q3).
+            %folder keeps the binding (decision Q3) and writes only a
+            %freshImport event, which resets every commitment.
 
             binding = testCase.makeLedgerBinding();
             UMITRigLedger.bind(testCase.TempSaveFolder, binding, 'Origin', 'test');
@@ -281,22 +283,84 @@ classdef TestRunImagesClassification < matlab.unittest.TestCase
 
             ledger = UMITRigLedger.read(testCase.TempSaveFolder);
             types = cellfun(@(e) e.type, ledger.events, 'UniformOutput', false);
-            testCase.verifyEqual(types, {'bind', 'commit', 'reimport'});
-            testCase.verifyEqual(ledger.state, 'BoundCommitted');
+            testCase.verifyEqual(types, {'bind', 'commit', 'freshImport'});
+            testCase.verifyEqual(ledger.state, 'BoundUncommitted');
+            testCase.verifyEmpty(ledger.commitments.optics);
             testCase.verifyEqual(ledger.binding.opticsHash, binding.optics.hash);
-            testCase.verifyEqual(rigResolution.ledgerState, 'BoundCommitted');
+            testCase.verifyEqual(rigResolution.ledgerState, 'BoundUncommitted');
             testCase.verifyEqual(rigResolution.rigID, 'ClassificationTestRig');
         end
 
-        function testRepeatedSingleCameraImportRecordsReimport(testCase)
+        function testFreshImportResetsTheFolder(testCase)
+            % Brief section 1.6 / Phase 4: a re-import deletes every derived
+            % artefact, resets the rig commitments, logs freshImport in both
+            % ledgers, and allows a new alignment.
+            folder = testCase.TempSaveFolder;
+            ImagesClassification(testCase.FixtureFolder, folder, 'backupOpts', 'ERASE');
+
+            % Derived state of the previous data: an applied alignment, ROIs,
+            % events, QC figures, history.
+            DataParams = loadDataParams(folder);
+            [~, referenceTemplate, estimateTemplate] = newRegistrationRecord();
+            reference = referenceTemplate;
+            [reference.contentHash, reference.image] = ...
+                computeImageContentHash(ones(DataParams.view.imageSizeYX, 'single'));
+            reference.imageSizeYX = DataParams.view.imageSizeYX;
+            reference.name = 'old reference';
+            reference.source = referenceSourceDescriptor('file', 'C:\old\ref.tif');
+            estimate = estimateTemplate;
+            estimate.tform = affine2d(eye(3));
+            estimate.referenceHash = reference.contentHash;
+            DataParams.registration.reference = reference;
+            DataParams.registration.estimate = estimate;
+            DataParams.registration.apply.isRegistered = true;
+            DataParams.registration.apply.appliedReferenceHash = reference.contentHash;
+            DataParams.registration.apply.appliedOn = '2026-10-15 10:00:00';
+            saveDataParams(folder, DataParams);
+            artefacts = {'cortex.roi', 'events.mat', 'registrationQC_2026-10-15_101010.png', ...
+                'dataHistory.mat', 'HbO.dat', 'manualAlignmentReport_20261015_101010.mat'};
+            for name = artefacts
+                fid = fopen(fullfile(folder, name{1}), 'w');
+                fprintf(fid, 'old');
+                fclose(fid);
+            end
+            fid = fopen(fullfile(folder, 'my_notes.txt'), 'w');
+            fprintf(fid, 'user notes');
+            fclose(fid);
+            u = @() lower(char(java.util.UUID.randomUUID()));
+            UMITProjectLedger.bind(folder, struct('bindingUUID', u(), 'projectUUID', u(), ...
+                'subjectUUID', u(), 'sessionUUID', u(), 'folderRole', 'processedDataFolder'), ...
+                struct('note', 'test'), 'Origin', 'test');
+
+            ImagesClassification(testCase.FixtureFolder, folder, 'backupOpts', 'GENBACKUP');
+
+            for name = artefacts
+                testCase.verifyFalse(isfile(fullfile(folder, name{1})), name{1});
+            end
+            testCase.verifyTrue(isfile(fullfile(folder, 'my_notes.txt')), 'unknown files are kept');
+            testCase.verifyNumElements(dir(fullfile(folder, 'bkp_*.zip')), 1);
+            DataParams = loadDataParams(folder);
+            testCase.verifyFalse(DataParams.registration.apply.isRegistered);
+            testCase.verifyEmpty(DataParams.registration.reference);
+            assertFolderCanBeAligned(folder, DataParams, 'Estimating the image alignment');
+            rig = UMITRigLedger.read(folder);
+            testCase.verifyEqual(rig.events{end}.type, 'freshImport');
+            project = UMITProjectLedger.read(folder);
+            testCase.verifyEqual(project.events{end}.type, 'freshImport');
+            testCase.verifyEqual(project.state, 'Bound');
+        end
+
+        function testRepeatedSingleCameraImportRecordsFreshImport(testCase)
             ImagesClassification(testCase.FixtureFolder, testCase.TempSaveFolder, ...
                 'backupOpts', 'ERASE');
             ImagesClassification(testCase.FixtureFolder, testCase.TempSaveFolder, ...
                 'backupOpts', 'ERASE');
+            testCase.verifyFalse(UMITProjectLedger.exists(testCase.TempSaveFolder), ...
+                'an unbound folder gets no project ledger');
 
             ledger = UMITRigLedger.read(testCase.TempSaveFolder);
             types = cellfun(@(e) e.type, ledger.events, 'UniformOutput', false);
-            testCase.verifyEqual(types, {'noRig', 'reimport'});
+            testCase.verifyEqual(types, {'noRig', 'freshImport'});
             testCase.verifyEqual(ledger.state, 'NoRig');
         end
 

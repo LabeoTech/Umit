@@ -1,4 +1,4 @@
-classdef TestProjectManagerTool < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestProjectManagerTool < matlab.unittest.TestCase
     %TESTPROJECTMANAGERTOOL Integration tests for ProjectManagerTool.mlapp.
 
     properties
