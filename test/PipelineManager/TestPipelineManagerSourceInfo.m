@@ -337,28 +337,18 @@ end
 
 function parserFolder = iCreateFixtureCategory(projectRoot)
 % PipelineManager discovers functions under Analysis/: copy the fixtures
-% into a temporary category there (same approach as
-% TestPipelineManagerLegacyMetaData).
-analysisFolder = fullfile(projectRoot, 'Analysis');
-parserFolder = tempname(analysisFolder);
-mkdir(parserFolder);
+% into a temporary category there (createAnalysisFixtureCategory).
 fixtureFolder = fullfile(fileparts(mfilename('fullpath')), 'fixtures');
 names = {'pmSourceInfoScale', 'pmSourceInfoRate', 'pmSourceInfoBadMeta', 'pmSourceInfoMake', ...
     'pmSourceInfoMean', 'pmSourceInfoEvents', 'pmSourceInfoAxes'};
-for k = 1:numel(names)
-    copyfile(fullfile(fixtureFolder, [names{k} '.m']), fullfile(parserFolder, [names{k} '.m']));
-end
+files = struct('name', names, 'source', fullfile(fixtureFolder, strcat(names, '.m')), 'text', '');
 % A second copy of the scaling step: the same function cannot appear twice
 % in one branch.
 source = fileread(fullfile(fixtureFolder, 'pmSourceInfoScale.m'));
 source = strrep(source, "function outData = pmSourceInfoScale(", "function outData = pmSourceInfoScaleB(");
 source = strrep(source, "'pmSourceInfoScale', 'Test", "'pmSourceInfoScaleB', 'Test");
-fid = fopen(fullfile(parserFolder, 'pmSourceInfoScaleB.m'), 'w');
-fwrite(fid, source, 'char');
-fclose(fid);
-addpath(parserFolder, '-begin');
-clear pmSourceInfoScale pmSourceInfoScaleB pmSourceInfoRate pmSourceInfoBadMeta pmSourceInfoMake pmSourceInfoMean pmSourceInfoEvents pmSourceInfoAxes
-rehash;
+files(end + 1) = struct('name', 'pmSourceInfoScaleB', 'source', '', 'text', source);
+parserFolder = createAnalysisFixtureCategory(projectRoot, files);
 end
 
 function iRemoveFixtureCategory(parserFolder, projectRoot)

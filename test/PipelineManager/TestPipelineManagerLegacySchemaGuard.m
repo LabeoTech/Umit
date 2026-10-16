@@ -368,21 +368,14 @@ end
 function parserFolder = createTemporaryFixtureCategory(projectRoot, fixtureName)
 %CREATETEMPORARYFIXTURECATEGORY Copy one fixture into a scanned category.
 
-analysisFolder = fullfile(projectRoot, 'Analysis');
-parserFolder = tempname(analysisFolder);
-mkdir(parserFolder);
-
 if strcmp(fixtureName, 'funcTemplate')
-    sourceFile = fullfile(analysisFolder, 'funcTemplate.m');
+    sourceFile = fullfile(projectRoot, 'Analysis', 'funcTemplate.m');
 else
     sourceFile = fullfile(projectRoot, 'test', 'PipelineManager', ...
         'fixtures', [fixtureName '.m']);
 end
-copyfile(sourceFile, fullfile(parserFolder, [fixtureName '.m']));
-
-addpath(parserFolder, '-begin');
-clear(fixtureName);
-rehash;
+parserFolder = createAnalysisFixtureCategory(projectRoot, ...
+    struct('name', fixtureName, 'source', sourceFile));
 end
 
 function cleanupTemplateCategory(parserFolder, projectRoot)

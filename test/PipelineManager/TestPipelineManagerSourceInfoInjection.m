@@ -312,27 +312,18 @@ end
 
 function parserFolder = iCreateFixtureCategory(projectRoot)
 % PipelineManager discovers functions under Analysis/: copy the fixtures
-% into a temporary category there. Copies of pmInjEcho let the same step
-% appear on several branches.
-analysisFolder = fullfile(projectRoot, 'Analysis');
-parserFolder = tempname(analysisFolder);
-mkdir(parserFolder);
+% into a temporary category there (createAnalysisFixtureCategory). Copies
+% of pmInjEcho let the same step appear on several branches.
 fixtureFolder = fullfile(fileparts(mfilename('fullpath')), 'fixtures');
 names = {'pmInjEcho', 'pmInjTwoInputs', 'pmSourceInfoScale', 'pmSourceInfoRate', 'pmSourceInfoMake'};
-for k = 1:numel(names)
-    copyfile(fullfile(fixtureFolder, [names{k} '.m']), fullfile(parserFolder, [names{k} '.m']));
-end
+files = struct('name', names, 'source', fullfile(fixtureFolder, strcat(names, '.m')), 'text', '');
 source = fileread(fullfile(fixtureFolder, 'pmInjEcho.m'));
 for suffix = {'B', 'C', 'D'}
     newName = ['pmInjEcho' suffix{1}];
-    copyText = strrep(source, 'function outData = pmInjEcho(', ['function outData = ' newName '(']);
-    fid = fopen(fullfile(parserFolder, [newName '.m']), 'w');
-    fwrite(fid, copyText, 'char');
-    fclose(fid);
+    files(end + 1) = struct('name', newName, 'source', '', 'text', ...
+        strrep(source, 'function outData = pmInjEcho(', ['function outData = ' newName '('])); %#ok<AGROW>
 end
-addpath(parserFolder, '-begin');
-clear pmInjEcho pmInjEchoB pmInjEchoC pmInjEchoD pmInjTwoInputs pmSourceInfoScale pmSourceInfoRate pmSourceInfoMake
-rehash;
+parserFolder = createAnalysisFixtureCategory(projectRoot, files);
 end
 
 function iRemoveFixtureCategory(parserFolder, projectRoot)
