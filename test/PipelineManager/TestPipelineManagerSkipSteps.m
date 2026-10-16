@@ -197,17 +197,11 @@ end
 
 function parserFolder = iCreateFixtureCategory(projectRoot)
 % PipelineManager discovers functions under Analysis/: copy the fixtures into a
-% temporary category there.
-analysisFolder = fullfile(projectRoot, 'Analysis');
-parserFolder = tempname(analysisFolder);
-mkdir(parserFolder);
+% temporary category there (createAnalysisFixtureCategory).
 fixtureFolder = fullfile(fileparts(mfilename('fullpath')), 'fixtures');
-for name = {'pmSkipStepA', 'pmSkipStepB'}
-    copyfile(fullfile(fixtureFolder, [name{1} '.m']), fullfile(parserFolder, [name{1} '.m']));
-end
-addpath(parserFolder, '-begin');
-clear pmSkipStepA pmSkipStepB
-rehash;
+names = {'pmSkipStepA', 'pmSkipStepB'};
+files = struct('name', names, 'source', fullfile(fixtureFolder, strcat(names, '.m')));
+parserFolder = createAnalysisFixtureCategory(projectRoot, files);
 end
 
 function iRemoveFixtureCategory(parserFolder, projectRoot)

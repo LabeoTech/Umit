@@ -74,14 +74,10 @@ end
 
 % =========================================================================
 function categoryFolder = iCreateFixtureCategory(projectRoot, fixtureName)
-% Copy one fixture into a temporary Analysis/ category.
-categoryFolder = tempname(fullfile(projectRoot, 'Analysis'));
-mkdir(categoryFolder);
+% Copy one fixture into a temporary Analysis/ category (createAnalysisFixtureCategory).
 fixtureFolder = fullfile(fileparts(mfilename('fullpath')), 'fixtures');
-copyfile(fullfile(fixtureFolder, [fixtureName '.m']), fullfile(categoryFolder, [fixtureName '.m']));
-addpath(categoryFolder, '-begin');
-clear(fixtureName);
-rehash;
+categoryFolder = createAnalysisFixtureCategory(projectRoot, ...
+    struct('name', fixtureName, 'source', fullfile(fixtureFolder, [fixtureName '.m'])));
 end
 
 function iRemoveFixtureCategory(categoryFolder, projectRoot)

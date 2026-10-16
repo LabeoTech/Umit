@@ -30,3 +30,5 @@ docs/dev/
 
 # Archive of deprecated legacy code (2026-10-09 clean-up)
 umIT_DEPRECATED_*.zip
+# Temporary PipelineManager test categories (test/testHelpers/createAnalysisFixtureCategory.m)
+Analysis/pmTestFixture_*/

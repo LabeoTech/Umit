@@ -42,7 +42,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestPipelineManagerPa
                 single(reshape(1:24, [2 3 4])), 'DimNames', {'Y', 'X', 'T'}, 'FrameRateHz', 10);
 
             parserFolder = iCreateFixtureCategory(testCase.ProjectRoot);
-            testCase.addTeardown(@() iRemoveFixtureCategory(parserFolder, testCase.ProjectRoot));
+            testCase.addTeardown(@() removeAnalysisFixtureCategory(parserFolder, testCase.ProjectRoot));
 
             testCase.AppliedLog = {};
         end
@@ -307,31 +307,10 @@ end
 end
 
 function parserFolder = iCreateFixtureCategory(projectRoot)
-% PipelineManager discovers functions under Analysis/: copy the fixture into
-% a temporary category there.
-analysisFolder = fullfile(projectRoot, 'Analysis');
-parserFolder = tempname(analysisFolder);
-mkdir(parserFolder);
+% PipelineManager discovers functions under Analysis/: copy the fixtures into
+% a temporary category there (createAnalysisFixtureCategory).
 fixtureFolder = fullfile(fileparts(mfilename('fullpath')), 'fixtures');
-for name = {'pmParamEditor', 'pmParamUnsupported'}
-    copyfile(fullfile(fixtureFolder, [name{1} '.m']), fullfile(parserFolder, [name{1} '.m']));
-end
-addpath(parserFolder, '-begin');
-clear pmParamEditor pmParamUnsupported
-rehash;
-end
-
-function iRemoveFixtureCategory(parserFolder, projectRoot)
-analysisFolder = fullfile(projectRoot, 'Analysis');
-if ~startsWith(parserFolder, [analysisFolder filesep], 'IgnoreCase', true)
-    error('Umitoolbox:TestPipelineManagerParameterContainer:UnsafeCleanupPath', ...
-        'Refusing to remove a folder outside Analysis.');
-end
-clear pmParamEditor pmParamUnsupported
-if any(strcmp(strsplit(path, pathsep), parserFolder))
-    rmpath(parserFolder);
-end
-if isfolder(parserFolder)
-    rmdir(parserFolder, 's');
-end
+names = {'pmParamEditor', 'pmParamUnsupported'};
+files = struct('name', names, 'source', fullfile(fixtureFolder, strcat(names, '.m')));
+parserFolder = createAnalysisFixtureCategory(projectRoot, files);
 end
