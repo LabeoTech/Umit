@@ -1,4 +1,4 @@
-classdef TestSpeckleMappingNaNDenominator < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestSpeckleMappingNaNDenominator < matlab.unittest.TestCase
     %TESTSPECKLEMAPPINGNANDENOMINATOR Regression for TASK_F1_F2: RAMSafe
     % 'spatial' must use a non-NaN-count denominator, not a fixed Nt, so its
     % output matches Standard mode bit-for-bit on NaN-containing input.

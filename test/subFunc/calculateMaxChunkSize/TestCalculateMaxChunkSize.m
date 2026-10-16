@@ -1,4 +1,4 @@
-classdef TestCalculateMaxChunkSize < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestCalculateMaxChunkSize < matlab.unittest.TestCase
     %TESTCALCULATEMAXCHUNKSIZE Fallback + warning behavior on chunk-calc failure (TASK 5.1).
     %
     %   Covers both failure branches of calculateMaxChunkSize: a failed RAM

@@ -1,4 +1,4 @@
-classdef TestPipelineManagerSourceInfoInjection < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestPipelineManagerSourceInfoInjection < matlab.unittest.TestCase
     %TESTPIPELINEMANAGERSOURCEINFOINJECTION 'sourceInfo' inputs (.dat header Phase 6b-2).
     %
     %   Per-data metadata (frame rate, axes, exposure) reaches functions as

@@ -1,4 +1,4 @@
-classdef TestUMITRigOptics < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestUMITRigOptics < matlab.unittest.TestCase
     %TESTUMITRIGOPTICS Focused schema-v3 optical and preflight tests.
 
     properties

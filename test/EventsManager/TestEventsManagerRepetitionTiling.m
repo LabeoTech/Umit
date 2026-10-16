@@ -1,4 +1,4 @@
-classdef TestEventsManagerRepetitionTiling < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventsManagerRepetitionTiling < matlab.unittest.TestCase
     %TESTEVENTSMANAGERREPETITIONTILING Regression for DFR-20260921-001.
     %
     % Reproduces two digital conditions whose declared durations tile

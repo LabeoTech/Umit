@@ -1,4 +1,4 @@
-classdef TestUMTInfoIgnoresAcqInfos < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestUMTInfoIgnoresAcqInfos < matlab.unittest.TestCase
     %TESTUMTINFOIGNORESACQINFOS .umt Info comes from the file, not AcqInfos.mat (Phase 7a).
     %
     %   AcqInfos.mat describes the raw acquisition. Its Height, Width, and

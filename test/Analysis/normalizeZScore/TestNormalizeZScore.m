@@ -1,4 +1,4 @@
-classdef TestNormalizeZScore < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestNormalizeZScore < matlab.unittest.TestCase
     %TESTNORMALIZEZSCORE Unit tests for normalizeZScore.
     %
     % Coverage:

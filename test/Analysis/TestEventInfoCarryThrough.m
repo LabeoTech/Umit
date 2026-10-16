@@ -1,4 +1,4 @@
-classdef TestEventInfoCarryThrough < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventInfoCarryThrough < matlab.unittest.TestCase
     %TESTEVENTINFOCARRYTHROUGH Per-instance functions keep the event flags (.dat header Phase 8c).
     %
     %   Functions that keep the E axis must carry the input eventInfo

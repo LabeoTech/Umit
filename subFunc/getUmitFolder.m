@@ -8,9 +8,15 @@ function folderPath = getUmitFolder(subFolder, opts)
 %
 %   Returns the UMIT configuration root folder:
 %
-%       <USER>/Documents/LabeoTech/Config/umIT
+%       <USER>/Documents/LabeoTech/umIT
 %
-%   or a requested relative subfolder below it.
+%   or a requested relative subfolder below it. The root holds the project
+%   store ('projects'), the rig library ('rigs') and the preferences.
+%
+%   Root override: when the environment variable UMIT_ROOT is set to a
+%   non-empty absolute folder path, that folder is the root instead. Tests
+%   set it through UMITTemporaryRootFixture so that they never read or
+%   write the real stores. An empty value means "not set".
 %
 %   Inputs:
 %       subFolder - Optional relative folder path below the UMIT root.
@@ -37,13 +43,18 @@ arguments
     opts.create (1,1) logical = true
 end
 
-if ispc
-    root = getenv('USERPROFILE');
-else
-    root = getenv('HOME');
+folderPath = strtrim(getenv('UMIT_ROOT'));
+if isempty(folderPath)
+    if ispc
+        root = getenv('USERPROFILE');
+    else
+        root = getenv('HOME');
+    end
+    folderPath = fullfile(root, 'Documents', 'LabeoTech','umIT');
+elseif ~iIsAbsolutePath(folderPath)
+    error('Umitoolbox:UmitFolder:invalidRootOverride', ...
+        'UMIT_ROOT must be an absolute folder path, got "%s".', folderPath);
 end
-
-folderPath = fullfile(root, 'Documents', 'LabeoTech','umIT');
 
 subFolder = strtrim(subFolder);
 
@@ -76,4 +87,10 @@ if ~isfolder(folderPath)
     end
 end
 
+end
+
+function tf = iIsAbsolutePath(folderPath)
+%IISABSOLUTEPATH True for a drive, UNC or root-anchored path.
+tf = startsWith(folderPath, {'/', '\'}) || ...
+    ~isempty(regexp(folderPath, '^[A-Za-z]:[\\/]', 'once'));
 end

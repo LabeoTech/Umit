@@ -1,4 +1,4 @@
-classdef TestHemoCompute < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestHemoCompute < matlab.unittest.TestCase
     %TESTHEMOCOMPUTE Unit tests for HemoCompute.
     %
     %   These tests use small synthetic AcqInfos-driven datasets so the
@@ -106,7 +106,13 @@ classdef TestHemoCompute < matlab.unittest.TestCase
             iCreateSyntheticHemoDataset(folder, false);
             store = iCreateLibraryRig(testCase);
             iBindDatasetToRig(folder, store);
-            store.archiveRig();
+            % On a library where this rig is the Active one (an isolated
+            % test root), archiving needs a replacement to become Active.
+            replacement = '';
+            if strcmp(store.getRigInfo().status, 'active')
+                replacement = iCreateLibraryRig(testCase).getRigInfo().uuid;
+            end
+            store.archiveRig(replacement);
             testCase.assertEqual(store.getRigInfo().status, 'archived');
 
             [HbO, ~] = iRunHb(folder, 'Illuminations', {'red','green'});

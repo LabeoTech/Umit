@@ -1,4 +1,4 @@
-classdef TestEventsManagerPlot < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventsManagerPlot < matlab.unittest.TestCase
     %TESTEVENTSMANAGERPLOT Smoke tests for plotting behavior.
 
     properties

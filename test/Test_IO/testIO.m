@@ -1,4 +1,4 @@
-classdef testIO < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) testIO < matlab.unittest.TestCase
     %TESTIO Unit tests for UMT data packaging and raw/UMT I/O.
     %
     %   This suite covers:

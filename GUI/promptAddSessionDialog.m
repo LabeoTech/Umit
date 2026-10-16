@@ -12,8 +12,8 @@ function sessionInfo = promptAddSessionDialog(callerFigure, subjectInfo, saveFol
 
 sessionInfo = [];
 inferredDate = getSessionAcquisitionDatePrefill(saveFolder);
-% The session's rig mirrors the rig bound in the SaveFolder's rig ledger
-% (read-only preview; no Active-rig fallback).
+% Read-only preview of the SaveFolder's rig (its rig ledger); sessions keep
+% no rig of their own.
 rigPreviewText = describeFolderRigLedger(saveFolder).displayText;
 
 dialogFigure = uifigure( ...
@@ -65,9 +65,9 @@ rigLabel.Layout.Row = 5;
 rigLabel.Layout.Column = 1;
 rigField = uieditfield(grid, 'text', ...
     'Value', rigPreviewText, 'Editable', 'off', ...
-    'Tooltip', ['The session records the rig bound in this SaveFolder''s ' ...
-    'rig ledger (empty when the folder is not bound). Bind or rebind it ' ...
-    'in DataViewer: Management > Rig > Folder Rig.']);
+    'Tooltip', ['The rig bound in this SaveFolder''s rig ledger (read only). ' ...
+    'Sessions do not store a rig. Bind or rebind it in DataViewer: ' ...
+    'Management > Rig > Folder Rig.']);
 rigField.Layout.Row = 5;
 rigField.Layout.Column = 2;
 

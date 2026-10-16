@@ -1,4 +1,4 @@
-classdef TestSourceInfoFields < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestSourceInfoFields < matlab.unittest.TestCase
     %TESTSOURCEINFOFIELDS The closed whitelist of injectable per-data metadata (Phase 6b-2).
 
     methods (Test)

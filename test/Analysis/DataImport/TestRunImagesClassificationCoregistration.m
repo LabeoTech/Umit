@@ -1,4 +1,4 @@
-classdef TestRunImagesClassificationCoregistration < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestRunImagesClassificationCoregistration < matlab.unittest.TestCase
 %TESTRUNIMAGESCLASSIFICATIONCOREGISTRATION Functional tests for
 %ImagesClassification.m's dual-camera coregistration path added this
 %session: preferring the rig's active cameraCoregistration managed resource
@@ -8,10 +8,11 @@ classdef TestRunImagesClassificationCoregistration < matlab.unittest.TestCase
 %   D:\UMIT-DEV\Test2Cam (never reads/writes the original -- only the raw
 %   .bin/info.txt files are copied into an isolated temp RawFolder per test).
 %
-%   UMITRigStore.getRigsRoot() is a single, non-redirectable real folder (see
-%   test/RigManagement/TestUMITRigStore.m for the same constraint). Each test
-%   snapshots UMITRigStore.listRigs() before/after and removes exactly the
-%   rig folder(s) that appeared, so real pre-existing rigs are never touched.
+%   The rig library is redirected to a temporary folder by the shared
+%   UMITTemporaryRootFixture. Each test still snapshots
+%   UMITRigStore.listRigs() before/after and removes exactly the rig
+%   folder(s) that appeared, because the temporary root is shared by
+%   consecutive test classes.
 
     properties (Constant)
         SourceRawFolder = 'D:\UMIT-DEV\Test2Cam';
@@ -185,7 +186,7 @@ classdef TestRunImagesClassificationCoregistration < matlab.unittest.TestCase
 
             ledger = UMITRigLedger.read(saveFolder);
             types = cellfun(@(e) e.type, ledger.events, 'UniformOutput', false);
-            testCase.verifyEqual(types, {'bind', 'commit', 'reimport', 'commit'});
+            testCase.verifyEqual(types, {'bind', 'commit', 'freshImport', 'commit'});
             testCase.verifyEqual(ledger.state, 'BoundCommitted');
             testCase.verifyEqual(ledger.commitments.coregistration, ...
                 UMITRigLedger.bindingFromRig(rigStore).coregistration.hash);
@@ -204,7 +205,7 @@ classdef TestRunImagesClassificationCoregistration < matlab.unittest.TestCase
             ledger = UMITRigLedger.read(saveFolder);
             expected = UMITRigLedger.bindingFromRig(rigB);
             types = cellfun(@(e) e.type, ledger.events, 'UniformOutput', false);
-            testCase.verifyEqual(types, {'bind', 'commit', 'reimport', 'rebind', 'commit'});
+            testCase.verifyEqual(types, {'bind', 'commit', 'freshImport', 'rebind', 'commit'});
             testCase.verifyEqual(ledger.state, 'BoundCommitted');
             testCase.verifyFalse(ledger.hadConflict);
             testCase.verifyEqual(ledger.binding.opticsHash, expected.optics.hash);
@@ -212,32 +213,32 @@ classdef TestRunImagesClassificationCoregistration < matlab.unittest.TestCase
             testCase.verifyEqual(rigResolution.rigUUID, rigB.getRigInfo().uuid);
         end
 
-        function testReimportWithDifferentOpticsAfterCommitIsRefused(testCase)
+        function testFreshImportWithDifferentOpticsAfterCommitRebinds(testCase)
+        %TESTFRESHIMPORTWITHDIFFERENTOPTICSAFTERCOMMITREBINDS A re-import is a
+        %fresh import: it resets the optics commitment too, so a different
+        %Active Rig is bound without conflict (the former reimportConflict
+        %guard was removed, Bruno 2026-10-15).
+
             rigA = testCase.createCoregisteredRig({'LED_632nm', 'LED_521nm'}, [3 -2]);
-            saveFolder = fullfile(testCase.TempRoot, 'SaveConflict');
+            saveFolder = fullfile(testCase.TempRoot, 'SaveFresh');
             mkdir(saveFolder);
             ImagesClassification(testCase.RawFolder, saveFolder, 'backupOpts', 'ERASE');
-            % Simulate an optics consumer (HemoCompute, Phase 4).
+            % Simulate an optics consumer (HemoCompute).
             UMITRigLedger.commit(saveFolder, 'optics', ...
                 UMITRigLedger.bindingFromRig(rigA).optics.hash, 'Origin', 'test');
-            ledgerBefore = fileread(UMITRigLedger.filePath(saveFolder));
-            datBefore = dir(fullfile(saveFolder, '*.dat'));
 
-            testCase.createCoregisteredRig({'LED_593nm', 'LED_521nm'}, [1 1]);
-            try
-                ImagesClassification(testCase.RawFolder, saveFolder, 'backupOpts', 'ERASE');
-                testCase.verifyFail('Expected a re-import conflict error.');
-            catch ME
-                testCase.verifyEqual(ME.identifier, 'Umitoolbox:RigLedger:reimportConflict');
-                testCase.verifySubstring(ME.message, saveFolder);
-                testCase.verifySubstring(ME.message, rigA.getRigInfo().displayName);
-            end
+            rigB = testCase.createCoregisteredRig({'LED_593nm', 'LED_521nm'}, [1 1]);
+            ImagesClassification(testCase.RawFolder, saveFolder, 'backupOpts', 'ERASE');
 
-            % Refused before any file was touched.
-            testCase.verifyEqual(fileread(UMITRigLedger.filePath(saveFolder)), ledgerBefore);
-            datAfter = dir(fullfile(saveFolder, '*.dat'));
-            testCase.verifyEqual({datAfter.name}, {datBefore.name});
-            testCase.verifyEqual([datAfter.datenum], [datBefore.datenum]);
+            ledger = UMITRigLedger.read(saveFolder);
+            expected = UMITRigLedger.bindingFromRig(rigB);
+            types = cellfun(@(e) e.type, ledger.events, 'UniformOutput', false);
+            testCase.verifyEqual(types, {'bind', 'commit', 'commit', 'freshImport', 'rebind', 'commit'});
+            testCase.verifyEqual(ledger.state, 'BoundCommitted');
+            testCase.verifyFalse(ledger.hadConflict);
+            testCase.verifyEqual(ledger.binding.opticsHash, expected.optics.hash);
+            testCase.verifyEmpty(ledger.commitments.optics);
+            testCase.verifyEqual(ledger.commitments.coregistration, expected.coregistration.hash);
         end
 
         function testReimportWithoutActiveResourceKeepsOpticsBinding(testCase)
@@ -257,7 +258,7 @@ classdef TestRunImagesClassificationCoregistration < matlab.unittest.TestCase
 
             ledger = UMITRigLedger.read(saveFolder);
             types = cellfun(@(e) e.type, ledger.events, 'UniformOutput', false);
-            testCase.verifyEqual(types, {'bind', 'commit', 'reimport', 'rebind'});
+            testCase.verifyEqual(types, {'bind', 'commit', 'freshImport', 'rebind'});
             testCase.verifyEqual(ledger.binding.opticsHash, opticsHash);
             testCase.verifyEmpty(ledger.binding.coregistrationHash);
             testCase.verifyEqual(ledger.state, 'BoundUncommitted');

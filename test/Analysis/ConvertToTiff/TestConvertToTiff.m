@@ -1,4 +1,4 @@
-classdef TestConvertToTiff < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestConvertToTiff < matlab.unittest.TestCase
     %TESTCONVERTTOTIFF Unit tests for ConvertToTiff.
     %
     % Contract: .dat input only (Y-X-T, Y-X-T-E, or a single Y-X frame);

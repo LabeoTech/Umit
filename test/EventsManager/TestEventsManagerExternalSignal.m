@@ -1,4 +1,4 @@
-classdef TestEventsManagerExternalSignal < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventsManagerExternalSignal < matlab.unittest.TestCase
     %TESTEVENTSMANAGEREXTERNALSIGNAL Unit tests for getTriggersFromSignal.
 
     properties

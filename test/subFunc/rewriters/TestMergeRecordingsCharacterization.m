@@ -1,4 +1,4 @@
-classdef TestMergeRecordingsCharacterization < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestMergeRecordingsCharacterization < matlab.unittest.TestCase
     %TESTMERGERECORDINGSCHARACTERIZATION mergeRecordings keeps its merged data and events.
     %
     %   .dat header Phase 4e-3. fixtures/mergeRecordingsReference.mat was

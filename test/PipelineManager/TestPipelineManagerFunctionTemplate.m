@@ -1,4 +1,4 @@
-classdef TestPipelineManagerFunctionTemplate < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestPipelineManagerFunctionTemplate < matlab.unittest.TestCase
     %TESTPIPELINEMANAGERFUNCTIONTEMPLATE Validate the analysis templates.
 
     properties

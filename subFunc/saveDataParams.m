@@ -84,26 +84,14 @@ else
     DataParams.folders.RawFolderSetBy = char(string(DataParams.folders.RawFolderSetBy));
 end
 
-if ~isfield(DataParams, 'registration') || ...
-        ~isstruct(DataParams.registration) || ...
-        ~isscalar(DataParams.registration)
+if ~isfield(DataParams, 'registration')
     DataParams.registration = struct();
 end
-
-registrationProvenanceDefaults = struct( ...
-    'imageReferenceUUID', '', ...
-    'imageReferenceChecksum', '');
-provenanceFields = fieldnames(registrationProvenanceDefaults);
-for k = 1:numel(provenanceFields)
-    thisField = provenanceFields{k};
-    if ~isfield(DataParams.registration, thisField)
-        DataParams.registration.(thisField) = ...
-            registrationProvenanceDefaults.(thisField);
-    else
-        DataParams.registration.(thisField) = char(string( ...
-            DataParams.registration.(thisField)));
-    end
+viewInfo = struct();
+if isfield(DataParams, 'view')
+    viewInfo = DataParams.view;
 end
+DataParams.registration = upgradeRegistrationRecord(DataParams.registration, viewInfo);
 
 end
 

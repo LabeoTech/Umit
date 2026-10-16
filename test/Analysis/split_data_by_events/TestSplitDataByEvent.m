@@ -1,4 +1,4 @@
-classdef TestSplitDataByEvent < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestSplitDataByEvent < matlab.unittest.TestCase
     properties
         ProjectRoot
         SampleDataFolder

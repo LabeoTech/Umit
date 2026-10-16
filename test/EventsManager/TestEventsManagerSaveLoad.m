@@ -1,4 +1,4 @@
-classdef TestEventsManagerSaveLoad < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventsManagerSaveLoad < matlab.unittest.TestCase
     %TESTEVENTSMANAGERSAVELOAD Round-trip tests for events.mat persistence.
 
     properties

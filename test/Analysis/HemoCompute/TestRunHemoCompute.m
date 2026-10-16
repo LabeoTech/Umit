@@ -1,4 +1,4 @@
-classdef TestRunHemoCompute < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestRunHemoCompute < matlab.unittest.TestCase
     %TESTRUNHEMOCOMPUTE Unit tests for HemoCompute.
     %
     %   These tests use synthetic AcqInfos-driven datasets to verify wrapper

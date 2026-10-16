@@ -1,4 +1,4 @@
-classdef TestDatFormatLoading < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestDatFormatLoading < matlab.unittest.TestCase
     %TESTDATFORMATLOADING loadMetaData, loadData, and mapDat on every readable .dat kind.
     %
     %   Kinds covered (.dat header Phase 2, updated in Phase 5b):

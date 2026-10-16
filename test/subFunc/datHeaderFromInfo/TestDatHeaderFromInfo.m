@@ -1,4 +1,4 @@
-classdef TestDatHeaderFromInfo < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestDatHeaderFromInfo < matlab.unittest.TestCase
     %TESTDATHEADERFROMINFO Output header descriptions from a source Info.
     %
     %   .dat header Phase 4c-2a: datHeaderFromInfo copies class, axes,

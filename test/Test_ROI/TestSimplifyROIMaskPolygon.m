@@ -1,4 +1,4 @@
-classdef TestSimplifyROIMaskPolygon < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestSimplifyROIMaskPolygon < matlab.unittest.TestCase
     %TESTSIMPLIFYROIMASKPOLYGON Tests compact, topology-preserving ROI polygons.
 
     methods (Test)

@@ -1,6 +1,7 @@
 function ImageReference = genImageReferenceStruct(imageData, varargin)
-%GENIMAGEREFERENCESTRUCT Create a canonical UMIT ImageReference structure.
+%GENIMAGEREFERENCESTRUCT Create a canonical UMIT ImageReference structure (v2).
 %
+%   ImageReference = genImageReferenceStruct(imageData, 'Name', name)
 %   ImageReference = genImageReferenceStruct(imageData, ...
 %       'Name', name, ...
 %       'ProjectUUID', projectUUID, ...
@@ -23,19 +24,22 @@ function ImageReference = genImageReferenceStruct(imageData, varargin)
 %       'ManualTransformTform', tform, ...
 %       'ManualTransformNote', note)
 %
-%   Creates an in-memory ImageReference payload. This function does not
-%   choose a destination folder or save a managed project resource. Use
-%   UMITProjectStore.addImageReference to import the resulting MAT-file.
+%   Creates an in-memory ImageReference payload (version 2). This function
+%   does not choose a destination folder or save anything. Use
+%   UMITProjectStore.addImageReference to import the resulting MAT-file into
+%   a subject library, or exportImageReferenceFile to write a standalone
+%   reference file (projects are optional).
 %
 %   Inputs:
 %       imageData - Non-empty numeric or logical 2-D image.
 %
-%   Required name-value arguments:
+%   Required name-value argument:
 %       Name        - User-facing reference name.
-%       ProjectUUID - Immutable project UUID.
-%       ProjectName - Project display name.
-%       SubjectUUID - Immutable subject UUID.
-%       SubjectID   - Current subject ID.
+%
+%   Optional identity (version 2): all may be empty.
+%       ProjectUUID, ProjectName - both or neither. Default: ''
+%       SubjectUUID, SubjectID   - both or neither; a subject needs a
+%                                  project. Default: ''
 %
 %   Optional name-value arguments:
 %       SessionUUID            - Source session UUID. Default: ''
@@ -62,6 +66,8 @@ function ImageReference = genImageReferenceStruct(imageData, varargin)
 %   Notes:
 %       - Images are stored as finite single-precision matrices.
 %       - Non-finite image values are replaced by zero.
+%       - contentHash is computeImageContentHash(image) and is checked by
+%         validateImageReferenceStruct.
 %       - Managed filenames, paths, checksums, and resource UUIDs are not
 %         embedded in this payload. Those belong to UMITProjectStore.
 
@@ -104,13 +110,16 @@ addParameter(p, 'CreatedOn', datetime('now'), ...
 parse(p, varargin{:});
 R = p.Results;
 
-requiredText = {'Name', 'ProjectUUID', 'ProjectName', ...
-    'SubjectUUID', 'SubjectID'};
-for iField = 1:numel(requiredText)
-    fieldName = requiredText{iField};
-    if strlength(strtrim(string(R.(fieldName)))) == 0
-        error(errID, '"%s" cannot be empty.', fieldName);
-    end
+if strlength(strtrim(string(R.Name))) == 0
+    error(errID, '"Name" cannot be empty.');
+end
+if xor(strlength(strtrim(string(R.ProjectUUID))) == 0, ...
+        strlength(strtrim(string(R.ProjectName))) == 0)
+    error(errID, '"ProjectUUID" and "ProjectName" must either both be empty or both be provided.');
+end
+if xor(strlength(strtrim(string(R.SubjectUUID))) == 0, ...
+        strlength(strtrim(string(R.SubjectID))) == 0)
+    error(errID, '"SubjectUUID" and "SubjectID" must either both be empty or both be provided.');
 end
 
 sessionUUID = char(string(R.SessionUUID));
@@ -136,12 +145,12 @@ else
     manualAppliedOn = NaT;
 end
 
-imageData = single(imageData);
-imageData(~isfinite(imageData)) = 0;
+[contentHash, imageData] = computeImageContentHash(imageData);
 
 ImageReference = struct();
-ImageReference.version = 1;
+ImageReference.version = 2;
 ImageReference.image = imageData;
+ImageReference.contentHash = contentHash;
 ImageReference.name = char(string(R.Name));
 ImageReference.description = char(string(R.Description));
 ImageReference.projectUUID = lower(char(string(R.ProjectUUID)));

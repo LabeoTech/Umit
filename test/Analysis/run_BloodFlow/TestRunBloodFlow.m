@@ -1,4 +1,4 @@
-classdef TestRunBloodFlow < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestRunBloodFlow < matlab.unittest.TestCase
     %TESTRUNBLOODFLOW Unit tests for run_BloodFlow.
     %
     % Uses the real fixture folder:

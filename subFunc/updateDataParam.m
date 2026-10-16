@@ -57,17 +57,6 @@ if strcmp(fieldPath, 'mask.logical')
     end
 end
 
-if strcmp(fieldPath, 'registration.tform')
-    if ~isempty(fieldValue)
-        DataParams.registration.isRegistered = true;
-        if isempty(DataParams.registration.createdOn)
-            DataParams.registration.createdOn = datetime('now');
-        end
-    else
-        DataParams.registration.isRegistered = false;
-    end
-end
-
 if strcmp(fieldPath, 'folders.RawFolder')
     DataParams.folders.RawFolder = char(string(DataParams.folders.RawFolder));
     DataParams.folders.RawFolderStatus = iInferRawFolderStatus(DataParams.folders.RawFolder);
@@ -99,7 +88,7 @@ if ~isfield(S, thisField)
         'Unknown field: %s', strjoin(parts, '.'));
 end
 
-if numel(parts) == 1
+if isscalar(parts)
     S.(thisField) = value;
     return
 end

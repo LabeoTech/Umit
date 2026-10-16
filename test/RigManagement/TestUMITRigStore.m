@@ -1,15 +1,15 @@
-classdef TestUMITRigStore < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestUMITRigStore < matlab.unittest.TestCase
 %TESTUMITRIGSTORE Unit tests for centralized rig management (RigManagement/UMITRigStore.m).
 %
 %   Covers rig creation/discovery, the cameraCoregistration managed-resource
 %   lifecycle (add/setActive/archive/restore), and the new purgeResource method
 %   added for the DataViewer_Coreg2Cams UMITRigStore migration.
 %
-%   NOTE: UMITRigStore.getRigsRoot() resolves to a single, non-configurable real
-%   folder (getUmitFolder('rigs')), same constraint as UMITProjectStore. Like
-%   test/ProjectManagement/TestUMITProjectStore.m, these tests create real rigs
-%   under that real root and track the exact RigRoot/RigUUID created so teardown
-%   can remove precisely that folder -- never anything else under the root.
+%   UMITRigStore.getRigsRoot() resolves through getUmitFolder('rigs'), which
+%   the shared UMITTemporaryRootFixture redirects to a temporary folder: these
+%   tests never touch the real rig library. Teardown still removes exactly the
+%   RigRoot/RigUUID each test created, because the temporary root is shared
+%   by consecutive test classes.
 
     properties
         TempRoot

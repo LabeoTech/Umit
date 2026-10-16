@@ -1,4 +1,4 @@
-classdef TestSpatialSlabIO < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestSpatialSlabIO < matlab.unittest.TestCase
     %TESTSPATIALSLABIO Handle-based spatialSlabIO reads and the unchanged positional form.
     %
     %   Every handle-based read is compared with the matching part of the

@@ -1,4 +1,4 @@
-classdef TestEventsManagerFileBacked < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventsManagerFileBacked < matlab.unittest.TestCase
     %TESTEVENTSMANAGERFILEBACKED Integration tests for file-backed trigger detection.
 
     properties

@@ -16,13 +16,14 @@ function schema = getUMITProjectSchema(version)
 %                 naming rules, resource definitions, and validation rules.
 %
 %   Notes:
-%       - The centralized project folder stores metadata, image-reference
-%         files, and session registration-transform files only.
+%       - The centralized project folder stores metadata and image-reference
+%         files only. A folder's reference and alignment are recorded only
+%         in its DataParams.registration (project redesign, section 1.2).
 %       - Imaging data remains external and is referenced from metadata.
 %       - Rigs are independent of any project: rig metadata and rig-owned
 %         resources (dual-camera coregistration, calibration files) live in
-%         the separate UMITRigStore/getUMITRigSchema. A session only keeps a
-%         rigUUID/rigID pointer to an external rig -- it never owns one.
+%         the separate UMITRigStore/getUMITRigSchema, and a folder's rig is
+%         recorded in its rig ledger (UMITRigLedger). Sessions keep no rig.
 %       - Store only schema.version in project metadata. The complete
 %         schema definition remains centralized in this function.
 %       - Managed identifiers are case-insensitive for uniqueness checks
@@ -66,13 +67,14 @@ switch version
         schema.files.subjectMetadata = 'subject.mat';
         schema.files.sessionMetadata = 'session.mat';
         schema.files.lockMetadata = 'lockInfo.mat';
-        schema.files.projectBinding = 'UMITProjectBinding.umitlink';
+        % Folder binding: the project ledger (UMITProjectLedger), which
+        % replaced UMITProjectBinding.umitlink (brief section 1.9).
+        schema.files.projectBinding = 'UMITProjectLedger.json';
 
         schema.metadataVariables = struct();
         schema.metadataVariables.project = 'ProjectInfo';
         schema.metadataVariables.subject = 'SubjectInfo';
         schema.metadataVariables.session = 'SessionInfo';
-        schema.metadataVariables.projectBinding = 'ProjectBinding';
 
         schema.projectBinding = struct();
         schema.projectBinding.version = 1;
@@ -107,9 +109,6 @@ switch version
             'subjects/<SubjectID>/references/image/<State>';
         schema.pathTemplates.session = ...
             'subjects/<SubjectID>/sessions/<SessionID>';
-        schema.pathTemplates.sessionRegistration = ...
-            ['subjects/<SubjectID>/sessions/<SessionID>/' ...
-             'transforms/registration/<State>'];
 
         schema.nodeTypes = struct();
         schema.nodeTypes.project = struct( ...
@@ -123,6 +122,8 @@ switch version
             'allowedChildren', {{ ...
                 schema.folders.references, ...
                 schema.folders.sessions}});
+        % 'transforms' is a legacy child: sessions created before the
+        % registration-transform resources were retired may still have it.
         schema.nodeTypes.session = struct( ...
             'metadataFile', schema.files.sessionMetadata, ...
             'parentType', 'subject', ...
@@ -168,21 +169,16 @@ switch version
             'requiredVariable', 'ImageReference', ...
             'validatorFunction', 'validateImageReferenceStruct');
 
-        schema.resourceTypes.registrationTransform = struct( ...
-            'ownerType', 'session', ...
-            'filePrefix', 'SessionToReference', ...
-            'allowedExtensions', {{'.mat'}}, ...
-            'activePointerField', 'activeRegistrationTransformUUID', ...
-            'relativeFolderParts', {{ ...
-                schema.folders.transforms, ...
-                schema.folders.registration}}, ...
-            'requiredVariable', '', ...
-            'validatorFunction', '');
+        % Retired resource types: records of these types in existing
+        % metadata are tolerated (a validation warning), never written,
+        % listed or made active. registrationTransform: session transform
+        % files, retired by the project redesign (section 4, Q5/Q9);
+        % DataParams.registration is the only record of an alignment.
+        schema.retiredResourceTypes = {'registrationTransform'};
 
         % cameraCoregistration resources moved to the independent
-        % UMITRigStore/getUMITRigSchema -- rigs are no
-        % longer owned by a project, see requiredSessionFields.rigUUID/rigID
-        % for the pointer a session keeps to an external rig.
+        % UMITRigStore/getUMITRigSchema -- rigs are no longer owned by a
+        % project, and sessions keep no rig pointer (project redesign 1.12).
 
         % -----------------------------------------------------------------
         % Required metadata fields
@@ -249,11 +245,8 @@ switch version
             'rawDataBindingUUID', ...
             'processedDataFolder', ...
             'processedDataBindingUUID', ...
-            'rigUUID', ...
-            'rigID', ...
             'createdOn', ...
             'modifiedOn', ...
-            'activeRegistrationTransformUUID', ...
             'resourceRegistry'};
 
         schema.registryFields = { ...
@@ -286,12 +279,6 @@ switch version
             'sex', 'dateOfBirth', 'ageAtProjectEntry', 'ageReference', ...
             'weight_g', 'housing', 'diet', 'healthStatus', 'earTag', 'rfid', ...
             'notes'};
-        % rigUUID/rigID are intentionally excluded: they are a read-only
-        % mirror of the rig bound in the session SaveFolder's rig ledger
-        % (UMITRigLedger; empty when the folder is not bound), written only
-        % by addSession/migrateSessionRigAssignment and never accepted as
-        % caller input here. The fields stay in requiredSessionFields below
-        % (they may be empty).
         schema.editableFields.session = { ...
             'displayName', ...
             'description', ...

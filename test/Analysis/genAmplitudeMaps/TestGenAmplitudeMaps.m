@@ -1,4 +1,4 @@
-classdef TestGenAmplitudeMaps < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGenAmplitudeMaps < matlab.unittest.TestCase
     %TESTGENAMPLITUDEMAPS Unit tests for genAmplitudeMaps.
     %
     % Contract: event-split Y-X-T-E .dat input only (no internal split), a

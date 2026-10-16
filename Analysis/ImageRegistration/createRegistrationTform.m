@@ -7,9 +7,12 @@ function outFile = createRegistrationTform(SaveFolder, varargin)
 %
 %   This function resolves SaveFolder's UMIT project binding and estimates a
 %   2D geometric transform that aligns one image from the current folder to
-%   the subject's active project-managed Image Reference. The exact fixed
-%   image and managed-resource UUID/checksum provenance used for the estimate
-%   are stored in DataParams.registration with the transform and QC metadata.
+%   the subject's active project-managed Image Reference, resolved by the
+%   shared resolveImageReferenceSource (source kind 'project'). A copy of
+%   the reference image, its content hash and its source descriptor are
+%   stored in DataParams.registration.reference; the transform, the QC
+%   metadata and the hash it was estimated against in
+%   DataParams.registration.estimate (version-2 record).
 %
 %   This function does NOT modify any .dat files. It only estimates and
 %   stores the transform, generates QC artifacts, and updates
@@ -21,9 +24,25 @@ function outFile = createRegistrationTform(SaveFolder, varargin)
 %                    one or more .dat files.
 %
 %   Name-Value parameters:
+%       ReferenceSource - Where the fixed reference comes from (brief
+%                    section 1.4): a reference source struct for
+%                    resolveImageReferenceSource (kinds 'project', 'umitDat',
+%                    'file') or a file path (a .dat is a 'umitDat' source,
+%                    any other file a 'file' source: an exported reference
+%                    or a TIF/MAT/UMT image). Resolution order:
+%                      1) this parameter when given;
+%                      2) else, for a project-bound folder, the bound
+%                         subject's active Image Reference;
+%                      3) else an error (Umitoolbox:ImageRegistration:
+%                         noReferenceSource) explaining how to supply one.
+%                    Projects are optional. Default: '' (steps 2-3)
+%
 %       UseFile    - File used to build the moving image. Use:
-%                      'auto'  : .dat filename recorded in the active
-%                                ImageReference.sourceFile provenance
+%                      'auto'  : the .dat named in the active
+%                                ImageReference.sourceFile provenance when
+%                                the folder has it; otherwise the folder's
+%                                only Y-X-T .dat file (several candidates
+%                                are an error: pass one explicitly)
 %                      <name>  : specific .dat file name
 %                    Default: 'auto'
 %
@@ -42,9 +61,16 @@ function outFile = createRegistrationTform(SaveFolder, varargin)
 %                    files: {DataParams.mat, QC .fig, QC .png}
 %
 %   Notes:
-%       - SaveFolder must have a valid UMITProjectBinding.umitlink whose
+%       - SaveFolder must be bound (UMITProjectLedger.json) to a session whose
 %         subject has an active, available managed Image Reference.
 %       - Folder-local reference images are not used as a fallback.
+%       - An aligned folder is refused
+%         (Umitoolbox:ImageRegistration:alreadyAligned): only a fresh import
+%         reopens alignment. The apply record is never modified here.
+%       - The stored transform maps the folder's own image coordinates into
+%         reference coordinates (the moving image is resized to the
+%         reference for the estimate and the resize is composed back in),
+%         which is the convention of applyImageAlignmentToFolder.
 %       - Managed Image Reference resources are read but never modified.
 %       - QC metrics are advisory only and do not replace visual review.
 %       - The QC artifacts are timestamped and saved in SaveFolder.
@@ -90,6 +116,8 @@ addParameter(p, 'ShowFigure', defaultShowFigure, ...
 addParameter(p, 'RefStatistic', defaultRefStatistic, ...
     @(x) (ischar(x) || (isstring(x) && isscalar(x))) && ...
     ismember(lower(char(string(x))), {'mean','median','first'}));
+addParameter(p, 'ReferenceSource', '', ...
+    @(x) isstruct(x) || ischar(x) || (isstring(x) && isscalar(x)));
 
 parse(p, SaveFolder, varargin{:});
 
@@ -97,6 +125,7 @@ SaveFolder = char(string(p.Results.SaveFolder));
 UseFile = char(string(p.Results.UseFile));
 ShowFigure = p.Results.ShowFigure;
 RefStatistic = lower(char(string(p.Results.RefStatistic)));
+ReferenceSource = p.Results.ReferenceSource;
 
 clear p
 
@@ -108,13 +137,26 @@ assert(isfile(dataParamsFile), ...
     'Umitoolbox:createRegistrationTform:MissingDataParams', ...
     'DataParams.mat was not found in "%s".', SaveFolder);
 
-[~, managedReference, ImageReference] = ...
-    iResolveManagedImageReference(SaveFolder);
-refFr = single(ImageReference.image);
-
-% Load only after managed-reference validation. loadDataParams normalizes
-% older DataParams files in memory without writing them.
+% loadDataParams normalizes older DataParams files in memory without
+% writing them. An aligned folder is committed to its alignment: estimating
+% again is refused before anything is resolved or written.
 DataParams = loadDataParams(SaveFolder);
+operation = 'Estimating the image alignment';
+if DataParams.registration.apply.isRegistered
+    % Name the requested reference in the refusal when it can be resolved.
+    requested = [];
+    try
+        requested = iResolveReference(SaveFolder, ReferenceSource);
+    catch
+    end
+    assertFolderCanBeAligned(SaveFolder, DataParams, operation, requested);
+end
+
+% The reference, through the shared resolver (resolveImageReferenceSource):
+% the explicit ReferenceSource, else the bound subject's active reference.
+reference = iResolveReference(SaveFolder, ReferenceSource);
+refFr = reference.image;
+
 if ~isempty(DataParams.view.imageSizeYX) && ...
         ~isequal(size(refFr), double(DataParams.view.imageSizeYX(:).'))
     error('Umitoolbox:createRegistrationTform:ReferenceSizeMismatch', ...
@@ -127,7 +169,7 @@ end
 % -------------------------------------------------------------------------
 % Resolve moving-image source file
 % -------------------------------------------------------------------------
-targetFile = iResolveTargetFile(SaveFolder, UseFile, ImageReference);
+targetFile = iResolveTargetFile(SaveFolder, UseFile, reference.sourceFile);
 
 % -------------------------------------------------------------------------
 % Load moving image from file
@@ -139,8 +181,12 @@ assert(~isempty(targetFr) && isnumeric(targetFr) && ismatrix(targetFr), ...
     'Failed to build a valid 2D moving image from "%s".', targetFile);
 
 targetFr = single(targetFr);
+movingSizeYX = size(targetFr);
 
-% Resize moving image if needed so registration steps are well-defined.
+% Resize moving image if needed so registration steps are well-defined. The
+% stored transform is composed with this resize afterwards, so it always
+% maps the folder's own image coordinates into reference coordinates (the
+% convention of the shared apply backend applyImageAlignmentToFolder).
 if any(size(targetFr) ~= size(refFr))
     targetFr = imresize(targetFr, size(refFr));
 end
@@ -247,10 +293,15 @@ counts = histcounts2(refFrMask(:), registeredMask(:), metric.NumberOfHistogramBi
 MIAfter = iMutualInformation(counts);
 MIDelta = MIAfter - MIBefore;
 
+% QC metrics describe the estimated (resized-frame) transform; the stored
+% transform maps native moving coordinates.
+qcTform = tform;
+tform = iComposeMovingResize(tform, movingSizeYX, size(refFr));
+
 % -------------------------------------------------------------------------
 % Derive QC metrics
 % -------------------------------------------------------------------------
-tformQC = getTformQCMetrics(tform);
+tformQC = getTformQCMetrics(qcTform);
 translationXY = tformQC.translationXY;
 rotationDeg = tformQC.rotationDeg;
 scaleXY = tformQC.scaleXY;
@@ -303,26 +354,27 @@ else
 end
 
 % -------------------------------------------------------------------------
-% Update DataParams.registration
+% Update the estimate fields of DataParams.registration. The apply record
+% (isRegistered, isReviewed, applied*, confirmationMode) is never touched
+% here: the guard above guarantees the folder is not aligned.
 % -------------------------------------------------------------------------
-DataParams.registration.isRegistered = false;
-DataParams.registration.isReviewed = false;
-DataParams.registration.tform = tform;
-DataParams.registration.transformType = 'similarity';
-DataParams.registration.method = ...
-    'imregcorr initialization + multimodal imregtform optimization';
-DataParams.registration.referenceDescription = iReferenceDescription( ...
-    managedReference, ImageReference);
-DataParams.registration.referenceFile = managedReference.absolutePath;
-DataParams.registration.referenceImage = refFr;
-DataParams.registration.imageReferenceUUID = managedReference.uuid;
-DataParams.registration.imageReferenceChecksum = managedReference.checksum;
-DataParams.registration.createdOn = char( ...
-    datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
-DataParams.registration.source = targetFile;
-DataParams.registration.qcStatus = qcStatus;
-DataParams.registration.qcWarning = qcWarning;
-DataParams.registration.qcMetrics = struct( ...
+[~, referenceTemplate, estimateTemplate] = newRegistrationRecord();
+createdOn = char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss'));
+
+referenceRecord = referenceTemplate;
+for fieldName = {'image', 'contentHash', 'name', 'description', 'axisConvention', ...
+        'imageSizeYX', 'source'}
+    referenceRecord.(fieldName{1}) = reference.(fieldName{1});
+end
+referenceRecord.selectedOn = createdOn;
+
+estimate = estimateTemplate;
+estimate.tform = tform;
+estimate.transformType = 'similarity';
+estimate.method = 'imregcorr initialization + multimodal imregtform optimization';
+estimate.qcStatus = qcStatus;
+estimate.qcWarning = qcWarning;
+estimate.qcMetrics = struct( ...
     'MIBefore', MIBefore, ...
     'MIAfter', MIAfter, ...
     'MIDelta', MIDelta, ...
@@ -330,13 +382,14 @@ DataParams.registration.qcMetrics = struct( ...
     'rotationDeg', rotationDeg, ...
     'scaleXY', scaleXY, ...
     'determinant', determinantVal);
-DataParams.registration.qcFigureFile = qcFigName;
-DataParams.registration.qcPreviewImageFile = qcPngName;
-DataParams.registration.appliedOn = '';
-DataParams.registration.appliedBy = '';
-DataParams.registration.confirmationMode = '';
-DataParams.registration.notes = '';
-DataParams.registration.resourceUUID = '';
+estimate.qcFigureFile = qcFigName;
+estimate.qcPreviewImageFile = qcPngName;
+estimate.createdOn = createdOn;
+estimate.movingSource = targetFile;
+estimate.referenceHash = reference.contentHash;
+
+DataParams.registration.reference = referenceRecord;
+DataParams.registration.estimate = estimate;
 
 validateDataParams(DataParams);
 saveDataParams(SaveFolder, DataParams);
@@ -348,16 +401,17 @@ function info = localPipelineInfo()
 
 info = PipelineManager.createPipelineInfo( ...
     mfilename, ...
-    ['Estimate and store a folder registration transform using the bound ' ...
-     'subject''s active project-managed Image Reference.']);
+    ['Estimate and store a folder registration transform against a reference: ' ...
+     'the ReferenceSource given, else the bound subject''s active project-managed ' ...
+     'Image Reference.']);
 
 info = PipelineManager.addInput( ...
     info, ...
     'SaveFolder', ...
     'SaveFolder', ...
-    ['Project-bound folder containing DataParams.mat, AcqInfos.mat, and ' ...
-     'source .dat files. Its subject must have an active managed Image ' ...
-     'Reference.'], ...
+    ['Folder containing DataParams.mat, AcqInfos.mat, and source .dat files. ' ...
+     'Without ReferenceSource it must be project-bound and its subject must ' ...
+     'have an active managed Image Reference.'], ...
     'kind', 'input', ...
     'position', 1, ...
     'callType', 'positional', ...
@@ -368,8 +422,9 @@ info = PipelineManager.addInput( ...
     'UseFile', ...
     'parameter', ...
     ['Specific .dat file used to build the moving image. With ''auto'', ' ...
-     'use the same .dat filename recorded in the active ' ...
-     'ImageReference.sourceFile; do not fall back to another .dat file.'], ...
+     'use the .dat named in the active ImageReference.sourceFile when the ' ...
+     'folder has it, otherwise the folder''s only Y-X-T .dat file; several ' ...
+     'candidates are an error.'], ...
     'kind', 'parameter', ...
     'default', defaultUseFile, ...
     'callType', 'namevalue');
@@ -382,6 +437,18 @@ info = PipelineManager.addInput( ...
     'kind', 'parameter', ...
     'default', defaultShowFigure, ...
     'allowed', [true false], ...
+    'callType', 'namevalue');
+
+info = PipelineManager.addInput( ...
+    info, ...
+    'ReferenceSource', ...
+    'parameter', ...
+    ['Reference file: a .dat of a UMIT save folder (mean of up to 100 evenly ' ...
+     'spaced frames), an exported image reference (.mat) or a TIF/MAT/UMT image. ' ...
+     'Empty: the bound subject''s active Image Reference. A .dat source from an ' ...
+     'already aligned folder is allowed with a warning.'], ...
+    'kind', 'parameter', ...
+    'default', '', ...
     'callType', 'namevalue');
 
 info = PipelineManager.addInput( ...
@@ -415,9 +482,30 @@ end
 % Local helpers
 % =========================================================================
 
-function [bindingContext, resource, ImageReference] = ...
-        iResolveManagedImageReference(saveFolder)
-%IRESOLVEMANAGEDIMAGEREFERENCE Resolve and validate the fixed image source.
+function reference = iResolveReference(saveFolder, referenceSource)
+%IRESOLVEREFERENCE Resolution order of the reference (brief section 3, Phase 4).
+
+if ~(ischar(referenceSource) || isstring(referenceSource)) || strlength(string(referenceSource)) > 0
+    reference = resolveImageReferenceSource( ...
+        normalizeReferenceSourceInput(referenceSource), 'Interactive', false);
+    return
+end
+switch UMITProjectStore.getProjectBindingState(saveFolder)
+    case 'unbound'
+        error('Umitoolbox:ImageRegistration:noReferenceSource', ...
+            ['Estimating the image alignment was refused for folder "%s".\nWhy: no reference ' ...
+             'source was given and the folder is not bound to a project.\nHow to fix:\n' ...
+             '  (1) Pass ''ReferenceSource'': a .dat of a UMIT save folder, an exported ' ...
+             'image reference (.mat), or a TIF/MAT/UMT image.\n' ...
+             '  (2) Or bind the folder to a project session whose subject has an active ' ...
+             'Image Reference.'], saveFolder);
+    otherwise
+        reference = iResolveProjectReference(saveFolder);
+end
+end
+
+function reference = iResolveProjectReference(saveFolder)
+%IRESOLVEPROJECTREFERENCE The bound subject's active library reference.
 
 try
     [bindingContext, store] = ...
@@ -428,137 +516,85 @@ catch ME
          'No folder-local reference was used. %s'], saveFolder, ME.message);
 end
 
-try
-    resource = store.getActiveImageReference(bindingContext.subjectID);
-catch ME
-    error( ...
-        'Umitoolbox:createRegistrationTform:ActiveImageReferenceResolutionFailed', ...
-        ['Could not resolve the active managed Image Reference for subject ' ...
-         'UUID %s. %s'], bindingContext.subjectUUID, ME.message);
+reference = resolveImageReferenceSource(struct( ...
+    'kind', 'project', ...
+    'store', store, ...
+    'subjectID', bindingContext.subjectID), 'Interactive', false);
 end
 
-if isempty(resource)
-    error('Umitoolbox:createRegistrationTform:NoActiveImageReference', ...
-        ['Subject "%s" (%s) has no active managed Image Reference. ' ...
-         'Select one in Image Reference Manager before estimating registration.'], ...
-        bindingContext.subjectID, bindingContext.subjectUUID);
+function tform = iComposeMovingResize(tform, movingSizeYX, refSizeYX)
+%ICOMPOSEMOVINGRESIZE Express TFORM in the native moving-image coordinates.
+%
+% The estimate runs on the moving image resized to the reference size.
+% imresize maps intrinsic coordinate u to s*(u - 0.5) + 0.5 per axis, so the
+% stored transform is TFORM applied after that scaling. It must stay a
+% similarity transform (uniform scale): an aspect-ratio change cannot be
+% applied by the shared backend.
+
+movingSizeYX = double(movingSizeYX(1:2));
+refSizeYX = double(refSizeYX(1:2));
+if isequal(movingSizeYX, refSizeYX)
+    return
 end
 
-if ~strcmp(resource.type, 'imageReference') || ...
-        ~strcmp(resource.status, 'active') || ...
-        ~strcmpi(resource.ownerUUID, bindingContext.subjectUUID)
-    error('Umitoolbox:createRegistrationTform:InvalidActiveImageReference', ...
-        ['The resolved resource is not an active Image Reference owned by ' ...
-         'the SaveFolder subject.']);
+sx = refSizeYX(2) / movingSizeYX(2);
+sy = refSizeYX(1) / movingSizeYX(1);
+if abs(sx - sy) > 1e-9 * max(sx, sy)
+    error('Umitoolbox:createRegistrationTform:AnisotropicResize', ...
+        ['The folder image [%s] and the reference [%s] have different aspect ' ...
+         'ratios, so no similarity transform can map one onto the other.'], ...
+        num2str(movingSizeYX), num2str(refSizeYX));
 end
 
-if ~resource.fileExists || ~isfile(resource.absolutePath)
-    error('Umitoolbox:createRegistrationTform:MissingImageReferenceFile', ...
-        'The active managed Image Reference file is missing: %s', ...
-        resource.absolutePath);
+if isprop(tform, 'A')
+    A = double(tform.A);
+else
+    A = double(tform.T).';
+end
+S = [sx 0 0.5 - 0.5 * sx; 0 sy 0.5 - 0.5 * sy; 0 0 1];
+tform = affinetform2d(A * S);
 end
 
-try
-    actualChecksum = computeFileChecksum(resource.absolutePath);
-catch ME
-    error('Umitoolbox:createRegistrationTform:InvalidImageReferenceFile', ...
-        'Could not checksum the active managed Image Reference file: %s', ...
-        ME.message);
-end
-if ~strcmp(actualChecksum, resource.checksum)
-    error('Umitoolbox:createRegistrationTform:ImageReferenceChecksumMismatch', ...
-        ['The active managed Image Reference file does not match its ' ...
-         'registered SHA-256 checksum: %s'], resource.absolutePath);
-end
-
-try
-    loaded = load(resource.absolutePath, 'ImageReference', '-mat');
-catch ME
-    error('Umitoolbox:createRegistrationTform:InvalidImageReferenceFile', ...
-        'Could not load the active managed Image Reference file: %s', ...
-        ME.message);
-end
-if ~isfield(loaded, 'ImageReference')
-    error('Umitoolbox:createRegistrationTform:InvalidImageReferencePayload', ...
-        ['The active managed Image Reference file does not contain the ' ...
-         'required ImageReference variable: %s'], resource.absolutePath);
-end
-
-ImageReference = loaded.ImageReference;
-try
-    validateImageReferenceStruct(ImageReference);
-catch ME
-    error('Umitoolbox:createRegistrationTform:InvalidImageReferencePayload', ...
-        'The active managed Image Reference payload is invalid: %s', ...
-        ME.message);
-end
-
-if ~strcmpi(ImageReference.projectUUID, bindingContext.projectUUID) || ...
-        ~strcmpi(ImageReference.subjectUUID, bindingContext.subjectUUID)
-    error('Umitoolbox:createRegistrationTform:ImageReferenceIdentityMismatch', ...
-        ['The active Image Reference payload project/subject UUIDs do not ' ...
-         'match the resolved SaveFolder binding.']);
-end
-
-end
-
-
-function description = iReferenceDescription(resource, ImageReference)
-%IREFERENCEDESCRIPTION Choose the best managed-reference description.
-
-candidates = { ...
-    resource.description, ...
-    ImageReference.description, ...
-    resource.displayName, ...
-    ImageReference.name};
-
-description = '';
-for k = 1:numel(candidates)
-    candidate = strtrim(char(string(candidates{k})));
-    if ~isempty(candidate)
-        description = candidate;
-        return
-    end
-end
-
-end
-
-function targetFile = iResolveTargetFile(saveFolder, useFile, ImageReference)
+function targetFile = iResolveTargetFile(saveFolder, useFile, sourceFile)
 %IRESOLVETARGETFILE Resolve the .dat file used to estimate registration.
 
 if strcmpi(useFile, 'auto')
-    sourceFile = strtrim(char(string(ImageReference.sourceFile)));
-    if isempty(sourceFile)
-        error( ...
-            'Umitoolbox:createRegistrationTform:AutoSourceFileUnavailable', ...
-            ['UseFile=''auto'' requires the active Image Reference to record ' ...
-             'the source channel filename in ImageReference.sourceFile. ' ...
-             'Recreate the reference with source provenance or pass UseFile explicitly.']);
-    end
-
+    % 1) The .dat channel the reference was built from, when the folder has
+    %    a file of that name.
+    sourceFile = strtrim(char(string(sourceFile)));
     [~, sourceName, sourceExt] = fileparts(sourceFile);
     sourceFileName = [sourceName sourceExt];
-    if isempty(sourceFileName) || ~strcmpi(sourceExt, '.dat')
-        error( ...
-            'Umitoolbox:createRegistrationTform:AutoSourceFileNotDat', ...
-            ['UseFile=''auto'' requires the active Image Reference source ' ...
-             'to be a .dat channel, but its sourceFile is "%s". Pass a ' ...
-             'specific .dat filename with UseFile.'], sourceFile);
+    if strcmpi(sourceExt, '.dat') && isfile(fullfile(saveFolder, sourceFileName))
+        targetFile = fullfile(saveFolder, sourceFileName);
+        fprintf(['createRegistrationTform: UseFile=''auto'' selected "%s" ' ...
+            'from the Image Reference source provenance.\n'], sourceFileName);
+        return
     end
 
-    targetFile = fullfile(saveFolder, sourceFileName);
-    if ~isfile(targetFile)
-        error( ...
-            'Umitoolbox:createRegistrationTform:AutoSourceFileNotFound', ...
-            ['UseFile=''auto'' selected "%s" from the active Image ' ...
-             'Reference provenance, but that file was not found in "%s".'], ...
-            sourceFileName, saveFolder);
+    % 2) Otherwise (reference built from a TIF/MAT/UMT file, or from a .dat
+    %    of another name): the folder's only Y-X-T .dat. Several candidates
+    %    are never guessed between.
+    candidates = iYXTDatFiles(saveFolder);
+    if isscalar(candidates)
+        targetFile = fullfile(saveFolder, candidates{1});
+        fprintf(['createRegistrationTform: UseFile=''auto'' selected "%s", the ' ...
+            'only Y-X-T .dat file in the folder.\n'], candidates{1});
+        return
     end
-
-    fprintf(['createRegistrationTform: UseFile=''auto'' selected "%s" ' ...
-        'from the active Image Reference sourceFile provenance.\n'], ...
-        sourceFileName);
-    return
+    if isempty(sourceFile)
+        sourceText = 'records no source file';
+    else
+        sourceText = sprintf('was built from "%s"', sourceFile);
+    end
+    if isempty(candidates)
+        error('Umitoolbox:createRegistrationTform:AutoSourceFileNotFound', ...
+            ['UseFile=''auto'' found no Y-X-T .dat file in "%s" (the Image ' ...
+             'Reference %s).'], saveFolder, sourceText);
+    end
+    error('Umitoolbox:createRegistrationTform:AutoSourceFileAmbiguous', ...
+        ['UseFile=''auto'' cannot choose the moving image: the Image Reference %s, ' ...
+         'and "%s" holds several Y-X-T .dat files (%s). Pass one with UseFile.'], ...
+        sourceText, saveFolder, strjoin(candidates, ', '));
 end
 
 useFile = char(string(useFile));
@@ -571,6 +607,25 @@ assert(isfile(targetFile), ...
     'Umitoolbox:createRegistrationTform:UseFileNotFound', ...
     'Requested file "%s" was not found in "%s".', useFile, saveFolder);
 
+end
+
+function names = iYXTDatFiles(saveFolder)
+%IYXTDATFILES Names of the folder's .dat files with a Y-X-T layout.
+
+listing = dir(fullfile(saveFolder, '*.dat'));
+names = {};
+for iFile = 1:numel(listing)
+    try
+        info = loadMetaData(fullfile(saveFolder, listing(iFile).name));
+    catch
+        continue
+    end
+    dimNames = cellstr(string(info.dimNames));
+    if isequal(dimNames(:).', {'Y', 'X', 'T'})
+        names{end+1} = listing(iFile).name; %#ok<AGROW>
+    end
+end
+names = sort(names);
 end
 
 function img2D = iBuildMovingImageFromDat(datFile, refStatistic)

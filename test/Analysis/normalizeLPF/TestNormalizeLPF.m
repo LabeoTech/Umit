@@ -1,4 +1,4 @@
-classdef TestNormalizeLPF < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestNormalizeLPF < matlab.unittest.TestCase
     %TESTNORMALIZELPF Unit tests for normalizeLPF.
     %
     % Coverage:

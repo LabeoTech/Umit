@@ -15,6 +15,13 @@ Running log for `_tasks/completed/task_redesign_rig_management.md` (accepted 202
 
 All App Designer edits were applied, manually validated and promoted on 2026-10-15; the paste folder is deleted. User docs follow in `_tasks/active/task_docs_rig_ledger.md`.
 
+> **Changed after acceptance (2026-10-15, project redesign Phase 0; see `IMPLEMENTATION_NOTES_project.md`).** Statements below about `reimport`, `recordReimport`, `assertCanReimport` and `reimportConflict` are historical:
+> - The generic engine moved to `subFunc/UMITLedgerCore.m` (canonical JSON/hash, header and event checks, atomic writes, locking). `UMITRigLedger` keeps its API, error IDs, messages and file format.
+> - `reimport` was replaced by **`freshImport`** (`UMITRigLedger.recordFreshImport`): it resets **all** commitments (optics, coregistration, filter sets), keeps the binding (or NoRig), ends an open conflict, and keeps `hadConflict` (Bruno). Event fields: `previousOpticsHash`, `previousCoregistrationHash`, `previousFilterSets` (list of `{id, hash}`), informational only.
+> - A ledger that still holds a `reimport` event is **invalid** (unknown event type; Bruno: no migration).
+> - `assertCanReimport` and `Umitoolbox:RigLedger:reimportConflict` were removed (Bruno): a re-import with a different Active rig rebinds without conflict. `ImagesClassification` writes `freshImport` before classifying.
+> - Q3 still holds (a single-camera re-import keeps the binding), but the folder is now BoundUncommitted afterwards.
+
 ## Decisions confirmed with Bruno (brief §4, 2026-10-14)
 
 | # | Question | Decision |

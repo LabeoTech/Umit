@@ -3,13 +3,24 @@ function validateImageReferenceStruct(ImageReference)
 %
 %   validateImageReferenceStruct(ImageReference)
 %
-%   Validates the in-memory payload stored in managed Image Reference MAT
-%   files. Managed resource identity, path, checksum, status, and filename
-%   are intentionally excluded because they belong to UMITProjectStore.
+%   Validates the in-memory payload stored in Image Reference MAT files
+%   (subject libraries and standalone exported files). Managed resource
+%   identity, path, checksum, status, and filename are intentionally
+%   excluded because they belong to UMITProjectStore.
 %
-%   Required fields:
+%   Versions:
+%       2 (written today): identity is OPTIONAL. projectUUID/projectName and
+%         subjectUUID/subjectID are both-or-neither pairs, and a subject
+%         needs a project. contentHash must equal
+%         computeImageContentHash(image).
+%       1 (read only): the original contract; project and subject identity
+%         are required and there is no contentHash. Use
+%         normalizeImageReferenceStruct to upgrade a v1 struct in memory.
+%
+%   Required fields (v2 adds contentHash):
 %       version
 %       image
+%       contentHash (v2)
 %       name
 %       description
 %       projectUUID
@@ -71,6 +82,15 @@ requiredFields = { ...
     'manualTransformAppliedOn', ...
     'manualTransformNote'};
 
+if ~isfield(ImageReference, 'version') || ~isnumeric(ImageReference.version) || ...
+        ~isscalar(ImageReference.version) || ~ismember(ImageReference.version, [1 2])
+    error(errID, '"version" must be numeric scalar 1 or 2.');
+end
+version = double(ImageReference.version);
+if version == 2
+    requiredFields = [requiredFields(1:2), {'contentHash'}, requiredFields(3:end)];
+end
+
 fields = fieldnames(ImageReference);
 missingFields = setdiff(requiredFields, fields);
 if ~isempty(missingFields)
@@ -84,12 +104,6 @@ if ~isempty(unknownFields)
     error(errID, ...
         'ImageReference contains unsupported field(s): %s.', ...
         strjoin(unknownFields, ', '));
-end
-
-if ~isnumeric(ImageReference.version) || ...
-        ~isscalar(ImageReference.version) || ...
-        ImageReference.version ~= 1
-    error(errID, '"version" must be numeric scalar 1.');
 end
 
 imageData = ImageReference.image;
@@ -113,13 +127,17 @@ if ~isequal(double(imageSizeYX(:).'), double(size(imageData)))
     error(errID, '"imageSizeYX" does not match the stored image size.');
 end
 
-requiredNonemptyText = { ...
-    'name', 'projectUUID', 'projectName', 'subjectUUID', ...
-    'subjectID', 'axisConvention', 'createdBy'};
+identityText = {'projectUUID', 'projectName', 'subjectUUID', 'subjectID'};
+requiredNonemptyText = {'name', 'axisConvention', 'createdBy'};
 optionalText = { ...
     'description', 'sessionUUID', 'sessionID', 'sourceFolder', ...
     'sourceFile', 'sourceType', 'processingNotes', ...
     'parentResourceUUID', 'manualTransformNote'};
+if version == 1
+    requiredNonemptyText = [requiredNonemptyText, identityText];
+else
+    optionalText = [optionalText, identityText];
+end
 
 for iField = 1:numel(requiredNonemptyText)
     fieldName = requiredNonemptyText{iField};
@@ -139,7 +157,23 @@ end
 uuidFields = {'projectUUID', 'subjectUUID'};
 for iField = 1:numel(uuidFields)
     fieldName = uuidFields{iField};
-    iValidateUUID(ImageReference.(fieldName), fieldName, false, errID);
+    iValidateUUID(ImageReference.(fieldName), fieldName, version == 2, errID);
+end
+if version == 2
+    iValidatePair(ImageReference, 'projectUUID', 'projectName', errID);
+    iValidatePair(ImageReference, 'subjectUUID', 'subjectID', errID);
+    if ~isempty(char(string(ImageReference.subjectUUID))) && ...
+            isempty(char(string(ImageReference.projectUUID)))
+        error(errID, 'A subject identity requires a project identity.');
+    end
+    contentHash = ImageReference.contentHash;
+    if ~iIsTextScalar(contentHash) || ...
+            isempty(regexp(char(string(contentHash)), '^sha256:[0-9a-f]{64}$', 'once'))
+        error(errID, '"contentHash" must be ''sha256:'' followed by 64 lowercase hex digits.');
+    end
+    if ~strcmp(char(string(contentHash)), computeImageContentHash(imageData))
+        error(errID, '"contentHash" does not match the stored image.');
+    end
 end
 iValidateUUID( ...
     ImageReference.sessionUUID, 'sessionUUID', true, errID);
@@ -215,6 +249,18 @@ function tf = iIsTextScalar(x)
 %IISTEXTSCALAR Return true for a character vector or string scalar.
 
 tf = ischar(x) || (isstring(x) && isscalar(x));
+
+end
+
+function iValidatePair(ImageReference, firstField, secondField, errID)
+%IVALIDATEPAIR Both-or-neither identity fields (version 2).
+
+first = strtrim(char(string(ImageReference.(firstField))));
+second = strtrim(char(string(ImageReference.(secondField))));
+if xor(isempty(first), isempty(second))
+    error(errID, '"%s" and "%s" must either both be empty or both be populated.', ...
+        firstField, secondField);
+end
 
 end
 

@@ -1,4 +1,4 @@
-classdef TestNormalizeLPFModes < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestNormalizeLPFModes < matlab.unittest.TestCase
     %TESTNORMALIZELPFMODES normalizeLPF input modes against the legacy filter.
     %
     % Formerly TestNormalisationFiltering, the suite of the IOIAnalysis

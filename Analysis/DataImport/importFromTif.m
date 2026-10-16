@@ -28,6 +28,13 @@ function [outFile, rigResolution] = importFromTif(RawFolder, SaveFolder, varargi
 %                    characteristics differently from averaging BinningTemp
 %                    consecutive frames.
 %                    Allowed values: 1:8
+%   backupOpts     - What to do when the SaveFolder already holds an
+%                    import (a fresh import): 'GENBACKUP' (zip, then delete
+%                    and import), 'ERASE' (delete without a zip, then
+%                    import), a zip name, or '' (direct call: confirmation
+%                    dialog listing the deletions; GENBACKUP in batch).
+%                    Ignored for an empty SaveFolder.
+%                    Default: '' (PipelineManager: 'GENBACKUP').
 %
 % Outputs:
 %   outFile       - Cell array containing the names of the saved .dat files.
@@ -49,12 +56,16 @@ function [outFile, rigResolution] = importFromTif(RawFolder, SaveFolder, varargi
 %     unchanged, and an invalid one is an error raised before any file is
 %     written. AcqInfos.mat stores no rig information (legacy rigUUID/rigID
 %     fields are dropped when the file is rewritten).
-%   - All imported channels within the same SaveFolder must have identical
-%     raw dimensions, number of frames, and acquisition timing. When the
-%     SaveFolder already holds an "AcqInfos.mat", its raw Width, Height,
-%     FrameRateHz, and ExposureMsec (and its binning, when stored) must match
-%     the new TIFF files. Files written before this rule hold binned values
-%     and are rejected.
+%   - All channels of a recording are imported in one call; they must have
+%     identical raw dimensions, number of frames, and acquisition timing.
+%   - Importing into a SaveFolder that already holds an import is a FRESH
+%     IMPORT (prepareFreshImport, brief section 1.6; Bruno 2026-10-15: always,
+%     also when adding channels): every artefact derived from the previous
+%     data is deleted (planFreshImport), freshImport events are logged in the
+%     rig ledger and, when bound, the project ledger, and the import starts
+%     from an empty folder state. backupOpts is the only decision
+%     (GENBACKUP zips the deleted files first, ERASE does not; a direct call
+%     with backupOpts = '' asks on a desktop).
 
 % -------------------------------------------------------------------------
 % Shared declarations
@@ -83,12 +94,14 @@ addParameter(p, 'BinningSpatial', 1, ...
     @(x) isnumeric(x) && isscalar(x) && isfinite(x) && any(x == allowedBinningSpatial));
 addParameter(p, 'BinningTemp', 1, ...
     @(x) isnumeric(x) && isscalar(x) && isfinite(x) && any(x == allowedBinningTemp));
+addParameter(p, 'backupOpts', '', @(x) ischar(x) || (isstring(x) && isscalar(x)));
 parse(p, RawFolder, SaveFolder, varargin{:});
 
 RawFolder = p.Results.RawFolder;
 SaveFolder = p.Results.SaveFolder;
 BinningSpatial = p.Results.BinningSpatial;
 BinningTemp = p.Results.BinningTemp;
+backupOpts = char(string(p.Results.backupOpts));
 
 clear p
 
@@ -112,6 +125,14 @@ end
 
 assert(iscell(tif_metadata.Tiffiles) && ~isempty(tif_metadata.Tiffiles), ...
     'Missing information about TIFF files. Please check info.json and try again.');
+
+% -------------------------------------------------------------------------
+% Fresh import: an invalid rig ledger is an error, then a SaveFolder that
+% already holds an import is reset (or the import refused) before any file
+% of the new import is written.
+% -------------------------------------------------------------------------
+UMITRigLedger.read(SaveFolder);
+prepareFreshImport(SaveFolder, 'backupOpts', backupOpts, 'Origin', 'importFromTif');
 
 % -------------------------------------------------------------------------
 % Prepare folder-level AcqInfoStream
@@ -138,9 +159,7 @@ if isfile(acqInfoPath)
 end
 
 % No rig is resolved: TIFF imports record an explicit "no rig" in the folder
-% rig ledger (only when the folder has no ledger yet). Reading the ledger
-% now rejects an invalid ledger before any file is written.
-UMITRigLedger.read(SaveFolder);
+% rig ledger (only when the folder has no ledger yet).
 
 extraInfo = rmfield(tif_metadata, 'Tiffiles');
 coreFields = intersect(fieldnames(extraInfo), {'Width','Height','Length','FrameRateHz','ExposureMsec'});
@@ -399,6 +418,20 @@ function info = localGetPipelineInfo()
         'kind', 'parameter', ...
         'default', 1, ...
         'allowed', allowedBinningTemp, ...
+        'callType', 'namevalue');
+
+    info = PipelineManager.addInput( ...
+        info, ...
+        'backupOpts', ...
+        'parameter', ...
+        ['When the SaveFolder already holds an import (a fresh import deletes every ' ...
+         'artefact derived from the previous data and resets the rig commitments): ' ...
+         '''GENBACKUP'' (default) zips the files it deletes, then re-imports; ' ...
+         '''ERASE'' deletes them without a zip, then re-imports. Ignored for an ' ...
+         'empty SaveFolder.'], ...
+        'kind', 'parameter', ...
+        'default', 'GENBACKUP', ...
+        'allowed', {'GENBACKUP', 'ERASE'}, ...
         'callType', 'namevalue');
 
     info = PipelineManager.addOutput( ...

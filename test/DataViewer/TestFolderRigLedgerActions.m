@@ -1,4 +1,4 @@
-classdef TestFolderRigLedgerActions < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestFolderRigLedgerActions < matlab.unittest.TestCase
     %TESTFOLDERRIGLEDGERACTIONS DataViewer folder-rig backend (Phase 5).
     %
     %   Covers describeFolderRigLedger (display), planFolderRigBinding

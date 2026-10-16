@@ -1,4 +1,4 @@
-classdef TestConsumerLayoutGuards < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestConsumerLayoutGuards < matlab.unittest.TestCase
     %TESTCONSUMERLAYOUTGUARDS Analysis consumers refuse unsupported .dat layouts (Phase 6b-1).
     %
     %   Since writers emit any supported layout, every consumer that assumes

@@ -1,4 +1,4 @@
-classdef TestDatHeader < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestDatHeader < matlab.unittest.TestCase
     %TESTDATHEADER Version-1 .dat header schema, encoder, decoder, reader, validator.
     %
     %   Protects the on-disk header format defined in

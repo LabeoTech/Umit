@@ -1,4 +1,4 @@
-classdef TestGSR < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGSR < matlab.unittest.TestCase
     % TESTGSR Unit tests for GSR.
     %
     % Required fixture files located in the same folder as this test class:

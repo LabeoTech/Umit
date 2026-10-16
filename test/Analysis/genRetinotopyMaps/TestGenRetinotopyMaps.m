@@ -1,4 +1,4 @@
-classdef TestGenRetinotopyMaps < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGenRetinotopyMaps < matlab.unittest.TestCase
     properties
         ProjectRoot
         SampleDataFolder

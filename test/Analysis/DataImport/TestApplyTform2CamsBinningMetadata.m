@@ -1,4 +1,4 @@
-classdef TestApplyTform2CamsBinningMetadata < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestApplyTform2CamsBinningMetadata < matlab.unittest.TestCase
     %TESTAPPLYTFORM2CAMSBINNINGMETADATA Effective-binning regression tests.
 
     properties

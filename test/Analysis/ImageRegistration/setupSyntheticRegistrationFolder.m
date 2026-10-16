@@ -4,12 +4,20 @@ function fixture = setupSyntheticRegistrationFolder(rootFolder, varargin)
 %   fixture = setupSyntheticRegistrationFolder(rootFolder)
 %   fixture = setupSyntheticRegistrationFolder(rootFolder, 'DatFormat', fmt)
 %
+%   fixture = setupSyntheticRegistrationFolder(rootFolder, 'WithStore', false)
+%
 %   'DatFormat' is 'header' (default: headered green.dat/red.dat) or
 %   'legacySidecar' (headerless .dat plus legacy sidecar .mat), as written
 %   by writeTestDat (.dat header Phase 5a).
+%
+%   'WithStore' (default true) binds the folder to a fixture rig and to a
+%   project session whose subject has an active managed reference. With
+%   false, the folder is a plain imported dataset: no rig ledger, no
+%   project, and no store is touched (project redesign scenarios 2/2b).
 
 p = inputParser;
 addParameter(p, 'DatFormat', 'header', @(x) any(strcmpi(x, {'header', 'legacySidecar'})));
+addParameter(p, 'WithStore', true, @(x) islogical(x) && isscalar(x));
 parse(p, varargin{:});
 datFormat = p.Results.DatFormat;
 
@@ -54,6 +62,19 @@ save(fullfile(rootFolder, 'AcqInfos.mat'), 'AcqInfoStream');
 DataParams = createDataParams(rootFolder, 'overwrite', true);
 DataParams.view.pixelSize_px_per_mm = 1;
 saveDataParams(rootFolder, DataParams);
+
+fixture = struct();
+fixture.Ny = Ny;
+fixture.Nx = Nx;
+fixture.Nt = Nt;
+fixture.ReferenceImage = refImage;
+fixture.ShiftXY = shiftXY;
+fixture.GreenData = greenData;
+fixture.RedData = redData;
+fixture.SaveFolder = rootFolder;
+if ~p.Results.WithStore
+    return
+end
 
 % Bind an isolated fixture Rig in this dataset's rig ledger before
 % addSession runs, so the session mirrors it -- the fixture never depends on
@@ -104,15 +125,6 @@ imageReferenceUUID = store.addImageReference( ...
     subjectID, sourceReferenceFile, resourceInfo);
 managedReference = store.getResource(imageReferenceUUID);
 
-fixture = struct();
-fixture.Ny = Ny;
-fixture.Nx = Nx;
-fixture.Nt = Nt;
-fixture.ReferenceImage = refImage;
-fixture.ShiftXY = shiftXY;
-fixture.GreenData = greenData;
-fixture.RedData = redData;
-fixture.SaveFolder = rootFolder;
 fixture.RigRoot = rigStore.RigRoot;
 fixture.Store = store;
 fixture.ProjectRoot = store.ProjectRoot;

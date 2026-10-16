@@ -1,4 +1,4 @@
-classdef TestDataViewerManagementMenu < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestDataViewerManagementMenu < matlab.unittest.TestCase
     %TESTDATAVIEWERMANAGEMENTMENU Verify the DataViewer management hierarchy.
 
     methods (Test)

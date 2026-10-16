@@ -1,4 +1,4 @@
-classdef TestEventsManagerAggregation < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventsManagerAggregation < matlab.unittest.TestCase
     %TESTEVENTSMANAGERAGGREGATION Centralized aggregation over events (.dat header Phase 8c).
     %
     %   EventsManager.conditionAggregationPlan and reduceByCondition carry

@@ -1,4 +1,4 @@
-classdef TestImportEmptyRigLibrary < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture('emptyRigLibrary')}) TestImportEmptyRigLibrary < matlab.unittest.TestCase
 %TESTIMPORTEMPTYRIGLIBRARY Imports on a machine whose rig library is empty.
 %
 %   Rig-ledger redesign, Phase 3: no import path may resolve, create or
@@ -6,10 +6,9 @@ classdef TestImportEmptyRigLibrary < matlab.unittest.TestCase
 %   imports record an explicit "no rig"; dual-camera data are imported
 %   without coregistration, with a warning (decision Q1).
 %
-%   UMITRigStore.getRigsRoot() is the real, non-redirectable rig library,
-%   so every test is guarded with assumeTrue and self-skips when the
-%   library has rigs. Run it with the real library moved aside (see
-%   IMPLEMENTATION_NOTES_rig_ledger.md, "Empty-library run").
+%   The class has its own UMITTemporaryRootFixture (tag 'emptyRigLibrary'),
+%   so the rig library is a fresh, empty temporary folder whatever the
+%   machine holds. The assumeEqual guard remains as a safety net.
 
     properties (Constant)
         DualCameraRawFolder = 'D:\UMIT-DEV\Test2Cam';

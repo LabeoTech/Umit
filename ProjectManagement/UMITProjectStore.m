@@ -11,12 +11,14 @@ classdef UMITProjectStore < handle
     %   metadata atomically, imports managed resources, archives/restores
     %   resources, performs transactional ID renames, and validates the project.
     %
-    %   The centralized folder stores metadata and image-reference/transform
-    %   files only. Imaging data remains external and may be referenced by
+    %   The centralized folder stores metadata and image-reference files
+    %   only. Imaging data remains external and may be referenced by
     %   session metadata. Rigs are independent of any project -- see
     %   RigManagement/UMITRigStore for rig metadata and rig-owned resources
-    %   (camera coregistration, calibration files). A session only keeps a
-    %   rigUUID/rigID pointer to an external rig.
+    %   (camera coregistration, calibration files). Sessions keep no rig
+    %   pointer: a folder's rig is recorded in its rig ledger (UMITRigLedger).
+    %   A folder's image reference and alignment are recorded only in its
+    %   DataParams.registration; the project keeps no transform resources.
     %
     %   Main operations:
     %       getProjectsRoot
@@ -32,11 +34,9 @@ classdef UMITProjectStore < handle
     %       addSubject
     %       addSession
     %       addImageReference
-    %       addRegistrationTransform
     %       archiveResource
     %       restoreResource
     %       setActiveImageReference
-    %       setActiveRegistrationTransform
     %       updateSubjectMetadata
     %       updateSessionMetadata
     %       updateProjectMetadata
@@ -51,7 +51,6 @@ classdef UMITProjectStore < handle
     %       getResource
     %       resolveResourcePath
     %       getActiveImageReference
-    %       getActiveRegistrationTransform
     %       getSubjectInfoByUUID
     %       getSessionInfoByUUID
     %       getSessionContextByUUID
@@ -78,11 +77,14 @@ classdef UMITProjectStore < handle
     %       - Resource filenames are immutable after import.
     %       - Archived resources remain registered and restorable.
     %       - Every mutation uses a project lock and atomic metadata writes.
-    %       - Invalid projects open read-only, except for narrowly scoped
-    %         SaveFolder repair/relocation/session-removal operations when
-    %         the selected binding is the only inconsistency.
+    %       - Validity is per session: a project opens read-only only for
+    %         store-level errors. Errors of one subject or session block the
+    %         mutations of that subject or session only, except narrowly
+    %         scoped SaveFolder repair/relocation/session-removal operations
+    %         when the selected binding is the only inconsistency. Mutations
+    %         validate what they touch (quick mode), not the whole project.
     %       - UMITProjectStore is the only supported creator, reader,
-    %         validator, and remover of UMITProjectBinding.umitlink files.
+    %         validator and writer of folder project ledgers (UMITProjectLedger.json).
 
     properties (SetAccess = private)
         ProjectRoot
@@ -261,8 +263,13 @@ classdef UMITProjectStore < handle
             %
             %       getUmitFolder('projects')
             %
-            %   Invalid projects are returned in read-only mode. The validation
-            %   result is available from store.LastValidationReport.
+            %   A project with a store-level error (project metadata, schema,
+            %   required folders, unregistered top-level folders, duplicate
+            %   UUIDs) is returned in read-only mode. Errors of one subject or
+            %   session do not make the project read-only: they block only
+            %   the mutations of that subject or session (per-session
+            %   validity). The validation result, with each issue's
+            %   storeLevel flag, is available from store.LastValidationReport.
 
             errID = 'Umitoolbox:UMITProjectStore:openFailed';
             projectUUID = ...
@@ -309,7 +316,7 @@ classdef UMITProjectStore < handle
             obj = UMITProjectStore(projectRoot, schema, false);
             report = obj.validate('Mode', 'quick');
             obj.LastValidationReport = report;
-            obj.IsReadOnly = ~report.isValid;
+            obj.IsReadOnly = any([report.errors.storeLevel]);
         end
 
         function projectRoot = resolveProjectRoot(projectUUID)
@@ -321,61 +328,8 @@ classdef UMITProjectStore < handle
                 'Umitoolbox:UMITProjectStore:resolveProjectFailed';
             projectUUID = ...
                 UMITProjectStore.iNormalizeProjectUUID(projectUUID);
-            projectsRoot = UMITProjectStore.getProjectsRoot();
-            schema = getUMITProjectSchema();
 
-            folderList = dir(projectsRoot);
-            folderList = folderList([folderList.isdir]);
-            folderNames = {folderList.name};
-            keep = ~ismember(folderNames, {'.', '..'}) & ...
-                ~startsWith(folderNames, '.__creating_');
-            folderList = folderList(keep);
-
-            matchingRoots = strings(0, 1);
-
-            % New projects use a full UUID suffix. Search those candidates
-            % first, then fall back to all project folders to tolerate a
-            % manually renamed directory inside the static root.
-            suffix = ['__', projectUUID];
-            candidateMask = endsWith( ...
-                {folderList.name}, suffix, 'IgnoreCase', true);
-            candidateOrder = [ ...
-                find(candidateMask), find(~candidateMask)];
-
-            for iCandidate = candidateOrder
-                candidateRoot = fullfile( ...
-                    projectsRoot, folderList(iCandidate).name);
-                projectFile = fullfile( ...
-                    candidateRoot, schema.files.projectMetadata);
-
-                if ~isfile(projectFile)
-                    continue
-                end
-
-                try
-                    loaded = load(projectFile, ...
-                        schema.metadataVariables.project, '-mat');
-                catch
-                    continue
-                end
-
-                if ~isfield(loaded, ...
-                        schema.metadataVariables.project)
-                    continue
-                end
-
-                ProjectInfo = loaded.( ...
-                    schema.metadataVariables.project);
-
-                if isstruct(ProjectInfo) && isscalar(ProjectInfo) && ...
-                        isfield(ProjectInfo, 'projectUUID') && ...
-                        strcmpi(ProjectInfo.projectUUID, projectUUID)
-                    matchingRoots(end+1, 1) = ...
-                        string(candidateRoot); %#ok<AGROW>
-                end
-            end
-
-            matchingRoots = unique(matchingRoots, 'stable');
+            matchingRoots = UMITProjectStore.iFindProjectRoots(projectUUID);
 
             if isempty(matchingRoots)
                 error(errID, ...
@@ -421,7 +375,7 @@ classdef UMITProjectStore < handle
                 folderName = folderList(iFolder).name;
 
                 if ismember(folderName, {'.', '..'}) || ...
-                        startsWith(folderName, '.__creating_')
+                        startsWith(folderName, '.') % internal staging folders
                     continue
                 end
 
@@ -527,10 +481,30 @@ classdef UMITProjectStore < handle
         end
 
         function fileName = getProjectBindingFileName()
-            %GETPROJECTBINDINGFILENAME Return the protected SaveFolder link name.
+            %GETPROJECTBINDINGFILENAME Name of the folder's project ledger file.
+            %
+            %   The file exists in every folder that was ever bound (its
+            %   history is kept after an unbind): use getProjectBindingState
+            %   to know whether a folder is bound.
 
             schema = getUMITProjectSchema();
             fileName = schema.files.projectBinding;
+        end
+
+        function state = getProjectBindingState(dataFolder)
+            %GETPROJECTBINDINGSTATE 'unbound', 'bound' or 'invalid'. Never writes.
+            %
+            %   state = UMITProjectStore.getProjectBindingState(dataFolder)
+            %
+            %   'unbound': no project ledger, or its binding was removed.
+            %   'bound': the ledger binds the folder (resolveProjectBinding
+            %   then decides orphan, mismatch or conflict against the store).
+            %   'invalid': the ledger fails integrity validation.
+
+            state = UMITProjectStore.iBindingState(dataFolder);
+            if strcmp(state, 'none')
+                state = 'unbound';
+            end
         end
 
         function [ProjectInfo, projectRoot] = getProjectInfoByUUID(projectUUID)
@@ -545,11 +519,18 @@ classdef UMITProjectStore < handle
         end
 
         function [ProjectBinding, bindingPath] = readProjectBinding(dataFolder)
-            %READPROJECTBINDING Load and validate one .umitlink file.
+            %READPROJECTBINDING Current binding of a folder from its project ledger.
             %
             %   ProjectBinding = UMITProjectStore.readProjectBinding(dataFolder)
+            %   [ProjectBinding, ledgerPath] = ...
             %
-            %   This is the only supported read interface for the binding file.
+            %   Reads UMITProjectLedger.json (UMITProjectLedger) and returns
+            %   the binding record {version, bindingUUID, projectUUID,
+            %   subjectUUID, sessionUUID, folderRole, createdOn,
+            %   modifiedOn}. Only the identity fields are read from the
+            %   ledger; its snapshots are never read. A folder without a
+            %   ledger, or whose binding was removed, has no binding.
+            %   Never writes.
 
             errID = 'Umitoolbox:UMITProjectStore:bindingReadFailed';
 
@@ -566,29 +547,19 @@ classdef UMITProjectStore < handle
             end
 
             schema = getUMITProjectSchema();
-            bindingPath = fullfile(dataFolder, schema.files.projectBinding);
-
-            if ~isfile(bindingPath)
-                error(errID, ...
-                    'Project binding file does not exist: %s', bindingPath);
-            end
-
+            bindingPath = UMITProjectLedger.filePath(dataFolder);
             try
-                loaded = load(bindingPath, ...
-                    schema.metadataVariables.projectBinding, '-mat');
+                info = UMITProjectLedger.read(dataFolder);
             catch ME
+                error(errID, 'Could not read the project ledger: %s', ME.message);
+            end
+            if ~strcmp(info.state, 'Bound')
                 error(errID, ...
-                    'Could not load project binding file: %s', ME.message);
+                    'The folder is not bound to a project (project ledger state %s): %s', ...
+                    info.state, bindingPath);
             end
 
-            variableName = schema.metadataVariables.projectBinding;
-            if ~isfield(loaded, variableName)
-                error(errID, ...
-                    'Binding file does not contain variable "%s".', ...
-                    variableName);
-            end
-
-            ProjectBinding = loaded.(variableName);
+            ProjectBinding = UMITProjectStore.iBindingRecordFromLedger(info.binding, schema);
             UMITProjectStore.iValidateProjectBindingStruct( ...
                 ProjectBinding, schema, errID);
         end
@@ -607,23 +578,47 @@ classdef UMITProjectStore < handle
             ProjectBinding = ...
                 UMITProjectStore.readProjectBinding(dataFolder);
 
-            try
-                UMITProjectStore.resolveProjectRoot( ...
-                    ProjectBinding.projectUUID);
-                tf = false;
-
-            catch ME
-                if UMITProjectStore.iIsProjectNotFoundError(ME)
-                    tf = true;
-                    return
-                end
-
-                rethrow(ME)
+            matchingRoots = UMITProjectStore.iFindProjectRoots( ...
+                ProjectBinding.projectUUID);
+            if numel(matchingRoots) > 1
+                % A duplicated project UUID is an error, not an orphan.
+                UMITProjectStore.resolveProjectRoot(ProjectBinding.projectUUID);
             end
+            tf = isempty(matchingRoots);
+        end
+
+        function ProjectBinding = removeStaleProjectBinding(dataFolder)
+            %REMOVESTALEPROJECTBINDING Clear a link no session matches any more.
+            %
+            %   ProjectBinding = UMITProjectStore.removeStaleProjectBinding(dataFolder)
+            %
+            %   A stale link (audit item 9) binds the folder to a project that
+            %   IS on this machine, but none of its sessions binds this folder
+            %   any more (the session was removed, relocated or rebound while
+            %   the folder was offline). describeProjectBinding reports it as
+            %   'stale'. Appends an unbind event with reason 'staleBinding';
+            %   the ledger and its history stay. Any other state is refused
+            %   (Umitoolbox:UMITProjectStore:bindingNotStale).
+
+            info = describeProjectBinding(dataFolder);
+            if ~strcmp(info.state, 'stale')
+                error('Umitoolbox:UMITProjectStore:bindingNotStale', ...
+                    ['The folder''s project binding is "%s", not stale; only a ' ...
+                     'stale binding can be cleared this way: %s'], info.state, ...
+                    char(string(dataFolder)));
+            end
+            ProjectBinding = info.binding;
+            UMITProjectLedger.unbind(UMITProjectStore.iAbsolutePath(dataFolder), ...
+                'Reason', 'staleBinding', ...
+                'Origin', 'UMITProjectStore.removeStaleProjectBinding');
         end
 
         function ProjectBinding = removeOrphanProjectBinding(dataFolder)
-            %REMOVEORPHANPROJECTBINDING Remove a valid link to a missing project.
+            %REMOVEORPHANPROJECTBINDING Remove a binding to a project absent here.
+            %
+            %   Appends an orphanRemoval event to the folder's project
+            %   ledger (the history and the file stay); the folder becomes
+            %   unbound.
             %
             %   ProjectBinding = ...
             %       UMITProjectStore.removeOrphanProjectBinding(dataFolder)
@@ -646,30 +641,12 @@ classdef UMITProjectStore < handle
             end
 
             dataFolder = UMITProjectStore.iAbsolutePath(dataFolder);
-            schema = getUMITProjectSchema();
-            bindingPath = fullfile( ...
-                dataFolder, schema.files.projectBinding);
-            stagedRemovalPath = fullfile(dataFolder, sprintf( ...
-                '.%s.%s.orphan-removal', ...
-                schema.files.projectBinding, ...
-                UMITProjectStore.iGenerateUUID()));
-
-            [ok, message] = movefile( ...
-                bindingPath, stagedRemovalPath, 'f');
-            if ~ok
-                error(errID, ...
-                    'Could not stage orphan binding removal: %s', message);
-            end
-
             try
-                delete(stagedRemovalPath);
+                UMITProjectLedger.recordOrphanRemoval(dataFolder, ...
+                    'Origin', 'UMITProjectStore.removeOrphanProjectBinding');
             catch ME
-                % Restore the visible binding whenever final cleanup fails.
-                if isfile(stagedRemovalPath) && ~isfile(bindingPath)
-                    movefile(stagedRemovalPath, bindingPath, 'f');
-                end
                 error(errID, ...
-                    'Could not remove orphan binding: %s', ME.message);
+                    'Could not record the orphan binding removal: %s', ME.message);
             end
         end
 
@@ -694,7 +671,7 @@ classdef UMITProjectStore < handle
             [SessionInfo, ParentSubjectInfo, ~] = ...
                 store.getSessionInfoByUUID(ProjectBinding.sessionUUID);
 
-            if ~strcmp(ParentSubjectInfo.uuid, SubjectInfo.uuid)
+            if ~strcmpi(ParentSubjectInfo.uuid, SubjectInfo.uuid)
                 error(errID, ...
                     'Binding subject UUID does not own the bound session UUID.');
             end
@@ -720,7 +697,7 @@ classdef UMITProjectStore < handle
                     UMITProjectStore.iNormalizeComparisonPath(currentFolder), ...
                     UMITProjectStore.iNormalizeComparisonPath(registeredFolder))
                 error('Umitoolbox:UMITProjectStore:bindingPathMismatch', ...
-                    ['The .umitlink UUIDs are valid, but the current folder path ' ...
+                    ['The project ledger UUIDs are valid, but the current folder path ' ...
                      'does not match SessionInfo.%s. The folder may have been ' ...
                      'moved or copied.'], pathField);
             end
@@ -733,8 +710,6 @@ classdef UMITProjectStore < handle
             context.subjectID = SubjectInfo.subjectID;
             context.sessionUUID = SessionInfo.uuid;
             context.sessionID = SessionInfo.sessionID;
-            context.rigUUID = SessionInfo.rigUUID;
-            context.rigID = SessionInfo.rigID;
             context.folderRole = ProjectBinding.folderRole;
             context.matchedField = ProjectBinding.folderRole;
             context.bindingUUID = ProjectBinding.bindingUUID;
@@ -837,8 +812,6 @@ classdef UMITProjectStore < handle
             context.subjectID = SubjectInfo.subjectID;
             context.sessionUUID = SessionInfo.uuid;
             context.sessionID = SessionInfo.sessionID;
-            context.rigUUID = SessionInfo.rigUUID;
-            context.rigID = SessionInfo.rigID;
             context.rawDataFolder = SessionInfo.rawDataFolder;
             context.processedDataFolder = ...
                 SessionInfo.processedDataFolder;
@@ -939,22 +912,12 @@ classdef UMITProjectStore < handle
             resource = obj.iGetActiveResource(owner, 'imageReference');
         end
 
-        function resource = getActiveRegistrationTransform(obj, subjectID, sessionID)
-            %GETACTIVEREGISTRATIONTRANSFORM Return an active session transform.
-            %
-            %   Returns [] when the session has no active transform.
-
-            owner = obj.iResolveOwner('session', {subjectID, sessionID});
-            resource = obj.iGetActiveResource( ...
-                owner, 'registrationTransform');
-        end
-
         function context = findSessionByDataFolder(obj, dataFolder)
-            %FINDSESSIONBYDATAFOLDER Resolve context from a managed .umitlink.
+            %FINDSESSIONBYDATAFOLDER Resolve context from a folder's project ledger.
             %
             %   context = store.findSessionByDataFolder(dataFolder)
             %
-            %   Returns [] when the folder has no UMITProjectBinding.umitlink.
+            %   Returns [] when the folder is not bound (no project ledger, or its binding was removed).
             %   The binding must resolve to this store's project UUID.
 
             if ~(ischar(dataFolder) || ...
@@ -966,9 +929,7 @@ classdef UMITProjectStore < handle
             dataFolder = UMITProjectStore.iAbsolutePath(dataFolder);
             obj.iAssertExternalDataPath(dataFolder, 'dataFolder');
 
-            bindingPath = fullfile(dataFolder, ...
-                obj.Schema.files.projectBinding);
-            if ~isfile(bindingPath)
+            if strcmp(UMITProjectStore.iBindingState(dataFolder), 'none')
                 context = [];
                 return
             end
@@ -988,9 +949,9 @@ classdef UMITProjectStore < handle
             [SessionInfo, SubjectInfo] = ...
                 obj.getSessionInfoByUUID(ProjectBinding.sessionUUID);
 
-            if ~strcmp(SessionInfo.subjectUUID, ...
+            if ~strcmpi(SessionInfo.subjectUUID, ...
                     ProjectBinding.subjectUUID) || ...
-                    ~strcmp(SubjectInfo.uuid, ...
+                    ~strcmpi(SubjectInfo.uuid, ...
                     ProjectBinding.subjectUUID)
                 error('Umitoolbox:UMITProjectStore:bindingOwnerMismatch', ...
                     'Binding subject UUID does not own the bound session.');
@@ -1010,8 +971,6 @@ classdef UMITProjectStore < handle
             context.subjectUUID = SubjectInfo.uuid;
             context.sessionID = SessionInfo.sessionID;
             context.sessionUUID = SessionInfo.uuid;
-            context.rigID = SessionInfo.rigID;
-            context.rigUUID = SessionInfo.rigUUID;
             context.matchedField = pathField;
             context.folderRole = pathField;
             context.bindingUUID = ProjectBinding.bindingUUID;
@@ -1033,15 +992,17 @@ classdef UMITProjectStore < handle
             errID = 'Umitoolbox:UMITProjectStore:addSubjectFailed';
             obj.iAssertWritable();
             lockCleanup = obj.iAcquireWriteLock('addSubject');
-            obj.iAssertHealthyForMutation();
+            obj.iAssertHealthyForMutation(UMITProjectStore.iScope());
 
             if ~isstruct(subjectInfo) || ~isscalar(subjectInfo)
                 error(errID, '"subjectInfo" must be a scalar struct.');
             end
+            UMITProjectStore.iAssertKnownInputFields(subjectInfo, ...
+                [{'subjectID'}, obj.Schema.editableFields.subject], errID);
 
             subjectID = obj.iNormalizeManagedID( ...
                 UMITProjectStore.iGetTextField(subjectInfo, 'subjectID', '', false, errID), ...
-                'subjectID');
+                'subjectID', false);
             displayName = UMITProjectStore.iGetTextField( ...
                 subjectInfo, 'displayName', subjectID, true, errID);
             if isempty(strtrim(displayName))
@@ -1110,7 +1071,8 @@ classdef UMITProjectStore < handle
 
             try
                 obj.iSaveProjectInfo(ProjectInfo);
-                obj.iAssertValidAfterMutation();
+                obj.iAssertValidAfterMutation(UMITProjectStore.iScope( ...
+                    'subjects', {subjectUUID}));
             catch ME
                 UMITProjectStore.iRemoveFolderIfPresent(subjectPath);
                 obj.iSaveProjectInfo(originalProjectInfo);
@@ -1121,10 +1083,16 @@ classdef UMITProjectStore < handle
             clear cleanupStage lockCleanup
         end
 
-        function sessionUUID = addSession(obj, subjectID, sessionInfo)
+        function sessionUUID = addSession(obj, subjectID, sessionInfo, varargin)
             %ADDSESSION Add a dataset-backed session under an existing subject.
             %
             %   sessionUUID = store.addSession(subjectID, sessionInfo)
+            %   sessionUUID = store.addSession(..., 'ReplaceOrphanBinding', true)
+            %
+            %   ReplaceOrphanBinding (default false): the SaveFolder may carry
+            %   a binding to a project that is not on this machine (an
+            %   orphan); it is replaced by a rebind event in the folder's
+            %   ledger (audit item 12). Any other existing binding is refused.
             %
             %   Required sessionInfo fields:
             %       sessionID
@@ -1135,25 +1103,23 @@ classdef UMITProjectStore < handle
             %       description
             %       acquisitionDate
             %
-            %   Rig identity is never supplied by the caller: rigID/rigUUID
-            %   are rejected as sessionInfo fields. The session's rigUUID/
-            %   rigID are a read-only MIRROR of the rig bound in the
-            %   SaveFolder's rig ledger (UMITRigLedger), and empty when the
-            %   folder is not bound. Nothing is written to the SaveFolder for
-            %   the rig (rig-ledger redesign: no AcqInfos.mat stamping, no
-            %   Active-rig fallback). Bind the folder's rig in DataViewer
-            %   (Management > Rig > Folder Rig) before calling addSession to
-            %   record it in the session.
+            %   Any other field is rejected (unsupportedField). Sessions keep
+            %   no rig: the folder's rig is recorded in its rig ledger
+            %   (UMITRigLedger) and read from there.
             %
             %   The session registry entry, SessionInfo, and SaveFolder
-            %   UMITProjectBinding.umitlink are installed as one rollback-safe
+            %   the project ledger bind event are installed as one rollback-safe
             %   operation. A persisted session is therefore never created
             %   without its authoritative SaveFolder reference.
 
             errID = 'Umitoolbox:UMITProjectStore:addSessionFailed';
+            p = inputParser;
+            p.FunctionName = 'UMITProjectStore.addSession';
+            addParameter(p, 'ReplaceOrphanBinding', false, ...
+                @(x) islogical(x) && isscalar(x));
+            parse(p, varargin{:});
             obj.iAssertWritable();
             lockCleanup = obj.iAcquireWriteLock('addSession');
-            obj.iAssertHealthyForMutation();
 
             if ~isstruct(sessionInfo) || ~isscalar(sessionInfo)
                 error(errID, '"sessionInfo" must be a scalar struct.');
@@ -1168,15 +1134,9 @@ classdef UMITProjectStore < handle
                      'through addSession. The store owns binding identities.']);
             end
 
-            forbiddenRigFields = intersect(fieldnames(sessionInfo), ...
-                {'rigID', 'rigUUID'});
-            if ~isempty(forbiddenRigFields)
-                error('Umitoolbox:UMITProjectStore:rigAssignmentNotSupported', ...
-                    ['A session''s rig is not assigned through the project: it ' ...
-                     'mirrors the rig bound in the SaveFolder''s rig ledger. Bind ' ...
-                     'the folder''s rig (DataViewer: Management > Rig > Folder Rig) ' ...
-                     'before creating the session.']);
-            end
+            UMITProjectStore.iAssertKnownInputFields(sessionInfo, ...
+                [{'sessionID', 'processedDataFolder'}, ...
+                obj.Schema.editableFields.session], errID);
 
             if ~isfield(sessionInfo, 'processedDataFolder') || ...
                     isempty(strtrim(char(string( ...
@@ -1204,23 +1164,27 @@ classdef UMITProjectStore < handle
                     existingMatches(1).matchedField);
             end
 
-            bindingPath = fullfile(saveFolder, ...
-                obj.Schema.files.projectBinding);
-            if isfile(bindingPath)
+            if ~strcmp(UMITProjectStore.iBindingState(saveFolder), 'none') && ...
+                    ~(p.Results.ReplaceOrphanBinding && ...
+                    strcmp(UMITProjectStore.iBindingState(saveFolder), 'bound') && ...
+                    UMITProjectStore.isOrphanProjectBinding(saveFolder))
                 error('Umitoolbox:UMITProjectStore:bindingFileExists', ...
-                    ['The SaveFolder already contains %s. Resolve that ' ...
-                     'binding before adding a session.'], ...
+                    ['The SaveFolder is already bound to a project (%s). Resolve ' ...
+                     'that binding before adding a session (an orphan binding can be ' ...
+                     'replaced with ''ReplaceOrphanBinding'', true).'], ...
                     obj.Schema.files.projectBinding);
             end
 
             [subjectRecord, SubjectInfo, subjectPath] = ...
                 obj.iResolveSubject(subjectID);
+            obj.iAssertHealthyForMutation(UMITProjectStore.iScope( ...
+                'subjects', {SubjectInfo.uuid}));
             originalSubjectInfo = SubjectInfo;
 
             sessionID = obj.iNormalizeManagedID( ...
                 UMITProjectStore.iGetTextField( ...
                 sessionInfo, 'sessionID', '', false, errID), ...
-                'sessionID');
+                'sessionID', false);
             displayName = UMITProjectStore.iGetTextField( ...
                 sessionInfo, 'displayName', sessionID, true, errID);
             if isempty(strtrim(displayName))
@@ -1233,8 +1197,6 @@ classdef UMITProjectStore < handle
 
             obj.iAssertUniqueRegistryID( ...
                 SubjectInfo.sessionRegistry, sessionID, 'session');
-
-            [rigUUID, rigID] = UMITProjectStore.iFolderLedgerRig(saveFolder);
 
             sessionUUID = UMITProjectStore.iGenerateUUID();
             sessionRel = UMITProjectStore.iJoinRelative( ...
@@ -1278,11 +1240,8 @@ classdef UMITProjectStore < handle
             SessionInfo.processedDataFolder = saveFolder;
             SessionInfo.processedDataBindingUUID = ...
                 UMITProjectStore.iGenerateUUID();
-            SessionInfo.rigUUID = rigUUID;
-            SessionInfo.rigID = rigID;
             SessionInfo.createdOn = nowTime;
             SessionInfo.modifiedOn = nowTime;
-            SessionInfo.activeRegistrationTransformUUID = '';
             SessionInfo.resourceRegistry = ...
                 UMITProjectStore.iEmptyResourceRegistry();
 
@@ -1305,10 +1264,7 @@ classdef UMITProjectStore < handle
                     obj.Schema.files.sessionMetadata), ...
                 obj.Schema.metadataVariables.session, SessionInfo);
 
-            tempBindingPath = obj.iWriteProjectBindingTemp( ...
-                saveFolder, ProjectBinding);
-            cleanupBindingTemp = onCleanup(@() ...
-                UMITProjectStore.iDeleteFileIfPresent(tempBindingPath));
+            ledgerBackup = UMITProjectStore.iBackupLedger(saveFolder);
 
             [ok, message] = movefile(stagedSessionPath, sessionPath, 'f');
             if ~ok
@@ -1324,36 +1280,53 @@ classdef UMITProjectStore < handle
             try
                 obj.iSaveSubjectInfo(subjectPath, SubjectInfo);
 
-                [ok, message] = movefile( ...
-                    tempBindingPath, bindingPath, 'f');
-                if ~ok
-                    error(errID, ...
-                        'Could not install project binding file: %s', ...
-                        message);
-                end
+                obj.iInstallBinding(saveFolder, ProjectBinding, ...
+                    SubjectInfo.subjectID, sessionID);
 
-                obj.iAssertValidAfterMutation();
+                obj.iAssertValidAfterMutation(UMITProjectStore.iScope( ...
+                    'subjects', {SubjectInfo.uuid}, 'sessions', {sessionUUID}));
             catch ME
-                UMITProjectStore.iDeleteFileIfPresent(bindingPath);
+                UMITProjectStore.iRestoreLedger(ledgerBackup);
                 UMITProjectStore.iRemoveFolderIfPresent(sessionPath);
                 obj.iSaveSubjectInfo(subjectPath, originalSubjectInfo);
                 rethrow(ME)
             end
 
             obj.iAppendLog('addSession', sessionUUID, 'completed');
-            clear cleanupBindingTemp cleanupStage lockCleanup
+            clear cleanupStage lockCleanup
         end
 
         function ProjectBinding = bindRawDataFolder( ...
                 obj, subjectID, sessionID, rawDataFolder, varargin)
             %BINDRAWDATAFOLDER Bind one raw-data folder to a session.
+            %
+            %   store.bindRawDataFolder(subjectID, sessionID, rawDataFolder)
+            %   store.bindRawDataFolder(subjectID, sessionID, '')
+            %
             %   The RawFolder may be the same folder as the session
             %   SaveFolder. It must contain a .bin, .tif, or .tiff file.
             %
+            %   Single RawFolder authority (audit item 7): the SaveFolder's
+            %   DataParams.folders.RawFolder, written by the importers. An
+            %   empty RAWDATAFOLDER takes it from there; a different folder
+            %   is refused (Umitoolbox:UMITProjectStore:rawFolderMismatch).
+            %   SessionInfo.rawDataFolder only records where the store placed
+            %   the RawFolder's ledger. A SaveFolder whose DataParams has no
+            %   RawFolder (older imports) accepts any RawFolder.
+            %
             %   Name-Value option:
-            %       ReplaceOrphanBinding - Replace a structurally valid .umitlink
+            %       ReplaceOrphanBinding - Replace a structurally valid binding
             %                              whose project UUID is unavailable.
 
+            if isempty(rawDataFolder) || strlength(string(rawDataFolder)) == 0
+                rawDataFolder = obj.iDataParamsRawFolder( ...
+                    obj.getSessionInfo(subjectID, sessionID));
+                if isempty(rawDataFolder)
+                    error('Umitoolbox:UMITProjectStore:rawFolderUnknown', ...
+                        ['The SaveFolder''s DataParams records no RawFolder; give ' ...
+                         'the RawFolder explicitly.']);
+                end
+            end
             ProjectBinding = obj.iBindSessionDataFolder( ...
                 subjectID, sessionID, rawDataFolder, 'rawDataFolder', ...
                 varargin{:});
@@ -1364,7 +1337,7 @@ classdef UMITProjectStore < handle
             %BINDPROCESSEDDATAFOLDER Bind or relocate a session SaveFolder.
             %
             %   Name-Value option:
-            %       ReplaceOrphanBinding - Replace a structurally valid .umitlink
+            %       ReplaceOrphanBinding - Replace a structurally valid binding
             %                              whose project UUID is unavailable.
 
             SessionInfo = obj.getSessionInfo(subjectID, sessionID);
@@ -1459,6 +1432,9 @@ classdef UMITProjectStore < handle
             %   and ledger update are rollback-safe, and an unavailable old
             %   RawFolder does not prevent relocation. The new RawFolder may
             %   equal the SaveFolder and must contain recognizable raw data.
+            %   It must equal the SaveFolder's DataParams.folders.RawFolder
+            %   when that is recorded (audit item 7): after moving raw data,
+            %   update DataParams first.
 
             ProjectBinding = obj.iRelocateSessionDataFolder( ...
                 subjectID, sessionID, newRawDataFolder, ...
@@ -1487,7 +1463,7 @@ classdef UMITProjectStore < handle
             %
             %   The project-owned session metadata and registry entry are
             %   removed. External scientific data is never deleted. When the
-            %   SaveFolder is accessible, its matching .umitlink is removed;
+            %   SaveFolder is accessible, its matching project-ledger binding is removed (unbind event);
             %   malformed links that still occupy the managed filename are
             %   invalidated without touching other dataset files.
 
@@ -1512,7 +1488,8 @@ classdef UMITProjectStore < handle
             subjectUUID = UMITProjectStore.iNormalizeUUIDInput(subjectUUID);
             obj.iAssertWritable();
             lockCleanup = obj.iAcquireWriteLock('removeSubjectFromProject'); %#ok<NASGU>
-            obj.iAssertHealthyForMutation();
+            obj.iAssertHealthyForMutation(UMITProjectStore.iScope( ...
+                'subjectTrees', {subjectUUID}));
 
             [SubjectInfo, subjectRecord] = obj.getSubjectInfoByUUID(subjectUUID);
             ProjectInfo = obj.getProjectInfo();
@@ -1545,8 +1522,7 @@ classdef UMITProjectStore < handle
                 ProjectInfo.modifiedOn = datetime('now');
                 obj.iSaveProjectInfo(ProjectInfo);
                 obj.iDeletePreflightedBindings(linkChanges);
-                obj.iAssertValidAfterMutation();
-                obj.IsReadOnly = false;
+                obj.iAssertValidAfterMutation(UMITProjectStore.iScope());
             catch ME
                 obj.iRestorePreflightedBindings(linkChanges);
                 if ~isfolder(subjectPath) && isfolder(stagedSubjectPath)
@@ -1576,7 +1552,13 @@ classdef UMITProjectStore < handle
             %   project-owned metadata and managed resources are deleted.
             %   Deletion is deliberately available for a project opened
             %   read-only after validation failure, so corrupted managed
-            %   metadata does not become undeletable.
+            %   metadata does not become undeletable (audit item 23): an
+            %   unreadable subject or session, an offline data folder, or a
+            %   folder whose ledger no longer binds it to this project is
+            %   skipped instead of blocking the deletion. Skipped folders
+            %   keep their ledger, which then reads as an orphan binding
+            %   (removeOrphanProjectBinding clears it). RESULT.skipped lists
+            %   them (fields folder/node and reason).
             %   External raw and processed imaging folders are never deleted.
 
             errID = 'Umitoolbox:UMITProjectStore:deleteProjectFailed';
@@ -1598,7 +1580,7 @@ classdef UMITProjectStore < handle
             mkdir(recoveryPath);
             cleanupRecovery = onCleanup(@() ...
                 UMITProjectStore.iRemoveFolderIfPresent(recoveryPath));
-            linkChanges = obj.iPreflightProjectRemoval( ...
+            [linkChanges, skipped] = obj.iPreflightProjectRemoval( ...
                 ProjectInfo, recoveryPath);
 
             try
@@ -1620,7 +1602,8 @@ classdef UMITProjectStore < handle
 
             result = struct('projectUUID', ProjectInfo.projectUUID, ...
                 'subjectsRemoved', numel(ProjectInfo.subjectRegistry), ...
-                'sessionsRemoved', sessionCount);
+                'sessionsRemoved', sessionCount, ...
+                'skipped', skipped);
             clear cleanupRecovery lockCleanup
         end
 
@@ -1633,17 +1616,6 @@ classdef UMITProjectStore < handle
             resourceUUID = obj.iAddManagedResource( ...
                 'subject', {subjectID}, 'imageReference', ...
                 sourceFile, resourceInfo);
-        end
-
-        function resourceUUID = addRegistrationTransform(obj, subjectID, sessionID, sourceFile, resourceInfo)
-            %ADDREGISTRATIONTRANSFORM Import a session registration transform.
-
-            if nargin < 5
-                resourceInfo = struct();
-            end
-            resourceUUID = obj.iAddManagedResource( ...
-                'session', {subjectID, sessionID}, ...
-                'registrationTransform', sourceFile, resourceInfo);
         end
 
         function archiveResource(obj, resourceUUID, varargin)
@@ -1670,9 +1642,9 @@ classdef UMITProjectStore < handle
 
             obj.iAssertWritable();
             lockCleanup = obj.iAcquireWriteLock('archiveResource');
-            obj.iAssertHealthyForMutation();
-
             location = obj.iLocateResource(resourceUUID);
+            scope = UMITProjectStore.iLocationScope(location);
+            obj.iAssertHealthyForMutation(scope);
             metadata = location.metadata;
             originalMetadata = metadata;
             record = metadata.resourceRegistry(location.recordIndex);
@@ -1701,7 +1673,7 @@ classdef UMITProjectStore < handle
                 replacement = metadata.resourceRegistry(replacementIndex);
                 if ~strcmp(replacement.type, record.type) || ...
                         strcmp(replacement.status, 'archived') || ...
-                        strcmp(replacement.uuid, record.uuid)
+                        strcmpi(replacement.uuid, record.uuid)
                     error(errID, ...
                         'Replacement must be a different non-archived resource of the same type.');
                 end
@@ -1735,7 +1707,7 @@ classdef UMITProjectStore < handle
 
             try
                 obj.iSaveLocatedMetadata(location, metadata);
-                obj.iAssertValidAfterMutation();
+                obj.iAssertValidAfterMutation(scope);
             catch ME
                 movefile(archivePath, oldPath, 'f');
                 obj.iSaveLocatedMetadata(location, originalMetadata);
@@ -1756,9 +1728,9 @@ classdef UMITProjectStore < handle
 
             obj.iAssertWritable();
             lockCleanup = obj.iAcquireWriteLock('restoreResource');
-            obj.iAssertHealthyForMutation();
-
             location = obj.iLocateResource(resourceUUID);
+            scope = UMITProjectStore.iLocationScope(location);
+            obj.iAssertHealthyForMutation(scope);
             metadata = location.metadata;
             originalMetadata = metadata;
             record = metadata.resourceRegistry(location.recordIndex);
@@ -1791,7 +1763,7 @@ classdef UMITProjectStore < handle
 
             try
                 obj.iSaveLocatedMetadata(location, metadata);
-                obj.iAssertValidAfterMutation();
+                obj.iAssertValidAfterMutation(scope);
             catch ME
                 movefile(activePath, oldPath, 'f');
                 obj.iSaveLocatedMetadata(location, originalMetadata);
@@ -1809,13 +1781,6 @@ classdef UMITProjectStore < handle
                 'imageReference', resourceUUID);
         end
 
-        function setActiveRegistrationTransform(obj, subjectID, sessionID, resourceUUID)
-            %SETACTIVEREGISTRATIONTRANSFORM Select an active session transform.
-
-            obj.iSetActiveResource('session', {subjectID, sessionID}, ...
-                'registrationTransform', resourceUUID);
-        end
-
         function updateProjectMetadata(obj, updates)
             %UPDATEPROJECTMETADATA Update editable project metadata fields.
 
@@ -1823,7 +1788,7 @@ classdef UMITProjectStore < handle
             obj.iAssertUpdateStruct(updates, errID);
             obj.iAssertWritable();
             lockCleanup = obj.iAcquireWriteLock('updateProjectMetadata');
-            obj.iAssertHealthyForMutation();
+            obj.iAssertHealthyForMutation(UMITProjectStore.iScope());
 
             ProjectInfo = obj.getProjectInfo();
             originalProjectInfo = ProjectInfo;
@@ -1838,7 +1803,7 @@ classdef UMITProjectStore < handle
 
             try
                 obj.iSaveProjectInfo(ProjectInfo);
-                obj.iAssertValidAfterMutation();
+                obj.iAssertValidAfterMutation(UMITProjectStore.iScope());
             catch ME
                 obj.iSaveProjectInfo(originalProjectInfo);
                 rethrow(ME)
@@ -1855,10 +1820,11 @@ classdef UMITProjectStore < handle
             obj.iAssertUpdateStruct(updates, errID);
             obj.iAssertWritable();
             lockCleanup = obj.iAcquireWriteLock('updateSubjectMetadata');
-            obj.iAssertHealthyForMutation();
 
             [subjectRecord, SubjectInfo, subjectPath, projectIndex, ProjectInfo] = ...
                 obj.iResolveSubject(subjectID);
+            scope = UMITProjectStore.iScope('subjects', {SubjectInfo.uuid});
+            obj.iAssertHealthyForMutation(scope);
             SubjectInfo = obj.iApplyEditableUpdates( ...
                 SubjectInfo, updates, obj.Schema.editableFields.subject, errID);
             SubjectInfo.modifiedOn = datetime('now');
@@ -1877,7 +1843,7 @@ classdef UMITProjectStore < handle
             try
                 obj.iSaveSubjectInfo(subjectPath, SubjectInfo);
                 obj.iSaveProjectInfo(ProjectInfo);
-                obj.iAssertValidAfterMutation();
+                obj.iAssertValidAfterMutation(scope);
             catch ME
                 copyfile(fullfile(backupPath, obj.Schema.files.subjectMetadata), ...
                     fullfile(subjectPath, obj.Schema.files.subjectMetadata), 'f');
@@ -1895,10 +1861,7 @@ classdef UMITProjectStore < handle
             %
             %   Data-folder paths and binding UUIDs are managed only through
             %   bindRawDataFolder, bindProcessedDataFolder, and the matching
-            %   unbind methods. rigID/rigUUID are rejected here as well: they
-            %   mirror the rig bound in the SaveFolder's rig ledger. Change
-            %   the folder's rig in DataViewer (Management > Rig > Folder
-            %   Rig), then refresh the mirror with migrateSessionRigAssignment.
+            %   unbind methods. Any field that is not editable is rejected.
 
             errID = 'Umitoolbox:UMITProjectStore:updateSessionFailed';
             obj.iAssertUpdateStruct(updates, errID);
@@ -1912,24 +1875,15 @@ classdef UMITProjectStore < handle
                      'through updateSessionMetadata. Use the binding methods.']);
             end
 
-            forbiddenRigFields = intersect(fieldnames(updates), ...
-                {'rigID', 'rigUUID'});
-            if ~isempty(forbiddenRigFields)
-                error('Umitoolbox:UMITProjectStore:rigAssignmentNotSupported', ...
-                    ['A session''s rig cannot be changed through ' ...
-                     'updateSessionMetadata: it mirrors the rig bound in the ' ...
-                     'SaveFolder''s rig ledger. Change the folder''s rig in ' ...
-                     'DataViewer (Management > Rig > Folder Rig), then call ' ...
-                     'migrateSessionRigAssignment to refresh the mirror.']);
-            end
-
             obj.iAssertWritable();
             lockCleanup = obj.iAcquireWriteLock('updateSessionMetadata');
-            obj.iAssertHealthyForMutation();
 
             [~, SubjectInfo, subjectPath, SessionInfo, ...
                 sessionPath, sessionIndex] = ...
                 obj.iResolveSession(subjectID, sessionID);
+            scope = UMITProjectStore.iScope('subjects', {SubjectInfo.uuid}, ...
+                'sessions', {SessionInfo.uuid});
+            obj.iAssertHealthyForMutation(scope);
 
             SessionInfo = obj.iApplyEditableUpdates( ...
                 SessionInfo, updates, obj.Schema.editableFields.session, errID);
@@ -1955,7 +1909,7 @@ classdef UMITProjectStore < handle
             try
                 obj.iSaveSessionInfo(sessionPath, SessionInfo);
                 obj.iSaveSubjectInfo(subjectPath, SubjectInfo);
-                obj.iAssertValidAfterMutation();
+                obj.iAssertValidAfterMutation(scope);
             catch ME
                 copyfile(fullfile(backupPath, ...
                     obj.Schema.files.sessionMetadata), ...
@@ -1973,36 +1927,6 @@ classdef UMITProjectStore < handle
             clear cleanupBackup lockCleanup
         end
 
-        function SessionInfo = migrateSessionRigAssignment(obj, subjectID, sessionID)
-            %MIGRATESESSIONRIGASSIGNMENT Refresh a Session's rig mirror.
-            %
-            %   Copies the rig bound in the session SaveFolder's rig ledger
-            %   (UMITRigLedger) into the session's rigUUID/rigID mirror.
-            %   Read-only towards the SaveFolder: nothing is written there
-            %   (no AcqInfos.mat stamping, no Active-rig fallback). A session
-            %   whose mirror already matches, or whose folder is not bound,
-            %   is returned unchanged.
-
-            errID = 'Umitoolbox:UMITProjectStore:sessionRigMigrationFailed';
-            [~, ~, ~, SessionInfo] = obj.iResolveSession(subjectID, sessionID);
-            if ~isfield(SessionInfo, 'processedDataFolder') || ...
-                    isempty(SessionInfo.processedDataFolder)
-                error(errID, 'Session has no available SaveFolder.');
-            end
-
-            [rigUUID, rigID] = UMITProjectStore.iFolderLedgerRig( ...
-                SessionInfo.processedDataFolder);
-            currentUUID = '';
-            if isfield(SessionInfo, 'rigUUID')
-                currentUUID = strtrim(char(string(SessionInfo.rigUUID)));
-            end
-            if isempty(rigUUID) || strcmpi(currentUUID, rigUUID)
-                return
-            end
-            obj.iStampSessionRig(subjectID, sessionID, rigUUID, rigID);
-            SessionInfo = obj.getSessionInfo(subjectID, sessionID);
-        end
-
         function updateResourceMetadata(obj, resourceUUID, updates)
             %UPDATERESOURCEMETADATA Update a resource display name or description.
 
@@ -2010,9 +1934,9 @@ classdef UMITProjectStore < handle
             obj.iAssertUpdateStruct(updates, errID);
             obj.iAssertWritable();
             lockCleanup = obj.iAcquireWriteLock('updateResourceMetadata');
-            obj.iAssertHealthyForMutation();
-
             location = obj.iLocateResource(resourceUUID);
+            scope = UMITProjectStore.iLocationScope(location);
+            obj.iAssertHealthyForMutation(scope);
             metadata = location.metadata;
             originalMetadata = metadata;
             record = metadata.resourceRegistry(location.recordIndex);
@@ -2024,7 +1948,7 @@ classdef UMITProjectStore < handle
 
             try
                 obj.iSaveLocatedMetadata(location, metadata);
-                obj.iAssertValidAfterMutation();
+                obj.iAssertValidAfterMutation(scope);
             catch ME
                 obj.iSaveLocatedMetadata(location, originalMetadata);
                 rethrow(ME)
@@ -2039,12 +1963,13 @@ classdef UMITProjectStore < handle
             errID = 'Umitoolbox:UMITProjectStore:renameSubjectFailed';
             obj.iAssertWritable();
             lockCleanup = obj.iAcquireWriteLock('renameSubjectID');
-            obj.iAssertHealthyForMutation();
 
             [~, SubjectInfo, oldPath, projectIndex, ProjectInfo] = ...
                 obj.iResolveSubject(oldSubjectID);
+            scope = UMITProjectStore.iScope('subjectTrees', {SubjectInfo.uuid});
+            obj.iAssertHealthyForMutation(scope);
             oldSubjectID = SubjectInfo.subjectID;
-            newSubjectID = obj.iNormalizeManagedID(newSubjectID, 'subjectID');
+            newSubjectID = obj.iNormalizeManagedID(newSubjectID, 'subjectID', false);
             if strcmp(oldSubjectID, newSubjectID)
                 clear lockCleanup
                 return
@@ -2114,7 +2039,7 @@ classdef UMITProjectStore < handle
                 ProjectInfo.subjectRegistry(projectIndex).relativePath = newRel;
                 ProjectInfo.modifiedOn = datetime('now');
                 obj.iSaveProjectInfo(ProjectInfo);
-                obj.iAssertValidAfterMutation();
+                obj.iAssertValidAfterMutation(scope);
 
             catch ME
                 UMITProjectStore.iRemoveFolderIfPresent(temporaryPath);
@@ -2139,12 +2064,14 @@ classdef UMITProjectStore < handle
             errID = 'Umitoolbox:UMITProjectStore:renameSessionFailed';
             obj.iAssertWritable();
             lockCleanup = obj.iAcquireWriteLock('renameSessionID');
-            obj.iAssertHealthyForMutation();
 
             [subjectRecord, SubjectInfo, subjectPath, SessionInfo, oldPath, sessionIndex] = ...
                 obj.iResolveSession(subjectID, oldSessionID);
+            scope = UMITProjectStore.iScope('subjects', {SubjectInfo.uuid}, ...
+                'sessions', {SessionInfo.uuid});
+            obj.iAssertHealthyForMutation(scope);
             oldSessionID = SessionInfo.sessionID;
-            newSessionID = obj.iNormalizeManagedID(newSessionID, 'sessionID');
+            newSessionID = obj.iNormalizeManagedID(newSessionID, 'sessionID', false);
             if strcmp(oldSessionID, newSessionID)
                 clear lockCleanup
                 return
@@ -2198,7 +2125,7 @@ classdef UMITProjectStore < handle
                 SubjectInfo.sessionRegistry(sessionIndex).relativePath = newRel;
                 SubjectInfo.modifiedOn = datetime('now');
                 obj.iSaveSubjectInfo(subjectPath, SubjectInfo);
-                obj.iAssertValidAfterMutation();
+                obj.iAssertValidAfterMutation(scope);
 
             catch ME
                 UMITProjectStore.iRemoveFolderIfPresent(temporaryPath);
@@ -2295,7 +2222,7 @@ classdef UMITProjectStore < handle
             %     - The source and target subjects' sessionRegistry entries
             %       are updated together under one project write lock.
             %     - If the session has a bound rawDataFolder and/or
-            %       processedDataFolder, each bound folder's .umitlink file
+            %       processedDataFolder, each bound folder's project-ledger binding
             %       is rewritten so its subjectUUID matches the new owner
             %       (projectUUID and sessionUUID are unchanged, since the
             %       project itself does not change).
@@ -2316,7 +2243,6 @@ classdef UMITProjectStore < handle
             errID = 'Umitoolbox:UMITProjectStore:moveSessionFailed';
             obj.iAssertWritable();
             lockCleanup = obj.iAcquireWriteLock('moveSessionToSubject');
-            obj.iAssertHealthyForMutation();
 
             targetSubjectUUID = ...
                 UMITProjectStore.iNormalizeUUIDInput(targetSubjectUUID);
@@ -2324,6 +2250,11 @@ classdef UMITProjectStore < handle
             [~, OldSubjectInfo, oldSubjectPath, SessionInfo, ...
                 oldSessionPath, oldSessionIndex, oldSessionRecord] = ...
                 obj.iResolveSessionByUUID(sessionUUID);
+            % The session and both subject nodes (registries change).
+            scope = UMITProjectStore.iScope( ...
+                'subjects', {OldSubjectInfo.uuid, targetSubjectUUID}, ...
+                'sessions', {SessionInfo.uuid});
+            obj.iAssertHealthyForMutation(scope);
 
             if strcmpi(OldSubjectInfo.uuid, targetSubjectUUID)
                 clear lockCleanup
@@ -2379,7 +2310,7 @@ classdef UMITProjectStore < handle
                 bindingPath = fullfile(SessionInfo.(role), ...
                     obj.Schema.files.projectBinding);
                 backupPath = fullfile(recoveryPath, ...
-                    sprintf('%s.umitlink', role));
+                    sprintf('%s_%s', role, obj.Schema.files.projectBinding));
                 copyfile(bindingPath, backupPath, 'f');
                 bindingBackups(end+1) = struct( ...
                     'role', {role}, 'path', {bindingPath}, ...
@@ -2405,16 +2336,8 @@ classdef UMITProjectStore < handle
                     ProjectBinding = UMITProjectStore.readProjectBinding( ...
                         SessionInfo.(role));
                     ProjectBinding.subjectUUID = TargetSubjectInfo.uuid;
-                    ProjectBinding.modifiedOn = datetime('now');
-                    tempBindingPath = obj.iWriteProjectBindingTemp( ...
-                        SessionInfo.(role), ProjectBinding);
-                    [ok, message] = movefile( ...
-                        tempBindingPath, bindingBackups(iRole).path, 'f');
-                    if ~ok
-                        error(errID, ...
-                            'Could not update data-folder binding: %s', ...
-                            message);
-                    end
+                    obj.iInstallBinding(SessionInfo.(role), ProjectBinding, ...
+                        TargetSubjectInfo.subjectID, SessionInfo.sessionID);
                 end
 
                 OldSubjectInfo.sessionRegistry(oldSessionIndex) = [];
@@ -2427,7 +2350,7 @@ classdef UMITProjectStore < handle
                 TargetSubjectInfo.modifiedOn = datetime('now');
                 obj.iSaveSubjectInfo(targetSubjectPath, TargetSubjectInfo);
 
-                obj.iAssertValidAfterMutation();
+                obj.iAssertValidAfterMutation(scope);
 
             catch ME
                 UMITProjectStore.iRemoveFolderIfPresent(newSessionPath);
@@ -2479,7 +2402,7 @@ classdef UMITProjectStore < handle
             %     2) Only once (1) has committed, ATTACH the session under
             %        the target project.
             %   This ordering is required, not just a preference: a bound
-            %   rawDataFolder/processedDataFolder's .umitlink file can only
+            %   rawDataFolder/processedDataFolder's project-ledger binding can only
             %   ever satisfy ONE project's full validation at a time (its
             %   projectUUID/subjectUUID must match whichever project's
             %   SessionInfo currently references that folder). Attaching to
@@ -2516,7 +2439,7 @@ classdef UMITProjectStore < handle
             %       subject with the source's subjectID in the target
             %       project. SessionInfo.subjectUUID is updated to that
             %       target-project subject's UUID.
-            %     - Any bound rawDataFolder/processedDataFolder .umitlink
+            %     - Any bound rawDataFolder/processedDataFolder project-ledger binding
             %       file is rewritten with the target project's projectUUID
             %       and the target subject's UUID; sessionUUID and
             %       bindingUUID are unchanged.
@@ -2567,10 +2490,11 @@ classdef UMITProjectStore < handle
             sourceLock = obj.iAcquireWriteLock( ...
                 'rebindSessionToProject_detach');
             try
-                obj.iAssertHealthyForMutation();
                 [~, SubjectInfo, subjectPath, SessionInfo, sessionPath, ...
                     sessionIndex, sessionRecord] = ...
                     obj.iResolveSessionByUUID(sessionUUID);
+                obj.iAssertHealthyForMutation(UMITProjectStore.iScope( ...
+                    'subjects', {SubjectInfo.uuid}, 'sessions', {sessionUUID}));
 
                 recoveryPath = obj.iCreateRecoveryFolder( ...
                     'rebindSessionToProject');
@@ -2584,7 +2508,8 @@ classdef UMITProjectStore < handle
                 SubjectInfo.sessionRegistry(sessionIndex) = [];
                 SubjectInfo.modifiedOn = datetime('now');
                 obj.iSaveSubjectInfo(subjectPath, SubjectInfo);
-                obj.iAssertValidAfterMutation();
+                obj.iAssertValidAfterMutation(UMITProjectStore.iScope( ...
+                    'subjects', {SubjectInfo.uuid}));
 
             catch ME
                 if exist('sessionPath', 'var') && exist('stagingSessionPath', 'var') ...
@@ -2613,7 +2538,6 @@ classdef UMITProjectStore < handle
             targetLock = targetStore.iAcquireWriteLock( ...
                 'rebindSessionToProject_attach');
             try
-                targetStore.iAssertHealthyForMutation();
                 TargetProjectInfo = targetStore.getProjectInfo();
                 targetSubjectIdx = targetStore.iFindRegistryIndex( ...
                     TargetProjectInfo.subjectRegistry, SubjectInfo.subjectID);
@@ -2625,6 +2549,8 @@ classdef UMITProjectStore < handle
                     fullfile(targetSubjectPath, ...
                     targetStore.Schema.files.subjectMetadata), ...
                     targetStore.Schema.metadataVariables.subject);
+                targetStore.iAssertHealthyForMutation(UMITProjectStore.iScope( ...
+                    'subjects', {TargetSubjectInfo.uuid}));
 
                 targetStore.iAssertUniqueRegistryID( ...
                     TargetSubjectInfo.sessionRegistry, ...
@@ -2670,18 +2596,9 @@ classdef UMITProjectStore < handle
                         AttachedSessionInfo.(role));
                     ProjectBinding.projectUUID = TargetProjectInfo.projectUUID;
                     ProjectBinding.subjectUUID = TargetSubjectInfo.uuid;
-                    ProjectBinding.modifiedOn = datetime('now');
-                    tempBindingPath = targetStore.iWriteProjectBindingTemp( ...
-                        AttachedSessionInfo.(role), ProjectBinding);
-                    bindingPath = fullfile(AttachedSessionInfo.(role), ...
-                        targetStore.Schema.files.projectBinding);
-                    [ok, message] = movefile( ...
-                        tempBindingPath, bindingPath, 'f');
-                    if ~ok
-                        error(errID, ...
-                            'Could not update data-folder binding: %s', ...
-                            message);
-                    end
+                    targetStore.iInstallBinding(AttachedSessionInfo.(role), ...
+                        ProjectBinding, TargetSubjectInfo.subjectID, ...
+                        AttachedSessionInfo.sessionID);
                 end
 
                 newSessionRecord = sessionRecord;
@@ -2691,7 +2608,8 @@ classdef UMITProjectStore < handle
                 targetStore.iSaveSubjectInfo( ...
                     targetSubjectPath, TargetSubjectInfo);
 
-                targetStore.iAssertValidAfterMutation();
+                targetStore.iAssertValidAfterMutation(UMITProjectStore.iScope( ...
+                    'subjects', {TargetSubjectInfo.uuid}, 'sessions', {sessionUUID}));
 
             catch ME
                 if ~isempty(newSessionPath) && isfolder(newSessionPath)
@@ -2715,97 +2633,6 @@ classdef UMITProjectStore < handle
                 sprintf('moved to project %s', targetProjectUUID));
             targetStore.iAppendLog('rebindSessionToProject', SessionInfo.uuid, ...
                 sprintf('received from project %s', ProjectInfo.projectUUID));
-        end
-
-        function iCompensateFailedRebindDetach(obj, sessionUUID, ...
-                subjectID, SessionInfo, stagingSessionPath, backupSubject, ...
-                recoveryPath, targetProjectUUID, attachError)
-            %ICOMPENSATEFAILEDREBINDDETACH Best-effort restore into source.
-            %
-            % Called only when rebindSessionToProject's phase 2 (attach to
-            % the target project) fails after phase 1 (detach from this,
-            % the source, project) already committed. Restores the session
-            % folder and this project's subject registry entry from the
-            % phase-1 recovery snapshot. SessionInfo is the pristine,
-            % pre-attach struct (NOT the copy phase 2 mutated with the
-            % target subject's UUID/ID) and is re-saved on top of the
-            % restored folder so the session's own metadata cannot end up
-            % claiming the target subject as its owner. Always errors: with
-            % the original attach failure if the restore succeeds, or with
-            % both errors combined (and the recovery path highlighted for
-            % manual recovery) if the restore itself fails.
-
-            restoreErrID = 'Umitoolbox:UMITProjectStore:rebindSessionFailed';
-            sourceLock = obj.iAcquireWriteLock('rebindSessionToProject_undo');
-            try
-                % Phase 1 already removed the session from this subject, so
-                % only the subject (not the session) can still be resolved
-                % normally; the session's folder location is rebuilt from
-                % the subject's own relativePath plus the known sessionID.
-                [subjectRecord, ~, subjectPath] = ...
-                    obj.iResolveSubject(subjectID);
-                sessionRel = UMITProjectStore.iJoinRelative( ...
-                    subjectRecord.relativePath, obj.Schema.folders.sessions, ...
-                    SessionInfo.sessionID);
-                sessionPath = obj.iResolveRelativePath(sessionRel);
-
-                UMITProjectStore.iRemoveFolderIfPresent(sessionPath);
-                copyfile(stagingSessionPath, sessionPath, 'f');
-                obj.iSaveSessionInfo(sessionPath, SessionInfo);
-                copyfile(backupSubject, ...
-                    fullfile(subjectPath, obj.Schema.files.subjectMetadata), 'f');
-
-                SourceProjectInfo = obj.getProjectInfo();
-                boundRoles = {'rawDataFolder', 'processedDataFolder'};
-                for iRole = 1:numel(boundRoles)
-                    role = boundRoles{iRole};
-                    if isempty(SessionInfo.(role)) || ...
-                            ~isfolder(SessionInfo.(role))
-                        continue
-                    end
-                    ProjectBinding = UMITProjectStore.readProjectBinding( ...
-                        SessionInfo.(role));
-                    ProjectBinding.projectUUID = ...
-                        SourceProjectInfo.projectUUID;
-                    ProjectBinding.subjectUUID = SessionInfo.subjectUUID;
-                    ProjectBinding.modifiedOn = datetime('now');
-                    tempBindingPath = obj.iWriteProjectBindingTemp( ...
-                        SessionInfo.(role), ProjectBinding);
-                    bindingPath = fullfile(SessionInfo.(role), ...
-                        obj.Schema.files.projectBinding);
-                    [ok, message] = movefile( ...
-                        tempBindingPath, bindingPath, 'f');
-                    if ~ok
-                        error(restoreErrID, ...
-                            'Could not restore data-folder binding: %s', ...
-                            message);
-                    end
-                end
-                obj.iAssertValidAfterMutation();
-
-                clear sourceLock
-
-            catch ME
-                clear sourceLock
-                warning(restoreErrID, ...
-                    ['Could not attach session (UUID: %s) to target ' ...
-                     'project %s, AND the automatic restore into this ' ...
-                     'source project also failed. The session is not ' ...
-                     'referenced by either project''s registry. Its files ' ...
-                     'are preserved for manual recovery at: %s'], ...
-                    sessionUUID, targetProjectUUID, recoveryPath);
-                error(restoreErrID, ...
-                    ['Rebind failed and automatic restore also failed. ' ...
-                     'Attach cause: %s | Restore cause: %s | Recovery ' ...
-                     'snapshot: %s'], attachError.message, ME.message, ...
-                    recoveryPath);
-            end
-
-            UMITProjectStore.iRemoveFolderIfPresent(recoveryPath);
-            error(restoreErrID, ...
-                ['Could not attach session to target project %s. The ' ...
-                 'session was restored to this (source) project. ' ...
-                 'Cause: %s'], targetProjectUUID, attachError.message);
         end
 
         function LockInfo = getLockInfo(obj)
@@ -2904,20 +2731,45 @@ classdef UMITProjectStore < handle
             %   report = store.validate()
             %   report = store.validate('Mode', 'quick')
             %   report = store.validate('Mode', 'full')
+            %   report = store.validate('Mode', 'quick', 'Scope', scope)
             %
             %   Quick mode performs all structural and registry checks but skips
             %   file checksum computation. Full mode also validates checksums.
+            %
+            %   Every issue carries a storeLevel flag: true for errors of the
+            %   store itself (project metadata, schema, required folders,
+            %   registries, folders below 'subjects' that belong to no
+            %   registered subject, global UUIDs), false for errors that
+            %   belong to one registered subject or session. Only store-level
+            %   errors make a project read-only (per-session validity).
+            %
+            %   'Scope' (used by mutations, brief section 1.11) limits the
+            %   traversal to the entities a mutation touches: a struct with
+            %   cellstr fields subjects (subject nodes, without their
+            %   sessions), sessions (session nodes; their subject node must
+            %   be listed in subjects) and subjectTrees (subjects with all
+            %   their sessions). Project-level checks always run; the global
+            %   UUID scan is skipped. A scoped validation does not replace
+            %   LastValidationReport.
 
             p = inputParser;
             p.FunctionName = 'UMITProjectStore.validate';
             addParameter(p, 'Mode', 'full', ...
                 @(x) ischar(x) || (isstring(x) && isscalar(x)));
+            addParameter(p, 'Scope', [], @(x) isempty(x) || isstruct(x));
             parse(p, varargin{:});
 
             mode = lower(char(string(p.Results.Mode)));
             if ~ismember(mode, {'quick', 'full'})
                 error('Umitoolbox:UMITProjectStore:invalidValidationMode', ...
                     'Validation mode must be "quick" or "full".');
+            end
+            scope = p.Results.Scope;
+            isScoped = isstruct(scope);
+            if isScoped
+                scope = UMITProjectStore.iScope( ...
+                    'subjects', scope.subjects, 'sessions', scope.sessions, ...
+                    'subjectTrees', scope.subjectTrees);
             end
 
             report = obj.iNewValidationReport(mode);
@@ -2928,8 +2780,7 @@ classdef UMITProjectStore < handle
                 report = obj.iAddIssue(report, 'error', ...
                     'missing_project_metadata', 'project', '', ...
                     'project.mat is missing.', false);
-                report.isValid = false;
-                obj.LastValidationReport = report;
+                report = obj.iFinishReport(report, [], isScoped);
                 return
             end
 
@@ -2940,8 +2791,7 @@ classdef UMITProjectStore < handle
                 report = obj.iAddIssue(report, 'error', ...
                     'invalid_project_metadata', 'project', ...
                     obj.Schema.files.projectMetadata, ME.message, false);
-                report.isValid = false;
-                obj.LastValidationReport = report;
+                report = obj.iFinishReport(report, [], isScoped);
                 return
             end
 
@@ -2996,13 +2846,18 @@ classdef UMITProjectStore < handle
             if isfield(ProjectInfo, 'subjectRegistry') && ...
                     obj.iIsRegistryStruct(ProjectInfo.subjectRegistry)
                 for iSubject = 1:numel(ProjectInfo.subjectRegistry)
+                    subjectRecord = ProjectInfo.subjectRegistry(iSubject);
+                    if isScoped && ~UMITProjectStore.iScopeHasSubject( ...
+                            scope, subjectRecord.uuid)
+                        continue
+                    end
                     try
                         report = obj.iValidateSubjectNode(report, ...
-                            ProjectInfo.subjectRegistry(iSubject), ProjectInfo, mode);
+                            subjectRecord, ProjectInfo, mode, scope);
                     catch ME
                         report = obj.iAddIssue(report, 'error', ...
-                            'subject_validation_failed', 'subject', '', ...
-                            ME.message, false);
+                            'subject_validation_failed', 'subject', ...
+                            subjectRecord.relativePath, ME.message, false);
                     end
                 end
             end
@@ -3011,20 +2866,102 @@ classdef UMITProjectStore < handle
                 report = obj.iValidateUnregisteredTopNodes(report, ProjectInfo);
             end
 
-            try
-                report = obj.iValidateGlobalUUIDs(report, ProjectInfo);
-            catch ME
-                report = obj.iAddIssue(report, 'error', ...
-                    'global_uuid_validation_failed', 'project', '', ...
-                    ME.message, false);
+            if ~isScoped
+                try
+                    report = obj.iValidateGlobalUUIDs(report, ProjectInfo);
+                catch ME
+                    report = obj.iAddIssue(report, 'error', ...
+                        'global_uuid_validation_failed', 'project', '', ...
+                        ME.message, false);
+                end
             end
-            report.isValid = isempty(report.errors);
-            report.checkedOn = datetime('now');
-            obj.LastValidationReport = report;
+            report = obj.iFinishReport(report, ProjectInfo, isScoped);
         end
     end
 
     methods (Access = private)
+        function iCompensateFailedRebindDetach(obj, sessionUUID, ...
+                subjectID, SessionInfo, stagingSessionPath, backupSubject, ...
+                recoveryPath, targetProjectUUID, attachError)
+            %ICOMPENSATEFAILEDREBINDDETACH Best-effort restore into source.
+            %
+            % Called only when rebindSessionToProject's phase 2 (attach to
+            % the target project) fails after phase 1 (detach from this,
+            % the source, project) already committed. Restores the session
+            % folder and this project's subject registry entry from the
+            % phase-1 recovery snapshot. SessionInfo is the pristine,
+            % pre-attach struct (NOT the copy phase 2 mutated with the
+            % target subject's UUID/ID) and is re-saved on top of the
+            % restored folder so the session's own metadata cannot end up
+            % claiming the target subject as its owner. Always errors: with
+            % the original attach failure if the restore succeeds, or with
+            % both errors combined (and the recovery path highlighted for
+            % manual recovery) if the restore itself fails.
+
+            restoreErrID = 'Umitoolbox:UMITProjectStore:rebindSessionFailed';
+            sourceLock = obj.iAcquireWriteLock('rebindSessionToProject_undo');
+            try
+                % Phase 1 already removed the session from this subject, so
+                % only the subject (not the session) can still be resolved
+                % normally; the session's folder location is rebuilt from
+                % the subject's own relativePath plus the known sessionID.
+                [subjectRecord, ~, subjectPath] = ...
+                    obj.iResolveSubject(subjectID);
+                sessionRel = UMITProjectStore.iJoinRelative( ...
+                    subjectRecord.relativePath, obj.Schema.folders.sessions, ...
+                    SessionInfo.sessionID);
+                sessionPath = obj.iResolveRelativePath(sessionRel);
+
+                UMITProjectStore.iRemoveFolderIfPresent(sessionPath);
+                copyfile(stagingSessionPath, sessionPath, 'f');
+                obj.iSaveSessionInfo(sessionPath, SessionInfo);
+                copyfile(backupSubject, ...
+                    fullfile(subjectPath, obj.Schema.files.subjectMetadata), 'f');
+
+                SourceProjectInfo = obj.getProjectInfo();
+                boundRoles = {'rawDataFolder', 'processedDataFolder'};
+                for iRole = 1:numel(boundRoles)
+                    role = boundRoles{iRole};
+                    if isempty(SessionInfo.(role)) || ...
+                            ~isfolder(SessionInfo.(role))
+                        continue
+                    end
+                    ProjectBinding = UMITProjectStore.readProjectBinding( ...
+                        SessionInfo.(role));
+                    ProjectBinding.projectUUID = ...
+                        SourceProjectInfo.projectUUID;
+                    ProjectBinding.subjectUUID = SessionInfo.subjectUUID;
+                    obj.iInstallBinding(SessionInfo.(role), ProjectBinding, ...
+                        SessionInfo.subjectID, SessionInfo.sessionID);
+                end
+                obj.iAssertValidAfterMutation(UMITProjectStore.iScope( ...
+                    'subjects', {SessionInfo.subjectUUID}, 'sessions', {sessionUUID}));
+
+                clear sourceLock
+
+            catch ME
+                clear sourceLock
+                warning(restoreErrID, ...
+                    ['Could not attach session (UUID: %s) to target ' ...
+                     'project %s, AND the automatic restore into this ' ...
+                     'source project also failed. The session is not ' ...
+                     'referenced by either project''s registry. Its files ' ...
+                     'are preserved for manual recovery at: %s'], ...
+                    sessionUUID, targetProjectUUID, recoveryPath);
+                error(restoreErrID, ...
+                    ['Rebind failed and automatic restore also failed. ' ...
+                     'Attach cause: %s | Restore cause: %s | Recovery ' ...
+                     'snapshot: %s'], attachError.message, ME.message, ...
+                    recoveryPath);
+            end
+
+            UMITProjectStore.iRemoveFolderIfPresent(recoveryPath);
+            error(restoreErrID, ...
+                ['Could not attach session to target project %s. The ' ...
+                 'session was restored to this (source) project. ' ...
+                 'Cause: %s'], targetProjectUUID, attachError.message);
+        end
+
         function obj = UMITProjectStore(projectRoot, schema, isReadOnly)
             %UMITPROJECTSTORE Construct an object bound to one project root.
 
@@ -3040,7 +2977,6 @@ classdef UMITProjectStore < handle
             errID = 'Umitoolbox:UMITProjectStore:addResourceFailed';
             obj.iAssertWritable();
             lockCleanup = obj.iAcquireWriteLock(['add_', resourceType]);
-            obj.iAssertHealthyForMutation();
 
             if ~isfield(obj.Schema.resourceTypes, resourceType)
                 error(errID, 'Unsupported resource type: %s', resourceType);
@@ -3087,8 +3023,15 @@ classdef UMITProjectStore < handle
                 resourceInfo, 'description', '', true, errID);
 
             owner = obj.iResolveOwner(ownerType, ownerIDs);
+            scope = UMITProjectStore.iLocationScope(owner);
+            obj.iAssertHealthyForMutation(scope);
             metadata = owner.metadata;
             originalMetadata = metadata;
+
+            if strcmp(resourceType, 'imageReference')
+                obj.iAssertImageReferenceImport( ...
+                    sourceProbe.ImageReference, owner, sourceFile);
+            end
 
             resourceUUID = UMITProjectStore.iGenerateUUID();
             timestamp = char(datetime('now', ...
@@ -3137,7 +3080,7 @@ classdef UMITProjectStore < handle
 
             try
                 obj.iSaveOwnerMetadata(owner, metadata);
-                obj.iAssertValidAfterMutation();
+                obj.iAssertValidAfterMutation(scope);
             catch ME
                 if isfile(destinationPath)
                     delete(destinationPath);
@@ -3148,6 +3091,38 @@ classdef UMITProjectStore < handle
 
             obj.iAppendLog(['add_', resourceType], resourceUUID, 'completed');
             clear cleanupStage lockCleanup
+        end
+
+        function iAssertImageReferenceImport(obj, ImageReference, owner, sourceFile)
+            %IASSERTIMAGEREFERENCEIMPORT Version and identity of a new library reference.
+            %
+            %   Subject libraries store ImageReference version 2. Identity
+            %   fields are optional in v2, but any that are present must
+            %   name this project and the owner subject (audit item 21);
+            %   a reference exported from another project or subject is
+            %   imported only after its identity fields are cleared.
+
+            if ImageReference.version ~= 2
+                error('Umitoolbox:UMITProjectStore:imageReferenceVersion', ...
+                    ['Subject libraries store ImageReference version 2, but "%s" ' ...
+                     'holds version %d. Recreate it with genImageReferenceStruct.'], ...
+                    sourceFile, ImageReference.version);
+            end
+            ProjectInfo = obj.getProjectInfo();
+            payloadProject = strtrim(char(string(ImageReference.projectUUID)));
+            if ~isempty(payloadProject) && ~strcmpi(payloadProject, ProjectInfo.projectUUID)
+                error('Umitoolbox:UMITProjectStore:imageReferenceIdentityMismatch', ...
+                    ['The image reference "%s" belongs to project "%s" (%s), not to ' ...
+                     'project "%s" (%s).'], sourceFile, ImageReference.projectName, ...
+                    payloadProject, ProjectInfo.projectName, ProjectInfo.projectUUID);
+            end
+            payloadSubject = strtrim(char(string(ImageReference.subjectUUID)));
+            if ~isempty(payloadSubject) && ~strcmpi(payloadSubject, owner.metadata.uuid)
+                error('Umitoolbox:UMITProjectStore:imageReferenceIdentityMismatch', ...
+                    ['The image reference "%s" belongs to subject "%s" (%s), not to ' ...
+                     'subject "%s" (%s).'], sourceFile, ImageReference.subjectID, ...
+                    payloadSubject, owner.metadata.subjectID, owner.metadata.uuid);
+            end
         end
 
         function iValidateManagedResourcePayload(obj, resourceType, loadedData, sourceFile)
@@ -3242,9 +3217,10 @@ classdef UMITProjectStore < handle
 
             obj.iAssertWritable();
             lockCleanup = obj.iAcquireWriteLock(['setActive_', resourceType]);
-            obj.iAssertHealthyForMutation();
 
             owner = obj.iResolveOwner(ownerType, ownerIDs);
+            scope = UMITProjectStore.iLocationScope(owner);
+            obj.iAssertHealthyForMutation(scope);
             metadata = owner.metadata;
             originalMetadata = metadata;
             resourceIndex = obj.iFindResourceIndex( ...
@@ -3285,7 +3261,7 @@ classdef UMITProjectStore < handle
 
             try
                 obj.iSaveOwnerMetadata(owner, metadata);
-                obj.iAssertValidAfterMutation();
+                obj.iAssertValidAfterMutation(scope);
             catch ME
                 obj.iSaveOwnerMetadata(owner, originalMetadata);
                 rethrow(ME)
@@ -3357,6 +3333,10 @@ classdef UMITProjectStore < handle
 
             registry = metadata.resourceRegistry;
             selected = true(1, numel(registry));
+            if ~isempty(registry)
+                % Retired types (e.g. registration transforms) are never listed.
+                selected = ~ismember({registry.type}, obj.Schema.retiredResourceTypes);
+            end
 
             if ~isempty(typeFilter)
                 selected = selected & strcmp({registry.type}, typeFilter);
@@ -3429,7 +3409,7 @@ classdef UMITProjectStore < handle
             end
 
             registry = metadata.resourceRegistry;
-            matchingIndices = find(strcmp({registry.uuid}, pointerUUID));
+            matchingIndices = find(strcmpi({registry.uuid}, pointerUUID));
             if isempty(matchingIndices)
                 error('Umitoolbox:UMITProjectStore:invalidActiveResource', ...
                     ['Active pointer "%s" does not resolve to a registered ' ...
@@ -3461,6 +3441,10 @@ classdef UMITProjectStore < handle
 
         function locations = iFindResourceLocations(obj, resourceUUID)
             %IFINDRESOURCELOCATIONS Find all registrations of one resource UUID.
+            %   Unreadable subject or session metadata is skipped: one broken
+            %   node must not block resource lookups elsewhere in the project
+            %   (per-session validity). Resources of a broken node are then
+            %   not found.
 
             resourceUUID = UMITProjectStore.iNormalizeUUIDInput(resourceUUID);
             template = UMITProjectStore.iNewResourceLocation( ...
@@ -3472,12 +3456,15 @@ classdef UMITProjectStore < handle
                 subjectRecord = ProjectInfo.subjectRegistry(iSubject);
                 subjectPath = obj.iResolveRelativePath( ...
                     subjectRecord.relativePath);
-                SubjectInfo = obj.iLoadMetadata( ...
-                    fullfile(subjectPath, obj.Schema.files.subjectMetadata), ...
-                    obj.Schema.metadataVariables.subject);
-
-                indices = find(strcmp( ...
-                    {SubjectInfo.resourceRegistry.uuid}, resourceUUID));
+                try
+                    SubjectInfo = obj.iLoadMetadata( ...
+                        fullfile(subjectPath, obj.Schema.files.subjectMetadata), ...
+                        obj.Schema.metadataVariables.subject);
+                    indices = find(strcmpi( ...
+                        {SubjectInfo.resourceRegistry.uuid}, resourceUUID));
+                catch
+                    continue
+                end
                 for iIndex = 1:numel(indices)
                     locations(end+1, 1) = ...
                         UMITProjectStore.iNewResourceLocation( ...
@@ -3492,13 +3479,16 @@ classdef UMITProjectStore < handle
                     sessionRecord = SubjectInfo.sessionRegistry(iSession);
                     sessionPath = obj.iResolveRelativePath( ...
                         sessionRecord.relativePath);
-                    SessionInfo = obj.iLoadMetadata( ...
-                        fullfile(sessionPath, ...
-                        obj.Schema.files.sessionMetadata), ...
-                        obj.Schema.metadataVariables.session);
-
-                    indices = find(strcmp( ...
-                        {SessionInfo.resourceRegistry.uuid}, resourceUUID));
+                    try
+                        SessionInfo = obj.iLoadMetadata( ...
+                            fullfile(sessionPath, ...
+                            obj.Schema.files.sessionMetadata), ...
+                            obj.Schema.metadataVariables.session);
+                        indices = find(strcmpi( ...
+                            {SessionInfo.resourceRegistry.uuid}, resourceUUID));
+                    catch
+                        continue
+                    end
                     for iIndex = 1:numel(indices)
                         locations(end+1, 1) = ...
                             UMITProjectStore.iNewResourceLocation( ...
@@ -3669,7 +3659,7 @@ classdef UMITProjectStore < handle
 
         function ProjectBinding = iBindSessionDataFolder( ...
                 obj, subjectID, sessionID, dataFolder, folderRole, varargin)
-            %IBINDSESSIONDATAFOLDER Create reciprocal session/.umitlink state.
+            %IBINDSESSIONDATAFOLDER Create reciprocal session/project-ledger state.
 
             errID = 'Umitoolbox:UMITProjectStore:bindDataFolderFailed';
 
@@ -3683,7 +3673,6 @@ classdef UMITProjectStore < handle
             obj.iAssertWritable();
             lockCleanup = obj.iAcquireWriteLock( ...
                 ['bind_', folderRole]);
-            obj.iAssertHealthyForMutation();
 
             if ~(ischar(dataFolder) || ...
                     (isstring(dataFolder) && isscalar(dataFolder)))
@@ -3705,6 +3694,12 @@ classdef UMITProjectStore < handle
 
             [~, SubjectInfo, ~, SessionInfo, sessionPath] = ...
                 obj.iResolveSession(subjectID, sessionID);
+            scope = UMITProjectStore.iScope('subjects', {SubjectInfo.uuid}, ...
+                'sessions', {SessionInfo.uuid});
+            obj.iAssertHealthyForMutation(scope);
+            if strcmp(folderRole, 'rawDataFolder')
+                obj.iAssertRawFolderAuthority(SessionInfo, dataFolder);
+            end
             [pathField, bindingField] = ...
                 obj.iGetBindingRoleFields(folderRole);
 
@@ -3750,15 +3745,13 @@ classdef UMITProjectStore < handle
                     existingMatches(1).matchedField);
             end
 
-            bindingPath = fullfile(dataFolder, ...
-                obj.Schema.files.projectBinding);
             hasOrphanBinding = false;
 
-            if isfile(bindingPath)
+            if UMITProjectStore.iHasBinding(dataFolder)
                 if ~replaceOrphanBinding
                     error('Umitoolbox:UMITProjectStore:bindingFileExists', ...
-                        ['The target folder already contains %s. Resolve or ' ...
-                         'detach that binding before assigning this folder.'], ...
+                        ['The target folder is already bound to a project (%s). ' ...
+                         'Resolve or detach that binding before assigning this folder.'], ...
                         obj.Schema.files.projectBinding);
                 end
 
@@ -3800,18 +3793,8 @@ classdef UMITProjectStore < handle
                 obj.Schema.files.sessionMetadata);
             copyfile(sessionMetadataPath, backupSessionPath, 'f');
 
-            backupOrphanPath = '';
-            if hasOrphanBinding
-                backupOrphanPath = fullfile(recoveryPath, ...
-                    ['orphan_', obj.Schema.files.projectBinding]);
-                copyfile(bindingPath, backupOrphanPath, 'f');
-            end
-
-            tempBindingPath = obj.iWriteProjectBindingTemp( ...
-                dataFolder, ProjectBinding);
-            cleanupTemp = onCleanup(@() ...
-                UMITProjectStore.iDeleteFileIfPresent( ...
-                tempBindingPath));
+            % An orphan binding is replaced by a rebind event (history kept).
+            ledgerBackup = UMITProjectStore.iBackupLedger(dataFolder);
 
             try
                 SessionInfo.(pathField) = dataFolder;
@@ -3820,25 +3803,15 @@ classdef UMITProjectStore < handle
                 SessionInfo.modifiedOn = datetime('now');
                 obj.iSaveSessionInfo(sessionPath, SessionInfo);
 
-                [ok, message] = movefile( ...
-                    tempBindingPath, bindingPath, 'f');
-                if ~ok
-                    error(errID, ...
-                        'Could not install project binding file: %s', ...
-                        message);
-                end
+                obj.iInstallBinding(dataFolder, ProjectBinding, ...
+                    SubjectInfo.subjectID, SessionInfo.sessionID);
 
-                obj.iAssertValidAfterMutation();
+                obj.iAssertValidAfterMutation(scope);
 
             catch ME
                 copyfile(backupSessionPath, ...
                     sessionMetadataPath, 'f');
-                UMITProjectStore.iDeleteFileIfPresent(bindingPath);
-
-                if hasOrphanBinding && isfile(backupOrphanPath)
-                    copyfile(backupOrphanPath, bindingPath, 'f');
-                end
-
+                UMITProjectStore.iRestoreLedger(ledgerBackup);
                 rethrow(ME)
             end
 
@@ -3850,7 +3823,7 @@ classdef UMITProjectStore < handle
 
             obj.iAppendLog(logAction, ...
                 ProjectBinding.bindingUUID, pathField);
-            clear cleanupTemp cleanupRecovery lockCleanup
+            clear cleanupRecovery lockCleanup
         end
 
         function ProjectBinding = iGetSessionDataFolderBinding( ...
@@ -3914,11 +3887,9 @@ classdef UMITProjectStore < handle
                 return
             end
 
-            bindingPath = fullfile(SessionInfo.(pathField), ...
-                obj.Schema.files.projectBinding);
-            if ~isfile(bindingPath)
+            if strcmp(UMITProjectStore.iBindingState(SessionInfo.(pathField)), 'none')
                 status.message = sprintf( ...
-                    'SaveFolder is missing %s.', ...
+                    'SaveFolder is not bound in its %s.', ...
                     obj.Schema.files.projectBinding);
                 return
             end
@@ -3974,7 +3945,9 @@ classdef UMITProjectStore < handle
                 ['relocate_', folderRole]);
             [~, SubjectInfo, ~, SessionInfo, sessionPath, ...
                 sessionIndex] = obj.iResolveSession(subjectID, sessionID);
-            obj.iAssertBindingMutationAllowed( ...
+            scope = UMITProjectStore.iScope('subjects', {SubjectInfo.uuid}, ...
+                'sessions', {SessionInfo.uuid});
+            obj.iAssertBindingMutationAllowed(scope, ...
                 SubjectInfo.sessionRegistry(sessionIndex).relativePath);
 
             if ~(ischar(newDataFolder) || ...
@@ -3992,6 +3965,10 @@ classdef UMITProjectStore < handle
                 obj.iAssertValidSaveFolderDataset(newDataFolder);
             else
                 obj.iAssertValidRawDataFolder(newDataFolder);
+            end
+
+            if strcmp(folderRole, 'rawDataFolder')
+                obj.iAssertRawFolderAuthority(SessionInfo, newDataFolder);
             end
 
             [pathField, bindingField] = ...
@@ -4013,9 +3990,7 @@ classdef UMITProjectStore < handle
                 end
             end
 
-            targetBindingPath = fullfile(newDataFolder, ...
-                obj.Schema.files.projectBinding);
-            targetBindingExists = isfile(targetBindingPath);
+            targetBindingExists = UMITProjectStore.iHasBinding(newDataFolder);
             targetBinding = [];
             targetBindingReadable = false;
             if targetBindingExists
@@ -4061,10 +4036,19 @@ classdef UMITProjectStore < handle
                         ['Target SaveFolder is bound to another project or ' ...
                          'session. Its link was not modified.']);
                 end
+                % Audit item 13: taking over an orphan folder must not pull
+                % a session away from a folder that still binds it.
+                if ~isempty(oldDataFolder) && ~sameFolder && isfolder(oldDataFolder) && ...
+                        strcmp(describeProjectBinding(oldDataFolder).state, 'bound')
+                    error('Umitoolbox:UMITProjectStore:sessionAlreadyBound', ...
+                        ['Session %s is healthily bound to "%s". Unbind it there, or ' ...
+                         'choose another session, before giving it this folder.'], ...
+                        SessionInfo.sessionID, oldDataFolder);
+                end
             end
 
             if sameFolder && ownsTargetBinding && ...
-                    strcmp(targetBinding.bindingUUID, ...
+                    strcmpi(targetBinding.bindingUUID, ...
                     SessionInfo.(bindingField))
                 ProjectBinding = targetBinding;
                 clear lockCleanup
@@ -4102,15 +4086,9 @@ classdef UMITProjectStore < handle
                 obj.Schema.files.sessionMetadata);
             copyfile(sessionMetadataPath, backupSessionPath, 'f');
 
-            backupTargetPath = '';
-            if targetBindingExists
-                backupTargetPath = fullfile(recoveryPath, ...
-                    ['target_', obj.Schema.files.projectBinding]);
-                copyfile(targetBindingPath, backupTargetPath, 'f');
-            end
+            targetLedgerBackup = UMITProjectStore.iBackupLedger(newDataFolder);
 
-            oldBindingPath = '';
-            backupOldPath = '';
+            oldLedgerBackup = [];
             removeOldBinding = false;
             [otherPathField, otherBindingField] = ...
                 obj.iGetOtherBindingRoleFields(pathField);
@@ -4120,39 +4098,26 @@ classdef UMITProjectStore < handle
                 UMITProjectStore.iNormalizeComparisonPath( ...
                 SessionInfo.(otherPathField)));
             if ~sameFolder && ~isempty(oldDataFolder) && ...
-                    ~oldFolderStillUsed && isfolder(oldDataFolder)
-                oldBindingPath = fullfile(oldDataFolder, ...
-                    obj.Schema.files.projectBinding);
-                if isfile(oldBindingPath)
-                    backupOldPath = fullfile(recoveryPath, ...
-                        ['old_', obj.Schema.files.projectBinding]);
-                    copyfile(oldBindingPath, backupOldPath, 'f');
-                    try
-                        oldBinding = UMITProjectStore.readProjectBinding( ...
-                            oldDataFolder);
-                        removeOldBinding = strcmpi( ...
-                            oldBinding.projectUUID, ProjectInfo.projectUUID) && ...
-                            strcmpi(oldBinding.sessionUUID, SessionInfo.uuid);
-                    catch
-                        % The ledger owns this path. Removing the managed
-                        % filename invalidates a malformed stale link while
-                        % preserving the backup for rollback.
-                        removeOldBinding = true;
-                    end
+                    ~oldFolderStillUsed && isfolder(oldDataFolder) && ...
+                    UMITProjectStore.iHasBinding(oldDataFolder)
+                oldLedgerBackup = UMITProjectStore.iBackupLedger(oldDataFolder);
+                try
+                    oldBinding = UMITProjectStore.readProjectBinding( ...
+                        oldDataFolder);
+                    removeOldBinding = strcmpi( ...
+                        oldBinding.projectUUID, ProjectInfo.projectUUID) && ...
+                        strcmpi(oldBinding.sessionUUID, SessionInfo.uuid);
+                catch
+                    % An invalid ledger cannot take an unbind event;
+                    % iRemoveBinding leaves it as it is (with a warning).
+                    removeOldBinding = true;
                 end
             end
 
-            sharedOldTempPath = '';
+            remainingBinding = [];
             if ~sameFolder && oldFolderStillUsed && ...
                     isfolder(oldDataFolder)
-                oldBindingPath = fullfile(oldDataFolder, ...
-                    obj.Schema.files.projectBinding);
-                if isfile(oldBindingPath)
-                    backupOldPath = fullfile(recoveryPath, ...
-                        ['old_', obj.Schema.files.projectBinding]);
-                    copyfile(oldBindingPath, backupOldPath, 'f');
-                end
-
+                oldLedgerBackup = UMITProjectStore.iBackupLedger(oldDataFolder);
                 remainingBinding = struct();
                 remainingBinding.version = ...
                     obj.Schema.projectBinding.version;
@@ -4167,17 +4132,7 @@ classdef UMITProjectStore < handle
                 remainingBinding.modifiedOn = nowTime;
                 UMITProjectStore.iValidateProjectBindingStruct( ...
                     remainingBinding, obj.Schema, errID);
-                sharedOldTempPath = obj.iWriteProjectBindingTemp( ...
-                    oldDataFolder, remainingBinding);
-                cleanupSharedOldTemp = onCleanup(@() ...
-                    UMITProjectStore.iDeleteFileIfPresent( ...
-                    sharedOldTempPath));
             end
-
-            tempBindingPath = obj.iWriteProjectBindingTemp( ...
-                newDataFolder, ProjectBinding);
-            cleanupTemp = onCleanup(@() ...
-                UMITProjectStore.iDeleteFileIfPresent(tempBindingPath));
 
             try
                 SessionInfo.(pathField) = newDataFolder;
@@ -4185,51 +4140,29 @@ classdef UMITProjectStore < handle
                 SessionInfo.modifiedOn = datetime('now');
                 obj.iSaveSessionInfo(sessionPath, SessionInfo);
 
-                [ok, message] = movefile( ...
-                    tempBindingPath, targetBindingPath, 'f');
-                if ~ok
-                    error(errID, ...
-                        'Could not install target project binding: %s', ...
-                        message);
-                end
+                obj.iInstallBinding(newDataFolder, ProjectBinding, ...
+                    SubjectInfo.subjectID, SessionInfo.sessionID);
 
                 if removeOldBinding
-                    delete(oldBindingPath);
-                elseif ~isempty(sharedOldTempPath)
-                    [ok, message] = movefile( ...
-                        sharedOldTempPath, oldBindingPath, 'f');
-                    if ~ok
-                        error(errID, ...
-                            ['Could not preserve the co-located folder ' ...
-                             'binding: %s'], message);
-                    end
+                    UMITProjectStore.iRemoveBinding(oldDataFolder, 'relocated');
+                elseif ~isempty(remainingBinding)
+                    % The old folder stays bound for the other role.
+                    obj.iInstallBinding(oldDataFolder, remainingBinding, ...
+                        SubjectInfo.subjectID, SessionInfo.sessionID);
                 end
 
-                obj.iAssertValidAfterMutation();
+                obj.iAssertValidAfterMutation(scope);
                 obj.IsReadOnly = false;
             catch ME
                 copyfile(backupSessionPath, sessionMetadataPath, 'f');
-                UMITProjectStore.iDeleteFileIfPresent(targetBindingPath);
-                if ~isempty(backupTargetPath) && isfile(backupTargetPath)
-                    copyfile(backupTargetPath, targetBindingPath, 'f');
-                end
-                if removeOldBinding && ~isfile(oldBindingPath) && ...
-                        isfile(backupOldPath)
-                    copyfile(backupOldPath, oldBindingPath, 'f');
-                elseif ~isempty(sharedOldTempPath)
-                    if isfile(backupOldPath)
-                        copyfile(backupOldPath, oldBindingPath, 'f');
-                    else
-                        UMITProjectStore.iDeleteFileIfPresent( ...
-                            oldBindingPath);
-                    end
-                end
+                UMITProjectStore.iRestoreLedger(targetLedgerBackup);
+                UMITProjectStore.iRestoreLedger(oldLedgerBackup);
                 rethrow(ME)
             end
 
             obj.iAppendLog(logOperation, ...
                 SessionInfo.uuid, newDataFolder);
-            clear cleanupTemp cleanupSharedOldTemp cleanupRecovery lockCleanup
+            clear cleanupRecovery lockCleanup
         end
 
         function removedSession = iRemoveSessionFromProject( ...
@@ -4240,7 +4173,9 @@ classdef UMITProjectStore < handle
             [~, SubjectInfo, subjectPath, SessionInfo, sessionPath, ...
                 sessionIndex, sessionRecord] = ...
                 obj.iResolveSession(subjectID, sessionID);
-            obj.iAssertBindingMutationAllowed(sessionRecord.relativePath);
+            obj.iAssertBindingMutationAllowed(UMITProjectStore.iScope( ...
+                'subjects', {SubjectInfo.uuid}, 'sessions', {SessionInfo.uuid}), ...
+                sessionRecord.relativePath);
 
             removedSession = SessionInfo;
             recoveryPath = obj.iCreateRecoveryFolder( ...
@@ -4278,14 +4213,14 @@ classdef UMITProjectStore < handle
                     end
                     linkPath = fullfile(dataFolder, ...
                         obj.Schema.files.projectBinding);
-                    if ~isfile(linkPath)
+                    if ~UMITProjectStore.iHasBinding(dataFolder)
                         continue
                     end
 
                     change = struct();
                     change.path = linkPath;
                     change.backupPath = fullfile(recoveryPath, ...
-                        sprintf('link_%d.umitlink', iRole));
+                        sprintf('link_%d_%s', iRole, obj.Schema.files.projectBinding));
                     change.invalidatedPath = '';
                     copyfile(linkPath, change.backupPath, 'f');
 
@@ -4301,12 +4236,13 @@ classdef UMITProjectStore < handle
                     end
 
                     if removeManagedLink
-                        delete(linkPath);
+                        UMITProjectStore.iRemoveBinding(dataFolder, 'sessionRemoved');
                         linkChanges(end+1) = change; %#ok<AGROW>
                     end
                 end
 
-                obj.iAssertValidAfterMutation();
+                obj.iAssertValidAfterMutation(UMITProjectStore.iScope( ...
+                    'subjects', {SubjectInfo.uuid}));
                 obj.IsReadOnly = false;
             catch ME
                 if ~isfolder(sessionPath) && isfolder(backupSessionPath)
@@ -4347,38 +4283,57 @@ classdef UMITProjectStore < handle
             end
         end
 
-        function linkChanges = iPreflightProjectRemoval( ...
+        function [linkChanges, skipped] = iPreflightProjectRemoval( ...
                 obj, ProjectInfo, recoveryPath)
-            %IPREFLIGHTPROJECTREMOVAL Verify all external links before delete.
+            %IPREFLIGHTPROJECTREMOVAL Snapshot the links a deletion removes.
+            %
+            %   Tolerant (deleteProject, audit item 23): unreadable subject
+            %   or session metadata, offline folders and folders whose
+            %   ledger does not bind them to this session are skipped and
+            %   reported in SKIPPED (struct array: folder, reason).
 
             linkChanges = struct('path', {}, 'backupPath', {});
+            skipped = struct('folder', {}, 'reason', {});
             for iSubject = 1:numel(ProjectInfo.subjectRegistry)
                 subjectRecord = ProjectInfo.subjectRegistry(iSubject);
                 subjectPath = obj.iResolveRelativePath(subjectRecord.relativePath);
-                SubjectInfo = obj.iLoadMetadata( ...
-                    fullfile(subjectPath, obj.Schema.files.subjectMetadata), ...
-                    obj.Schema.metadataVariables.subject);
-                if ~isfolder(subjectPath)
-                    error('Umitoolbox:UMITProjectStore:deleteProjectFailed', ...
-                        'Subject folder is unavailable: %s', subjectPath);
+                try
+                    SubjectInfo = obj.iLoadMetadata( ...
+                        fullfile(subjectPath, obj.Schema.files.subjectMetadata), ...
+                        obj.Schema.metadataVariables.subject);
+                catch ME
+                    skipped(end+1) = struct('folder', subjectPath, ...
+                        'reason', ['unreadable subject metadata: ' ME.message]); %#ok<AGROW>
+                    continue
                 end
                 for iSession = 1:numel(SubjectInfo.sessionRegistry)
                     sessionRecord = SubjectInfo.sessionRegistry(iSession);
                     sessionPath = obj.iResolveRelativePath( ...
                         sessionRecord.relativePath);
-                    SessionInfo = obj.iLoadMetadata( ...
-                        fullfile(sessionPath, obj.Schema.files.sessionMetadata), ...
-                        obj.Schema.metadataVariables.session);
-                    linkChanges = obj.iPreflightSessionBindings( ...
-                        SessionInfo, SubjectInfo, recoveryPath, linkChanges);
+                    try
+                        SessionInfo = obj.iLoadMetadata( ...
+                            fullfile(sessionPath, obj.Schema.files.sessionMetadata), ...
+                            obj.Schema.metadataVariables.session);
+                    catch ME
+                        skipped(end+1) = struct('folder', sessionPath, ...
+                            'reason', ['unreadable session metadata: ' ME.message]); %#ok<AGROW>
+                        continue
+                    end
+                    [linkChanges, skipped] = obj.iPreflightSessionBindings( ...
+                        SessionInfo, SubjectInfo, recoveryPath, linkChanges, skipped);
                 end
             end
         end
 
-        function linkChanges = iPreflightSessionBindings( ...
-                obj, SessionInfo, SubjectInfo, recoveryPath, linkChanges)
+        function [linkChanges, skipped] = iPreflightSessionBindings( ...
+                obj, SessionInfo, SubjectInfo, recoveryPath, linkChanges, skipped)
             %IPREFLIGHTSESSIONBINDINGS Validate and snapshot managed links.
+            %
+            %   Strict (called without SKIPPED): an offline or mismatched
+            %   folder is an error. Tolerant (SKIPPED passed in): such
+            %   folders are recorded in SKIPPED instead.
 
+            tolerant = nargin >= 6;
             roles = {'rawDataFolder', 'processedDataFolder'};
             for iRole = 1:numel(roles)
                 [pathField, bindingField] = ...
@@ -4388,22 +4343,36 @@ classdef UMITProjectStore < handle
                     continue
                 end
                 if ~isfolder(dataFolder)
+                    if tolerant
+                        skipped(end+1) = struct('folder', dataFolder, ...
+                            'reason', 'folder unavailable (offline or moved)'); %#ok<AGROW>
+                        continue
+                    end
                     error('Umitoolbox:UMITProjectStore:bindingFolderUnavailable', ...
                         ['Bound folder must be available before project ' ...
                          'removal: %s'], dataFolder);
                 end
 
-                ProjectBinding = UMITProjectStore.readProjectBinding(dataFolder);
-                obj.iAssertBindingMatchesSession( ...
-                    ProjectBinding, SessionInfo, SubjectInfo, ...
-                    pathField, bindingField, dataFolder);
+                try
+                    ProjectBinding = UMITProjectStore.readProjectBinding(dataFolder);
+                    obj.iAssertBindingMatchesSession( ...
+                        ProjectBinding, SessionInfo, SubjectInfo, ...
+                        pathField, bindingField, dataFolder);
+                catch ME
+                    if tolerant
+                        skipped(end+1) = struct('folder', dataFolder, ...
+                            'reason', ['not bound to this session: ' ME.message]); %#ok<AGROW>
+                        continue
+                    end
+                    rethrow(ME)
+                end
                 bindingPath = fullfile(dataFolder, ...
                     obj.Schema.files.projectBinding);
                 if any(strcmpi({linkChanges.path}, bindingPath))
                     continue
                 end
                 backupPath = fullfile(recoveryPath, sprintf( ...
-                    'link_%d.umitlink', numel(linkChanges) + 1));
+                    'link_%d_%s', numel(linkChanges) + 1, obj.Schema.files.projectBinding));
                 [ok, message] = copyfile(bindingPath, backupPath, 'f');
                 if ~ok
                     error('Umitoolbox:UMITProjectStore:bindingBackupFailed', ...
@@ -4426,15 +4395,19 @@ classdef UMITProjectStore < handle
         end
 
         function iDeletePreflightedBindings(~, linkChanges)
-            %IDELETEPREFLIGHTEDBINDINGS Remove only links validated in preflight.
+            %IDELETEPREFLIGHTEDBINDINGS Unbind only folders validated in preflight.
+            %
+            %   Each folder's project ledger gets an unbind event (reason
+            %   'removedFromProject'); the ledger and its history stay.
 
             for iChange = 1:numel(linkChanges)
-                if ~isfile(linkChanges(iChange).path)
+                dataFolder = fileparts(linkChanges(iChange).path);
+                if ~UMITProjectLedger.isBound(dataFolder)
                     error('Umitoolbox:UMITProjectStore:bindingChanged', ...
                         ['A project binding changed after deletion preflight: ' ...
                          '%s'], linkChanges(iChange).path);
                 end
-                delete(linkChanges(iChange).path);
+                UMITProjectStore.iRemoveBinding(dataFolder, 'removedFromProject');
             end
         end
 
@@ -4455,16 +4428,20 @@ classdef UMITProjectStore < handle
         end
 
         function count = iCountProjectSessions(obj, ProjectInfo)
-            %ICOUNTPROJECTSESSIONS Return the number of registered sessions.
+            %ICOUNTPROJECTSESSIONS Number of registered sessions (readable subjects).
 
             count = 0;
             for iSubject = 1:numel(ProjectInfo.subjectRegistry)
                 subjectPath = obj.iResolveRelativePath( ...
                     ProjectInfo.subjectRegistry(iSubject).relativePath);
-                SubjectInfo = obj.iLoadMetadata( ...
-                    fullfile(subjectPath, obj.Schema.files.subjectMetadata), ...
-                    obj.Schema.metadataVariables.subject);
-                count = count + numel(SubjectInfo.sessionRegistry);
+                try
+                    SubjectInfo = obj.iLoadMetadata( ...
+                        fullfile(subjectPath, obj.Schema.files.subjectMetadata), ...
+                        obj.Schema.metadataVariables.subject);
+                    count = count + numel(SubjectInfo.sessionRegistry);
+                catch
+                    % Unreadable subject: counted as no sessions.
+                end
             end
         end
 
@@ -4475,10 +4452,12 @@ classdef UMITProjectStore < handle
             obj.iAssertWritable();
             lockCleanup = obj.iAcquireWriteLock( ...
                 ['unbind_', folderRole]);
-            obj.iAssertHealthyForMutation();
 
             [~, SubjectInfo, ~, SessionInfo, sessionPath] = ...
                 obj.iResolveSession(subjectID, sessionID);
+            scope = UMITProjectStore.iScope('subjects', {SubjectInfo.uuid}, ...
+                'sessions', {SessionInfo.uuid});
+            obj.iAssertHealthyForMutation(scope);
             [pathField, bindingField] = ...
                 obj.iGetBindingRoleFields(folderRole);
 
@@ -4532,7 +4511,7 @@ classdef UMITProjectStore < handle
             copyfile(sessionMetadataPath, backupSessionPath, 'f');
             copyfile(bindingPath, backupBindingPath, 'f');
 
-            replacementBindingPath = '';
+            replacementBinding = [];
             if folderStillUsed && ...
                     strcmp(ProjectBinding.folderRole, pathField)
                 replacementBinding = ProjectBinding;
@@ -4540,12 +4519,6 @@ classdef UMITProjectStore < handle
                     SessionInfo.(otherBindingField);
                 replacementBinding.folderRole = otherPathField;
                 replacementBinding.modifiedOn = datetime('now');
-                replacementBindingPath = ...
-                    obj.iWriteProjectBindingTemp( ...
-                    dataFolder, replacementBinding);
-                cleanupReplacement = onCleanup(@() ...
-                    UMITProjectStore.iDeleteFileIfPresent( ...
-                    replacementBindingPath));
             end
 
             try
@@ -4555,24 +4528,19 @@ classdef UMITProjectStore < handle
                 obj.iSaveSessionInfo(sessionPath, SessionInfo);
 
                 if ~folderStillUsed
-                    delete(bindingPath);
-                elseif ~isempty(replacementBindingPath)
-                    [ok, message] = movefile( ...
-                        replacementBindingPath, bindingPath, 'f');
-                    if ~ok
-                        error( ...
-                            'Umitoolbox:UMITProjectStore:unbindDataFolderFailed', ...
-                            ['Could not preserve the co-located folder ' ...
-                             'binding: %s'], message);
-                    end
+                    UMITProjectStore.iRemoveBinding(dataFolder, 'folderUnbound');
+                elseif ~isempty(replacementBinding)
+                    % The folder stays bound for the other role.
+                    obj.iInstallBinding(dataFolder, replacementBinding, ...
+                        SubjectInfo.subjectID, SessionInfo.sessionID);
                 end
-                obj.iAssertValidAfterMutation();
+                obj.iAssertValidAfterMutation(scope);
 
             catch ME
                 copyfile(backupSessionPath, ...
                     sessionMetadataPath, 'f');
                 if (~folderStillUsed || ...
-                        ~isempty(replacementBindingPath)) && ...
+                        ~isempty(replacementBinding)) && ...
                         isfile(backupBindingPath)
                     copyfile(backupBindingPath, bindingPath, 'f');
                 end
@@ -4581,7 +4549,7 @@ classdef UMITProjectStore < handle
 
             obj.iAppendLog('unbindDataFolder', ...
                 ProjectBinding.bindingUUID, pathField);
-            clear cleanupReplacement cleanupRecovery lockCleanup
+            clear cleanupRecovery lockCleanup
         end
 
         function [pathField, bindingField] = ...
@@ -4602,23 +4570,35 @@ classdef UMITProjectStore < handle
             end
         end
 
-        function tempPath = iWriteProjectBindingTemp( ...
-                obj, dataFolder, ProjectBinding)
-            %IWRITEPROJECTBINDINGTEMP Stage a MAT payload beside its final link.
+        function iInstallBinding(obj, dataFolder, ProjectBinding, subjectID, sessionID)
+            %IINSTALLBINDING Record ProjectBinding in the folder's project ledger.
             %
-            % saveMatAtomic intentionally accepts only .mat destinations. The
-            % binding is therefore written and verified as a temporary MAT file,
-            % then iBindSessionDataFolder renames it atomically to the managed
-            % .umitlink destination.
+            %   An unbound folder gets a bind event; a bound folder (an
+            %   orphan being replaced, a session moved to another subject or
+            %   project) gets a rebind event recording the previous binding.
+            %   Both carry a frozen human snapshot of the project metadata
+            %   and the subject and session IDs. Callers back the ledger up
+            %   first (iBackupLedger) and restore it on failure.
 
-            tempName = sprintf('.%s.%s.tmp.mat', ...
-                obj.Schema.files.projectBinding, ...
-                UMITProjectStore.iGenerateUUID());
-            tempPath = fullfile(dataFolder, tempName);
-
-            saveMatAtomic(tempPath, ...
-                obj.Schema.metadataVariables.projectBinding, ...
-                ProjectBinding);
+            identity = struct( ...
+                'bindingUUID', lower(ProjectBinding.bindingUUID), ...
+                'projectUUID', lower(ProjectBinding.projectUUID), ...
+                'subjectUUID', lower(ProjectBinding.subjectUUID), ...
+                'sessionUUID', lower(ProjectBinding.sessionUUID), ...
+                'folderRole', ProjectBinding.folderRole);
+            snapshot = UMITProjectLedger.makeSnapshot(obj.getProjectInfo(), ...
+                subjectID, sessionID);
+            origin = 'UMITProjectStore';
+            if UMITProjectLedger.isBound(dataFolder)
+                current = UMITProjectLedger.read(dataFolder).binding;
+                if isequal(rmfield(current, {'boundOn', 'modifiedOn'}), ...
+                        orderfields(identity, UMITProjectLedger.BindingFields))
+                    return
+                end
+                UMITProjectLedger.rebind(dataFolder, identity, snapshot, 'Origin', origin);
+            else
+                UMITProjectLedger.bind(dataFolder, identity, snapshot, 'Origin', origin);
+            end
         end
 
         function iAssertBindingMatchesSession(obj, ProjectBinding, ...
@@ -4628,22 +4608,22 @@ classdef UMITProjectStore < handle
 
             ProjectInfo = obj.getProjectInfo();
 
-            if ~strcmp(ProjectBinding.projectUUID, ...
+            if ~strcmpi(ProjectBinding.projectUUID, ...
                     ProjectInfo.projectUUID)
                 error('Umitoolbox:UMITProjectStore:bindingProjectMismatch', ...
                     'Binding project UUID does not match this project.');
             end
-            if ~strcmp(ProjectBinding.subjectUUID, SubjectInfo.uuid) || ...
-                    ~strcmp(SessionInfo.subjectUUID, SubjectInfo.uuid)
+            if ~strcmpi(ProjectBinding.subjectUUID, SubjectInfo.uuid) || ...
+                    ~strcmpi(SessionInfo.subjectUUID, SubjectInfo.uuid)
                 error('Umitoolbox:UMITProjectStore:bindingOwnerMismatch', ...
                     'Binding subject UUID does not match the session owner.');
             end
-            if ~strcmp(ProjectBinding.sessionUUID, SessionInfo.uuid)
+            if ~strcmpi(ProjectBinding.sessionUUID, SessionInfo.uuid)
                 error('Umitoolbox:UMITProjectStore:bindingSessionMismatch', ...
                     'Binding session UUID does not match SessionInfo.uuid.');
             end
             roleMatches = strcmp(ProjectBinding.folderRole, pathField);
-            bindingMatches = strcmp(ProjectBinding.bindingUUID, ...
+            bindingMatches = strcmpi(ProjectBinding.bindingUUID, ...
                 SessionInfo.(bindingField));
             if ~roleMatches
                 [otherPathField, otherBindingField] = ...
@@ -4651,7 +4631,7 @@ classdef UMITProjectStore < handle
                 roleMatches = strcmp(ProjectBinding.folderRole, ...
                     otherPathField) && ...
                     ~isempty(SessionInfo.(otherPathField)) && ...
-                    strcmp(ProjectBinding.bindingUUID, ...
+                    strcmpi(ProjectBinding.bindingUUID, ...
                     SessionInfo.(otherBindingField)) && ...
                     strcmp( ...
                     UMITProjectStore.iNormalizeComparisonPath( ...
@@ -4685,6 +4665,9 @@ classdef UMITProjectStore < handle
 
         function matches = iFindSessionPathMatches(obj, dataFolder)
             %IFINDSESSIONPATHMATCHES Find sessions storing an exact data path.
+            %   Unreadable subject or session metadata is skipped (per-session
+            %   validity); the folder's own project ledger still guards
+            %   against binding a folder twice.
 
             comparisonPath = ...
                 UMITProjectStore.iNormalizeComparisonPath(dataFolder);
@@ -4701,20 +4684,28 @@ classdef UMITProjectStore < handle
                 subjectRecord = ProjectInfo.subjectRegistry(iSubject);
                 subjectPath = obj.iResolveRelativePath( ...
                     subjectRecord.relativePath);
-                SubjectInfo = obj.iLoadMetadata( ...
-                    fullfile(subjectPath, ...
-                    obj.Schema.files.subjectMetadata), ...
-                    obj.Schema.metadataVariables.subject);
+                try
+                    SubjectInfo = obj.iLoadMetadata( ...
+                        fullfile(subjectPath, ...
+                        obj.Schema.files.subjectMetadata), ...
+                        obj.Schema.metadataVariables.subject);
+                catch
+                    continue
+                end
 
                 for iSession = 1:numel(SubjectInfo.sessionRegistry)
                     sessionRecord = ...
                         SubjectInfo.sessionRegistry(iSession);
                     sessionPath = obj.iResolveRelativePath( ...
                         sessionRecord.relativePath);
-                    SessionInfo = obj.iLoadMetadata( ...
-                        fullfile(sessionPath, ...
-                        obj.Schema.files.sessionMetadata), ...
-                        obj.Schema.metadataVariables.session);
+                    try
+                        SessionInfo = obj.iLoadMetadata( ...
+                            fullfile(sessionPath, ...
+                            obj.Schema.files.sessionMetadata), ...
+                            obj.Schema.metadataVariables.session);
+                    catch
+                        continue
+                    end
 
                     roles = {'rawDataFolder', ...
                         'processedDataFolder'};
@@ -4794,51 +4785,6 @@ classdef UMITProjectStore < handle
             saveMatAtomic( ...
                 fullfile(sessionPath, obj.Schema.files.sessionMetadata), ...
                 obj.Schema.metadataVariables.session, SessionInfo);
-        end
-
-        function SessionInfo = iStampSessionRig(obj, subjectID, sessionID, rigUUID, rigID)
-            %ISTAMPSESSIONRIG Persist an already-resolved Rig pointer.
-            %
-            %   Internal-only mirror-write used by migrateSessionRigAssignment.
-            %   Unlike the public API, this never validates a caller-supplied
-            %   Rig -- it only persists a value UMITRigStore has already
-            %   resolved (UMITRigStore remains the sole authority deciding
-            %   which Rig is valid to assign).
-
-            obj.iAssertWritable();
-            lockCleanup = obj.iAcquireWriteLock('iStampSessionRig'); %#ok<NASGU>
-
-            [~, ~, ~, SessionInfo, sessionPath, ~, sessionRecord] = ...
-                obj.iResolveSession(subjectID, sessionID);
-            % A session this method is asked to repair is, by definition,
-            % failing full validation on its own blank Rig fields -- exempt
-            % exactly that pre-diagnosed issue on this session, and no other,
-            % from the otherwise-unchanged mutation-health gate.
-            obj.iAssertHealthyForMutation(struct( ...
-                'codes', {{'session_rig_required', 'session_rig_incomplete'}}, ...
-                'relativePath', sessionRecord.relativePath));
-
-            SessionInfo.rigUUID = rigUUID;
-            SessionInfo.rigID = rigID;
-            SessionInfo.modifiedOn = datetime('now');
-
-            backupPath = obj.iCreateRecoveryFolder('iStampSessionRig');
-            cleanupBackup = onCleanup(@() ...
-                UMITProjectStore.iRemoveFolderIfPresent(backupPath));
-            copyfile(fullfile(sessionPath, obj.Schema.files.sessionMetadata), ...
-                fullfile(backupPath, obj.Schema.files.sessionMetadata), 'f');
-
-            try
-                obj.iSaveSessionInfo(sessionPath, SessionInfo);
-                obj.iAssertValidAfterMutation();
-            catch ME
-                copyfile(fullfile(backupPath, obj.Schema.files.sessionMetadata), ...
-                    fullfile(sessionPath, obj.Schema.files.sessionMetadata), 'f');
-                rethrow(ME)
-            end
-
-            obj.iAppendLog('iStampSessionRig', SessionInfo.uuid, 'completed');
-            clear cleanupBackup lockCleanup
         end
 
         function value = iLoadMetadata(~, filePath, variableName)
@@ -4956,31 +4902,43 @@ classdef UMITProjectStore < handle
             end
         end
 
-        function iAssertHealthyForMutation(obj, exemptIssue)
-            %IASSERTHEALTHYFORMUTATION Revalidate before every mutation.
+        function iAssertHealthyForMutation(obj, scope)
+            %IASSERTHEALTHYFORMUTATION Validate what a mutation touches first.
             %
-            %   exemptIssue, if supplied, is a scalar struct with fields
-            %   'codes' (cellstr) and 'relativePath' naming the single,
-            %   already-diagnosed issue that the calling mutation exists to
-            %   repair. Matching errors are excluded from THIS call's gate
-            %   only -- every other error, and every other caller's
-            %   unqualified call, still blocks the mutation exactly as
-            %   before.
+            %   obj.iAssertHealthyForMutation(scope)
+            %
+            %   Per-session validity (brief section 1.11): a quick, scoped
+            %   validation (UMITProjectStore.iScope) of the project level and
+            %   the subjects/sessions the mutation touches; no checksum of
+            %   every resource. Any error found blocks the mutation. Errors of
+            %   other subjects or sessions are not looked at and never block
+            %   it. Only store-level errors make the store read-only.
 
-            report = obj.validate('Mode', 'full');
-            blockingErrors = report.errors;
-            if nargin > 1 && ~isempty(exemptIssue)
-                isExempt = arrayfun(@(issue) ...
-                    strcmp(issue.relativePath, exemptIssue.relativePath) && ...
-                    any(strcmp(issue.code, exemptIssue.codes)), blockingErrors);
-                blockingErrors = blockingErrors(~isExempt);
+            report = obj.validate('Mode', 'quick', 'Scope', scope);
+            obj.iThrowBlockingErrors(report.errors);
+        end
+
+        function iThrowBlockingErrors(obj, blockingErrors)
+            %ITHROWBLOCKINGERRORS Refuse a mutation blocked by validation errors.
+            %
+            %   Store-level errors: Umitoolbox:UMITProjectStore:invalidProject
+            %   (and the store becomes read-only). Errors of the touched
+            %   subject or session only: ...:invalidTarget (the rest of the
+            %   project stays writable).
+
+            if isempty(blockingErrors)
+                return
             end
-            if ~isempty(blockingErrors)
+            if any([blockingErrors.storeLevel])
                 obj.IsReadOnly = true;
                 error('Umitoolbox:UMITProjectStore:invalidProject', ...
                     'Project validation failed: %s', ...
                     UMITProjectStore.iJoinIssueMessages(blockingErrors));
             end
+            error('Umitoolbox:UMITProjectStore:invalidTarget', ...
+                ['The subject or session to modify has validation errors ' ...
+                 '(the rest of the project is unaffected): %s'], ...
+                UMITProjectStore.iJoinIssueMessages(blockingErrors));
         end
 
         function [pathField, bindingField] = ...
@@ -5018,9 +4976,7 @@ classdef UMITProjectStore < handle
                 return
             end
 
-            bindingPath = fullfile(dataFolder, ...
-                obj.Schema.files.projectBinding);
-            if ~isfile(bindingPath)
+            if ~UMITProjectLedger.isBound(dataFolder)
                 return
             end
 
@@ -5070,7 +5026,7 @@ classdef UMITProjectStore < handle
                     isfolder(oldDataFolder)
                 oldBindingPath = fullfile(oldDataFolder, ...
                     obj.Schema.files.projectBinding);
-                if isfile(oldBindingPath)
+                if UMITProjectStore.iHasBinding(oldDataFolder)
                     backupOldPath = fullfile(recoveryPath, ...
                         ['old_', obj.Schema.files.projectBinding]);
                     copyfile(oldBindingPath, backupOldPath, 'f');
@@ -5094,14 +5050,14 @@ classdef UMITProjectStore < handle
                 SessionInfo.modifiedOn = datetime('now');
                 obj.iSaveSessionInfo(sessionPath, SessionInfo);
                 if removeOldBinding
-                    delete(oldBindingPath);
+                    UMITProjectStore.iRemoveBinding(oldDataFolder, 'relocated');
                 end
-                obj.iAssertValidAfterMutation();
+                obj.iAssertValidAfterMutation(UMITProjectStore.iScope( ...
+                    'subjects', {SessionInfo.subjectUUID}, 'sessions', {SessionInfo.uuid}));
                 obj.IsReadOnly = false;
             catch ME
                 copyfile(backupSessionPath, sessionMetadataPath, 'f');
-                if removeOldBinding && ~isfile(oldBindingPath) && ...
-                        isfile(backupOldPath)
+                if removeOldBinding && isfile(backupOldPath)
                     copyfile(backupOldPath, oldBindingPath, 'f');
                 end
                 rethrow(ME)
@@ -5112,15 +5068,14 @@ classdef UMITProjectStore < handle
             clear cleanupRecovery
         end
 
-        function iAssertBindingMutationAllowed(obj, sessionRelativePath)
+        function iAssertBindingMutationAllowed(obj, scope, sessionRelativePath)
             %IASSERTBINDINGMUTATIONALLOWED Permit narrowly scoped repair writes.
             %
-            % Normal mutations still require a fully healthy writable store.
-            % Relocation, repair, and explicit session removal may proceed when
-            % the only validation errors are binding-consistency errors on the
-            % selected session.
+            % Relocation, repair, and explicit session removal may proceed
+            % when the only validation errors in their scope are
+            % binding-consistency or dataset errors on the selected session.
 
-            report = obj.validate('Mode', 'full');
+            report = obj.validate('Mode', 'quick', 'Scope', scope);
             if report.isValid
                 return
             end
@@ -5129,24 +5084,20 @@ classdef UMITProjectStore < handle
                 'missing_project_binding', ...
                 'invalid_project_binding', ...
                 'incomplete_data_folder_binding', ...
-                'missing_acq_infos', ...
+                'not_a_dataset', ...
                 'invalid_acq_infos', ...
                 'missing_raw_data_files'};
             errors = report.errors;
             isAllowed = ismember({errors.code}, allowedCodes) & ...
                 strcmp({errors.relativePath}, sessionRelativePath);
-            if ~all(isAllowed)
-                obj.IsReadOnly = true;
-                error('Umitoolbox:UMITProjectStore:invalidProject', ...
-                    'Project validation failed: %s', ...
-                    UMITProjectStore.iJoinIssueMessages(errors(~isAllowed)));
-            end
+            obj.iThrowBlockingErrors(errors(~isAllowed));
         end
 
-        function iAssertValidAfterMutation(obj)
-            %IASSERTVALIDAFTERMUTATION Validate the full project after a write.
+        function iAssertValidAfterMutation(obj, scope)
+            %IASSERTVALIDAFTERMUTATION Validate what a mutation touched.
+            %   Quick, scoped validation (see iAssertHealthyForMutation).
 
-            report = obj.validate('Mode', 'full');
+            report = obj.validate('Mode', 'quick', 'Scope', scope);
             if ~report.isValid
                 error('Umitoolbox:UMITProjectStore:postWriteValidationFailed', ...
                     'Project failed post-write validation: %s', ...
@@ -5154,15 +5105,21 @@ classdef UMITProjectStore < handle
             end
         end
 
-        function id = iNormalizeManagedID(obj, idIn, idLabel)
+        function id = iNormalizeManagedID(obj, idIn, idLabel, allowRewrite)
             %INORMALIZEMANAGEDID Normalize one filesystem-backed MATLAB ID.
             %
-            % IDs that fail the managed-ID grammar are converted with
-            % matlab.lang.makeValidName before the managed-ID checks. Existing
-            % valid IDs are preserved for compatibility; the store's
-            % reserved-name and case-insensitive uniqueness protections remain
-            % in force.
+            % For lookups (ALLOWREWRITE true, the default), IDs that fail the
+            % managed-ID grammar are converted with matlab.lang.makeValidName
+            % before the managed-ID checks, so "Mouse 104" finds "Mouse104".
+            % For new and renamed IDs (ALLOWREWRITE false) a rewrite is never
+            % applied silently (audit item 24): the ID is refused with
+            % Umitoolbox:UMITProjectStore:invalidID and the message names
+            % the valid form to use instead. The store's reserved-name and
+            % case-insensitive uniqueness protections remain in force.
 
+            if nargin < 4
+                allowRewrite = true;
+            end
             if ~(ischar(idIn) || (isstring(idIn) && isscalar(idIn)))
                 error('Umitoolbox:UMITProjectStore:invalidID', ...
                     '"%s" must be a character vector or string scalar.', idLabel);
@@ -5178,8 +5135,15 @@ classdef UMITProjectStore < handle
             end
 
             if isempty(regexp(id, rules.idPattern, 'once'))
+                requested = id;
                 id = matlab.lang.makeValidName(id, ...
                     'ReplacementStyle', 'underscore');
+                if ~allowRewrite
+                    error('Umitoolbox:UMITProjectStore:invalidID', ...
+                        ['%s "%s" is not a valid name (letters, digits, "_" and "-", ' ...
+                         'starting with a letter or digit). Use "%s" instead.'], ...
+                        idLabel, requested, id);
+                end
             end
             if strlength(string(id)) > rules.maxIDLength
                 error('Umitoolbox:UMITProjectStore:invalidID', ...
@@ -5223,7 +5187,7 @@ classdef UMITProjectStore < handle
 
                 % Ignore the item currently being renamed.
                 if ~isempty(ignoredUUID) && ...
-                        strcmp(registry(iRecord).uuid, ignoredUUID)
+                        strcmpi(registry(iRecord).uuid, ignoredUUID)
                     continue
                 end
 
@@ -5276,47 +5240,62 @@ classdef UMITProjectStore < handle
         end
 
         function iAssertValidSaveFolderDataset(~, saveFolder)
-            %IASSERTVALIDSAVEFOLDERDATASET Require canonical acquisition metadata.
+            %IASSERTVALIDSAVEFOLDERDATASET Require imported imaging data.
+            %
+            %   Format-neutral (audit section 12.1 item 5): the folder must
+            %   hold a .dat file with a UMIT header, or a valid AcqInfos.mat
+            %   (isUmitDataset). AcqInfos.mat alone is no longer required.
+            %   Errors: Umitoolbox:UMITProjectStore:notADataset (no marker),
+            %   ...:invalidAcqInfos (only an unreadable AcqInfos.mat).
 
-            acquisitionFile = fullfile(saveFolder, 'AcqInfos.mat');
-            if ~isfile(acquisitionFile)
-                error( ...
-                    'Umitoolbox:UMITProjectStore:missingAcqInfos', ...
-                    ['SaveFolder must contain AcqInfos.mat before it can ' ...
-                     'be registered as an imaging dataset: %s'], ...
-                    saveFolder);
+            [isDataset, reason] = isUmitDataset(saveFolder);
+            if isDataset
+                return
             end
+            if isfile(fullfile(saveFolder, 'AcqInfos.mat'))
+                error('Umitoolbox:UMITProjectStore:invalidAcqInfos', ...
+                    'SaveFolder is not a UMIT dataset: %s.', reason);
+            end
+            error('Umitoolbox:UMITProjectStore:notADataset', ...
+                ['SaveFolder is not a UMIT dataset: %s. Import the raw data ' ...
+                 'into it first.'], reason);
+        end
 
+        function rawFolder = iDataParamsRawFolder(~, SessionInfo)
+            %IDATAPARAMSRAWFOLDER The SaveFolder's DataParams.folders.RawFolder.
+            %   '' when the SaveFolder, its DataParams or the field is
+            %   unavailable or 'Missing'. Read-only.
+
+            rawFolder = '';
+            saveFolder = SessionInfo.processedDataFolder;
+            if isempty(saveFolder) || ~isfile(fullfile(saveFolder, 'DataParams.mat'))
+                return
+            end
             try
-                variableNames = who('-file', acquisitionFile);
-                if ~ismember('AcqInfoStream', variableNames)
-                    error( ...
-                        'Umitoolbox:UMITProjectStore:invalidAcqInfos', ...
-                        ['AcqInfos.mat in "%s" must contain a scalar ' ...
-                         'AcqInfoStream struct.'], ...
-                        saveFolder);
-                end
-                loaded = load(acquisitionFile, ...
-                    'AcqInfoStream', '-mat');
-            catch ME
-                if strcmp(ME.identifier, ...
-                        'Umitoolbox:UMITProjectStore:invalidAcqInfos')
-                    rethrow(ME)
-                end
-                error( ...
-                    'Umitoolbox:UMITProjectStore:invalidAcqInfos', ...
-                    'Could not read AcqInfos.mat in "%s": %s', ...
-                    saveFolder, ME.message);
+                DataParams = loadDataParams(saveFolder);
+                value = char(string(DataParams.folders.RawFolder));
+            catch
+                return
             end
+            if ~isempty(value) && ~strcmpi(value, 'Missing')
+                rawFolder = value;
+            end
+        end
 
-            if ~isfield(loaded, 'AcqInfoStream') || ...
-                    ~isstruct(loaded.AcqInfoStream) || ...
-                    ~isscalar(loaded.AcqInfoStream)
-                error( ...
-                    'Umitoolbox:UMITProjectStore:invalidAcqInfos', ...
-                    ['AcqInfos.mat in "%s" must contain a scalar ' ...
-                     'AcqInfoStream struct.'], ...
-                    saveFolder);
+        function iAssertRawFolderAuthority(obj, SessionInfo, rawFolder)
+            %IASSERTRAWFOLDERAUTHORITY Raw binding must follow DataParams (item 7).
+
+            authority = obj.iDataParamsRawFolder(SessionInfo);
+            if isempty(authority)
+                return
+            end
+            if ~isfolder(authority) || ~strcmp( ...
+                    UMITProjectStore.iNormalizeComparisonPath(authority), ...
+                    UMITProjectStore.iNormalizeComparisonPath(rawFolder))
+                error('Umitoolbox:UMITProjectStore:rawFolderMismatch', ...
+                    ['The SaveFolder''s DataParams.folders.RawFolder is "%s", the ' ...
+                     'authority for its RawFolder; "%s" was given. Update DataParams ' ...
+                     'first if the raw data moved.'], authority, rawFolder);
             end
         end
 
@@ -5373,15 +5352,12 @@ classdef UMITProjectStore < handle
             mkdir(fullfile(subjectPath, obj.Schema.folders.sessions));
         end
 
-        function iCreateSessionFolders(obj, sessionPath)
-            %ICREATESESSIONFOLDERS Create canonical session folders.
+        function iCreateSessionFolders(~, sessionPath)
+            %ICREATESESSIONFOLDERS Create the canonical session folder.
+            %   Sessions own no resource folders since the registration
+            %   transforms were retired (section 4 Q5/Q9).
 
             mkdir(sessionPath);
-            base = fullfile(sessionPath, ...
-                obj.Schema.folders.transforms, ...
-                obj.Schema.folders.registration);
-            mkdir(fullfile(base, obj.Schema.folders.active));
-            mkdir(fullfile(base, obj.Schema.folders.archive));
         end
 
         function rel = iBuildResourceRelativePath(obj, ownerBaseRel, resourceType, stateFolder, fileName)
@@ -5477,8 +5453,13 @@ classdef UMITProjectStore < handle
             output = [newPrefix, input(numel(oldPrefix)+1:end)];
         end
 
-        function report = iValidateSubjectNode(obj, report, subjectRecord, ProjectInfo, mode)
-            %IVALIDATESUBJECTNODE Validate one subject and all child sessions.
+        function report = iValidateSubjectNode(obj, report, subjectRecord, ProjectInfo, mode, scope)
+            %IVALIDATESUBJECTNODE Validate one subject and its child sessions.
+            %   SCOPE ([] = all) limits the sessions validated (see validate).
+
+            if nargin < 6
+                scope = [];
+            end
 
             subjectRel = subjectRecord.relativePath;
             subjectPath = obj.iResolveRelativePath(subjectRel);
@@ -5508,7 +5489,7 @@ classdef UMITProjectStore < handle
                 obj.Schema.requiredSubjectFields, 'subject', metadataRel);
 
             if isfield(SubjectInfo, 'uuid') && ...
-                    ~strcmp(SubjectInfo.uuid, subjectRecord.uuid)
+                    ~strcmpi(SubjectInfo.uuid, subjectRecord.uuid)
                 report = obj.iAddIssue(report, 'error', ...
                     'subject_uuid_mismatch', 'subject', subjectRel, ...
                     'Subject UUID does not match the project registry.', false);
@@ -5566,6 +5547,10 @@ classdef UMITProjectStore < handle
 
                 if obj.iIsRegistryStruct(SubjectInfo.sessionRegistry)
                     for iSession = 1:numel(SubjectInfo.sessionRegistry)
+                        if ~UMITProjectStore.iScopeHasSession(scope, ...
+                                subjectRecord.uuid, SubjectInfo.sessionRegistry(iSession).uuid)
+                            continue
+                        end
                         try
                             report = obj.iValidateSessionNode(report, ...
                                 SubjectInfo.sessionRegistry(iSession), ...
@@ -5584,7 +5569,7 @@ classdef UMITProjectStore < handle
                 report, SubjectInfo, subjectRel);
         end
 
-        function report = iValidateSessionNode(obj, report, sessionRecord, SubjectInfo, subjectRecord, ProjectInfo, mode)
+        function report = iValidateSessionNode(obj, report, sessionRecord, SubjectInfo, subjectRecord, ~, mode)
             %IVALIDATESESSIONNODE Validate one session metadata node.
 
             sessionRel = sessionRecord.relativePath;
@@ -5615,7 +5600,7 @@ classdef UMITProjectStore < handle
                 obj.Schema.requiredSessionFields, 'session', metadataRel);
 
             if isfield(SessionInfo, 'uuid') && ...
-                    ~strcmp(SessionInfo.uuid, sessionRecord.uuid)
+                    ~strcmpi(SessionInfo.uuid, sessionRecord.uuid)
                 report = obj.iAddIssue(report, 'error', ...
                     'session_uuid_mismatch', 'session', sessionRel, ...
                     'Session UUID does not match the subject registry.', false);
@@ -5630,7 +5615,7 @@ classdef UMITProjectStore < handle
 
             if isfield(SessionInfo, 'subjectUUID') && ...
                     isfield(SubjectInfo, 'uuid') && ...
-                    ~strcmp(SessionInfo.subjectUUID, SubjectInfo.uuid)
+                    ~strcmpi(SessionInfo.subjectUUID, SubjectInfo.uuid)
                 report = obj.iAddIssue(report, 'error', ...
                     'session_subject_uuid_mismatch', 'session', sessionRel, ...
                     'Session subjectUUID does not match its parent subject.', false);
@@ -5650,55 +5635,16 @@ classdef UMITProjectStore < handle
                     'invalid_session_id', 'session', sessionRel, ME.message, false);
             end
 
-            requiredFolders = { ...
-                UMITProjectStore.iJoinRelative(obj.Schema.folders.transforms, ...
-                obj.Schema.folders.registration, ...
-                obj.Schema.folders.active), ...
-                UMITProjectStore.iJoinRelative(obj.Schema.folders.transforms, ...
-                obj.Schema.folders.registration, ...
-                obj.Schema.folders.archive)};
-            report = obj.iValidateRequiredNodeFolders( ...
-                report, sessionPath, sessionRel, 'session', requiredFolders);
+            % 'transforms' is a legacy, optional child (retired
+            % registration-transform resources); its content is not checked.
             report = obj.iValidateAllowedChildren(report, ...
                 sessionPath, sessionRel, 'session', { ...
                 obj.Schema.files.sessionMetadata, ...
                 obj.Schema.folders.transforms});
-            report = obj.iValidateAllowedChildren(report, ...
-                fullfile(sessionPath, obj.Schema.folders.transforms), ...
-                UMITProjectStore.iJoinRelative(sessionRel, ...
-                obj.Schema.folders.transforms), 'session', ...
-                {obj.Schema.folders.registration});
-            report = obj.iValidateAllowedChildren(report, ...
-                fullfile(sessionPath, obj.Schema.folders.transforms, ...
-                obj.Schema.folders.registration), ...
-                UMITProjectStore.iJoinRelative(sessionRel, ...
-                obj.Schema.folders.transforms, ...
-                obj.Schema.folders.registration), 'session', ...
-                {obj.Schema.folders.active, obj.Schema.folders.archive});
 
             if isfield(SessionInfo, 'resourceRegistry')
                 report = obj.iValidateResourceRegistry(report, ...
                     SessionInfo, sessionRel, 'session', mode);
-            end
-
-            % Rigs are independent of this project (see UMITRigStore), so
-            % project validation only checks that the local rigUUID/rigID
-            % pointer is internally well-formed -- it deliberately does not
-            % resolve the external rig store here, to avoid coupling a
-            % project's own validation to another store's availability.
-            % The pointer mirrors the SaveFolder's rig ledger and is empty
-            % when the folder is not bound to a rig (rig-ledger redesign):
-            % an empty pointer is valid, a half-filled one is not.
-            hasRigUUID = isfield(SessionInfo, 'rigUUID') && ~isempty(SessionInfo.rigUUID);
-            hasRigID = isfield(SessionInfo, 'rigID') && ~isempty(SessionInfo.rigID);
-            if hasRigUUID && ~hasRigID
-                report = obj.iAddIssue(report, 'error', ...
-                    'session_rig_incomplete', 'session', sessionRel, ...
-                    'Session has rigUUID but no rigID.', false);
-            elseif hasRigID && ~hasRigUUID
-                report = obj.iAddIssue(report, 'error', ...
-                    'session_rig_incomplete', 'session', sessionRel, ...
-                    'Session has rigID but no rigUUID.', false);
             end
 
             bindingRoles = { ...
@@ -5768,9 +5714,8 @@ classdef UMITProjectStore < handle
                             SessionInfo.(pathField));
                     catch ME
                         if strcmp(ME.identifier, ...
-                                ['Umitoolbox:UMITProjectStore:' ...
-                                 'missingAcqInfos'])
-                            issueCode = 'missing_acq_infos';
+                                'Umitoolbox:UMITProjectStore:notADataset')
+                            issueCode = 'not_a_dataset';
                         else
                             issueCode = 'invalid_acq_infos';
                         end
@@ -5787,15 +5732,23 @@ classdef UMITProjectStore < handle
                             'missing_raw_data_files', 'session', ...
                             sessionRel, ME.message, false);
                     end
+                    authority = obj.iDataParamsRawFolder(SessionInfo);
+                    if ~isempty(authority) && ~strcmp( ...
+                            UMITProjectStore.iNormalizeComparisonPath(authority), ...
+                            UMITProjectStore.iNormalizeComparisonPath(SessionInfo.(pathField)))
+                        report = obj.iAddIssue(report, 'warning', ...
+                            'raw_folder_mismatch', 'session', sessionRel, sprintf( ...
+                            ['The session''s RawFolder "%s" differs from the ' ...
+                             'SaveFolder''s DataParams.folders.RawFolder "%s" (the ' ...
+                             'authority).'], SessionInfo.(pathField), authority), true);
+                    end
                 end
 
-                bindingPath = fullfile(SessionInfo.(pathField), ...
-                    obj.Schema.files.projectBinding);
-                if ~isfile(bindingPath)
+                if strcmp(UMITProjectStore.iBindingState(SessionInfo.(pathField)), 'none')
                     report = obj.iAddIssue(report, 'error', ...
                         'missing_project_binding', 'session', ...
                         sessionRel, sprintf( ...
-                        'Bound folder is missing %s: %s', ...
+                        'Bound folder is not bound in its %s: %s', ...
                         obj.Schema.files.projectBinding, ...
                         SessionInfo.(pathField)), true);
                     continue
@@ -5941,6 +5894,19 @@ classdef UMITProjectStore < handle
                 end
 
                 if ~validRecord(iRecord)
+                    continue
+                end
+
+                if ismember(record.type, obj.Schema.retiredResourceTypes)
+                    % Legacy record (e.g. a registration transform written
+                    % before section 4 Q5): tolerated, never used.
+                    report = obj.iAddIssue(report, 'warning', ...
+                        'retired_resource_type', ownerType, ...
+                        record.relativePath, ...
+                        sprintf(['Resource %s has the retired type "%s"; it is ' ...
+                        'kept on disk but no longer used.'], record.uuid, record.type), ...
+                        false);
+                    validRecord(iRecord) = false;
                     continue
                 end
 
@@ -6382,7 +6348,7 @@ classdef UMITProjectStore < handle
                                 isfield(SessionInfo, ...
                                 'processedDataFolder') && ...
                                 ~isempty(SessionInfo.rawDataBindingUUID) && ...
-                                strcmp(SessionInfo.rawDataBindingUUID, ...
+                                strcmpi(SessionInfo.rawDataBindingUUID, ...
                                 SessionInfo.processedDataBindingUUID) && ...
                                 ~isempty(SessionInfo.rawDataFolder) && ...
                                 strcmp( ...
@@ -6484,6 +6450,7 @@ classdef UMITProjectStore < handle
             issue.relativePath = relativePath;
             issue.message = message;
             issue.repairable = repairable;
+            issue.storeLevel = false; % set by iFinishReport
 
             switch severity
                 case 'error'
@@ -6502,7 +6469,8 @@ classdef UMITProjectStore < handle
                 'nodeType', '', ...
                 'relativePath', '', ...
                 'message', '', ...
-                'repairable', false);
+                'repairable', false, ...
+                'storeLevel', false);
 
             report = struct();
             report.isValid = true;
@@ -6511,6 +6479,33 @@ classdef UMITProjectStore < handle
             report.warnings = repmat(issueTemplate, 0, 1);
             report.unregisteredItems = {};
             report.checkedOn = NaT;
+        end
+
+        function report = iFinishReport(obj, report, ProjectInfo, isScoped)
+            %IFINISHREPORT Classify issues, set isValid, keep unscoped reports.
+            %
+            %   An issue is entity-level (storeLevel false) when it is not a
+            %   project node and its relativePath lies inside a registered
+            %   subject's folder; every other issue is store-level.
+
+            subjectRels = {};
+            if isstruct(ProjectInfo) && isfield(ProjectInfo, 'subjectRegistry') && ...
+                    obj.iIsRegistryStruct(ProjectInfo.subjectRegistry)
+                subjectRels = {ProjectInfo.subjectRegistry.relativePath};
+            end
+            for iIssue = 1:numel(report.errors)
+                report.errors(iIssue).storeLevel = ...
+                    UMITProjectStore.iIsStoreLevelIssue(report.errors(iIssue), subjectRels);
+            end
+            for iIssue = 1:numel(report.warnings)
+                report.warnings(iIssue).storeLevel = ...
+                    UMITProjectStore.iIsStoreLevelIssue(report.warnings(iIssue), subjectRels);
+            end
+            report.isValid = isempty(report.errors);
+            report.checkedOn = datetime('now');
+            if ~isScoped
+                obj.LastValidationReport = report;
+            end
         end
 
         function tf = iIsRegistryStruct(obj, registry)
@@ -6545,7 +6540,7 @@ classdef UMITProjectStore < handle
             if isempty(registry)
                 return
             end
-            index = find(strcmp({registry.uuid}, char(string(uuid))), 1, 'first');
+            index = find(strcmpi({registry.uuid}, char(string(uuid))), 1, 'first');
         end
 
         function iAppendLog(obj, operation, targetUUID, result)
@@ -6570,25 +6565,95 @@ classdef UMITProjectStore < handle
     end
 
     methods (Static, Access = private)
-        function [rigUUID, rigID] = iFolderLedgerRig(saveFolder)
-            %IFOLDERLEDGERRIG Rig bound in a SaveFolder's rig ledger, read-only.
-            %
-            %   Returns empty values when the folder has no rig ledger, is
-            %   recorded as "no rig", or its ledger is invalid: the session
-            %   pointer is only a mirror, and project operations must not
-            %   depend on (or write) the folder's rig data.
+        function state = iBindingState(dataFolder)
+            %IBINDINGSTATE 'none' (no ledger, or its binding was removed),
+            %'bound', or 'invalid' (a ledger that fails validation).
 
-            rigUUID = '';
-            rigID = '';
-            try
-                report = UMITRigLedger.validate(saveFolder);
-            catch
+            report = UMITProjectLedger.validate(dataFolder);
+            if ~report.isValid
+                state = 'invalid';
+            elseif strcmp(report.info.state, 'Bound')
+                state = 'bound';
+            else
+                state = 'none';
+            end
+        end
+
+        function tf = iHasBinding(dataFolder)
+            %IHASBINDING True for a bound folder or an invalid ledger (both
+            %block a new binding, as an existing .umitlink did).
+
+            tf = ~strcmp(UMITProjectStore.iBindingState(dataFolder), 'none');
+        end
+
+        function backup = iBackupLedger(dataFolder)
+            %IBACKUPLEDGER In-memory copy of the folder's ledger file bytes.
+
+            backup = struct('path', UMITProjectLedger.filePath(dataFolder), ...
+                'existed', false, 'bytes', uint8([]));
+            if isfile(backup.path)
+                fid = fopen(backup.path, 'r');
+                backup.bytes = fread(fid, Inf, '*uint8');
+                fclose(fid);
+                backup.existed = true;
+            end
+        end
+
+        function iRestoreLedger(backup)
+            %IRESTORELEDGER Undo ledger writes of a failed store operation.
+            %
+            %   The failed operation never happened, so its events are
+            %   removed by restoring the previous bytes (or the absence of
+            %   the file). This is a rollback, not a history rewrite.
+
+            if isempty(backup)
                 return
             end
-            if report.isValid && ~isempty(report.info.binding)
-                rigUUID = report.info.binding.sourceRig.uuid;
-                rigID = report.info.binding.sourceRig.rigID;
+            if ~backup.existed
+                UMITProjectStore.iDeleteFileIfPresent(backup.path);
+                return
             end
+            fid = fopen(backup.path, 'w');
+            if fid == -1
+                warning('Umitoolbox:UMITProjectStore:ledgerRestoreFailed', ...
+                    'Could not restore the project ledger %s.', backup.path);
+                return
+            end
+            fwrite(fid, backup.bytes, 'uint8');
+            fclose(fid);
+        end
+
+        function iRemoveBinding(dataFolder, reason)
+            %IREMOVEBINDING Record that the store removed a folder's binding.
+            %
+            %   Appends an unbind event (the ledger and its history stay).
+            %   A folder that is not bound is left unchanged. An invalid
+            %   ledger cannot take an event and is left untouched (warning).
+
+            switch UMITProjectStore.iBindingState(dataFolder)
+                case 'bound'
+                    UMITProjectLedger.unbind(dataFolder, 'Reason', reason, ...
+                        'Origin', 'UMITProjectStore');
+                case 'invalid'
+                    warning('Umitoolbox:UMITProjectStore:invalidLedgerKept', ...
+                        ['The project ledger in "%s" is invalid and was left as it is; ' ...
+                         'the folder is no longer registered to the session.'], dataFolder);
+            end
+        end
+
+        function ProjectBinding = iBindingRecordFromLedger(binding, schema)
+            %IBINDINGRECORDFROMLEDGER The store's binding record (identity
+            %from the ledger; times from its events).
+
+            ProjectBinding = struct( ...
+                'version', schema.projectBinding.version, ...
+                'bindingUUID', binding.bindingUUID, ...
+                'projectUUID', binding.projectUUID, ...
+                'subjectUUID', binding.subjectUUID, ...
+                'sessionUUID', binding.sessionUUID, ...
+                'folderRole', binding.folderRole, ...
+                'createdOn', UMITLedgerCore.localTime(binding.boundOn), ...
+                'modifiedOn', UMITLedgerCore.localTime(binding.modifiedOn));
         end
 
         function metadata = iAddMetadataDefaults(metadata, entityType)
@@ -6623,6 +6688,19 @@ classdef UMITProjectStore < handle
                 if ~isfield(metadata, fieldName)
                     metadata.(fieldName) = defaults.(fieldName);
                 end
+            end
+        end
+
+        function iAssertKnownInputFields(inputInfo, allowedFields, errID)
+            %IASSERTKNOWNINPUTFIELDS Reject creation fields that would be ignored.
+            %   (audit item 24: addSubject/addSession used to drop them
+            %   silently, while the update APIs rejected them.)
+
+            unknownFields = setdiff(fieldnames(inputInfo), allowedFields);
+            if ~isempty(unknownFields)
+                error('Umitoolbox:UMITProjectStore:unsupportedField', ...
+                    '%s: unsupported field(s) %s. Supported fields: %s.', ...
+                    errID, strjoin(unknownFields, ', '), strjoin(unique(allowedFields), ', '));
             end
         end
 
@@ -6669,14 +6747,6 @@ classdef UMITProjectStore < handle
                 end
                 value = char(string(value));
             end
-        end
-
-        function tf = iIsProjectNotFoundError(ME)
-            %IISPROJECTNOTFOUNDERROR Identify static-root UUID lookup misses.
-
-            tf = strcmp(ME.identifier, ...
-                'Umitoolbox:UMITProjectStore:resolveProjectFailed') && ...
-                contains(lower(char(string(ME.message))), 'not found');
         end
 
         function projectUUID = iNormalizeProjectUUID(projectUUID)
@@ -6915,6 +6985,124 @@ classdef UMITProjectStore < handle
             path = char(java.io.File(pathIn).getCanonicalPath());
         end
 
+        function matchingRoots = iFindProjectRoots(projectUUID)
+            %IFINDPROJECTROOTS Project roots whose project.mat has PROJECTUUID.
+            %   Never throws for a missing project (empty result). Internal
+            %   staging folders (names starting with '.') are skipped.
+
+            projectUUID = UMITProjectStore.iNormalizeProjectUUID(projectUUID);
+            projectsRoot = UMITProjectStore.getProjectsRoot();
+            schema = getUMITProjectSchema();
+
+            folderList = dir(projectsRoot);
+            folderList = folderList([folderList.isdir]);
+            folderNames = {folderList.name};
+            folderList = folderList(~startsWith(folderNames, '.'));
+
+            matchingRoots = strings(0, 1);
+            % New projects use a full UUID suffix. Search those candidates
+            % first, then fall back to all project folders to tolerate a
+            % manually renamed directory inside the static root.
+            suffix = ['__', projectUUID];
+            candidateMask = endsWith( ...
+                {folderList.name}, suffix, 'IgnoreCase', true);
+            candidateOrder = [find(candidateMask), find(~candidateMask)];
+
+            for iCandidate = candidateOrder
+                candidateRoot = fullfile( ...
+                    projectsRoot, folderList(iCandidate).name);
+                projectFile = fullfile( ...
+                    candidateRoot, schema.files.projectMetadata);
+                if ~isfile(projectFile)
+                    continue
+                end
+                try
+                    loaded = load(projectFile, ...
+                        schema.metadataVariables.project, '-mat');
+                catch
+                    continue
+                end
+                if ~isfield(loaded, schema.metadataVariables.project)
+                    continue
+                end
+                ProjectInfo = loaded.(schema.metadataVariables.project);
+                if isstruct(ProjectInfo) && isscalar(ProjectInfo) && ...
+                        isfield(ProjectInfo, 'projectUUID') && ...
+                        strcmpi(ProjectInfo.projectUUID, projectUUID)
+                    matchingRoots(end+1, 1) = string(candidateRoot); %#ok<AGROW>
+                end
+            end
+            matchingRoots = unique(matchingRoots, 'stable');
+        end
+
+        function scope = iScope(varargin)
+            %ISCOPE Validation scope of a mutation (see validate 'Scope').
+            %
+            %   scope = UMITProjectStore.iScope('subjects', uuids, ...
+            %       'sessions', uuids, 'subjectTrees', uuids)
+            %   Omitted lists are empty; iScope() is project-level only.
+
+            p = inputParser;
+            addParameter(p, 'subjects', {});
+            addParameter(p, 'sessions', {});
+            addParameter(p, 'subjectTrees', {});
+            parse(p, varargin{:});
+            normalize = @(values) lower(cellstr(string(values(:)')));
+            scope = struct( ...
+                'subjects', {normalize(p.Results.subjects)}, ...
+                'sessions', {normalize(p.Results.sessions)}, ...
+                'subjectTrees', {normalize(p.Results.subjectTrees)});
+            scope.subjects = unique([scope.subjects, scope.subjectTrees], 'stable');
+        end
+
+        function scope = iLocationScope(location)
+            %ILOCATIONSCOPE Validation scope of a resource's owner.
+            %   LOCATION is an iNewResourceLocation record or an
+            %   iResolveOwner result (fields type/ownerType and metadata).
+
+            if isfield(location, 'ownerType')
+                ownerType = location.ownerType;
+            else
+                ownerType = location.type;
+            end
+            metadata = location.metadata;
+            if strcmp(ownerType, 'session')
+                scope = UMITProjectStore.iScope('subjects', {metadata.subjectUUID}, ...
+                    'sessions', {metadata.uuid});
+            else
+                scope = UMITProjectStore.iScope('subjects', {metadata.uuid});
+            end
+        end
+
+        function tf = iScopeHasSubject(scope, subjectUUID)
+            tf = ~isstruct(scope) || ismember(lower(char(string(subjectUUID))), scope.subjects);
+        end
+
+        function tf = iScopeHasSession(scope, subjectUUID, sessionUUID)
+            tf = ~isstruct(scope) || ...
+                ismember(lower(char(string(sessionUUID))), scope.sessions) || ...
+                ismember(lower(char(string(subjectUUID))), scope.subjectTrees);
+        end
+
+        function tf = iIsStoreLevelIssue(issue, subjectRels)
+            %IISSTORELEVELISSUE True unless the issue lies inside a registered
+            %subject's folder (and is not a project-node issue).
+
+            tf = true;
+            if strcmp(issue.nodeType, 'project')
+                return
+            end
+            rel = strrep(char(string(issue.relativePath)), '\', '/');
+            for iRel = 1:numel(subjectRels)
+                subjectRel = strrep(char(string(subjectRels{iRel})), '\', '/');
+                if ~isempty(subjectRel) && (strcmp(rel, subjectRel) || ...
+                        startsWith(rel, [subjectRel '/']))
+                    tf = false;
+                    return
+                end
+            end
+        end
+
         function rel = iJoinRelative(varargin)
             %IJOINRELATIVE Join path parts using canonical forward slashes.
 
@@ -6966,7 +7154,7 @@ classdef UMITProjectStore < handle
 
         function iValidateProjectBindingStruct( ...
                 ProjectBinding, schema, errID)
-            %IVALIDATEPROJECTBINDINGSTRUCT Strictly validate .umitlink payload.
+            %IVALIDATEPROJECTBINDINGSTRUCT Strictly validate the store's binding record.
 
             if ~isstruct(ProjectBinding) || ~isscalar(ProjectBinding)
                 error(errID, ...

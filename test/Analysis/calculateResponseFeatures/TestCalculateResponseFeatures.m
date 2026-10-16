@@ -1,4 +1,4 @@
-classdef TestCalculateResponseFeatures < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestCalculateResponseFeatures < matlab.unittest.TestCase
     %TESTCALCULATERESPONSEFEATURES Unit tests for calculateResponseFeatures.
 
     methods (Test)

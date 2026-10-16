@@ -1,4 +1,4 @@
-classdef TestEventsManagerConstructorLoad < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventsManagerConstructorLoad < matlab.unittest.TestCase
     %TESTEVENTSMANAGERCONSTRUCTORLOAD Constructor and load-path behavior tests.
 
     properties

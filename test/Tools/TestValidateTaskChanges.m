@@ -1,4 +1,4 @@
-classdef TestValidateTaskChanges < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestValidateTaskChanges < matlab.unittest.TestCase
 %TESTVALIDATETASKCHANGES Focused tests for the consolidated task validator.
 
     properties

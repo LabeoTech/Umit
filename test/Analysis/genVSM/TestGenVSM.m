@@ -1,4 +1,4 @@
-classdef TestGenVSM < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGenVSM < matlab.unittest.TestCase
     properties
         ProjectRoot
         TempFolder

@@ -1,4 +1,4 @@
-classdef TestSameSizeRewritersCharacterization < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestSameSizeRewritersCharacterization < matlab.unittest.TestCase
     %TESTSAMESIZEREWRITERSCHARACTERIZATION Same-size rewriters keep their values.
     %
     %   .dat header Phase 4e-1. fixtures/sameSizeRewriterReference.mat was
@@ -14,8 +14,12 @@ classdef TestSameSizeRewritersCharacterization < matlab.unittest.TestCase
     properties (TestParameter)
         % correctMotionArtifact is no longer pinned here: its per-file output
         % and fixed declared name changed on purpose (see TestCorrectMotionArtifact).
-        caseName = {'applyTform2Cams_standard', 'applyTform2Cams_RAMsafe', ...
-            'applyRegistrationTformOnFolder'}
+        % applyRegistrationTformOnFolder is no longer pinned here either:
+        % since the project redesign Phase 1 (2026-10-15) it is a wrapper of
+        % applyImageAlignmentToFolder (linear interpolation, reference-size
+        % output), pinned by TestImageAlignmentCharacterization; its recorded
+        % 'nearest' values are intentionally no longer reproduced.
+        caseName = {'applyTform2Cams_standard', 'applyTform2Cams_RAMsafe'}
         inputKind = {'legacySidecar', 'headered'}
     end
 
@@ -71,12 +75,12 @@ classdef TestSameSizeRewritersCharacterization < matlab.unittest.TestCase
             % .dat header Phase 7a: after 7b, AcqInfos.mat holds the raw
             % (unbinned, larger) frame size; applyTform2Cams takes the frame
             % size from the files, so the frozen reference still holds.
-            caseName = 'applyTform2Cams_standard';
+            pinnedCase = 'applyTform2Cams_standard';
             [cases, utils] = sameSizeRewriterCases();
-            c = cases(strcmp({cases.name}, caseName));
+            c = cases(strcmp({cases.name}, pinnedCase));
             S = load(fullfile(fileparts(mfilename('fullpath')), 'fixtures', ...
                 'sameSizeRewriterReference.mat'), 'ref');
-            ref = S.ref(strcmp({S.ref.name}, caseName));
+            ref = S.ref(strcmp({S.ref.name}, pinnedCase));
 
             folder = fullfile(tempdir, ['sameSizeChar_' char(java.util.UUID.randomUUID)]);
             cleanupFcn = c.build(folder, strcmp(inputKind, 'headered'));

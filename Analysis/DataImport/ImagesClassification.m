@@ -20,11 +20,17 @@ function [classifiedFiles, rigResolution] = ImagesClassification(RawFolder, Save
 %         transform cannot be applied), the data are imported WITHOUT
 %         coregistration, with a warning: a new folder records "no rig", a
 %         bound folder keeps its optics binding without a coregistration.
-%       - Re-importing into a folder that has a ledger records a reimport
-%         event first, which resets the coregistration commitment. A
-%         dual-camera re-import whose Active Rig optics differ from the
-%         folder's committed optics is refused before any file is touched
-%         (Umitoolbox:RigLedger:reimportConflict).
+%       - Re-importing into a SaveFolder that already holds an import is a
+%         FRESH IMPORT (prepareFreshImport): every artefact derived from the
+%         previous data is deleted (planFreshImport lists them; raw files,
+%         ledgers and unknown files are kept), and freshImport events are
+%         recorded in the rig ledger (ALL rig commitments reset, binding
+%         kept) and, when the folder is bound to a project, in the project
+%         ledger. backupOpts is the only decision: GENBACKUP (default in
+%         pipelines) zips the deleted files first, ERASE does not; a direct
+%         call with backupOpts = '' asks on a desktop. A dual-camera
+%         re-import then rebinds to the Active Rig, whatever rig the folder
+%         used before.
 %
 %   Repeated illumination entries are supported within each camera sequence.
 %   For example, Red-Green-Red creates red.dat and green.dat; red.dat stores
@@ -46,25 +52,19 @@ function [classifiedFiles, rigResolution] = ImagesClassification(RawFolder, Save
 %       BinningTemp    - Temporal binning factor.
 %                        Default: 1
 %
-%       backupOpts     - Backup handling option applied before writing
-%                        outputs into SaveFolder.
-%                        Values:
-%                            ''           resolve interactively
-%                            'ERASE'      delete without a backup
-%                            'GENBACKUP'  zip, then delete
+%       backupOpts     - What to do when the SaveFolder already holds an
+%                        import (a fresh import); ignored for an empty
+%                        SaveFolder. Values:
+%                            'GENBACKUP'  zip the files to delete, then
+%                                         delete them and import
+%                            'ERASE'      delete them without a zip, import
 %                            <char>       zip under that base name, then
-%                                         delete
+%                                         delete and import
+%                            ''           direct call: confirmation dialog
+%                                         listing the deletions (zip, delete
+%                                         or cancel); GENBACKUP in batch
 %                        Default: '' for a direct call; 'GENBACKUP' when the
-%                        function is driven by PipelineManager, which cannot
-%                        answer an interactive prompt and must not default to
-%                        a destructive action.
-%
-%                        Notes:
-%                        - All values delete the managed existing files in
-%                          SaveFolder; only 'ERASE' does so without first
-%                          creating a .zip backup.
-%                        - Raw acquisition files (.bin, .tif, info.txt,
-%                          Comments.txt, Snapshot*.png) are never managed.
+%                        function is driven by PipelineManager.
 %
 %       b_SubROI       - Interactive sub-region selection before sorting
 %                        (pre-defined ROI file or drawn rectangle). Not
@@ -155,8 +155,11 @@ backupOpts = char(string(p.Results.backupOpts));
 b_SubROI = logical(p.Results.b_SubROI);
 
 if ~p.Results.ApplyRig
+    % Calibration data into temporary folders: no ledger reads or writes.
+    prepareFreshImport(SaveFolder, 'backupOpts', backupOpts, ...
+        'Origin', 'ImagesClassification', 'RecordLedgerEvents', false);
     classifiedFiles = iClassifyRawBinaries(RawFolder, SaveFolder, ...
-        BinningSpatial, BinningTemp, b_SubROI, backupOpts);
+        BinningSpatial, BinningTemp, b_SubROI);
     return
 end
 
@@ -175,18 +178,15 @@ uncoregisteredReason = '';
 if isMultiCamera
     [binding, activeResource, tformFile, tformPayload, uncoregisteredReason, ...
         rigResolution.cameraCoregistration.skipReason] = localResolveDualCameraRig();
-    UMITRigLedger.assertCanReimport(SaveFolder, binding, ...
-        'Operation', 'Re-importing dual-camera data');
 end
 
-% A re-import overwrites the raw-derived files: the coregistration
-% commitment is reset before anything is overwritten.
-if isReimport
-    UMITRigLedger.recordReimport(SaveFolder, 'Origin', ledgerOrigin);
-end
+% A re-import is a fresh import (confirmed or refused here, before any file
+% is touched): derived artefacts are deleted and freshImport events reset
+% every rig commitment and are logged in the project ledger when bound.
+prepareFreshImport(SaveFolder, 'backupOpts', backupOpts, 'Origin', ledgerOrigin);
 
 classifiedFiles = iClassifyRawBinaries(RawFolder, SaveFolder, ...
-    BinningSpatial, BinningTemp, b_SubROI, backupOpts);
+    BinningSpatial, BinningTemp, b_SubROI);
 if ~iscell(classifiedFiles)
     classifiedFiles = {};
 end
@@ -229,7 +229,7 @@ else
     rigResolution.cameraCoregistration.status = 'skipped';
     rigResolution.cameraCoregistration.skipReason = 'singleCameraAcquisition';
     % A first single-camera import records an explicit "no rig"; a
-    % re-import keeps the existing binding (only the reimport event above).
+    % re-import keeps the existing binding (only the freshImport event above).
     if ~isReimport
         UMITRigLedger.writeNoRig(SaveFolder, 'Origin', ledgerOrigin);
     end
@@ -279,10 +279,13 @@ classifiedFiles = unique(classifiedFiles, 'stable');
             'kind', 'parameter', 'default', 1, 'allowed', allowedBinning, 'callType', 'namevalue');
 
         info = PipelineManager.addInput(info, 'backupOpts', 'parameter', ...
-            ['Backup handling for managed files already present in SaveFolder. ' ...
-             '''GENBACKUP'' zips them before the import; ''ERASE'' deletes them ' ...
-             'without a backup.'], ...
-            'kind', 'parameter', 'default', 'GENBACKUP', 'allowed', {'GENBACKUP','ERASE'}, 'callType', 'namevalue');
+            ['When the SaveFolder already holds an import (a fresh import deletes every ' ...
+             'artefact derived from the previous data and resets the rig commitments): ' ...
+             '''GENBACKUP'' (default) zips the files it deletes, then re-imports; ' ...
+             '''ERASE'' deletes them without a zip, then re-imports. Ignored for an ' ...
+             'empty SaveFolder.'], ...
+            'kind', 'parameter', 'default', 'GENBACKUP', 'allowed', {'GENBACKUP','ERASE'}, ...
+            'callType', 'namevalue');
 
         info = PipelineManager.addOutput(info, 'classifiedFiles', 'ImageTimeSeries', 'file', ...
             'Generated file manifest saved in SaveFolder.', ...
@@ -380,7 +383,7 @@ classifiedFiles = unique(classifiedFiles, 'stable');
         if ismember(ledgerState, {'Unknown', 'NoRig'})
             UMITRigLedger.bind(SaveFolder, rigBinding, 'Origin', ledgerOrigin);
         else
-            % assertCanReimport and the reimport event rule out a conflict.
+            % The freshImport event reset every commitment: no conflict.
             rebindConflict = UMITRigLedger.rebind(SaveFolder, rigBinding, 'Origin', ledgerOrigin);
             if rebindConflict.hasConflict
                 error('Umitoolbox:ImagesClassification:RigConflict', ...
@@ -555,14 +558,16 @@ classifiedFiles = unique(classifiedFiles, 'stable');
 
 end
 
-function outFile = iClassifyRawBinaries(DataFolder, SaveFolder, BinningSpatial, BinningTemp, b_SubROI, backupOpts)
+function outFile = iClassifyRawBinaries(DataFolder, SaveFolder, BinningSpatial, BinningTemp, b_SubROI)
 %ICLASSIFYRAWBINARIES Split interlaced raw binaries into channel .dat files.
 %   Rig-independent classification. Writes one headered .dat file per
 %   output channel and AcqInfos.mat in SaveFolder, and returns the
-%   SaveFolder-relative .dat manifest.
+%   SaveFolder-relative .dat manifest. The caller has already reset a
+%   previously imported SaveFolder (prepareFreshImport).
 
-% Control for existing files and create backup or erase them.
-genBackupFolder(SaveFolder, backupOpts,'eraseFolder',true);
+if ~isfolder(SaveFolder)
+    mkdir(SaveFolder);
+end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 outFile = {};

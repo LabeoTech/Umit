@@ -1,4 +1,4 @@
-classdef TestRunHemoCorrection < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestRunHemoCorrection < matlab.unittest.TestCase
     %TESTRUNHEMOCORRECTION Unit tests for HemoCorrection.
     %
     %   These tests use a synthetic AcqInfos-driven dataset with unequal

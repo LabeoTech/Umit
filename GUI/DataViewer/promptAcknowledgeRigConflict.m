@@ -69,7 +69,13 @@ try
 catch ME
     result.message = sprintf('Could not acknowledge the rig conflict: %s', ME.message);
     result.severity = 'error';
-    uialert(parentFigure, ME.message, 'Acknowledge Rig Conflict failed', 'Icon', 'error');
+    [~, lockMessage, isLockError] = offerStaleLockClearing(parentFigure, ME, 'Folder', saveFolder);
+    if isLockError
+        result.message = lockMessage;
+        result.severity = 'warning';
+    else
+        uialert(parentFigure, ME.message, 'Acknowledge Rig Conflict failed', 'Icon', 'error');
+    end
 end
 
     function iClose(isAccepted)

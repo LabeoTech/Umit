@@ -1,4 +1,4 @@
-classdef TestDataViewerPreferences < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestDataViewerPreferences < matlab.unittest.TestCase
 %TESTDATAVIEWERPREFERENCES Focused persistence and startup-path tests.
 
     properties

@@ -1,4 +1,4 @@
-classdef TestImageAlignmentCharacterization < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestImageAlignmentCharacterization < matlab.unittest.TestCase
     %TESTIMAGEALIGNMENTCHARACTERIZATION applyImageAlignmentToFolder keeps its values.
     %
     %   .dat header Phase 4e-2. fixtures/imageAlignmentReference.mat was
@@ -57,18 +57,25 @@ classdef TestImageAlignmentCharacterization < matlab.unittest.TestCase
             end
         end
 
-        function alignedFolderCanBeAlignedAgain(testCase)
-            % AcqInfos.mat keeps the raw size, so the second alignment must
-            % take the old size from the files themselves.
+        function alignedFolderRefusesASecondAlignment(testCase)
+            % Project redesign Phase 1 (brief §4 Q1, Bruno 2026-10-15): an
+            % aligned folder is committed to its alignment; a second apply,
+            % even with the same reference, is refused before any change.
             c = imageAlignmentCase();
             testCase.newFolder(c, 'legacySidecar');
             evalc('c.run(testCase.Folder)');
-            evalc('c.run(testCase.Folder)');
+            before = cellfun(@(name) computeFileChecksum(fullfile(testCase.Folder, name)), ...
+                [c.datOutputs, {'DataParams.mat'}], 'UniformOutput', false);
 
+            testCase.verifyError(@() c.run(testCase.Folder), ...
+                'Umitoolbox:ImageRegistration:alreadyAligned');
+
+            after = cellfun(@(name) computeFileChecksum(fullfile(testCase.Folder, name)), ...
+                [c.datOutputs, {'DataParams.mat'}], 'UniformOutput', false);
+            testCase.verifyEqual(after, before);
             for j = 1:numel(c.datOutputs)
                 hdr = readDatHeader(fullfile(testCase.Folder, c.datOutputs{j}));
                 testCase.verifyEqual(hdr.dimSizes(1:2), size(c.referenceImage));
-                testCase.verifyTrue(hdr.writeComplete);
             end
         end
 

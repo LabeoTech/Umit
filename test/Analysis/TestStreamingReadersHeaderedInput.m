@@ -1,4 +1,4 @@
-classdef TestStreamingReadersHeaderedInput < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestStreamingReadersHeaderedInput < matlab.unittest.TestCase
     %TESTSTREAMINGREADERSHEADEREDINPUT Streaming Analysis readers give identical
     %results on headerless and headered input.
     %
@@ -292,12 +292,10 @@ store = UMITRigStore.create(struct('rigID', ['HdrEquiv_' suffix(1:10)], ...
 end
 
 function iBindDatasetToRig(folder, store)
-loaded = load(fullfile(folder, 'AcqInfos.mat'), 'AcqInfoStream');
-AcqInfoStream = loaded.AcqInfoStream;
-rigInfo = store.getRigInfo();
-AcqInfoStream.rigUUID = rigInfo.uuid;
-AcqInfoStream.rigID = rigInfo.rigID;
-save(fullfile(folder, 'AcqInfos.mat'), 'AcqInfoStream', '-mat');
+% The folder's rig is recorded in its rig ledger (rig-ledger redesign);
+% HemoCompute refuses a folder without one.
+UMITRigLedger.bind(folder, UMITRigLedger.bindingFromRig(store, ...
+    'IncludeCoregistration', false), 'Origin', 'TestStreamingReadersHeaderedInput');
 end
 
 function iRemoveFolder(folder)

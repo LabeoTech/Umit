@@ -1,4 +1,4 @@
-classdef TestRigManagerTool < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestRigManagerTool < matlab.unittest.TestCase
 %TESTRIGMANAGERTOOL Focused non-interactive Rig Manager GUI tests.
 
     properties

@@ -1,4 +1,4 @@
-classdef TestApplyAggregateFunction < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestApplyAggregateFunction < matlab.unittest.TestCase
     %TESTAPPLY_AGGREGATE_FUNCTION Unit tests for apply_aggregate_function.
     %
     % Coverage:
