@@ -1,0 +1,170 @@
+---
+permalink: /documentation/userDocs/fcns/HemoCompute.html
+layout: default
+title: HemoCompute
+parent: Imaging
+grand_parent: Functions
+---
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+      .mycollapsible {
+      background-color: #eeeeee;
+      color: black;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      margin-bottom: 10px;
+      }
+      .active, .mycollapsible:hover {
+      background-color: #888;
+      }
+      .content {
+      padding: 0 18px;
+      display: none;
+      overflow: hidden;
+      background-color: #fff;
+      border: 1px solid black;
+      margin-bottom: 10px;
+      }
+    </style>
+    <title>HemoCompute</title>
+  </head>
+  <body>
+    <h2>HemoCompute</h2>
+    <hr>
+    <p>
+      Calculates HbO and HbR from reflectance signals.
+    </p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+      This function uses reflectance (intrinsic) signals to estimate changes in oxygenated (HbO)
+      and deoxygenated (HbR) hemoglobin. The illumination spectra and camera responses come only
+      from the <a href="../other/mat-files-organization.html#umitrigledger-json">folder rig ledger</a>
+      (<samp>UMITRigLedger.json</samp> in the SaveFolder), never from the rig library or the Active rig.
+      The filter transmission comes from the filter set named by <samp>FilterSet</samp>.
+    </p>
+    <h4>Rig requirements</h4>
+    <p>The SaveFolder must be bound to a rig. HemoCompute stops with an error, before anything is written, when the folder:</p>
+    <ul>
+      <li>has no rig ledger (<samp>Umitoolbox:RigLedger:noLedger</samp>), for example a folder imported by an earlier release;</li>
+      <li>is recorded as "no rig" (<samp>Umitoolbox:RigLedger:noRigBound</samp>), for example a single-camera import that was never bound;</li>
+      <li>is in a rig conflict (<samp>Umitoolbox:RigLedger:conflicted</samp>);</li>
+      <li>has an invalid rig ledger (<samp>Umitoolbox:RigLedger:invalidLedger</samp>).</li>
+    </ul>
+    <p>The error message says why the folder was refused and how to fix it: bind a rig with <a href="../apps/folder-rig.html">DataViewer's Management &gt; Rig &gt; Folder Rig</a> menu, resolve the conflict there, or start again from a fresh save folder. A pipeline runs the same checks before it starts (preflight): a folder that fails them is skipped and logged, and the other folders are processed.</p>
+    <p>After a successful computation, HemoCompute <b>commits</b> the optics and the filter set it used to the folder's rig ledger (the first time only). From then on the folder keeps using those optics: rebinding it to a rig whose optics differ creates a rig conflict, and editing the filter set in the rig library under the same name makes HemoCompute refuse the folder (<samp>Umitoolbox:RigLedger:filterSetModified</samp>; save the edited filter set under a new name instead). Editing or archiving the library rig afterwards has no effect on the folder.</p>
+    <p>When the rig library of this computer no longer has the filter set (for example on another computer), HemoCompute uses the copy committed in the folder's rig ledger and shows the warning <samp>Umitoolbox:HemoCompute:FilterSetFromLedger</samp>. To use the library again, import the filter set with the same name and content into the rig library.</p>
+    <h3>Input</h3>
+    <hr>
+    <p>
+      Call the function as <samp>HemoCompute(SaveFolder, data, ...)</samp>.
+    </p>
+    <ul>
+      <li><samp>SaveFolder</samp> contains <samp>AcqInfos.mat</samp> and the imported reflectance channels.</li>
+      <li><samp>data</samp> is the name of one of the illumination channel <samp>.dat</samp> files in the SaveFolder (for example <samp>red.dat</samp>), as wired into the pipeline step. It must be one of the channel files resolved from <samp>AcqInfos.mat</samp> and the folder's rig optics (see below), otherwise the function returns an error. Numeric arrays, other file types and other dimension layouts are not supported.
+        <br><b>Why this input exists:</b> it is a pipeline dependency, not the data that is processed. The function reads <i>all</i> the selected channel files from the SaveFolder, whichever one is passed, so the values of <samp>data</samp> are validated but never used. The input is kept because the pipeline schedules a step from its data inputs: a step without one would be treated as a source and run in the first phase, before setup steps such as the registration of the folder, and without waiting for the step that produces the channels. Wiring one channel file into <samp>data</samp> makes the step run after its producer, in the main schedule.</li>
+    </ul>
+    <p>
+      HemoCompute reads all the channels selected by <samp>Illuminations</samp> from the
+      SaveFolder, not only the file passed in <samp>data</samp>. Supported canonical names are <samp>red</samp>, <samp>green</samp>, and
+      <samp>yellow</samp>; the historical name <samp>amber</samp> is normalized to
+      <samp>yellow</samp>. Imported channel filenames and timebases are resolved from
+      <samp>AcqInfos.mat</samp>. Every resolved channel file must be an image time series with dimensions Y,X,T. Four-dimensional event-split input is not supported.
+    </p>
+    <h3>Output</h3>
+    <hr>
+    <p>
+      The function writes the Y,X,T files <samp>HbO.dat</samp> and <samp>HbR.dat</samp> in the SaveFolder.
+      With one requested output, the function returns the manifest
+      <samp>{'HbO.dat','HbR.dat'}</samp>. With two requested outputs, it returns those two
+      filenames individually; it does not return numeric arrays.
+    </p>
+    <p>
+      Samples whose intensity (after normalization) is not positive and finite, for example masked pixels stored as 0, have no optical density: HbO and HbR are NaN at those samples, and the function shows the warning <samp>Umitoolbox:HemoCompute:NonPositiveIntensity</samp> with the number of such samples. NaN samples stay NaN. (Earlier releases gave finite or infinite values there.)
+    </p>
+    <pre><code>files = HemoCompute(saveFolder, data);
+[hbOFile, hbRFile] = HemoCompute(saveFolder, data);
+hbO = loadData(fullfile(saveFolder, hbOFile));</code></pre>
+    <h3 id="parameters">Parameters</h3>
+    <hr>
+
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>FilterSet</b></samp> - Filter set<br>
+      <span class="title-desc"><i> gCaMP | jrGECO | none (default)</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Set of excitation and emission filters used in recordings. The filter set is read from the rig library of this computer (or, if the library no longer has it, from the copy committed in the folder's rig ledger, see <a href="#description">Description</a>):
+      </p>
+      <ul>
+        <li><i>GCaMP</i>: Filter set from recordings using GCaMP as a fluorophore</li>
+        <li><i>jRGECO</i>: Filter set from recordings using jRGECO as a fluorophore</li>
+        <li><i>none</i>: No filter set</li>
+      </ul>
+    </div>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>b_normalize</b></samp> - Normalize data<br>
+      <span class="title-desc"><i> true (default) | false</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Set this parameter to <b>true</b> to normalize the data prior to the calculation of the HbR and HbO: each channel is smoothed with a 1 Hz low-pass filter and divided by its 1/120 Hz baseline. Set to <b>false</b> to skip the normalization if the input data is already normalized.
+      </p>
+      <p>
+        At frame rates of 2 Hz or less, 1 Hz is not below the Nyquist frequency, so the 1 Hz smoothing is skipped with the warning <samp>Umitoolbox:HemoCompute:NormalizationSmoothingSkipped</samp>, and each channel is only divided by its 1/120 Hz baseline. (Earlier releases failed on such recordings.)
+      </p>
+      <p>
+        If the data from the input files are already normalized (i.e. with an average around 0 or 1) and this parameter is set to <b>true</b>, the normalization will be skipped. However, if it is set to <b>false</b> and the input data is not normalized, the computation will be aborted. The normalized data is necessary for the execution of this algorithm.
+      </p>        
+    </div>
+
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>Illuminations</b></samp> - Reflectance channels<br>
+      <span class="title-desc"><i> {'red','green','yellow'} (default) | two or three canonical names</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Select two or three different channels from <samp>red</samp>, <samp>green</samp>, and
+        <samp>yellow</samp>. The selected channels must exist in the SaveFolder and be represented
+        by the acquisition and by the optics of the folder's rig.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>HbT_concentration_uM</b></samp> - Total hemoglobin concentration<br>
+      <span class="title-desc"><i> 100 (default) | positive numeric scalar</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Sets the assumed total hemoglobin concentration in micromolar.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>StO2perc</b></samp> - Oxygen saturation<br>
+      <span class="title-desc"><i> 60 (default) | numeric scalar from 0 to 100</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Sets the assumed tissue oxygen saturation as a percentage.
+      </p>
+    </div>
+    <!-- JavaScript code to collapse sections -->
+    <script src="../../collapsible_behaviour.js"></script>
+  </body>
+</html>

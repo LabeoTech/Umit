@@ -8,29 +8,39 @@ nav_order: 1
 ---
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>DataViewer overview</title></head><body>
 <h1>DataViewer overview</h1>
-<p><em>DataViewer</em> opens image time series. It combines image navigation, temporal signals, ROIs, event-aligned viewing, processing, and project-aware tools in one window.</p>
-<p style="text-align:center"><img src="../../assets/img/current/dataviewer-overview-current.png" alt="Current DataViewer overview" width="880"><br><em>Current DataViewer using a demonstration fluorescence recording.</em></p>
-<p><em>Management</em> groups the Save Folder's routine associations: choose a Raw Folder, bind the loaded folder to a project session, or assign an available rig. Full project and rig administration remain in their dedicated managers.</p>
+<p><em>DataViewer</em> is the main umIT application. In one window it imports recordings, displays image time series and their temporal signals, runs processing pipelines, and creates and measures regions of interest (ROIs). Everything else in umIT is reached from it.</p>
+<p style="text-align:center"><img src="../../assets/img/current/dataviewer-overview-current.png" alt="DataViewer showing a demonstration recording: toolbar tabs, image view with crosshair, temporal profile and ROI table" width="880"><br><em>DataViewer with a demonstration recording. The context line below the toolbar shows the Save Folder of the loaded data.</em></p>
 <h2>Launch</h2>
 <pre><code>DataViewer;
 DataViewer("C:\data\session\green.dat");
 DataViewer("FilePath","C:\data\session\result.umt");</code></pre>
+<h2 id="workflow">A typical session</h2>
+<ol>
+<li><strong>Import the raw data.</strong> <strong>File &gt; Import &gt; from .bin</strong> (LabeoTech systems) or <strong>from .tif</strong> creates one <samp>.dat</samp> file per imaging channel in a Save Folder, with the acquisition information in <samp>AcqInfos.mat</samp>. See the <a href="../../tutorials/tt_dataviewer_data_import.html">data import tutorial</a>, <a href="../fcns/ImagesClassification.html">ImagesClassification</a> and <a href="../fcns/importFromTif.html">importFromTif</a>.</li>
+<li><strong>Explore the raw data.</strong> Open a channel with <strong>File &gt; Open</strong>, move through the frames or play them as a movie, adjust the display, and click a pixel to see its signal through time. Events, when present, let you switch to an event-aligned view. See <a href="data-loading-navigation.html">Data loading and basic exploration</a>, <a href="image-visualization.html">Image visualization</a> and <a href="temporal-visualization.html">Temporal visualization</a>.</li>
+<li><strong>Process the data.</strong> On the <strong>Pipeline</strong> tab, <em>Pipeline Manager</em> chains analysis functions, for example filtering, normalization (ΔF/F or ΔR/R), hemodynamic correction or hemoglobin computation, starting from the open file. Results come back to the viewer as temporary files until you save them. See <a href="processing-export.html">Processing and export</a> and <a href="../tools/pipeline_configuration_tool.html">Pipeline Manager</a>.</li>
+<li><strong>Create ROIs and extract signals.</strong> On the <strong>ROIs</strong> tab, draw regions, create them by threshold or from the Allen atlas, and export their measurements and time courses. See <a href="ROImanager.html">ROI management</a>.</li>
+<li><strong>Save what you need.</strong> Display settings are not saved; processed results and ROIs are saved only when you ask (see below).</li>
+</ol>
+<p>The <a href="user-interface.html">User interface</a> page describes every menu, tab and control.</p>
 <h2>Supported files</h2>
 <table><tr><th>Source</th><th>Required information</th><th>Behavior</th></tr>
-<tr><td><a href="../other/dat-files-organization.html"><samp>.dat</samp></a></td><td><samp>AcqInfos.mat</samp> in the Save Folder</td><td>Stores one continuous image channel. Every <samp>.dat</samp> file in the same Save Folder has the dimensions recorded in <samp>AcqInfos.mat</samp>.</td></tr>
+<tr><td><a href="../other/dat-files-organization.html"><samp>.dat</samp></a></td><td>The file's own header</td><td>Stores one image channel or result. Its header describes its axes, sizes, data type and frame rate.</td></tr>
 <tr><td>Image-kind <a href="../other/umt-files-organization.html"><samp>.umt</samp></a></td><td>A compatible image entry</td><td>Stores results whose dimensions or origin do not fit a <samp>.dat</samp> file, such as one map per condition or data combined across recordings. The file carries the metadata needed to describe each entry.</td></tr></table>
 <p>This two-file framework keeps large, equally sized continuous channels simple while allowing smaller processed results—such as amplitude maps or event averages—to describe their own dimensions and labels.</p>
-<h2>Application data flow</h2>
-<pre>Save Folder (.dat/.umt + metadata)
-        |
-        v
-   DataViewer ----> ROI tools and temporal display
-        |
-        +----> Pipeline Manager / Events Manager
-        |
-        +----> project binding ----> references, alignment, project manager
-        |
-        +----> rig context --------> dual-camera coregistration</pre>
+<h2 id="context-label">Context line</h2>
+<p>The line below the toolbar summarizes the loaded Save Folder, for example <samp>Project: Not assigned | Rig: Rig A | Align: not aligned | Save: … | Raw: …</samp>. Hover over it for details (binding state, rig ledger state, alignment reference). Binding problems found when the data are loaded are also reported in the status line above the image.</p>
+<table><tr><th>Part</th><th>Values</th></tr>
+<tr><td><strong>Project</strong></td><td>The project, subject and session the folder is bound to, or <samp>Not assigned</samp>. See <a href="project-session-integration.html">Project and session integration</a>.</td></tr>
+<tr><td><strong>Rig</strong></td><td>The folder's rig, read from its rig ledger (see <a href="folder-rig.html">Folder rig</a>).</td></tr>
+<tr><td><strong>Align</strong></td><td><samp>aligned</samp> once an image alignment was applied to the folder, otherwise <samp>not aligned</samp>. The tooltip names the reference and when it was applied. See <a href="../tools/manual_image_registration_tool.html">Image Alignment Tool</a>.</td></tr>
+<tr><td><strong>Save / Raw</strong></td><td>The Save Folder and the Raw Folder recorded for the data (<samp>Missing</samp> when unknown).</td></tr></table>
+<h2 id="projects-and-rigs">Projects and rigs</h2>
+<p>Two optional resources, reached from the <strong>Management</strong> menu, support larger studies and specific analyses. Neither is needed to view, process or measure data.</p>
+<ul>
+<li><strong>Projects</strong> organize recordings by subject and session. Use a project when several recordings of the same animals must be compared over time, for example to align every session of a subject to one shared reference image. See <a href="project-session-integration.html">Project and session integration</a>.</li>
+<li><strong>Rigs</strong> describe the imaging hardware (cameras, illumination spectra, dual-camera calibration). A Save Folder needs a rig only for analyses that depend on the optics, such as <a href="../fcns/HemoCompute.html">HemoCompute</a>, and for dual-camera imports. See <a href="folder-rig.html">Folder rig</a> and <a href="../tools/rig-manager_tool.html">Rigs and Optical Library</a>.</li>
+</ul>
 <h2>What is kept and what is saved</h2>
 <p><em>DataViewer</em> is designed for basic exploration, so you do not need to save every display change. Frame position, colormap, clipping, crosshair position, and most previews last only for the current session. The app saves only metadata that must remain associated with the Save Folder, such as confirmed image calibration, coordinate origin, logical mask, Raw Folder location, and ignored event selections.</p>
 <p>Processed images and newly created ROIs are <strong>not</strong> saved automatically. Use the relevant save or export command when you need to keep them. See <a href="processing-export.html">Processing and export</a> and <a href="../other/mat-files-organization.html">Save Folder metadata files</a>.</p>
