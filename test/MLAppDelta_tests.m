@@ -399,6 +399,43 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) MLAppDelta_tests < ma
             testCase.verifySubstring(guiBody, 'caps.hasData && isIdle');
         end
 
+        function testPipelineManagerToolIsNonModalAndDataViewerBlocksItself(testCase)
+        %TESTPIPELINEMANAGERTOOLISNONMODALANDDATAVIEWERBLOCKSITSELF Guard PM Tool blocking.
+        %
+        % A modal PM Tool hides its menu bar, so DataViewer blocks itself with a
+        % progress dialog instead. Every tool-close and launch-failure path must
+        % release that dialog or DataViewer stays locked.
+
+            toolPath = fullfile(testCase.RepoRoot, 'GUI', 'PipelineManagerTool.mlapp');
+            startupBody = testCase.getMlappMethodBody(toolPath, 'startupFcn');
+            testCase.verifyFalse(contains(startupBody, 'WindowStyle'), ...
+                'PipelineManagerTool must not set a modal WindowStyle at startup.');
+
+            dataViewerPath = fullfile(testCase.RepoRoot, ...
+                'GUI', 'DataViewer', 'DataViewer.mlapp');
+            blockBody = testCase.getMlappMethodBody(dataViewerPath, ...
+                'blockForPipelineManager');
+            testCase.verifySubstring(blockBody, 'uiprogressdlg(app.UIFigure');
+            testCase.verifySubstring(blockBody, '''Indeterminate'', ''on''');
+
+            for launcher = ["PipeLauncherButtonPushed", "BatchPipelineMenuSelected"]
+                body = testCase.getMlappMethodBody(dataViewerPath, launcher);
+                testCase.verifySubstring(body, 'app.blockForPipelineManager()');
+                testCase.verifySubstring(body, 'app.guardPipelineManagerRelease()');
+                testCase.verifySubstring(body, 'app.releasePipelineManagerBlock()', ...
+                    sprintf('%s must release the block when launching fails.', launcher));
+            end
+
+            for closedFcn = ["onPipelineManagerClosed", "onBatchPipelineManagerClosed"]
+                body = testCase.getMlappMethodBody(dataViewerPath, closedFcn);
+                testCase.verifySubstring(body, 'app.releasePipelineManagerBlock()');
+            end
+
+            destroyedBody = testCase.getMlappMethodBody(dataViewerPath, ...
+                'onPipelineManagerFigureDestroyed');
+            testCase.verifySubstring(destroyedBody, 'app.releasePipelineManagerBlock()');
+        end
+
         function testDataViewerCropsROIsToEffectiveImageMask(testCase)
         %TESTDATAVIEWERCROPSROISTOEFFECTIVEIMAGEMASK Guard image-boundary clipping.
 
@@ -556,6 +593,27 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) MLAppDelta_tests < ma
                 sprintf('Could not find the method following %s.', methodName));
 
             body = code(startIndex:endIndex(1)-1);
+        end
+
+        function body = getMlappMethodBody(testCase, appPath, methodName)
+        %GETMLAPPMETHODBODY Return one method span, ending at the next function.
+        %
+        % Only valid for methods without nested functions.
+
+            code = exportMlappToM(appPath);
+
+            startPattern = ['function[^\r\n]*\<' char(methodName) '\s*\('];
+            startIndex = regexp(code, startPattern, 'start');
+            testCase.assertNumElements(startIndex, 1, ...
+                sprintf('Expected one %s method.', methodName));
+
+            nextIndex = regexp(code, '\n\s*function\s', 'start');
+            nextIndex = nextIndex(nextIndex > startIndex);
+            if isempty(nextIndex)
+                body = code(startIndex:end);
+            else
+                body = code(startIndex:nextIndex(1));
+            end
         end
 
         function removeAppArtifacts(testCase, appName)
