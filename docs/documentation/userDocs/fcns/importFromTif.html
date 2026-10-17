@@ -49,79 +49,72 @@ nav_order: 2
     <h3 id="description">Description</h3>
     <hr>
     <p>
-      This function imports imaging data stored in a multi-frame .TIF file and saves in a <samp>.dat</samp> file to be used in <b><i>umIToolbox</i></b>. The function reads all valid <samp>.TIF</samp> files (see section below) inside a folder (RawFolder) and saves the output files (to a SaveFolder). This function has optional parameters that allows one to perform spatial and temporal binning to the data.
+      This function imports imaging data stored in multi-frame .TIF files and saves each imaging channel in a <samp>.dat</samp> file to be used in <b><i>umIT</i></b>. The function reads the TIFF files listed in an <samp>info.json</samp> file inside a folder (RawFolder) and saves the output files to a SaveFolder. Optional parameters perform spatial and temporal binning. In <em>DataViewer</em>, this function runs from <strong>File &gt; Import &gt; from .tif</strong>.
     </p>
     <h3>Input data format</h3>
     <hr>
     <p>
-      Here are the properties of a valid .TIF file:
+      The RawFolder must contain:
     </p>
     <ul>
-      <li>be an image time series with dimensions Y,X,T(ime) from a single channel</li>
-      <li>contain pixel values encoded as one of the following data types:
-        <ul>
-          <li>uint8</li>
-          <li>uint16</li>
-          <li>uint32</li>
-        </ul>
-      </li>
-      <li>have a <samp>.txt</samp> file with the same name as the <samp>.TIF</samp> file located in the folder which contains meta data about the recording (see section below)</li>
+      <li>one or more TIFF files, each an image time series with dimensions Y,X,T(ime) from a single channel. A recording split into several files is imported as one sequence when the files share a base name followed by a number, for example <samp>fluo.tif</samp>, <samp>fluo_1.tif</samp>, <samp>fluo_2.tif</samp> (the file without a number comes first);</li>
+      <li>a file named <samp>info.json</samp> that describes the TIFF files (see below).</li>
     </ul>
-    <h4>The meta data text file</h4>
+    <h4>The info.json file</h4>
     <p>
-      In order to import the data from the .TIF file(s), this function uses some information stored in a text file with the same name of the associated .TIF file. For example, the file <samp>fluo.tif</samp> should have the file <samp>fluo.txt</samp>in the same folder. A template of the file is located in <b><i>umIT</i></b>'s folder as <code class="stringformat">'.\Analysis\Tiff_data_import_info_template.txt'</code>. Otherwise, copy the template below and save it to a <samp>.txt</samp> file:
+      <samp>info.json</samp> holds a list <samp>Tiffiles</samp> with one entry per channel. Each entry has the following fields:
     </p>
-    <p style="text-align: center;"><i>Template of text file for .TIF file meta data:</i></p>
+    <ul>
+      <li><b>filename</b>: name of the TIFF file (or of the first file of a sequence) in the RawFolder;</li>
+      <li><b>FrameRateHz</b>: recording frame rate, in hertz;</li>
+      <li><b>ExposureMsec</b>: illumination exposure, in milliseconds;</li>
+      <li><b>IlluminationColor</b>: name of the imaging channel. It gives the name of the output file (see <a href="#output">Output</a>);</li>
+      <li><b>CamIdx</b> (optional): index of the camera, 1 by default.</li>
+    </ul>
+    <p>
+      Other top-level fields of <samp>info.json</samp> are copied into <samp>AcqInfos.mat</samp> as acquisition information.
+    </p>
+    <p style="text-align: center;"><i>Example of an info.json file for two channels:</i></p>
     <div class="codeinput">
       <code>
-        Scan info<br>
-        DateTime: yyyymmdd_HHMMSS<br>
-        FrameRateHz: 30.000000<br>
-        ExposureMsec: 0.100000<br>
-        Illumination1: &lt;CHANNEL_NAME&gt;<br>
+        {<br>
+        &nbsp;&nbsp;"Tiffiles": [<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;{"filename": "img_fluo.tif", "FrameRateHz": 30, "ExposureMsec": 0.1, "IlluminationColor": "Fluo"},<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;{"filename": "img_red.tif", "FrameRateHz": 30, "ExposureMsec": 0.1, "IlluminationColor": "Red"}<br>
+        &nbsp;&nbsp;]<br>
+        }
       </code>
     </div>
-    <p>
-      The parameters are the following:
-    </p>
-    <ul>
-      <li><b>DateTime</b>: recording timestamp (start) in the format yyyymmdd_HHMMSS (e.g. 20220101_120510 for a recording that started January 1st 2022 at 12:05:10)
-          <div class="infonote">
-            <p><strong>Note</strong><br>
-              This parameter is optional.
-            </p>
-          </div>
-      </li>
-      <li><b>FrameRateHz</b>: (float) recording frame rate (in Hertz)</li>
-      <li><b>ExposureMsec</b>: (float) illumination exposure (in milliseconds)</li>
-      <li><b>Illumination1</b>: (char) name of the imaging channel</li>
-    </ul>
     <div class="warnnote">
       <p><strong>Important</strong><br>
-        Use the template as show and change only the values (after the ": "). Do not change the names of the parameters from the text file! Otherwise, the function will fail.
+        All channels of a recording are imported in one call, and they must have identical frame size, number of frames, <samp>FrameRateHz</samp> and <samp>ExposureMsec</samp>. Otherwise the import stops with an error.
       </p>
     </div>
-    <h3>Output</h3>
+    <h3 id="output">Output</h3>
     <hr>
     <p>
-      A <samp>.dat</samp> file will be created and stored in the SaveFolder with the channel name (located in the <samp>Illumination1</samp> parameter from the metadata text file). For example, for the .TIF file <samp>img_fluo.tif</samp> with the text file <samp>img_fluo.txt</samp> containing the information below, the resulting output will be a .dat file named <samp>fluo.dat</samp>.
+      One <samp>.dat</samp> file per entry of <samp>Tiffiles</samp>, stored in the SaveFolder and named after <samp>IlluminationColor</samp> in lower case (spaces become underscores; <samp>Amber</samp> becomes <samp>yellow</samp>). For example, the entries above create <samp>fluo.dat</samp> and <samp>red.dat</samp>. The pixel values are saved in single precision, and the header of each <samp>.dat</samp> file holds its axes, size, frame rate and exposure (after binning).
     </p>
-    <div class="codeinput">
-      <code>
-        Scan info<br>
-        DateTime: 20220101_120510<br>
-        FrameRateHz: 30<br>
-        ExposureMsec: 0.1<br>
-        Illumination1: fluo<br>
-      </code>
-    </div>
+    <p>
+      The function also writes <samp>AcqInfos.mat</samp> (the acquisition values before binning, with the binning factors) and records the RawFolder in <samp>DataParams.mat</samp>. <samp>AcqInfos.mat</samp> holds no rig information.
+    </p>
+    <h3 id="rig">Rig</h3>
+    <hr>
+    <p>
+      A TIFF import never uses a rig. A SaveFolder without a rig ledger is recorded as "no rig" in its <a href="../other/mat-files-organization.html#umitrigledger-json">folder rig ledger</a>; a folder that already has a rig binding keeps it. To process the folder with rig-dependent functions such as <a href="HemoCompute.html">HemoCompute</a>, bind a rig in <a href="../apps/folder-rig.html">DataViewer (Management &gt; Rig &gt; Folder Rig)</a>. An invalid folder rig ledger stops the import before any file is written.
+    </p>
+    <h3 id="fresh-import">Importing into a used Save Folder</h3>
+    <hr>
+    <p>
+      An import into a SaveFolder that already holds an import is always a <b>fresh import</b>, also when you only want to add a channel: the files derived from the previous import are deleted (or zipped first, see <samp>backupOpts</samp>), the rig commitments are reset, and the folder starts again from an empty state. Import all the channels of a recording together. What is deleted and what is kept is described on the <a href="ImagesClassification.html#fresh-import">ImagesClassification</a> page; the rules are the same.
+    </p>
     <h3 id="parameters">Parameters</h3>
     <hr>
     <p>The parameters of this function are the following:</p>
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
       <samp><b>BinningSpatial</b></samp> - Spatial binning <br>
-      <span class="title-desc"><i>1(default), 2, 4, 8, 16 or 32</i></span>
+      <span class="title-desc"><i>1 (default), 2, 4, 8, 16 or 32</i></span>
     </button>
     <div class="content">
       <p>
@@ -132,12 +125,22 @@ nav_order: 2
     <button title="click to expand" type="button" class="mycollapsible">
       <span class="iconplus"></span>
       <samp><b>BinningTemp</b></samp> - Temporal binning <br>
-      <span class="title-desc"><i>1(default), 2, 4, 8, 16 or 32</i></span>
+      <span class="title-desc"><i>1 (default) | integer from 1 to 8</i></span>
     </button>
     <div class="content">
       <p>
-        Performs binning across frames (i.e. over the time dimension) using a linear interpolation. The <samp>BinningTemp</samp> values represent the scale factor for the temporal dimension of a recording. For example, for a recording with original frame rate of 10Hz, a <samp>BinningTemp</samp> value of <b>2</b> will reduce the number of frames in half, resulting in a frame rate of 5Hz.<br>
-        A <samp>BinningSpatial</samp> value of <b>1</b> equals to no binning.
+        Performs binning across frames (i.e. over the time dimension) using a linear interpolation. The <samp>BinningTemp</samp> values represent the scale factor for the temporal dimension of a recording. For example, for a recording with original frame rate of 10Hz, a <samp>BinningTemp</samp> value of <b>2</b> will reduce the number of frames in half, resulting in a frame rate of 5Hz. The number of frames must be divisible by <samp>BinningTemp</samp>.<br>
+        A <samp>BinningTemp</samp> value of <b>1</b> equals to no binning.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>backupOpts</b></samp> - Backup before a fresh import<br>
+      <span class="title-desc"><i>GENBACKUP (default) | ERASE</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Used only when the SaveFolder already holds an import; ignored for an empty SaveFolder. <i>GENBACKUP</i> zips the files to delete into <samp>bkp_&lt;date&gt;_&lt;time&gt;.zip</samp> in the SaveFolder (the zip is kept) before deleting them; <i>ERASE</i> deletes them without a zip. In a direct MATLAB call, the default is empty (a dialog asks), and any other text is used as the name of the zip file.
       </p>
     </div>
     <!-- JavaScript code to collapse sections -->

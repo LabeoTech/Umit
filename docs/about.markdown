@@ -7,7 +7,7 @@ nav_order: 2
 Recent advances in genetic tools, such as fast-responding calcium indicators (e.g., GCaMP6f) as well as the increasingly accessible high-speed, high-resolution and high throughput longitudinal recording systems allowed the acquisition of faster and more detailed images at mesoscale level for months on large cohorts of animals. This generates large amounts of data that need to be stored, pre-processed and analyzed in a timely manner which can become a limiting factor as experiments become larger and more complex.   
 
 
-Introducing the umIToolbox, or umIT for brevity, a MATLAB toolbox designed to assist researchers in visualizing and analyzing large imaging datasets.
+Introducing umIT (Universal Mesoscale Imaging Toolbox), a MATLAB toolbox designed to assist researchers in visualizing and analyzing large imaging datasets.
 
 
 You can find the source code for uMIT at GitHub:

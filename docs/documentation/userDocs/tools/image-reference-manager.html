@@ -8,20 +8,37 @@ nav_order: 3
 ---
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Image Reference Manager</title></head><body>
 <h1>Image Reference Manager</h1>
-<p>An image reference is a subject-owned fixed image used to align sessions consistently.</p>
-<h2>Open from DataViewer</h2><p>Load image data and choose <strong>Utilities &gt; Image Reference</strong>. The Save Folder must have a resolvable project, subject, and session binding. Read-only projects may view references, but creating, editing, activating, archiving, or restoring requires writable project access.</p>
-<p><em>DataViewer</em> passes the project information, subject and session, current 2-D frame, source frame number, source type, and source provenance.</p>
-<p style="text-align:center"><img src="../../assets/img/current/image-reference-manager.png" alt="Image Reference Manager with an active reference selected" width="880"><br><em>An active image reference with its preview, description, source, and managed-resource status.</em></p>
-<h2>Controls</h2>
+<p>An image reference is a fixed 2-D image used to align recordings consistently with the <a href="manual_image_registration_tool.html"><em>Image Alignment Tool</em></a>. With a project, references are kept in each subject's <strong>reference library</strong>, so all sessions of a subject can share one. Without a project, a reference is saved as a standalone <strong>reference file</strong>. A project is not required.</p>
+<h2>Open from DataViewer</h2><p>Load image data and choose <strong>Utilities &gt; Image Reference</strong>. The manager opens in one of two modes:</p>
+<ul>
+<li><strong>Library mode</strong>, when the Save Folder is bound to a project session: the window title names the subject, and the table lists the subject's references. Read-only projects may view references, but creating, editing, activating, archiving, or restoring requires writable project access.</li>
+<li><strong>Standalone mode</strong>, when the Save Folder is not bound to a project: the window title reads <em>no project</em>, and a reference is created and then exported as a file.</li>
+</ul>
+<p><em>DataViewer</em> passes the current 2-D frame, the source frame number, the source file and, in library mode, the project, subject and session.</p>
+<h2>Library mode</h2>
+<p style="text-align:center"><img src="../../assets/img/current/image-reference-manager.png" alt="Image Reference Manager for subject Mouse01 with the active reference Mouse01 reference selected" width="880"><br><em>A subject's reference library with its active reference, preview, description and source.</em></p>
 <table><tr><th>Control</th><th>Purpose and persistence</th></tr>
-<tr><td>Reference table</td><td>Lists active or archived resources, creation time, name, image size, source type, and managed file.</td></tr>
+<tr><td>Reference table</td><td>Lists active or archived references: status, creation time, name, image size, source type, and managed file.</td></tr>
 <tr><td>Preview and metadata</td><td>Shows the selected image and its provenance; read-only until <strong>Edit</strong>.</td></tr>
-<tr><td><strong>Create from current frame</strong></td><td>Captures the frame received from DataViewer, prompts for description/notes, imports a managed subject resource, and can make it active.</td></tr>
-<tr><td><strong>Create from file</strong></td><td>Imports a supported 2-D image source as a managed resource.</td></tr>
+<tr><td><strong>Create from current frame</strong></td><td>Captures the frame received from <em>DataViewer</em>, asks for a name, description and processing notes, and adds the reference to the subject's library.</td></tr>
+<tr><td><strong>Create from file</strong></td><td>Adds a supported 2-D image (TIF, MAT, UMT, or a reference file exported by UMIT) to the library.</td></tr>
 <tr><td><strong>Edit / Apply</strong></td><td>Adjusts reference framing after confirmation and creates the managed replacement required by store rules.</td></tr>
-<tr><td><strong>Set Active</strong></td><td>Changes the subject's active reference pointer.</td></tr>
-<tr><td><strong>Archive / Restore</strong></td><td>Archives without erasing history, or restores an archived resource. Archiving an active reference may require choosing a replacement.</td></tr></table>
-<h2>Basic workflow</h2><ol><li>Select an existing row, or choose <strong>Create from current frame</strong> or <strong>Create from file</strong>.</li><li>Enter a clear name, description, and processing notes.</li><li>Inspect the preview and image size.</li><li>Optionally choose <strong>Edit</strong>, apply an affine adjustment to the framing, and confirm the edited reference.</li><li>Choose <strong>Set Active</strong> when this should be the default alignment reference.</li></ol>
-<h2>DataViewer refresh</h2><p>The manager changes centralized resources, not the displayed pixels. <em>DataViewer</em> retains its current image and resolves reference state again when a dependent tool is opened.</p>
-<div class="warnnote"><p><strong>Preserve the managed history</strong><br>Managed resources are identified by UUID. <strong>Do not edit or replace their files directly.</strong> Archive and restore them only through the manager.</p></div>
+<tr><td><strong>Set Active</strong></td><td>Makes the selected reference the subject's active reference.</td></tr>
+<tr><td><strong>Archive / Restore</strong></td><td>Archives without erasing history, or restores an archived reference. Archiving an active reference may require choosing a replacement.</td></tr>
+<tr><td><strong>Export as File...</strong> (right-click a row)</td><td>Saves the selected library reference as a standalone reference file, for use without the project or on another computer.</td></tr></table>
+<p style="text-align:center"><img src="../../assets/img/current/image-reference-manager-export-menu.png" alt="Right-click menu on a reference row with the command Export as File" width="867"><br><em>Exporting a library reference as a file.</em></p>
+<h2 id="standalone">Standalone mode (no project)</h2>
+<p style="text-align:center"><img src="../../assets/img/current/image-reference-manager-standalone.png" alt="Image Reference Manager with the title no project, explaining that a reference is created from the current frame or a file and exported as a reference file" width="867"><br><em>Standalone mode: create a reference, then export it.</em></p>
+<ol><li>Choose <strong>Create from current frame</strong> or <strong>Create from file</strong>, and enter a name, description and processing notes.</li><li>Inspect the preview.</li><li>Choose <strong>Export...</strong> and save the reference file.</li></ol>
+<p>The reference file can then be selected in the <em>Image Alignment Tool</em> (source <strong>Reference File</strong>), for this folder and others, or imported into a subject library later.</p>
+<h2>Basic workflow (library mode)</h2><ol><li>Select an existing row, or choose <strong>Create from current frame</strong> or <strong>Create from file</strong>.</li><li>Enter a clear name, description, and processing notes.</li><li>Inspect the preview and image size.</li><li>Optionally choose <strong>Edit</strong>, apply an affine adjustment to the framing, and confirm the edited reference.</li><li>Choose <strong>Set Active</strong> when this should be the subject's default alignment reference.</li></ol>
+<h2 id="adopt">Adding a folder's reference to the library</h2>
+<p>A folder that was aligned without a project keeps a copy of its reference image in <samp>DataParams.mat</samp>. Once the folder is bound to a project session, <strong>Management &gt; Project &gt; Add Folder Reference to Library...</strong> in <em>DataViewer</em> compares that image with the subject's library:</p>
+<ul>
+<li>if the library already holds the same image (active or archived), the match is only reported, and nothing is changed;</li>
+<li>otherwise the dialog <strong>Add Folder Reference to Library</strong> offers <strong>Add to Library</strong>, <strong>Add and Make Active</strong> or <strong>Not Now</strong>.</li>
+</ul>
+<p>The folder itself is never changed. <em>DataViewer</em> also makes this offer quietly after a folder's project binding changes.</p>
+<h2>DataViewer refresh</h2><p>The manager changes the reference library or writes a reference file; it does not change the displayed pixels or the folder's alignment.</p>
+<div class="warnnote"><p><strong>Preserve the managed history</strong><br>Library references are identified by UUID. <strong>Do not edit or replace their files directly.</strong> Archive and restore them only through the manager.</p></div>
 </body></html>

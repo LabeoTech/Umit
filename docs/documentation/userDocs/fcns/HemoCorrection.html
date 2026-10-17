@@ -1,0 +1,173 @@
+---
+permalink: /documentation/userDocs/fcns/HemoCorrection.html
+layout: default
+title: HemoCorrection
+parent: Imaging
+grand_parent: Functions
+---
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <style media="screen">
+      ul {
+        line-height: 1.5;
+      }
+      .mycollapsible {
+      background-color: #eeeeee;
+      color: black;
+      cursor: pointer;
+      padding: 18px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 15px;
+      margin-bottom: 10px;
+      }
+      .active, .mycollapsible:hover {
+      background-color: #888;
+      }
+      .content {
+      padding: 0 18px;
+      display: none;
+      overflow: hidden;
+      background-color: #fff;
+      border: 1px solid black;
+      margin-bottom: 10px;
+      }
+    </style>
+    <title>HemoCorrection</title>
+  </head>
+  <body>
+    <h2>HemoCorrection</h2>
+    <hr>
+    <p>
+      Performs hemodynamic correction of the fluorescence signal.
+    </p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+      This function removes the hemodynamic fluctuations from a fluorescence signal using data acquired with the LabeoTech's optical imaging systems.The function uses multi-channel recordings to measure the light absorption of the hemoglobin in order to remove it from the fluorescence channel. In brief, this function applies a <b>pixelwise linear regression</b> of the fluorescence signal onto the reflectance signals (<samp>Algorithm</samp> = <samp>LinearRegression</samp>, default). The algorithm is described in details by <a href="#references">[1]</a>. Alternatively, a <b>ratiometric</b> correction based on the normalized fluorescence and the normalized reflectance of a single reference channel can be selected (<samp>Algorithm</samp> = <samp>Ratiometric</samp>).
+    </p>
+    <h3>Input</h3>
+    <hr>
+    <p>
+      The fluorescence data, given as a <samp>.dat</samp> file or as a numeric array, with dimensions Y,X,T or, for data split by events, Y,X,T,E. UMT structures and <samp>.umt</samp> files are not supported. The reference reflectance channels are continuous Y,X,T <samp>.dat</samp> files stored in the SaveFolder (<samp>events.mat</samp> must also be there for event-split fluorescence). <samp>AcqInfos.mat</samp> is not read. This function uses one to three files containing reflectance (red, yellow and green) data and applies the hemodynamic correction to the file containing the fluorescence data. The file names must be the following:<br>
+    </p>
+    <ul>
+      <li><i>fluo.dat | fluo_475.dat</i>: fluorescence channel</li>
+      <li><i>red.dat</i>: red channel</li>
+      <li><i>yellow.dat</i>: yellow/amber channel</li>
+      <li><i>green.dat</i>: green channel</li>
+    </ul>
+    <p>The abovementioned files are created using the <a href="./ImagesClassification.html">ImagesClassification</a> function.</p>
+    <h3>Output</h3>
+    <hr>
+    <p>
+      The corrected fluorescence signal, with the same dimensions as the input fluorescence data. A <samp>.dat</samp> input gives the file <samp>hemoCorr_fluo.dat</samp> in the SaveFolder (same axes as the input; the channel name stored in its header is <samp>hemoCorr_fluo</samp>); a numeric array input gives a numeric array of the same size.</p>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <b>More details</b>
+    </button>
+    <div class="content">
+      <h4>Frame rates and reference channels</h4>
+      <p>
+        Every reference channel uses the frame rate stored in its own <samp>.dat</samp> header and is resampled to the frame rate of the fluorescence data. A reference faster than the fluorescence is low-pass filtered (0.45 x the fluorescence rate) before it is resampled.
+      </p>
+      <h4>Event-split fluorescence (Y,X,T,E)</h4>
+      <p>
+        Each E slice is a trial that is corrected independently, with its own fluorescence and reference means and its own regression over the trial frames. The E axis must hold one slice per event instance of <samp>events.mat</samp> (as saved by <a href="./split_data_by_event.html">split_data_by_event</a>). The continuous reference channels are cut by the same events: the frame times of every trial are sampled in each reference channel by linear interpolation.
+      </p>
+    </div>
+    <h3 id="parameters">Parameters</h3>
+    <hr>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>Red</b></samp> - Red channel<br>
+      <span class="title-desc"><i> true (default) | false </i></span>
+    </button>
+    <div class="content">
+      <p>
+        If <b>true</b>, the function includes the <b>Red</b> channel in the hemodynamic correction algorithm.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>Green</b></samp> - Green channel<br>
+      <span class="title-desc"><i> true (default) | false </i></span>
+    </button>
+    <div class="content">
+      <p>
+        If <b>true</b>, the function includes the <b>Green</b> channel in the hemodynamic correction algorithm.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>Amber</b></samp> - Yellow/Amber channel<br>
+      <span class="title-desc"><i> true (default) | false </i></span>
+    </button>
+    <div class="content">
+      <p>
+        If <b>true</b>, the function includes the <b>Amber</b> channel in the hemodynamic correction algorithm.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>Algorithm</b></samp> - Correction algorithm<br>
+      <span class="title-desc"><i> 'LinearRegression' (default) | 'Ratiometric' </i></span>
+    </button>
+    <div class="content">
+      <p>
+        <b>LinearRegression</b> regresses the fluorescence onto one or more reflectance channels, pixel by pixel. <b>Ratiometric</b> uses a single reference channel.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>Other</b></samp> - Custom reference channel<br>
+      <span class="title-desc"><i> '' (default) | file name </i></span>
+    </button>
+    <div class="content">
+      <p>
+        Name of a custom reference channel file to include in the correction.
+      </p>
+      <p>
+        At least one reference channel must be selected (<samp>Red</samp>, <samp>Green</samp>, <samp>Amber</samp> or <samp>Other</samp>). Without one, the function stops with the error <samp>Umitoolbox:HemoCorrection:InvalidInput</samp>; it no longer opens a channel-selection dialog.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>LowPassFreq</b></samp> - Low-pass cutoff of the reference channels (Hz)<br>
+      <span class="title-desc"><i> 0 (default) | non-negative number </i></span>
+    </button>
+    <div class="content">
+      <p>
+        Cutoff frequency (in Hz) of a low-pass filter applied to the reference channels before the regression. With <samp>0</samp>, no extra filter is applied (a reference faster than the fluorescence still gets its automatic anti-alias filter, see <i>More details</i>).
+      </p>
+      <ul>
+        <li>Only the <samp>LinearRegression</samp> algorithm on Y,X,T fluorescence supports it. With <samp>Ratiometric</samp> or with event-split (Y,X,T,E) fluorescence it must be 0; otherwise the function stops with <samp>Umitoolbox:HemoCorrection:UnsupportedLowPassFreq</samp>.</li>
+        <li>It must be below the Nyquist frequency of the fluorescence (half its frame rate); otherwise the function stops with <samp>Umitoolbox:HemoCorrection:invalidLowPassFreq</samp>.</li>
+        <li>A reference channel whose own Nyquist frequency is at or below the cutoff (a reference slower than the cutoff allows) is not filtered. The function then shows the warning <samp>Umitoolbox:HemoCorrection:LowPassFreqSkipped</samp>, which names the channel.</li>
+      </ul>
+    </div>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>FrameRateHz</b></samp> - Fluorescence frame rate<br>
+      <span class="title-desc"><i> positive number </i></span>
+    </button>
+    <div class="content">
+      <p>
+        Frame rate (in Hz) of the <b>fluorescence</b> data, never of a reference channel. It is provided automatically by the pipeline or by the <samp>.dat</samp> header; a numeric array input needs it explicitly.
+      </p>
+    </div>
+    <h3 id="references">References</h3>
+    <hr>
+    <ol>
+      <li>Valley, M. T., M. G. Moore, J. Zhuang, N. Mesa, D. Castelli, D. Sullivan, M. Reimers, and J. Waters. 2020. ‘Separation of Hemodynamic Signals from GCaMP Fluorescence Measured with Wide-Field Imaging’. Journal of Neurophysiology 123 (1): 356–66. <a href="https://doi.org/10.1152/jn.00304.2019">https://doi.org/10.1152/jn.00304.2019</a>.
+      </li>
+    </ol>
+
+    <!-- JavaScript code to collapse sections -->
+    <script src="../../collapsible_behaviour.js"></script>
+  </body>
+</html>

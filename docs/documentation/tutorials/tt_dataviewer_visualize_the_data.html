@@ -2,7 +2,7 @@
 layout: default
 title: Visualize imaging data
 parent: Data exploration
-grand_parent: umIToolbox app
+grand_parent: Getting Started
 permalink: /documentation/tutorials/tt_dataviewer_visualize_the_data.html
 nav_exclude: true
 ---
@@ -33,7 +33,7 @@ nav_exclude: true
     <h3>Sections</h3>
     <hr>
     <ul>
-      <li><a href="#open-data">Open imaging data</a>: open imaging data in <i>DataViewer</i> through the main GUI or as a standalone.</li>
+      <li><a href="#open-data">Open imaging data</a>: open imaging data in <i>DataViewer</i>.</li>
       <li><a href="#viz-image-time-series">Basic data exploration</a>: explore an image time series data to learn the basics of <i>DataViewer</i>.</li>
       <li><a href="#viz-spcm">Visualize functional maps</a>: explore a Seed-pixel correlation map.</li>
       <li><a href="#viz-event-triggered-data">Visualize event-triggered data</a>: explore event-triggered image time series.</li>
@@ -41,21 +41,8 @@ nav_exclude: true
     <h3 id="open-data">Open imaging data</h3>
     <hr>
     <p>
-      You can launch <i>DataViewer</i> from the main GUI or as a standalone from Matlab's command window.
+      Launch <i>DataViewer</i> from MATLAB's command window.
     </p>
-    <h4>Launch <i>DataViewer</i> from the main GUI</h4>
-    <p>
-      In Matlab's command window, launch the main GUI:
-    </p>
-    <div class="codeinput">
-      <pre>
-        umIToolbox(<font class="stringformat">'C:/FOLDER/projectfile.mat'</font>);
-      </pre>
-    </div>
-    <p>
-      Go to the <i>Visualization</i> tab. Then select the object containing the file to be opened (step 1). In the <i>Select a file:</i> list box, select the file (step 2) - in this example, <samp>HP_tempFilt.dat</samp>. Finally, click on the app's button (step 3) to launch <i>DataViewer</i>:
-    </p>
-    <img src="../assets/img/tt_dataviewer_open_data_from_mainGUI.png" alt="tt_dataviewer_open_data_from_mainGUI" width="660">
     <h4>Launch <i>DataViewer</i> as standalone</h4>
     <p>
       To open an imaging file in <i>DataViewer</i> directly from Matlab's command window,launch <i>DataViewer</i> with the full path of the file as input:
@@ -80,7 +67,7 @@ nav_exclude: true
     <h3 id="viz-image-time-series">Basic data exploration</h3>
     <hr>
     <p>
-      In this tutorial, we will explore an intermediate step from the preproceesing of a resting state experiment. The data stored in the file <samp>HP_tempFilt.dat</samp> consists of the fluorescence signal that was corrected for the hemodynamic artifacts, followed by the removal of the global signal variance and temporally filtered and normalized (check the tutorial on <a href="tt_creating_connectivity_maps.html">preprocessing data for resting state</a> for details).
+      In this tutorial, we will explore an intermediate step from the preproceesing of a resting state experiment. The data stored in the file <samp>HP_tempFilt.dat</samp> consists of the fluorescence signal that was corrected for the hemodynamic artifacts, followed by the removal of the global signal variance and temporally filtered and normalized (check the tutorial on preprocessing data for resting state for details).
     </p>
     <p>
       Below is a screenshot of the app with the data loaded. It consists of three windows: the main window (1), where all the options and controls are located, the image window (2) where the current frame of the data is shown, and the temporal signal window (3) where the temporal profile of the selected pixel is displayed.
@@ -118,7 +105,7 @@ nav_exclude: true
     <h3 id="viz-spcm">Visualize functional maps</h3>
     <hr>
     <p>
-      The functional connectivity maps created in <a href="tt_creating_connectivity_maps.html">this tutorial</a> were stored in the file <samp>SCPMap.dat</samp>. This data consists of a 3D array containing correlation values where each frame represents the correlation map for a given seed pixel.
+      The functional connectivity maps created in this tutorial were stored in the file <samp>SCPMap.dat</samp>. This data consists of a 3D array containing correlation values where each frame represents the correlation map for a given seed pixel.
     </p>
     <p>
       When visualizing a correlation map, the behaviour of the image's crosshair is different from the other imaging data types. Here, when clicking on a pixel, the correlation map is updated to show the map from the selected pixel as the seed:
@@ -128,7 +115,7 @@ nav_exclude: true
     <h3 id="viz-event-triggered-data">Visualize event-triggered data</h3>
     <hr>
     <p>
-      For images and image time series split by events, the <i>DataViewer</i> app shows an extra window, the Events window, containing the conditions and event repetitions. You can select one repetition or the average (<samp><font class="stringformat">#Average</font></samp>). The example below was drawn from the tutorial on <a href="./tt_creating_event_triggered_avg_maps.html">preproceesing event-triggered data</a>  and it represents the normalized fluorescence signal of a whiskers stimulation split in 10 trials.
+      For images and image time series split by events, the <i>DataViewer</i> app shows an extra window, the Events window, containing the conditions and event repetitions. You can select one repetition or the average (<samp><font class="stringformat">#Average</font></samp>). The example below was drawn from the tutorial on preproceesing event-triggered data  and it represents the normalized fluorescence signal of a whiskers stimulation split in 10 trials.
     </p>
     <video src="../assets/gifs/tt_dataviewer_example_data_split_by_evnt.ogg" alt="tt_dataviewer_example_data_split_by_evnt" width ="880" controls></video>
     <hr>

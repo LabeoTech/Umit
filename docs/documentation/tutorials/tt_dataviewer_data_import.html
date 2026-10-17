@@ -12,8 +12,8 @@ nav_order: 2
 <h2>Open an existing file</h2>
 <ol><li>Select <strong>File &gt; Open</strong>.</li><li>Choose a <samp>.dat</samp> or <samp>.umt</samp> file.</li><li>If the UMT contains several compatible image entries, select one in the entry dialog.</li><li>Wait for the loaded filename and frame count to appear.</li></ol>
 <h2>Import a recording</h2>
-<p><strong>from bin</strong> imports recordings produced by the <a href="https://labeotech.com/product/modular-optical-imaging-system/">OiS200 LightTrack widefield imaging system</a>. <strong>from tif</strong> accepts generic TIFF image sequences produced by other rigs.</p>
-<ol><li>Choose <strong>File &gt; Import &gt; from bin</strong> or <strong>from tif</strong>.</li><li>Select the raw source and a Save Folder when prompted.</li><li>Review the import options and start the import.</li><li>Open one of the generated <samp>.dat</samp> files.</li></ol>
+<p><strong>from .bin</strong> imports recordings produced by the <a href="https://labeotech.com/product/modular-optical-imaging-system/">OiS200 LightTrack widefield imaging system</a>. <strong>from .tif</strong> accepts generic TIFF image sequences produced by other rigs.</p>
+<ol><li>Choose <strong>File &gt; Import &gt; from .bin</strong> or <strong>from .tif</strong>.</li><li>Select the raw source and a Save Folder when prompted.</li><li>Review the import options and start the import.</li><li>Open one of the generated <samp>.dat</samp> files.</li></ol>
 <div class="warnnote"><p><strong>Keep acquisition metadata together.</strong><br><em>DataViewer</em> will not guess image dimensions for a <samp>.dat</samp> file when <samp>AcqInfos.mat</samp> is missing or invalid.</p></div>
 <div class="infonote"><p><strong>What is saved?</strong><br><strong>Open</strong> is read-only. Import creates processed data and acquisition metadata in the selected Save Folder. <strong>File &gt; Set Raw Folder</strong> updates <samp>DataParams.mat</samp>; it does not move raw data.</p></div>
 <p>See <a href="../userDocs/apps/data-loading-navigation.html">Data loading and basic exploration</a> for all supported controls.</p>

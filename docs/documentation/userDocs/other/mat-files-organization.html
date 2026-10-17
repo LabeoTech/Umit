@@ -8,7 +8,7 @@ nav_order: 2
 ---
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Save Folder metadata files</title></head><body>
 <h1>Save Folder metadata files</h1>
-<p>A Save Folder keeps imaging data and recording-specific information together. Project information and managed image references or transforms are held in the user's central umIT folder, but <samp>UMITProjectBinding.umitlink</samp> links the Save Folder to its project, subject, and session.</p>
+<p>A Save Folder keeps imaging data and recording-specific information together. Two ledger files record what the folder is bound to: <samp>UMITRigLedger.json</samp> records its rig, and <samp>UMITProjectLedger.json</samp> (only when the folder is bound to a project) links it to its project, subject, and session. Project information and subject reference libraries are held in the user's central umIT folder; rig definitions are held in the rig library of the computer.</p>
 <p>Each <samp>.dat</samp> file describes itself: its <a href="dat-files-organization.html">512-byte header</a> records the size of every axis, the numeric class, the frame rate, and the exposure, so the files in a Save Folder may have different shapes and frame rates. <samp>AcqInfos.mat</samp> does not describe the imported <samp>.dat</samp> files. It describes the <strong>raw acquisition</strong> they came from. Results that are not images use the <a href="umt-files-organization.html"><samp>.umt</samp> format</a>.</p>
 <div class="warnnote"><p><strong>Do not remove AcqInfos.mat</strong><br>The <samp>.dat</samp> files remain readable without it, but <samp>AcqInfos.mat</samp> holds the facts of the original acquisition, such as the camera and illumination layout, the hardware binning, and the import settings. Dual-camera coregistration and several tools rely on them, and they cannot be rebuilt without the raw recording.</p></div>
 
@@ -19,7 +19,8 @@ nav_order: 2
 <tr><td><samp>events.mat</samp></td><td>Analog traces, event timing, condition names, repetitions, and saved ignored-trial flags.</td><td><a href="../tools/events-manager_tool.html"><em>Events Manager</em></a> or the <em>EventsManager</em> class.</td></tr>
 <tr><td><samp>dataHistory.mat</samp></td><td>Processing steps and parameters that produced each saved output file.</td><td><a href="../tools/pipeline_configuration_tool.html"><em>Pipeline Manager</em></a>.</td></tr>
 <tr><td><samp>pipeLog.mat</samp></td><td>Step-by-step execution results, timing, inputs, outputs, and errors.</td><td><em>Pipeline Manager</em>.</td></tr>
-<tr><td><samp>UMITProjectBinding.umitlink</samp></td><td>Link from this folder to one project, subject, session, and folder role.</td><td><a href="../tools/project-management-folder-binding.html"><em>Project Binding Manager</em></a>.</td></tr></table>
+<tr><td><samp>UMITRigLedger.json</samp></td><td>The folder's rig: its binding to a rig, the optics, camera coregistration and filter sets used by rig-dependent steps, and the history of these events.</td><td>Import functions, rig-dependent analysis functions, and <a href="../apps/folder-rig.html"><em>DataViewer</em> (Management &gt; Rig &gt; Folder Rig)</a>.</td></tr>
+<tr><td><samp>UMITProjectLedger.json</samp></td><td>Link from this folder to one project, subject, session, and folder role, with the history of binding changes. Only present for a folder that is or was bound to a project.</td><td><a href="../tools/project-management-folder-binding.html"><em>Project Binding Manager</em></a>, the <em>Project Manager</em>, and <em>DataViewer</em> (Management &gt; Project).</td></tr></table>
 <div class="infonote"><p><strong>Use the interface that owns each file</strong><br>These files are coordinated with other application state. Do not hand-edit them unless you understand the validation and update rules; use the app, class, or helper listed above.</p></div>
 
 <h2 id="acqinfosmat">AcqInfos.mat</h2>
@@ -31,6 +32,7 @@ nav_order: 2
 <tr><td><samp>ImportedChannels</samp></td><td>Manifest of the <samp>.dat</samp> files created by the import: file name, channel tag, illumination color, and camera, used to match a file to its illumination and camera. The size, class, frame rate, and exposure of each file are always read from the file's own header.</td></tr>
 <tr><td><samp>MultiCam</samp> and camera/channel fields</td><td>Dual-camera acquisition layout, rotations, flips, hardware binning, camera model, and illumination sequence when present.</td></tr>
 <tr><td>Hardware/importer-specific fields</td><td>Additional facts preserved by the importer, such as analog channel names, the acquisition date and time, or source acquisition information.</td></tr></table>
+<p><samp>AcqInfos.mat</samp> holds no rig information: the rig of the folder is recorded only in <a href="#umitrigledger-json"><samp>UMITRigLedger.json</samp></a>. Fields <samp>rigUUID</samp> and <samp>rigID</samp> written by earlier development versions are ignored, and they are dropped when the file is rewritten by an import.</p>
 <div class="infonote"><p><strong>Older Save Folders</strong><br>Folders imported with an earlier development version may hold an <samp>AcqInfos.mat</samp> whose <samp>Height</samp>, <samp>Width</samp>, <samp>Length</samp>, or <samp>Datatype</samp> fields describe the imported files. umIT does not read those fields as facts about imported data, and the file is not migrated. New imports no longer write <samp>Length</samp> or <samp>Datatype</samp>.</p></div>
 
 <h2>DataParams.mat</h2>
@@ -40,7 +42,7 @@ nav_order: 2
 <tr><td><samp>view</samp></td><td><samp>imageSizeYX</samp>, image-axis convention, pixel scale, and the image origin used for calibrated coordinates.</td></tr>
 <tr><td><samp>mask</samp></td><td>The folder-wide logical mask plus its name, description, coordinate space, source, and creation time.</td></tr>
 <tr><td><samp>folders</samp></td><td>The Raw Folder path, its availability status, and when/by whom it was set.</td></tr>
-<tr><td><samp>registration</samp></td><td>Single-camera alignment status, reference information, transform, review/application history, QC files, and QC measurements.</td></tr>
+<tr><td><samp>registration</samp></td><td>Image alignment of the folder, in three parts: <samp>reference</samp> (the selected reference image, its name, a content fingerprint and where it came from: a subject library, a UMIT <samp>.dat</samp> file or a reference file), <samp>estimate</samp> (the estimated transform, method, QC files and measurements), and <samp>apply</samp> (whether, when and by whom the alignment was applied). This is the only record of a folder's alignment; no transform is stored in the project.</td></tr>
 <tr><td><samp>cameraCoregistration</samp></td><td>Dual-camera transform status, rig/resource references, review/application history, QC files, and QC measurements.</td></tr>
 <tr><td><samp>custom</samp></td><td>Reserved validated space for additional recording-level information.</td></tr></table>
 
@@ -58,13 +60,27 @@ nav_order: 2
 <h2>pipeLog.mat</h2>
 <p>The file contains a table named <samp>pipeLog</samp>. Each row describes one attempted step. Columns include <samp>NodeTag</samp>, <samp>FunctionName</samp>, <samp>NodeID</samp>, <samp>Status</samp>, start/end times, duration, input source, output files, and short/full messages. It is an execution log, while <samp>dataHistory.mat</samp> describes the provenance of files that remain in the folder.</p>
 
-<h2>UMITProjectBinding.umitlink</h2>
-<p>This link file contains one <samp>ProjectBinding</samp> structure with a format version, binding identifier, project/subject/session identifiers, the folder role (<samp>rawDataFolder</samp> or <samp>processedDataFolder</samp>), and creation/modification times. It is a locator, not a copy of the project information. Use <em>Project Binding Manager</em> to bind, rebind, repair, or remove it.</p>
+<h2 id="umitrigledger-json">UMITRigLedger.json</h2>
+<p>The folder rig ledger is the single source of rig information for the Save Folder. Analysis functions that depend on the rig, such as <a href="../fcns/HemoCompute.html">HemoCompute</a>, read the optics from it, never from the rig library of the computer, so the folder gives the same results on any computer and after the library rig is edited or archived. It is a JSON text file next to <samp>AcqInfos.mat</samp>, written by the import functions, by rig-dependent analysis functions and by <em>DataViewer</em>'s Folder Rig menu.</p>
+<ul>
+<li><b>Snapshots</b>: copies of the optics (camera and illumination spectra), of the camera coregistration and of the filter sets that the folder was bound to or used. Each snapshot is complete, so the folder does not need the library rig.</li>
+<li><b>Events</b>: an append-only list of what happened to the folder: imported without a rig, bound or rebound to a rig, a part committed by its first use, a conflict, an acknowledged conflict, a fresh import. Entries are never removed or rewritten. The <a href="../apps/folder-rig.html">Rig Ledger History</a> shows them.</li>
+</ul>
+<p>The folder states read from the ledger are: no ledger (<em>unknown</em>), <em>no rig</em>, bound (with or without committed parts), <em>conflict</em>, and <em>invalid</em>. They are explained in <a href="../apps/folder-rig.html">DataViewer: Folder rig</a>. Reading the ledger never changes it; opening data does not create one.</p>
+<div class="warnnote"><p><strong>Never edit UMITRigLedger.json by hand</strong><br>Every snapshot is checked against its content when the ledger is read. An edited or damaged ledger is <em>invalid</em>: the data still open, but rig-dependent processing is refused for the folder. There is no repair tool. Restore the file from a backup, or re-import the raw data into a fresh Save Folder. An import into the same folder is refused while its rig ledger is invalid.</p></div>
+
+<h2 id="umitprojectledger-json">UMITProjectLedger.json</h2>
+<p>A folder bound to a project keeps a project ledger, a JSON text file with the folder's binding (project, subject and session identifiers and the folder role, <samp>rawDataFolder</samp> or <samp>processedDataFolder</samp>) and an append-only list of binding events: bind, rebind, unbind (with its reason, for example the session was removed), orphan removal and fresh import. Each bind or rebind keeps a copy of the project's names at that time, so the history reads the same when the project is not available. The file stays when a folder is unbound, so its history survives; such a folder reads as unbound.</p>
+<p>It is a locator, not a copy of the project information. Use <em>Project Binding Manager</em> or the <em>Project Manager</em> to bind, rebind or remove a binding, and <em>DataViewer</em> (Management &gt; Project) to view the history or repair a binding. Do not edit it by hand.</p>
+<div class="infonote"><p><strong>Folders bound with an earlier development version</strong><br>Earlier versions stored the binding in <samp>UMITProjectBinding.umitlink</samp>. That file is no longer read and is not converted: a folder that has only a <samp>.umitlink</samp> reads as unbound. The file is not deleted; bind the folder again with <em>Project Binding Manager</em>.</p></div>
 
 <h2>Local and centralized information</h2>
-<pre>Save Folder                           Central umIT project folder
------------                           ---------------------------
-imaging files and local metadata <--- .umitlink ---> project / subject / session
-                                                   image references and transforms</pre>
-<p>The Save Folder remains a self-contained location for one recording and its processing history. The central project folder provides organization across many recordings and keeps resources that should be shared between sessions. The link connects the two without requiring a particular name or folder-tree layout for the imaging data.</p>
+<pre>Save Folder                              Central umIT folder
+-----------                              -------------------
+imaging files and local metadata
+UMITProjectLedger.json  -- binding -->   project / subject / session,
+                                         subject reference libraries
+UMITRigLedger.json      (self-contained snapshots; the rig library of the
+                         computer is used only to choose a rig)</pre>
+<p>The Save Folder remains a self-contained location for one recording, its processing history, its rig and its alignment. The central project folder provides organization across many recordings and keeps the reference images that should be shared between sessions. The project ledger connects the two without requiring a particular name or folder-tree layout for the imaging data. A project is optional.</p>
 </body></html>

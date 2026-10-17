@@ -1,0 +1,53 @@
+---
+layout: default
+permalink: /documentation/userDocs/apps/folder-rig.html
+title: Folder rig
+parent: DataViewer
+grand_parent: Documentation
+nav_order: 7
+---
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Folder rig</title></head><body>
+<h1>Folder rig</h1>
+<p>This page is for users of rig-dependent processing, for example hemoglobin computation with <a href="../fcns/HemoCompute.html">HemoCompute</a>. Viewing data, ROIs and most processing do not depend on the rig.</p>
+<p>Every Save Folder keeps its own record of the rig its data came from: the <strong>folder rig ledger</strong> (<samp>UMITRigLedger.json</samp>, see <a href="../other/mat-files-organization.html#umitrigledger-json">Save Folder metadata files</a>). It is the single source of rig information for that folder. The <a href="../tools/rig-manager_tool.html">rig library</a> of your computer is used only to author rigs and to choose one; analysis functions such as <a href="../fcns/HemoCompute.html">HemoCompute</a> read the optics from the folder ledger, never from the library. Opening data in <em>DataViewer</em> never writes to the folder.</p>
+<h2>Rig states in the context line</h2>
+<p style="text-align:center"><img src="../../assets/img/current/dataviewer-folder-rig-label-states.png" alt="Six context lines showing the rig states unknown (no rig ledger), Rig A, Rig B - CONFLICT, Rig B (committed) [had conflict], none (no rig) and invalid rig ledger" width="820"><br><em>The rig part of the context line in the different folder states.</em></p>
+<table><tr><th>Text</th><th>Meaning</th></tr>
+<tr><td><samp>unknown (no rig ledger)</samp></td><td>The folder has no rig ledger, for example data imported by an earlier release. Bind a rig before rig-dependent processing.</td></tr>
+<tr><td><samp>none (no rig)</samp></td><td>The folder was imported without a rig (single-camera data, TIFF import, or dual-camera data imported without coregistration). Bind a rig before rig-dependent processing.</td></tr>
+<tr><td>the rig name, for example <samp>Rig A</samp></td><td>The folder is bound to that rig, and no rig-dependent result has used it yet. The rig can be changed freely.</td></tr>
+<tr><td><samp>(committed)</samp> after the name</td><td>A rig-dependent step (for example <em>HemoCompute</em>, or a dual-camera import that applied a coregistration) used the rig's optics or coregistration. They are now committed to the folder: rebinding to a rig whose optics differ creates a conflict.</td></tr>
+<tr><td><samp>- CONFLICT</samp> after the name</td><td>The folder was rebound to a rig whose optics differ from the committed ones. Rig-dependent processing is blocked until the conflict is resolved.</td></tr>
+<tr><td><samp>[had conflict]</samp></td><td>A permanent mark: the folder had a rig conflict at some point. The details are in the Rig Ledger History.</td></tr>
+<tr><td><samp>invalid rig ledger</samp></td><td>The ledger file is damaged or was edited by hand (see below).</td></tr></table>
+<h2>Management &gt; Rig &gt; Folder Rig</h2>
+<p style="text-align:center"><img src="../../assets/img/current/dataviewer-folder-rig-menu-conflict.png" alt="DataViewer Management, Rig, Folder Rig submenu with Bind / Rebind Rig, Acknowledge Rig Conflict and Rig Ledger History, on a conflicted folder" width="880"><br><em>The Folder Rig submenu on a folder in conflict: all three commands are available.</em></p>
+<table><tr><th>Command</th><th>Available when</th><th>Effect</th></tr>
+<tr><td><strong>Bind / Rebind Rig...</strong></td><td>Data are loaded</td><td>Binds the folder to a rig of the library, or changes its rig (see below).</td></tr>
+<tr><td><strong>Acknowledge Rig Conflict...</strong></td><td>The folder is in conflict</td><td>Accepts the current rig for the folder (see below).</td></tr>
+<tr><td><strong>Rig Ledger History...</strong></td><td>The folder has a rig ledger</td><td>Shows every event recorded in the ledger, read-only.</td></tr></table>
+<h3>Bind or rebind a rig</h3>
+<ol>
+<li>Choose <strong>Management &gt; Rig &gt; Folder Rig &gt; Bind / Rebind Rig...</strong>.</li>
+<li>Pick a rig. The list holds the Active and Available rigs of the library; the Active rig is pre-selected. Archived rigs cannot be bound.</li>
+<li>Confirm. For a folder without a rig the confirmation only names the rig and the folder. When the folder already committed optics and the chosen rig's optics differ, a warning names both rigs and explains that the folder will become CONFLICTED; choose <strong>Rebind</strong> to continue or <strong>Cancel</strong>.</li>
+</ol>
+<p style="text-align:center"><img src="../../assets/img/current/dataviewer-bind-rig-dialog.png" alt="Bind / Rebind Rig dialog with Rig A (RigA) - Active pre-selected and Rig B in the list" width="461"><br><em>The rig picker, with the Active rig pre-selected.</em></p>
+<p style="text-align:center"><img src="../../assets/img/current/dataviewer-bind-rig-confirm.png" alt="Bind Rig confirmation: Bind rig Rig A (RigA) to this folder, with the folder path, Bind and Cancel" width="315"><br><em>The confirmation for a folder that has no rig yet.</em></p>
+<p style="text-align:center"><img src="../../assets/img/current/dataviewer-rebind-conflict-warning.png" alt="Rebind Rig warning saying that the optics of Rig A and Rig B differ and that the folder will become conflicted" width="445"><br><em>The warning shown before a rebind that changes committed optics.</em></p>
+<p>Binding or rebinding changes the folder's <strong>optics</strong> only. The camera coregistration of a dual-camera folder stays as it was imported: it changes only through a re-import of the raw data (see <a href="../fcns/ImagesClassification.html#rig">ImagesClassification</a>).</p>
+<h3>Resolve a rig conflict</h3>
+<p>A conflicted folder can be fixed in three ways:</p>
+<ul>
+<li><strong>Revert</strong>: rebind the folder to the rig whose optics were committed.</li>
+<li><strong>Start again</strong>: re-import the raw data into a fresh Save Folder.</li>
+<li><strong>Acknowledge</strong>: choose <strong>Acknowledge Rig Conflict...</strong> to accept the current rig for this folder. The dialog explains the conflict; you may enter a comment, which is stored in the ledger. Results computed before the rebind are not changed, but they are not reused either: when a pipeline is run again with step skipping on, rig-dependent steps that ran before the acknowledgement are recomputed. The folder keeps the permanent <samp>[had conflict]</samp> mark.</li>
+</ul>
+<p style="text-align:center"><img src="../../assets/img/current/dataviewer-acknowledge-rig-conflict.png" alt="Acknowledge Rig Conflict dialog with an explanation of the conflict and an optional comment" width="561"><br><em>Acknowledging a conflict, with an optional comment.</em></p>
+<h3>Rig Ledger History</h3>
+<p>The history lists the folder, its state and bound rig, then one line per event: <samp>noRig</samp> (imported without a rig), <samp>bind</samp>, <samp>rebind</samp> (with what changed in the optics and the coregistration), <samp>commit</samp> (which part was committed, and by which step), <samp>conflict</samp>, <samp>acknowledgeConflict</samp> (with its comment) and <samp>freshImport</samp> (a re-import reset the commitments). Rigs are named as they were recorded, so the history reads the same on a computer whose library does not have them.</p>
+<p style="text-align:center"><img src="../../assets/img/current/dataviewer-rig-ledger-history.png" alt="Rig Ledger History dialog listing bind, commit, rebind, conflict and acknowledgeConflict events" width="880"><br><em>The history of a folder that was bound to Rig A, used by HemoCompute, rebound to Rig B and acknowledged.</em></p>
+<h3>Invalid rig ledger</h3>
+<p>If the ledger file is damaged or was edited by hand, <em>DataViewer</em> still loads the data and shows the alert <strong>Invalid Rig Ledger</strong>. Rig-dependent processing (for example <em>HemoCompute</em>) is then refused for the folder. There is no repair tool: restore <samp>UMITRigLedger.json</samp> from a backup, or re-import the raw data into a fresh Save Folder.</p>
+<p style="text-align:center"><img src="../../assets/img/current/dataviewer-invalid-rig-ledger-alert.png" alt="DataViewer Invalid Rig Ledger alert saying that data loaded but rig-dependent processing is blocked" width="880"><br><em>The alert shown when the folder's rig ledger cannot be read.</em></p>
+</body></html>

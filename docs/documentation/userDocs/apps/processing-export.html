@@ -9,8 +9,9 @@ nav_order: 5
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Processing and export</title></head><body>
 <h1>Processing and export</h1>
 <h2>Processing with Pipeline Manager</h2>
-<p>Data processing is managed by <a href="../tools/pipeline_configuration_tool.html"><em>Pipeline Manager</em></a>. <em>DataViewer</em> keeps one processing graph for the active Save Folder. The current file appears at the start of that graph as an input node: it represents the already-open file and is not another copy of the data. Closing <em>Pipeline Manager</em> keeps the graph and last result available until you switch Save Folders or close the viewer.</p>
-<p style="text-align:center"><img src="../../assets/img/current/dataviewer-pipeline-tab.png" alt="DataViewer Pipeline tab with current pipeline status" width="880"><br><em>The tab reports the current input file, graph status, last outputs, and latest-run summary.</em></p>
+<p>Data processing is managed by <a href="../tools/pipeline_configuration_tool.html"><em>Pipeline Manager</em></a>. <em>DataViewer</em> keeps one processing graph for the active Save Folder. The current file appears at the start of that graph as an input node: it represents the already-open file. Closing <em>Pipeline Manager</em> keeps the graph and last result available until you switch Save Folders or close the viewer. When the viewer shows a result of the pipeline, the pipeline keeps its original input, and re-running an unchanged pipeline skips the finished steps.</p>
+<p>To process several recordings, including their import, choose <strong>File &gt; Batch pipeline...</strong> or right-click the <strong>Pipeline Manager</strong> button and choose <strong>Batch mode...</strong>; see <a href="../tools/pipeline_configuration_tool.html#batch-mode">Batch mode</a>.</p>
+<p style="text-align:center"><img src="../../assets/img/current/dataviewer-pipeline-tab.png" alt="DataViewer Pipeline tab after a run: status Passed, one temporary output, the current temporary pipeline file and the latest summary" width="880"><br><em>The tab reports the current input file, graph status, last outputs, and latest-run summary.</em></p>
 <h2>Returning results</h2>
 <p>After a run, <em>DataViewer</em> separates permanent, temporary, and viewer-compatible outputs. If several compatible images exist, an output-selector dialog shows file, source step, output name, type, and persistence. Non-image reports and terminal results stay on disk and are summarized rather than opened as images.</p>
 <h2>Temporary output lifecycle</h2>
@@ -19,10 +20,10 @@ nav_order: 5
 <p>Choose <strong>Utilities &gt; Data History</strong> to inspect how the current file was produced. Each row identifies an analysis function, its version, its input sources, its output, and the parameter values used. The information comes from <samp>dataHistory.mat</samp> and is read-only in this dialog.</p>
 <p style="text-align:center"><img src="../../assets/img/current/data-history-dialog.png" alt="Data History dialog for the current file" width="760"><br><em>The dialog lists the ordered processing steps, function versions, inputs, and parameters recorded for the current file.</em></p>
 <h2>Data export</h2>
-<table><tr><th>Command</th><th>Writes</th><th>Source changed?</th></tr>
-<tr><td><strong>File &gt; Save</strong></td><td>A selected data file</td><td>No.</td></tr>
-<tr><td><strong>File &gt; Export &gt; to tif</strong></td><td>TIFF image data</td><td>No.</td></tr>
-<tr><td><strong>ROIs &gt; Save</strong></td><td><samp>.roi</samp></td><td>No image samples changed.</td></tr>
-<tr><td><strong>ROIs &gt; Export ROI data</strong></td><td>CSV tables</td><td>No.</td></tr>
-<tr><td><strong>Data History</strong></td><td>Nothing; displays <samp>dataHistory.mat</samp></td><td>No.</td></tr></table>
+<table><tr><th>Command</th><th>Writes</th></tr>
+<tr><td><strong>File &gt; Save</strong></td><td>A selected data file</td></tr>
+<tr><td><strong>File &gt; Export &gt; to tif</strong></td><td>TIFF image data, through <a href="../fcns/ConvertToTiff.html">ConvertToTiff</a>. Only an open <samp>.dat</samp> file can be exported; for an open <samp>.umt</samp> file the command reports "Only .dat files can be exported to TIFF."</td></tr>
+<tr><td><strong>ROIs &gt; Save</strong></td><td><samp>.roi</samp></td></tr>
+<tr><td><strong>ROIs &gt; Export ROI data</strong></td><td>CSV tables</td></tr>
+<tr><td><strong>Data History</strong></td><td>Nothing; displays <samp>dataHistory.mat</samp></td></tr></table>
 </body></html>

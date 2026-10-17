@@ -1,0 +1,119 @@
+---
+permalink: /documentation/userDocs/fcns/ImagesClassification.html
+layout: default
+title: ImagesClassification
+parent: Data import & export
+grand_parent: Functions
+nav_order: 1
+---
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <style>
+      ul {
+        line-height: 1.5;
+      }
+
+    </style>
+
+    <title>ImagesClassification</title>
+  </head>
+  <body>
+    <h2>ImagesClassification</h2>
+    <hr>
+    <p>Imports raw imaging data acquired with the <a href="http://www.labeotech.com">LabeoTech</a>'s optical imaging systems.</p>
+    <h3 id="description">Description</h3>
+    <hr>
+    <p>
+      This function reads multi-channel imaging data stored in binary files (<samp>img_xxxx.bin</samp>) together with the acquisition information file (<samp>info.txt</samp>) of an imaging session. The signal of each illumination channel is saved separately in a <samp>.dat</samp> file, whose header describes its axes, size and frame rate. The acquisition metadata are saved in one <samp>AcqInfos.mat</samp> file in the SaveFolder. Optional parameters perform spatial and temporal binning. In <em>DataViewer</em>, this function runs from <strong>File &gt; Import &gt; from .bin</strong>. Stimulation triggers are not imported by this function; use <a href="getEvents.html">getEvents</a>.
+    </p>
+    <p>
+      When <samp>info.txt</samp> has no <samp>Camera Model</samp> entry, the camera model <samp>D1024</samp> is assumed (it selects how dropped frames are detected and filled), with the warning <samp>Umitoolbox:ImagesClassification:CameraModelMissing</samp>.
+    </p>
+    <h3>Output</h3>
+    <hr>
+    <p>
+      The <samp>ImagesClassification</samp> function creates one or more of the following <samp>.dat</samp> files:
+    </p>
+    <ul>
+      <li>Red</li>
+      <li>Green</li>
+      <li>Yellow</li>
+      <li>Speckle</li>
+      <li>fluo / fluo_475 / fluo_567</li>
+    </ul>
+    <p>and the file <samp>AcqInfos.mat</samp>. <samp>AcqInfos.mat</samp> does not hold rig information: the rig of the folder is recorded in its <a href="../other/mat-files-organization.html#umitrigledger-json">folder rig ledger</a> (<samp>UMITRigLedger.json</samp>).</p>
+    <h3 id="rig">Rig and camera coregistration</h3>
+    <hr>
+    <ul>
+      <li><b>Single-camera data</b> do not use a rig. A first import records the folder as "no rig" in its rig ledger. A re-import keeps the rig binding the folder already has. To process the folder with rig-dependent functions such as <a href="HemoCompute.html">HemoCompute</a>, bind a rig in <a href="../apps/folder-rig.html">DataViewer (Management &gt; Rig &gt; Folder Rig)</a>.</li>
+      <li><b>Dual-camera data</b> use the <b>Active rig</b> of the <a href="../tools/rig-manager_tool.html">rig library</a> and its active camera coregistration. The transform is applied to the second camera, and the folder is bound to the Active rig with that coregistration.</li>
+      <li>If there is no Active rig, if the Active rig has no active coregistration, or if the transform cannot be applied, the dual-camera data are imported <b>without coregistration</b>. The warning <samp>Umitoolbox:ImagesClassification:ImportedWithoutCoregistration</samp> gives the reason and asks you to set an Active rig with an active coregistration in the Rig Manager, then to re-import. A new folder is then recorded as "no rig"; a folder that was already bound keeps its optics binding, without a coregistration.</li>
+      <li>A calibration that turns out to be wrong is fixed with <b>Recalibrate</b> in the <a href="../tools/dual-cam-coregistration_tool.html">Camera Coregistration tool</a>, followed by a re-import of the raw data. There is no option to import dual-camera data without the active calibration.</li>
+      <li>Several Active rigs, or an invalid folder rig ledger, stop the import before the SaveFolder is touched. No rig is ever created by an import.</li>
+    </ul>
+    <h3 id="fresh-import">Importing into a used Save Folder (fresh import)</h3>
+    <hr>
+    <p>
+      An import into a SaveFolder that already holds an import (or files derived from one) is a <b>fresh import</b>: the folder is reset so that it is equivalent to a first import.
+    </p>
+    <ul>
+      <li><b>Deleted</b> (top level of the SaveFolder): the files that UMIT knows it creates, namely the imported <samp>.dat</samp> files and every other <samp>.dat</samp>, <samp>AcqInfos.mat</samp>, <samp>DataParams.mat</samp> (including any image alignment), <samp>.umt</samp> and <samp>.roi</samp> files, <samp>events.mat</samp>, processing history (<samp>dataHistory.mat</samp>, <samp>pipeLog.mat</samp>), alignment and motion-correction reports, ROI CSV exports, TIFF exports of the folder's channels, every output recorded in the processing history, and temporary leftovers.</li>
+      <li><b>Kept</b>: the raw acquisition files (<samp>.bin</samp>, <samp>info.txt</samp>, <samp>Comments.txt</samp>, snapshots, input TIFF files), the rig and project ledgers, backup <samp>.zip</samp> files of earlier imports, subfolders, and any file UMIT does not recognize. Unknown files are listed before the import, so you can see what stays.</li>
+      <li><b>Rig</b>: the folder keeps its rig binding (or its "no rig" record), but every rig commitment (optics, coregistration, filter sets) is reset and the reset is recorded in the rig ledger. A dual-camera re-import binds the folder to the current Active rig, whatever rig it used before, without a conflict. A folder that once had a rig conflict keeps its "had conflict" mark.</li>
+      <li><b>Project</b>: a folder bound to a project stays bound; the fresh import is recorded in its project ledger. A new alignment can be estimated and applied afterwards.</li>
+    </ul>
+    <p>
+      The <samp>backupOpts</samp> parameter decides whether the deleted files are kept in a zip file (see below). In <em>DataViewer</em>, <strong>File &gt; Import &gt; from .bin</strong> first shows an informative dialog that lists what will be deleted and kept, with <strong>Continue</strong> and <strong>Cancel</strong>; the backup choice then comes from <samp>backupOpts</samp>. A direct MATLAB call with <samp>backupOpts</samp> empty shows a dialog with <strong>Zip, delete and import</strong>, <strong>Delete and import</strong> and <strong>Cancel</strong> (Cancel stops with <samp>Umitoolbox:DataImport:freshImportCancelled</samp>). Pipelines are not refused for a used SaveFolder: they use <samp>GENBACKUP</samp> by default.
+    </p>
+    <p style="text-align: center;">
+      <img src="../../assets/img/current/dataviewer-fresh-import-dialog.png" alt="Fresh import dialog in DataViewer listing the seven files that will be deleted, saying that raw files and ledgers are kept, with Continue and Cancel" width="472"><br>
+      <em>DataViewer lists what a fresh import deletes before it starts.</em>
+    </p>
+    <h3 id="parameters">Parameters</h3>
+    <hr>
+    <p>The parameters of this function are the following:</p>
+    <button  title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>BinningSpatial</b></samp> - Spatial binning <br>
+      <span class="title-desc"><i>1 (default) | integer from 1 to 8</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Performs binning on each frame of the imported channels using a bicubic interpolation. The <samp>BinningSpatial</samp> values represent the scale factor that a frame is divided by. For example, for a recording with original frame size of 1024 by 1024 pixels, a <samp>BinningSpatial</samp> value of <b>2</b> will result in a frame of size 512 by 512 pixels.<br>
+        A <samp>BinningSpatial</samp> value of <b>1</b> equals to no binning.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>BinningTemp</b></samp> - Temporal binning <br>
+      <span class="title-desc"><i>1 (default) | integer from 1 to 8</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Performs binning across frames (i.e. over the time dimension) using a linear interpolation. The <samp>BinningTemp</samp> values represent the scale factor for the temporal dimension of a recording. For example, for a recording with original frame rate of 10Hz, a <samp>BinningTemp</samp> value of <b>2</b> will reduce the number of frames in half, resulting in a frame rate of 5Hz.<br>
+        A <samp>BinningTemp</samp> value of <b>1</b> equals to no binning.
+      </p>
+    </div>
+    <button title="click to expand" type="button" class="mycollapsible">
+      <span class="iconplus"></span>
+      <samp><b>backupOpts</b></samp> - Backup before a fresh import<br>
+      <span class="title-desc"><i>GENBACKUP (default) | ERASE</i></span>
+    </button>
+    <div class="content">
+      <p>
+        Used only when the SaveFolder already holds an import (see <a href="#fresh-import">fresh import</a>); ignored for an empty SaveFolder.
+      </p>
+      <ul>
+        <li><i>GENBACKUP</i>: the files to delete are first zipped into <samp>bkp_&lt;date&gt;_&lt;time&gt;.zip</samp> in the SaveFolder. The zip is kept.</li>
+        <li><i>ERASE</i>: the files are deleted without a zip.</li>
+      </ul>
+      <p>
+        In a direct MATLAB call, the default is empty (a dialog asks), and any other text is used as the name of the zip file.
+      </p>
+    </div>
+    <!-- JavaScript code to collapse sections -->
+    <script src="../../collapsible_behaviour.js"></script>
+  </body>
+</html>
