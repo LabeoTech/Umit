@@ -62,8 +62,8 @@ classdef UMITRigLedger
     %       Snapshot builders round every stored number to 6 significant
     %       digits, so the canonical form survives the JSON round-trip.
     %
-    %   Error identifiers: Umitoolbox:RigLedger:<condition>. See
-    %   IMPLEMENTATION_NOTES_rig_ledger.md for the list and messages.
+    %   Error identifiers: Umitoolbox:RigLedger:<condition> (raised by the
+    %   guards and writers below; messages are built by buildErrorMessage).
     %
     %   The generic engine (canonical JSON and hashing, header and event
     %   checks, atomic writes, locking) is UMITLedgerCore, shared with the
