@@ -7,7 +7,7 @@ function validateDatHeader(hdr, varargin)
 %
 %   Errors with identifier Umitoolbox:validateDatHeader:invalidHeader and a
 %   message naming the problem when the descriptive fields of HDR break a
-%   rule of docs/dev/dat-header-spec.md. Returns nothing when HDR is valid.
+%   rule of claude-context/dat-format-reference.md. Returns nothing when HDR is valid.
 %
 %   Input:
 %       hdr - Scalar struct using the field names of decodeDatHeader.

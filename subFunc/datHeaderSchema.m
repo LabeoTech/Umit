@@ -5,7 +5,7 @@ function [layout, codes] = datHeaderSchema(version)
 %   [layout, codes] = datHeaderSchema(version)
 %
 %   Single source of truth for the self-describing .dat header defined in
-%   docs/dev/dat-header-spec.md. Every other header function reads byte
+%   claude-context/dat-format-reference.md. Every other header function reads byte
 %   offsets, classes, codes, and fixed values from here.
 %
 %   Input:

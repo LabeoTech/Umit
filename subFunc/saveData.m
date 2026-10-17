@@ -41,7 +41,7 @@ function outFile = saveData(filename, data, varargin)
 %
 %   Notes:
 %       - Numeric arrays are written with a version-1 header (see
-%         docs/dev/dat-header-spec.md): axes DimNames, class single,
+%         claude-context/dat-format-reference.md): axes DimNames, class single,
 %         channelName = the output file's base name (non-ASCII characters
 %         replaced by '_', truncated to the header field).
 %       - Frame rate, with a T axis: FrameRateHz, else Info.frameRateHz;

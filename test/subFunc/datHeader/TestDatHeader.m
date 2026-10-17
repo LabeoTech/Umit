@@ -2,7 +2,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestDatHeader < matla
     %TESTDATHEADER Version-1 .dat header schema, encoder, decoder, reader, validator.
     %
     %   Protects the on-disk header format defined in
-    %   docs/dev/dat-header-spec.md. Byte offsets, codes, and fixed values
+    %   claude-context/dat-format-reference.md. Byte offsets, codes, and fixed values
     %   are hard-coded here from the spec on purpose, so datHeaderSchema is
     %   checked against the spec rather than against itself.
     %
