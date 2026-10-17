@@ -8,7 +8,7 @@ function [hash, image] = computeImageContentHash(image)
 %   image gives the same hash whatever its source (project library, .dat
 %   extraction, exported file) and however often it is re-saved.
 %
-%   Canonical form (normative; also in IMPLEMENTATION_NOTES_project.md):
+%   Canonical form (normative):
 %       1) Normalize exactly as genImageReferenceStruct does: convert to
 %          single and set non-finite values to 0. Negative zero is also
 %          written as +0, so the bytes do not depend on the sign of zero.
