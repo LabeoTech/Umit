@@ -103,8 +103,17 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestAnalysisPipelineM
                 'Extensions', {'.umt', '.roi'});
         end
 
-        function testPMGenImageTimeSeriesUMTRamOnlyScenarios(testCase)
-            testCase.verifyRamOnlyNode('genImageTimeSeriesUMT', ...
+        function testPMRamOnlyNodeScenarios(testCase)
+            % No Analysis function is RAM-only any more, so a test fixture
+            % (supportsFile false, dataMode 'ram') covers that contract.
+            projectRoot = extractBefore(mfilename('fullpath'), [filesep 'test' filesep]);
+            parserFolder = createAnalysisFixtureCategory(projectRoot, struct( ...
+                'name', 'pmRamOnlyImagePackager', ...
+                'source', fullfile(projectRoot, 'test', 'PipelineManager', 'fixtures', ...
+                'pmRamOnlyImagePackager.m')));
+            testCase.addTeardown(@() removeAnalysisFixtureCategory(parserFolder, projectRoot));
+
+            testCase.verifyRamOnlyNode('pmRamOnlyImagePackager', ...
                 @() iCreateImageFixture(testCase.TempRoot), 'input.dat');
         end
     end
