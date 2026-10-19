@@ -4,7 +4,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGetEvents < matla
     properties
         TempFolder
         RawFolder
-        RigFixture
+        RigRoot
     end
 
     methods (TestMethodSetup)
@@ -15,13 +15,26 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGetEvents < matla
             testCase.TempFolder = fullfile(tempdir, ...
                 ['TestGetEvents_' char(java.util.UUID.randomUUID)]);
             mkdir(testCase.TempFolder);
-            testCase.RigFixture = setupIsolatedActiveRigFixture();
+            % ImagesClassification resolves the Default Rig, so make a
+            % throwaway rig the Default one in this class's temporary root.
+            rigStore = UMITRigStore.create(struct('rigID', ...
+                ['TestGetEvents_' strrep(char(java.util.UUID.randomUUID()), '-', '')]));
+            UMITRigStore.setDefaultRig(rigStore.getRigInfo().uuid);
+            testCase.RigRoot = rigStore.RigRoot;
         end
     end
 
     methods (TestMethodTeardown)
         function teardown(testCase)
-            teardownIsolatedActiveRigFixture(testCase.RigFixture);
+            schema = getUMITRigSchema();
+            defaultFile = fullfile(UMITRigStore.getRigsRoot(), ...
+                schema.store.internalFolder, schema.store.defaultFile);
+            if isfile(defaultFile)
+                delete(defaultFile);
+            end
+            if ~isempty(testCase.RigRoot) && isfolder(testCase.RigRoot)
+                rmdir(testCase.RigRoot, 's');
+            end
             if isfolder(testCase.TempFolder)
                 rmdir(testCase.TempFolder, 's');
             end
