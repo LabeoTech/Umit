@@ -60,6 +60,8 @@ function outData = normalizeLPF(data, SaveFolder, varargin)
 %                     the input.
 %
 %   Notes:
+%       - .dat input must be single precision; other classes are refused
+%         (Umitoolbox:normalizeLPF:UnsupportedDatatype).
 %       - .dat input is streamed in X slabs (Y-X-T and Y-X-T-E), so the
 %         recording is never loaded whole.
 %       - The frame rate resolved above (explicit, else the .dat header) is
@@ -149,6 +151,11 @@ if isFileInput && strcmp(ext, '.dat')
     % Y-X-E) has no frame rate to resolve.
     fileInfo = loadMetaData(dataFile);
     assertDatLayout(fileInfo, {{'Y','X','T'}, {'Y','X','T','E'}}, 'normalizeLPF');
+    assert(strcmpi(char(string(fileInfo.dataClass)), 'single'), ...
+        'Umitoolbox:normalizeLPF:UnsupportedDatatype', ...
+        ['normalizeLPF currently expects single-precision .dat files; "%s" is %s. ' ...
+         'Filtering writes the input class back, which would round the normalized ' ...
+         'ratio of an integer file.'], dataFile, char(string(fileInfo.dataClass)));
     Fs = resolveDataInfoValue('frameRateHz', explicitRate, dataFile, mfilename);
     nT = datAxisSize(fileInfo, 'T');
 elseif isnumeric(data) || islogical(data)
