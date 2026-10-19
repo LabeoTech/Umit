@@ -23,7 +23,6 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestRunImagesClassifi
         TempRoot
         RawFolder
         RigRootsToClean = {};
-        RigFixture
     end
 
     methods (TestClassSetup)
@@ -56,11 +55,14 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestRunImagesClassifi
 
             testCase.RigRootsToClean = {};
 
-            % DFR-20260819-010: dual-camera ImagesClassification uses the
-            % Active Rig (UMITRigStore.getActiveRig), which requires exactly
-            % one Active Rig. Guarantee that regardless of ambient state,
-            % and restore whatever was Active before in teardown.
-            testCase.RigFixture = setupIsolatedActiveRigFixture();
+            % Dual-camera ImagesClassification uses the Active Rig
+            % (UMITRigStore.getActiveRig), which requires exactly one. Make
+            % a throwaway rig the Default one in this class's temporary
+            % root; teardown removes it like every other rig of the test.
+            fixtureRig = UMITRigStore.create(struct('rigID', ...
+                ['UnitTestFixtureRig_' strrep(char(java.util.UUID.randomUUID()), '-', '')]));
+            UMITRigStore.setDefaultRig(fixtureRig.getRigInfo().uuid);
+            testCase.RigRootsToClean{end+1} = fixtureRig.RigRoot;
         end
     end
 
@@ -69,7 +71,6 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestRunImagesClassifi
         %REMOVETEMPORARYFOLDERS Remove the temp raw/save folders and exactly
         %the rig folder(s) this test caused to be created.
 
-            teardownIsolatedActiveRigFixture(testCase.RigFixture);
             testCase.removeOwnedDefaultPointer();
             for iRig = 1:numel(testCase.RigRootsToClean)
                 rigRoot = testCase.RigRootsToClean{iRig};
@@ -124,9 +125,8 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestRunImagesClassifi
         %an active cameraCoregistration resource, import must use it (and
         %record its real resourceUUID/rigID), not the legacy flat file.
 
-            % DFR-20260819-010: TestMethodSetup's RigFixture already
-            % guarantees a restorable Active Rig, so it is safe to switch
-            % the Default Rig again here regardless of ambient state.
+            % TestMethodSetup already made a fixture rig the Default Rig;
+            % switch the Default Rig again here.
             rigInfo = struct();
             rigInfo.rigID = ['UnitTestRig_' char(java.util.UUID.randomUUID())];
             rigStore = UMITRigStore.create(rigInfo);

@@ -121,10 +121,10 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestUMITRigStore < ma
             testCase.verifyEqual(reopenedByID.RigRoot, testCase.RigRoot);
         end
 
-        function testTemporaryActivationRestoresActiveRigStatus(testCase)
-        %TESTTEMPORARYACTIVATIONRESTORESACTIVERIGSTATUS Regression for test
-        %fixtures that used to restore only defaultRig.mat after changing
-        %the Active Rig, leaving the former Active Rig persisted as Available.
+        function testSetDefaultRigDemotesPreviousActiveRig(testCase)
+        %TESTSETDEFAULTRIGDEMOTESPREVIOUSACTIVERIG Making another rig the
+        %Default rig activates it and persists the former Active rig as
+        %Available, and re-activating the former rig reverses both.
 
             original = testCase.createRig();
             original.activateRig();
@@ -132,12 +132,12 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestUMITRigStore < ma
 
             temporary = testCase.createRig(2);
             temporaryInfo = temporary.getRigInfo();
-            fixture = activateRigTemporarily(temporaryInfo.uuid);
+            UMITRigStore.setDefaultRig(temporaryInfo.uuid);
             testCase.verifyEqual( ...
                 UMITRigStore.getActiveRig().getRigInfo().uuid, ...
                 temporaryInfo.uuid);
 
-            deactivateRigTemporarily(fixture);
+            original.activateRig();
 
             restored = UMITRigStore.open(originalInfo.uuid).getRigInfo();
             demoted = UMITRigStore.open(temporaryInfo.uuid).getRigInfo();

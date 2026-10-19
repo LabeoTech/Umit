@@ -6,7 +6,6 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestRigManagerTool < 
         RigRoots cell
         RigUUIDs cell
         Apps cell
-        RigActivationFixture = struct()
     end
 
     methods (TestMethodSetup)
@@ -16,7 +15,6 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestRigManagerTool < 
             testCase.RigRoots = {};
             testCase.RigUUIDs = {};
             testCase.Apps = {};
-            testCase.RigActivationFixture = struct();
         end
     end
 
@@ -28,7 +26,6 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestRigManagerTool < 
                     delete(app);
                 end
             end
-            deactivateRigTemporarily(testCase.RigActivationFixture);
             rigs = UMITRigStore.listRigs();
             for iRig = 1:numel(testCase.RigUUIDs)
                 row = find(strcmpi(rigs.RigUUID, ...
@@ -44,6 +41,14 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestRigManagerTool < 
                 if isfolder(testCase.RigRoots{iRig})
                     rmdir(testCase.RigRoots{iRig}, 's');
                 end
+            end
+            % A test may have made one of its (now removed) rigs the Default
+            % rig; do not leave a dangling pointer in the shared temp root.
+            schema = getUMITRigSchema();
+            defaultFile = fullfile(UMITRigStore.getRigsRoot(), ...
+                schema.store.internalFolder, schema.store.defaultFile);
+            if isfile(defaultFile)
+                delete(defaultFile);
             end
             if isfolder(testCase.TempRoot)
                 rmdir(testCase.TempRoot, 's');
@@ -136,8 +141,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestRigManagerTool < 
         function testDefaultIndicatorAndPublicShowRig(testCase)
             first = testCase.createRig(1, 'First');
             second = testCase.createRig(2, 'Second');
-            testCase.RigActivationFixture = ...
-                activateRigTemporarily(first.getRigInfo().uuid);
+            UMITRigStore.setDefaultRig(first.getRigInfo().uuid);
             app = testCase.openApp(second.getRigInfo().uuid);
 
             testCase.verifyTrue(any(app.RigListTable.Data.Default == "Default"));

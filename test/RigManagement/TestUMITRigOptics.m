@@ -5,7 +5,6 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestUMITRigOptics < m
         TempRoot = ''
         RigRoots = {}
         UserLibraryFiles = {}
-        RigActivationFixture = struct()
     end
 
     methods (TestMethodSetup)
@@ -13,17 +12,23 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestUMITRigOptics < m
             addpath(genpath(fileparts(fileparts(fileparts(mfilename('fullpath'))))));
             testCase.TempRoot = tempname;
             mkdir(testCase.TempRoot);
-            testCase.RigActivationFixture = struct();
         end
     end
 
     methods (TestMethodTeardown)
         function removeFixture(testCase)
-            deactivateRigTemporarily(testCase.RigActivationFixture);
             for iRig = 1:numel(testCase.RigRoots)
                 if isfolder(testCase.RigRoots{iRig})
                     rmdir(testCase.RigRoots{iRig}, 's');
                 end
+            end
+            % A test may have made one of its (now removed) rigs the Default
+            % rig; do not leave a dangling pointer in the shared temp root.
+            schema = getUMITRigSchema();
+            defaultFile = fullfile(UMITRigStore.getRigsRoot(), ...
+                schema.store.internalFolder, schema.store.defaultFile);
+            if isfile(defaultFile)
+                delete(defaultFile);
             end
             for iFile = 1:numel(testCase.UserLibraryFiles)
                 if isfile(testCase.UserLibraryFiles{iFile})
@@ -303,8 +308,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestUMITRigOptics < m
         function testStoreLevelDefaultInvariant(testCase)
             first = testCase.createConfiguredRig();
             second = testCase.createConfiguredRig();
-            testCase.RigActivationFixture = ...
-                activateRigTemporarily(first.getRigInfo().uuid);
+            UMITRigStore.setDefaultRig(first.getRigInfo().uuid);
             UMITRigStore.setDefaultRig(second.getRigInfo().uuid);
 
             resolved = UMITRigStore.getDefaultRig();
