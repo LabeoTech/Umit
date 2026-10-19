@@ -51,6 +51,24 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestReferenceAdoption
             testCase.verifyEqual(planReferenceAdoption(unaligned).state, 'notAligned');
         end
 
+        function testBoundFolderWithoutDataParamsIsNotAligned(testCase)
+            % DFR-20261016-001: no DataParams.mat is an unaligned folder,
+            % not an error, and nothing is written.
+            bare = fullfile(testCase.Root, 'noDataParams');
+            setupSyntheticRegistrationFolder(bare, 'WithStore', false);
+            delete(fullfile(bare, 'DataParams.mat'));
+            testCase.Store.addSession('Mouse_1', struct('sessionID', 'S1', ...
+                'processedDataFolder', bare));
+            before = {dir(bare).name};
+
+            plan = planReferenceAdoption(bare);
+
+            testCase.verifyEqual(plan.state, 'notAligned');
+            testCase.verifyEqual(plan.subjectID, 'Mouse_1');
+            testCase.verifyFalse(isfile(fullfile(bare, 'DataParams.mat')));
+            testCase.verifyEqual({dir(bare).name}, before);
+        end
+
         function testAddTheCommittedReferenceOnce(testCase)
             testCase.bind();
             before = computeFileChecksum(fullfile(testCase.Folder, 'DataParams.mat'));

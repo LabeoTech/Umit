@@ -37,6 +37,12 @@ end
 plan.subjectID = context.subjectID;
 plan.projectName = context.projectName;
 
+if ~isfile(fullfile(folder, 'DataParams.mat'))
+    % A bound folder without DataParams.mat has no commitment to adopt.
+    plan.state = 'notAligned';
+    plan.message = 'The folder is not aligned: there is no DataParams.mat, so no committed reference to adopt.';
+    return
+end
 registration = loadDataParams(folder).registration;
 if ~registration.apply.isRegistered || isempty(registration.reference)
     plan.state = 'notAligned';
