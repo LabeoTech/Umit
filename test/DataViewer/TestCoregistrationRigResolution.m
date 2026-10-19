@@ -59,6 +59,10 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestCoregistrationRig
             bound = testCase.createLibraryRig('Archived');
             UMITRigLedger.bind(testCase.Folder, UMITRigLedger.bindingFromRig(bound, ...
                 'IncludeCoregistration', false), 'Origin', 'test');
+            % The temporary rig library holds only test rigs: the first one
+            % is Active and cannot be archived until another rig is Active.
+            keepActive = testCase.createLibraryRig('KeepActive');
+            UMITRigStore.setDefaultRig(keepActive.getRigInfo().uuid);
             bound.archiveRig();
             testCase.verifyError(@() resolveCoregistrationRig(testCase.Folder), ...
                 'Umitoolbox:Coreg2Cams:boundRigArchived');
