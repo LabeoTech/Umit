@@ -44,10 +44,10 @@ fixture = setupSyntheticRegistrationFolder(folder, 'DatFormat', 'legacySidecar')
 cleanupFcn = @() iRemoveFolders({fixture.ProjectRoot, fixture.RigRoot});
 
 map = reshape(single(1:fixture.Ny * fixture.Nx), fixture.Ny, fixture.Nx);
-% ImageAlignmentTool reads a UMT stored as one variable in the MAT file
-% (saveData writes the struct fields at top level, which it skips; see
-% DFR-20260929-005), so the map is saved in the format it transforms.
-umt = genUMTStruct(map, 'kind', 'image', 'entryName', 'map', 'dimNames', {'Y', 'X'}); %#ok<NASGU>
+% The map is saved as one UMT variable in the MAT file (the older layout);
+% TestImageAlignmentCharacterization.saveDataWrittenUmtIsAligned covers
+% the top-level layout that saveData writes.
+umt = genUMTStruct(map, 'kind', 'image', 'entryName', 'map', 'dimNames', {'Y', 'X'});
 save(fullfile(folder, 'map.umt'), 'umt', '-mat');
 
 if strcmp(dataClass, 'legacySidecar')

@@ -57,6 +57,30 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestImageAlignmentCha
             end
         end
 
+        function saveDataWrittenUmtIsAligned(testCase)
+            % DFR-20260929-005: saveData stores the UMT fields at the top
+            % level of the MAT file; such a .umt must be transformed like
+            % the variable-wrapped layout, not skipped.
+            c = imageAlignmentCase();
+            S = load(fullfile(fileparts(mfilename('fullpath')), 'fixtures', ...
+                'imageAlignmentReference.mat'), 'ref');
+            testCase.newFolder(c, 'legacySidecar');
+            umtPath = fullfile(testCase.Folder, c.umtOutput);
+            wrapped = load(umtPath, 'umt', '-mat'); %#ok<NASGU> used inside evalc
+            evalc('saveData(umtPath, wrapped.umt)');
+            testCase.assertTrue(isfield(load(umtPath, '-mat'), 'kind'), ...
+                'The fixture must hold the top-level (saveData) layout.');
+
+            [~, report] = evalc('c.run(testCase.Folder)');
+
+            testCase.verifyFalse(any(contains(string(report.umtFilesSkipped), c.umtOutput)), ...
+                'The saveData-written .umt must not be skipped.');
+            U = load(umtPath, '-mat');
+            testCase.assertTrue(isfield(U, 'data'), 'Layout must stay top-level.');
+            testCase.verifyEqual(size(U.data.map.value), S.ref.umtSize);
+            testCase.verifyEqual(c.hash(single(U.data.map.value)), S.ref.umtSha256);
+        end
+
         function alignedFolderRefusesASecondAlignment(testCase)
             % Project redesign Phase 1 (brief §4 Q1, Bruno 2026-10-15): an
             % aligned folder is committed to its alignment; a second apply,
