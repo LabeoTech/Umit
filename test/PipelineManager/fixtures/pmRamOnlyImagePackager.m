@@ -1,12 +1,16 @@
-function outData = genImageTimeSeriesUMT(data, varargin)
-%GENIMAGETIMESERIESUMT Package a numeric YXT array into a UMT structure.
+function outData = pmRamOnlyImagePackager(data, varargin)
+%PMRAMONLYIMAGEPACKAGER Test fixture: a RAM-only node (no file input).
 %
-%   outData = genImageTimeSeriesUMT(data)
-%   outData = genImageTimeSeriesUMT(data, 'EntryName', 'main')
-%   outData = genImageTimeSeriesUMT(data, 'EntryName', 'main', 'Labels', labels)
+%   outData = pmRamOnlyImagePackager(data)
+%   outData = pmRamOnlyImagePackager(data, 'EntryName', 'main')
+%   outData = pmRamOnlyImagePackager(data, 'EntryName', 'main', 'Labels', labels)
 %
-%   This function replaces the deprecated DATSTAT-style packaging workflow
-%   with a direct UMT constructor for image time-series data.
+%   Declares its data input with supportsFile = false and dataMode = 'ram', so
+%   PipelineManager must refuse file input for it in strict RAM-safe mode.
+%   Used by TestAnalysisPipelineManagerIntegration. It was the Analysis
+%   function genImageTimeSeriesUMT, kept here as a fixture when that function
+%   was deleted (DFR-20261007-002); it still packages a Y-X-T array as an
+%   image UMT.
 %
 %   Input:
 %       data - Numeric or logical array with dimensions Y x X x T.
@@ -28,7 +32,7 @@ if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) && ...
 end
 
 p = inputParser;
-p.FunctionName = 'genImageTimeSeriesUMT';
+p.FunctionName = 'pmRamOnlyImagePackager';
 addRequired(p, 'data', @(x) (isnumeric(x) || islogical(x)) && ndims(x) == 3);
 addParameter(p, 'EntryName', 'main', @(x) ischar(x) || (isstring(x) && isscalar(x)));
 addParameter(p, 'Labels', struct(), @(x) isstruct(x) && isscalar(x));
@@ -57,7 +61,7 @@ validateUMTStruct(outData, 'requireEventInfo', true);
 
     function info = localPipelineInfo()
         info = PipelineManager.createPipelineInfo( ...
-            'genImageTimeSeriesUMT', ...
+            'pmRamOnlyImagePackager', ...
             'Package a numeric YXT array into a UMT image time-series structure.');
 
         info = PipelineManager.addInput(info, ...

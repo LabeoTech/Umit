@@ -2,7 +2,7 @@ function outData = pmParamUnsupported(data, SaveFolder, varargin) %#ok<INUSD>
 %PMPARAMUNSUPPORTED Test fixture with a parameter type the editor cannot render.
 %
 %   Used by TestPipelineManagerParameterContainer. Declares one 'struct'
-%   parameter (as genImageTimeSeriesUMT does); the parameter editors support
+%   parameter (as the former genImageTimeSeriesUMT did); the parameter editors support
 %   only logical, numeric (double/single) and char parameters.
 
 if nargin == 1 && (ischar(data) || (isstring(data) && isscalar(data))) && ...
