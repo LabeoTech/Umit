@@ -294,6 +294,68 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestHemoCompute < mat
                 'Umitoolbox:HemoCompute:InvalidInput');
         end
 
+        function testHbOutputsCanBeEventSplitAfterwards(testCase)
+            % Per-event hemoglobin: HemoCompute runs on the continuous
+            % channels (its 1/120 Hz baseline needs the whole recording) and
+            % HbO.dat/HbR.dat are split afterwards (DFR-20260820-018).
+            sampleFolder = fullfile(testCase.ProjectRoot, 'test', 'Analysis', 'TestingData_with_events');
+            testCase.assumeTrue(isfile(fullfile(sampleFolder, 'events.mat')), ...
+                'Sample events.mat is missing.');
+            sampleInfo = load(fullfile(sampleFolder, 'AcqInfos.mat'), 'AcqInfoStream');
+            rate = double(sampleInfo.AcqInfoStream.FrameRateHz);
+            nFrames = double(sampleInfo.AcqInfoStream.Length);
+
+            folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
+            iCreateSyntheticHemoDataset(folder, false, rate, nFrames);
+            iCopyAnalogInputInfo(folder, sampleInfo.AcqInfoStream);
+            iBindDatasetToRig(folder, iConfiguredRigInfo());
+            copyfile(fullfile(sampleFolder, 'events.mat'), folder);
+
+            [~, ~] = evalc('iRunHb(folder, ''Illuminations'', {''red'',''green''});');
+            for output = {'HbO', 'HbR'}
+                hbFile = fullfile(folder, [output{1} '.dat']);
+                continuous = loadData(hbFile);
+                testCase.assertSize(continuous, [8 8 nFrames]);
+
+                [~, splitFile] = evalc('split_data_by_event(hbFile, folder)');
+
+                info = loadMetaData(splitFile);
+                testCase.verifyEqual(info.dimNames, {'Y','X','T','E'}, output{1});
+                expected = single(EventsManager(folder).splitDataByEvents(continuous, ...
+                    'FrameRateHz', rate, 'IncludeIgnored', true));
+                testCase.verifyEqual(info.dimSizes(:).', size(expected), output{1});
+                testCase.verifyEqual(loadData(splitFile), expected, output{1});
+            end
+        end
+
+        function testEventSplitInputPointsToSplittingAfterwards(testCase)
+            % An event-split file is refused, and the message names the
+            % supported workflow.
+            sampleFolder = fullfile(testCase.ProjectRoot, 'test', 'Analysis', 'TestingData_with_events');
+            testCase.assumeTrue(isfile(fullfile(sampleFolder, 'events.mat')), ...
+                'Sample events.mat is missing.');
+            sampleInfo = load(fullfile(sampleFolder, 'AcqInfos.mat'), 'AcqInfoStream');
+            rate = double(sampleInfo.AcqInfoStream.FrameRateHz);
+            nFrames = double(sampleInfo.AcqInfoStream.Length);
+            folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
+            iCreateSyntheticHemoDataset(folder, false, rate, nFrames);
+            iCopyAnalogInputInfo(folder, sampleInfo.AcqInfoStream);
+            iBindDatasetToRig(folder, iConfiguredRigInfo());
+            copyfile(fullfile(sampleFolder, 'events.mat'), folder);
+            [~, splitFile] = evalc('split_data_by_event(fullfile(folder, ''green.dat''), folder)');
+            [~, splitName] = fileparts(splitFile);
+
+            try
+                HemoCompute(folder, [splitName '.dat'], 'Illuminations', {'red','green'});
+                testCase.verifyFail('expected an error');
+            catch ME
+                testCase.verifyEqual(ME.identifier, 'Umitoolbox:HemoCompute:unsupportedLayout');
+                testCase.verifySubstring(ME.message, 'Event-split .dat input is not supported');
+                testCase.verifySubstring(ME.message, 'split_data_by_event');
+                testCase.verifyFalse(contains(ME.message, 'yet'));
+            end
+        end
+
         function testMissingChannelFile(testCase)
             delete(fullfile(testCase.TempFolder, 'green.dat'));
 
@@ -556,6 +618,23 @@ end
 function types = iEventTypes(folderPath)
 info = UMITRigLedger.read(folderPath);
 types = cellfun(@(e) e.type, info.events, 'UniformOutput', false);
+end
+
+function iCopyAnalogInputInfo(folderPath, sourceStream)
+%ICOPYANALOGINPUTINFO Give the synthetic AcqInfos the analog-input description
+%   (AISampleRate, AINChannels, AICh*) EventsManager needs to load events.mat.
+
+file = fullfile(folderPath, 'AcqInfos.mat');
+loaded = load(file, 'AcqInfoStream');
+AcqInfoStream = loaded.AcqInfoStream;
+names = fieldnames(sourceStream);
+for iName = 1:numel(names)
+    if strcmp(names{iName}, 'AISampleRate') || strcmp(names{iName}, 'AINChannels') || ...
+            startsWith(names{iName}, 'AICh')
+        AcqInfoStream.(names{iName}) = sourceStream.(names{iName});
+    end
+end
+save(file, 'AcqInfoStream');
 end
 
 function iCreateSyntheticHemoDataset(folderPath, repeatedRed, baseFreq, baseLength, scale)
