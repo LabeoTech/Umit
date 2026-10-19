@@ -1498,6 +1498,14 @@ classdef PipelineManager < handle
                             freshConfigurationFolders{end+1} = obj.SaveFolderList{f}; %#ok<AGROW>
                             freshConfigurationMessages{end+1} = freshPlan.message; %#ok<AGROW>
                         end
+                    elseif freshPlan.isValid
+                        % An existing but invalid or old-schema AcqInfos.mat
+                        % does not block a pipeline rooted at a valid
+                        % acquisition importer: the importer's fresh import
+                        % (prepareFreshImport: backup by default, then delete)
+                        % resets the folder. The initializer must still leave
+                        % valid current metadata (runPipelineOnFolder).
+                        freshFolderFlags(f) = true;
                     else
                         legacyFolders{end+1} = obj.SaveFolderList{f}; %#ok<AGROW>
                         legacyMessages{end+1} = legacyMessage; %#ok<AGROW>

@@ -140,25 +140,82 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestPipelineManagerLe
                 sharedFolder, 'imported.dat')));
         end
 
-        function testExistingAcqInfosBlocksInitialization(testCase)
-            % Only AcqInfos.mat makes a SaveFolder "not fresh": an existing
-            % but invalid one keeps the legacy-schema block for importers.
+        function testInvalidAcqInfosDoesNotBlockValidImporter(testCase)
+            % An existing but invalid AcqInfos.mat makes the folder "not
+            % fresh" and legacy-schema. A pipeline rooted at a valid
+            % acquisition importer may still run: the importer's fresh
+            % import resets the folder (DFR-20261002-001).
             parserFolder = createTemporaryFixtureCategory( ...
                 testCase.ProjectRoot, 'pmFreshValidMetadataInitializer');
             cleanup = onCleanup(@() cleanupTemplateCategory( ...
                 parserFolder, testCase.ProjectRoot));
 
             [saveFolder, rawFolder] = testCase.newFolderPair();
-            unexpectedVariable = 1; %#ok<NASGU>
+            unexpectedVariable = 1;
             save(fullfile(saveFolder, 'AcqInfos.mat'), 'unexpectedVariable', '-mat');
 
             pm = PipelineManager(saveFolder, rawFolder, testCase.ProjectRoot);
             pm.b_skipSteps = false;
             pm.addStep('pmFreshValidMetadataInitializer');
+            result = pm.executePipeline('PrintSummary', false);
+
+            testCase.verifyEqual(result.status, "completed");
+            testCase.verifyTrue(isfile(fullfile(saveFolder, 'imported.dat')));
+            testCase.verifyFalse(isLegacySchemaFolder(saveFolder), ...
+                'The importer must leave valid current AcqInfos.mat metadata.');
+        end
+
+        function testLegacyAcqInfosIsBackedUpByFreshImport(testCase)
+            % Importer pipeline over an old-schema AcqInfos.mat: the fresh
+            % import (default GENBACKUP) zips the old metadata before
+            % replacing it.
+            parserFolder = createTemporaryFixtureCategory( ...
+                testCase.ProjectRoot, 'pmFreshImportInitializer');
+            cleanup = onCleanup(@() cleanupTemplateCategory( ...
+                parserFolder, testCase.ProjectRoot));
+
+            [saveFolder, rawFolder] = testCase.newFolderPair();
+            AcqInfoStream = struct('Width', 1, 'Height', 1);
+            save(fullfile(saveFolder, 'AcqInfos.mat'), 'AcqInfoStream', '-mat');
+            testCase.assertTrue(isLegacySchemaFolder(saveFolder));
+
+            pm = PipelineManager(saveFolder, rawFolder, testCase.ProjectRoot);
+            pm.b_skipSteps = false;
+            pm.addStep('pmFreshImportInitializer');
+            result = pm.executePipeline('PrintSummary', false);
+
+            testCase.verifyEqual(result.status, "completed");
+            testCase.verifyFalse(isLegacySchemaFolder(saveFolder));
+            zips = dir(fullfile(saveFolder, 'bkp_*.zip'));
+            testCase.assertNumElements(zips, 1, 'A backup zip must be made.');
+            extractFolder = testCase.applyFixture( ...
+                matlab.unittest.fixtures.TemporaryFolderFixture);
+            unzip(fullfile(zips(1).folder, zips(1).name), extractFolder.Folder);
+            old = load(fullfile(extractFolder.Folder, 'AcqInfos.mat'), 'AcqInfoStream');
+            testCase.verifyEqual(old.AcqInfoStream, struct('Width', 1, 'Height', 1));
+        end
+
+        function testInvalidFreshPlanKeepsLegacyBlockForImporter(testCase)
+            % Two initializers are not a valid importer pipeline, so the
+            % legacy-schema folder stays protected.
+            parserFolder = createTemporaryFixtureCategory( ...
+                testCase.ProjectRoot, 'pmFreshImportInitializer');
+            cleanup = onCleanup(@() cleanupTemplateCategory( ...
+                parserFolder, testCase.ProjectRoot));
+
+            [saveFolder, rawFolder] = testCase.newFolderPair();
+            unexpectedVariable = 1;
+            save(fullfile(saveFolder, 'AcqInfos.mat'), 'unexpectedVariable', '-mat');
+
+            pm = PipelineManager(saveFolder, rawFolder, testCase.ProjectRoot);
+            pm.b_skipSteps = false;
+            pm.addStep('pmFreshImportInitializer');
+            pm.addStep('pmFreshImportInitializer');
 
             testCase.verifyError(@() pm.executePipeline('PrintSummary', false), ...
                 'PipelineManager:executePipeline:LegacySchema');
             testCase.verifyFalse(isfile(fullfile(saveFolder, 'imported.dat')));
+            testCase.verifyEmpty(dir(fullfile(saveFolder, 'bkp_*.zip')));
         end
 
         function testLeftoverArtifactsDoNotBlockInitialization(testCase)
