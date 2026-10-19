@@ -24,6 +24,28 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestAssertDatLayout <
             end
         end
 
+        function eventSplitHintReplacesTheGenericWording(testCase)
+            Info = struct('dimNames', {{'Y', 'X', 'T', 'E'}}, 'filePath', 'ev.dat');
+            try
+                assertDatLayout(Info, {{'Y', 'X', 'T'}}, 'fx', ...
+                    'EventSplitHint', 'Split the output afterwards.');
+                testCase.verifyFail('expected an error');
+            catch ME
+                testCase.verifyEqual(ME.identifier, 'Umitoolbox:fx:unsupportedLayout');
+                testCase.verifySubstring(ME.message, 'Event-split .dat input is not supported by this function. Split the output afterwards.');
+                testCase.verifyFalse(contains(ME.message, 'yet'));
+            end
+
+            % The hint is only used for event-split files.
+            nonEvent = struct('dimNames', {{'Y', 'X', 'F'}}, 'filePath', 'f.dat');
+            try
+                assertDatLayout(nonEvent, {{'Y', 'X', 'T'}}, 'fx', 'EventSplitHint', 'Hint text');
+                testCase.verifyFail('expected an error');
+            catch ME
+                testCase.verifyFalse(contains(ME.message, 'Hint text'));
+            end
+        end
+
         function nonEventLayoutHasNoEventWording(testCase)
             Info = struct('dimNames', {{'Y', 'X', 'F'}}, 'filePath', 'f.dat');
             try

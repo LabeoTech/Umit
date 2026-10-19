@@ -80,6 +80,9 @@ function varargout = HemoCompute(SaveFolder, data, varargin)
 %         low-pass and divides it by its 1/120 Hz baseline. When 1 Hz is not
 %         below the Nyquist frequency of the target timeline (frame rate
 %         <= 2 Hz), the 1 Hz smoothing is skipped with a warning.
+%       - Event-split (E axis) channels are not supported. Normalization
+%         needs the continuous recording, so compute HbO and HbR first and
+%         split the two outputs afterwards with split_data_by_event.
 %       - Samples whose (normalized) intensity is not positive and finite
 %         have no optical density: they give NaN in HbO and HbR, with a
 %         warning. NaN samples stay NaN.
@@ -284,7 +287,17 @@ dataPath = fullfile(SaveFolder, dataName);
 assert(isfile(dataPath), ...
     'Umitoolbox:HemoCompute:FileNotFound', ...
     'Input .dat file not found in SaveFolder: "%s".', dataName);
-assertDatLayout(loadMetaData(dataPath), {{'Y','X','T'}}, 'HemoCompute');
+assertDatLayout(loadMetaData(dataPath), {{'Y','X','T'}}, 'HemoCompute', ...
+    'EventSplitHint', localEventSplitHint());
+end
+
+function text = localEventSplitHint()
+%LOCALEVENTSPLITHINT How to get per-event hemoglobin without 4-D input.
+
+text = ['HemoCompute works on the continuous Y-X-T channels (its 1/120 Hz ' ...
+    'baseline normalization needs the whole recording, not single trials): ' ...
+    'run HemoCompute first, then split HbO.dat and HbR.dat with ' ...
+    'split_data_by_event.'];
 end
 
 function localAssertChannelFiles(dataName, opticalInfo, SaveFolder)
@@ -305,7 +318,8 @@ assert(any(strcmpi(channelFiles, dataName)), ...
 for iFile = 1:numel(channelFiles)
     channelPath = fullfile(SaveFolder, channelFiles{iFile});
     if isfile(channelPath)
-        assertDatLayout(loadMetaData(channelPath), {{'Y','X','T'}}, 'HemoCompute');
+        assertDatLayout(loadMetaData(channelPath), {{'Y','X','T'}}, 'HemoCompute', ...
+            'EventSplitHint', localEventSplitHint());
     end
 end
 end

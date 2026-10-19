@@ -1,7 +1,8 @@
-function assertDatLayout(Info, acceptedLayouts, fnName)
+function assertDatLayout(Info, acceptedLayouts, fnName, varargin)
 %ASSERTDATLAYOUT Refuse a .dat input whose axes a function does not support.
 %
 %   assertDatLayout(Info, acceptedLayouts, fnName)
+%   assertDatLayout(Info, acceptedLayouts, fnName, 'EventSplitHint', text)
 %
 %   Consumers check the layout of every .dat input before reading data or
 %   writing outputs (.dat header Phase 6b-1): since writers emit any
@@ -16,10 +17,16 @@ function assertDatLayout(Info, acceptedLayouts, fnName)
 %       fnName          - Name of the calling function, used in the error
 %                         identifier and message.
 %
+%   Name-Value parameters:
+%       EventSplitHint  - Text appended to the message when the file has an
+%                         E (event) axis, to say what the caller can do
+%                         instead (for example split the output afterwards).
+%                         Default: '' (generic wording).
+%
 %   Raises Umitoolbox:<fnName>:unsupportedLayout when Info.dimNames equals
 %   none of acceptedLayouts. The message names the file, its axes, and the
 %   accepted layouts; for event-split files it says that event-split .dat
-%   input is not supported by that function yet.
+%   input is not supported by that function (yet, unless a hint is given).
 %
 %   See also: loadMetaData, datAxisSize
 
@@ -29,7 +36,9 @@ addRequired(p, 'Info', @(x) isstruct(x) && isscalar(x) && isfield(x, 'dimNames')
 addRequired(p, 'acceptedLayouts', @(x) iscell(x) && ~isempty(x) && ...
     all(cellfun(@(c) iscell(c) || isstring(c), x)));
 addRequired(p, 'fnName', @(x) (ischar(x) || (isstring(x) && isscalar(x))) && strlength(string(x)) > 0);
-parse(p, Info, acceptedLayouts, fnName);
+addParameter(p, 'EventSplitHint', '', @(x) ischar(x) || (isstring(x) && isscalar(x)));
+parse(p, Info, acceptedLayouts, fnName, varargin{:});
+eventSplitHint = strtrim(char(string(p.Results.EventSplitHint)));
 
 fnName = char(fnName);
 dimNames = cellstr(string(Info.dimNames(:).'));
@@ -47,7 +56,11 @@ acceptedText = strjoin(cellfun(@(c) ['{' strjoin(cellstr(string(c(:).')), ',') '
     acceptedLayouts, 'UniformOutput', false), ' or ');
 eventText = '';
 if any(strcmp(dimNames, 'E'))
-    eventText = ' Event-split .dat input is not supported by this function yet.';
+    if isempty(eventSplitHint)
+        eventText = ' Event-split .dat input is not supported by this function yet.';
+    else
+        eventText = [' Event-split .dat input is not supported by this function. ' eventSplitHint];
+    end
 end
 error(sprintf('Umitoolbox:%s:unsupportedLayout', fnName), ...
     '%s: the .dat input%s has axes {%s}; supported layouts: %s.%s', ...
