@@ -47,6 +47,24 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestOfferReferenceAdo
             testCase.verifyEmpty(testCase.Store.listSubjectResources('Mouse_1', 'Status', {}));
         end
 
+        function testBoundFolderWithoutDataParamsOffersNothingQuietly(testCase)
+            % DFR-20261016-001: binding a folder without DataParams.mat must
+            % not raise the "Could not compare" error alert.
+            bare = fullfile(testCase.Root, 'noDataParams');
+            setupSyntheticRegistrationFolder(bare, 'WithStore', false);
+            delete(fullfile(bare, 'DataParams.mat'));
+            testCase.Store.addSession('Mouse_1', struct('sessionID', 'S9', ...
+                'processedDataFolder', bare));
+
+            result = offerReferenceAdoption([], bare, 'Quiet', true, ...
+                'Interactive', false, 'Choice', 'add');
+
+            testCase.verifyEqual(result.state, 'notAligned');
+            testCase.verifyEqual(result.severity, 'info');
+            testCase.verifyFalse(result.changed);
+            testCase.verifyEmpty(testCase.Store.listSubjectResources('Mouse_1', 'Status', {}));
+        end
+
         function testSkipAddsNothing(testCase)
             testCase.bind();
             result = offerReferenceAdoption([], testCase.Folder, 'Interactive', false);
