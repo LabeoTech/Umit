@@ -331,22 +331,11 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestHemoCompute < mat
         function testEventSplitInputPointsToSplittingAfterwards(testCase)
             % An event-split file is refused, and the message names the
             % supported workflow.
-            sampleFolder = fullfile(testCase.ProjectRoot, 'test', 'Analysis', 'TestingData_with_events');
-            testCase.assumeTrue(isfile(fullfile(sampleFolder, 'events.mat')), ...
-                'Sample events.mat is missing.');
-            sampleInfo = load(fullfile(sampleFolder, 'AcqInfos.mat'), 'AcqInfoStream');
-            rate = double(sampleInfo.AcqInfoStream.FrameRateHz);
-            nFrames = double(sampleInfo.AcqInfoStream.Length);
-            folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).Folder;
-            iCreateSyntheticHemoDataset(folder, false, rate, nFrames);
-            iCopyAnalogInputInfo(folder, sampleInfo.AcqInfoStream);
-            iBindDatasetToRig(folder, iConfiguredRigInfo());
-            copyfile(fullfile(sampleFolder, 'events.mat'), folder);
-            [~, splitFile] = evalc('split_data_by_event(fullfile(folder, ''green.dat''), folder)');
-            [~, splitName] = fileparts(splitFile);
+            writeTestDat(fullfile(testCase.TempFolder, 'ev.dat'), ...
+                rand(8, 8, 4, 2, 'single'), 10, 'DimNames', {'Y','X','T','E'});
 
             try
-                HemoCompute(folder, [splitName '.dat'], 'Illuminations', {'red','green'});
+                HemoCompute(testCase.TempFolder, 'ev.dat', 'Illuminations', {'red','green'});
                 testCase.verifyFail('expected an error');
             catch ME
                 testCase.verifyEqual(ME.identifier, 'Umitoolbox:HemoCompute:unsupportedLayout');
