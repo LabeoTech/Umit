@@ -32,3 +32,7 @@ docs/dev/
 umIT_DEPRECATED_*.zip
 # Temporary PipelineManager test categories (test/testHelpers/createAnalysisFixtureCategory.m)
 Analysis/pmTestFixture_*/
+
+# Local audit reports (kept locally, not tracked)
+AUDIT_project_management.md
+AUDIT_rig_management.md
