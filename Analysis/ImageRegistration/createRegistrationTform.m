@@ -5,11 +5,13 @@ function outFile = createRegistrationTform(SaveFolder, varargin)
 %   outFile = createRegistrationTform(SaveFolder, 'Name', Value, ...)
 %   info    = createRegistrationTform('pipelineInfo')
 %
-%   This function resolves SaveFolder's UMIT project binding and estimates a
-%   2D geometric transform that aligns one image from the current folder to
-%   the subject's active project-managed Image Reference, resolved by the
-%   shared resolveImageReferenceSource (source kind 'project'). A copy of
-%   the reference image, its content hash and its source descriptor are
+%   This function estimates a 2D geometric transform that aligns one image
+%   from the current folder to a reference image: the one given by
+%   ReferenceSource, else (for a project-bound folder) the bound subject's
+%   active project-managed Image Reference. The reference is resolved by the
+%   shared resolveImageReferenceSource (source kinds 'project', 'umitDat',
+%   'file'). A copy of the reference image, its content hash and its source
+%   descriptor are
 %   stored in DataParams.registration.reference; the transform, the QC
 %   metadata and the hash it was estimated against in
 %   DataParams.registration.estimate (version-2 record).
@@ -61,9 +63,12 @@ function outFile = createRegistrationTform(SaveFolder, varargin)
 %                    files: {DataParams.mat, QC .fig, QC .png}
 %
 %   Notes:
-%       - SaveFolder must be bound (UMITProjectLedger.json) to a session whose
-%         subject has an active, available managed Image Reference.
-%       - Folder-local reference images are not used as a fallback.
+%       - Without ReferenceSource, SaveFolder must be bound
+%         (UMITProjectLedger.json) to a session whose subject has an active,
+%         available managed Image Reference. With ReferenceSource the
+%         folder needs no project.
+%       - There is no implicit folder-local fallback: a reference stored in
+%         the folder is used only when passed as ReferenceSource.
 %       - An aligned folder is refused
 %         (Umitoolbox:ImageRegistration:alreadyAligned): only a fresh import
 %         reopens alignment. The apply record is never modified here.
@@ -85,6 +90,12 @@ function outFile = createRegistrationTform(SaveFolder, varargin)
 %           'D:\Data\Mouse01\Session01', ...
 %           'UseFile', 'green.dat', ...
 %           'ShowFigure', false);
+%
+%       % Without a project: take the reference from a .dat of another
+%       % UMIT save folder.
+%       createRegistrationTform( ...
+%           'D:\Data\Mouse01\Session01', ...
+%           'ReferenceSource', 'D:\Data\Mouse01\Session00\green.dat');
 
 % -------------------------------------------------------------------------
 % Shared declarations
