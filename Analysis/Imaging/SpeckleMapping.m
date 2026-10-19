@@ -341,51 +341,25 @@ function frameOut = localChunked(readFrames, readColumns, Ny, Nx, Nt, ...
 %LOCALCHUNKED Speckle contrast read in chunks through the given readers.
 %   READFRAMES(tIdx) returns the Y-X frames tIdx; READCOLUMNS(xIdx) returns
 %   the X columns xIdx for all frames. Both return single precision.
+%
+%   The 'spatial' mode first needs the temporal mean of every pixel (one
+%   full read). The 'temporal' mode normalizes each column slab by its own
+%   temporal mean and skips that pass.
 
-% -------------------------------------------------------------------------
-% Pass 1: temporal mean
-% -------------------------------------------------------------------------
 frameOut = zeros(Ny, Nx);
-mData = zeros(Ny, Nx, 'single');
-countData = zeros(Ny, Nx, 'single');
-
-disp('Pass 1/2 - Calculating temporal mean...')
-
-nChunks = calculateMaxChunkSize(totalBytes, 1, .1);
-chunkT  = ceil(Nt / nChunks);
-nChunks = ceil(Nt / chunkT);
-
-lastPct = -1;
-fprintf('0%% ');
-
-for c = 1:nChunks
-    tStart = (c-1) * chunkT + 1;
-    tEnd   = min(tStart + chunkT - 1, Nt);
-
-    slab = readFrames(tStart:tEnd);
-
-    % Use omitnan during accumulation.
-    mData = mData + sum(slab, 3, 'omitnan');
-    countData = countData + sum(~isnan(slab), 3);
-
-    pct = floor(100 * c / nChunks);
-    if pct ~= lastPct
-        fprintf('%d%% ', pct);
-        lastPct = pct;
-    end
-
-    clear slab
-end
-
-mData = mData ./ countData;
-
-% -------------------------------------------------------------------------
-% Pass 2: speckle contrast
-% -------------------------------------------------------------------------
-fprintf('\nPass 2/2 - Calculating Speckle Contrast (%s algorithm)...\n', sType)
 
 switch sType
     case 'spatial'
+        % -----------------------------------------------------------------
+        % Pass 1: temporal mean
+        % -----------------------------------------------------------------
+        mData = localTemporalMean(readFrames, Ny, Nx, Nt, totalBytes);
+
+        % -----------------------------------------------------------------
+        % Pass 2: speckle contrast
+        % -----------------------------------------------------------------
+        fprintf('\nPass 2/2 - Calculating Speckle Contrast (%s algorithm)...\n', sType)
+
         Kernel = single(fspecial('disk', 2) > 0);
         countOut = zeros(Ny, Nx);
 
@@ -420,6 +394,8 @@ switch sType
         frameOut = frameOut ./ countOut;
 
     case 'temporal'
+        fprintf('Pass 1/1 - Calculating Speckle Contrast (%s algorithm)...\n', sType)
+
         Kernel = ones(1, 1, 5, 'single');
 
         nChunks = nChunksPass2;
@@ -448,4 +424,41 @@ switch sType
             clear slab
         end
 end
+end
+
+function mData = localTemporalMean(readFrames, Ny, Nx, Nt, totalBytes)
+%LOCALTEMPORALMEAN Temporal mean of every pixel, streamed in time chunks.
+
+mData = zeros(Ny, Nx, 'single');
+countData = zeros(Ny, Nx, 'single');
+
+disp('Pass 1/2 - Calculating temporal mean...')
+
+nChunks = calculateMaxChunkSize(totalBytes, 1, .1);
+chunkT  = ceil(Nt / nChunks);
+nChunks = ceil(Nt / chunkT);
+
+lastPct = -1;
+fprintf('0%% ');
+
+for c = 1:nChunks
+    tStart = (c-1) * chunkT + 1;
+    tEnd   = min(tStart + chunkT - 1, Nt);
+
+    slab = readFrames(tStart:tEnd);
+
+    % Use omitnan during accumulation.
+    mData = mData + sum(slab, 3, 'omitnan');
+    countData = countData + sum(~isnan(slab), 3);
+
+    pct = floor(100 * c / nChunks);
+    if pct ~= lastPct
+        fprintf('%d%% ', pct);
+        lastPct = pct;
+    end
+
+    clear slab
+end
+
+mData = mData ./ countData;
 end
