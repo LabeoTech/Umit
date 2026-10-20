@@ -29,7 +29,8 @@ function plan = planFreshImport(SaveFolder)
 %         ConvertToTiff exports above), Comments.txt, Snapshot*.png, input
 %         *.tif / *.tiff (except the exports above), info.json;
 %       - ledgers: UMITRigLedger.json, UMITProjectLedger.json, their lock
-%         folders, and a legacy UMITProjectBinding.umitlink;
+%         folders, a legacy UMITProjectBinding.umitlink, and quarantined
+%         invalid rig ledgers (UMITRigLedger.invalid_<timestamp>.json);
 %       - backup zips (*.zip) of earlier imports;
 %       - anything else (unknown files and every subfolder), reported in
 %         plan.unknown so a confirmation can list it.
@@ -67,7 +68,8 @@ ledgerNames = {'UMITRigLedger.json', 'UMITProjectLedger.json', ...
     'UMITProjectBinding.umitlink', 'UMITRigLedger.lock', 'UMITProjectLedger.lock'};
 for iEntry = 1:numel(names)
     name = names{iEntry};
-    if ismember(name, ledgerNames)
+    if ismember(name, ledgerNames) || ...
+            ~isempty(regexp(name, '^UMITRigLedger\.invalid_\d{8}T\d{6}(_\d+)?\.json$', 'once'))
         plan.keptLedgers{end+1} = name;
     elseif isDir(iEntry)
         plan.unknown{end+1} = [name filesep];

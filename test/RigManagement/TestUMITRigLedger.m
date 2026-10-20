@@ -535,6 +535,92 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestUMITRigLedger < m
         end
     end
 
+    %% Quarantine of an invalid ledger (DFR-20261014-002)
+    methods (Test)
+        function testQuarantineMovesATamperedLedgerAndTheFolderCanBeReboundAgain(testCase)
+            testCase.bindAndCommitOptics('A');
+            path = UMITRigLedger.filePath(testCase.Folder);
+            testCase.writeText(path, regexprep(fileread(path), '"model": "D1024"', '"model": "D9999"', 'once'));
+
+            testCase.verifyQuarantineThenRebind(path);
+        end
+
+        function testQuarantineMovesAMalformedLedger(testCase)
+            path = UMITRigLedger.filePath(testCase.Folder);
+            testCase.writeText(path, '{not json');
+
+            testCase.verifyQuarantineThenRebind(path);
+        end
+
+        function testQuarantineMovesALedgerWithInconsistentEvents(testCase)
+            testCase.bindAndCommitOptics('A');
+            UMITRigLedger.rebind(testCase.Folder, testCase.binding('B', 'LED_593nm'), 'Origin', 'test');
+            path = UMITRigLedger.filePath(testCase.Folder);
+            raw = jsondecode(fileread(path));
+            types = cellfun(@(e) e.type, raw.events, 'UniformOutput', false);
+            raw.events(strcmp(types, 'conflict')) = [];
+            testCase.writeText(path, jsonencode(raw));
+
+            testCase.verifyQuarantineThenRebind(path);
+        end
+
+        function testValidAndMissingLedgersAreRefusedUntouched(testCase)
+            testCase.verifyError(@() UMITRigLedger.quarantineInvalidLedger(testCase.Folder, ...
+                'Origin', 'test'), 'Umitoolbox:RigLedger:noLedger');
+            testCase.verifyEmpty(testCase.folderEntries());
+
+            testCase.bindAndCommitOptics('A');
+            path = UMITRigLedger.filePath(testCase.Folder);
+            before = fileread(path);
+            testCase.verifyError(@() UMITRigLedger.quarantineInvalidLedger(testCase.Folder, ...
+                'Origin', 'test'), 'Umitoolbox:RigLedger:notInvalid');
+            testCase.verifyEqual(fileread(path), before);
+            testCase.verifyEqual(testCase.folderEntries(), {UMITRigLedger.FileName});
+        end
+
+        function testOriginIsRequired(testCase)
+            testCase.writeText(UMITRigLedger.filePath(testCase.Folder), '{not json');
+
+            testCase.verifyError(@() UMITRigLedger.quarantineInvalidLedger(testCase.Folder), ...
+                'Umitoolbox:RigLedger:invalidInput');
+            testCase.verifyEqual(testCase.folderEntries(), {UMITRigLedger.FileName});
+        end
+
+        function testRepeatedQuarantinesGetUniqueNames(testCase)
+            path = UMITRigLedger.filePath(testCase.Folder);
+            testCase.writeText(path, '{first');
+            first = UMITRigLedger.quarantineInvalidLedger(testCase.Folder, 'Origin', 'test');
+            testCase.writeText(path, '{second');
+            second = UMITRigLedger.quarantineInvalidLedger(testCase.Folder, 'Origin', 'test');
+
+            testCase.verifyNotEqual(first.quarantinedFile, second.quarantinedFile);
+            testCase.verifyEqual(fileread(first.quarantinedFile), '{first');
+            testCase.verifyEqual(fileread(second.quarantinedFile), '{second');
+        end
+
+        function testHeldLockBlocksQuarantineAndKeepsTheFile(testCase)
+            path = UMITRigLedger.filePath(testCase.Folder);
+            testCase.writeText(path, '{not json');
+            mkdir(fullfile(testCase.Folder, UMITRigLedger.LockFolderName));
+
+            testCase.verifyError(@() UMITRigLedger.quarantineInvalidLedger(testCase.Folder, ...
+                'Origin', 'test'), 'Umitoolbox:RigLedger:ledgerLocked');
+            testCase.verifyEqual(fileread(path), '{not json');
+        end
+
+        function testInvalidLedgerErrorNamesTheQuarantine(testCase)
+            testCase.writeText(UMITRigLedger.filePath(testCase.Folder), '{not json');
+            try
+                UMITRigLedger.read(testCase.Folder);
+                testCase.verifyFail('expected an error');
+            catch ME
+                testCase.verifyEqual(ME.identifier, 'Umitoolbox:RigLedger:invalidLedger');
+                testCase.verifySubstring(ME.message, 'quarantineInvalidLedger');
+                testCase.verifySubstring(ME.message, 'backup');
+            end
+        end
+    end
+
     %% Atomic writes and locking
     methods (Test)
         function testWritesLeaveNoTemporaryFiles(testCase)
@@ -617,6 +703,35 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestUMITRigLedger < m
             binding = testCase.binding(rigID);
             UMITRigLedger.bind(testCase.Folder, binding, 'Origin', 'test');
             UMITRigLedger.commit(testCase.Folder, 'optics', binding.optics.hash, 'Origin', 'test');
+        end
+
+        function verifyQuarantineThenRebind(testCase, path)
+            %VERIFYQUARANTINETHENREBIND Quarantine the invalid ledger at PATH,
+            %   check nothing was lost and that the folder can be bound again.
+            fid = fopen(path, 'r');
+            bytesBefore = fread(fid, inf, '*uint8');
+            fclose(fid);
+            testCase.assertFalse(UMITRigLedger.validate(testCase.Folder).isValid);
+
+            result = UMITRigLedger.quarantineInvalidLedger(testCase.Folder, 'Origin', 'test');
+
+            [~, name, ext] = fileparts(result.quarantinedFile);
+            testCase.verifyNotEmpty(regexp([name ext], ...
+                '^UMITRigLedger\.invalid_\d{8}T\d{6}\.json$', 'once'));
+            testCase.verifyEqual(result.previousState, 'Invalid');
+            testCase.verifyNotEmpty(result.issues);
+            testCase.verifyEqual(testCase.folderEntries(), {[name ext]}, ...
+                'The ledger is renamed; no other file appears and no lock is left.');
+            fid = fopen(result.quarantinedFile, 'r');
+            bytesAfter = fread(fid, inf, '*uint8');
+            fclose(fid);
+            testCase.verifyEqual(bytesAfter, bytesBefore, 'The bytes are unchanged.');
+            testCase.verifyEqual(UMITRigLedger.read(testCase.Folder).state, 'Unknown');
+
+            UMITRigLedger.bind(testCase.Folder, testCase.binding('C'), 'Origin', 'test');
+            info = UMITRigLedger.read(testCase.Folder);
+            testCase.verifyEqual(info.state, 'BoundUncommitted');
+            testCase.verifyEqual(numel(info.events), 1, 'The new ledger starts a fresh history.');
         end
 
         function names = folderEntries(testCase)

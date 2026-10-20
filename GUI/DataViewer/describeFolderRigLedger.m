@@ -18,13 +18,16 @@ function summary = describeFolderRigLedger(saveFolder)
 %       canBind          - Bind/Rebind is possible (ledger readable)
 %       canAcknowledge   - there is an open conflict
 %       canViewHistory   - the ledger exists and is readable
+%       canRepair        - the ledger is invalid and can be quarantined
+%                          (UMITRigLedger.quarantineInvalidLedger)
 
 saveFolder = char(string(saveFolder));
 summary = struct('folder', saveFolder, 'exists', false, 'isValid', true, ...
     'issues', {{}}, 'state', 'Unknown', 'rigUUID', '', 'rigID', '', ...
     'rigDisplayName', '', 'hadConflict', false, 'conflictParts', {{}}, ...
     'committedLines', {{}}, 'displayText', '', 'tooltipLines', {{}}, ...
-    'canBind', false, 'canAcknowledge', false, 'canViewHistory', false);
+    'canBind', false, 'canAcknowledge', false, 'canViewHistory', false, ...
+    'canRepair', false);
 
 if isempty(saveFolder) || ~isfolder(saveFolder)
     summary.displayText = '<none>';
@@ -38,6 +41,7 @@ summary.isValid = report.isValid;
 summary.issues = report.issues;
 if ~report.isValid
     summary.state = 'Invalid';
+    summary.canRepair = true;
     summary.displayText = 'invalid rig ledger';
     summary.tooltipLines = [{sprintf('Rig ledger: INVALID (%s)', UMITRigLedger.FileName)}, ...
         cellfun(@(issue) ['  ' issue], report.issues, 'UniformOutput', false), ...

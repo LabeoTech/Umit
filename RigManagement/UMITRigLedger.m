@@ -36,7 +36,7 @@ classdef UMITRigLedger
     %   Writers (each takes a mandatory 'Origin' Name-Value):
     %       writeNoRig, bind, rebind, revertBinding,
     %       dropCoregistrationBinding, commit, recordFreshImport,
-    %       acknowledgeConflict, clearStaleLock
+    %       acknowledgeConflict, clearStaleLock, quarantineInvalidLedger
     %
     %   Guards used by rig-dependent consumers (throw, never warn):
     %       assertCanUseOptics, assertCanUseCoregistration,
@@ -867,6 +867,55 @@ classdef UMITRigLedger
             wasCleared = UMITLedgerCore.clearStaleLock(saveFolder, UMITRigLedger.iSpec(), ...
                 p.Results.MinimumAge);
         end
+
+        function result = quarantineInvalidLedger(saveFolder, varargin)
+            %QUARANTINEINVALIDLEDGER Move an invalid ledger aside so the folder can be rebound.
+            %
+            %   result = UMITRigLedger.quarantineInvalidLedger(saveFolder, 'Origin', name)
+            %
+            %   Only an INVALID ledger is moved: a valid ledger throws
+            %   Umitoolbox:RigLedger:notInvalid and a folder without a ledger
+            %   throws Umitoolbox:RigLedger:noLedger, both leaving the folder
+            %   untouched. The ledger is validated again inside the folder lock.
+            %   UMITRigLedger.json is renamed to
+            %   UMITRigLedger.invalid_<yyyyMMddTHHmmss>.json (a numeric suffix
+            %   keeps names unique) in the same folder, bytes unchanged. Nothing
+            %   is edited, deleted or written: no new ledger, no event. The
+            %   folder then reads as Unknown and can be bound again (bind).
+            %
+            %   The folder loses its rig commitments (optics, coregistration and
+            %   filter-set snapshots, conflict history). Outputs computed before
+            %   are not recomputed, and a rig change made while the ledger was
+            %   invalid cannot be detected for them. Callers confirm this with
+            %   the user before calling.
+            %
+            %   RESULT fields: folder, quarantinedFile (absolute path), issues
+            %   (cellstr, why the ledger was invalid), previousState ('Invalid')
+            %   and origin.
+
+            origin = UMITRigLedger.iParseOrigin('quarantineInvalidLedger', varargin{:});
+            folder = UMITRigLedger.iExistingFolder(saveFolder);
+            lock = UMITRigLedger.iAcquireLock(folder, 'quarantineInvalidLedger'); %#ok<NASGU>
+            operation = 'Quarantining an invalid rig ledger';
+            report = UMITRigLedger.validate(folder);
+            if ~report.exists
+                UMITRigLedger.iThrowNoLedger(operation, folder);
+            end
+            if report.isValid
+                UMITRigLedger.iThrow('Umitoolbox:RigLedger:notInvalid', operation, folder, ...
+                    sprintf('the rig ledger "%s" is valid; only an invalid ledger can be quarantined.', ...
+                    UMITRigLedger.FileName), ...
+                    {'Nothing was changed. Use rebind to change the binding of a valid ledger.'});
+            end
+            target = UMITRigLedger.iQuarantineTarget(folder);
+            [wasMoved, message] = movefile(UMITRigLedger.filePath(folder), target);
+            if ~wasMoved
+                error('Umitoolbox:RigLedger:quarantineFailed', ...
+                    'Could not move the invalid rig ledger of "%s" aside: %s', folder, message);
+            end
+            result = struct('folder', folder, 'quarantinedFile', target, ...
+                'issues', {report.issues}, 'previousState', 'Invalid', 'origin', origin);
+        end
     end
 
     %% Private helpers
@@ -1174,7 +1223,20 @@ classdef UMITRigLedger
                 sprintf('the rig ledger "%s" failed integrity validation: %s', ...
                 UMITRigLedger.FileName, strjoin(issues, ' | ')), ...
                 {sprintf('Restore %s from a backup copy of this folder.', UMITRigLedger.FileName), ...
+                ['Or move the invalid file aside and bind a rig again (the folder loses its rig ' ...
+                'commitments): UMITRigLedger.quarantineInvalidLedger(saveFolder, ''Origin'', ...).'], ...
                 UMITRigLedger.iFixFreshFolder()});
+        end
+
+        function target = iQuarantineTarget(folder)
+            stamp = char(datetime('now', 'Format', 'yyyyMMdd''T''HHmmss'));
+            base = fullfile(folder, ['UMITRigLedger.invalid_' stamp]);
+            target = [base '.json'];
+            suffix = 1;
+            while isfile(target)
+                suffix = suffix + 1;
+                target = sprintf('%s_%d.json', base, suffix);
+            end
         end
 
         function iThrowNoLedger(operation, folder)

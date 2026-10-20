@@ -45,6 +45,27 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestFreshImport < mat
             testCase.verifyEqual(sort(testCase.entries()), sort(testCase.allNames()));
         end
 
+        function testQuarantinedRigLedgersAreKeptNotDeletedNorUnknown(testCase)
+            % UMITRigLedger.quarantineInvalidLedger leaves
+            % UMITRigLedger.invalid_<timestamp>.json in the folder: it is a ledger
+            % (kept), not an unknown item, and a fresh import never deletes it.
+            testCase.populateImportedFolder();
+            names = {'UMITRigLedger.invalid_20261020T101500.json', ...
+                'UMITRigLedger.invalid_20261020T101500_2.json'};
+            for k = 1:numel(names)
+                testCase.writeFile(names{k});
+            end
+
+            plan = planFreshImport(testCase.Folder);
+
+            testCase.verifyEqual(sort(plan.keptLedgers), sort([{'UMITRigLedger.json'}, names]));
+            testCase.verifyEmpty(intersect(names, [plan.unknown, plan.toDelete]));
+            applyFreshImport(testCase.Folder, 'Backup', 'ERASE', 'Origin', 'test');
+            for k = 1:numel(names)
+                testCase.verifyTrue(isfile(fullfile(testCase.Folder, names{k})), names{k});
+            end
+        end
+
         function testEmptyFolderIsNotAPreviousImport(testCase)
             testCase.writeFile('img_0001.bin');
             testCase.writeFile('info.txt');
