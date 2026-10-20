@@ -31,6 +31,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestFolderRigLedgerAc
             testCase.verifySubstring(summary.displayText, 'no rig ledger');
             testCase.verifyTrue(summary.canBind);
             testCase.verifyFalse(summary.canViewHistory);
+            testCase.verifyFalse(summary.canRepair, 'Only an invalid ledger can be repaired.');
             testCase.verifyFalse(UMITRigLedger.exists(testCase.Folder), 'Describing never writes.');
 
             UMITRigLedger.writeNoRig(testCase.Folder, 'Origin', 'test');
@@ -67,6 +68,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestFolderRigLedgerAc
             summary = describeFolderRigLedger(testCase.Folder);
             testCase.verifyEqual(summary.state, 'Invalid');
             testCase.verifyFalse(summary.canBind);
+            testCase.verifyTrue(summary.canRepair);
             testCase.verifyNotEmpty(summary.issues);
             testCase.verifyEqual(describeFolderRigLedger('').displayText, '<none>');
         end
