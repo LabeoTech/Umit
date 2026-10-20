@@ -158,7 +158,10 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestHemoCompute < mat
             testCase.verifyEqual(sort({info.commitments.filterSets.id}), sort({filterSetID, 'none'}));
 
             % The same ID modified in the library is an error, before computing.
-            UMITRigStore.updateFilterSet(filterSetID, struct('id', filterSetID, ...
+            % updateFilterSet refuses a content change, so the library file is
+            % rewritten directly: a library edited by hand, or another computer's
+            % library, that holds different content under the same ID.
+            iModifyUserFilterSetInPlace(filterSetID, struct('id', filterSetID, ...
                 'displayName', 'Modified', 'excitationSpectrumID', '', ...
                 'emissionSpectrumID', 'FF01512630'));
             hbFile = dir(fullfile(testCase.TempFolder, 'HbO.dat'));
@@ -583,6 +586,14 @@ filterSetID = ['HemoTestSet_' suffix(1:8)];
 UMITRigStore.importFilterSet(struct('id', filterSetID, 'displayName', 'Hemo Test Set', ...
     'excitationSpectrumID', '', 'emissionSpectrumID', emissionSpectrumID));
 testCase.addTeardown(@() iRemoveUserFilterSet(filterSetID));
+end
+
+function iModifyUserFilterSetInPlace(filterSetID, definition)
+%IMODIFYUSERFILTERSETINPLACE Rewrite a user filter-set file, bypassing updateFilterSet.
+file = UMITRigStore.getFilterSet(filterSetID).file;
+fid = fopen(file, 'w');
+fwrite(fid, jsonencode(definition), 'char');
+fclose(fid);
 end
 
 function iRemoveUserFilterSet(filterSetID)
