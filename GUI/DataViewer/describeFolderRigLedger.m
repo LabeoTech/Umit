@@ -45,7 +45,8 @@ if ~report.isValid
     summary.displayText = 'invalid rig ledger';
     summary.tooltipLines = [{sprintf('Rig ledger: INVALID (%s)', UMITRigLedger.FileName)}, ...
         cellfun(@(issue) ['  ' issue], report.issues, 'UniformOutput', false), ...
-        {'Rig-dependent processing is blocked until the file is restored from a backup.'}];
+        {['Rig-dependent processing is blocked until the file is restored from a backup ' ...
+        'or repaired (Management > Rig > Folder Rig > Repair Rig Ledger...).']}];
     return
 end
 

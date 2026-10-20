@@ -5,7 +5,8 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestFolderRigLedgerAc
     %   (read-only preview incl. conflicts), applyFolderRigBinding (writes)
     %   and formatRigLedgerHistory. The dialogs that wrap them
     %   (runFolderRigBindingDialog, promptAcknowledgeRigConflict,
-    %   showRigLedgerHistoryDialog) are checked manually.
+    %   showRigLedgerHistoryDialog) are checked manually; promptRepairRigLedger
+    %   is tested through its non-interactive mode (no dialog is opened).
 
     properties
         Folder
@@ -71,6 +72,50 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestFolderRigLedgerAc
             testCase.verifyTrue(summary.canRepair);
             testCase.verifyNotEmpty(summary.issues);
             testCase.verifyEqual(describeFolderRigLedger('').displayText, '<none>');
+        end
+
+        function testRepairDialogMovesTheInvalidLedgerAside(testCase)
+            % DFR-20261014-002 phase 2: Repair quarantines the file, the folder
+            % reads as having no ledger and can be bound again.
+            path = UMITRigLedger.filePath(testCase.Folder);
+            testCase.writeText(path, '{not json');
+
+            result = promptRepairRigLedger([], testCase.Folder, ...
+                'Interactive', false, 'Choice', 'repair');
+
+            testCase.verifyTrue(result.changed);
+            testCase.verifyEqual(result.severity, 'warning');
+            testCase.verifySubstring(result.message, 'UMITRigLedger.invalid_');
+            testCase.verifyFalse(isfile(path));
+            testCase.verifyNumElements(dir(fullfile(testCase.Folder, 'UMITRigLedger.invalid_*.json')), 1);
+            summary = describeFolderRigLedger(testCase.Folder);
+            testCase.verifyEqual(summary.state, 'Unknown');
+            testCase.verifyFalse(summary.canRepair);
+            testCase.verifyTrue(summary.canBind);
+        end
+
+        function testRepairDialogCancelLeavesTheLedger(testCase)
+            path = UMITRigLedger.filePath(testCase.Folder);
+            testCase.writeText(path, '{not json');
+
+            result = promptRepairRigLedger([], testCase.Folder, ...
+                'Interactive', false, 'Choice', 'cancel');
+
+            testCase.verifyFalse(result.changed);
+            testCase.verifyEqual(fileread(path), '{not json');
+            testCase.verifyEmpty(dir(fullfile(testCase.Folder, 'UMITRigLedger.invalid_*.json')));
+        end
+
+        function testRepairHelperRefusesAValidLedgerWithoutADialog(testCase)
+            UMITRigLedger.writeNoRig(testCase.Folder, 'Origin', 'test');
+            before = fileread(UMITRigLedger.filePath(testCase.Folder));
+
+            result = promptRepairRigLedger([], testCase.Folder, ...
+                'Interactive', false, 'Choice', 'repair');
+
+            testCase.verifyFalse(result.changed);
+            testCase.verifySubstring(result.message, 'nothing to repair');
+            testCase.verifyEqual(fileread(UMITRigLedger.filePath(testCase.Folder)), before);
         end
 
         function testPlanIsReadOnlyAndPreviewsConflicts(testCase)
