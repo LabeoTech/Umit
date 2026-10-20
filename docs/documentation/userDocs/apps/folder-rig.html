@@ -21,10 +21,11 @@ nav_order: 7
 <tr><td><samp>[had conflict]</samp></td><td>A permanent mark: the folder had a rig conflict at some point. The details are in the Rig Ledger History.</td></tr>
 <tr><td><samp>invalid rig ledger</samp></td><td>The ledger file is damaged or was edited by hand (see below).</td></tr></table>
 <h2>Management &gt; Rig &gt; Folder Rig</h2>
-<p style="text-align:center"><img src="../../assets/img/current/dataviewer-folder-rig-menu-conflict.png" alt="DataViewer Management, Rig, Folder Rig submenu with Bind / Rebind Rig, Acknowledge Rig Conflict and Rig Ledger History, on a conflicted folder" width="880"><br><em>The Folder Rig submenu on a folder in conflict: all three commands are available.</em></p>
+<p style="text-align:center"><img src="../../assets/img/current/dataviewer-folder-rig-menu-conflict.png" alt="DataViewer Management, Rig, Folder Rig submenu with Bind / Rebind Rig, Acknowledge Rig Conflict, Repair Rig Ledger and Rig Ledger History, on a conflicted folder" width="880"><br><em>The Folder Rig submenu on a folder in conflict: Bind / Rebind Rig, Acknowledge Rig Conflict and Rig Ledger History are available; Repair Rig Ledger is greyed out because the ledger is valid.</em></p>
 <table><tr><th>Command</th><th>Available when</th><th>Effect</th></tr>
 <tr><td><strong>Bind / Rebind Rig...</strong></td><td>Data are loaded</td><td>Binds the folder to a rig of the library, or changes its rig (see below).</td></tr>
 <tr><td><strong>Acknowledge Rig Conflict...</strong></td><td>The folder is in conflict</td><td>Accepts the current rig for the folder (see below).</td></tr>
+<tr><td><strong>Repair Rig Ledger...</strong></td><td>The rig ledger is invalid</td><td>Moves the invalid ledger file aside so that a rig can be bound again (see <a href="#invalid-rig-ledger">Invalid rig ledger</a>).</td></tr>
 <tr><td><strong>Rig Ledger History...</strong></td><td>The folder has a rig ledger</td><td>Shows every event recorded in the ledger, read-only.</td></tr></table>
 <h3>Bind or rebind a rig</h3>
 <ol>
@@ -47,7 +48,21 @@ nav_order: 7
 <h3>Rig Ledger History</h3>
 <p>The history lists the folder, its state and bound rig, then one line per event: <samp>noRig</samp> (imported without a rig), <samp>bind</samp>, <samp>rebind</samp> (with what changed in the optics and the coregistration), <samp>commit</samp> (which part was committed, and by which step), <samp>conflict</samp>, <samp>acknowledgeConflict</samp> (with its comment) and <samp>freshImport</samp> (a re-import reset the commitments). Rigs are named as they were recorded, so the history reads the same on a computer whose library does not have them.</p>
 <p style="text-align:center"><img src="../../assets/img/current/dataviewer-rig-ledger-history.png" alt="Rig Ledger History dialog listing bind, commit, rebind, conflict and acknowledgeConflict events" width="880"><br><em>The history of a folder that was bound to Rig A, used by HemoCompute, rebound to Rig B and acknowledged.</em></p>
-<h3>Invalid rig ledger</h3>
-<p>If the ledger file is damaged or was edited by hand, <em>DataViewer</em> still loads the data and shows the alert <strong>Invalid Rig Ledger</strong>. Rig-dependent processing (for example <em>HemoCompute</em>) is then refused for the folder. There is no repair tool: restore <samp>UMITRigLedger.json</samp> from a backup, or re-import the raw data into a fresh Save Folder.</p>
+<h3 id="invalid-rig-ledger">Invalid rig ledger</h3>
+<p>If the ledger file is damaged or was edited by hand, <em>DataViewer</em> still loads the data and shows the alert <strong>Invalid Rig Ledger</strong>. Rig-dependent processing (for example <em>HemoCompute</em>) is then refused for the folder, and so is a new import into the same Save Folder. You have three ways out:</p>
+<ul>
+<li>restore <samp>UMITRigLedger.json</samp> from a backup copy of the folder;</li>
+<li>re-import the raw data into a fresh Save Folder;</li>
+<li>repair the ledger with <strong>Management &gt; Rig &gt; Folder Rig &gt; Repair Rig Ledger...</strong> (below).</li>
+</ul>
 <p style="text-align:center"><img src="../../assets/img/current/dataviewer-invalid-rig-ledger-alert.png" alt="DataViewer Invalid Rig Ledger alert saying that data loaded but rig-dependent processing is blocked" width="880"><br><em>The alert shown when the folder's rig ledger cannot be read.</em></p>
+<h3>Repair a rig ledger</h3>
+<p>While the ledger is invalid, <strong>Repair Rig Ledger...</strong> is the only enabled command of the Folder Rig submenu: <em>Bind / Rebind Rig</em>, <em>Acknowledge Rig Conflict</em> and <em>Rig Ledger History</em> need a readable ledger and are disabled. The command opens a dialog that lists what is wrong with the file, what repairing does, what is lost, and the other options.</p>
+<p style="text-align:center"><img src="../../assets/img/current/dataviewer-repair-rig-ledger-dialog.png" alt="Repair Rig Ledger dialog listing the integrity problem, what repairing does, what is lost and the other options, with Repair and Cancel buttons" width="600"><br><em>The Repair Rig Ledger dialog for a ledger that is not valid JSON.</em></p>
+<ol>
+<li>Read the problem and the consequences, then choose <strong>Repair</strong> (or <strong>Cancel</strong>: nothing changes).</li>
+<li>The invalid file is <em>renamed</em>, in the same folder, to <samp>UMITRigLedger.invalid_&lt;date&gt;T&lt;time&gt;.json</samp>. Nothing is edited or deleted: the file is kept as it was, byte for byte, and a later repair never overwrites it. A new import into the folder does not delete it either.</li>
+<li>The folder now has no rig ledger: its rig is <samp>unknown (no rig ledger)</samp>. Bind a rig again with <strong>Bind / Rebind Rig...</strong>; this starts a new ledger with a fresh history.</li>
+</ol>
+<div class="warnnote"><p><strong>What a repair loses</strong><br>The folder loses its rig commitments (the optics, camera coregistration and filter sets it had used) and its conflict history. Results computed before are not recomputed, and a change of rig made while the ledger was invalid cannot be detected for them. If the folder matters for a publication, restore the ledger from a backup instead.</p></div>
 </body></html>
