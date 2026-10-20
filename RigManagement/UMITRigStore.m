@@ -805,11 +805,17 @@ classdef UMITRigStore < handle
         end
 
         function filterSet = updateFilterSet(filterSetID, filterSet)
-            %UPDATEFILTERSET Replace an existing user filter-set definition.
+            %UPDATEFILTERSET Edit the display name of an existing user filter set.
             %
             %   filterSet = UMITRigStore.updateFilterSet(filterSetID, definition)
             %   validates the complete replacement before taking the store
-            %   lock. Built-in definitions and filter-set IDs are immutable.
+            %   lock. Built-in definitions are read-only. The content of a
+            %   filter set (its excitation and emission spectrum IDs) is
+            %   immutable under its ID, because folders commit a filter set by
+            %   ID and hash: a change of either spectrum ID throws
+            %   Umitoolbox:UMITRigStore:filterSetContentLocked and writes
+            %   nothing. Save the changed definition under a new ID with
+            %   importFilterSet. Only the display name can be edited in place.
 
             schema = getUMITRigSchema();
             filterSetID = UMITRigStore.iNormalizeManagedID( ...
@@ -833,6 +839,20 @@ classdef UMITRigStore < handle
                 end
                 error('Umitoolbox:UMITRigStore:builtInFilterSetReadOnly', ...
                     'Built-in filter set "%s" cannot be edited.', filterSetID);
+            end
+
+            current = jsondecode(fileread(destination));
+            contentFields = {'excitationSpectrumID', 'emissionSpectrumID'};
+            for iField = 1:numel(contentFields)
+                field = contentFields{iField};
+                if ~strcmpi(char(string(current.(field))), filterSet.(field))
+                    error('Umitoolbox:UMITRigStore:filterSetContentLocked', ...
+                        ['Filter set "%s" cannot change its %s ("%s" to "%s"): folders may ' ...
+                         'already have used it. Save the changed definition under a new ' ...
+                         'filter-set ID instead (UMITRigStore.importFilterSet); only the ' ...
+                         'display name can be edited in place.'], ...
+                        filterSetID, field, char(string(current.(field))), filterSet.(field));
+                end
             end
 
             serializable = filterSet;

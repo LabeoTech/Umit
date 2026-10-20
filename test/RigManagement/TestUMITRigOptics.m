@@ -179,6 +179,56 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestUMITRigOptics < m
             testCase.verifyFalse(any(strcmp(listed.ID, filterSetID)));
         end
 
+        function testFilterSetContentIsLockedUnderItsID(testCase)
+            % DFR-20261014-003: the spectrum IDs of a filter set cannot change
+            % in place (folders commit a filter set by ID and hash); the
+            % display name can; a changed definition goes under a new ID.
+            suffix = strrep(char(java.util.UUID.randomUUID()), '-', '');
+            filterSetID = ['LockedFilter_' suffix(1:8)];
+            definition = struct('id', filterSetID, 'displayName', 'Locked', ...
+                'excitationSpectrumID', 'FF01496LP', 'emissionSpectrumID', 'FF01496LP');
+            UMITRigStore.importFilterSet(definition);
+            file = UMITRigStore.getFilterSet(filterSetID).file;
+            testCase.UserLibraryFiles{end+1} = file;
+            fid = fopen(file, 'r');
+            bytesBefore = fread(fid, inf, '*uint8');
+            fclose(fid);
+
+            changedExcitation = definition;
+            changedExcitation.excitationSpectrumID = 'FF01512630';
+            testCase.verifyError(@() UMITRigStore.updateFilterSet(filterSetID, changedExcitation), ...
+                'Umitoolbox:UMITRigStore:filterSetContentLocked');
+            changedEmission = definition;
+            changedEmission.emissionSpectrumID = 'FF01512630';
+            testCase.verifyError(@() UMITRigStore.updateFilterSet(filterSetID, changedEmission), ...
+                'Umitoolbox:UMITRigStore:filterSetContentLocked');
+            fid = fopen(file, 'r');
+            testCase.verifyEqual(fread(fid, inf, '*uint8'), bytesBefore, 'A refused update writes nothing.');
+            fclose(fid);
+
+            renamed = definition;
+            renamed.displayName = 'Renamed only';
+            UMITRigStore.updateFilterSet(filterSetID, renamed);
+            stored = UMITRigStore.getFilterSet(filterSetID);
+            testCase.verifyEqual(stored.displayName, 'Renamed only');
+            testCase.verifyEqual(stored.excitationSpectrumID, 'FF01496LP');
+
+            newDefinition = changedExcitation;
+            newDefinition.id = [filterSetID '_2'];
+            UMITRigStore.importFilterSet(newDefinition);
+            testCase.UserLibraryFiles{end+1} = UMITRigStore.getFilterSet(newDefinition.id).file;
+            testCase.verifyEqual(UMITRigStore.getFilterSet(newDefinition.id).excitationSpectrumID, 'FF01512630');
+            testCase.verifyEqual(UMITRigStore.getFilterSet(filterSetID).excitationSpectrumID, 'FF01496LP', ...
+                'The original filter set is untouched.');
+
+            testCase.verifyError(@() UMITRigStore.updateFilterSet('GCaMP', ...
+                struct('id', 'GCaMP', 'displayName', 'x', 'excitationSpectrumID', 'FF01496LP', ...
+                'emissionSpectrumID', 'FF01496LP')), 'Umitoolbox:UMITRigStore:builtInFilterSetReadOnly');
+            testCase.verifyError(@() UMITRigStore.updateFilterSet(['Missing_' suffix(1:8)], ...
+                struct('id', 'x', 'displayName', 'x', 'excitationSpectrumID', 'FF01496LP', ...
+                'emissionSpectrumID', 'FF01496LP')), 'Umitoolbox:UMITRigStore:filterSetNotFound');
+        end
+
         function testSpectrumImportRejectsExistingID(testCase)
             source = fullfile(testCase.TempRoot, 'source.csv');
             writematrix([(400:700)' ones(301, 1)], source);
