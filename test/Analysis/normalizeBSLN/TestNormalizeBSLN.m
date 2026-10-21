@@ -163,17 +163,35 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestNormalizeBSLN < m
             testCase.verifyNumericEquivalent(single(loadData(out)), expected);
         end
 
-        function testEventSplitRecordingNormalizesEveryTrial(testCase)
-            % Y-X-T-E, recording mode: the baseline of every trial is its
-            % own first 20% of T.
+        function testEventSplitRecordingSwitchesToTrialWithWarning(testCase)
+            % Y-X-T-E has no recording to normalize against: recording mode
+            % is replaced by trial mode (events.mat baseline) and warns.
             [splitFile, byEv] = testCase.writeEventSplitFile();
-            nT = size(byEv, 3);
+            ev = EventsManager(testCase.SaveFolder);
+            nBase = min(size(byEv, 3), ...
+                max(1, round(double(ev.baselinePeriod) * testCase.getFrameRateHz())));
 
-            out = normalizeBSLN(splitFile, testCase.SaveFolder, ...
-                'normalizationMode', 'recording', 'b_centerAtOne', true);
+            [~, id, out] = iLastWarning(@() normalizeBSLN(splitFile, testCase.SaveFolder, ...
+                'normalizationMode', 'recording', 'b_centerAtOne', true));
 
+            testCase.verifyEqual(id, 'normalizeBSLN:RecordingModeOnEventSplit');
             testCase.verifyEqual(iAxes(out), {'Y','X','T','E'});
-            expected = testCase.expectedPerTrial(byEv, max(1, round(0.2 * nT)), true);
+            expected = testCase.expectedPerTrial(byEv, nBase, true);
+            testCase.verifyNumericEquivalent(single(loadData(out)), expected);
+        end
+
+        function testEventSplitDefaultModeSwitchesAndIgnoresNumericBaseline(testCase)
+            [splitFile, byEv] = testCase.writeEventSplitFile();
+            ev = EventsManager(testCase.SaveFolder);
+            nBase = min(size(byEv, 3), ...
+                max(1, round(double(ev.baselinePeriod) * testCase.getFrameRateHz())));
+
+            [msg, id, out] = iLastWarning(@() normalizeBSLN(splitFile, testCase.SaveFolder, ...
+                'baselineMode', 0.1));
+
+            testCase.verifyEqual(id, 'normalizeBSLN:RecordingModeOnEventSplit');
+            testCase.verifySubstring(msg, 'numeric baselineMode is ignored');
+            expected = testCase.expectedPerTrial(byEv, nBase, false);
             testCase.verifyNumericEquivalent(single(loadData(out)), expected);
         end
 
@@ -445,6 +463,13 @@ end
 function names = iAxes(datFile)
 %IAXES Axis names of a .dat file, as a row cell.
 names = cellstr(string(loadMetaData(datFile).dimNames(:).'));
+end
+
+function [msg, id, out] = iLastWarning(fcn)
+%ILASTWARNING Run FCN, returning its output and the last warning it raised.
+lastwarn('', '');
+out = fcn();
+[msg, id] = lastwarn;
 end
 
 function deleteIfExists(filePath)

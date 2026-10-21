@@ -18,16 +18,19 @@ function outData = normalizeBSLN(data, SaveFolder, varargin)
 % Name-Value parameters:
 %   normalizationMode : 'recording' or 'trial'
 %                       Default: 'recording'
-%                         - 'recording': the baseline is taken from the
-%                           start of the recording (Y-X-T), or from the
-%                           start of every trial (Y-X-T-E).
+%                         - 'recording': Y-X-T only. The baseline is taken
+%                           from the start of the recording.
 %                         - 'trial': Y-X-T-E only. The baseline of every
 %                           trial is the baseline period of events.mat.
+%                       On a Y-X-T-E file 'recording' does not apply: it is
+%                       replaced by 'trial' with the warning
+%                       normalizeBSLN:RecordingModeOnEventSplit, and a
+%                       numeric baselineMode is ignored.
 %
 %   baselineMode      : 'auto' or positive numeric scalar (seconds)
 %                       Default: 'auto'
 %                       Notes:
-%                         - recording mode:
+%                         - recording mode (Y-X-T):
 %                             * 'auto'  => first 20%% of T
 %                             * numeric => first baselineMode seconds
 %                         - trial mode:
@@ -226,6 +229,20 @@ Nx = datAxisSize(Info, 'X');
 Nt = datAxisSize(Info, 'T');
 Ne = max(1, datAxisSize(Info, 'E'));
 hasE = datAxisSize(Info, 'E') > 0;
+
+% Event-split data have no recording to normalize against: the baseline is the
+% baseline period of events.mat, so recording mode is replaced by trial mode.
+if hasE && strcmp(normalizationMode, 'recording')
+    ignoredNote = '';
+    if ~(ischar(baselineMode) || (isstring(baselineMode) && isscalar(baselineMode)))
+        ignoredNote = ' The numeric baselineMode is ignored.';
+    end
+    warning('normalizeBSLN:RecordingModeOnEventSplit', ...
+        ['"%s" is event-split (Y-X-T-E): normalizationMode "recording" does not ' ...
+         'apply, using "trial" (baseline period of events.mat).%s'], inFile, ignoredNote);
+    normalizationMode = 'trial';
+    baselineMode = 'auto';
+end
 
 isTrialMode = strcmp(normalizationMode, 'trial');
 if isTrialMode && ~hasE
