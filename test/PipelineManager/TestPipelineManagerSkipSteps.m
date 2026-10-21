@@ -126,6 +126,124 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestPipelineManagerSk
     end
 
     methods (Test)
+        function sourceThatIsTheFullPipelineResultIsNotRecomputed(testCase)
+            % A fresh pipeline whose source is the stored result of the very same
+            % steps has nothing left to do: its history already ends with them.
+            first = testCase.newPipeline();
+            tagA = first.addStep('pmSkipStepA', 'input', testCase.SourceFile);
+            first.addStep('pmSkipStepB', 'input', sprintf('%s:outData', tagA));
+            first.executePipeline('LeafOutputPolicy', 'viewerTemp', 'PrintSummary', false);
+            tempNames = iTempFiles(testCase.SaveFolder);
+            testCase.verifyEqual(numel(tempNames), 1);
+            tempFile = fullfile(testCase.SaveFolder, tempNames{1});
+
+            second = testCase.newPipeline();
+            tagA2 = second.addStep('pmSkipStepA', 'input', tempFile);
+            second.addStep('pmSkipStepB', 'input', sprintf('%s:outData', tagA2));
+            r2 = second.executePipeline('LeafOutputPolicy', 'viewerTemp', 'PrintSummary', false);
+
+            testCase.verifyEqual(iCalls('pmSkipStepA'), 1, 'Step A is already in the source history.');
+            testCase.verifyEqual(iCalls('pmSkipStepB'), 1, 'Step B is already in the source history.');
+            testCase.verifyEqual(iTempFiles(testCase.SaveFolder), tempNames, ...
+                'No new PMTMP_* file may be written.');
+            testCase.verifyEqual(height(r2.viewerCompatibleFinalOutputs), 1);
+            testCase.verifyEqual(char(r2.viewerCompatibleFinalOutputs.ActualFileName(1)), tempNames{1});
+        end
+
+        function sourceWithIdenticalSiblingResultsIsReusedItself(testCase)
+            % Forced reruns leave several PMTMP_* files with the same history. The
+            % one the pipeline reads from is the file that satisfies it.
+            first = testCase.newPipeline();
+            first.b_skipSteps = false;
+            tagA = first.addStep('pmSkipStepA', 'input', testCase.SourceFile);
+            first.addStep('pmSkipStepB', 'input', sprintf('%s:outData', tagA));
+            first.executePipeline('LeafOutputPolicy', 'viewerTemp', 'PrintSummary', false);
+            first.executePipeline('LeafOutputPolicy', 'viewerTemp', 'PrintSummary', false);
+            tempNames = iTempFiles(testCase.SaveFolder);
+            testCase.verifyEqual(numel(tempNames), 2);
+            tempFile = fullfile(testCase.SaveFolder, tempNames{1});
+
+            second = testCase.newPipeline();
+            tagA2 = second.addStep('pmSkipStepA', 'input', tempFile);
+            second.addStep('pmSkipStepB', 'input', sprintf('%s:outData', tagA2));
+            r2 = second.executePipeline('LeafOutputPolicy', 'viewerTemp', 'PrintSummary', false);
+
+            testCase.verifyEqual(iCalls('pmSkipStepA'), 2, 'Only the two forced runs execute A.');
+            testCase.verifyEqual(iCalls('pmSkipStepB'), 2, 'Only the two forced runs execute B.');
+            testCase.verifyEqual(iTempFiles(testCase.SaveFolder), tempNames);
+            testCase.verifyEqual(char(r2.viewerCompatibleFinalOutputs.ActualFileName(1)), tempNames{1}, ...
+                'The reported output must be the source file itself.');
+        end
+
+        function sourceThatIsAPipelinePrefixOnlyRunsTheRemainingSteps(testCase)
+            first = testCase.newPipeline();
+            first.addStep('pmSkipStepA', 'input', testCase.SourceFile);
+            r1 = first.executePipeline('LeafOutputPolicy', 'saveLeaves', 'PrintSummary', false);
+            outputA = fullfile(testCase.SaveFolder, char(r1.viewerCompatibleFinalOutputs.ActualFileName(1)));
+
+            second = testCase.newPipeline();
+            tagA = second.addStep('pmSkipStepA', 'input', outputA);
+            second.addStep('pmSkipStepB', 'input', sprintf('%s:outData', tagA));
+            r2 = second.executePipeline('LeafOutputPolicy', 'saveLeaves', 'PrintSummary', false);
+
+            testCase.verifyEqual(iCalls('pmSkipStepA'), 1, 'A is already applied to the source.');
+            testCase.verifyEqual(iCalls('pmSkipStepB'), 1, 'Only B is missing.');
+            result = loadData(fullfile(testCase.SaveFolder, ...
+                char(r2.viewerCompatibleFinalOutputs.ActualFileName(1))));
+            testCase.verifyEqual(single(result), single(reshape(1:24, [2 3 4])) + 2, ...
+                'B must run once on the output of A.');
+        end
+
+        function sourceWithDifferentTrailingStepsIsStillProcessed(testCase)
+            % The source history ends with B, the pipeline starts with A: nothing
+            % overlaps, so A must really be applied on top of the source.
+            first = testCase.newPipeline();
+            tagA = first.addStep('pmSkipStepA', 'input', testCase.SourceFile);
+            first.addStep('pmSkipStepB', 'input', sprintf('%s:outData', tagA));
+            first.executePipeline('LeafOutputPolicy', 'viewerTemp', 'PrintSummary', false);
+            tempNames = iTempFiles(testCase.SaveFolder);
+            tempFile = fullfile(testCase.SaveFolder, tempNames{1});
+
+            second = testCase.newPipeline();
+            second.addStep('pmSkipStepA', 'input', tempFile);
+            second.executePipeline('LeafOutputPolicy', 'saveLeaves', 'PrintSummary', false);
+
+            testCase.verifyEqual(iCalls('pmSkipStepA'), 2, 'A was never applied after B.');
+        end
+
+        function historyOfAPartiallySkippedRunMatchesAFullRun(testCase)
+            % The source has its own history and the first step is satisfied by a
+            % stored output: the new output's provenance must not repeat the
+            % source and preloaded steps.
+            seed = testCase.newPipeline();
+            seed.addStep('pmSkipStepA', 'input', testCase.SourceFile);
+            r0 = seed.executePipeline('LeafOutputPolicy', 'saveLeaves', 'PrintSummary', false);
+            sourceWithHistory = fullfile(testCase.SaveFolder, char(r0.viewerCompatibleFinalOutputs.ActualFileName(1)));
+
+            onlyB = testCase.newPipeline();
+            onlyB.addStep('pmSkipStepB', 'input', sourceWithHistory);
+            onlyB.executePipeline('LeafOutputPolicy', 'saveLeaves', 'PrintSummary', false);
+
+            skipped = testCase.newPipeline();
+            tagB = skipped.addStep('pmSkipStepB', 'input', sourceWithHistory);
+            skipped.addStep('pmSkipStepA', 'input', sprintf('%s:outData', tagB));
+            rSkip = skipped.executePipeline('LeafOutputPolicy', 'saveLeaves', 'PrintSummary', false);
+            testCase.verifyEqual(iCalls('pmSkipStepB'), 1, 'B must be preloaded in the second pipeline.');
+
+            forced = testCase.newPipeline();
+            forced.b_skipSteps = false;
+            tagB2 = forced.addStep('pmSkipStepB', 'input', sourceWithHistory);
+            forced.addStep('pmSkipStepA', 'input', sprintf('%s:outData', tagB2));
+            rForce = forced.executePipeline('LeafOutputPolicy', 'saveLeaves', 'PrintSummary', false);
+
+            skippedNames = iHistoryStepNames(testCase.SaveFolder, ...
+                char(rSkip.viewerCompatibleFinalOutputs.ActualFileName(1)));
+            forcedNames = iHistoryStepNames(testCase.SaveFolder, ...
+                char(rForce.viewerCompatibleFinalOutputs.ActualFileName(1)));
+            testCase.verifyEqual(skippedNames, forcedNames, ...
+                'Skipping must not change the recorded provenance.');
+        end
+
         function producedOutputIsRecognisedAsCachedResult(testCase)
             pm = testCase.newPipeline();
             pm.addStep('pmSkipStepA', 'input', testCase.SourceFile);
@@ -188,6 +306,13 @@ end
 function names = iDatFiles(folder)
 listing = dir(fullfile(folder, '*.dat'));
 names = sort({listing.name});
+end
+
+function names = iHistoryStepNames(folder, fileName)
+stored = load(fullfile(folder, 'dataHistory.mat'), 'dataHistory');
+files = string({stored.dataHistory.file});
+entry = stored.dataHistory(strcmpi(files, fileName));
+names = string({entry.info.name});
 end
 
 function names = iTempFiles(folder)
