@@ -6156,6 +6156,32 @@ classdef PipelineManager < handle
             end
         end
 
+        function prefixOut = trimInfoOverlap(obj, prefixInfo, followingInfo)
+            %TRIMINFOOVERLAP Drop from a provenance prefix the steps FOLLOWINGINFO repeats.
+            %
+            %   PREFIXOUT = TRIMINFOOVERLAP(OBJ, PREFIXINFO, FOLLOWINGINFO) removes
+            %   the longest tail of PREFIXINFO that equals the head of FOLLOWINGINFO
+            %   (name, version, parameters), so that [PREFIXOUT; FOLLOWINGINFO] lists
+            %   each step once.
+
+            prefixOut = prefixInfo;
+
+            for k = min(numel(prefixInfo), numel(followingInfo)):-1:1
+                isOverlap = true;
+                for j = 1:k
+                    if ~obj.isSameStep(prefixInfo(end-k+j), followingInfo(j))
+                        isOverlap = false;
+                        break
+                    end
+                end
+
+                if isOverlap
+                    prefixOut = prefixInfo(1:end-k);
+                    return
+                end
+            end
+        end
+
         function tf = isSameStep(~,A, B)
             %ISSAMESTEP Compare two provenance step structs.
             %
@@ -10147,6 +10173,7 @@ classdef PipelineManager < handle
                 nOut = numel(returnedOutputIndices);
                 returnedValues = cell(1, nOut);
                 f = str2func(funcName);
+                stepStartTime = datetime('now');
 
                 obj.throwIfExecutionCancelled(cancelFcn, progressFcn, 'before function execution', ...
                     'stepID', stepNode.id, ...
@@ -10173,7 +10200,6 @@ classdef PipelineManager < handle
                 savedFiles = obj.saveNodeDataOutputs(stepNode, saveFolderLocal);
                 if ~isempty(savedFiles)
                     createdFilesLocal = [createdFilesLocal; savedFiles];
-                stepStartTime = datetime('now');
                     createdFilesLocal = unique(createdFilesLocal, 'stable');
                     appendCurrentOutFiles(savedFiles);
                 end
@@ -10336,22 +10362,11 @@ classdef PipelineManager < handle
 
                                     preInfo = preRec2.info;
 
-                                    if ~isempty(entry.info) && ~isempty(preInfo)
-
-                                        A = preInfo(end);
-                                        B = entry.info(1);
-
-                                        sameStep = isfield(A,'name') && isfield(B,'name') && ...
-                                            strcmpi(char(string(A.name)), char(string(B.name))) && ...
-                                            isfield(A,'version') && isfield(B,'version') && ...
-                                            strcmpi(char(string(A.version)), char(string(B.version))) && ...
-                                            isfield(A,'parameters') && isfield(B,'parameters') && ...
-                                            isequal(A.parameters, B.parameters);
-
-                                        if sameStep
-                                            preInfo(end) = [];
-                                        end
-                                    end
+                                    % entry.info may already start with the preloaded
+                                    % step's own provenance (a proxy-backed input
+                                    % prepends its file history), so drop the
+                                    % overlap from the prefix, not a single step.
+                                    preInfo = obj.trimInfoOverlap(preInfo, entry.info);
 
                                     entry.info = [preInfo; entry.info]; %#ok<AGROW>
                                 end
@@ -12067,7 +12082,14 @@ classdef PipelineManager < handle
             %
             %   CREATEDFILES = REGISTEROUTPUTS(OBJ, NODELOCAL, OUTCELL, FOLDER)
             %   CREATEDFILES = REGISTEROUTPUTS(OBJ, NODELOCAL, OUTCELL, FOLDER, STEPSOURCEINFO)
+            %   CREATEDFILES = REGISTEROUTPUTS(..., STEPSTARTTIME)
             %   registers pipeline-relevant outputs produced by NODELOCAL.
+            %
+            %   STEPSTARTTIME (optional datetime) is when the step function started.
+            %   A DATA output the function returned as an existing file that was
+            %   written at or after it gets rec.ownedFile = true: the function
+            %   created that file for this run (as opposed to returning an input),
+            %   so the viewerTemp leaf policy may promote it instead of copying it.
             %
             %   Source Info (.dat header fields of manager-saved outputs):
             %       - STEPSOURCEINFO is the source Info of the step's primary
@@ -12082,15 +12104,8 @@ classdef PipelineManager < handle
             %         as created files, and do not participate in manager-side
             %         saving.
             %
-            %   CREATEDFILES = REGISTEROUTPUTS(..., STEPSTARTTIME)
             %   Legacy outFile behavior:
             %       - If the node is legacy and has an "outFile" output, the concrete
-            %   STEPSTARTTIME (optional datetime) is when the step function started.
-            %   A DATA output the function returned as an existing file that was
-            %   written at or after it gets rec.ownedFile = true: the function
-            %   created that file for this run (as opposed to returning an input),
-            %   so the viewerTemp leaf policy may promote it instead of copying it.
-            %
             %         filename list is read from the corresponding output position in
             %         OUTCELL (not from outCell{:}).
             %       - Each created file is registered in dataStore using a filename-based
@@ -12127,6 +12142,9 @@ classdef PipelineManager < handle
             if nargin < 5
                 stepSourceInfo = [];
             end
+            if nargin < 6
+                stepStartTime = [];
+            end
 
             % ---------------------------------------------------------
             % metaData outputs update the propagated source Info
@@ -12142,9 +12160,6 @@ classdef PipelineManager < handle
             if isfield(nodeLocal.info,'legacyOpts') && nodeLocal.info.legacyOpts
 
                 outFileIdx = find(strcmpi({outputsLocal.name}, 'outFile'), 1, 'first');
-            if nargin < 6
-                stepStartTime = [];
-            end
 
                 if ~isempty(outFileIdx)
 
@@ -12324,6 +12339,7 @@ classdef PipelineManager < handle
                     [fullFn, folderBoundName] = localResolveReturnedFile( ...
                         folder, fileList(1));
                     rec.fileName = string(fullFn);
+                    rec.ownedFile = obj.isFileWrittenSince(fullFn, stepStartTime);
                     obj.dataStore(key) = rec;
 
                     keyCompat = obj.makeKey(nodeIDLocal, char(folderBoundName));
@@ -12339,7 +12355,6 @@ classdef PipelineManager < handle
                 % =====================================================
                 if strcmpi(obj.ramMode,'ramsafe')
 
-                    rec.ownedFile = obj.isFileWrittenSince(fullFn, stepStartTime);
                     rec.sourceInfo = stepSourceInfo;
                     if isnumeric(val) || islogical(val)
                         tmpFile = obj.writeTempData(val, folder, nodeIDLocal, outName, stepSourceInfo);
@@ -12931,21 +12946,6 @@ classdef PipelineManager < handle
             end
         end
 
-        function tmpFile = writeTempData(obj, dataVal, folder, nodeIDLocal, outName, sourceInfo)
-            %WRITETEMPDATA Write temporary DATA output and return its full saved path.
-            %
-            %   tmpFile = writeTempData(obj, dataVal, folder, nodeIDLocal, outName)
-            %   tmpFile = writeTempData(..., sourceInfo)
-            %
-            %   sourceInfo (optional) is the record's source Info; saveData
-            %   takes the header frame rate and exposure from it, and the
-            %   axis names come from saveDataArgs (resolveDimNames).
-            %
-            %   Behavior:
-            %       - Validates that the requested output exists on the step
-            %       - Creates an extensionless temporary base name
-            %       - Saves the payload through saveData
-            %       - Normalizes the returned value from saveData to a full path
         function tf = isFileWrittenSince(~, filePath, startTime)
             %ISFILEWRITTENSINCE True if FILEPATH exists and was modified at/after STARTTIME.
             %
@@ -12962,6 +12962,21 @@ classdef PipelineManager < handle
             tf = datetime(info(1).datenum, 'ConvertFrom', 'datenum') >= startSecond;
         end
 
+        function tmpFile = writeTempData(obj, dataVal, folder, nodeIDLocal, outName, sourceInfo)
+            %WRITETEMPDATA Write temporary DATA output and return its full saved path.
+            %
+            %   tmpFile = writeTempData(obj, dataVal, folder, nodeIDLocal, outName)
+            %   tmpFile = writeTempData(..., sourceInfo)
+            %
+            %   sourceInfo (optional) is the record's source Info; saveData
+            %   takes the header frame rate and exposure from it, and the
+            %   axis names come from saveDataArgs (resolveDimNames).
+            %
+            %   Behavior:
+            %       - Validates that the requested output exists on the step
+            %       - Creates an extensionless temporary base name
+            %       - Saves the payload through saveData
+            %       - Normalizes the returned value from saveData to a full path
             %       - Registers the full path in obj.tempFiles
 
             % Resolve node
@@ -13164,6 +13179,13 @@ classdef PipelineManager < handle
             %                                   update matching entries in
             %                                   obj.dataHistory and save dataHistory.mat.
             %
+            %       'promoteOwnedFiles'       - If true, a permanent file-backed output
+            %                                   the step function wrote itself in this
+            %                                   run (rec.ownedFile) is moved to the
+            %                                   destination name instead of copied, so
+            %                                   no duplicate stays behind. History and
+            %                                   current-run file names follow the move.
+            %
             %   Behavior:
             %       - Temporary file-backed outputs are promoted first.
             %       - RAM-backed outputs are saved with saveData.
@@ -13179,17 +13201,11 @@ classdef PipelineManager < handle
 
             % -------------------------------------------------------------
             % Parse optional inputs
-            %       'promoteOwnedFiles'       - If true, a permanent file-backed output
-            %                                   the step function wrote itself in this
-            %                                   run (rec.ownedFile) is moved to the
-            %                                   destination name instead of copied, so
-            %                                   no duplicate stays behind. History and
-            %                                   current-run file names follow the move.
-            %
             % -------------------------------------------------------------
             overrideFileNames       = struct();
             skipIfAlreadySaved      = false;
             updateDataHistoryOnMove = false;
+            promoteOwnedFiles       = false;
 
             for iArg = 1:2:numel(varargin)
                 key = lower(char(string(varargin{iArg})));
@@ -13205,7 +13221,9 @@ classdef PipelineManager < handle
                     case 'updatedatahistoryonmove'
                         updateDataHistoryOnMove = logical(val);
 
-            promoteOwnedFiles       = false;
+                    case 'promoteownedfiles'
+                        promoteOwnedFiles = logical(val);
+
                     otherwise
                         error('PipelineManager:saveNodeDataOutputs:UnknownOption', ...
                             'Unknown option "%s".', char(string(varargin{iArg})));
@@ -13221,9 +13239,6 @@ classdef PipelineManager < handle
             for iOut = 1:numel(node.info.outputs)
 
                 outDef = node.info.outputs(iOut);
-                    case 'promoteownedfiles'
-                        promoteOwnedFiles = logical(val);
-
 
                 if ~isfield(outDef,'isData') || ~outDef.isData
                     continue
@@ -13649,6 +13664,29 @@ classdef PipelineManager < handle
                     continue
                 end
 
+                % Several files can share one provenance (forced reruns). When the
+                % branch reads from one of them, that source file is the match.
+                if numel(matches) > 1
+                    sourceFiles = strings(0,1);
+                    leafPathIDs = obj.branchPathFromLeaf(leafID);
+                    for iPath = 1:numel(leafPathIDs)
+                        pathNode = obj.nodes(obj.getNodeIndexByID(leafPathIDs(iPath)));
+                        if obj.isHistoryProxyNode(pathNode)
+                            sourceFiles(end+1,1) = string(obj.resolveProxyNodeFile(pathNode)); %#ok<AGROW>
+                        end
+                    end
+
+                    isSourceMatch = false(1, numel(matches));
+                    for iM = 1:numel(matches)
+                        isSourceMatch(iM) = any(strcmpi( ...
+                            string(obj.dataHistory(matches(iM).hIdx).file), sourceFiles));
+                    end
+
+                    if nnz(isSourceMatch) == 1
+                        matches = matches(isSourceMatch);
+                    end
+                end
+
                 % ---------------------------------------------------------
                 % FULL COVERAGE: candidate fully satisfied by one file -> tag leaf
                 % and skip the whole branch.
@@ -13894,6 +13932,11 @@ classdef PipelineManager < handle
             %   - Files produced by upstream stream nodes do NOT prepend their own
             %     dataHistory here, because their provenance is already represented
             %     explicitly by upstream nodes in the candidate path.
+            %   - When the prepended source history ends with the same steps the
+            %     branch starts with, those history steps are flagged as the branch's
+            %     first nodes (candidateStepIsNode = true) and the duplicated node
+            %     steps are dropped, so a source that is already the stored result of
+            %     those steps satisfies them.
 
             candidateSteps      = struct.empty(0,1);
             candidateNodeIDs    = [];
@@ -14076,9 +14119,57 @@ classdef PipelineManager < handle
                 candidateNodeIDs(end+1) = node.id; %#ok<AGROW>
             end
 
+            % The source file's own history may already end with the leading steps
+            % of this branch (the file is the stored result of those steps).
+            [candidateSteps, candidateStepIsNode] = ...
+                absorbSatisfiedSourceTail(candidateSteps, candidateStepIsNode);
+
             % =============================================================
-            % Local helper
+            % Local helpers
             % =============================================================
+            function [stepsOut, isNodeOut] = absorbSatisfiedSourceTail(stepsIn, isNodeIn)
+                %ABSORBSATISFIEDSOURCETAIL Treat history steps already applied by the branch as nodes.
+                %
+                %   When the provenance prepended from the source file ends with the
+                %   same k steps (name, version, parameters) that the branch starts
+                %   with, those k history steps ARE the branch's first k nodes: they
+                %   are flagged as node steps and the duplicated node steps are
+                %   dropped. History matching then counts the source file as covering
+                %   those nodes, so they are skipped. Users who want to apply the
+                %   steps again disable b_skipSteps. The longest overlap wins.
+
+                stepsOut = stepsIn;
+                isNodeOut = isNodeIn;
+
+                nLead = find(isNodeIn, 1, 'first') - 1;   % leading provenance steps
+                if isempty(nLead) || nLead < 1
+                    return
+                end
+
+                nodeRun = isNodeIn(nLead+1:end);
+                nNodeRun = find(~nodeRun, 1, 'first') - 1;
+                if isempty(nNodeRun)
+                    nNodeRun = numel(nodeRun);
+                end
+
+                for k = min(nLead, nNodeRun):-1:1
+                    isOverlap = true;
+                    for j = 1:k
+                        if ~obj.isSameStep(stepsIn(nLead-k+j), stepsIn(nLead+j))
+                            isOverlap = false;
+                            break
+                        end
+                    end
+
+                    if isOverlap
+                        isNodeOut(nLead-k+1:nLead) = true;
+                        stepsOut(nLead+1:nLead+k) = [];
+                        isNodeOut(nLead+1:nLead+k) = [];
+                        return
+                    end
+                end
+            end
+
             function [stepsOut, isNodeOut] = appendCandidateInfo(stepsIn, isNodeIn, infoToAppend, isNodeFlag)
                 %APPENDCANDIDATEINFO Append provenance steps while preserving node mask.
                 %
@@ -14113,7 +14204,12 @@ classdef PipelineManager < handle
                 firstAppend = infoToAppend(1);
                 lastAcc     = stepsOut(end);
 
-                if obj.isSameStep(lastAcc, firstAppend)
+                % Node steps that directly follow the source's prepended provenance
+                % are reconciled by absorbSatisfiedSourceTail (longest overlap)
+                % instead of this single-step boundary dedup.
+                deferToTailAbsorb = isscalar(isNodeFlag) && logical(isNodeFlag) && ~any(isNodeOut);
+
+                if ~deferToTailAbsorb && obj.isSameStep(lastAcc, firstAppend)
                     infoToAppend = infoToAppend(2:end);
                     maskToAppend = maskToAppend(2:end);
                 end
