@@ -9320,7 +9320,8 @@ classdef PipelineManager < handle
                 saveFolder, ...
                 'overrideFileNames', overrideFileNames, ...
                 'skipIfAlreadySaved', false, ...
-                'updateDataHistoryOnMove', true);
+                'updateDataHistoryOnMove', true, ...
+                'promoteOwnedFiles', strcmpi(policy, 'viewertemp'));
 
             savedFiles = [savedFiles; string(newlySavedFiles(:))];
 
@@ -10166,12 +10167,13 @@ classdef PipelineManager < handle
                 outCell = cell(1, numel(outputsLocal));
                 outCell(returnedOutputIndices) = returnedValues;
 
-                createdFilesLocal = obj.registerOutputs(stepNode, outCell, saveFolderLocal, stepSourceInfo);
+                createdFilesLocal = obj.registerOutputs(stepNode, outCell, saveFolderLocal, stepSourceInfo, stepStartTime);
                 appendCurrentOutFiles(createdFilesLocal);
 
                 savedFiles = obj.saveNodeDataOutputs(stepNode, saveFolderLocal);
                 if ~isempty(savedFiles)
                     createdFilesLocal = [createdFilesLocal; savedFiles];
+                stepStartTime = datetime('now');
                     createdFilesLocal = unique(createdFilesLocal, 'stable');
                     appendCurrentOutFiles(savedFiles);
                 end
@@ -12060,7 +12062,7 @@ classdef PipelineManager < handle
             end
         end
 
-        function createdFiles = registerOutputs(obj, nodeLocal, outCell, folder, stepSourceInfo)
+        function createdFiles = registerOutputs(obj, nodeLocal, outCell, folder, stepSourceInfo, stepStartTime)
             %REGISTEROUTPUTS Register outputs in obj.dataStore and return created filenames.
             %
             %   CREATEDFILES = REGISTEROUTPUTS(OBJ, NODELOCAL, OUTCELL, FOLDER)
@@ -12080,8 +12082,15 @@ classdef PipelineManager < handle
             %         as created files, and do not participate in manager-side
             %         saving.
             %
+            %   CREATEDFILES = REGISTEROUTPUTS(..., STEPSTARTTIME)
             %   Legacy outFile behavior:
             %       - If the node is legacy and has an "outFile" output, the concrete
+            %   STEPSTARTTIME (optional datetime) is when the step function started.
+            %   A DATA output the function returned as an existing file that was
+            %   written at or after it gets rec.ownedFile = true: the function
+            %   created that file for this run (as opposed to returning an input),
+            %   so the viewerTemp leaf policy may promote it instead of copying it.
+            %
             %         filename list is read from the corresponding output position in
             %         OUTCELL (not from outCell{:}).
             %       - Each created file is registered in dataStore using a filename-based
@@ -12133,6 +12142,9 @@ classdef PipelineManager < handle
             if isfield(nodeLocal.info,'legacyOpts') && nodeLocal.info.legacyOpts
 
                 outFileIdx = find(strcmpi({outputsLocal.name}, 'outFile'), 1, 'first');
+            if nargin < 6
+                stepStartTime = [];
+            end
 
                 if ~isempty(outFileIdx)
 
@@ -12327,6 +12339,7 @@ classdef PipelineManager < handle
                 % =====================================================
                 if strcmpi(obj.ramMode,'ramsafe')
 
+                    rec.ownedFile = obj.isFileWrittenSince(fullFn, stepStartTime);
                     rec.sourceInfo = stepSourceInfo;
                     if isnumeric(val) || islogical(val)
                         tmpFile = obj.writeTempData(val, folder, nodeIDLocal, outName, stepSourceInfo);
@@ -12933,6 +12946,22 @@ classdef PipelineManager < handle
             %       - Creates an extensionless temporary base name
             %       - Saves the payload through saveData
             %       - Normalizes the returned value from saveData to a full path
+        function tf = isFileWrittenSince(~, filePath, startTime)
+            %ISFILEWRITTENSINCE True if FILEPATH exists and was modified at/after STARTTIME.
+            %
+            %   File times have a one-second resolution, so STARTTIME is floored to
+            %   the second. An empty STARTTIME returns false.
+
+            tf = false;
+            if isempty(startTime) || ~isfile(char(string(filePath)))
+                return
+            end
+
+            info = dir(char(string(filePath)));
+            startSecond = dateshift(startTime, 'start', 'second');
+            tf = datetime(info(1).datenum, 'ConvertFrom', 'datenum') >= startSecond;
+        end
+
             %       - Registers the full path in obj.tempFiles
 
             % Resolve node
@@ -13150,6 +13179,13 @@ classdef PipelineManager < handle
 
             % -------------------------------------------------------------
             % Parse optional inputs
+            %       'promoteOwnedFiles'       - If true, a permanent file-backed output
+            %                                   the step function wrote itself in this
+            %                                   run (rec.ownedFile) is moved to the
+            %                                   destination name instead of copied, so
+            %                                   no duplicate stays behind. History and
+            %                                   current-run file names follow the move.
+            %
             % -------------------------------------------------------------
             overrideFileNames       = struct();
             skipIfAlreadySaved      = false;
@@ -13169,6 +13205,7 @@ classdef PipelineManager < handle
                     case 'updatedatahistoryonmove'
                         updateDataHistoryOnMove = logical(val);
 
+            promoteOwnedFiles       = false;
                     otherwise
                         error('PipelineManager:saveNodeDataOutputs:UnknownOption', ...
                             'Unknown option "%s".', char(string(varargin{iArg})));
@@ -13184,6 +13221,9 @@ classdef PipelineManager < handle
             for iOut = 1:numel(node.info.outputs)
 
                 outDef = node.info.outputs(iOut);
+                    case 'promoteownedfiles'
+                        promoteOwnedFiles = logical(val);
+
 
                 if ~isfield(outDef,'isData') || ~outDef.isData
                     continue
@@ -13343,10 +13383,50 @@ classdef PipelineManager < handle
                         continue
                     end
 
-                    ok = copyfile(srcPath, finalDstPath);
-                    if ~ok
-                        error('PipelineManager:saveNodeDataOutputs:CopyFailed', ...
-                            'Failed to copy file "%s" -> "%s".', srcPath, finalDstPath);
+                    isOwnedSrc = promoteOwnedFiles && isfield(rec,'ownedFile') && ...
+                        logical(rec.ownedFile);
+
+                    if isOwnedSrc
+                        % The step function wrote this file for this run: promote
+                        % it (move) so the function-named file does not linger
+                        % beside the final one.
+                        [~,srcBase,srcExt] = fileparts(srcPath);
+                        oldFileName = string(srcBase) + string(srcExt);
+
+                        ok = movefile(srcPath, finalDstPath);
+                        if ~ok
+                            error('PipelineManager:saveNodeDataOutputs:MoveFailed', ...
+                                'Failed to move file "%s" -> "%s".', srcPath, finalDstPath);
+                        end
+
+                        rec.ownedFile = false;
+
+                        % The compatibility key of the old filename is stale now.
+                        keyOld = obj.makeKey(node.id, char(oldFileName));
+                        if ~strcmp(keyOld, key) && obj.dataStore.isKey(keyOld)
+                            remove(obj.dataStore, keyOld);
+                        end
+
+                        if updateDataHistoryOnMove && ~isempty(obj.dataHistory)
+                            for iHist = 1:numel(obj.dataHistory)
+                                if isfield(obj.dataHistory(iHist),'file') && ...
+                                        strcmpi(char(string(obj.dataHistory(iHist).file)), char(oldFileName))
+                                    obj.dataHistory(iHist).file = char(finalFileName);
+                                    b_historyChanged = true;
+                                end
+                            end
+                        end
+
+                        if ~isempty(obj.current_outFile)
+                            outMask = strcmpi(string(obj.current_outFile), oldFileName);
+                            obj.current_outFile(outMask) = [];
+                        end
+                    else
+                        ok = copyfile(srcPath, finalDstPath);
+                        if ~ok
+                            error('PipelineManager:saveNodeDataOutputs:CopyFailed', ...
+                                'Failed to copy file "%s" -> "%s".', srcPath, finalDstPath);
+                        end
                     end
 
                     rec.fileName = string(finalDstPath);
