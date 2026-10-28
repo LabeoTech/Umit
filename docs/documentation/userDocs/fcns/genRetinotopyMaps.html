@@ -40,7 +40,7 @@ grand_parent: Functions
     <title>genRetinotopyMaps</title>
   </head>
   <body>
-    <h2>genRetinotopyMaps</h2>
+    <h2 id="genretinotopymaps">genRetinotopyMaps</h2>
     <hr>
     <p>
       Creates azimuth and elevation maps from retinotopic mapping recordings.
@@ -50,7 +50,7 @@ grand_parent: Functions
     <p>
       This function generates the amplitude and phase components of the azimuth and elevation retinotopic maps. The maps are created from the cortical responses to a periodic stimulus  <a href="#refs">[1-4]</a>.
     </p>
-    <h3>Input</h3>
+    <h3 id="input">Input</h3>
     <hr>
     <p>
       This function accepts only continuous image time series with dimensions Y, X and T, stored in a <samp>.dat</samp> file. UMT structs and <samp>.umt</samp> files are not supported. When called directly from MATLAB, a numeric Y x X x T array is also accepted; in that case the frame rate must be given explicitly with the <samp>FrameRateHz</samp> parameter.
@@ -94,7 +94,7 @@ grand_parent: Functions
       </p>
     </div>
 
-    <h3>Output</h3>
+    <h3 id="output">Output</h3>
     <hr>
     <p>
       The <samp>genRetinotopyMaps</samp> function creates a single <samp>.umt</samp> file (default name <samp>retinotopyMaps.umt</samp>) containing the following entries:
@@ -192,7 +192,7 @@ grand_parent: Functions
         Frame rate of the input data in Hz. When the function runs in a pipeline, the value is taken from the data automatically, and a <samp>.dat</samp> file otherwise provides it in its header. An explicit value overrides the header (a warning is issued if they differ). It is required for numeric array input.
       </p>
     </div>
-    <h3>References</h3>
+    <h3 id="references">References</h3>
     <hr>
     <ol id="refs">
       <li>

@@ -21,7 +21,7 @@ nav_exclude: true
             This page is preserved from a previous release. Controls and workflows may differ. See the <a href="{{ site.baseurl }}/documentation/userDocs/tools/manual_image_registration_tool.html">current equivalent</a> before following these instructions.
         </p>
     </div>
-  <h2>Manual image registration tool</h2>
+  <h2 id="manual-image-registration-tool">Manual image registration tool</h2>
     <hr>
     <p>
       The manual image registration tool is available in the <b><i>DataViewer</i></b> app. The tool allows one to interactively align an image from a <samp>.dat</samp> file to a reference image. The geometric transformations are then applied to the  misaligned <samp>.dat</samp> file.
@@ -31,7 +31,7 @@ nav_exclude: true
         If you are using the <b><i>umIToolbox</i></b> app, click <a href="{{ site.baseurl }}/documentation/userDocs/tools/manual_image_registration_tool_olderVersion.html">here</a> to access the old manual aligment tool. This tool will be deprecated in a later version of the <b>umIT</b> toolbox.
       </p>
     </div>
-    <h3>Procedure</h3>
+    <h3 id="procedure">Procedure</h3>
     <ol>
       <li>
         <p>Open it in <b><i>DataViewer</i></b>.</p>
@@ -59,7 +59,7 @@ nav_exclude: true
         Once the moving image (magenta) is placed in the optimal position, click on the <b>Align</b> button to apply to the misaligned data.
       </p>
     </ol>
-    <h3>Interface components</h3>    
+    <h3 id="interface-components">Interface components</h3>    
     <h4 id="options">Options panel</h4>
     <ul>
       <li><b><i>Image sharpening</i></b>:
@@ -81,14 +81,14 @@ nav_exclude: true
         </ul>
       </li>
     </ul>
-    <h4> Align Button </h4>
+    <h4 id="align-button"> Align Button </h4>
     <p>
       Applies the coregistration to the misaligned <samp>.dat</samp> file.
     </p>
     <p>
       A <samp>tform.mat</samp> file will also be saved in the <samp>.dat</samp> file's directory containing the geometric transformation <i>affine2d</i> object.
     </p>
-    <h4> Export Button </h4>
+    <h4 id="export-button"> Export Button </h4>
     <p>
       Saves the <i>affine2d</i> object with the geometric transformation to a <samp>.mat</samp> file.
     </p>    

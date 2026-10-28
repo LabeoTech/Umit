@@ -7,10 +7,10 @@ grand_parent: Documentation
 nav_order: 5
 ---
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Organization of .roi files</title></head><body>
-<h1>Organization of .roi files</h1>
+<h1 id="organization-of-roi-files">Organization of .roi files</h1>
 <p>A <samp>.roi</samp> file saves regions of interest created or loaded in <em>DataViewer</em>. It contains ROI geometry, masks, names, colors, measurements, and enough image context to validate or scale the regions when they are loaded again.</p>
 
-<h2>Top-level structure (version 1)</h2>
+<h2 id="top-level-structure-version-1">Top-level structure (version 1)</h2>
 <table><tr><th>Field</th><th>Meaning</th></tr>
 <tr><td><samp>schemaName</samp>, <samp>version</samp></td><td>Identify the current <samp>UMIT_ROI</samp> format and its validation rules.</td></tr>
 <tr><td><samp>createdOn</samp>, <samp>modifiedOn</samp></td><td>Creation and last-change times.</td></tr>
@@ -19,7 +19,7 @@ nav_order: 5
 <tr><td><samp>statsImage</samp></td><td>Optional displayed image used to calculate saved statistics, with frame/event view context.</td></tr>
 <tr><td><samp>ROIs</samp></td><td>Structure array containing one record per ROI.</td></tr></table>
 
-<h2>Each ROI entry</h2>
+<h2 id="each-roi-entry">Each ROI entry</h2>
 <table><tr><th>Field/group</th><th>Meaning</th></tr>
 <tr><td><samp>name</samp>, <samp>type</samp>, <samp>color</samp>, <samp>notes</samp></td><td>Unique display name, rectangle/ellipse/polygon/polyshape type, RGB color, and optional notes.</td></tr>
 <tr><td><samp>DOC</samp>, <samp>modifiedOn</samp></td><td>Date of creation and most recent change.</td></tr>
@@ -27,7 +27,7 @@ nav_order: 5
 <tr><td><samp>mask</samp></td><td>Y-X pixel mask. Its size must match <samp>imageInfo.imageSizeYX</samp>.</td></tr>
 <tr><td><samp>stats</samp></td><td>Pixel count, area, centroid, distance from origin, and spatial mean/standard deviation/median/minimum/maximum calculated from the saved statistics image.</td></tr></table>
 
-<h2>Save and load</h2>
+<h2 id="save-and-load">Save and load</h2>
 <p>Use the <strong>Save</strong> and <strong>Load</strong> controls in the <em>DataViewer</em> ROIs tab. Loading can replace the current ROI list or append to it. If image sizes differ, the app presents the supported compatibility/scaling choice and then rebuilds the ROI identities.</p>
 <p>For MATLAB workflows, use <samp>createROIFile</samp>, <samp>createROIEntry</samp>, <samp>saveROIFile</samp>, <samp>loadROIFile</samp>, and <samp>validateROIFile</samp>. Direct field editing can leave geometry, masks, and statistics inconsistent.</p>
 <div class="warnnote"><p><strong>Older ROI files may need migration</strong><br>Version 1 validation does not treat an unversioned previous-release ROI structure as current. Use the controlled load/migration path rather than renaming or hand-editing fields.</p></div>

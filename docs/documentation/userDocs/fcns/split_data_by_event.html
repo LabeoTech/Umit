@@ -40,7 +40,7 @@ grand_parent: Functions
     <title>split data by event</title>
   </head>
   <body>
-    <h2>split_data_by_event - Split data by trials</h2>
+    <h2 id="split-data-by-event-split-data-by-trials">split_data_by_event - Split data by trials</h2>
     <hr>
     <p>
       Rearranges an image time series by trials.
@@ -54,7 +54,7 @@ grand_parent: Functions
       The function uses the <b>onset</b> timestamps (<samp>state == 1</samp>) of each trial in the <samp>events.mat</samp> file as a temporal reference of the trial. Here, we refer to this temporal reference as an <b>"event"</b>. Each trial starts one baseline period (defined in the events information) before its event, runs until the start of the next trial (the last one runs to the end of the recording), and all trials are then cropped to the length of the shortest one so they stack along E.
     </p>
 
-    <h3>Input</h3>
+    <h3 id="input">Input</h3>
     <hr>
     <p>
       This function accepts data with a time (T) axis as its last axis, given as one of:
@@ -67,7 +67,7 @@ grand_parent: Functions
     <p>
       Arrays are not supported, and data that are already split by events are rejected. A <samp>.dat</samp> input is streamed: the continuous recording is never loaded whole and each trial is read and written in slabs (Low-RAM mode is always on).
     </p>
-    <h3>Output</h3>
+    <h3 id="output">Output</h3>
     <hr>
     <p>
       The output follows the input format.
@@ -87,11 +87,11 @@ grand_parent: Functions
       <b>More details</b>
     </button>
     <div class="content">
-      <h4>Ignored events</h4>
+      <h4 id="ignored-events">Ignored events</h4>
       <p>
         Every event instance of <samp>events.mat</samp> is saved, including the ones that were removed (ignored), so the E axis maps one to one onto <samp>events.mat</samp>. Removing an event affects display and processing, not saving: functions that reduce the output over events, such as <a href="./genAmplitudeMaps.html">genAmplitudeMaps</a>, exclude the ignored instances.
       </p>
-      <h4>Trial length</h4>
+      <h4 id="trial-length">Trial length</h4>
       <p>
         If trials have unequal lengths, the output is cropped to the shortest trial. UMT inputs are processed in RAM and keep a UMT output.
       </p>

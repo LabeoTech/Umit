@@ -9,15 +9,15 @@ nav_order: 1
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><style>
 .mycollapsible{background-color:#eee;color:#000;cursor:pointer;padding:18px;width:100%;border:0;text-align:left;font-size:15px;margin-bottom:10px}.mycollapsible:hover{background-color:#888}.content{padding:0 18px;display:none;overflow:hidden;background:#fff;border:1px solid #000;margin-bottom:10px}
 </style><title>createRegistrationTform</title></head><body>
-<h2>createRegistrationTform</h2><hr>
+<h2 id="createregistrationtform">createRegistrationTform</h2><hr>
 <p>Estimate and store a 2-D transform that aligns one Save Folder image to its reference image.</p>
 <h3 id="description">Description</h3><hr>
 <p>The function takes the reference image from <samp>ReferenceSource</samp> or, for a folder bound to a project, from the subject's active Image Reference (a project is not required). It then selects a moving <samp>.dat</samp>, reduces its Y-X-T data to one image (computed in X slabs, so the whole recording is never loaded into memory), estimates a similarity transform, calculates advisory quality-control metrics, and updates <samp>DataParams.mat</samp>: the reference image and where it came from, and the estimated transform.</p>
 <p>An aligned folder is refused (<samp>Umitoolbox:ImageRegistration:alreadyAligned</samp>): after apply, only a <a href="ImagesClassification.html#fresh-import">fresh import</a> of the raw data allows a new alignment. Without a reference source, the function stops with <samp>Umitoolbox:ImageRegistration:noReferenceSource</samp>, which explains both ways to supply one.</p>
 <div class="infonote"><p><strong>No .dat samples are changed.</strong><br>This function estimates and stores a candidate only. Use <a href="applyRegistrationTformOnFolder.html"><samp>applyRegistrationTformOnFolder</samp></a> separately after visual review.</p></div>
-<h3>Input</h3><hr><p><samp>SaveFolder</samp> must contain valid <samp>DataParams.mat</samp>, <samp>AcqInfos.mat</samp>, and one or more eligible <samp>.dat</samp> files. The moving file must be a Y-X-T <samp>.dat</samp>; a file with any other layout is refused with an <samp>unsupportedLayout</samp> error.</p>
-<h3>Output</h3><hr><p><samp>outFile</samp> is a file manifest containing the updated <samp>DataParams.mat</samp> and timestamped QC <samp>.fig</samp> and <samp>.png</samp> files.</p>
-<h3>Quality control</h3><hr>
+<h3 id="input">Input</h3><hr><p><samp>SaveFolder</samp> must contain valid <samp>DataParams.mat</samp>, <samp>AcqInfos.mat</samp>, and one or more eligible <samp>.dat</samp> files. The moving file must be a Y-X-T <samp>.dat</samp>; a file with any other layout is refused with an <samp>unsupportedLayout</samp> error.</p>
+<h3 id="output">Output</h3><hr><p><samp>outFile</samp> is a file manifest containing the updated <samp>DataParams.mat</samp> and timestamped QC <samp>.fig</samp> and <samp>.png</samp> files.</p>
+<h3 id="quality-control">Quality control</h3><hr>
 <p>The timestamped QC figure shows the filtered reference, the filtered moving image, the registered moving image, and an overlay. Inspect matching vessels or other stable anatomy, along with the field-of-view borders. The numeric values below are stored in <samp>DataParams.registration.qcMetrics</samp>; the summary is stored in <samp>qcStatus</samp> and <samp>qcWarning</samp>.</p>
 <table><tr><th>Metric</th><th>How to interpret it</th></tr>
 <tr><td><samp>MIBefore</samp></td><td>Mutual information between the filtered reference and moving images before registration. It is a baseline similarity value, not a pass/fail score.</td></tr>

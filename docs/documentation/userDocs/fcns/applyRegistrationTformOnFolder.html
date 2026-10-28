@@ -9,13 +9,13 @@ nav_order: 2
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><style>
 .mycollapsible{background-color:#eee;color:#000;cursor:pointer;padding:18px;width:100%;border:0;text-align:left;font-size:15px;margin-bottom:10px}.mycollapsible:hover{background-color:#888}.content{padding:0 18px;display:none;overflow:hidden;background:#fff;border:1px solid #000;margin-bottom:10px}
 </style><title>applyRegistrationTformOnFolder</title></head><body>
-<h2>applyRegistrationTformOnFolder</h2><hr>
+<h2 id="applyregistrationtformonfolder">applyRegistrationTformOnFolder</h2><hr>
 <p>Apply the registration transform stored in a Save Folder (by <a href="createRegistrationTform.html"><samp>createRegistrationTform</samp></a>) to all image data in that folder.</p>
 <div class="warnnote"><p><strong>Destructive and done only once</strong><br>This function rewrites every image <samp>.dat</samp> and image <samp>.umt</samp> file. Interpolation and pixels moved outside the frame cannot be recovered, and no backup copy is made. A folder can be aligned only once: afterwards estimate and apply are refused (<samp>Umitoolbox:ImageRegistration:alreadyAligned</samp>), and only a <a href="ImagesClassification.html#fresh-import">fresh import</a> of the raw data allows a new alignment. Keep a copy of the folder if you may need the unaligned data, and inspect the quality-control image before continuing.</p></div>
 <h3 id="description">Description</h3><hr>
 <p>The function uses the same apply engine as the <a href="../tools/manual_image_registration_tool.html"><em>Image Alignment Tool</em></a>, so both give the same folder state. It checks the folder first: the stored transform must have been estimated against the reference recorded in the folder (otherwise <samp>Umitoolbox:ImageRegistration:estimateReferenceMismatch</samp>; estimate again), and every target must be supported and of the expected size. Then every transformed file is written next to its original; only when all are ready are the originals replaced and <samp>DataParams.mat</samp> updated. If any step fails, every original is restored and nothing is changed; a report <samp>ImageAlignmentFailedReport_*.txt</samp> names the failed stage.</p>
 <p>The transform is 2-D, so it is applied to every Y-X plane of data whose first two axes are Y and X, whatever follows them, with linear interpolation. The output frame has the size of the reference image. <samp>NaN</samp> pixels (for example outside the field of view or the padding of short trials) are excluded from the interpolation and restored as <samp>NaN</samp> after warping.</p>
-<h3>Files modified</h3><hr>
+<h3 id="files-modified">Files modified</h3><hr>
 <table><tr><th>File type</th><th>Effect</th></tr>
 <tr><td>Every <samp>.dat</samp> file whose first two axes are Y and X (Y-X, Y-X-T, Y-X-E, Y-X-F, Y-X-T-E)</td><td>Every Y-X plane is geometrically transformed and the file is replaced. A <samp>.dat</samp> whose first two axes are not Y and X stops the operation before any file is changed.</td></tr>
 <tr><td>Every image <samp>.umt</samp> file</td><td>Every entry whose dimensions start with Y, X is transformed; an entry of another frame size stops the operation.</td></tr>
@@ -23,9 +23,9 @@ nav_order: 2
 <tr><td><samp>DataParams.mat</samp></td><td>The mask and view are transformed, and <samp>DataParams.registration</samp> records the applied state (time, confirmation mode) for the reference the transform was estimated against.</td></tr>
 <tr><td><samp>AcqInfos.mat</samp>, <samp>events.mat</samp>, processing history/logs, and project information</td><td>Not modified.</td></tr></table>
 <p>A <samp>manualAlignmentReport_*.mat</samp> report is written on success.</p>
-<h3>Input</h3><hr>
+<h3 id="input">Input</h3><hr>
 <p><samp>SaveFolder</samp> must contain a valid <samp>DataParams.mat</samp> with a stored transform, and at least one image file (a <samp>.dat</samp> with Y and X as its first two axes, or an image <samp>.umt</samp>).</p>
-<h3>Output</h3><hr>
+<h3 id="output">Output</h3><hr>
 <p>There is no normal data output. The modified image filenames and updated DataParams path are printed to the MATLAB command window.</p>
 <h3 id="parameters">Parameters</h3><hr>
 <button type="button" class="mycollapsible"><span class="iconplus"></span><samp><b>RequireUserConfirmation</b></samp> - require destructive-operation confirmation<br><span class="title-desc"><i>true (default) | false</i></span></button>

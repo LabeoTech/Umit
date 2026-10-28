@@ -40,12 +40,12 @@ grand_parent: Functions
     <title>genVSM</title>
   </head>
   <body>
-    <h2>genVSM - generate a visual sign map and cortical-area ROIs</h2>
+    <h2 id="genvsm-generate-a-visual-sign-map-and-cortical-area-rois">genVSM - generate a visual sign map and cortical-area ROIs</h2>
     <hr>
     <p>
       Creates a visual sign map from azimuth and elevation maps and writes detected cortical patches to a DataViewer-compatible <samp>.roi</samp> file.
     </p>
-    <h3>Syntax</h3>
+    <h3 id="syntax">Syntax</h3>
     <hr>
     <pre><code>[outData, roiFile] = genVSM(retinotopyUMT, SaveFolder)
 [outData, roiFile] = genVSM(retinotopyUMT, SaveFolder, 'Name', Value)</code></pre>
@@ -54,7 +54,7 @@ grand_parent: Functions
     <p>
       This function uses the azimuth and elevation phase maps created by <samp>genRetinotopyMaps</samp> to create a visual sign map (VSM). It always attempts to segment the VSM into connected cortical patches. When patches are detected, each patch is stored as a canonical ROI named <samp>CtxArea_&lt;index&gt;</samp>, for example <samp>CtxArea_1</samp>, in a <samp>.roi</samp> file that can be opened in DataViewer.
     </p>
-    <h3>Input</h3>
+    <h3 id="input">Input</h3>
     <hr>
     <ul>
       <li>
@@ -65,12 +65,12 @@ grand_parent: Functions
       </li>
     </ul>
 
-    <h3> The algorithm</h3>
+    <h3 id="the-algorithm"> The algorithm</h3>
     <hr>
     <p>
       In brief, the visual sign map is calculated as the sine of the difference between the gradients of the azimuth and elevation phase maps. The function then segments the map into connected patches and converts each patch into an ROI. This function uses the algorithm described by Sereno et al. <a href="#refs">[1,2]</a> and Garrett et al. <a href="#refs">[3]</a>.
     </p>
-    <h3>Output</h3>
+    <h3 id="output">Output</h3>
     <hr>
     <ul>
       <li>
@@ -142,7 +142,7 @@ grand_parent: Functions
     <p>
       <strong>API change:</strong> <samp>b_CreatePatches</samp> and <samp>PatchFileName</samp> have been removed. ROI creation is now always attempted, and <samp>ROIFileName</samp> controls the canonical <samp>.roi</samp> output filename.
     </p>
-    <h3>References</h3>
+    <h3 id="references">References</h3>
     <hr>
     <ol id="refs">
       <li>

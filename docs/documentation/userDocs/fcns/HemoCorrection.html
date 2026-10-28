@@ -40,7 +40,7 @@ grand_parent: Functions
     <title>HemoCorrection</title>
   </head>
   <body>
-    <h2>HemoCorrection</h2>
+    <h2 id="hemocorrection">HemoCorrection</h2>
     <hr>
     <p>
       Performs hemodynamic correction of the fluorescence signal.
@@ -50,7 +50,7 @@ grand_parent: Functions
     <p>
       This function removes the hemodynamic fluctuations from a fluorescence signal using data acquired with the LabeoTech's optical imaging systems.The function uses multi-channel recordings to measure the light absorption of the hemoglobin in order to remove it from the fluorescence channel. In brief, this function applies a <b>pixelwise linear regression</b> of the fluorescence signal onto the reflectance signals (<samp>Algorithm</samp> = <samp>LinearRegression</samp>, default). The algorithm is described in details by <a href="#references">[1]</a>. Alternatively, a <b>ratiometric</b> correction based on the normalized fluorescence and the normalized reflectance of a single reference channel can be selected (<samp>Algorithm</samp> = <samp>Ratiometric</samp>).
     </p>
-    <h3>Input</h3>
+    <h3 id="input">Input</h3>
     <hr>
     <p>
       The fluorescence data, given as a <samp>.dat</samp> file or as a numeric array, with dimensions Y,X,T or, for data split by events, Y,X,T,E. UMT structures and <samp>.umt</samp> files are not supported. The reference reflectance channels are continuous Y,X,T <samp>.dat</samp> files stored in the SaveFolder (<samp>events.mat</samp> must also be there for event-split fluorescence). <samp>AcqInfos.mat</samp> is not read. This function uses one to three files containing reflectance (red, yellow and green) data and applies the hemodynamic correction to the file containing the fluorescence data. The file names must be the following:<br>
@@ -62,7 +62,7 @@ grand_parent: Functions
       <li><i>green.dat</i>: green channel</li>
     </ul>
     <p>The abovementioned files are created using the <a href="./ImagesClassification.html">ImagesClassification</a> function.</p>
-    <h3>Output</h3>
+    <h3 id="output">Output</h3>
     <hr>
     <p>
       The corrected fluorescence signal, with the same dimensions as the input fluorescence data. A <samp>.dat</samp> input gives the file <samp>hemoCorr_fluo.dat</samp> in the SaveFolder (same axes as the input; the channel name stored in its header is <samp>hemoCorr_fluo</samp>); a numeric array input gives a numeric array of the same size.</p>
@@ -71,11 +71,11 @@ grand_parent: Functions
       <b>More details</b>
     </button>
     <div class="content">
-      <h4>Frame rates and reference channels</h4>
+      <h4 id="frame-rates-and-reference-channels">Frame rates and reference channels</h4>
       <p>
         Every reference channel uses the frame rate stored in its own <samp>.dat</samp> header and is resampled to the frame rate of the fluorescence data. A reference faster than the fluorescence is low-pass filtered (0.45 x the fluorescence rate) before it is resampled.
       </p>
-      <h4>Event-split fluorescence (Y,X,T,E)</h4>
+      <h4 id="event-split-fluorescence-y-x-t-e">Event-split fluorescence (Y,X,T,E)</h4>
       <p>
         Each E slice is a trial that is corrected independently, with its own fluorescence and reference means and its own regression over the trial frames. The E axis must hold one slice per event instance of <samp>events.mat</samp> (as saved by <a href="./split_data_by_event.html">split_data_by_event</a>). The continuous reference channels are cut by the same events: the frame times of every trial are sampled in each reference channel by linear interpolation.
       </p>

@@ -41,7 +41,7 @@ grand_parent: Functions
     <title>HemoCompute</title>
   </head>
   <body>
-    <h2>HemoCompute</h2>
+    <h2 id="hemocompute">HemoCompute</h2>
     <hr>
     <p>
       Calculates HbO and HbR from reflectance signals.
@@ -55,7 +55,7 @@ grand_parent: Functions
       (<samp>UMITRigLedger.json</samp> in the SaveFolder), never from the rig library or the Active rig.
       The filter transmission comes from the filter set named by <samp>FilterSet</samp>.
     </p>
-    <h4>Rig requirements</h4>
+    <h4 id="rig-requirements">Rig requirements</h4>
     <p>The SaveFolder must be bound to a rig. HemoCompute stops with an error, before anything is written, when the folder:</p>
     <ul>
       <li>has no rig ledger (<samp>Umitoolbox:RigLedger:noLedger</samp>), for example a folder imported by an earlier release;</li>
@@ -66,7 +66,7 @@ grand_parent: Functions
     <p>The error message says why the folder was refused and how to fix it: bind a rig with <a href="../apps/folder-rig.html">DataViewer's Management &gt; Rig &gt; Folder Rig</a> menu, resolve the conflict there, or start again from a fresh save folder. A pipeline runs the same checks before it starts (preflight): a folder that fails them is skipped and logged, and the other folders are processed.</p>
     <p>After a successful computation, HemoCompute <b>commits</b> the optics and the filter set it used to the folder's rig ledger (the first time only). From then on the folder keeps using those optics: rebinding it to a rig whose optics differ creates a rig conflict, and a filter set whose content differs from the committed one under the same name makes HemoCompute refuse the folder (<samp>Umitoolbox:RigLedger:filterSetModified</samp>; use a filter set with a new name instead). The Rig Manager does not let you change the profiles of a filter set in place (it offers to save a new filter set), so this happens with a library file edited by hand or a different library on another computer. Editing or archiving the library rig afterwards has no effect on the folder.</p>
     <p>When the rig library of this computer no longer has the filter set (for example on another computer), HemoCompute uses the copy committed in the folder's rig ledger and shows the warning <samp>Umitoolbox:HemoCompute:FilterSetFromLedger</samp>. To use the library again, import the filter set with the same name and content into the rig library.</p>
-    <h3>Input</h3>
+    <h3 id="input">Input</h3>
     <hr>
     <p>
       Call the function as <samp>HemoCompute(SaveFolder, data, ...)</samp>.
@@ -83,7 +83,7 @@ grand_parent: Functions
       <samp>yellow</samp>. Imported channel filenames and timebases are resolved from
       <samp>AcqInfos.mat</samp>. Every resolved channel file must be an image time series with dimensions Y,X,T. Four-dimensional event-split input is not supported.
     </p>
-    <h3>Output</h3>
+    <h3 id="output">Output</h3>
     <hr>
     <p>
       The function writes the Y,X,T files <samp>HbO.dat</samp> and <samp>HbR.dat</samp> in the SaveFolder.

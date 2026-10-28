@@ -7,10 +7,10 @@ grand_parent: Documentation
 nav_order: 1
 ---
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Pipeline Manager</title></head><body>
-<h1>Pipeline Manager</h1>
+<h1 id="pipeline-manager">Pipeline Manager</h1>
 <p><em>Pipeline Manager</em> builds a directed acyclic graph (DAG): a sequence of analysis functions in which arrows show how data moves from one operation to the next. The included functions cover common widefield-imaging processing and analysis workflows. If you want to create a custom analysis function of your own, see <a href="../other/how-to-create-custom-functions.html">Creating analysis functions for PipelineManager</a>.</p>
 <p>The manager records which functions and parameters produced each result, chooses an execution order, and reduces memory use by passing large data through files when appropriate. Its graph makes parallel and sequential processing paths visible before the pipeline runs.</p>
-<h2>Open the app</h2>
+<h2 id="open-the-app">Open the app</h2>
 <p>From <em>DataViewer</em>, load a <samp>.dat</samp> or image-kind <samp>.umt</samp>, open the <strong>Pipeline</strong> tab, and choose <strong>Pipeline Manager</strong>. The current file is already present as the protected input node.</p>
 <p>To open the standalone app from MATLAB:</p>
 <pre><code>PipelineManagerTool;</code></pre>
@@ -18,7 +18,7 @@ nav_order: 1
 <p>When the tool is opened from <em>DataViewer</em> (including batch mode), <em>DataViewer</em> shows a progress dialog titled <em>Pipeline Manager is open</em> and cannot be used until the tool is closed; closing the tool removes the dialog. The tool itself is a normal window with its own menu bar (File, Data, Execution, Tools). A standalone <samp>PipelineManagerTool</samp> does not block anything.</p>
 <p style="text-align:center"><img src="../../assets/img/current/dataviewer-pipeline-manager-open.png" alt="DataViewer greyed out behind a progress dialog titled Pipeline Manager is open, which says that DataViewer is available again when Pipeline Manager closes" width="880"><br><em>While <em>Pipeline Manager</em> is open, <em>DataViewer</em> is blocked by this dialog.</em></p>
 <p style="text-align:center"><img src="../../assets/img/current/pipeline-manager-current.png" alt="Pipeline Manager opened from DataViewer with green.dat connected to a normalizeLPF step, its summary and its editable parameters" width="880"><br><em>The current file is the starting point of the graph. The selected step shows its summary and its editable parameters. Function categories come from live <em>PipelineManager</em> discovery.</em></p>
-<h2>Interface layout</h2>
+<h2 id="interface-layout">Interface layout</h2>
 <p>Available analysis functions are listed on the left. The middle shows the pipeline graph and execution order. The right side summarizes the selected step and its parameters. File, data, execution, and inspection controls are along the top; run progress and the activity log are at the bottom.</p>
 <table><tr><th>Area/control</th><th>Purpose</th></tr>
 <tr><td>Available Functions + search</td><td>Filters discovered functions by category and name.</td></tr>
@@ -32,7 +32,7 @@ nav_order: 1
 <tr><td>RAM / Safety</td><td>Selects automatic or RAM-safe planning and the safety policy.</td></tr>
 <tr><td><strong>Reuse Existing Files</strong></td><td>Allows compatible outputs already on disk to satisfy steps.</td></tr>
 <tr><td><strong>Run</strong> / <strong>Stop</strong></td><td>Reviews and executes the graph, or requests a cooperative stop.</td></tr></table>
-<h2>Build and run a first pipeline</h2>
+<h2 id="build-and-run-a-first-pipeline">Build and run a first pipeline</h2>
 <ol><li>Expand a function category on the left, select a function, and choose <strong>Add</strong>.</li><li>If the function needs an input that is not determined automatically, select the source in the dialog. Compatible outputs from earlier steps, files in the Save Folder, and the current <em>DataViewer</em> file are shown where applicable.</li><li>Select the new graph step and set its options in the <strong>Parameters</strong> panel on the right, then choose <strong>Apply</strong>.</li><li>Add the next function. The manager connects compatible input and output types and updates the execution order.</li><li>Use <strong>Save Outputs</strong> on a step when a particular intermediate result must be written.</li><li>Choose <strong>Run</strong>, inspect the execution plan and warnings, then confirm.</li><li>Follow progress in the graph, execution-order panel, and activity log. At the end, a short <strong>Pipeline Run</strong> dialog reports the result: <strong>OK</strong> closes it, <strong>See full summary</strong> opens the run summary (completed, skipped, failed steps and outputs).</li></ol>
 <p style="text-align:center"><img src="../../assets/img/current/pipeline-run-result-dialog.png" alt="Pipeline Run dialog: Pipeline completed successfully, with OK and See full summary" width="301"><br><em>The result dialog shown at the end of a run.</em></p>
 <h2 id="graph">Graph interactions</h2>
@@ -45,14 +45,14 @@ nav_order: 1
 <tr><td>Save outputs</td><td>Right-click and choose <strong>Save Outputs</strong> to select which step outputs should persist.</td></tr>
 <tr><td>Remove a step</td><td>Right-click and choose <strong>Remove step</strong>. Downstream connections are rechecked; the protected <em>DataViewer</em> source cannot be removed.</td></tr>
 <tr><td>Clear the graph</td><td><strong>Clear Pipeline</strong> removes all steps after confirmation but keeps the selected folders and execution settings.</td></tr></table>
-<h2>Adding a parallel branch</h2>
+<h2 id="adding-a-parallel-branch">Adding a parallel branch</h2>
 <p><strong>Add as New Branch</strong> starts another path instead of extending the currently selected path. Use branches when one pipeline should process several input files or generate two independent results from the same source. The graph shows where branches share an input and where they remain separate.</p>
-<h2>Pipeline script generation</h2>
+<h2 id="pipeline-script-generation">Pipeline script generation</h2>
 <p>Choose <strong>File &gt; Generate Script</strong> to export the current graph as a MATLAB script. The generated script reproduces the configured steps, connections, parameters, data folders, and execution settings. Review the file paths before running it on another computer.</p>
 <h2 id="batch-mode">Batch mode</h2>
 <p>To run one pipeline on several recordings from <em>DataViewer</em>, choose <strong>File &gt; Batch pipeline...</strong> (or right-click the <strong>Pipeline Manager</strong> button of the Pipeline tab and choose <strong>Batch mode...</strong>). The tool opens as <em>Pipeline Manager Tool - Batch mode</em>: it works on folder pairs instead of the open file, and the import functions (<a href="../fcns/ImagesClassification.html">ImagesClassification</a>, <a href="../fcns/importFromTif.html">importFromTif</a>, <a href="../fcns/getEvents.html">getEvents</a>) are available. The folders of the file open in <em>DataViewer</em> pre-fill the first pair.</p>
 <p style="text-align:center"><img src="../../assets/img/current/pipeline-manager-batch-mode.png" alt="Pipeline Manager Tool in batch mode with the DataImport category and the Data Folders button" width="880"><br><em>Batch mode, with the import functions available.</em></p>
-<h2>Batch data folders</h2>
+<h2 id="batch-data-folders">Batch data folders</h2>
 <p><strong>Data Folders</strong> builds a table of Save Folder/Raw Folder pairs. Add folders one at a time or discover child Save Folders, filter the list, set a Raw Folder, use the Save Folder as its own raw source, mark unavailable raw data as <samp>Missing</samp>, and enable or disable rows. Invalid or duplicate Save Folders block the run. A step that requires raw data skips a row marked <samp>Missing</samp> rather than guessing a location.</p>
 <p>Before running, every folder is checked (preflight). A folder that fails a check of its own, for example a rig-dependent step such as <a href="../fcns/HemoCompute.html">HemoCompute</a> on a folder without a usable rig ledger, is skipped and logged as <em>Failed</em> with the reason, and the other folders run. If every folder fails, the run stops before any work starts.</p>
 <h2 id="step-skipping">Re-running a pipeline (step skipping)</h2>
@@ -80,7 +80,7 @@ nav_order: 1
 <tr><td><strong>View Folder Pipeline Log</strong></td><td>Loads <samp>pipeLog.mat</samp> for a selected enabled Save Folder.</td></tr>
 <tr><td><strong>Export Error Log</strong></td><td>Writes detailed diagnostic text for sharing or later review.</td></tr></table>
 <div class="infonote"><p><strong>* Virtual input</strong><br>A virtual input is a file or value that supplies a step without being produced by another step in the graph. Examples include the current <em>DataViewer</em> file and a file selected from the Save Folder.</p></div>
-<h2>Output files and control files</h2>
+<h2 id="output-files-and-control-files">Output files and control files</h2>
 <p>In standalone mode, saved final or explicitly selected outputs are written to each Save Folder using the function's declared file name. In <em>DataViewer</em> mode, compatible image results are offered for immediate display and are temporary by default; non-image reports and terminal results remain saved files when the function creates or requests them.</p>
 <table><tr><th>Item</th><th>Contents</th></tr>
 <tr><td>Pipeline file</td><td>The saved graph, connections, parameters, and execution choices. Written only by <strong>Save Pipeline</strong>.</td></tr>

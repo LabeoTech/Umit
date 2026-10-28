@@ -21,7 +21,7 @@ nav_exclude: true
             This page is preserved from a previous release. Controls and workflows may differ. See the <a href="{{ site.baseurl }}/documentation/userDocs/apps/ROImanager.html">current equivalent</a> before following these instructions.
         </p>
     </div>
-		<h2>ROImanager</h2>
+		<h2 id="roimanager">ROImanager</h2>
 		<hr>
 		<p>
 			<samp>ROImanager</samp> is a graphical interface dedicated to create, edit and save regions of interest (ROIs) associated to an image. In addition, it provides preset ROIs of the top projection of mouse cortical areas from the Mouse Allen Brain Atlas. The <samp>ROImanager</samp> app can be called from the <a href="{{ site.baseurl }}/documentation/userDocs/apps/umIToolbox-Viz.html">Visualization</a> tab, from the <i>Add-ons</i> tab in the <a href="{{ site.baseurl }}/documentation/userDocs/apps/DataViewer.html">DataViewer</a> app or as <b>standalone</b> (see syntax below).
@@ -418,7 +418,7 @@ nav_exclude: true
 		<p>
 			Window containing the grayscaled image (left) and the binary mask (right). The ROIs created by the threshold are overlayed on both images and numbered on the binary mask.
 		</p>
-		<h4> Generating ROIs</h4>
+		<h4 id="generating-rois"> Generating ROIs</h4>
 		<p>
 			Once all parameters are set in the control panel(1), simply click on the green button (<i>Create ROIs</i>) to generate the ROIs. The new ROIs will be added to the ROI table in <samp>ROImanager</samp> app with the notation : <samp>newROI_&lt;NUMBER&gt;</samp>
 		</p>
@@ -544,7 +544,7 @@ nav_exclude: true
 		<p>
 			In order to create the <i>Imaging reference frame</i>, one can simply go to Image &gt;&gt;Image reference file... &gt;&gt; <i>Export</i> and select the folder and name of the file (default: <i>ImagingReferenceFrame.mat</i>) to save the current frame as the reference frame. However, it is advisable to set all image parameters (origin, pixel size, colormap and logical mask) before creating the file. Here is a brief description on how to set the main image parameters:
 		</p>
-		<h4>Origin</h4>
+		<h4 id="origin">Origin</h4>
 		<p>
 			To create a new reference point (i.e. origin), go to Image &gt;&gt; Set origin &gt;&gt; <i>New</i>. Here, you can select a point in the image to be the new <i>origin</i> (0,0) of the cartesian coordinates. In the example below, we will select an anatomical landmark from the mouse skull(<i>Bregma</i>) as the origin. To select a new origin, click and drag the green dot to the desired location and right-click to save. The image's axis will be shifted to match the new origin point.
 		</p>
@@ -571,7 +571,7 @@ nav_exclude: true
 			<video src="{{ site.baseurl }}/documentation/assets/gifs/roimanager_import_origin.ogg" alt="roimanager_import_origin" width = "880" controls></video><br>
 			<i>How to import X,Y coordinates from <samp>.mat</samp> file as a new origin.</i>
 		</p>
-		<h4>Pixel size</h4>
+		<h4 id="pixel-size">Pixel size</h4>
 		<p>
 			To set the image's pixel size, simply go to Image &gt;&gt; <i>Set pixel size</i> and type the image's pixel ratio in pixel per millimeter:
 		</p>
@@ -586,7 +586,7 @@ nav_exclude: true
 				To erase the pixel size and reset the axis units and ROI coordinates back to <i>pixels</i>, just set the pixel ratio to <b>zero</b>.
 			</p>
 		</div>
-		<h4>Colormap</h4>
+		<h4 id="colormap">Colormap</h4>
 		<p>
 			To change the colormap and the color scale, go to Image &gt;&gt; <i>Set colormap</i>:
 		</p>
@@ -596,7 +596,7 @@ nav_exclude: true
 				If the <samp>ROImanager</samp> app was opened as <i>Add-on</i> from the <samp>DataViewer</samp> app, the button <i>Set colormap</i> from <samp>ROImanager</samp> is disabled. You can access the colormap settings from the <samp>DataViewer</samp> interface instead.
 			</p>
 		</div>
-		<h4>Logical mask</h4>
+		<h4 id="logical-mask">Logical mask</h4>
 		<p>
 			To learn how to create or import a logical mask, read <a href="#draw-a-mask">this section</a>.
 		</p>

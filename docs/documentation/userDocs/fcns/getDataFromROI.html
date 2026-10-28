@@ -41,7 +41,7 @@ grand_parent: Functions
     <title>getDataFromROI</title>
   </head>
   <body>
-    <h2>getDataFromROI</h2>
+    <h2 id="getdatafromroi">getDataFromROI</h2>
     <hr>
     <p>
       Extracts data from ROIs.
@@ -57,7 +57,7 @@ grand_parent: Functions
     <p>
       To calculate event response features, use the workflow <a href="split_data_by_event.html"><samp>split_data_by_event</samp></a> &rarr; <samp>getDataFromROI</samp> with <samp>SpatialAggFcn</samp> other than <samp>'none'</samp> &rarr; <a href="calculateResponseFeatures.html"><samp>calculateResponseFeatures</samp></a>.
     </p>
-    <h3>Input</h3>
+    <h3 id="input">Input</h3>
     <hr>
     <p>
       This function accepts imaging data containing the dimensions Y and X, in one of the following forms:
@@ -74,7 +74,7 @@ grand_parent: Functions
         An event-split <samp>.dat</samp> file (e.g., the output of <a href="split_data_by_event.html"><samp>split_data_by_event</samp></a>) stores no event labels. The event information is taken from the <samp>events.mat</samp> file of the Save Folder: one slice per event instance or one slice per condition. If the E dimension matches neither, the slices are treated as a single condition and a warning is issued.
       </p>
     </div>
-    <h3>Output</h3>
+    <h3 id="output">Output</h3>
     <hr>
     <p>
       The output of this function is a <samp>.umt</samp> file (default name <samp>ROI_data.umt</samp>) of kind <samp>roi</samp> containing the data separated by ROI. The output dimensions depend on <samp>SpatialAggFcn</samp>:

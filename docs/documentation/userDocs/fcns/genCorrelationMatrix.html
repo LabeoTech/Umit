@@ -40,7 +40,7 @@ grand_parent: Functions
     <title>genCorrelationMatrix</title>
   </head>
   <body>
-    <h2>genCorrelationMatrix</h2>
+    <h2 id="gencorrelationmatrix">genCorrelationMatrix</h2>
     <hr>
     <p>
       Generate correlation matrix from image time series.
@@ -53,12 +53,12 @@ grand_parent: Functions
     <p>
       The <samp>.dat</samp> file is streamed in blocks of image columns, so the recording is never loaded whole into memory. When <samp>centroid_vs_centroid</samp> is used, only the seed pixels are read.
     </p>
-    <h3>Input</h3>
+    <h3 id="input">Input</h3>
     <hr>
     <p>
       This function accepts only a <samp>.dat</samp> file containing a continuous image time series with dimensions Y, X and T. Numeric arrays, <samp>.umt</samp> files and UMT structs are not supported, and neither are event-split data (Y, X, T and E). The image size must match the image size of the ROI file.
     </p>
-    <h3>Output</h3>
+    <h3 id="output">Output</h3>
     <hr>
     <p>
       The output of this function is a <samp>.umt</samp> file (default name <samp>corrMatrix.umt</samp>) of kind <samp>roi</samp> containing the entry <samp>CorrMatrix</samp> with dimensions <samp>{'ROI','ROI'}</samp>, i.e., an N x N correlation matrix where N is the number of ROIs. The ROI names are stored as labels of both dimensions.

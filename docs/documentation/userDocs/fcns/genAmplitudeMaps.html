@@ -8,17 +8,17 @@ grand_parent: Functions
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><style>
 .mycollapsible{background-color:#eee;color:#000;cursor:pointer;padding:18px;width:100%;border:0;text-align:left;font-size:15px;margin-bottom:10px}.mycollapsible:hover{background-color:#888}.content{padding:0 18px;display:none;overflow:hidden;background:#fff;border:1px solid #000;margin-bottom:10px}
 </style><title>genAmplitudeMaps</title></head><body>
-<h2>genAmplitudeMaps</h2><hr><p>Calculate one response-minus-baseline image for each event condition.</p>
+<h2 id="genamplitudemaps">genAmplitudeMaps</h2><hr><p>Calculate one response-minus-baseline image for each event condition.</p>
 <h3 id="description">Description</h3><hr>
 <p>For every condition, the function aggregates baseline samples and response samples, subtracts the baseline map from the response map, and aggregates repetitions. The file is streamed in X slabs and only the baseline and response frames of each trial are read, so the data are never loaded whole (Low-RAM mode is always on).</p>
-<h3>Input</h3><hr>
+<h3 id="input">Input</h3><hr>
 <p>An event-split <samp>.dat</samp> file with axes Y-X-T-E, for example the output of <a href="./split_data_by_event.html">split_data_by_event</a>. Continuous Y-X-T data must be split first. Arrays, UMT structures and <samp>.umt</samp> files are not supported.</p>
 <p>The E axis of the file is matched to the <samp>events.mat</samp> in <samp>SaveFolder</samp>:</p>
 <ul>
 <li>one slice per event instance: the instances of each condition are pooled into one map (ignored instances are excluded);</li>
 <li>one slice per condition (an aggregated file): one map per slice.</li></ul>
 <p>An E axis that cannot be matched to <samp>events.mat</samp> is rejected. Without an <samp>events.mat</samp>, every slice is treated as a repetition of one condition, with a default baseline of 7 frames.</p>
-<h3>Output</h3><hr>
+<h3 id="output">Output</h3><hr>
 <p>A <samp>.dat</samp> file, <samp>amplitudeMap.dat</samp>, written in <samp>SaveFolder</samp> with axes Y-X-E: one amplitude map per event condition, ordered by first appearance. The file stores no labels; its E axis is matched to <samp>events.mat</samp> (one slice per condition).</p>
 <button type="button" class="mycollapsible"><span class="iconplus"></span><b>More details</b></button>
 <div class="content"><p>Ignored instances are excluded, and a condition whose instances are all ignored gives a NaN map. <samp>BaselineMeasure</samp> and <samp>ResponseMeasure</samp> are applied jointly across frames <b>and</b> trials within each condition, not per trial and then averaged across trials. With the default <samp>ResponseMeasure</samp> = <samp>max</samp>, the response is the single largest response-window value across all trials of a condition, not the mean of each trial's own peak.</p></div>

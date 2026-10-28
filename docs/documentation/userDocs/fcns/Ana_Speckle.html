@@ -40,7 +40,7 @@ grand_parent: Functions
     <title>Ana_Speckle</title>
   </head>
   <body>
-    <h2>Ana_Speckle</h2>
+    <h2 id="ana-speckle">Ana_Speckle</h2>
     <hr>
     <p>
       Calculates the blood flow from the Laser Contrast Speckle Imaging (LSCI) data.
@@ -50,7 +50,7 @@ grand_parent: Functions
     <p>
       This function uses the raw LSCI data stored in a speckle <samp>.dat</samp> file (typically <samp>speckle.dat</samp>) and calculates flow of imaged blood vessels (in arbitrary units). The algorithm used in this function is described in <a href="#references">[1]</a>. The input selects the execution mode: a file is read, processed and written in chunks, so the whole recording is never loaded into memory (Low-RAM mode), while an array is processed in memory (Standard mode).
     </p>
-    <h3>Input</h3>
+    <h3 id="input">Input</h3>
     <hr>
     <p>
       The raw LSCI image time series, with dimensions Y,X,T, in one of two forms:
@@ -62,7 +62,7 @@ grand_parent: Functions
     <p>
       Other file types and other dimension layouts are not supported.
     </p>
-    <h3>Output</h3>
+    <h3 id="output">Output</h3>
     <hr>
     <p>
       For a file input, the file <samp>Flow.dat</samp>, written in the save folder: a single-precision image time series with dimensions Y,X,T containing blood-flow values in

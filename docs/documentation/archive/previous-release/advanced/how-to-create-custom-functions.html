@@ -23,7 +23,7 @@ nav_exclude: true
             This page is preserved from a previous release. Controls and workflows may differ. See the <a href="{{ site.baseurl }}/documentation/userDocs/other/how-to-create-custom-functions.html">current equivalent</a> before following these instructions.
         </p>
     </div>
-    <h2>How to create custom functions in <b><i>umIT</i></b></h2>
+    <h2 id="how-to-create-custom-functions-in-umit">How to create custom functions in <b><i>umIT</i></b></h2>
     <hr>
     <p>
         The <b><i>umIToolbox</i></b> was designed to allow the integration of custom functions to its pipeline
@@ -39,7 +39,7 @@ nav_exclude: true
         functions based on a set of keywords representing the function's inputs and outputs. Here is the list of all
         valid keywords:
     </p>
-    <h4>Inputs</h4>
+    <h4 id="inputs">Inputs</h4>
     <hr>
     <table>
         <tr>
@@ -72,7 +72,7 @@ nav_exclude: true
             <td>handle of the <i>protocol</i> object (<i>Subject, Acquisition or Modality</i>)</td>
         </tr>
     </table>
-    <h4>Outputs</h4>
+    <h4 id="outputs">Outputs</h4>
     <hr>
     <table>
         <tr>
@@ -257,7 +257,7 @@ default_Output = {'file1.dat','file2.dat'};
         </div>
         </p>
     </div>
-    <h5>Default output file name(s)</h5>
+    <h5 id="default-output-file-name-s">Default output file name(s)</h5>
     <p>
         If the function output is a <samp>outData</samp>, means that there is a single data is created. In this case,
         the <samp>default_Output</samp> variable is a the name of the file with it's <samp>.dat</samp> or
@@ -287,7 +287,7 @@ default_Output = {'file1.dat','file2.dat'};
             created.
         </p>
     </div>
-    <h5>Default options</h5>
+    <h5 id="default-options">Default options</h5>
     <p>
         Functions using the <samp>opts</samp> parameters structures, need to set the default options. Two structures
         need to be created: <samp>default_opts</samp> and <samp>opts_values</samp>. The <samp>default_opts</samp>
@@ -364,7 +364,7 @@ default_Output = {'file1.dat','file2.dat'};
                     word or scalar values ONLY.</b></td>
         </tr>
     </table>
-    <h5>Default object</h5>
+    <h5 id="default-object">Default object</h5>
     <p>
         In some cases, the handle of the <b><i>protocol</i></b> object (i.e. Subject, Acquisition or Modality) that the
         function is running with can be passed as input. To do so, simply add the <samp>default_object</samp> variable
@@ -380,7 +380,7 @@ default_Output = {'file1.dat','file2.dat'};
         useful when the function needs to access the hierarchy of the object (e.g., the object variable of a modality
         can access the acquisition and/or subject objects associated with it).
     </p>
-    <h5>Dependency variable</h5>
+    <h5 id="dependency-variable">Dependency variable</h5>
     <p>
         Although it is not a default value, the <samp>dependency</samp> variable can be used in the default section to
         force the <b>PipelineManager</b> to include a given function in the pipeline prior to the one with the variable.

@@ -40,7 +40,7 @@ grand_parent: Functions
     <title>SpeckleMapping</title>
   </head>
   <body>
-    <h2>SpeckleMapping</h2>
+    <h2 id="specklemapping">SpeckleMapping</h2>
     <hr>
     <p>
       Calculates the average speckle contrast map from Laser Speckle Contrast Imaging (LSCI) raw data.
@@ -56,7 +56,7 @@ grand_parent: Functions
     <p>
       where the speckle contrast (<b>K<sub>s</sub></b>) is equal to the ratio of standard deviation (<b>&sigma;</b>) to the mean intensity (<b>I</b>) averaged across time. The speckle contrast can be calculated either in the spatial or the temporal dimensions <a href="#references">[1]</a>. In brief, the estimation of the speckle contrast in space is obtained by calculating the standard deviation across a 5 by 5 pixel window which may decrease the spatial resolution. In contrast, if the calculation is performed in the temporal domain, the original spatial resolution is preserved.
     </p>
-    <h3>Input</h3>
+    <h3 id="input">Input</h3>
     <hr>
     <p>
       An image time series with dimensions Y,X,T (LSCI data), given in one of two forms that also select the execution mode:
@@ -68,7 +68,7 @@ grand_parent: Functions
     <p>
       Both forms give the same map. Other file types, UMT structs and other dimension layouts are not supported.
     </p>
-    <h3>Output</h3>
+    <h3 id="output">Output</h3>
     <hr>
     <p>
       A UMT image containing the speckle contrast map of the input data, as a single Y,X entry named <samp>SpeckleMap</samp>.
