@@ -1,0 +1,10 @@
+{%- comment -%}
+  Overrides just-the-docs' footer_custom.html so footer_content can contain the
+  build year. Liquid in _config.yml values is not evaluated, so the config holds a
+  %YEAR% token that is replaced here with the year of the build (site.time).
+  scheduled_pages.yml rebuilds the site every Jan 1 so the year rolls over.
+{%- endcomment -%}
+{%- if site.footer_content -%}
+  {%- assign build_year = site.time | date: "%Y" -%}
+  <p class="text-small text-grey-dk-100 mb-0">{{ site.footer_content | replace: "%YEAR%", build_year }}</p>
+{%- endif -%}
