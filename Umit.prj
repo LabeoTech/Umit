@@ -130,7 +130,7 @@ test</param.exclude.filters>
     <fileset.depfun.excluded />
     <fileset.package />
     <build-deliverables>
-      <file location="${PROJECT_ROOT}" name="Umit.mltbx" optional="false">C:\Users\bofsp\Documents\Umit\Umit.mltbx</file>
+      <file location="${PROJECT_ROOT}" name="Umit.mltbx" optional="false">${PROJECT_ROOT}\Umit.mltbx</file>
     </build-deliverables>
     <workflow />
     <matlab>
