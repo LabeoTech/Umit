@@ -478,19 +478,25 @@ function tifNames = getTIFlist(folder, filename)
 
 filename = convertStringsToChars(filename);
 
-if ~endsWith(filename, '.tif', 'IgnoreCase', true)
+% ".tif" and ".tiff" are the same format; both extensions are accepted, both
+% for the named file and for the files of a numbered sequence.
+if ~endsWith(filename, {'.tif', '.tiff'}, 'IgnoreCase', true)
     filename = [filename '.tif'];
 end
 
-tok = regexp(filename, '^(.*?)([-_]\d+)?\.tif$', 'tokens', 'once', 'ignorecase');
+tok = regexp(filename, '^(.*?)([-_]\d+)?\.tiff?$', 'tokens', 'once', 'ignorecase');
 assert(~isempty(tok), ...
-    'Invalid TIFF filename "%s". Expected a .tif file name.', filename);
+    'Invalid TIFF filename "%s". Expected a .tif or .tiff file name.', filename);
 
 prefix = tok{1};
 prefixEsc = regexptranslate('escape', prefix);
 
-% Look for data stored in multiple files
-tifList = dir(fullfile(folder, [prefix '*.tif']));
+% Look for data stored in multiple files. The extension is filtered here
+% rather than in the dir pattern, so ".tif" and ".tiff" files are both found
+% exactly once (a "*.tif" pattern also matches ".tiff" on some file systems).
+tifList = dir(fullfile(folder, [prefix '*']));
+tifList = tifList(~[tifList.isdir]);
+tifList = tifList(~cellfun(@isempty, regexp({tifList.name}, '\.tiff?$', 'once', 'ignorecase')));
 
 if isscalar(tifList) && strcmpi(tifList.name, filename)
     tifNames = {tifList.name};
@@ -500,7 +506,7 @@ elseif numel(tifList) > 1
     fprintf('Found sequence of files (N = %d) with prefix "%s"\nProcessing...\n', ...
         numel(tifNames), prefix);
 
-    expr = ['^' prefixEsc '[-_]?(\d+)\.tif$'];
+    expr = ['^' prefixEsc '[-_]?(\d+)\.tiff?$'];
     suffixes = regexp(tifNames, expr, 'tokens', 'once', 'ignorecase');
     idx = ~cellfun(@isempty, suffixes);
 
@@ -508,7 +514,7 @@ elseif numel(tifList) > 1
     % carries the first frames of the sequence but matches no numeric
     % pattern. Treating it as index 0 keeps it in the import; matching on the
     % numeric pattern alone would silently drop its frames.
-    baseIdx = strcmpi(tifNames, [prefix '.tif']);
+    baseIdx = strcmpi(tifNames, [prefix '.tif']) | strcmpi(tifNames, [prefix '.tiff']);
 
     if ~any(idx) && any(baseIdx)
         % Similar files exist but do not belong to a numeric sequence.

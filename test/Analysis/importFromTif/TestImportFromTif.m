@@ -299,6 +299,58 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestImportFromTif < m
             testCase.verifyEqual(imported, expected);
         end
 
+        function testTiffExtensionIsAccepted(testCase)
+            % ".tiff" is the same format as ".tif". A derived sibling that
+            % shares the prefix ("img_red_k.tiff") must not join the import.
+            rawFolder = fullfile(testCase.TempFolder, 'Raw_tiffExt');
+            saveFolder = fullfile(testCase.TempFolder, 'Save_tiffExt');
+            mkdir(rawFolder);
+            mkdir(saveFolder);
+
+            data = reshape(uint16(1:5*6*4), [5, 6, 4]);
+            localWriteMultipageTif(fullfile(rawFolder, 'img_red.tiff'), data);
+            localWriteMultipageTif(fullfile(rawFolder, 'img_red_k.tiff'), data + 1);
+
+            tiffiles = struct( ...
+                'filename', 'img_red.tiff', ...
+                'FrameRateHz', 30.0, ...
+                'ExposureMsec', 0.1, ...
+                'IlluminationColor', 'Red');
+            localWriteInfoJson(rawFolder, struct('DateTime', '20260411_120000'), tiffiles);
+
+            outFile = importFromTif(rawFolder, saveFolder);
+
+            testCase.verifyEqual(outFile, {'red.dat'});
+            testCase.verifyEqual(localReadDatFile(fullfile(saveFolder, 'red.dat')), ...
+                single(data));
+        end
+
+        function testTiffExtensionSequenceConcatenation(testCase)
+            % A numbered sequence saved with ".tiff" is concatenated in order.
+            rawFolder = fullfile(testCase.TempFolder, 'Raw_tiffSeq');
+            saveFolder = fullfile(testCase.TempFolder, 'Save_tiffSeq');
+            mkdir(rawFolder);
+            mkdir(saveFolder);
+
+            dataA = reshape(uint16(1:5*4*2), [5, 4, 2]);
+            dataB = reshape(uint16(100 + (1:5*4*3)), [5, 4, 3]);
+            localWriteMultipageTif(fullfile(rawFolder, 'img_red_001.tiff'), dataA);
+            localWriteMultipageTif(fullfile(rawFolder, 'img_red_002.tiff'), dataB);
+
+            tiffiles = struct( ...
+                'filename', 'img_red_001.tiff', ...
+                'FrameRateHz', 12.0, ...
+                'ExposureMsec', 0.3, ...
+                'IlluminationColor', 'Red');
+            localWriteInfoJson(rawFolder, struct('DateTime', '20260411_120400'), tiffiles);
+
+            outFile = importFromTif(rawFolder, saveFolder);
+
+            testCase.verifyEqual(outFile, {'red.dat'});
+            testCase.verifyEqual(localReadDatFile(fullfile(saveFolder, 'red.dat')), ...
+                cat(3, single(dataA), single(dataB)));
+        end
+
         function testUnnumberedBaseFileIsIncludedInSequence(testCase)
             % "img.tif" alongside "img_1.tif"/"img_2.tif" matches no numeric
             % suffix, so it used to be dropped from the sequence and its
