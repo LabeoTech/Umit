@@ -63,6 +63,10 @@ cTags = {'iRed', 'iGreen', 'iYellow'};
 channelNames = {'red', 'green', 'yellow'};
 nativeLength = nan(1,3);
 nativeFreq = nan(1,3);
+% nativeDatSize{i} holds every dimension except time: [Y X] for (Y,X,T) data
+% and [E Y X] for event-split (E,Y,X,T) data. Metadata stores the first two
+% dimensions in datSize and the rest (time last) in datLength, e.g. event-split
+% data has datSize=[E Y] and datLength=[X T].
 nativeDatSize = cell(1,3);
 selectedChannels = false(1,3);
 
@@ -78,7 +82,7 @@ for indC = 1:size(Illumination,2)
             iRed = load([DataFolder 'red.mat']);
             nativeLength(1) = iRed.datLength(1,end);
             nativeFreq(1) = iRed.Freq;
-            nativeDatSize{1} = iRed.datSize;
+            nativeDatSize{1} = [iRed.datSize, iRed.datLength(1,1:end-1)];
             selectedChannels(1) = true;
         case 'green'
             fidG = fopen([DataFolder 'green.dat']);
@@ -86,7 +90,7 @@ for indC = 1:size(Illumination,2)
             iGreen = load([DataFolder 'green.mat']);
             nativeLength(2) = iGreen.datLength(1,end);
             nativeFreq(2) = iGreen.Freq;
-            nativeDatSize{2} = iGreen.datSize;
+            nativeDatSize{2} = [iGreen.datSize, iGreen.datLength(1,1:end-1)];
             selectedChannels(2) = true;
         case 'yellow'
             fidY = fopen([DataFolder 'yellow.dat']);
@@ -94,7 +98,7 @@ for indC = 1:size(Illumination,2)
             iYellow = load([DataFolder 'yellow.mat']);
             nativeLength(3) = iYellow.datLength(1,end);
             nativeFreq(3) = iYellow.Freq;
-            nativeDatSize{3} = iYellow.datSize;
+            nativeDatSize{3} = [iYellow.datSize, iYellow.datLength(1,1:end-1)];
             selectedChannels(3) = true;
         otherwise
             disp('Unknown colour');
@@ -182,8 +186,8 @@ switch idxTarget
         iFile = iYellow;
 end
 
-datsz = [iFile.datSize, NbFrames];
 NbPix = double(NbPix);
+datsz = [NbPix, NbFrames]; % [Y X T] or [E Y X T]
 
 % Check if the data is normalized.
 indxNorm = [-2 -2 -2];
@@ -198,11 +202,15 @@ for i = 1:3
     % the data were normalized.
     thisDatsz = [nativeDatSize{i}, nativeLength(i)];
     frIdx = unique(floor(linspace(1,thisDatsz(end),10)));
-    tmp = zeros(thisDatsz(1),thisDatsz(2),'single');
+    % One "frame" is every element sharing the same time index: Y*X for
+    % 3D (Y,X,T) files and E*Y*X for 4D (E,Y,X,T) files. It is read as a
+    % flat vector because only the global mean is needed.
+    nElemPerFrame = prod(double(nativeDatSize{i}));
+    tmp = zeros(nElemPerFrame,1,'single');
     for jj = 1:length(frIdx)
-        eval(['fseek(' fTags{i} ',(frIdx(jj) - 1)*prod(thisDatsz([1 2]))*4,''bof'');']);
-        eval(['frame = fread(' fTags{i} ',thisDatsz([1 2]),''*single'');']);
-        tmp = tmp + frame';
+        eval(['fseek(' fTags{i} ',(frIdx(jj) - 1)*nElemPerFrame*4,''bof'');']);
+        eval(['frame = fread(' fTags{i} ',nElemPerFrame,''*single'');']);
+        tmp = tmp + frame;
     end
     tmp = tmp./length(frIdx);
     Mdat = mean(tmp,'all','omitnan');
@@ -281,8 +289,8 @@ if ~b_RAMsafeMode
     HbO = zeros(datsz, 'single');
     HbR = zeros(datsz, 'single');
 else
-    metaData = load(iFile.Properties.Source);
-    metaData.datLength = NbFrames;
+    metaData = iFile; % struct loaded from the target channel's .mat file
+    metaData.datLength = [iFile.datLength(1,1:end-1), NbFrames];
     metaData.Freq = Freq;
 
     metaData.datFile = 'HbO.dat';
@@ -470,7 +478,7 @@ if bSave
     for i = 1:numel(fn)
         fHbO.(fn{i}) = iFile.(fn{i});
     end
-    fHbO.datLength = NbFrames;
+    fHbO.datLength = [iFile.datLength(1,1:end-1), NbFrames];
     fHbO.Freq = Freq;
 
     % Save HbR .dat file.
@@ -484,7 +492,7 @@ if bSave
     for i = 1:numel(fn)
         fHbR.(fn{i}) = iFile.(fn{i});
     end
-    fHbR.datLength = NbFrames;
+    fHbR.datLength = [iFile.datLength(1,1:end-1), NbFrames];
     fHbR.Freq = Freq;
 end
 
