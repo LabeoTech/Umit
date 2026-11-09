@@ -128,11 +128,12 @@ roi_names   = {roi_data.ROI_info.Name}';
 roi_pixVals = cell(size(roi_names));
 
 % Locate Y and X
-[~,yxLoc] = ismember({'Y','X'}, dim_names);
+% Dimensions that remain after removing Y and X (original order kept):
+otherDims = dim_names(~ismember(dim_names, {'Y','X'}));
 if strcmp(opts.SpatialAggFcn, 'none')
-    new_dim_names = [{'P'},setdiff(dim_names,{'Y','X'})];
+    new_dim_names = [{'O','P'}, otherDims];
 else
-    new_dim_names = setdiff(dim_names,{'Y','X'});
+    new_dim_names = [{'O'}, otherDims];
 end
 
 datSize = [metaData.datSize metaData.datLength];
@@ -152,24 +153,22 @@ if hasEvents
     Nx = datSize(3);
     Nt = datSize(4);
     
-    elemsPerTrial = Ny * Nx * Nt;
-    bytesPerTrial = elemsPerTrial * bytes;
-    
-    % Preallocate per ROI
+    % Preallocate per ROI (same layout as standard mode: [1 E T] or
+    % [P E T] when SpatialAggFcn is 'none').
     for r = 1:numel(roi_pixVals)
         if strcmp(opts.SpatialAggFcn,'none')
             nPix = nnz(roi_data.ROI_info(r).Stats.ROI_binary_mask);
-            roi_pixVals{r} = zeros(Ne, nPix, Nt, datatype);
+            roi_pixVals{r} = zeros(nPix, Ne, Nt, datatype);
         else
-            roi_pixVals{r} = zeros(Ne, Nt, datatype);
+            roi_pixVals{r} = zeros(1, Ne, Nt, datatype);
         end
     end
     
     for e = 1:Ne
         
-        fseek(fid,(e-1)*bytesPerTrial,'bof');
-        slab = fread(fid, elemsPerTrial, ['*' datatype]);
-        slab = reshape(slab, Ny, Nx, Nt);
+        % Event-split files are stored as [E,Y,X,T] (E varies fastest), so
+        % one trial is not contiguous: read it with a strided read.
+        slab = readTrial(fid, e, [Ne, Ny, Nx, Nt], datatype); % [Y,X,T]
         
         for r = 1:numel(roi_pixVals)
             
@@ -181,7 +180,7 @@ if hasEvents
             
             pixVals = applyAggFcn(pixVals, opts.SpatialAggFcn);
             
-            roi_pixVals{r}(e,:,:) = pixVals;
+            roi_pixVals{r}(:,e,:) = pixVals;
         end
         
         clear slab tmp
@@ -234,26 +233,26 @@ else
         
         
     end
-    new_dim_names = [{'O'}, new_dim_names];  % O,T
-    fprintf('Done\n');
-    
-    % Metadata handling (unchanged)
-    if isa(metaData,'matlab.io.MatFile')
-        metaData.Properties.Writable = true;
-    end
-    metaData.ROIfile = opts.ROImasks_filename;
-    
-    if isempty(object)
-        outData = save2Mat('', roi_pixVals, roi_names,...
-            new_dim_names, 'appendMetaData', metaData, 'genFile', false);
-    else
-        outData = save2Mat('', roi_pixVals, roi_names,...
-            new_dim_names, 'appendMetaData', metaData, 'genFile', false,...
-            'appendObjectInfo', object);
-    end
-    
+    close(w);
 end
-close(w);
+fprintf('Done\n');
+
+%% =========================================================
+% Metadata handling and output (both modes)
+%% =========================================================
+if isa(metaData,'matlab.io.MatFile')
+    metaData.Properties.Writable = true;
+end
+metaData.ROIfile = opts.ROImasks_filename;
+
+if isempty(object)
+    outData = save2Mat('', roi_pixVals, roi_names,...
+        new_dim_names, 'appendMetaData', metaData, 'genFile', false);
+else
+    outData = save2Mat('', roi_pixVals, roi_names,...
+        new_dim_names, 'appendMetaData', metaData, 'genFile', false,...
+        'appendObjectInfo', object);
+end
 end
 
 
