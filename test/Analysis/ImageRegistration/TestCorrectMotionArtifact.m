@@ -2,7 +2,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestCorrectMotionArti
     %TESTCORRECTMOTIONARTIFACT Unit tests for correctMotionArtifact.
     %
     % The function returns the corrected data (array in -> array out, .dat in
-    % -> motionCorrected.dat). The estimated shifts are only available in the
+    % -> <name>_MotionCorrected.dat). The estimated shifts are only available in the
     % <name>_MotionCorrection.mat that SaveShifts=true writes, so the shift
     % tests read them from there.
 
@@ -41,6 +41,11 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestCorrectMotionArti
 
             AcqInfoStream = struct('Width', testCase.Nx, 'Height', testCase.Ny, ...
                 'Length', testCase.Nt, 'FrameRateHz', 10, 'ExposureMsec', 20);
+            for channel = {'green.dat', 'red.dat'}
+                AcqInfoStream = appendImportedChannelInfo(AcqInfoStream, struct( ...
+                    'DatFile', channel{1}, 'Length', testCase.Nt, ...
+                    'FrameRateHz', 10, 'ExposureMsec', 20));
+            end
             save(fullfile(testCase.TempFolder, 'AcqInfos.mat'), 'AcqInfoStream');
         end
     end
@@ -75,14 +80,14 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestCorrectMotionArti
             testCase.verifyEqual(redParams(:, [2 1]), testCase.RedShifts, 'AbsTol', 0.15);
         end
 
-        function testDatOutputIsTheDeclaredFileAndSourcesAreUntouched(testCase)
+        function testDatOutputIsSuffixedAndSourcesAreUntouched(testCase)
             greenBefore = computeFileChecksum(fullfile(testCase.TempFolder, 'green.dat'));
             redBefore = computeFileChecksum(fullfile(testCase.TempFolder, 'red.dat'));
 
             outFile = correctMotionArtifact('green.dat', testCase.TempFolder, ...
                 'SaveShifts', false, 'ShowPlot', false);
 
-            testCase.verifyEqual(outFile, fullfile(testCase.TempFolder, 'motionCorrected.dat'));
+            testCase.verifyEqual(outFile, fullfile(testCase.TempFolder, 'green_MotionCorrected.dat'));
             testCase.verifyTrue(isfile(outFile));
             testCase.verifyEqual(computeFileChecksum(fullfile(testCase.TempFolder, 'green.dat')), greenBefore);
             testCase.verifyEqual(computeFileChecksum(fullfile(testCase.TempFolder, 'red.dat')), redBefore);
@@ -94,8 +99,8 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestCorrectMotionArti
             testCase.verifyEqual(info.dataClass, 'single');
         end
 
-        function testRerunReplacesTheDeclaredOutput(testCase)
-            staleFile = fullfile(testCase.TempFolder, 'motionCorrected.dat');
+        function testRerunReplacesItsOwnPreviousOutput(testCase)
+            staleFile = fullfile(testCase.TempFolder, 'green_MotionCorrected.dat');
             fclose(fopen(staleFile, 'w'));
             staleBytes = dir(staleFile).bytes;
 
@@ -210,7 +215,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestCorrectMotionArti
             hdr = readDatHeader(outFile);
             testCase.verifyTrue(hdr.writeComplete);
             testCase.verifyEqual(hdr.frameRateHz, 10);
-            testCase.verifyEqual(hdr.channelName, 'motionCorrected');
+            testCase.verifyEqual(hdr.channelName, 'red_MotionCorrected');
         end
 
         function testInputMayLiveOutsideSaveFolder(testCase)
@@ -224,7 +229,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestCorrectMotionArti
             outFile = correctMotionArtifact(externalFile, testCase.TempFolder, ...
                 'SaveShifts', false, 'ShowPlot', false);
 
-            testCase.verifyEqual(outFile, fullfile(testCase.TempFolder, 'motionCorrected.dat'));
+            testCase.verifyEqual(outFile, fullfile(testCase.TempFolder, 'ext_MotionCorrected.dat'));
             testCase.verifyTrue(isfile(outFile));
         end
 
@@ -259,15 +264,321 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestCorrectMotionArti
                 'Umitoolbox:correctMotionArtifact:UnsupportedLayout');
         end
 
+        function testOverwriteReplacesTheSourceInPlace(testCase)
+            sourceFile = fullfile(testCase.TempFolder, 'green.dat');
+            before = computeFileChecksum(sourceFile);
+
+            outFile = correctMotionArtifact('green.dat', testCase.TempFolder, ...
+                'Overwrite', true, 'UpsamplingFactor', 10, 'SaveShifts', false, 'ShowPlot', false);
+
+            testCase.verifyEqual(outFile, sourceFile);
+            testCase.verifyNotEqual(computeFileChecksum(sourceFile), before);
+            testCase.verifyEmpty(dir(fullfile(testCase.TempFolder, '*_MotionCorrected.dat')));
+            testCase.verifyEmpty(dir(fullfile(testCase.TempFolder, '*_writing.dat')));
+            testCase.verifyTrue(readDatHeader(sourceFile).writeComplete);
+            rowsIn = 10:(testCase.Ny-10);
+            colsIn = 10:(testCase.Nx-10);
+            corrected = double(loadData(sourceFile));
+            for t = 1:testCase.Nt
+                testCase.verifyEqual(corrected(rowsIn, colsIn, t), ...
+                    double(testCase.RefPattern(rowsIn, colsIn)), 'AbsTol', 0.1);
+            end
+        end
+
+        function testRunLogsEveryWrittenFileEvenWithoutSaveShifts(testCase)
+            correctMotionArtifact('green.dat', testCase.TempFolder, ...
+                'SaveShifts', false, 'ShowPlot', false);
+
+            S = load(fullfile(testCase.TempFolder, 'MotionCorrectionLog.mat'), 'MotionCorrectionLog');
+            testCase.verifyEqual({S.MotionCorrectionLog.file}, {'green_MotionCorrected.dat'});
+            testCase.verifyEqual(S.MotionCorrectionLog.inputFile, 'green.dat');
+            testCase.verifyEqual(S.MotionCorrectionLog.bytes, ...
+                dir(fullfile(testCase.TempFolder, 'green_MotionCorrected.dat')).bytes);
+        end
+
+        function testSuffixedCorrectedFileIsRefused(testCase)
+            outFile = correctMotionArtifact('green.dat', testCase.TempFolder, ...
+                'SaveShifts', false, 'ShowPlot', false);
+            before = computeFileChecksum(outFile);
+
+            testCase.verifyError(@() correctMotionArtifact(outFile, testCase.TempFolder, ...
+                'SaveShifts', false, 'ShowPlot', false), ...
+                'Umitoolbox:correctMotionArtifact:AlreadyCorrected');
+            testCase.verifyEqual(computeFileChecksum(outFile), before);
+            testCase.verifyEmpty(dir(fullfile(testCase.TempFolder, '*_MotionCorrected_MotionCorrected.dat')));
+        end
+
+        function testSuffixIsRefusedEvenWithoutALog(testCase)
+            % A corrected copy brought in from elsewhere has no log entry.
+            copyfile(fullfile(testCase.TempFolder, 'green.dat'), ...
+                fullfile(testCase.TempFolder, 'other_MotionCorrected.dat'));
+
+            testCase.verifyError(@() correctMotionArtifact('other_MotionCorrected.dat', ...
+                testCase.TempFolder, 'SaveShifts', false, 'ShowPlot', false), ...
+                'Umitoolbox:correctMotionArtifact:AlreadyCorrected');
+        end
+
+        function testFileOverwrittenInPlaceIsRefused(testCase)
+            % No suffix to tell it apart: only the log can.
+            sourceFile = fullfile(testCase.TempFolder, 'green.dat');
+            correctMotionArtifact('green.dat', testCase.TempFolder, 'Overwrite', true, ...
+                'SaveShifts', false, 'ShowPlot', false);
+            before = computeFileChecksum(sourceFile);
+
+            testCase.verifyError(@() correctMotionArtifact('green.dat', testCase.TempFolder, ...
+                'Overwrite', true, 'SaveShifts', false, 'ShowPlot', false), ...
+                'Umitoolbox:correctMotionArtifact:AlreadyCorrected');
+            testCase.verifyError(@() correctMotionArtifact('green.dat', testCase.TempFolder, ...
+                'SaveShifts', false, 'ShowPlot', false), ...
+                'Umitoolbox:correctMotionArtifact:AlreadyCorrected');
+            testCase.verifyEqual(computeFileChecksum(sourceFile), before);
+        end
+
+        function testAllowRecorrectionWarnsAndProceeds(testCase)
+            correctMotionArtifact('green.dat', testCase.TempFolder, 'Overwrite', true, ...
+                'SaveShifts', false, 'ShowPlot', false);
+
+            testCase.verifyWarning(@() correctMotionArtifact('green.dat', testCase.TempFolder, ...
+                'AllowRecorrection', true, 'SaveShifts', false, 'ShowPlot', false), ...
+                'Umitoolbox:correctMotionArtifact:AlreadyCorrected');
+            testCase.verifyTrue(isfile(fullfile(testCase.TempFolder, 'green_MotionCorrected.dat')));
+        end
+
+        function testReplacedFileIsNoLongerTreatedAsCorrected(testCase)
+            % Importing again produces a new file under the same name.
+            correctMotionArtifact('green.dat', testCase.TempFolder, 'Overwrite', true, ...
+                'SaveShifts', false, 'ShowPlot', false);
+            pause(0.2);
+            iWriteSingleDat(fullfile(testCase.TempFolder, 'green.dat'), ...
+                iBuildShiftedStack(testCase.RefPattern, testCase.Shifts), 10, 20);
+
+            outFile = correctMotionArtifact('green.dat', testCase.TempFolder, ...
+                'SaveShifts', false, 'ShowPlot', false);
+
+            testCase.verifyTrue(isfile(outFile));
+        end
+
+        function testBatchCorrectsEveryListedChannelIndependently(testCase)
+            greenBefore = computeFileChecksum(fullfile(testCase.TempFolder, 'green.dat'));
+            redBefore = computeFileChecksum(fullfile(testCase.TempFolder, 'red.dat'));
+
+            outFiles = correctMotionArtifact(testCase.TempFolder, ...
+                'UpsamplingFactor', 10, 'ShowPlot', false);
+
+            testCase.verifyEqual(outFiles, { ...
+                fullfile(testCase.TempFolder, 'green_MotionCorrected.dat'), ...
+                fullfile(testCase.TempFolder, 'red_MotionCorrected.dat')});
+            testCase.verifyEqual(computeFileChecksum(fullfile(testCase.TempFolder, 'green.dat')), greenBefore);
+            testCase.verifyEqual(computeFileChecksum(fullfile(testCase.TempFolder, 'red.dat')), redBefore);
+            for k = 1:numel(outFiles)
+                testCase.verifyTrue(isfile(outFiles{k}));
+            end
+            greenParams = iReadParams(testCase.TempFolder, 'green');
+            redParams = iReadParams(testCase.TempFolder, 'red');
+            testCase.verifyEqual(greenParams(:, [2 1]), testCase.Shifts, 'AbsTol', 0.15);
+            testCase.verifyEqual(redParams(:, [2 1]), testCase.RedShifts, 'AbsTol', 0.15);
+            S = load(fullfile(testCase.TempFolder, 'MotionCorrectionLog.mat'), 'MotionCorrectionLog');
+            testCase.verifyEqual(sort({S.MotionCorrectionLog.file}), ...
+                {'green_MotionCorrected.dat', 'red_MotionCorrected.dat'});
+        end
+
+        function testBatchOverwriteReplacesEveryChannelInPlace(testCase)
+            greenBefore = computeFileChecksum(fullfile(testCase.TempFolder, 'green.dat'));
+            redBefore = computeFileChecksum(fullfile(testCase.TempFolder, 'red.dat'));
+
+            outFiles = correctMotionArtifact(testCase.TempFolder, 'Overwrite', true, ...
+                'UpsamplingFactor', 10, 'SaveShifts', false, 'ShowPlot', false);
+
+            testCase.verifyEqual(outFiles, { ...
+                fullfile(testCase.TempFolder, 'green.dat'), ...
+                fullfile(testCase.TempFolder, 'red.dat')});
+            testCase.verifyNotEqual(computeFileChecksum(outFiles{1}), greenBefore);
+            testCase.verifyNotEqual(computeFileChecksum(outFiles{2}), redBefore);
+            testCase.verifyEmpty(dir(fullfile(testCase.TempFolder, '*_MotionCorrected.dat')));
+
+            % A second batch finds nothing left to correct and changes nothing.
+            after = computeFileChecksum(outFiles{1});
+            testCase.verifyError(@() correctMotionArtifact(testCase.TempFolder, ...
+                'Overwrite', true, 'SaveShifts', false, 'ShowPlot', false), ...
+                'Umitoolbox:correctMotionArtifact:AlreadyCorrected');
+            testCase.verifyEqual(computeFileChecksum(outFiles{1}), after);
+        end
+
+        function testBatchSkipsAnAlreadyCorrectedChannelWithAWarning(testCase)
+            correctMotionArtifact('green.dat', testCase.TempFolder, 'Overwrite', true, ...
+                'SaveShifts', false, 'ShowPlot', false);
+            greenAfterFirst = computeFileChecksum(fullfile(testCase.TempFolder, 'green.dat'));
+
+            testCase.verifyWarning(@() correctMotionArtifact(testCase.TempFolder, ...
+                'SaveShifts', false, 'ShowPlot', false), ...
+                'Umitoolbox:correctMotionArtifact:AlreadyCorrected');
+
+            testCase.verifyTrue(isfile(fullfile(testCase.TempFolder, 'red_MotionCorrected.dat')));
+            testCase.verifyFalse(isfile(fullfile(testCase.TempFolder, 'green_MotionCorrected.dat')));
+            testCase.verifyEqual(computeFileChecksum(fullfile(testCase.TempFolder, 'green.dat')), greenAfterFirst);
+        end
+
+        function testBatchSkipsAListedChannelWhoseFileIsMissing(testCase)
+            iAddImportedChannel(testCase.TempFolder, 'yellow.dat', testCase.Nt);
+
+            testCase.verifyWarning(@() correctMotionArtifact(testCase.TempFolder, ...
+                'SaveShifts', false, 'ShowPlot', false), ...
+                'Umitoolbox:correctMotionArtifact:MissingChannelFile');
+
+            testCase.verifyTrue(isfile(fullfile(testCase.TempFolder, 'green_MotionCorrected.dat')));
+            testCase.verifyTrue(isfile(fullfile(testCase.TempFolder, 'red_MotionCorrected.dat')));
+            testCase.verifyFalse(isfile(fullfile(testCase.TempFolder, 'yellow_MotionCorrected.dat')));
+        end
+
+        function testBatchChecksEveryChannelBeforeWritingAnything(testCase)
+            iWriteSingleDat(fullfile(testCase.TempFolder, 'yellow.dat'), ...
+                zeros(testCase.Ny, testCase.Nx, 1, 'single'), 10, 20);
+            iAddImportedChannel(testCase.TempFolder, 'yellow.dat', 1);
+
+            testCase.verifyError(@() correctMotionArtifact(testCase.TempFolder, ...
+                'Overwrite', true, 'SaveShifts', false, 'ShowPlot', false), ...
+                'Umitoolbox:correctMotionArtifact:TooFewFrames');
+
+            % green and red come first in the list but must be untouched.
+            testCase.verifyEmpty(dir(fullfile(testCase.TempFolder, 'MotionCorrectionLog.mat')));
+            testCase.verifyEmpty(dir(fullfile(testCase.TempFolder, '*_writing.dat')));
+        end
+
+        function testBatchErrorsWhenNoChannelFileExists(testCase)
+            delete(fullfile(testCase.TempFolder, 'green.dat'));
+            delete(fullfile(testCase.TempFolder, 'red.dat'));
+
+            testCase.verifyError(@() correctMotionArtifact(testCase.TempFolder, ...
+                'ShowPlot', false), 'Umitoolbox:correctMotionArtifact:NoFiles');
+        end
+
+        function testBatchOnALegacyFolderIncludesSpeckleAndFluo(testCase)
+            % No ImportedChannels: the channels come from the declared
+            % illuminations. The shared fallback only knows red, green and
+            % yellow, so speckle and fluo must not be dropped.
+            folder = iMakeLegacyFolder(testCase, 'legacyAll', { ...
+                {'green.dat', 'Green'}, {'red.dat', 'Red'}, {'speckle.dat', 'Speckle'}, ...
+                {'fluo_475.dat', 'Fluo #1 475nm'}, {'fluo.dat', 'Fluo'}});
+
+            outFiles = correctMotionArtifact(folder, 'SaveShifts', false, 'ShowPlot', false);
+
+            testCase.verifyEqual(sort(cellfun(@(f) iFileName(f), outFiles, 'UniformOutput', false)), ...
+                sort({'green_MotionCorrected.dat', 'red_MotionCorrected.dat', ...
+                'speckle_MotionCorrected.dat', 'fluo_475_MotionCorrected.dat', ...
+                'fluo_MotionCorrected.dat'}));
+            S = load(fullfile(folder, 'AcqInfos.mat'), 'AcqInfoStream');
+            testCase.verifyFalse(isfield(S.AcqInfoStream, 'ImportedChannels'));
+        end
+
+        function testBatchOnALegacyFolderWithOnlySpeckleAndFluo(testCase)
+            % Here the shared fallback finds nothing at all.
+            folder = iMakeLegacyFolder(testCase, 'legacyNoRgy', { ...
+                {'speckle.dat', 'Speckle'}, {'fluo_567.dat', 'Fluo #1 567nm'}});
+
+            outFiles = correctMotionArtifact(folder, 'SaveShifts', false, 'ShowPlot', false);
+
+            testCase.verifyEqual(sort(cellfun(@(f) iFileName(f), outFiles, 'UniformOutput', false)), ...
+                sort({'speckle_MotionCorrected.dat', 'fluo_567_MotionCorrected.dat'}));
+        end
+
+        function testLegacyDeclaredChannelWithAMissingFileIsSkippedNotAnError(testCase)
+            folder = iMakeLegacyFolder(testCase, 'legacyMissing', { ...
+                {'green.dat', 'Green'}, {'red.dat', 'Red'}, {'speckle.dat', 'Speckle'}});
+            delete(fullfile(folder, 'red.dat'));
+            delete(fullfile(folder, 'red.mat'));
+
+            testCase.verifyWarning(@() correctMotionArtifact(folder, ...
+                'SaveShifts', false, 'ShowPlot', false), ...
+                'Umitoolbox:correctMotionArtifact:MissingChannelFile');
+
+            testCase.verifyTrue(isfile(fullfile(folder, 'green_MotionCorrected.dat')));
+            testCase.verifyTrue(isfile(fullfile(folder, 'speckle_MotionCorrected.dat')));
+            testCase.verifyFalse(isfile(fullfile(folder, 'red_MotionCorrected.dat')));
+        end
+
+        function testLegacyFolderWithoutIlluminationsUsesTheFilesInTheFolder(testCase)
+            folder = iMakeLegacyFolder(testCase, 'legacyBare', { ...
+                {'speckle.dat', ''}, {'fluo.dat', ''}});
+
+            outFiles = correctMotionArtifact(folder, 'SaveShifts', false, 'ShowPlot', false);
+
+            testCase.verifyEqual(sort(cellfun(@(f) iFileName(f), outFiles, 'UniformOutput', false)), ...
+                sort({'speckle_MotionCorrected.dat', 'fluo_MotionCorrected.dat'}));
+        end
+
+        function testImportedChannelsStaysAuthoritative(testCase)
+            % A speckle.dat that the registry does not list (for example a
+            % derived file) is not an imported channel and is left alone.
+            writeTestDat(fullfile(testCase.TempFolder, 'speckle.dat'), ...
+                zeros(testCase.Ny, testCase.Nx, testCase.Nt, 'single') + 1, 10, 20);
+
+            outFiles = correctMotionArtifact(testCase.TempFolder, 'SaveShifts', false, 'ShowPlot', false);
+
+            testCase.verifyEqual(sort(cellfun(@(f) iFileName(f), outFiles, 'UniformOutput', false)), ...
+                sort({'green_MotionCorrected.dat', 'red_MotionCorrected.dat'}));
+            testCase.verifyFalse(isfile(fullfile(testCase.TempFolder, 'speckle_MotionCorrected.dat')));
+        end
+
+        function testBatchNeedsAcqInfos(testCase)
+            delete(fullfile(testCase.TempFolder, 'AcqInfos.mat'));
+
+            % One argument: the folder alone is the batch form.
+            testCase.verifyError(@() correctMotionArtifact(testCase.TempFolder), ...
+                'Umitoolbox:correctMotionArtifact:InvalidInput');
+        end
+
         function testPipelineInfoDeclaresContract(testCase)
             info = correctMotionArtifact('pipelineInfo');
 
-            testCase.verifyEqual({info.inputs.name}, {'data', 'SaveFolder'});
-            testCase.verifyEqual({info.parameters.name}, ...
-                {'TransformType', 'UpsamplingFactor', 'SaveShifts', 'ShowPlot'});
-            testCase.verifyEqual({info.outputs.name}, {'outData'});
-            testCase.verifyEqual(info.outputs(1).defOutfilename, 'motionCorrected.dat');
-            testCase.verifyEqual(info.outputs(1).type, {'ImageTimeSeries', 'ProcessedData'});
+            % A setup step: a folder input, no DATA input or output.
+            testCase.verifyEqual({info.inputs.name}, {'SaveFolder'});
+            testCase.verifyFalse(info.inputs(1).isData);
+            testCase.verifyEqual({info.parameters.name}, {'TransformType', 'UpsamplingFactor', ...
+                'Overwrite', 'AllowRecorrection', 'SaveShifts', 'ShowPlot'});
+            testCase.verifyEqual({info.outputs.name}, {'correctedDatFiles'});
+            testCase.verifyFalse(info.outputs(1).isData);
+            testCase.verifyFalse(info.outputs(1).returnsValue);
+            testCase.verifyEqual(info.outputs(1).defOutfilename, '*.dat');
+        end
+
+        function testPipelineRunsItAsASetupStepThatOverwritesTheChannels(testCase)
+            % The point of the setup role: the channel files that
+            % ImportedChannels lists are corrected in place before any later
+            % step reads them.
+            greenFile = fullfile(testCase.TempFolder, 'green.dat');
+            redFile = fullfile(testCase.TempFolder, 'red.dat');
+            greenBefore = computeFileChecksum(greenFile);
+            redBefore = computeFileChecksum(redFile);
+
+            pm = buildPMForScenario(testCase.TempFolder, 'correctMotionArtifact', 'auto', ...
+                'Parameters', struct('Overwrite', true, 'UpsamplingFactor', 10, ...
+                'SaveShifts', false, 'ShowPlot', false));
+            result = pm.executePipeline('PrintSummary', false);
+
+            testCase.verifyEqual(result.status, "completed");
+            testCase.verifyNotEqual(computeFileChecksum(greenFile), greenBefore);
+            testCase.verifyNotEqual(computeFileChecksum(redFile), redBefore);
+            testCase.verifyEmpty(dir(fullfile(testCase.TempFolder, '*_MotionCorrected.dat')));
+            rowsIn = 10:(testCase.Ny-10);
+            colsIn = 10:(testCase.Nx-10);
+            corrected = double(loadData(greenFile));
+            for t = 1:testCase.Nt
+                testCase.verifyEqual(corrected(rowsIn, colsIn, t), ...
+                    double(testCase.RefPattern(rowsIn, colsIn)), 'AbsTol', 0.1);
+            end
+        end
+
+        function testPipelineDefaultKeepsTheChannelsUntouched(testCase)
+            greenBefore = computeFileChecksum(fullfile(testCase.TempFolder, 'green.dat'));
+
+            pm = buildPMForScenario(testCase.TempFolder, 'correctMotionArtifact', 'auto', ...
+                'Parameters', struct('SaveShifts', false, 'ShowPlot', false));
+            result = pm.executePipeline('PrintSummary', false);
+
+            testCase.verifyEqual(result.status, "completed");
+            testCase.verifyEqual(computeFileChecksum(fullfile(testCase.TempFolder, 'green.dat')), greenBefore);
+            testCase.verifyTrue(isfile(fullfile(testCase.TempFolder, 'green_MotionCorrected.dat')));
+            testCase.verifyTrue(isfile(fullfile(testCase.TempFolder, 'red_MotionCorrected.dat')));
         end
     end
 
@@ -321,4 +632,45 @@ fid = fopen(filePath, 'w', 'ieee-le');
 fwrite(fid, encodeDatHeader(hdr), 'uint8');
 fwrite(fid, values, 'single');
 fclose(fid);
+end
+
+function params = iReadParams(folder, stem)
+%IREADPARAMS Shift matrix saved by a run on <stem>.dat.
+S = load(fullfile(folder, [stem '_MotionCorrection.mat']), 'MotionCorrection');
+params = S.MotionCorrection.params;
+end
+
+function iAddImportedChannel(folder, datFile, nt)
+%IADDIMPORTEDCHANNEL List one more .dat file in the folder's AcqInfos.mat.
+S = load(fullfile(folder, 'AcqInfos.mat'), 'AcqInfoStream');
+AcqInfoStream = appendImportedChannelInfo(S.AcqInfoStream, struct( ...
+    'DatFile', datFile, 'Length', nt, 'FrameRateHz', 10, 'ExposureMsec', 20));
+save(fullfile(folder, 'AcqInfos.mat'), 'AcqInfoStream');
+end
+
+function name = iFileName(filePath)
+%IFILENAME Name with extension of a path.
+[~, base, ext] = fileparts(filePath);
+name = [base ext];
+end
+
+function folder = iMakeLegacyFolder(testCase, folderName, channels)
+%IMAKELEGACYFOLDER Legacy folder: sidecar .dat files, Illumination<N> in
+% AcqInfos.mat and no ImportedChannels. channels is {{datName, color}, ...};
+% an empty color declares no illumination for that file.
+folder = fullfile(testCase.TempFolder, folderName);
+mkdir(folder);
+stack = iBuildShiftedStack(testCase.RefPattern, testCase.Shifts);
+AcqInfoStream = struct('Width', testCase.Nx, 'Height', testCase.Ny, ...
+    'Length', testCase.Nt, 'FrameRateHz', 10, 'ExposureMsec', 20);
+nIllum = 0;
+for k = 1:numel(channels)
+    writeTestDat(fullfile(folder, channels{k}{1}), stack, 10, 20, 'Format', 'legacySidecar');
+    if ~isempty(channels{k}{2})
+        nIllum = nIllum + 1;
+        AcqInfoStream.(sprintf('Illumination%d', nIllum)) = ...
+            struct('Color', channels{k}{2}, 'FrameRateHz', 10, 'ExposureMsec', 20);
+    end
+end
+save(fullfile(folder, 'AcqInfos.mat'), 'AcqInfoStream');
 end
