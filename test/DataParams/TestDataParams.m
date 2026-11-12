@@ -131,10 +131,10 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestDataParams < matl
         function testRegistrationRecordRules(testCase)
             DataParams = createDataParams(testCase.TempFolder);
             [~, referenceTemplate, estimateTemplate] = newRegistrationRecord();
-            image = single(magic(6));
+            image = iImage(6, 8); % non-square on purpose (DFR-20261109-002)
             reference = referenceTemplate;
             [reference.contentHash, reference.image] = computeImageContentHash(image);
-            reference.imageSizeYX = [6 6];
+            reference.imageSizeYX = [6 8];
             reference.name = 'test';
             reference.source = referenceSourceDescriptor('file', 'C:\ref.tif');
             estimate = estimateTemplate;
@@ -152,8 +152,8 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestDataParams < matl
 
             % Aligned: the commitment must equal the reference hash.
             aligned = DataParams;
-            aligned.view.imageSizeYX = [6 6];
-            aligned.mask.logical = true(6);
+            aligned.view.imageSizeYX = [6 8];
+            aligned.mask.logical = true(6, 8);
             aligned.registration.apply.isRegistered = true;
             aligned.registration.apply.appliedReferenceHash = reference.contentHash;
             testCase.verifyWarningFree(@() validateDataParams(aligned));
@@ -200,4 +200,10 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestDataParams < matl
                 'AcqInfoStream', '-mat');
         end
     end
+end
+
+function image = iImage(ny, nx)
+%IIMAGE Non-square, asymmetric test image of size [ny nx] (DFR-20261109-002).
+full = single(magic(max(ny, nx)));
+image = full(1:ny, 1:nx);
 end

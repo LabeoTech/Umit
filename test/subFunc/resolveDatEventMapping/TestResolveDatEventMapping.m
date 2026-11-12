@@ -96,7 +96,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestResolveDatEventMa
 
         function continuousFileIsRejected(testCase)
             f = fullfile(testCase.Folder, 'cont.dat');
-            saveData(f, zeros(2, 2, 3, 'single'), 'DimNames', {'Y', 'X', 'T'}, 'FrameRateHz', 10);
+            saveData(f, zeros(2, 3, 3, 'single'), 'DimNames', {'Y', 'X', 'T'}, 'FrameRateHz', 10);
             testCase.verifyError(@() resolveDatEventMapping(loadMetaData(f), testCase.Folder), ...
                 'Umitoolbox:resolveDatEventMapping:noEventAxis');
         end
@@ -105,6 +105,6 @@ end
 
 function info = iWriteSplit(folder, nE)
 f = fullfile(folder, sprintf('byEv%d.dat', nE));
-saveData(f, zeros(2, 2, 4, nE, 'single'), 'DimNames', {'Y', 'X', 'T', 'E'}, 'FrameRateHz', 10);
+saveData(f, zeros(2, 3, 4, nE, 'single'), 'DimNames', {'Y', 'X', 'T', 'E'}, 'FrameRateHz', 10);
 info = loadMetaData(f);
 end

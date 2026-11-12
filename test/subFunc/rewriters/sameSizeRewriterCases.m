@@ -117,7 +117,8 @@ end
 % Registration folder (applyRegistrationTformOnFolder)
 % =========================================================================
 function cleanupFcn = iBuildRegistrationFolder(folder, bHeadered)
-fixture = setupSyntheticRegistrationFolder(folder, 'DatFormat', 'legacySidecar');
+fixture = setupSyntheticRegistrationFolder(folder, 'DatFormat', 'legacySidecar', ...
+    'FrameSizeYX', [64 64]); % pinned: frozen reference recorded with 64x64
 if bHeadered
     iHeaderize(folder);
 end

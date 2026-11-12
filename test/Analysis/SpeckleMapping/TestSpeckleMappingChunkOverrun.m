@@ -8,12 +8,12 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestSpeckleMappingChu
     % (test/subFunc/calculateMaxChunkSize/mocks), following the same pattern
     % as TestHemoCompute's RAM-exhaustion/chunk-count-forcing tests.
     %
-    % With TOTAL=10000, AVAILABLE=1900 against a 12x12x10 single-precision
+    % With TOTAL=10000, AVAILABLE=1900 against a 12x16x10 (non-square) single-precision
     % fixture, all three RAM-safe chunking calls in SpeckleMapping.m
     % overshoot (nChunks vs. ceil(N/chunkSize)):
-    %   Pass 1:            nChunks=7,   chunkT=2, actually needed=5
-    %   'spatial' Pass 2:  nChunks=64,  chunkT=1, actually needed=10
-    %   'temporal' Pass 2: nChunks=173, chunkX=1, actually needed=12
+    %   Pass 1:            nChunks=9,   chunkT=2, actually needed=5
+    %   'spatial' Pass 2:  nChunks=86,  chunkT=1, actually needed=10
+    %   'temporal' Pass 2: nChunks=231, chunkX=1, actually needed=16
     % Before the fix, the last loop iteration(s) read/index past the data
     % (negative frame count on the Pass-1/spatial arithmetic paths, or an
     % empty xIdx reaching spatialSlabIO's x0 = xIdx(1) on the temporal
@@ -41,7 +41,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestSpeckleMappingChu
                 ['TestSpeckleMappingChunkOverrun_' char(java.util.UUID.randomUUID)]);
             mkdir(testCase.TempFolder);
 
-            Ny = 12; Nx = 12; Nt = 10;
+            Ny = 12; Nx = 16; Nt = 10; % non-square on purpose (DFR-20261109-002)
 
             rng(7);
             data = 0.5 + rand(Ny, Nx, Nt, 'single');

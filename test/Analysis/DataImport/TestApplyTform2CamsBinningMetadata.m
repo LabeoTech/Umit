@@ -38,7 +38,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestApplyTform2CamsBi
             % .dat header Phase 4e-1: a headered Camera-2 file is
             % coregistered and stays headered.
             testCase.writeDualCameraFolder(4, 1);
-            iRewriteWithHeader(fullfile(testCase.TempFolder, 'green.dat'), [8 8 1], 1);
+            iRewriteWithHeader(fullfile(testCase.TempFolder, 'green.dat'), [8 12 1], 1);
             tform = affine2d([1 0 0; 0 1 0; 4 -2 1]);
             tformInfo = struct('Binning', 2, 'BinningSpatial', 1, 'Rotation', 0, ...
                 'X_Offset', 0, 'Y_Offset', 0);
@@ -50,9 +50,35 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestApplyTform2CamsBi
             testCase.verifyTrue(isDatWithHeader(f));
             hdr = readDatHeader(f);
             testCase.verifyTrue(hdr.writeComplete);
-            testCase.verifyEqual(hdr.dimSizes, [8 8 1]);
+            testCase.verifyEqual(hdr.dimSizes, [8 12 1]);
             testCase.verifyEqual(hdr.channelName, 'green');
             testCase.verifyFalse(isfile([f '.tmp']));
+        end
+
+        function testTranslatesNonSquareFrameContentByTheTransform(testCase)
+            % The other tests write all-zero frames, which cannot show a Y/X
+            % mix-up. A marker pixel on a non-square frame must land exactly
+            % (tx, ty) = (4, -2) pixels away (columns +4, rows -2), in both
+            % the in-RAM and the RAM-safe path, and nowhere else.
+            for bRAMSafe = [false true]
+                testCase.writeDualCameraFolder(2, 1);
+                frame = zeros(8, 12, 'single');
+                frame(5, 3) = 7;
+                testCase.writeDatFile('green.dat', frame, 1);
+                tform = affine2d([1 0 0; 0 1 0; 4 -2 1]);
+                tformInfo = struct('Binning', 2, 'BinningSpatial', 1, 'Rotation', 0, ...
+                    'X_Offset', 0, 'Y_Offset', 0);
+
+                [status, warnmsg] = applyTform2Cams(testCase.TempFolder, tform, ...
+                    tformInfo, bRAMSafe);
+
+                testCase.verifyTrue(status, warnmsg);
+                moved = loadData(fullfile(testCase.TempFolder, 'green.dat'));
+                expected = zeros(8, 12, 'single');
+                expected(3, 7) = 7;
+                testCase.verifyEqual(moved, expected, ...
+                    sprintf('RAM-safe = %d', bRAMSafe));
+            end
         end
 
         function testRejectsLegacyAcquisitionMetadata(testCase)
@@ -86,8 +112,8 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestApplyTform2CamsBi
 
     methods (Access = private)
         function writeDualCameraFolder(testCase, hardwareBinning, softwareBinning)
-            frameSize = [8, 8];
-            AcqInfoStream = struct(); %#ok<NASGU>
+            frameSize = [8, 12]; % non-square on purpose (DFR-20261109-002)
+            AcqInfoStream = struct();
             AcqInfoStream.Width = frameSize(2);
             AcqInfoStream.Height = frameSize(1);
             AcqInfoStream.Length = 1;

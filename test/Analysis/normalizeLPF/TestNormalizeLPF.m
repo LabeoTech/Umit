@@ -284,7 +284,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestNormalizeLPF < ma
             % A non-single .dat is refused before anything is written: the
             % .dat path writes the input class back, which would round the
             % normalized ratio of an integer file to integers.
-            counts = round(1000 + 20 * rand(8, 8, 120));
+            counts = round(1000 + 20 * rand(8, 6, 120)); % non-square on purpose (DFR-20261109-002)
             for cls = {'uint16', 'int16', 'double'}
                 name = ['counts_' cls{1} '.dat'];
                 writeTestDat(fullfile(testCase.SaveFolder, name), cast(counts, cls{1}), 10);

@@ -119,7 +119,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventsManagerSele
             % .dat header Phase 8a: the AcqInfos.mat rate fallback is removed;
             % every event-to-frame conversion needs the data's own rate.
             prepareLabeledExternalObject(testCase);
-            data = reshape(single(1:2*2*40), 2, 2, 40);
+            data = reshape(single(1:2*3*40), 2, 3, 40);
             testCase.verifyError(@() testCase.Obj.getFrameMatrix(40), ...
                 'Umitoolbox:EventsManager:missingFrameRate');
             testCase.verifyError(@() testCase.Obj.getFrameMatrix(40, 'A', 2), ...
@@ -132,10 +132,10 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventsManagerSele
 
         function testSplitDataByEventsAndExportUseTheDataFrameRate(testCase)
             prepareLabeledExternalObject(testCase);
-            data = reshape(single(1:2*2*80), 2, 2, 80);
+            data = reshape(single(1:2*3*80), 2, 3, 80);
 
             [dataByEv, conditionList] = testCase.Obj.splitDataByEvents(data, 'FrameRateHz', 20);
-            testCase.verifySize(dataByEv, [2 2 20 3]);
+            testCase.verifySize(dataByEv, [2 3 20 3]);
             testCase.verifyEqual(dataByEv(:, :, :, 2), data(:, :, 27:46));
             testCase.verifyEqual(conditionList, uint16([1;2;1]));
 
@@ -219,7 +219,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventsManagerSele
             prepareLabeledExternalObject(testCase);
             testCase.Obj.removeRepetition('A', 2);
             rate = testCase.Obj.AcqInfo.FrameRateHz;
-            data = reshape(single(1:2*2*40), 2, 2, 40);
+            data = reshape(single(1:2*3*40), 2, 3, 40);
 
             [frAll, condAll, repAll, selAll] = testCase.Obj.getFrameMatrix(40, ...
                 'FrameRateHz', rate, 'IncludeIgnored', true);
@@ -234,7 +234,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventsManagerSele
             [byEvAll, ~, ~, sel] = testCase.Obj.splitDataByEvents(data, ...
                 'FrameRateHz', rate, 'IncludeIgnored', true);
             byEvSel = testCase.Obj.splitDataByEvents(data, 'FrameRateHz', rate);
-            testCase.verifySize(byEvAll, [2 2 size(byEvAll, 3) 3]);
+            testCase.verifySize(byEvAll, [2 3 size(byEvAll, 3) 3]);
             testCase.verifyEqual(sel, logical([1;1;0]));
             nT = min(size(byEvAll, 3), size(byEvSel, 3));
             testCase.verifyEqual(byEvAll(:, :, 1:nT, sel), byEvSel(:, :, 1:nT, :));
@@ -267,7 +267,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventsManagerSele
         function testPurgeBlockedByEventSplitFiles(testCase)
             % .dat header Phase 8b: no purge while event-split data exists.
             prepareBaselinePseudoEventObject(testCase);
-            saveData(fullfile(testCase.TempFolder, 'byEv.dat'), zeros(2, 2, 3, 2, 'single'), ...
+            saveData(fullfile(testCase.TempFolder, 'byEv.dat'), zeros(2, 3, 3, 2, 'single'), ...
                 'DimNames', {'Y', 'X', 'T', 'E'}, 'FrameRateHz', 10);
             before = testCase.Obj.eventID;
 

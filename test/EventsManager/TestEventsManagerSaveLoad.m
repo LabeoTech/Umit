@@ -66,7 +66,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventsManagerSave
             obj1 = EventsManager(testCase.TempFolder, testCase.TempFolder, 'csv');
             obj1.saveEvents(testCase.TempFolder);
             iFlagLegacyPurge(testCase.TempFolder, [3 4]);
-            saveData(fullfile(testCase.TempFolder, 'byEv.dat'), zeros(2, 2, 3, 2, 'single'), ...
+            saveData(fullfile(testCase.TempFolder, 'byEv.dat'), zeros(2, 3, 3, 2, 'single'), ...
                 'DimNames', {'Y', 'X', 'T', 'E'}, 'FrameRateHz', 10);
 
             obj2 = EventsManager(testCase.TempFolder, testCase.TempFolder, 'csv');

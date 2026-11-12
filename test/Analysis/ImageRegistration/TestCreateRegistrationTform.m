@@ -175,7 +175,8 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestCreateRegistratio
 
         function testDifferentSizeMovingImageIsComposedIntoTransform(testCase)
             % The stored transform maps the folder's own frame into the
-            % reference: a 2x larger recording aligns onto the 64x64 reference.
+            % reference: a 2x larger recording aligns onto the (non-square)
+            % reference.
             fx = testCase.Fixture;
             for name = {'green', 'red'}
                 data = single(loadData(fullfile(testCase.TempFolder, [name{1} '.dat'])));
@@ -193,15 +194,19 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestCreateRegistratio
 
             aligned = single(loadData(fullfile(testCase.TempFolder, 'green.dat')));
             testCase.verifySize(aligned, [fx.Ny fx.Nx fx.Nt]);
-            center = 12:52;
-            residual = aligned(center, center, 1) - fx.ReferenceImage(center, center);
+            rows = 12:52;
+            cols = 12:(fx.Nx - 12);
+            residual = aligned(rows, cols, 1) - fx.ReferenceImage(rows, cols);
             testCase.verifyLessThan(max(abs(residual(:))), 0.1);
         end
 
         function testDifferentAspectRatioIsRefused(testCase)
+            % The fixture frame is non-square; a square recording has a
+            % different aspect ratio than the reference.
+            fx = testCase.Fixture;
             data = single(loadData(fullfile(testCase.TempFolder, 'green.dat')));
             writeTestDat(fullfile(testCase.TempFolder, 'green.dat'), ...
-                imresize(data, [64 96]), 10, 20);
+                imresize(data, [fx.Ny fx.Ny]), 10, 20);
             DataParams = loadDataParams(testCase.TempFolder);
             DataParams.view.imageSizeYX = [];
             DataParams.mask.logical = [];

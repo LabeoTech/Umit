@@ -33,11 +33,11 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventsManagerAggr
             ev = iInstances([2 1 2 1 3], [1 1 2 2 1], ["B" "A" "B" "A" "C"], ...
                 logical([1 1 1 0 0]), nan(1, 5));
             plan = EventsManager.conditionAggregationPlan(ev);
-            data = reshape(single(1:2*2*3*5), 2, 2, 3, 5);
+            data = reshape(single(1:2*3*3*5), 2, 3, 3, 5);
 
             out = EventsManager.reduceByCondition(data, plan, @(x) mean(x, 4), 4);
 
-            testCase.verifySize(out, [2 2 3 3]);
+            testCase.verifySize(out, [2 3 3 3]);
             testCase.verifyEqual(out(:, :, :, 1), mean(data(:, :, :, [1 3]), 4));
             testCase.verifyEqual(out(:, :, :, 2), data(:, :, :, 2), 'A2 is ignored');
             testCase.verifyTrue(all(isnan(out(:, :, :, 3)), 'all'), 'C is all ignored');
@@ -75,11 +75,11 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventsManagerAggr
         function invalidInputsAreRefused(testCase)
             ev = iInstances([1 2], [1 1], ["A" "B"], true(1, 2), nan(1, 2));
             plan = EventsManager.conditionAggregationPlan(ev);
-            testCase.verifyError(@() EventsManager.reduceByCondition(zeros(2, 2, 3, 3), plan, ...
+            testCase.verifyError(@() EventsManager.reduceByCondition(zeros(2, 3, 3, 3), plan, ...
                 @(x) mean(x, 4), 4), 'Umitoolbox:EventsManager:eventAxisMismatch');
             planTwo = EventsManager.conditionAggregationPlan( ...
                 iInstances([1 1 2], [1 2 1], ["A" "A" "B"], true(1, 3), nan(1, 3)));
-            testCase.verifyError(@() EventsManager.reduceByCondition(zeros(2, 2, 3, 3), planTwo, ...
+            testCase.verifyError(@() EventsManager.reduceByCondition(zeros(2, 3, 3, 3), planTwo, ...
                 @(x) x, 4), 'Umitoolbox:EventsManager:invalidReduction');
 
             aggregated = plan.eventInfoOut;
@@ -95,7 +95,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventsManagerAggr
         function aggregatedEventInfoIsAValidUMT(testCase)
             ev = iInstances([1 2 1], [1 1 2], ["A" "B" "A"], logical([1 0 1]), [0.5 0.5 0.5]);
             plan = EventsManager.conditionAggregationPlan(ev);
-            umt = genUMTStruct(zeros(2, 2, 3, 2, 'single'), 'kind', 'image', ...
+            umt = genUMTStruct(zeros(2, 3, 3, 2, 'single'), 'kind', 'image', ...
                 'entryName', 'main', 'dimNames', {'Y', 'X', 'T', 'E'});
             umt = appendUMTEventInfo(umt, 'eventInfo', plan.eventInfoOut, 'overwrite', true);
             validateUMTStruct(umt, 'requireEventInfo', true);

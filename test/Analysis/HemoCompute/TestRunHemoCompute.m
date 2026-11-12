@@ -565,8 +565,8 @@ end
 function iCreateSyntheticHemoDataset(folderPath, repeatedRed)
 %ICREATESYNTHETICHEMODATASET Create normalized intrinsic-channel .dat files.
 
-Ny = 8;
-Nx = 8;
+Ny = 8; % non-square on purpose (DFR-20261109-002)
+Nx = 12;
 baseLength = 12;
 baseFreq = 10;
 

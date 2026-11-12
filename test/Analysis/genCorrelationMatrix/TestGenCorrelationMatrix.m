@@ -63,7 +63,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGenCorrelationMat
 
         function testCentroidVsCentroidAndAvgVsAvgAgreeForSinglePixelROIs(testCase)
             [imgData, roiA, roiB, sigA, sigB] = iBuildTwoSinglePixelROIs();
-            saveFolder = iSaveROIs(testCase, [roiA, roiB], [4 4]);
+            saveFolder = iSaveROIs(testCase, [roiA, roiB], [4 6]);
 
             expected = corr(sigA(:), sigB(:));
 
@@ -80,7 +80,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGenCorrelationMat
 
         function testCentroidVsAggMatchesManualAggregation(testCase, aggFcn)
             [imgData, roiSeed, roiTarget, sigS, pixelSigs] = iBuildSeedAndThreePixelTarget();
-            saveFolder = iSaveROIs(testCase, [roiSeed, roiTarget], [5 5]);
+            saveFolder = iSaveROIs(testCase, [roiSeed, roiTarget], [5 7]);
 
             perPixelRho = cellfun(@(s) corr(sigS(:), s(:)), pixelSigs);
             expected = feval(aggFcn, perPixelRho);
@@ -95,7 +95,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGenCorrelationMat
 
         function testFisherZTransformTruncatesBeforeAtanh(testCase)
             [imgData, roiA, roiB] = iBuildTwoIdenticalSinglePixelROIs();
-            saveFolder = iSaveROIs(testCase, [roiA, roiB], [3 3]);
+            saveFolder = iSaveROIs(testCase, [roiA, roiB], [3 5]);
 
             [rhoNoZ, labelsNoZ] = iRunAndReadCorr(saveFolder, imgData);
             ia = find(strcmp(labelsNoZ, 'ROI_A'), 1);
@@ -109,7 +109,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGenCorrelationMat
 
         function testReturnsUMTStructAndSPCMapsAsSecondOutput(testCase)
             [imgData, roiA, roiB] = iBuildTwoIdenticalSinglePixelROIs();
-            saveFolder = iSaveROIs(testCase, [roiA, roiB], [3 3]);
+            saveFolder = iSaveROIs(testCase, [roiA, roiB], [3 5]);
             datFile = iWriteDat(saveFolder, imgData);
 
             [outData, spcFile] = genCorrelationMatrix(datFile, saveFolder, ...
@@ -132,7 +132,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGenCorrelationMat
 
             entryA = spc.data.ROI_A;
             testCase.verifyEqual(cellstr(string(entryA.dimNames)), {'Y','X'});
-            testCase.verifyEqual(size(entryA.value), [3 3]);
+            testCase.verifyEqual(size(entryA.value), [3 5]);
 
             [~, spcFileOff] = genCorrelationMatrix(datFile, saveFolder);
             testCase.verifyEmpty(spcFileOff);
@@ -196,7 +196,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGenCorrelationMat
 
         function testRejectsArrayUMTFileAndEventSplitInput(testCase)
             [imgData, roiA, roiB] = iBuildTwoIdenticalSinglePixelROIs();
-            saveFolder = iSaveROIs(testCase, [roiA, roiB], [3 3]);
+            saveFolder = iSaveROIs(testCase, [roiA, roiB], [3 5]);
 
             testCase.verifyError(@() genCorrelationMatrix(imgData, saveFolder), ...
                 'Umitoolbox:genCorrelationMatrix:UnsupportedInputType');
@@ -215,7 +215,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGenCorrelationMat
 
         function testRoiFileLoadingRejectsPreRoiFiles(testCase)
             [imgData, roiA, roiB] = iBuildTwoIdenticalSinglePixelROIs();
-            saveFolder = iSaveROIs(testCase, [roiA, roiB], [3 3]);
+            saveFolder = iSaveROIs(testCase, [roiA, roiB], [3 5]);
 
             datFile = iWriteDat(saveFolder, imgData);
 
@@ -231,7 +231,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGenCorrelationMat
 
         function testMissingRoiFileThrows(testCase)
             [imgData, roiA, roiB] = iBuildTwoIdenticalSinglePixelROIs();
-            saveFolder = iSaveROIs(testCase, [roiA, roiB], [3 3]);
+            saveFolder = iSaveROIs(testCase, [roiA, roiB], [3 5]);
             datFile = iWriteDat(saveFolder, imgData);
 
             testCase.verifyError(@() genCorrelationMatrix(datFile, saveFolder, ...
@@ -240,7 +240,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGenCorrelationMat
         end
 
         function testDegenerateROIGuardOnEmptyMask(testCase)
-            imageSizeYX = [4 4];
+            imageSizeYX = [4 6];
             Nt = 10;
             imgData = single(reshape(1:(imageSizeYX(1)*imageSizeYX(2)*Nt), ...
                 [imageSizeYX, Nt]));
@@ -268,7 +268,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGenCorrelationMat
             sigA(1, [3 10 20]) = NaN;
 
             [imgData, roiA, roiB] = iBuildTwoSinglePixelROIsFromSignals(sigA, sigB);
-            saveFolder = iSaveROIs(testCase, [roiA, roiB], [4 4]);
+            saveFolder = iSaveROIs(testCase, [roiA, roiB], [4 6]);
 
             [rho, labels] = iRunAndReadCorr(saveFolder, imgData);
             ia = find(strcmp(labels, 'ROI_A'), 1);
@@ -289,14 +289,14 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGenCorrelationMat
             sigS = sin(2*pi*t/8);
             sigT = cos(2*pi*t/8) + 0.2*sin(2*pi*t/3);
 
-            imageSizeYX = [4 4];
+            imageSizeYX = [4 6];
             imgData = zeros([imageSizeYX, Nt], 'single');
-            imgData(1, 1, :) = sigS;
-            imgData(2, 2, :) = NaN;
-            imgData(3, 3, :) = sigT;
+            imgData(1, 5, :) = sigS;
+            imgData(2, 1, :) = NaN;
+            imgData(3, 6, :) = sigT;
 
-            maskSeed = false(imageSizeYX); maskSeed(1, 1) = true;
-            maskTarget = false(imageSizeYX); maskTarget(2, 2) = true; maskTarget(3, 3) = true;
+            maskSeed = false(imageSizeYX); maskSeed(1, 5) = true;
+            maskTarget = false(imageSizeYX); maskTarget(2, 1) = true; maskTarget(3, 6) = true;
             roiSeed = iMakeROIStructFromMask('Seed', maskSeed);
             roiTarget = iMakeROIStructFromMask('Target', maskTarget);
 
@@ -404,14 +404,14 @@ end
 
 function [imgData, roiA, roiB] = iBuildTwoSinglePixelROIsFromSignals(sigA, sigB)
 %IBUILDTWOSINGLEPIXELROISFROMSIGNALS Place two given traces at two pixels.
-imageSizeYX = [4 4];
+imageSizeYX = [4 6];
 Nt = numel(sigA);
 imgData = zeros([imageSizeYX, Nt], 'single');
-imgData(1, 1, :) = sigA;
-imgData(3, 3, :) = sigB;
+imgData(1, 5, :) = sigA;
+imgData(3, 2, :) = sigB;
 
-roiA = iMakeSinglePixelROIStruct('ROI_A', imageSizeYX, [1 1]);
-roiB = iMakeSinglePixelROIStruct('ROI_B', imageSizeYX, [3 3]);
+roiA = iMakeSinglePixelROIStruct('ROI_A', imageSizeYX, [1 5]);
+roiB = iMakeSinglePixelROIStruct('ROI_B', imageSizeYX, [3 2]);
 end
 
 function [imgData, roiA, roiB] = iBuildTwoIdenticalSinglePixelROIs()
@@ -419,18 +419,18 @@ function [imgData, roiA, roiB] = iBuildTwoIdenticalSinglePixelROIs()
 Nt = 30;
 t = 0:(Nt-1);
 sig = sin(2*pi*t/7);
-imageSizeYX = [3 3];
+imageSizeYX = [3 5];
 imgData = zeros([imageSizeYX, Nt], 'single');
-imgData(1, 1, :) = sig;
-imgData(2, 2, :) = sig;
+imgData(1, 4, :) = sig;
+imgData(3, 2, :) = sig;
 
-roiA = iMakeSinglePixelROIStruct('ROI_A', imageSizeYX, [1 1]);
-roiB = iMakeSinglePixelROIStruct('ROI_B', imageSizeYX, [2 2]);
+roiA = iMakeSinglePixelROIStruct('ROI_A', imageSizeYX, [1 4]);
+roiB = iMakeSinglePixelROIStruct('ROI_B', imageSizeYX, [3 2]);
 end
 
 function [imgData, roiSeed, roiTarget, sigS, pixelSigs] = iBuildSeedAndThreePixelTarget()
 %IBUILDSEEDANDTHREEPIXELTARGET One 1-pixel seed ROI vs. a 3-pixel target ROI.
-imageSizeYX = [5 5];
+imageSizeYX = [5 7];
 Nt = 25;
 t = 0:(Nt-1);
 sigS = sin(2*pi*t/6);
@@ -440,14 +440,14 @@ sig3 = -sin(2*pi*t/4);
 pixelSigs = {sig1, sig2, sig3};
 
 imgData = zeros([imageSizeYX, Nt], 'single');
-imgData(1, 1, :) = sigS;
-imgData(3, 1, :) = sig1;
-imgData(3, 2, :) = sig2;
-imgData(3, 3, :) = sig3;
+imgData(1, 6, :) = sigS;
+imgData(3, 4, :) = sig1;
+imgData(3, 5, :) = sig2;
+imgData(3, 6, :) = sig3;
 
 maskTarget = false(imageSizeYX);
-maskTarget(3, 1) = true; maskTarget(3, 2) = true; maskTarget(3, 3) = true;
+maskTarget(3, 4) = true; maskTarget(3, 5) = true; maskTarget(3, 6) = true;
 
-roiSeed = iMakeSinglePixelROIStruct('Seed', imageSizeYX, [1 1]);
+roiSeed = iMakeSinglePixelROIStruct('Seed', imageSizeYX, [1 6]);
 roiTarget = iMakeROIStructFromMask('Target', maskTarget);
 end

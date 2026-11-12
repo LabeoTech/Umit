@@ -318,7 +318,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestHemoCompute < mat
             for output = {'HbO', 'HbR'}
                 hbFile = fullfile(folder, [output{1} '.dat']);
                 continuous = loadData(hbFile);
-                testCase.assertSize(continuous, [8 8 nFrames]);
+                testCase.assertSize(continuous, [8 12 nFrames]);
 
                 [~, splitFile] = evalc('split_data_by_event(hbFile, folder)');
 
@@ -335,7 +335,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestHemoCompute < mat
             % An event-split file is refused, and the message names the
             % supported workflow.
             writeTestDat(fullfile(testCase.TempFolder, 'ev.dat'), ...
-                rand(8, 8, 4, 2, 'single'), 10, 'DimNames', {'Y','X','T','E'});
+                rand(8, 12, 4, 2, 'single'), 10, 'DimNames', {'Y','X','T','E'});
 
             try
                 HemoCompute(testCase.TempFolder, 'ev.dat', 'Illuminations', {'red','green'});
@@ -405,7 +405,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestHemoCompute < mat
             % reduction, so the clamp floor (and therefore the normalized
             % output) depended on chunkX, which itself depends on
             % available RAM at call time via calculateMaxChunkSize. Force
-            % two different chunk counts (1 vs. 8, for an 8-column test
+            % two different chunk counts (1 vs. many, for a 12-column test
             % image) via the memory() mock and confirm identical output.
             testCase.assumeEqual(computer, 'PCWIN64', ...
                 'Chunk-count forcing relies on shadowing the PCWIN64 memory() built-in.');
@@ -432,6 +432,48 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestHemoCompute < mat
 
             testCase.verifyEqual(HbOmanyChunks, HbOsingleChunk);
             testCase.verifyEqual(HbRmanyChunks, HbRsingleChunk);
+        end
+
+        function testTransposedFramesGiveTransposedResultAtAnyChunkCount(testCase)
+            % HbO/HbR are pixelwise, so swapping Y and X in every channel must
+            % swap them in the result, whatever the chunking over X. A Y/X
+            % mix-up (transposed frames, swapped sizes, slab offsets) breaks
+            % this only for non-square frames (DFR-20261109-002).
+            testCase.assumeEqual(computer, 'PCWIN64', ...
+                'Chunk-count forcing relies on shadowing the PCWIN64 memory() built-in.');
+            mocksFolder = fullfile(testCase.ProjectRoot, ...
+                'test', 'subFunc', 'calculateMaxChunkSize', 'mocks');
+            testCase.applyFixture(matlab.unittest.fixtures.PathFixture(mocksFolder));
+            testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture( ...
+                'UMIT_TEST_MOCK_MEMORY_MODE', 'fixed'));
+            testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture( ...
+                'UMIT_TEST_MOCK_MEMORY_TOTAL', num2str(1e12, '%d')));
+            testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture( ...
+                'UMIT_TEST_MOCK_MEMORY_AVAILABLE', num2str(1e12, '%d')));
+
+            transposedFolder = fullfile(testCase.TempFolder, 'transposed');
+            mkdir(transposedFolder);
+            iCreateSyntheticHemoDataset(transposedFolder, false, 10, 12, 1, true);
+            iBindDatasetToRig(transposedFolder, iConfiguredRigInfo());
+
+            [HbO, HbR] = iRunHb(testCase.TempFolder, 'Illuminations', {'red','green','yellow'});
+            [HbOt, HbRt] = iRunHb(transposedFolder, 'Illuminations', {'red','green','yellow'});
+            testCase.verifySize(HbO, [8 12 12]);
+            testCase.verifySize(HbOt, [12 8 12]);
+            testCase.verifyEqual(permute(HbO, [2 1 3]), HbOt);
+            testCase.verifyEqual(permute(HbR, [2 1 3]), HbRt);
+
+            % Many chunks over X (the test movies have 12 and 8 columns).
+            testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture( ...
+                'UMIT_TEST_MOCK_MEMORY_TOTAL', num2str(1e9, '%d')));
+            testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture( ...
+                'UMIT_TEST_MOCK_MEMORY_AVAILABLE', num2str(100005000, '%d')));
+            [HbOm, HbRm] = iRunHb(testCase.TempFolder, 'Illuminations', {'red','green','yellow'});
+            [HbOtm, HbRtm] = iRunHb(transposedFolder, 'Illuminations', {'red','green','yellow'});
+            testCase.verifyEqual(HbOm, HbO);
+            testCase.verifyEqual(HbOtm, HbOt);
+            testCase.verifyEqual(permute(HbOm, [2 1 3]), HbOtm);
+            testCase.verifyEqual(permute(HbRm, [2 1 3]), HbRtm);
         end
 
         function testRerunOverwritesDeclaredOutputs(testCase)
@@ -500,7 +542,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestHemoCompute < mat
                 'Illuminations', {'red','green'}, 'b_normalize', true), ...
                 'Umitoolbox:HemoCompute:NormalizationSmoothingSkipped');
             HbO = loadData(fullfile(lowRateFolder, 'HbO.dat'));
-            testCase.verifySize(HbO, [8, 8, 40]);
+            testCase.verifySize(HbO, [8, 12, 40]);
             testCase.verifyTrue(all(isfinite(HbO(:))));
         end
 
@@ -516,7 +558,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestHemoCompute < mat
             testCase.verifyWarningFree(@() HemoCompute(lowRateFolder, 'red.dat', ...
                 'Illuminations', {'red','green'}, 'b_normalize', false));
             HbO = loadData(fullfile(lowRateFolder, 'HbO.dat'));
-            testCase.verifySize(HbO, [8, 8, 40]);
+            testCase.verifySize(HbO, [8, 12, 40]);
         end
 
         function testPipelineInfo(testCase)
@@ -637,16 +679,19 @@ end
 save(file, 'AcqInfoStream');
 end
 
-function iCreateSyntheticHemoDataset(folderPath, repeatedRed, baseFreq, baseLength, scale)
+function iCreateSyntheticHemoDataset(folderPath, repeatedRed, baseFreq, baseLength, scale, transposed)
 %ICREATESYNTHETICHEMODATASET Create intrinsic-channel .dat files.
 %   Normalized (around 1) by default; SCALE multiplies the movies (for
-%   raw-like data). Defaults: 10 Hz, 12 frames, SCALE 1.
+%   raw-like data). Defaults: 10 Hz, 12 frames, SCALE 1. The frames are
+%   8 x 12 (non-square on purpose, DFR-20261109-002); TRANSPOSED writes the
+%   same movies with Y and X swapped (12 x 8).
 
 if nargin < 3, baseFreq = 10; end
 if nargin < 4, baseLength = 12; end
 if nargin < 5, scale = 1; end
+if nargin < 6, transposed = false; end
 Ny = 8;
-Nx = 8;
+Nx = 12;
 
 if repeatedRed
     redLength = baseLength * 2;
@@ -659,6 +704,9 @@ end
 AcqInfoStream = struct();
 AcqInfoStream.Height = Ny;
 AcqInfoStream.Width = Nx;
+if transposed
+    [AcqInfoStream.Height, AcqInfoStream.Width] = deal(Nx, Ny);
+end
 AcqInfoStream.Length = baseLength;
 AcqInfoStream.FrameRateHz = baseFreq;
 AcqInfoStream.Camera_Model = 'D1024';
@@ -684,6 +732,9 @@ for iChan = 1:size(channels, 1)
     amp = channels{iChan, 4};
 
     data = scale * iMakeNormalizedMovie(Ny, Nx, nFrames, amp);
+    if transposed
+        data = permute(data, [2 1 3]);
+    end
     iWriteSingleDat(fullfile(folderPath, datFile), data, frameRate, 10);
 
     AcqInfoStream.ImportedChannels(end+1).DatFile = datFile;

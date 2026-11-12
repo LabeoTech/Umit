@@ -33,7 +33,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestFolderStatusHelpe
             saveDataParams(testCase.Folder, DataParams);
             testCase.verifyEqual(describeFolderRegistration(testCase.Folder).state, 'NoReference');
 
-            [reference, estimate] = testCase.referenceAndEstimate(magic(6), 'Ref A');
+            [reference, estimate] = testCase.referenceAndEstimate(iImage(6, 8), 'Ref A');
             DataParams.registration.reference = reference;
             saveDataParams(testCase.Folder, DataParams);
             summary = describeFolderRegistration(testCase.Folder);
@@ -47,7 +47,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestFolderStatusHelpe
             saveDataParams(testCase.Folder, DataParams);
             testCase.verifyEqual(describeFolderRegistration(testCase.Folder).state, 'Estimated');
 
-            otherReference = testCase.referenceAndEstimate(magic(6)', 'Ref B');
+            otherReference = testCase.referenceAndEstimate(iImage(6, 8)', 'Ref B');
             DataParams.registration.reference = otherReference;
             saveDataParams(testCase.Folder, DataParams);
             summary = describeFolderRegistration(testCase.Folder);
@@ -55,8 +55,8 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestFolderStatusHelpe
             testCase.verifyTrue(any(contains(summary.tooltipLines, 'Estimate again')));
 
             DataParams.registration.reference = reference;
-            DataParams.view.imageSizeYX = [6 6];
-            DataParams.mask.logical = true(6);
+            DataParams.view.imageSizeYX = [6 8];
+            DataParams.mask.logical = true(6, 8);
             DataParams.registration.apply.isRegistered = true;
             DataParams.registration.apply.appliedReferenceHash = reference.contentHash;
             DataParams.registration.apply.appliedOn = '2026-10-15 10:00:00';
@@ -73,7 +73,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestFolderStatusHelpe
 
         function testRegistrationShowsTheAlignedSourceWarning(testCase)
             DataParams = createDataParams(testCase.Folder);
-            reference = testCase.referenceAndEstimate(magic(5), 'From aligned folder');
+            reference = testCase.referenceAndEstimate(iImage(5, 7), 'From aligned folder');
             reference.source = referenceSourceDescriptor('umitDat', 'D:\other\green.dat');
             reference.source.sourceAligned = true;
             reference.source.warning = 'The source data are already transformed.';
@@ -194,4 +194,10 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestFolderStatusHelpe
                 struct('projectName', projectName, 'experimenter', 'B. S.'), subjectID, sessionID);
         end
     end
+end
+
+function image = iImage(ny, nx)
+%IIMAGE Non-square, asymmetric test image of size [ny nx] (DFR-20261109-002).
+full = single(magic(max(ny, nx)));
+image = full(1:ny, 1:nx);
 end

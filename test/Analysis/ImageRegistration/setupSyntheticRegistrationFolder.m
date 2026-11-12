@@ -14,10 +14,17 @@ function fixture = setupSyntheticRegistrationFolder(rootFolder, varargin)
 %   project session whose subject has an active managed reference. With
 %   false, the folder is a plain imported dataset: no rig ledger, no
 %   project, and no store is touched (project redesign scenarios 2/2b).
+%
+%   'FrameSizeYX' (default [64 96]) is the frame size [Y X]. It is non-square
+%   on purpose (DFR-20261109-002). [64 64] reproduces the original square
+%   data bit for bit and is used by the characterization cases whose frozen
+%   references were recorded with it. Each side must be at least 48 so the
+%   fixed Gaussian centres stay inside the frame.
 
 p = inputParser;
 addParameter(p, 'DatFormat', 'header', @(x) any(strcmpi(x, {'header', 'legacySidecar'})));
 addParameter(p, 'WithStore', true, @(x) islogical(x) && isscalar(x));
+addParameter(p, 'FrameSizeYX', [64 96], @(x) isnumeric(x) && numel(x) == 2 && all(x >= 48));
 parse(p, varargin{:});
 datFormat = p.Results.DatFormat;
 
@@ -25,8 +32,12 @@ if ~isfolder(rootFolder)
     mkdir(rootFolder);
 end
 
-Ny = 64;
-Nx = 64;
+% Frames are NON-SQUARE by default so that a Y/X mix-up changes the result.
+% The Gaussians sit at fixed pixel coordinates, so [64 64] reproduces the
+% original square data exactly (the frozen characterization references of
+% test/subFunc/rewriters pin that size).
+Ny = p.Results.FrameSizeYX(1);
+Nx = p.Results.FrameSizeYX(2);
 Nt = 5;
 frameRateHz = 10;
 exposureMsec = 20;

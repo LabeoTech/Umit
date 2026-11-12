@@ -120,8 +120,8 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestConvertToTiff < m
             testCase.assumeEqual(computer, 'PCWIN64', ...
                 'Chunk forcing relies on shadowing the PCWIN64 memory() built-in.');
             saveFolder = iEventsFolder(testCase);
-            stack = rand(20, 20, 400, 'single');
-            events = rand(20, 20, 300, 3, 'single');
+            stack = rand(20, 30, 400, 'single'); % non-square on purpose (DFR-20261109-002)
+            events = rand(20, 30, 300, 3, 'single');
             writeTestDat(fullfile(saveFolder, 'stack.dat'), stack, 10);
             writeTestDat(fullfile(saveFolder, 'split.dat'), events, 10, ...
                 'DimNames', {'Y','X','T','E'});
@@ -135,7 +135,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestConvertToTiff < m
                 'UMIT_TEST_MOCK_MEMORY_TOTAL', '10000'));
             testCase.applyFixture(matlab.unittest.fixtures.EnvironmentVariableFixture( ...
                 'UMIT_TEST_MOCK_MEMORY_AVAILABLE', '5000'));
-            testCase.assertGreaterThan(calculateMaxChunkSize(20*20*400*4, 2, 0.1), 1, ...
+            testCase.assertGreaterThan(calculateMaxChunkSize(20*30*400*4, 2, 0.1), 1, ...
                 'The fixture must force more than one block.');
 
             outStack = {};

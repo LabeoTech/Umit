@@ -11,8 +11,8 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestSpeckleMappingNaN
 
     properties
         TempFolder = ''
-        AllNaNPixel = [3, 3]
-        PartialNaNPixel = [8, 8]
+        AllNaNPixel = [3, 11] % off-diagonal on purpose: a Y/X swap moves it
+        PartialNaNPixel = [9, 4]
     end
 
     methods (TestMethodSetup)
@@ -21,7 +21,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestSpeckleMappingNaN
                 ['TestSpeckleMappingNaNDenominator_' char(java.util.UUID.randomUUID)]);
             mkdir(testCase.TempFolder);
 
-            Ny = 12; Nx = 12; Nt = 10;
+            Ny = 12; Nx = 16; Nt = 10; % non-square on purpose (DFR-20261109-002)
 
             rng(42);
             data = 0.5 + rand(Ny, Nx, Nt, 'single');

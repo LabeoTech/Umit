@@ -33,7 +33,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGetDataFromROI < 
 
     properties
         TempFolder
-        ImageSizeYX = [6 6]
+        ImageSizeYX = [6 9]  % non-square on purpose (DFR-20261109-002)
         FrameRateHz = 10
         NFrames = 12
     end
@@ -61,12 +61,12 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGetDataFromROI < 
                 'MultiCam', false);
             save(fullfile(testCase.TempFolder, 'AcqInfos.mat'), 'AcqInfoStream');
 
-            roi1 = iMakeRectROI('ROI1', testCase.ImageSizeYX, 1:3, 1:3, [1 0 0]);
-            roi2 = iMakeRectROI('ROI2', testCase.ImageSizeYX, 4:6, 3:6, [0 1 0]);
+            roi1 = iMakeRectROI('ROI1', testCase.ImageSizeYX, 1:3, 5:7, [1 0 0]);
+            roi2 = iMakeRectROI('ROI2', testCase.ImageSizeYX, 4:6, 6:9, [0 1 0]);
             ROIFile = createROIFile(testCase.ImageSizeYX, 'ROIs', [roi1, roi2]);
             saveROIFile(fullfile(testCase.TempFolder, 'myROI.roi'), ROIFile);
 
-            soloROI = iMakeRectROI('SoloROI', testCase.ImageSizeYX, 1:3, 1:3, [1 0 0]);
+            soloROI = iMakeRectROI('SoloROI', testCase.ImageSizeYX, 1:3, 5:7, [1 0 0]);
             soloROIFile = createROIFile(testCase.ImageSizeYX, 'ROIs', soloROI);
             saveROIFile(fullfile(testCase.TempFolder, 'soloROI.roi'), soloROIFile);
         end
@@ -163,7 +163,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGetDataFromROI < 
             testCase.verifyFalse(any(isnan(roi2Slice), 'all'));
 
             % Cross-check actual values against a direct mask extraction.
-            mask1 = false(testCase.ImageSizeYX); mask1(1:3, 1:3) = true;
+            mask1 = false(testCase.ImageSizeYX); mask1(1:3, 5:7) = true;
             data2D = reshape(data, prod(testCase.ImageSizeYX), testCase.NFrames);
             expectedROI1 = data2D(mask1(:), :);
             testCase.verifyEqual(double(roi1Slice(1:9, :)), double(expectedROI1));
@@ -188,7 +188,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGetDataFromROI < 
             testCase.verifyEqual(cellstr(string(entry.dimNames)), {'ROI','T'});
             testCase.verifyEqual(size(entry.value), [1, testCase.NFrames]);
 
-            mask = false(testCase.ImageSizeYX); mask(1:3, 1:3) = true;
+            mask = false(testCase.ImageSizeYX); mask(1:3, 5:7) = true;
             data2D = reshape(data, prod(testCase.ImageSizeYX), testCase.NFrames);
             expected = mean(double(data2D(mask(:), :)), 1);
             testCase.verifyEqual(double(entry.value), expected, 'AbsTol', 1e-4);
@@ -327,7 +327,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGetDataFromROI < 
             testCase.verifyEqual(cellstr(string(out.labels.F(:))), {'Amplitude';'Phase'});
             testCase.verifyEqual(cellstr(string(out.labels.ROI(:))), {'ROI1';'ROI2'});
 
-            mask1 = false(testCase.ImageSizeYX); mask1(1:3, 1:3) = true;
+            mask1 = false(testCase.ImageSizeYX); mask1(1:3, 5:7) = true;
             frames = reshape(maps, [], 2);
             expected1 = mean(double(frames(mask1(:), :)), 1);
             testCase.verifyEqual(double(entry.value(1, :)), expected1, 'AbsTol', 1e-4);

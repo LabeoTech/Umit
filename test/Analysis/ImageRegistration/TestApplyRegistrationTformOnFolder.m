@@ -174,8 +174,11 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestApplyRegistration
             % DataParams.view must describe the current frame; a stale view
             % would give a wrong view/mask after alignment.
             DataParams = loadDataParams(testCase.TempFolder);
-            smallerYX = [32 32];
-            DataParams.view.imageSizeYX = smallerYX;
+            % A Y/X-transposed size must be rejected too: with a non-square
+            % frame it is a different size.
+            fx = testCase.Fixture;
+            transposedYX = [fx.Nx fx.Ny];
+            DataParams.view.imageSizeYX = transposedYX;
             DataParams.mask.logical = [];
             saveDataParams(testCase.TempFolder, DataParams);
             before = snapshotRegistrationFiles(testCase.TempFolder);

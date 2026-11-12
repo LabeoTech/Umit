@@ -584,8 +584,8 @@ s.rate = double(acq.AcqInfoStream.FrameRateHz);
 nT = datAxisSize(loadMetaData(fullfile(fixture, 'green.dat')), 'T');
 nT = 2 * floor(nT / 2);
 
-Ny = 6;
-Nx = 6;
+Ny = 6; % non-square on purpose (DFR-20261109-002)
+Nx = 9;
 t = (0:nT-1) / s.rate;
 stream = RandStream('mt19937ar', 'Seed', 3);
 slow = reshape(sin(2 * pi * t / (t(end) / 3)), 1, 1, nT);

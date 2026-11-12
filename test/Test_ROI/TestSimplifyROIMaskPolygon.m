@@ -3,10 +3,10 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestSimplifyROIMaskPo
 
     methods (Test)
         function reducesTypicalMaskBoundary(testCase)
-            mask = false(180, 180);
+            mask = false(180, 240); % non-square on purpose (DFR-20261109-002)
             theta = linspace(0, 2 * pi, 721).';
             radius = 55 + 5 * sin(7 * theta) + 2 * sin(19 * theta);
-            x = 90 + radius .* cos(theta);
+            x = 150 + radius .* cos(theta);
             y = 90 + radius .* sin(theta);
             mask = poly2mask(x, y, size(mask, 1), size(mask, 2));
 

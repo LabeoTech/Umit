@@ -255,8 +255,8 @@ end
 function iCreateHemoComputeDataset(folder)
 % Red at twice the rate of green and yellow, as in TestHemoCompute's
 % repeated-illumination case, so the resampling path is exercised.
-Ny = 8;
-Nx = 8;
+Ny = 8; % non-square on purpose (DFR-20261109-002)
+Nx = 12;
 baseLength = 12;
 baseFreq = 10;
 AcqInfoStream = struct('Height', Ny, 'Width', Nx, 'Length', baseLength, ...

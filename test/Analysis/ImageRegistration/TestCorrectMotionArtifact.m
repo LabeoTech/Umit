@@ -8,8 +8,8 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestCorrectMotionArti
 
     properties
         TempFolder
-        Ny = 64
-        Nx = 64
+        Ny = 48  % non-square on purpose (DFR-20261109-002)
+        Nx = 80
         Nt = 4
         RefPattern
         Shifts    % Nt-by-2 [rowShift colShift] estimated for green.dat
@@ -115,14 +115,16 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestCorrectMotionArti
 
             % Interior region only: a shift zero-fills pixels warped in from
             % outside the original frame near the border.
-            interior = 10:(testCase.Ny-10);
+            rowsIn = 10:(testCase.Ny-10);
+            colsIn = 10:(testCase.Nx-10);
+            % AbsTol is ignored for single arrays, so compare in double.
             for t = 1:testCase.Nt
                 testCase.verifyEqual( ...
-                    greenCorrected(interior, interior, t), ...
-                    testCase.RefPattern(interior, interior), 'AbsTol', 0.1);
+                    double(greenCorrected(rowsIn, colsIn, t)), ...
+                    double(testCase.RefPattern(rowsIn, colsIn)), 'AbsTol', 0.1);
                 testCase.verifyEqual( ...
-                    redCorrected(interior, interior, t), ...
-                    testCase.RefPattern(interior, interior) * 0.6, 'AbsTol', 0.1);
+                    double(redCorrected(rowsIn, colsIn, t)), ...
+                    double(testCase.RefPattern(rowsIn, colsIn)) * 0.6, 'AbsTol', 0.1);
             end
         end
 

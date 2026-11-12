@@ -40,7 +40,8 @@ c.hash = @iHash;
 end
 
 function cleanupFcn = iBuild(folder, dataClass)
-fixture = setupSyntheticRegistrationFolder(folder, 'DatFormat', 'legacySidecar');
+fixture = setupSyntheticRegistrationFolder(folder, 'DatFormat', 'legacySidecar', ...
+    'FrameSizeYX', [64 64]); % pinned: frozen reference recorded with 64x64
 cleanupFcn = @() iRemoveFolders({fixture.ProjectRoot, fixture.RigRoot});
 
 map = reshape(single(1:fixture.Ny * fixture.Nx), fixture.Ny, fixture.Nx);

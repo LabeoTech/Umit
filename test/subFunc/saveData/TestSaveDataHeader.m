@@ -276,9 +276,10 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestSaveDataHeader < 
         end
 
         function appendOfDifferentFrameSizeIsRefused(testCase)
-            % A 5 x 5 frame cannot be appended to a 100 x 100 x 10 file.
+            % A 5 x 5 frame cannot be appended to a 100 x 80 x 10 file; the
+            % frame is non-square, so each axis can be the only mismatch.
             f = fullfile(testCase.Folder, 'big.dat');
-            saveData(f, zeros(100, 100, 10, 'single'), 'DimNames', testCase.YXT, 'FrameRateHz', 10);
+            saveData(f, zeros(100, 80, 10, 'single'), 'DimNames', testCase.YXT, 'FrameRateHz', 10);
             before = iBytes(f);
             try
                 saveData(f, zeros(5, 5, 'single'), 'DimNames', testCase.YXT, ...
@@ -287,6 +288,27 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestSaveDataHeader < 
             catch ME
                 testCase.verifyEqual(ME.identifier, 'Umitoolbox:saveData:appendMismatch');
                 testCase.verifySubstring(ME.message, 'axis Y is 100 in the file but 5 in the data');
+            end
+            testCase.verifyEqual(iBytes(f), before);
+
+            % Same Y, different X: the X axis is the one reported.
+            try
+                saveData(f, zeros(100, 5, 'single'), 'DimNames', testCase.YXT, ...
+                    'FrameRateHz', 10, 'Append', true);
+                testCase.verifyFail('the append should have been refused');
+            catch ME
+                testCase.verifyEqual(ME.identifier, 'Umitoolbox:saveData:appendMismatch');
+                testCase.verifySubstring(ME.message, 'axis X is 80 in the file but 5 in the data');
+            end
+            testCase.verifyEqual(iBytes(f), before);
+
+            % A swapped (Y/X transposed) frame is refused as well.
+            try
+                saveData(f, zeros(80, 100, 'single'), 'DimNames', testCase.YXT, ...
+                    'FrameRateHz', 10, 'Append', true);
+                testCase.verifyFail('the append should have been refused');
+            catch ME
+                testCase.verifyEqual(ME.identifier, 'Umitoolbox:saveData:appendMismatch');
             end
             testCase.verifyEqual(iBytes(f), before);
         end

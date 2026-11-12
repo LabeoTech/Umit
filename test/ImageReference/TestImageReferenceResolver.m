@@ -18,9 +18,9 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestImageReferenceRes
             testCase.Root = tempname;
             testCase.SourceFolder = fullfile(testCase.Root, 'source');
             mkdir(testCase.SourceFolder);
-            frames = single(repmat(magic(8), 1, 1, 6)) + reshape(single(0:5), 1, 1, 6);
+            frames = single(repmat(iImage(8, 6), 1, 1, 6)) + reshape(single(0:5), 1, 1, 6);
             writeTestDat(fullfile(testCase.SourceFolder, 'green.dat'), frames, 10, 5);
-            AcqInfoStream = struct('Width', 8, 'Height', 8, 'FrameRateHz', 10);
+            AcqInfoStream = struct('Width', 6, 'Height', 8, 'FrameRateHz', 10);
             save(fullfile(testCase.SourceFolder, 'AcqInfos.mat'), 'AcqInfoStream');
         end
     end
@@ -80,7 +80,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestImageReferenceRes
 
             testCase.verifyEqual(testCase.folderChecksums(testCase.SourceFolder), before, ...
                 'selection must not write to the source folder');
-            testCase.verifyEqual(reference.image, mean(single(repmat(magic(8), 1, 1, 6)) + ...
+            testCase.verifyEqual(reference.image, mean(single(repmat(iImage(8, 6), 1, 1, 6)) + ...
                 reshape(single(0:5), 1, 1, 6), 3), 'AbsTol', 1e-5);
             testCase.verifyEqual(reference.contentHash, computeImageContentHash(reference.image));
             source = reference.source;
@@ -135,7 +135,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestImageReferenceRes
         end
 
         function testFileSourcePlainImages(testCase)
-            image = single(magic(10));
+            image = iImage(10, 7);
             tifPath = fullfile(testCase.Root, 'plain.tif');
             imwrite(uint16(image), tifPath);
             matPath = fullfile(testCase.Root, 'plain.mat');
@@ -172,7 +172,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestImageReferenceRes
         end
 
         function testExportedReferenceWithAndWithoutProject(testCase)
-            image = single(magic(7));
+            image = iImage(7, 9);
             free = genImageReferenceStruct(image, 'Name', 'free reference');
             testCase.verifyEqual(free.version, 2);
             freePath = exportImageReferenceFile(free, fullfile(testCase.Root, 'free.mat'));
@@ -200,7 +200,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestImageReferenceRes
         end
 
         function testVersion1ReferenceIsUpgradedInMemory(testCase)
-            image = single(magic(5));
+            image = iImage(5, 8);
             v2 = genImageReferenceStruct(image, 'Name', 'old', ...
                 'ProjectUUID', lower(char(java.util.UUID.randomUUID())), 'ProjectName', 'P', ...
                 'SubjectUUID', lower(char(java.util.UUID.randomUUID())), 'SubjectID', 'S1');
@@ -258,7 +258,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestImageReferenceRes
 
             % A library import of an exported file from another subject is refused,
             % and accepted once its identity is cleared.
-            foreign = genImageReferenceStruct(single(magic(4)), 'Name', 'foreign', ...
+            foreign = genImageReferenceStruct(iImage(4, 6), 'Name', 'foreign', ...
                 'ProjectUUID', fx.ProjectUUID, 'ProjectName', 'x', ...
                 'SubjectUUID', lower(char(java.util.UUID.randomUUID())), 'SubjectID', 'Other');
             foreignPath = exportImageReferenceFile(foreign, fullfile(testCase.Root, 'foreign.mat'));
@@ -288,8 +288,8 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestImageReferenceRes
             DataParams = createDataParams(folder);
             [~, referenceTemplate, estimateTemplate] = newRegistrationRecord();
             reference = referenceTemplate;
-            [reference.contentHash, reference.image] = computeImageContentHash(single(magic(8)));
-            reference.imageSizeYX = [8 8];
+            [reference.contentHash, reference.image] = computeImageContentHash(iImage(8, 6));
+            reference.imageSizeYX = [8 6];
             reference.name = 'committed reference';
             reference.source = referenceSourceDescriptor('file', 'C:\\ref.tif');
             estimate = estimateTemplate;
@@ -303,4 +303,10 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestImageReferenceRes
             saveDataParams(folder, DataParams);
         end
     end
+end
+
+function image = iImage(ny, nx)
+%IIMAGE Non-square, asymmetric test image of size [ny nx] (DFR-20261109-002).
+full = single(magic(max(ny, nx)));
+image = full(1:ny, 1:nx);
 end
