@@ -66,6 +66,76 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestPipelineManagerVi
             testCase.verifyTrue(any(strcmpi(historyFiles, tempListing(1).name)));
         end
 
+        function intermediateFunctionWrittenFilesAreRemoved(testCase)
+            % split_data_by_event and normalizeBSLN both write default-named .dat
+            % files. The split output only feeds normalizeBSLN, so dataByEv.dat
+            % must not survive the run; the leaf is the only product.
+            for policy = {'saveLeaves', 'viewerTemp'}
+                folder = fullfile(testCase.SaveFolder, ['run_' policy{1}]);
+                mkdir(folder);
+                for name = {'AcqInfos.mat', 'events.mat', 'green.dat'}
+                    copyfile(fullfile(testCase.SaveFolder, name{1}), folder);
+                end
+                sourceInfo = loadMetaData(fullfile(folder, 'green.dat'));
+                appendImportedChannelInfo(folder, struct('DatFile', 'green.dat', ...
+                    'Length', sourceInfo.dimSizes(3), 'FrameRateHz', sourceInfo.frameRateHz));
+
+                pm = PipelineManager(folder, '', testCase.ProjectRoot);
+                idSplit = pm.addStep('split_data_by_event', 'input', fullfile(folder, 'green.dat'));
+                pm.addStep('normalizeBSLN', 'input', idSplit);
+
+                result = pm.executePipeline('LeafOutputPolicy', policy{1}, 'PrintSummary', false);
+
+                testCase.verifyEqual(result.status, "completed", policy{1});
+                testCase.verifyFalse(isfile(fullfile(folder, 'dataByEv.dat')), ...
+                    [policy{1} ': intermediate dataByEv.dat must be deleted.']);
+                testCase.verifyEmpty(dir(fullfile(folder, 'PMTMP_*split_data_by_event*')), ...
+                    [policy{1} ': renamed intermediate must be deleted after its consumer ran.']);
+                if strcmp(policy{1}, 'saveLeaves')
+                    testCase.verifyTrue(isfile(fullfile(folder, 'normBSLN.dat')));
+                else
+                    testCase.verifyFalse(isfile(fullfile(folder, 'normBSLN.dat')));
+                    testCase.verifyNumElements(dir(fullfile(folder, 'PMTMP_*.dat')), 1);
+                end
+            end
+        end
+
+        function explicitSaveOfIntermediateKeepsItPermanent(testCase)
+            % The user asked to keep the intermediate: saving it under its own
+            % default name, or under a custom name, must leave exactly one
+            % permanent copy and no PMTMP leftovers.
+            cases = {'dataByEv.dat', 'mySplit.dat'};
+            for iCase = 1:numel(cases)
+                saveName = cases{iCase};
+                folder = fullfile(testCase.SaveFolder, sprintf('explicit_%d', iCase));
+                mkdir(folder);
+                for name = {'AcqInfos.mat', 'events.mat', 'green.dat'}
+                    copyfile(fullfile(testCase.SaveFolder, name{1}), folder);
+                end
+                sourceInfo = loadMetaData(fullfile(folder, 'green.dat'));
+                appendImportedChannelInfo(folder, struct('DatFile', 'green.dat', ...
+                    'Length', sourceInfo.dimSizes(3), 'FrameRateHz', sourceInfo.frameRateHz));
+
+                pm = PipelineManager(folder, '', testCase.ProjectRoot);
+                idSplit = pm.addStep('split_data_by_event', 'input', ...
+                    fullfile(folder, 'green.dat'), 'saveas', saveName);
+                pm.addStep('normalizeBSLN', 'input', idSplit, 'saveas', 'final.dat');
+
+                result = pm.executePipeline('LeafOutputPolicy', 'viewerTemp', 'PrintSummary', false);
+
+                testCase.verifyEqual(result.status, "completed", saveName);
+                testCase.verifyTrue(isfile(fullfile(folder, saveName)), ...
+                    [saveName ': explicitly saved intermediate must persist.']);
+                testCase.verifyTrue(isfile(fullfile(folder, 'final.dat')));
+                testCase.verifyEmpty(dir(fullfile(folder, 'PMTMP_*')), ...
+                    [saveName ': no PMTMP leftovers.']);
+                if ~strcmp(saveName, 'dataByEv.dat')
+                    testCase.verifyFalse(isfile(fullfile(folder, 'dataByEv.dat')), ...
+                        [saveName ': function-named copy must not stay beside the saved file.']);
+                end
+            end
+        end
+
         function saveLeavesKeepsFunctionNamedDatFile(testCase)
             pm = PipelineManager(testCase.SaveFolder, '', testCase.ProjectRoot);
             pm.addStep('split_data_by_event', 'input', testCase.SourceFile);

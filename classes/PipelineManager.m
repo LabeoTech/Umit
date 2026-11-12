@@ -10197,7 +10197,10 @@ classdef PipelineManager < handle
                 createdFilesLocal = obj.registerOutputs(stepNode, outCell, saveFolderLocal, stepSourceInfo, stepStartTime);
                 appendCurrentOutFiles(createdFilesLocal);
 
-                savedFiles = obj.saveNodeDataOutputs(stepNode, saveFolderLocal);
+                % A file the step wrote itself is moved, not copied, to an
+                % explicit save name so no function-named duplicate stays behind.
+                savedFiles = obj.saveNodeDataOutputs(stepNode, saveFolderLocal, ...
+                    'promoteOwnedFiles', true, 'updateDataHistoryOnMove', true);
                 if ~isempty(savedFiles)
                     createdFilesLocal = [createdFilesLocal; savedFiles];
                     createdFilesLocal = unique(createdFilesLocal, 'stable');
@@ -12340,10 +12343,28 @@ classdef PipelineManager < handle
                         folder, fileList(1));
                     rec.fileName = string(fullFn);
                     rec.ownedFile = obj.isFileWrittenSince(fullFn, stepStartTime);
+
+                    % An intermediate the function wrote under its own default
+                    % name (e.g. dataByEv.dat, normBSLN.dat) is not a result the
+                    % user asked for: hand it to the temp lifecycle so it is
+                    % deleted once its last consumer has run.
+                    if rec.ownedFile && rec.remainingConsumers > 0 && ...
+                            isempty(obj.normalizeOutputSaveFileNameList(outDef))
+                        tempFn = obj.demoteOwnedFileToTemp(nodeLocal, outDef, fullFn, folder);
+                        if strlength(tempFn) > 0
+                            fullFn = char(tempFn);
+                            [~, fBaseTmp, fExtTmp] = fileparts(fullFn);
+                            folderBoundName = string(fBaseTmp) + string(fExtTmp);
+                            rec.fileName = string(fullFn);
+                            rec.isTemp = true;
+                            rec.ownedFile = false;
+                        end
+                    end
                     obj.dataStore(key) = rec;
 
                     keyCompat = obj.makeKey(nodeIDLocal, char(folderBoundName));
                     recCompat = rec;
+                    recCompat.isTemp = false; % only the primary key owns deletion
                     recCompat.remainingConsumers = 0;
                     obj.dataStore(keyCompat) = recCompat;
                     createdFiles(end+1,1) = folderBoundName; %#ok<AGROW>
@@ -12960,6 +12981,50 @@ classdef PipelineManager < handle
             info = dir(char(string(filePath)));
             startSecond = dateshift(startTime, 'start', 'second');
             tf = datetime(info(1).datenum, 'ConvertFrom', 'datenum') >= startSecond;
+        end
+
+        function tmpFile = demoteOwnedFileToTemp(obj, node, outDef, filePath, folder)
+            %DEMOTEOWNEDFILETOTEMP Rename a function-written intermediate to a PMTMP_* file.
+            %
+            %   tmpFile = demoteOwnedFileToTemp(obj, node, outDef, filePath, folder)
+            %
+            %   A step that returns a .dat/.umt file it wrote itself into FOLDER
+            %   under its default name leaves a permanent-looking file behind. When
+            %   that output only feeds later steps, the file is renamed (same-volume
+            %   move, instant for multi-GB files) to the reserved PMTMP_* name and
+            %   tracked in obj.tempFiles, so decrementConsumers deletes it after
+            %   the last consumer and cleanupTemps removes it after a failure.
+            %
+            %   Returns "" and leaves the file untouched when it is not in FOLDER,
+            %   is already a temporary file, or the move fails.
+
+            tmpFile = "";
+            filePath = char(string(filePath));
+            [parentDir, ~, ext] = fileparts(filePath);
+            [~, srcName, srcExt] = fileparts(filePath);
+
+            trimSep = @(p) lower(regexprep(char(string(p)), '[\\/]+$', ''));
+            if ~strcmp(trimSep(parentDir), trimSep(folder)) || ...
+                    startsWith(string(srcName) + string(srcExt), string(obj.tempOutputPrefix))
+                return
+            end
+
+            if isempty(obj.currentTempSessionTag)
+                obj.currentTempSessionTag = obj.makeTempSessionTag();
+            end
+            baseName = obj.makeTempOutputBaseName(node, outDef);
+            candidate = fullfile(char(folder), [baseName ext]);
+
+            [ok, msg] = movefile(filePath, candidate);
+            if ~ok
+                warning('PipelineManager:demoteOwnedFileToTemp:MoveFailed', ...
+                    'Could not rename intermediate "%s" to a temporary file: %s', ...
+                    filePath, msg);
+                return
+            end
+
+            tmpFile = string(candidate);
+            obj.tempFiles(end+1,1) = tmpFile;
         end
 
         function tmpFile = writeTempData(obj, dataVal, folder, nodeIDLocal, outName, sourceInfo)
