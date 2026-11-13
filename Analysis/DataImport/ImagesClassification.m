@@ -871,6 +871,20 @@ outFile = [outFile, {channelInfo.datFile}];
         oIm = [];
         Cnt = 0;
         for indF = 1:size(fList,1)
+            % A raw file holding no complete frame (e.g. header-only) cannot
+            % be memory-mapped. As the last file it is tolerated (warn and
+            % skip); earlier in the sequence it means lost data (error).
+            if fList(indF).bytes < hWima * 4 + SizeImage
+                if indF < size(fList,1)
+                    error('Umitoolbox:ImagesClassification:emptyRawFile', ...
+                        ['Raw file %s holds no complete frame (%d bytes) but is ' ...
+                        'not the last file of the sequence. Classification aborted.'], ...
+                        fList(indF).name, fList(indF).bytes);
+                end
+                fprintf('WARNING: skipping %s: no complete frame (%d bytes).\n', ...
+                    fList(indF).name, fList(indF).bytes);
+                continue
+            end
             fprintf('Sorting %s.', fList(indF).name);
             data = memmapfile([DataFolder fList(indF).name], ...
                 'Offset', hWima * 4, 'Format', frameFormat, 'repeat', inf);

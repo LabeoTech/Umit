@@ -330,6 +330,80 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestImagesClassificat
                 'A MultiCam acquisition missing Cam2 binaries should raise an error.');
         end
 
+        function testHeaderOnlyTrailingFileIsSkipped(testCase)
+            %TESTHEADERONLYTRAILINGFILEISSKIPPED A trailing header-only img_*.bin must not abort the import.
+
+            rawFolder = testCase.TempRawFolder;
+            if isfolder(rawFolder)
+                rmdir(rawFolder, 's');
+            end
+            mkdir(rawFolder);
+            copyfile(fullfile(testCase.FixtureFolder, '*'), rawFolder);
+
+            seqFiles = dir(fullfile(rawFolder, 'img_*.bin'));
+            testCase.assumeNotEmpty(seqFiles, 'Fixture folder must contain img_*.bin files.');
+            names = sort({seqFiles.name})';
+
+            baseSave = fullfile(testCase.TempSaveFolder, 'base');
+            mkdir(baseSave);
+            ImagesClassification(rawFolder, baseSave, 'ApplyRig', false, 'backupOpts', 'ERASE');
+            baseInfo = load(fullfile(baseSave, 'AcqInfos.mat'), 'AcqInfoStream');
+
+            % Append an empty trailing file made of the 20-byte header only.
+            fid = fopen(fullfile(rawFolder, names{1}), 'r');
+            header = fread(fid, 20, '*uint8');
+            fclose(fid);
+            nextIdx = numel(names);
+            emptyName = sprintf('img_%05d.bin', nextIdx);
+            testCase.assertFalse(isfile(fullfile(rawFolder, emptyName)));
+            fid = fopen(fullfile(rawFolder, emptyName), 'w');
+            fwrite(fid, header, 'uint8');
+            fclose(fid);
+
+            outSave = fullfile(testCase.TempSaveFolder, 'withEmpty');
+            mkdir(outSave);
+            ImagesClassification(rawFolder, outSave, 'ApplyRig', false, 'backupOpts', 'ERASE');
+            outInfo = load(fullfile(outSave, 'AcqInfos.mat'), 'AcqInfoStream');
+
+            testCase.verifyEqual( ...
+                [outInfo.AcqInfoStream.ImportedChannels.Length], ...
+                [baseInfo.AcqInfoStream.ImportedChannels.Length], ...
+                'A header-only trailing file should be skipped without changing the imported length.');
+        end
+
+        function testHeaderOnlyMiddleFileErrors(testCase)
+            %TESTHEADERONLYMIDDLEFILEERRORS A header-only img_*.bin that is not the last file must abort.
+
+            rawFolder = testCase.TempRawFolder;
+            if isfolder(rawFolder)
+                rmdir(rawFolder, 's');
+            end
+            mkdir(rawFolder);
+            copyfile(fullfile(testCase.FixtureFolder, '*'), rawFolder);
+
+            seqFiles = dir(fullfile(rawFolder, 'img_*.bin'));
+            testCase.assumeNotEmpty(seqFiles, 'Fixture folder must contain img_*.bin files.');
+            names = sort({seqFiles.name})';
+            nFiles = numel(names);
+
+            % Add two real files after the fixture sequence, then truncate
+            % the first of them to its 20-byte header: it is now a middle file.
+            emptyName = sprintf('img_%05d.bin', nFiles);
+            lastName = sprintf('img_%05d.bin', nFiles + 1);
+            copyfile(fullfile(rawFolder, names{end}), fullfile(rawFolder, lastName));
+            fid = fopen(fullfile(rawFolder, names{end}), 'r');
+            header = fread(fid, 20, '*uint8');
+            fclose(fid);
+            fid = fopen(fullfile(rawFolder, emptyName), 'w');
+            fwrite(fid, header, 'uint8');
+            fclose(fid);
+
+            testCase.verifyError(@() ImagesClassification( ...
+                rawFolder, testCase.TempSaveFolder, ...
+                'ApplyRig', false, 'backupOpts', 'ERASE'), ...
+                'Umitoolbox:ImagesClassification:emptyRawFile');
+        end
+
         function testNonNumericFrameIndexErrors(testCase)
             %TESTNONNUMERICFRAMEINDEXERRORS Reject a non-numeric img_*.bin index (F-19).
 
