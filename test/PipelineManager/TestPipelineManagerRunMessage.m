@@ -69,6 +69,22 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestPipelineManagerRu
             testCase.verifyEqual(info.message, 'Pipeline failed: Preflight failed: missing input.');
         end
 
+        function thrownPreflightErrorsStayFullyReadable(testCase)
+            % A preflight failure lists every error with its full folder path;
+            % none of it may be cut to the 200-character run-log limit.
+            first = ['Node "step1" preflight failed for "' repmat('a', 1, 150) '": missing input channel.'];
+            second = ['Node "step2" preflight failed for "' repmat('b', 1, 150) '": rig not bound. (Function: f)'];
+            ME = MException('PipelineManager:validateNodePreflight:Failed', '%s', ...
+                [first newline second]);
+            info = PipelineManager.describeExecutionResult(ME);
+            testCase.verifyEqual(info.severity, 'error');
+            lines = splitlines(string(info.message));
+            testCase.verifyEqual(numel(lines), 3);
+            testCase.verifyEqual(char(lines(1)), 'Pipeline failed:');
+            testCase.verifyEqual(char(lines(2)), first);
+            testCase.verifyTrue(endsWith(lines(3), "rig not bound."));
+        end
+
         function incompleteResultsNeverThrow(testCase)
             info = PipelineManager.describeExecutionResult(struct());
             testCase.verifyEqual(info.severity, 'info');

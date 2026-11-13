@@ -7507,6 +7507,15 @@ classdef PipelineManager < handle
                     'Invalid file name.');
             end
 
+            % Only data files (.dat/.umt) can be pipeline sources. Companion
+            % artifacts such as events.mat, AcqInfos.mat or DataParams.mat are
+            % owned by other managers and are not data streams.
+            if ~any(strcmpi(ext, {'.dat', '.umt'}))
+                error('PipelineManager:ensureFileSourceNode:UnsupportedFileType', ...
+                    ['"%s" cannot be used as a file source. Only .dat and ' ...
+                    '.umt files are supported.'], filename);
+            end
+
             % -------------------------------------------------------------
             % Validate file existence using first SaveFolder
             % -------------------------------------------------------------
@@ -8693,7 +8702,7 @@ classdef PipelineManager < handle
                 % =========================================================
                 case 'file'
 
-                    [file, path] = uigetfile('*.*', ...
+                    [file, path] = uigetfile({'*.dat;*.umt', 'Data files (*.dat, *.umt)'}, ...
                         sprintf('Select file (%s)', strjoin(requiredType,'/')), ...
                         obj.SaveFolderList{1});
 
@@ -15739,6 +15748,38 @@ classdef PipelineManager < handle
             end
         end
 
+        function txt = formatThrownRunMessage(msg)
+            %FORMATTHROWNRUNMESSAGE Dialog text for an error thrown by executePipeline.
+            %
+            %   Unlike the per-folder run-log messages, a thrown error (typically
+            %   a preflight failure listing every problem, each with its full
+            %   folder path) must stay readable in full. One error per line is
+            %   kept, function/line detail is removed and only a very long total
+            %   is cut (the Activity Log always holds the complete text).
+
+            maxTotalChars = 1500;
+
+            lines = splitlines(string(msg));
+            lines = regexprep(lines, '\s*\(Function:[^)]*\)\s*$', '');
+            lines = strtrim(regexprep(lines, '[ \t]+', ' '));
+            lines = lines(strlength(lines) > 0);
+
+            if isempty(lines)
+                txt = 'Pipeline failed.';
+                return
+            end
+
+            if isscalar(lines)
+                txt = ['Pipeline failed: ' char(lines)];
+            else
+                txt = ['Pipeline failed:' newline char(strjoin(lines, newline))];
+            end
+
+            if numel(txt) > maxTotalChars
+                txt = [strtrim(txt(1:maxTotalChars - 3)) '...'];
+            end
+        end
+
         function txt = shortenRunMessage(msg)
             %SHORTENRUNMESSAGE Single-line, function/line-free, length-limited error text.
 
@@ -15766,9 +15807,12 @@ classdef PipelineManager < handle
             %   RESULT is the struct returned by executePipeline; ME is an
             %   MException thrown by it. INFO has the fields
             %       severity - 'success' | 'warning' | 'error' | 'info'
-            %       message  - Single short sentence. Failures carry the first
-            %                  error message (function/line detail removed,
-            %                  whitespace collapsed, truncated to 200 characters).
+            %       message  - Single short sentence. Failures of a finished run
+            %                  carry the first error message (function/line
+            %                  detail removed, whitespace collapsed, truncated to
+            %                  200 characters). An MException (e.g. a preflight
+            %                  failure) keeps every error on its own line,
+            %                  untruncated up to 1500 characters in total.
             %   Never throws: unknown or incomplete results yield an 'info'
             %   message that names the status.
 
@@ -15776,8 +15820,7 @@ classdef PipelineManager < handle
 
             if isa(resultOrError, 'MException')
                 info.severity = 'error';
-                info.message = ['Pipeline failed: ' ...
-                    PipelineManager.shortenRunMessage(resultOrError.message)];
+                info.message = PipelineManager.formatThrownRunMessage(resultOrError.message);
                 return
             end
 
