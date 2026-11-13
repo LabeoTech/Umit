@@ -3,8 +3,8 @@
 #   "legacyID": "FF0247230",
 #   "category": "filter",
 #   "displayName": "FF0247230",
-#   "manufacturer": "",
-#   "model": "",
+#   "manufacturer": "Semrock",
+#   "model": "FF02-472/30",
 #   "peakWavelengthNm": 483,
 #   "normalization": "dividedByMaximum"
 # }

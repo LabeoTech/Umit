@@ -3,8 +3,8 @@
 #   "legacyID": "Yellow",
 #   "category": "illumination",
 #   "displayName": "Yellow",
-#   "manufacturer": "",
-#   "model": "",
+#   "manufacturer": "ams OSRAM",
+#   "model": "LZ4-20MA08-0000",
 #   "peakWavelengthNm": 593,
 #   "normalization": "dividedByMaximum"
 # }
