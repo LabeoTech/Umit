@@ -5,15 +5,10 @@
   "cameras": [
     {
       "index": 1,
-      "displayName": "D1024 Camera 1",
-      "model": "D1024",
-      "spectrumID": "PF1024"
-    },
-    {
-      "index": 2,
-      "displayName": "D1024 Camera 2",
-      "model": "D1024",
-      "spectrumID": "PF1024"
+      "displayName": "Thorlabs CS2100M",
+      "manufacturer": "Thorlabs",
+      "model": "CS2100M",
+      "spectrumID": "ThorQLux"
     }
   ],
   "illuminations": [

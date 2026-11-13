@@ -227,8 +227,11 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestUMITRigStore < ma
             after = UMITRigStore.listRigs();
 
             testCase.verifyEqual(definition.rigID, 'OiS200');
-            testCase.verifyEqual(numel(definition.cameras), 2);
-            testCase.verifyEqual([definition.cameras.index], [1 2]);
+            testCase.verifyEqual(numel(definition.cameras), 1);
+            testCase.verifyEqual(definition.cameras.index, 1);
+            testCase.verifyEqual(definition.cameras.manufacturer, 'Thorlabs');
+            testCase.verifyEqual(definition.cameras.model, 'CS2100M');
+            testCase.verifyEqual(definition.cameras.spectrumID, 'ThorQLux');
             testCase.verifyEqual( ...
                 {definition.illuminations.name}, {'red', 'green', 'yellow'});
             testCase.verifyTrue(all(arrayfun( ...

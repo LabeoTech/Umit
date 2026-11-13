@@ -193,6 +193,40 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestRigManagerTool < 
             testCase.verifyClass(app.RemoveIlluminationSpectrumButton, ...
                 'matlab.ui.control.Button');
         end
+
+        function testNewRigFromTemplateCreatesSingleCameraRig(testCase)
+        %TESTNEWRIGFROMTEMPLATECREATESSINGLECAMERARIG Drive the real New Rig
+        %button with the OiS200 template; the modal dialogs are replaced by
+        %non-blocking stubs. The single-camera template must create a
+        %one-camera Rig without any Camera 2 prompt, and Camera 2 must stay
+        %addable afterwards.
+
+            host = testCase.createRig(1, 'NewRigHost');
+            app = testCase.openApp(host.getRigInfo().uuid);
+            newRigID = ['RigManager_FromTemplate_' ...
+                char(extractBefore(string(java.util.UUID.randomUUID()), 9))];
+            testCase.installDialogStubs(newRigID);
+
+            testCase.push(app.NewRigButton);
+
+            titles = getappdata(0, 'TestRigManagerDialogTitles');
+            testCase.verifyEqual(titles, {'Active Rig', 'Review New Rig'});
+            rigs = UMITRigStore.listRigs();
+            row = find(strcmp(rigs.RigID, newRigID), 1);
+            testCase.assertNotEmpty(row, 'The template Rig was not created.');
+            testCase.RigUUIDs{end+1} = char(rigs.RigUUID(row));
+            info = UMITRigStore.open(char(rigs.RigUUID(row))).getRigInfo();
+
+            testCase.verifyEqual(numel(info.cameras), 1);
+            testCase.verifyEqual(info.cameras.manufacturer, 'Thorlabs');
+            testCase.verifyEqual(info.cameras.model, 'CS2100M');
+            testCase.verifyEqual(info.cameras.spectrumID, 'ThorQLux');
+            testCase.verifyEqual({info.illuminations.name}, ...
+                {'red', 'green', 'yellow'});
+            testCase.verifyEqual(app.SelectedRigID, newRigID);
+            testCase.verifyEqual(string(app.Camera2Panel.Visible), "off");
+            testCase.verifyEqual(string(app.AddCamera2Button.Visible), "on");
+        end
     end
 
     methods (Access = private)
@@ -202,7 +236,16 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestRigManagerTool < 
             definition.rigID = sprintf('RigManager_%s_%s', ...
                 label, suffix(1:8));
             definition.displayName = sprintf('Rig Manager %s', label);
-            definition.cameras = definition.cameras(1:cameraCount);
+            % The built-in template is single-camera; replicate Camera 1
+            % as Camera 2 when a dual-camera Rig is requested.
+            cameras = definition.cameras(1);
+            for iCamera = 2:cameraCount
+                cameras(iCamera) = definition.cameras(1);
+                cameras(iCamera).index = iCamera;
+                cameras(iCamera).displayName = sprintf( ...
+                    '%s %d', definition.cameras(1).displayName, iCamera);
+            end
+            definition.cameras = cameras;
             store = UMITRigStore.create(definition);
             testCase.RigRoots{end+1} = store.RigRoot;
             testCase.RigUUIDs{end+1} = store.getRigInfo().uuid;
@@ -212,6 +255,49 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestRigManagerTool < 
             app = RigManagerTool([], 'manage', ...
                 'InitialRig', rigUUID, 'Visible', false);
             testCase.Apps{end+1} = app;
+        end
+
+        function installDialogStubs(testCase, newRigID)
+            %INSTALLDIALOGSTUBS Shadow the modal dialogs used by onNewRig.
+            stubFolder = tempname;
+            mkdir(stubFolder);
+            testCase.addTeardown(@() rmdir(stubFolder, 's'));
+            testCase.applyFixture( ...
+                matlab.unittest.fixtures.PathFixture(stubFolder));
+            testCase.writeStub(stubFolder, 'listdlg', { ...
+                'function [selection, ok] = listdlg(varargin)', ...
+                'selection = 1; ok = true;', 'end'});
+            testCase.writeStub(stubFolder, 'inputdlg', { ...
+                'function answer = inputdlg(~, ~, ~, definput)', ...
+                'answer = definput;', ...
+                'answer{1} = getappdata(0, ''TestRigManagerNewRigID'');', ...
+                'end'});
+            testCase.writeStub(stubFolder, 'uiconfirm', { ...
+                'function answer = uiconfirm(~, ~, titleText, varargin)', ...
+                'titles = getappdata(0, ''TestRigManagerDialogTitles'');', ...
+                'setappdata(0, ''TestRigManagerDialogTitles'', [titles, {titleText}]);', ...
+                'switch titleText', ...
+                '    case ''Active Rig'', answer = ''No'';', ...
+                '    case ''Review New Rig'', answer = ''Create Rig'';', ...
+                '    otherwise, error(''TestRigManagerTool:unexpectedDialog'', ''Unexpected dialog: %s'', titleText);', ...
+                'end', 'end'});
+            setappdata(0, 'TestRigManagerNewRigID', newRigID);
+            setappdata(0, 'TestRigManagerDialogTitles', {});
+            testCase.addTeardown(@() testCase.clearStubAppData());
+        end
+
+        function clearStubAppData(~)
+            for name = {'TestRigManagerNewRigID', 'TestRigManagerDialogTitles'}
+                if isappdata(0, name{1})
+                    rmappdata(0, name{1});
+                end
+            end
+        end
+
+        function writeStub(~, folder, name, lines)
+            fid = fopen(fullfile(folder, [name '.m']), 'w');
+            fprintf(fid, '%s\n', lines{:});
+            fclose(fid);
         end
 
         function push(~, button)
