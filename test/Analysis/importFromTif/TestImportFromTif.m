@@ -40,6 +40,13 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestImportFromTif < m
 
             testCase.verifyTrue(isfile(fullfile(saveFolder, 'red.dat')));
             testCase.verifyTrue(isfile(fullfile(saveFolder, 'AcqInfos.mat')));
+
+            % umIT supports only single-precision .dat files (DFR-20261019-006):
+            % the uint16 TIFF values are imported as single, unchanged in value.
+            testCase.verifyEqual(readDatHeader(fullfile(saveFolder, 'red.dat')).dataClass, 'single');
+            [~, imported] = evalc('loadData(fullfile(saveFolder, ''red.dat''))');
+            testCase.verifyClass(imported, 'single');
+            testCase.verifyEqual(sum(imported(:)), sum(single(data(:))));
         end
 
         function testPipelineInfoContract(testCase)

@@ -98,6 +98,27 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestMergeRecordingsCh
             testCase.verifyFalse(isfile(utils.outFile(testCase.Root)));
             testCase.verifyEqual({dir(outFolder).name}, {before.name});
         end
+
+        function integerInputsAreRefused(testCase)
+            % umIT supports only single-precision .dat files (DFR-20261019-006):
+            % inputs that agree with each other but are not single are refused
+            % with the shared message, before any output exists.
+            [~, utils] = mergeRecordingsCases();
+            utils.build(testCase.Root, true);
+            folders = utils.folders(testCase.Root);
+            for iFolder = 1:numel(folders)
+                if isfile(fullfile(folders{iFolder}, 'green.dat'))
+                    iAlterRecording(fullfile(folders{iFolder}, 'green.dat'), 'dataClass');
+                end
+            end
+            outFolder = fileparts(utils.outFile(testCase.Root));
+            before = dir(outFolder);
+
+            testCase.verifyError(@() mergeRecordings(utils.outFile(testCase.Root), ...
+                folders, 'green'), 'Umitoolbox:Dat:nonSingle');
+            testCase.verifyFalse(isfile(utils.outFile(testCase.Root)));
+            testCase.verifyEqual({dir(outFolder).name}, {before.name});
+        end
     end
 end
 

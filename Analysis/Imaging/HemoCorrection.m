@@ -553,7 +553,8 @@ nChunks = ceil(Nx / chunkSizePixels);
 spatSigma = 1;
 pad = ceil(3 * spatSigma);
 
-slabOut = spatialSlabIO('create', outFilename, datHeaderFromInfo(fMetaData, outBaseName));
+slabOut = spatialSlabIO('create', outFilename, ...
+    datHeaderFromInfo(fMetaData, outBaseName, 'dataClass', 'single'));
 c_out = onCleanup(@() spatialSlabIO('close', slabOut));
 
 h = waitbar(0, 'Fitting Hemodynamics...');
@@ -762,7 +763,8 @@ cFluo = onCleanup(@() spatialSlabIO('close', slabFluo));
 slabRef = spatialSlabIO('open', refMeta.filePath, 'Info', refMeta);
 cRef = onCleanup(@() spatialSlabIO('close', slabRef));
 
-slabOut = spatialSlabIO('create', tmpFile, datHeaderFromInfo(fluoMeta, outBaseName));
+slabOut = spatialSlabIO('create', tmpFile, ...
+    datHeaderFromInfo(fluoMeta, outBaseName, 'dataClass', 'single'));
 cOut = onCleanup(@() spatialSlabIO('close', slabOut));
 
 % Chunk along X to control RAM.

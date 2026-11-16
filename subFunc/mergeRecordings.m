@@ -94,7 +94,11 @@ assert(all(idxDim), 'umIToolbox:mergeRecordings:WrongInput',...
     'This function accepts only image time series with dimensions {"Y", "X","T"}!');
 % Check that all inputs can be concatenated in time:
 iAssertCompatibleInputs(mD, datNames);
-nFrames = cellfun(@(md) datAxisSize(md, 'T'), mD);
+% umIT supports only single-precision .dat files: refuse before anything is written.
+for iInput = 1:numel(mD)
+    assertSingleDat(mD{iInput}, 'Context', sprintf('"%s"', datNames{iInput}));
+end
+nFrames =cellfun(@(md) datAxisSize(md, 'T'), mD);
 frameRateHz = double(mD{1}.frameRateHz);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Data merge:

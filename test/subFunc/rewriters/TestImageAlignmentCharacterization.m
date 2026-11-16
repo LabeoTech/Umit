@@ -9,7 +9,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestImageAlignmentCha
     %   and must reproduce the recorded sizes and hashes of the .dat and
     %   image .umt outputs. Aligned files must be headered at the new frame
     %   size with the input's class, rate, exposure, and name, and
-    %   AcqInfos.mat must be left unchanged. Integer data keep their class.
+    %   AcqInfos.mat must be left unchanged. Integer data are refused (single only).
 
     properties
         Folder
@@ -34,27 +34,16 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestImageAlignmentCha
             testCase.verifyAgainstReference('single');
         end
 
-        function integerInputKeepsItsClass(testCase)
+        function integerInputIsRefusedBeforeAnyChange(testCase)
+            % umIT supports only single-precision .dat files (DFR-20261019-006):
+            % an integer folder is refused with the shared message and nothing
+            % is written.
             c = imageAlignmentCase();
             testCase.newFolder(c, 'uint16');
-            inputs = testCase.readInputs(c);
-            view = imref2d(size(c.referenceImage));
+            before = iSnapshot(testCase.Folder);
 
-            evalc('c.run(testCase.Folder)');
-
-            for j = 1:numel(c.datOutputs)
-                f = fullfile(testCase.Folder, c.datOutputs{j});
-                [~, out] = evalc('loadData(f)');
-                in = inputs{j};
-                expected = zeros([size(c.referenceImage), size(in, 3)], 'uint16');
-                for t = 1:size(in, 3)
-                    expected(:, :, t) = imwarp(in(:, :, t), c.tform, 'OutputView', view, ...
-                        'InterpolationMethod', 'linear', 'FillValues', uint16(0));
-                end
-                testCase.verifyClass(out, 'uint16');
-                testCase.verifyEqual(out, expected, c.datOutputs{j});
-                testCase.verifyEqual(readDatHeader(f).dataClass, 'uint16');
-            end
+            testCase.verifyError(@() c.run(testCase.Folder), 'Umitoolbox:Dat:nonSingle');
+            testCase.verifyEqual(iSnapshot(testCase.Folder), before);
         end
 
         function saveDataWrittenUmtIsAligned(testCase)

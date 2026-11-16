@@ -402,6 +402,8 @@ for iFile = 1:numel(datFiles)
             'DAT file disappeared during preflight: %s', datPath);
     end
     info = loadMetaData(datPath);
+    % umIT supports only single-precision .dat files: refuse before anything is written.
+    assertSingleDat(info, 'Context', sprintf('"%s"', datFiles(iFile).name));
     dimNames = cellstr(string(info.dimNames));
     dimNames = dimNames(:).';
     if numel(dimNames) < 2 || ~isequal(dimNames(1:2), {'Y', 'X'})

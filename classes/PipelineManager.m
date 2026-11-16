@@ -2078,6 +2078,33 @@ classdef PipelineManager < handle
                 end
             end
 
+            % umIT supports only single-precision .dat files: a file source
+            % that is not single is an error for its own folder only (the
+            % other folders still run, like any other folder preflight error).
+            for iNode = 1:numel(obj.nodes)
+                node = obj.nodes(iNode);
+                if ~isfield(node, 'kind') || ~strcmpi(node.kind, 'folder')
+                    continue
+                end
+                [~, ~, sourceExt] = fileparts(char(string(node.name)));
+                if ~strcmpi(sourceExt, '.dat')
+                    continue
+                end
+                for iFolder = 1:numel(obj.SaveFolderList)
+                    try
+                        localEnforceSingleDat( ...
+                            fullfile(obj.SaveFolderList{iFolder}, char(string(node.name))), ...
+                            sprintf('File source "%s" in "%s"', ...
+                            char(string(node.name)), obj.SaveFolderList{iFolder}));
+                    catch ME
+                        report.errors{end+1} = ME.message; %#ok<AGROW>
+                        report.folderErrors(end+1) = struct( ...
+                            'saveFolder', obj.SaveFolderList{iFolder}, ...
+                            'message', ME.message);
+                    end
+                end
+            end
+
             for iNode = 1:numel(obj.nodes)
                 node = obj.nodes(iNode);
                 if ~isfield(node, 'kind') || ~strcmpi(node.kind, 'stream') || ...
@@ -7532,6 +7559,9 @@ classdef PipelineManager < handle
                     filename, obj.SaveFolderList{1});
             end
 
+            % umIT supports only single-precision .dat files.
+            localEnforceSingleDat(testPath, sprintf('File source "%s"', filename));
+
             % -------------------------------------------------------------
             % Try to reuse existing folder node
             % -------------------------------------------------------------
@@ -12206,6 +12236,8 @@ classdef PipelineManager < handle
                         end
 
                         [fullFn, folderBoundName] = localResolveReturnedFile(folder, fName);
+                        localEnforceSingleDat(fullFn, sprintf('Step "%s" output "outFile" (%s)', ...
+                            char(string(nodeLocal.name)), char(folderBoundName)));
 
                         rec = struct( ...
                             'ramValue', [], ...
@@ -12310,6 +12342,8 @@ classdef PipelineManager < handle
                     for iF = 1:numel(fileList)
 
                         [fullFn, folderBoundName] = localResolveReturnedFile(folder, fileList(iF));
+                        localEnforceSingleDat(fullFn, sprintf('Step "%s" output "%s" (%s)', ...
+                            char(string(nodeLocal.name)), outName, char(folderBoundName)));
 
                         % Primary key for the output port: keep first concrete file
                         if ~primarySet
@@ -12350,6 +12384,8 @@ classdef PipelineManager < handle
 
                     [fullFn, folderBoundName] = localResolveReturnedFile( ...
                         folder, fileList(1));
+                    localEnforceSingleDat(fullFn, sprintf('Step "%s" output "%s" (%s)', ...
+                        char(string(nodeLocal.name)), outName, char(folderBoundName)));
                     rec.fileName = string(fullFn);
                     rec.ownedFile = obj.isFileWrittenSince(fullFn, stepStartTime);
 
@@ -16812,4 +16848,20 @@ classdef PipelineManager < handle
         end
 
     end
+end
+
+function localEnforceSingleDat(filePath, context)
+%LOCALENFORCESINGLEDAT Apply the single-precision .dat policy to one file.
+%
+%   umIT supports only single-precision .dat files (assertSingleDat). Only a
+%   non-single class stops the pipeline here: a file that cannot be read is
+%   reported by the stage that reads it, as before.
+
+try
+    assertSingleDat(filePath, 'Context', context);
+catch ME
+    if strcmp(ME.identifier, 'Umitoolbox:Dat:nonSingle')
+        rethrow(ME)
+    end
+end
 end
