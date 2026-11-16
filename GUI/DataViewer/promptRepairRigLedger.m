@@ -61,7 +61,7 @@ try
         catch
             % Theme is cosmetic.
         end
-        grid = uigridlayout(dialog, [2 2], 'RowHeight', {'1x', 'fit'}, ...
+        grid = uigridlayout(dialog, [2 2], 'RowHeight', {'1x', 30}, ...
             'ColumnWidth', {'1x', '1x'});
         textArea = uitextarea(grid, 'Value', splitlines(explanation), 'Editable', 'off');
         textArea.Layout.Column = [1 2];

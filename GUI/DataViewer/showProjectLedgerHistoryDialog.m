@@ -24,7 +24,7 @@ try
 catch
     % Theme is cosmetic.
 end
-grid = uigridlayout(dialog, [2 1], 'RowHeight', {'1x', 'fit'});
+grid = uigridlayout(dialog, [2 1], 'RowHeight', {'1x', 30});
 uitextarea(grid, 'Value', lines, 'Editable', 'off', 'FontName', 'Consolas');
 uibutton(grid, 'Text', 'Close', 'ButtonPushedFcn', @(~, ~) uiresume(dialog));
 dialog.CloseRequestFcn = @(~, ~) uiresume(dialog);

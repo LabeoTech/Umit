@@ -53,7 +53,7 @@ catch
     % Theme is cosmetic.
 end
 
-grid = uigridlayout(dialog, [3 2], 'RowHeight', {'fit', 'fit', 'fit'}, ...
+grid = uigridlayout(dialog, [3 2], 'RowHeight', {'fit', 'fit', 30}, ...
     'ColumnWidth', {'1x', '1x'});
 message = uilabel(grid, 'Text', char(p.Results.Message), 'WordWrap', 'on');
 message.Layout.Column = [1 2];
