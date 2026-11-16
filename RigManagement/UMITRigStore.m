@@ -785,23 +785,7 @@ classdef UMITRigStore < handle
             end
             filterSet = UMITRigStore.iValidateFilterSet(filterSet, filterSet.id);
             storeLock = UMITRigStore.iAcquireStoreLock('importFilterSet'); %#ok<NASGU>
-            libraryRoot = fullfile(UMITRigStore.getRigsRoot(), ...
-                getUMITRigSchema().spectrum.libraryFolder, ...
-                getUMITRigSchema().spectrum.filterSetsFolder);
-            if ~isfolder(libraryRoot)
-                mkdir(libraryRoot);
-            end
-            destination = fullfile(libraryRoot, [filterSet.id '.json']);
-            if ~isempty(UMITRigStore.iFindFilterSetFile(filterSet.id))
-                error('Umitoolbox:UMITRigStore:filterSetAlreadyExists', ...
-                    ['Filter set "%s" already exists. Create a new ID instead ' ...
-                     'of replacing a referenced definition.'], filterSet.id);
-            end
-            serializable = filterSet;
-            if isfield(serializable, 'file')
-                serializable = rmfield(serializable, 'file');
-            end
-            UMITRigStore.iWriteJSON(destination, serializable);
+            UMITRigStore.iWriteUserFilterSet(filterSet);
         end
 
         function filterSet = updateFilterSet(filterSetID, filterSet)
@@ -1128,23 +1112,35 @@ classdef UMITRigStore < handle
             wasCleared = true;
         end
 
-        function obj = importRig(filePath, varargin)
+        function [obj, summary] = importRig(filePath, varargin)
             %IMPORTRIG Install a rig from a self-contained .umitrig export.
             %
             %   store = UMITRigStore.importRig(filePath)
             %   store = UMITRigStore.importRig(filePath, 'RigID', newRigID)
             %   store = UMITRigStore.importRig(filePath, 'NewIdentity', true)
+            %   [store, summary] = UMITRigStore.importRig(filePath, ...)
             %
             %   The export (see exportRig) carries the rig record, the
-            %   content of every referenced spectrum and every managed
-            %   coregistration resource. The rig keeps its UUID, timestamps
-            %   and resource UUIDs/checksums unless NewIdentity is true (a
-            %   fresh rig UUID; for a second copy on the same machine).
-            %   Spectra missing from the library are added to the user
-            %   library; a spectrum ID that exists with different content
-            %   is an error (spectrum IDs are immutable). The imported rig
-            %   becomes Active only when no Active rig exists, otherwise
-            %   Available. Nothing is installed when any check fails.
+            %   content of every referenced spectrum, every managed
+            %   coregistration resource and, when the exporter chose them,
+            %   user-defined filter sets. The rig keeps its UUID,
+            %   timestamps and resource UUIDs/checksums unless NewIdentity
+            %   is true (a fresh rig UUID; for a second copy on the same
+            %   machine). Spectra missing from the library are added to the
+            %   user library; a spectrum ID that exists with different
+            %   content is an error (spectrum IDs are immutable). Filter
+            %   sets follow the same rule: a missing one is added to the
+            %   user library, one already present with the same excitation
+            %   and emission spectra is left alone, and one with the same ID
+            %   but different content is an error
+            %   (Umitoolbox:UMITRigStore:importFilterSetConflict). The
+            %   imported rig becomes Active only when no Active rig exists,
+            %   otherwise Available. Nothing is installed when any check
+            %   fails.
+            %
+            %   SUMMARY (optional second output) has the cell arrays of IDs
+            %   spectraAdded ('category/id'), filterSetsAdded and
+            %   filterSetsPresent (already in the library, not rewritten).
 
             errID = 'Umitoolbox:UMITRigStore:importRigFailed';
             p = inputParser;
@@ -1191,6 +1187,34 @@ classdef UMITRigStore < handle
                         ['Spectrum "%s" (%s) already exists in this library with different ' ...
                         'content. Spectrum IDs are immutable; import cannot replace it.'], ...
                         spectrum.id, spectrum.category);
+                end
+            end
+
+            % Preflight every filter set too: identical content is skipped, a
+            % different definition under the same ID is a conflict, and a
+            % missing one needs all of its filter spectra (in the export or
+            % already in the library).
+            filterSetWrite = false(1, numel(exported.filterSets));
+            for iFilterSet = 1:numel(exported.filterSets)
+                filterSet = exported.filterSets(iFilterSet);
+                try
+                    existingSet = UMITRigStore.getFilterSet(filterSet.id);
+                catch ME
+                    if ~strcmp(ME.identifier, 'Umitoolbox:UMITRigStore:filterSetNotFound')
+                        rethrow(ME)
+                    end
+                    UMITRigStore.iAssertFilterSetSpectraAvailable(filterSet, exported.spectra);
+                    filterSetWrite(iFilterSet) = true;
+                    continue
+                end
+                if ~strcmpi(existingSet.excitationSpectrumID, filterSet.excitationSpectrumID) || ...
+                        ~strcmpi(existingSet.emissionSpectrumID, filterSet.emissionSpectrumID)
+                    error('Umitoolbox:UMITRigStore:importFilterSetConflict', ...
+                        ['Filter set "%s" already exists in this library with different ' ...
+                        'content (excitation "%s", emission "%s"). Filter-set content is ' ...
+                        'immutable under its ID; import cannot replace it.'], ...
+                        filterSet.id, existingSet.excitationSpectrumID, ...
+                        existingSet.emissionSpectrumID);
                 end
             end
 
@@ -1256,6 +1280,19 @@ classdef UMITRigStore < handle
                 UMITRigStore.iWriteSpectrumFile(fullfile(folder, [spectrum.id '.txt']), ...
                     schema.spectrum.wavelengthNm(:), spectrum.response(:), spectrum.metadata);
             end
+
+            % Filter sets after the spectra they reference.
+            for iFilterSet = find(filterSetWrite)
+                filterSet = exported.filterSets(iFilterSet);
+                filterSet = UMITRigStore.iValidateFilterSet(filterSet, filterSet.id);
+                UMITRigStore.iWriteUserFilterSet(filterSet);
+            end
+
+            summary = struct( ...
+                'spectraAdded', {arrayfun(@(s) [s.category '/' s.id], ...
+                    exported.spectra(toWrite), 'UniformOutput', false)}, ...
+                'filterSetsAdded', {{exported.filterSets(filterSetWrite).id}}, ...
+                'filterSetsPresent', {{exported.filterSets(~filterSetWrite).id}});
 
             rigPath = fullfile(rigsRoot, rigID);
             [ok, message] = movefile(stagedRigPath, rigPath, 'f');
@@ -1712,6 +1749,42 @@ classdef UMITRigStore < handle
                 rethrow(ME)
             end
             obj.iAppendLog('restoreRig', RigInfo.uuid, 'completed');
+        end
+
+        function deletedRigID = deleteRig(obj)
+            %DELETERIG Permanently delete an archived Rig and everything it stores.
+            %
+            %   rigID = store.deleteRig()
+            %
+            %   Removes the Rig folder: its metadata, camera-coregistration
+            %   resources and operation log. It cannot be undone; export the
+            %   Rig first (exportRig) to keep a copy that importRig can
+            %   install again. Only an archived Rig can be deleted, so the
+            %   Active Rig is never deleted (archive it first, with a
+            %   replacement) and the lifecycle (exactly one Active Rig) is not
+            %   affected. Spectra and filter sets of the shared library are
+            %   not touched. Folders that were bound to the Rig keep their
+            %   rig-ledger snapshot; their dual-camera coregistration tool
+            %   reports the Rig as missing until it is imported again. This
+            %   object is read-only afterwards. Returns the deleted rig ID.
+
+            errID = 'Umitoolbox:UMITRigStore:deleteRigFailed';
+            storeLock = UMITRigStore.iAcquireStoreLock('deleteRig'); %#ok<NASGU>
+            lockCleanup = obj.iAcquireWriteLock('deleteRig'); %#ok<NASGU>
+
+            RigInfo = obj.iLoadRigInfo();
+            if ~strcmp(RigInfo.status, 'archived')
+                error(errID, ['Only an archived Rig can be deleted. Archive Rig "%s" ' ...
+                    'first (the Active Rig needs a replacement).'], RigInfo.rigID);
+            end
+
+            rigRoot = obj.RigRoot;
+            UMITRigStore.iRemoveFolderIfPresent(rigRoot);
+            if isfolder(rigRoot)
+                error(errID, 'Rig folder could not be removed completely: %s', rigRoot);
+            end
+            obj.IsReadOnly = true;
+            deletedRigID = RigInfo.rigID;
         end
 
         function resourceUUID = addCameraCoregistration(obj, sourceFile, resourceInfo)
@@ -2258,24 +2331,40 @@ classdef UMITRigStore < handle
             report.isValid = isempty(report.errors);
         end
 
-        function filePath = exportRig(obj, filePath)
+        function filePath = exportRig(obj, filePath, varargin)
             %EXPORTRIG Write this rig to a self-contained .umitrig file.
             %
             %   filePath = store.exportRig(filePath)
+            %   filePath = store.exportRig(filePath, 'FilterSets', ids)
             %
             %   The file (MAT format, variable UMITRigExport) holds the rig
             %   record, the content and metadata of every spectrum its
             %   cameras and illuminations reference, and the bytes of every
             %   managed coregistration resource. It can be installed on
-            %   another machine with UMITRigStore.importRig. Filter sets are
-            %   not part of a rig and are not exported. The rig must pass
-            %   full validation. The '.umitrig' extension is added when
+            %   another machine with UMITRigStore.importRig. The rig must
+            %   pass full validation. The '.umitrig' extension is added when
             %   missing.
+            %
+            %   A filter set is not part of a rig (it is chosen per analysis
+            %   and committed by each folder), so filter sets are exported
+            %   only when named: 'FilterSets' is a string array or cellstr of
+            %   filter-set IDs (default none). Each is written with the
+            %   filter spectra it references; an unknown ID throws
+            %   Umitoolbox:UMITRigStore:filterSetNotFound and no file is
+            %   written. A file without filter sets has schemaVersion 1; with
+            %   them, schemaVersion 2 and a filterSets field, which an older
+            %   toolbox refuses instead of silently ignoring.
 
             errID = 'Umitoolbox:UMITRigStore:exportRigFailed';
             if ~(ischar(filePath) || (isstring(filePath) && isscalar(filePath)))
                 error(errID, '"filePath" must be a character vector or string scalar.');
             end
+            p = inputParser;
+            p.FunctionName = 'UMITRigStore.exportRig';
+            addParameter(p, 'FilterSets', {}, @(x) iscellstr(x) || isstring(x) || ischar(x));
+            parse(p, varargin{:});
+            filterSetIDs = cellstr(string(p.Results.FilterSets));
+            filterSetIDs = filterSetIDs(:)';
             filePath = UMITRigStore.iAbsolutePath(char(string(filePath)));
             [folder, ~, extension] = fileparts(filePath);
             if ~strcmpi(extension, '.umitrig')
@@ -2308,6 +2397,35 @@ classdef UMITRigStore < handle
                 spectra(end+1) = entry; %#ok<AGROW>
             end
 
+            % Requested filter sets, each with the filter spectra it references.
+            filterSets = struct('id', {}, 'displayName', {}, ...
+                'excitationSpectrumID', {}, 'emissionSpectrumID', {});
+            for iFilterSet = 1:numel(filterSetIDs)
+                definition = UMITRigStore.getFilterSet(filterSetIDs{iFilterSet});
+                if any(strcmpi({filterSets.id}, definition.id))
+                    continue
+                end
+                setEntry = struct('id', definition.id, ...
+                    'displayName', definition.displayName, ...
+                    'excitationSpectrumID', definition.excitationSpectrumID, ...
+                    'emissionSpectrumID', definition.emissionSpectrumID);
+                filterSets(end+1) = setEntry; %#ok<AGROW>
+                spectrumIDs = {definition.excitationSpectrumID, definition.emissionSpectrumID};
+                for iSpectrum = 1:numel(spectrumIDs)
+                    spectrumID = spectrumIDs{iSpectrum};
+                    if isempty(spectrumID) || strcmpi(spectrumID, 'none')
+                        continue
+                    end
+                    spectrum = UMITRigStore.getSpectrum('filter', spectrumID);
+                    if any(strcmp({spectra.category}, 'filter') & strcmpi({spectra.id}, spectrum.id))
+                        continue
+                    end
+                    spectrumEntry = struct('category', 'filter', 'id', spectrum.id, ...
+                        'metadata', spectrum.metadata, 'response', spectrum.response(:));
+                    spectra(end+1) = spectrumEntry; %#ok<AGROW>
+                end
+            end
+
             resources = struct('record', {}, 'bytes', {});
             for iRecord = 1:numel(RigInfo.resourceRegistry)
                 record = RigInfo.resourceRegistry(iRecord);
@@ -2324,6 +2442,10 @@ classdef UMITRigStore < handle
                 'rig', RigInfo, ...
                 'spectra', spectra, ...
                 'resources', resources);
+            if ~isempty(filterSets)
+                UMITRigExport.schemaVersion = 2;
+                UMITRigExport.filterSets = filterSets;
+            end
             stagedPath = [tempname(folder) '.mat'];
             cleanupStage = onCleanup(@() UMITRigStore.iDeleteFileIfPresent(stagedPath));
             save(stagedPath, 'UMITRigExport', '-mat', '-v7');
@@ -3293,6 +3415,62 @@ classdef UMITRigStore < handle
             UMITRigStore.iResolveFilterSpectrum(filterSet.emissionSpectrumID);
         end
 
+        function iWriteUserFilterSet(filterSet)
+            %IWRITEUSERFILTERSET Write one validated filter set to the user library.
+            %
+            %   Caller holds the store lock and has validated FILTERSET.
+            %   Refuses an ID that already exists (user or built-in).
+
+            libraryRoot = fullfile(UMITRigStore.getRigsRoot(), ...
+                getUMITRigSchema().spectrum.libraryFolder, ...
+                getUMITRigSchema().spectrum.filterSetsFolder);
+            if ~isfolder(libraryRoot)
+                mkdir(libraryRoot);
+            end
+            destination = fullfile(libraryRoot, [filterSet.id '.json']);
+            if ~isempty(UMITRigStore.iFindFilterSetFile(filterSet.id))
+                error('Umitoolbox:UMITRigStore:filterSetAlreadyExists', ...
+                    ['Filter set "%s" already exists. Create a new ID instead ' ...
+                     'of replacing a referenced definition.'], filterSet.id);
+            end
+            serializable = filterSet;
+            if isfield(serializable, 'file')
+                serializable = rmfield(serializable, 'file');
+            end
+            UMITRigStore.iWriteJSON(destination, serializable);
+        end
+
+        function iAssertFilterSetSpectraAvailable(filterSet, exportedSpectra)
+            %IASSERTFILTERSETSPECTRAAVAILABLE Every filter spectrum of a set is obtainable.
+            %
+            %   Used by importRig before anything is written: each spectrum a
+            %   missing filter set references must be in the export or already
+            %   in the library ('none' or empty needs no spectrum).
+
+            spectrumIDs = {filterSet.excitationSpectrumID, filterSet.emissionSpectrumID};
+            for iSpectrum = 1:numel(spectrumIDs)
+                spectrumID = spectrumIDs{iSpectrum};
+                if isempty(spectrumID) || strcmpi(spectrumID, 'none')
+                    continue
+                end
+                if ~isempty(exportedSpectra) && any(strcmp({exportedSpectra.category}, 'filter') & ...
+                        strcmpi({exportedSpectra.id}, spectrumID))
+                    continue
+                end
+                try
+                    UMITRigStore.getSpectrum('filter', spectrumID);
+                catch ME
+                    if ~strcmp(ME.identifier, 'Umitoolbox:UMITRigStore:spectrumNotFound')
+                        rethrow(ME)
+                    end
+                    error('Umitoolbox:UMITRigStore:importFilterSetFailed', ...
+                        ['Filter set "%s" references filter spectrum "%s", which is ' ...
+                        'neither in the export nor in this library.'], ...
+                        filterSet.id, spectrumID);
+                end
+            end
+        end
+
         function response = iResolveFilterSpectrum(spectrumID)
             spectrumID = char(string(spectrumID));
             if isempty(spectrumID) || strcmpi(spectrumID, 'none')
@@ -3325,9 +3503,11 @@ classdef UMITRigStore < handle
                     ~strcmp(exported.format, 'umit-rig-export')
                 error(errID, 'File is not a UMIT rig export: %s', filePath);
             end
-            if exported.schemaVersion ~= 1
-                error(errID, 'Unsupported rig export schemaVersion %g.', exported.schemaVersion);
+            if ~isscalar(exported.schemaVersion) || ~ismember(exported.schemaVersion, [1 2])
+                error(errID, 'Unsupported rig export schemaVersion %s.', ...
+                    mat2str(exported.schemaVersion));
             end
+            exported.filterSets = UMITRigStore.iLoadExportedFilterSets(exported, errID);
             RigInfo = exported.rig;
             if ~isstruct(RigInfo) || ~isscalar(RigInfo) || ...
                     ~all(isfield(RigInfo, {'uuid', 'rigID', 'resourceRegistry'}))
@@ -3341,6 +3521,48 @@ classdef UMITRigStore < handle
                     error(errID, 'Exported spectrum "%s" is malformed.', ...
                         exported.spectra(iSpectrum).id);
                 end
+            end
+        end
+
+        function filterSets = iLoadExportedFilterSets(exported, errID)
+            %ILOADEXPORTEDFILTERSETS Structurally validate the filter sets of an export.
+            %
+            %   A schemaVersion 1 file has none (an empty struct array is
+            %   returned). A schemaVersion 2 file must carry a filterSets
+            %   struct array with text fields id, displayName,
+            %   excitationSpectrumID and emissionSpectrumID and unique IDs.
+            %   Whether the spectra exist is checked by importRig.
+
+            fields = {'id', 'displayName', 'excitationSpectrumID', 'emissionSpectrumID'};
+            filterSets = struct('id', {}, 'displayName', {}, ...
+                'excitationSpectrumID', {}, 'emissionSpectrumID', {});
+            if exported.schemaVersion == 1
+                return
+            end
+            if ~isfield(exported, 'filterSets') || ~isstruct(exported.filterSets) || ...
+                    ~all(isfield(exported.filterSets, fields))
+                error(errID, 'Rig export has no valid filterSets field.');
+            end
+            schema = getUMITRigSchema();
+            for iFilterSet = 1:numel(exported.filterSets)
+                entry = exported.filterSets(iFilterSet);
+                clean = struct();
+                for iField = 1:numel(fields)
+                    value = entry.(fields{iField});
+                    if ~(ischar(value) || (isstring(value) && isscalar(value)))
+                        error(errID, 'Exported filter-set field "%s" must be text.', fields{iField});
+                    end
+                    clean.(fields{iField}) = char(string(value));
+                end
+                try
+                    clean.id = UMITRigStore.iNormalizeManagedID(schema, clean.id, 'filterSetID');
+                catch ME
+                    error(errID, 'Exported filter set has an invalid ID: %s', ME.message);
+                end
+                if any(strcmpi({filterSets.id}, clean.id))
+                    error(errID, 'Rig export lists filter set "%s" twice.', clean.id);
+                end
+                filterSets(end+1) = clean; %#ok<AGROW>
             end
         end
 

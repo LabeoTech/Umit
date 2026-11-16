@@ -1093,9 +1093,199 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestUMITRigStore < ma
                 'Umitoolbox:UMITRigStore:exportRigFailed');
             testCase.verifyFalse(isfile(fullfile(testCase.TempRoot, 'broken.umitrig')));
         end
+
+        function testExportCarriesNamedFilterSetsAndImportRestoresThem(testCase)
+        %TESTEXPORTCARRIESNAMEDFILTERSETSANDIMPORTRESTORESTHEM A named user
+        %filter set (and its user filter spectrum) travels with the rig; a file
+        %without filter sets stays schemaVersion 1; a set already present with
+        %the same content is left alone.
+
+            [setID, spectrumID] = testCase.createUserFilterSet('Roundtrip');
+            source = testCase.createConfiguredRigForDuplication(1);
+            opticsHash = UMITRigLedger.buildOpticsSnapshot(source).hash;
+            original = UMITRigStore.getFilterSet(setID);
+
+            plainFile = source.exportRig(fullfile(testCase.TempRoot, 'plain.umitrig'));
+            plain = load(plainFile, 'UMITRigExport', '-mat').UMITRigExport;
+            testCase.verifyEqual(plain.schemaVersion, 1);
+            testCase.verifyFalse(isfield(plain, 'filterSets'), ...
+                'Files without filter sets stay readable by the previous version.');
+
+            setFile = source.exportRig(fullfile(testCase.TempRoot, 'withSets.umitrig'), ...
+                'FilterSets', {setID});
+            exported = load(setFile, 'UMITRigExport', '-mat').UMITRigExport;
+            testCase.verifyEqual(exported.schemaVersion, 2);
+            testCase.verifyEqual({exported.filterSets.id}, {setID});
+            testCase.verifyTrue(any(strcmp({exported.spectra.category}, 'filter') & ...
+                strcmp({exported.spectra.id}, spectrumID)), ...
+                'The filter spectrum the set references is exported.');
+
+            % Target library without the set and its spectrum.
+            UMITRigStore.removeFilterSet(setID);
+            delete(UMITRigStore.getSpectrum('filter', spectrumID).file);
+            testCase.verifyError(@() UMITRigStore.getFilterSet(setID), ...
+                'Umitoolbox:UMITRigStore:filterSetNotFound');
+
+            suffix = strrep(char(java.util.UUID.randomUUID()), '-', '');
+            [imported, summary] = UMITRigStore.importRig(setFile, ...
+                'RigID', ['FSImport_' suffix(1:8)], 'NewIdentity', true);
+            testCase.ExtraRigRoots{end+1} = imported.RigRoot;
+            restored = UMITRigStore.getFilterSet(setID);
+            testCase.UserLibraryFiles{end+1} = restored.file;
+            testCase.UserLibraryFiles{end+1} = UMITRigStore.getSpectrum('filter', spectrumID).file;
+            testCase.verifyEqual(restored.displayName, original.displayName);
+            testCase.verifyEqual(restored.excitationSpectrumID, original.excitationSpectrumID);
+            testCase.verifyEqual(restored.emissionSpectrumID, original.emissionSpectrumID);
+            testCase.verifyEqual(summary.filterSetsAdded, {setID});
+            testCase.verifyEmpty(summary.filterSetsPresent);
+            testCase.verifyEqual(summary.spectraAdded, {['filter/' spectrumID]});
+            testCase.verifyEqual(UMITRigLedger.buildOpticsSnapshot(imported).hash, opticsHash);
+
+            % Same content already present: skipped, not an error.
+            [again, summary] = UMITRigStore.importRig(setFile, ...
+                'RigID', ['FSAgain_' suffix(1:8)], 'NewIdentity', true);
+            testCase.ExtraRigRoots{end+1} = again.RigRoot;
+            testCase.verifyEmpty(summary.filterSetsAdded);
+            testCase.verifyEqual(summary.filterSetsPresent, {setID});
+            testCase.verifyEmpty(summary.spectraAdded);
+        end
+
+        function testImportRefusesConflictingFilterSetAndInstallsNothing(testCase)
+        %TESTIMPORTREFUSESCONFLICTINGFILTERSETANDINSTALLSNOTHING Same ID with
+        %different content is a conflict raised before any write.
+
+            [setID, spectrumID] = testCase.createUserFilterSet('Conflict');
+            source = testCase.createConfiguredRigForDuplication(1);
+            setFile = source.exportRig(fullfile(testCase.TempRoot, 'conflict.umitrig'), ...
+                'FilterSets', {setID});
+
+            UMITRigStore.removeFilterSet(setID);
+            delete(UMITRigStore.getSpectrum('filter', spectrumID).file);
+            UMITRigStore.importFilterSet(struct('id', setID, 'displayName', 'Different', ...
+                'excitationSpectrumID', 'none', 'emissionSpectrumID', 'none'));
+            testCase.UserLibraryFiles{end+1} = UMITRigStore.getFilterSet(setID).file;
+
+            rigCount = height(UMITRigStore.listRigs());
+            suffix = strrep(char(java.util.UUID.randomUUID()), '-', '');
+            testCase.verifyError(@() UMITRigStore.importRig(setFile, ...
+                'RigID', ['FSConflict_' suffix(1:8)], 'NewIdentity', true), ...
+                'Umitoolbox:UMITRigStore:importFilterSetConflict');
+            testCase.verifyEqual(height(UMITRigStore.listRigs()), rigCount);
+            testCase.verifyError(@() UMITRigStore.getSpectrum('filter', spectrumID), ...
+                'Umitoolbox:UMITRigStore:spectrumNotFound', ...
+                'No spectrum is written when a filter set conflicts.');
+        end
+
+        function testImportRefusesFilterSetWithoutItsSpectra(testCase)
+        %TESTIMPORTREFUSESFILTERSETWITHOUTITSSPECTRA A hand-edited export whose
+        %filter set names a filter spectrum that is nowhere is refused.
+
+            [setID, spectrumID] = testCase.createUserFilterSet('NoSpectrum');
+            source = testCase.createConfiguredRigForDuplication(1);
+            setFile = source.exportRig(fullfile(testCase.TempRoot, 'nospectrum.umitrig'), ...
+                'FilterSets', {setID});
+            UMITRigExport = load(setFile, 'UMITRigExport', '-mat').UMITRigExport;
+            isTheSpectrum = strcmp({UMITRigExport.spectra.category}, 'filter') & ...
+                strcmp({UMITRigExport.spectra.id}, spectrumID);
+            UMITRigExport.spectra(isTheSpectrum) = [];
+            save(setFile, 'UMITRigExport', '-mat', '-v7');
+
+            UMITRigStore.removeFilterSet(setID);
+            delete(UMITRigStore.getSpectrum('filter', spectrumID).file);
+            rigCount = height(UMITRigStore.listRigs());
+            suffix = strrep(char(java.util.UUID.randomUUID()), '-', '');
+            testCase.verifyError(@() UMITRigStore.importRig(setFile, ...
+                'RigID', ['FSNoSpec_' suffix(1:8)], 'NewIdentity', true), ...
+                'Umitoolbox:UMITRigStore:importFilterSetFailed');
+            testCase.verifyEqual(height(UMITRigStore.listRigs()), rigCount);
+        end
+
+        function testDeleteRigRemovesOnlyAnArchivedRig(testCase)
+        %TESTDELETERIGREMOVESONLYANARCHIVEDRIG Delete is permanent and only for
+        %an archived Rig; the Active rig and the lifecycle are never touched.
+
+            store = testCase.createRig();
+            replacement = testCase.createRig(2);
+            storeInfo = store.getRigInfo();
+            replacementInfo = replacement.getRigInfo();
+
+            testCase.verifyError(@() store.deleteRig(), ...
+                'Umitoolbox:UMITRigStore:deleteRigFailed');   % Active
+            testCase.verifyError(@() replacement.deleteRig(), ...
+                'Umitoolbox:UMITRigStore:deleteRigFailed');   % Available
+            testCase.verifyTrue(isfolder(testCase.RigRoot));
+            testCase.verifyTrue(isfolder(testCase.RigRoot2));
+
+            store.archiveRig(replacementInfo.uuid);
+            deletedID = store.deleteRig();
+
+            testCase.verifyEqual(deletedID, storeInfo.rigID);
+            testCase.verifyFalse(isfolder(testCase.RigRoot));
+            testCase.verifyFalse(UMITRigStore.rigExists(storeInfo.uuid));
+            testCase.verifyTrue(store.IsReadOnly);
+            testCase.verifyEqual(replacement.getRigInfo().status, 'active');
+            testCase.verifyTrue(UMITRigStore.validateLifecycle().isValid);
+            testCase.verifyTrue(replacement.validate('Mode', 'full').isValid);
+        end
+
+        function testDeletedRigCanBeRestoredFromItsExport(testCase)
+        %TESTDELETEDRIGCANBERESTOREDFROMITSEXPORT The safety net the UI offers:
+        %export, archive, delete, then import brings the rig back with its
+        %optics and coregistration unchanged.
+
+            source = testCase.createConfiguredRigForDuplication(1);
+            if strcmp(source.getRigInfo().status, 'available')
+                source.activateRig();
+            end
+            source.addCameraCoregistration( ...
+                testCase.createTformSource('coreg-del.mat', 1), struct('displayName', 'A'));
+            replacement = testCase.createRig(2);
+            sourceInfo = source.getRigInfo();
+            opticsHash = UMITRigLedger.buildOpticsSnapshot(source).hash;
+            coregHash = UMITRigLedger.buildCoregistrationSnapshot(source).hash;
+            exportFile = source.exportRig(fullfile(testCase.TempRoot, 'beforeDelete.umitrig'));
+
+            source.archiveRig(replacement.getRigInfo().uuid);
+            source.deleteRig();
+            testCase.verifyFalse(UMITRigStore.rigExists(sourceInfo.uuid));
+
+            restored = UMITRigStore.importRig(exportFile);
+            testCase.ExtraRigRoots{end+1} = restored.RigRoot;
+            testCase.verifyEqual(restored.getRigInfo().uuid, sourceInfo.uuid);
+            testCase.verifyTrue(restored.validate('Mode', 'full').isValid);
+            testCase.verifyEqual(UMITRigLedger.buildOpticsSnapshot(restored).hash, opticsHash);
+            testCase.verifyEqual(UMITRigLedger.buildCoregistrationSnapshot(restored).hash, coregHash);
+        end
+
+        function testExportRejectsUnknownFilterSetAndWritesNoFile(testCase)
+            source = testCase.createConfiguredRigForDuplication(1);
+            target = fullfile(testCase.TempRoot, 'unknownSet.umitrig');
+            testCase.verifyError(@() source.exportRig(target, ...
+                'FilterSets', {'NoSuchSet_unit'}), ...
+                'Umitoolbox:UMITRigStore:filterSetNotFound');
+            testCase.verifyFalse(isfile(target));
+        end
     end
 
     methods (Access = private)
+        function [setID, spectrumID] = createUserFilterSet(testCase, label)
+        %CREATEUSERFILTERSET User filter set: built-in excitation, user emission spectrum.
+
+            suffix = strrep(char(java.util.UUID.randomUUID()), '-', '');
+            spectrumID = ['FSSpec_' label '_' suffix(1:8)];
+            setID = ['FSSet_' label '_' suffix(1:8)];
+            spectrumSource = fullfile(testCase.TempRoot, [spectrumID '.csv']);
+            writematrix([(400:700)' linspace(0.1, 0.9, 301)'], spectrumSource);
+            spectrum = UMITRigStore.importSpectrum(spectrumSource, 'filter', ...
+                spectrumID, struct('displayName', ['Filter ' label]));
+            testCase.UserLibraryFiles{end+1} = spectrum.file;
+            UMITRigStore.importFilterSet(struct('id', setID, ...
+                'displayName', ['Set ' label], ...
+                'excitationSpectrumID', 'FF0148017', ...
+                'emissionSpectrumID', spectrumID));
+            testCase.UserLibraryFiles{end+1} = UMITRigStore.getFilterSet(setID).file;
+        end
+
         function removeFolder(~, folder)
             if isfolder(folder)
                 rmdir(folder, 's');
