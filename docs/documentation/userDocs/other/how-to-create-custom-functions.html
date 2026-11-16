@@ -77,7 +77,7 @@ info = PipelineManager.addOutput(info,'outData','ImageTimeSeries','data', ...
 <h3 id="technical-rules-for-dat-output">Technical rules for .dat output</h3>
 <ul>
 <li>The axes of a <samp>.dat</samp> file always start with Y and X, followed by those of T, E and F that the data have, always in the order T, E, F. Examples of valid layouts are Y-X, Y-X-T, Y-X-E, Y-X-F and Y-X-T-E.</li>
-<li>Values are saved in single precision. <samp>saveData</samp> refuses any other numeric class, so convert the result with <samp>single</samp> before returning or saving it.</li>
+<li>Values are saved in single precision. <samp>saveData</samp> refuses any other numeric class, so convert the result with <samp>single</samp> before returning or saving it. A function that writes a <samp>.dat</samp> file itself and returns its name must write single too: PipelineManager checks every <samp>.dat</samp> file a step returns and stops the step with an error that names the file and its class when it is not single. For the same reason a <samp>.dat</samp> file in another class cannot be used as a pipeline source (in a run over several Save Folders, only the folder with such a file is skipped).</li>
 <li>Data with a T axis need a frame rate, which the file stores in its header. Data without a T axis store none.</li>
 <li>Not every tool opens every layout. <em>DataViewer</em> currently opens <samp>.dat</samp> files with the axes Y-X, Y-X-T, Y-X-E and Y-X-T-E; it does not open a Y-X-F <samp>.dat</samp> file. Check the layout against the tools your users will use before choosing <samp>.dat</samp> for such an output.</li>
 </ul>
