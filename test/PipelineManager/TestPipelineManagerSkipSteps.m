@@ -211,6 +211,89 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestPipelineManagerSk
             testCase.verifyEqual(iCalls('pmSkipStepA'), 2, 'A was never applied after B.');
         end
 
+        function sourceWhoseHistoryIsLongerThanTheOverlapIsStillProcessed(testCase)
+            % DFR-20261021-001. The source was made by A -> B and the pipeline is
+            % B -> A. The source's last step is B, but that B was applied to the
+            % output of A, not to the source itself: only a pipeline that repeats
+            % the source's WHOLE history is satisfied by it. B must run again.
+            first = testCase.newPipeline();
+            tagA = first.addStep('pmSkipStepA', 'input', testCase.SourceFile);
+            first.addStep('pmSkipStepB', 'input', sprintf('%s:outData', tagA));
+            r1 = first.executePipeline('LeafOutputPolicy', 'saveLeaves', 'PrintSummary', false);
+            sourceAB = fullfile(testCase.SaveFolder, char(r1.viewerCompatibleFinalOutputs.ActualFileName(1)));
+
+            second = testCase.newPipeline();
+            tagB = second.addStep('pmSkipStepB', 'input', sourceAB);
+            second.addStep('pmSkipStepA', 'input', sprintf('%s:outData', tagB));
+            r2 = second.executePipeline('LeafOutputPolicy', 'saveLeaves', 'PrintSummary', false);
+
+            testCase.verifyEqual(iCalls('pmSkipStepB'), 2, 'B must be applied again on the source.');
+            testCase.verifyEqual(iCalls('pmSkipStepA'), 2, 'A runs after the second B.');
+            result = loadData(fullfile(testCase.SaveFolder, ...
+                char(r2.viewerCompatibleFinalOutputs.ActualFileName(1))));
+            testCase.verifyEqual(single(result), single(reshape(1:24, [2 3 4])) + 4, ...
+                'A -> B -> B -> A adds 4 in total.');
+        end
+
+        function sourceThatIsLongerThanThePipelineKeepsSkippingNothingNew(testCase)
+            % A source made by A -> B, a pipeline that starts with B only: B is
+            % applied again (the history before the overlap is not the origin).
+            first = testCase.newPipeline();
+            tagA = first.addStep('pmSkipStepA', 'input', testCase.SourceFile);
+            first.addStep('pmSkipStepB', 'input', sprintf('%s:outData', tagA));
+            r1 = first.executePipeline('LeafOutputPolicy', 'saveLeaves', 'PrintSummary', false);
+            sourceAB = fullfile(testCase.SaveFolder, char(r1.viewerCompatibleFinalOutputs.ActualFileName(1)));
+
+            second = testCase.newPipeline();
+            second.addStep('pmSkipStepB', 'input', sourceAB);
+            second.executePipeline('LeafOutputPolicy', 'saveLeaves', 'PrintSummary', false);
+
+            testCase.verifyEqual(iCalls('pmSkipStepB'), 2);
+            testCase.verifyEqual(iCalls('pmSkipStepA'), 1);
+        end
+
+        function rewiredPortOfAnOverlappedStepIsNotAbsorbed(testCase)
+            % DFR-20261021-001. Same functions and parameters, but the second
+            % step reads another output port of the first: the source made by
+            % the first pipeline does not satisfy the second one.
+            first = testCase.newPipeline();
+            tagS = first.addStep('pmSkipTwoOut', 'input', testCase.SourceFile);
+            first.addStep('pmSkipStepB', 'input', sprintf('%s:outData', tagS));
+            r1 = first.executePipeline('LeafOutputPolicy', 'saveLeaves', 'PrintSummary', false);
+            sourceFirst = fullfile(testCase.SaveFolder, iResultFile(r1, 'pmSkipStepB'));
+            testCase.verifyEqual(iCalls('pmSkipTwoOut'), 1);
+
+            second = testCase.newPipeline();
+            tagS2 = second.addStep('pmSkipTwoOut', 'input', sourceFirst);
+            second.addStep('pmSkipStepB', 'input', sprintf('%s:outAlt', tagS2));
+            r2 = second.executePipeline('LeafOutputPolicy', 'saveLeaves', 'PrintSummary', false);
+
+            testCase.verifyEqual(iCalls('pmSkipTwoOut'), 2, 'The rewired pipeline is not satisfied.');
+            testCase.verifyEqual(iCalls('pmSkipStepB'), 2);
+            result = loadData(fullfile(testCase.SaveFolder, ...
+                iResultFile(r2, 'pmSkipStepB')));
+            testCase.verifyEqual(single(result), single(reshape(1:24, [2 3 4])) + 13, ...
+                'First run: +1 +1; second run: +10 (outAlt) +1.');
+        end
+
+        function sameWiringOfAnOverlappedStepIsStillAbsorbed(testCase)
+            % Control for the port comparison: the same two-output pipeline on
+            % its own result is the stored result of itself and is skipped.
+            first = testCase.newPipeline();
+            tagS = first.addStep('pmSkipTwoOut', 'input', testCase.SourceFile);
+            first.addStep('pmSkipStepB', 'input', sprintf('%s:outAlt', tagS));
+            r1 = first.executePipeline('LeafOutputPolicy', 'saveLeaves', 'PrintSummary', false);
+            source = fullfile(testCase.SaveFolder, iResultFile(r1, 'pmSkipStepB'));
+
+            second = testCase.newPipeline();
+            tagS2 = second.addStep('pmSkipTwoOut', 'input', source);
+            second.addStep('pmSkipStepB', 'input', sprintf('%s:outAlt', tagS2));
+            second.executePipeline('LeafOutputPolicy', 'saveLeaves', 'PrintSummary', false);
+
+            testCase.verifyEqual(iCalls('pmSkipTwoOut'), 1);
+            testCase.verifyEqual(iCalls('pmSkipStepB'), 1);
+        end
+
         function historyOfAPartiallySkippedRunMatchesAFullRun(testCase)
             % The source has its own history and the first step is satisfied by a
             % stored output: the new output's provenance must not repeat the
@@ -324,7 +407,7 @@ function parserFolder = iCreateFixtureCategory(projectRoot)
 % PipelineManager discovers functions under Analysis/: copy the fixtures into a
 % temporary category there (createAnalysisFixtureCategory).
 fixtureFolder = fullfile(fileparts(mfilename('fullpath')), 'fixtures');
-names = {'pmSkipStepA', 'pmSkipStepB'};
+names = {'pmSkipStepA', 'pmSkipStepB', 'pmSkipTwoOut'};
 files = struct('name', names, 'source', fullfile(fixtureFolder, strcat(names, '.m')));
 parserFolder = createAnalysisFixtureCategory(projectRoot, files);
 end
@@ -342,4 +425,12 @@ end
 if isfolder(parserFolder)
     rmdir(parserFolder, 's');
 end
+end
+
+function name = iResultFile(result, functionName)
+% File name of the final output of one function (pmSkipTwoOut also leaves its
+% unused port as a leaf file, so the first row is not always the one wanted).
+outputs = result.viewerCompatibleFinalOutputs;
+row = find(outputs.FunctionName == string(functionName), 1);
+name = char(outputs.ActualFileName(row));
 end

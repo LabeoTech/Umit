@@ -14240,13 +14240,23 @@ classdef PipelineManager < handle
             function [stepsOut, isNodeOut] = absorbSatisfiedSourceTail(stepsIn, isNodeIn)
                 %ABSORBSATISFIEDSOURCETAIL Treat history steps already applied by the branch as nodes.
                 %
-                %   When the provenance prepended from the source file ends with the
-                %   same k steps (name, version, parameters) that the branch starts
-                %   with, those k history steps ARE the branch's first k nodes: they
-                %   are flagged as node steps and the duplicated node steps are
+                %   The source file's whole history (the provenance prepended from
+                %   it, without a leading FileSource record, which only marks the
+                %   origin of a file that had no history of its own) must equal the
+                %   first steps of the branch (name, version, parameters, and for
+                %   every step after the first the output port its data inputs
+                %   read). Then those history steps ARE the branch's first nodes:
+                %   they are flagged as node steps and the duplicated node steps are
                 %   dropped. History matching then counts the source file as covering
-                %   those nodes, so they are skipped. Users who want to apply the
-                %   steps again disable b_skipSteps. The longest overlap wins.
+                %   those nodes, so they are skipped. This is the same condition as
+                %   for any stored file in the folder: its whole history is the
+                %   start of the pipeline. A history that is longer than the overlap
+                %   (for example a file made by A -> B and a pipeline B -> A) is not
+                %   absorbed: that B was applied to the output of A, not to the
+                %   source. The first overlapped step is not compared by input
+                %   source: in the file's history it read the original data, in the
+                %   branch it reads the file. Users who want to apply the steps
+                %   again disable b_skipSteps.
 
                 stepsOut = stepsIn;
                 isNodeOut = isNodeIn;
@@ -14256,27 +14266,83 @@ classdef PipelineManager < handle
                     return
                 end
 
+                nOrigin = 0;   % leading FileSource record of a file without history
+                if isfield(stepsIn(1), 'name') && strcmpi(char(string(stepsIn(1).name)), 'FileSource')
+                    nOrigin = 1;
+                end
+
                 nodeRun = isNodeIn(nLead+1:end);
                 nNodeRun = find(~nodeRun, 1, 'first') - 1;
                 if isempty(nNodeRun)
                     nNodeRun = numel(nodeRun);
                 end
 
-                for k = min(nLead, nNodeRun):-1:1
-                    isOverlap = true;
-                    for j = 1:k
-                        if ~obj.isSameStep(stepsIn(nLead-k+j), stepsIn(nLead+j))
-                            isOverlap = false;
-                            break
-                        end
-                    end
+                k = nLead - nOrigin;   % the overlap must cover the whole history
+                if k < 1 || k > nNodeRun
+                    return
+                end
 
-                    if isOverlap
-                        isNodeOut(nLead-k+1:nLead) = true;
-                        stepsOut(nLead+1:nLead+k) = [];
-                        isNodeOut(nLead+1:nLead+k) = [];
+                for j = 1:k
+                    historyStep = stepsIn(nOrigin+j);
+                    nodeStep = stepsIn(nLead+j);
+                    if ~obj.isSameStep(historyStep, nodeStep)
                         return
                     end
+                    if j > 1 && ~overlapInputPortsMatch(historyStep, nodeStep)
+                        return
+                    end
+                end
+
+                isNodeOut(nOrigin+1:nLead) = true;
+                stepsOut(nLead+1:nLead+k) = [];
+                isNodeOut(nLead+1:nLead+k) = [];
+            end
+
+            function tf = overlapInputPortsMatch(historyStep, nodeStep)
+                %OVERLAPINPUTPORTSMATCH Both steps read the same output ports.
+                %
+                %   Compares the output-port part (after the first ':' of the
+                %   '<Node>:<port>' token) of every data input of NODESTEP with the
+                %   input of the same name in HISTORYSTEP. Folder and metaData inputs
+                %   and inputs without a token are ignored.
+
+                tf = true;
+                if ~isfield(nodeStep, 'inputs') || isempty(nodeStep.inputs)
+                    return
+                end
+                historyInputs = struct('name', {}, 'source', {});
+                if isfield(historyStep, 'inputs') && ~isempty(historyStep.inputs)
+                    historyInputs = historyStep.inputs;
+                end
+
+                for iInput = 1:numel(nodeStep.inputs)
+                    inputName = char(string(nodeStep.inputs(iInput).name));
+                    if any(strcmpi(inputName, {'metaData', 'SaveFolder', 'RawFolder'}))
+                        continue
+                    end
+                    nodePort = portOfSource(nodeStep.inputs(iInput).source);
+                    if isempty(nodePort)
+                        continue
+                    end
+                    historyIdx = find(strcmpi({historyInputs.name}, inputName), 1);
+                    if isempty(historyIdx) || ...
+                            ~strcmp(portOfSource(historyInputs(historyIdx).source), nodePort)
+                        tf = false;
+                        return
+                    end
+                end
+            end
+
+            function port = portOfSource(source)
+                %PORTOFSOURCE Output-port part of a '<Node>:<port>' source token ('' if none).
+                port = '';
+                if ~(ischar(source) || (isstring(source) && isscalar(source)))
+                    return
+                end
+                sourceText = char(string(source));
+                colonIdx = find(sourceText == ':', 1);
+                if ~isempty(colonIdx)
+                    port = sourceText(colonIdx+1:end);
                 end
             end
 
