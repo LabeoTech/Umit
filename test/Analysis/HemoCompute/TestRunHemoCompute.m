@@ -445,12 +445,15 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestRunHemoCompute < 
             % HemoCompute -> spatialGaussFilt: re-running an unchanged pipeline
             % reuses the whole branch (HemoCompute is skipped). A lone
             % HemoCompute step is never skipped: its two outputs make the
-            % leaf match ambiguous.
+            % leaf match ambiguous. HbO.dat is an intermediate here: since the
+            % pipeline deletes intermediates a function wrote itself, the test
+            % keeps both outputs with an explicit save name.
             folder = testCase.TempFolder;
             hboPath = fullfile(folder, 'HbO.dat');
             pm = PipelineManager({folder});
             pm.b_skipSteps = true;
-            hemoTag = pm.addStep('HemoCompute', 'input', fullfile(folder, 'red.dat'));
+            hemoTag = pm.addStep('HemoCompute', 'input', fullfile(folder, 'red.dat'), ...
+                'saveas', {'HbO.dat', 'HbR.dat'});
             pm.addStep('spatialGaussFilt', 'input', sprintf('%s:HbO', hemoTag));
             runArgs = {'LeafOutputPolicy', 'saveLeaves', 'PrintSummary', false};
 
