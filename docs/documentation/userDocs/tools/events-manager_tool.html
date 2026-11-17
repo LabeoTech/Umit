@@ -22,6 +22,14 @@ nav_order: 2
 <tr><td>Condition names</td><td><strong>Edit/Apply</strong> changes names in memory; <strong>Restore</strong> returns to the original list or cancels editing.</td></tr>
 <tr><td><strong>Detect</strong></td><td>Applies parameters and rebuilds detected events.</td></tr>
 <tr><td><strong>Save events.mat</strong></td><td>Writes validated current event state, asking before replacement.</td></tr></table>
+<h2 id="ignoring-conditions-and-repetitions">Ignoring conditions and repetitions</h2>
+<p>Events from a faulty trigger detection, for example a spurious pulse, can be left out without detecting again. Select a row of the condition table and right-click it:</p>
+<ul>
+<li><strong>Ignore condition</strong> drops the whole condition from the analysis output; its timing still bounds the trial length of its neighbours.</li>
+<li><strong>Purge condition</strong> also removes its timing, for events that are not real stimuli (for example a device-required baseline placeholder). It is refused while the Save Folder holds event-split data.</li>
+<li><strong>Ignore / restore repetitions...</strong> lists the repetitions of the condition with their onset times and a checkbox <strong>Ignore</strong> for each. Tick the repetitions to ignore, untick to include them again, and press <strong>Apply</strong>. Only the repetitions whose checkbox changed are affected, and both the start and the end of a repetition. A condition that was ignored as a whole can be restored one repetition at a time here.</li>
+</ul>
+<p>The condition table shows <strong>NRepeats</strong>, the repetitions still included, and <strong>NIgnored</strong>, the ignored ones; both update after every change. <strong>Reset ignored/purged conditions</strong> returns every ignored or purged event to included in one step. At least one condition and one repetition always stay included: the last condition with included events cannot be ignored or purged, and the repetitions of the only remaining condition cannot all be ignored. Nothing is written until you press <strong>Save events.mat</strong>; the status line reminds you after each change. Ignored events stay in <samp>events.mat</samp> and in saved event-split data, flagged, and are excluded from display and from the average of a condition. To decide about a trial after looking at the data, use <strong>Delete repetition</strong> in <a href="../apps/data-loading-navigation.html"><em>DataViewer</em></a> and save with the <strong>Save</strong> button of its Events panel.</p>
 <h2 id="detection-parameters">Detection parameters</h2>
 <table><tr><th>Parameter</th><th>Use</th></tr>
 <tr><td><strong>Threshold</strong></td><td>The voltage crossing used to detect an edge. <strong>Auto</strong> starts at 80% of the signal span above its minimum; set a number when noise or an unusual pulse amplitude requires manual control.</td></tr>
