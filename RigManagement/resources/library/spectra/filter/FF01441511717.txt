@@ -2,7 +2,7 @@
 #   "id": "FF01441511717",
 #   "legacyID": "FF01441511717",
 #   "category": "filter",
-#   "displayName": "FF01441511717",
+#   "displayName": "FF01-441/511/717",
 #   "manufacturer": "Semrock",
 #   "model": "FF01-441/511/717",
 #   "peakWavelengthNm": 694,

@@ -2,7 +2,7 @@
 #   "id": "FF0156524",
 #   "legacyID": "FF0156524",
 #   "category": "filter",
-#   "displayName": "FF0156524",
+#   "displayName": "FF01-565/24",
 #   "manufacturer": "Semrock",
 #   "model": "FF01-565/24",
 #   "peakWavelengthNm": 568,

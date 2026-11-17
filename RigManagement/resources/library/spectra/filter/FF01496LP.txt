@@ -2,7 +2,7 @@
 #   "id": "FF01496LP",
 #   "legacyID": "FF01496LP",
 #   "category": "filter",
-#   "displayName": "FF01496LP",
+#   "displayName": "FF01-496/LP",
 #   "manufacturer": "Semrock",
 #   "model": "FF01-496/LP",
 #   "peakWavelengthNm": 511,

@@ -2,7 +2,7 @@
 #   "id": "FF0154080",
 #   "legacyID": "FF0154080",
 #   "category": "filter",
-#   "displayName": "FF0154080",
+#   "displayName": "FF01-540/80",
 #   "manufacturer": "Semrock",
 #   "model": "FF01-540/80",
 #   "peakWavelengthNm": 567,

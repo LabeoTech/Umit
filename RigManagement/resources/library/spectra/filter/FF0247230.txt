@@ -2,7 +2,7 @@
 #   "id": "FF0247230",
 #   "legacyID": "FF0247230",
 #   "category": "filter",
-#   "displayName": "FF0247230",
+#   "displayName": "FF02-472/30",
 #   "manufacturer": "Semrock",
 #   "model": "FF02-472/30",
 #   "peakWavelengthNm": 483,
