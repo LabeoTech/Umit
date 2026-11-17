@@ -674,12 +674,116 @@ classdef UMITRigStore < handle
             spectrum = UMITRigStore.getSpectrum(category, spectrumID);
         end
 
+        function spectrum = createCompositeSpectrum(category, spectrumID, components, metadata)
+            %CREATECOMPOSITESPECTRUM Create a spectrum by combining library spectra.
+            %
+            %   spectrum = UMITRigStore.createCompositeSpectrum( ...
+            %       category, spectrumID, components, metadata)
+            %
+            %   CATEGORY is "filter", "illumination" or "camera". COMPONENTS
+            %   is a struct array with fields category and spectrumID.
+            %     filter:       two or more filter components.
+            %     illumination: exactly one illumination component plus one
+            %                   or more filter components.
+            %     camera:       exactly one camera component plus one or
+            %                   more filter components (the effective
+            %                   detection response behind those filters).
+            %   The curve is the point-wise product of the component curves,
+            %   divided by its own maximum, so its peak is 1. Like every
+            %   library spectrum it describes spectral SHAPE only, not
+            %   absolute transmission. The recipe is stored in the header
+            %   field composition. Composites are immutable: delete and
+            %   create a new one to change it.
+
+            if nargin < 4
+                metadata = struct();
+            end
+            [category, spectrumID] = UMITRigStore.iNormalizeSpectrumIdentity( ...
+                category, spectrumID);
+            if ~isstruct(metadata) || ~isscalar(metadata)
+                error('Umitoolbox:UMITRigStore:invalidSpectrumMetadata', ...
+                    'Spectrum metadata must be a scalar struct.');
+            end
+            % All three library categories can be combined; see the help text
+            % for the allowed component mix per category.
+            if ~isstruct(components) || ~all(isfield(components, {'category', 'spectrumID'}))
+                error('Umitoolbox:UMITRigStore:invalidComposite', ...
+                    'Components must be a struct array with category and spectrumID.');
+            end
+            components = components(:);
+            numComponents = numel(components);
+            componentCategories = strings(numComponents, 1);
+            componentIDs = strings(numComponents, 1);
+            for iComp = 1:numComponents
+                [catName, compID] = UMITRigStore.iNormalizeSpectrumIdentity( ...
+                    components(iComp).category, components(iComp).spectrumID);
+                componentCategories(iComp) = catName;
+                componentIDs(iComp) = compID;
+            end
+            numFilter = sum(componentCategories == "filter");
+            if strcmp(category, 'filter')
+                valid = numFilter >= 2 && numFilter == numComponents;
+                rule = 'a filter composite needs two or more filter components';
+            else
+                numBase = sum(componentCategories == string(category));
+                valid = numBase == 1 && numFilter >= 1 && ...
+                    numBase + numFilter == numComponents;
+                rule = sprintf(['a %s composite needs exactly one %s ' ...
+                    'component plus one or more filters'], category, category);
+            end
+            if ~valid
+                error('Umitoolbox:UMITRigStore:invalidComposite', ...
+                    'Invalid components: %s.', rule);
+            end
+
+            wavelength = getUMITRigSchema().spectrum.wavelengthNm;
+            rawProduct = ones(numel(wavelength), 1);
+            for iComp = 1:numComponents
+                component = UMITRigStore.getSpectrum( ...
+                    char(componentCategories(iComp)), char(componentIDs(iComp)));
+                rawProduct = rawProduct .* component.response;
+            end
+            if max(rawProduct) < 1e-6
+                error('Umitoolbox:UMITRigStore:invalidComposite', ...
+                    'The selected spectra have no usable spectral overlap.');
+            end
+            [maxValue, peakIndex] = max(rawProduct);
+            response = rawProduct ./ maxValue;
+
+            metadata.id = spectrumID;
+            metadata.category = category;
+            metadata.peakWavelengthNm = wavelength(peakIndex);
+            metadata.normalization = 'dividedByMaximum';
+            metadata.composition = struct( ...
+                'operation', 'product', ...
+                'components', struct( ...
+                    'category', cellstr(componentCategories), ...
+                    'spectrumID', cellstr(componentIDs)));
+            if ~isfield(metadata, 'displayName')
+                metadata.displayName = spectrumID;
+            end
+
+            storeLock = UMITRigStore.iAcquireStoreLock('createCompositeSpectrum'); %#ok<NASGU>
+            if ~isempty(UMITRigStore.iFindLibraryFile(category, spectrumID, '.txt'))
+                error('Umitoolbox:UMITRigStore:spectrumAlreadyExists', ...
+                    'Spectrum "%s" already exists. Choose a new ID.', spectrumID);
+            end
+            destinationFolder = UMITRigStore.iUserSpectrumFolder(category);
+            if ~isfolder(destinationFolder)
+                mkdir(destinationFolder);
+            end
+            UMITRigStore.iWriteSpectrumFile( ...
+                fullfile(destinationFolder, [spectrumID '.txt']), ...
+                wavelength, response, metadata);
+            spectrum = UMITRigStore.getSpectrum(category, spectrumID);
+        end
+
         function removeSpectrum(category, spectrumID)
             %REMOVESPECTRUM Delete an unreferenced user-library spectrum.
             %
             %   Built-in spectra cannot be deleted. A user spectrum is also
-            %   protected while referenced by any Rig camera/illumination or
-            %   filter-set definition.
+            %   protected while referenced by any Rig camera/illumination,
+            %   filter-set definition, or composite spectrum.
 
             [category, spectrumID] = UMITRigStore.iNormalizeSpectrumIdentity( ...
                 category, spectrumID);
@@ -717,6 +821,8 @@ classdef UMITRigStore < handle
                     end
                 end
             end
+            references = [references; ...
+                UMITRigStore.iCompositeDependents(category, spectrumID)];
             if ~isempty(references)
                 error('Umitoolbox:UMITRigStore:spectrumInUse', ...
                     'Spectrum "%s" is referenced by: %s.', ...
@@ -3718,6 +3824,33 @@ classdef UMITRigStore < handle
                     'Could not install file "%s": %s', filePath, message);
             end
             clear cleanupStage
+        end
+
+        function dependents = iCompositeDependents(category, spectrumID)
+            %ICOMPOSITEDEPENDENTS IDs of user composites built from a spectrum.
+
+            dependents = strings(0, 1);
+            for compositeCategory = {'filter', 'illumination', 'camera'}
+                folder = UMITRigStore.iUserSpectrumFolder(compositeCategory{1});
+                if ~isfolder(folder)
+                    continue
+                end
+                listing = dir(fullfile(folder, '*.txt'));
+                for iFile = 1:numel(listing)
+                    filePath = fullfile(listing(iFile).folder, listing(iFile).name);
+                    metadata = UMITRigStore.iReadSpectrumMetadata(filePath);
+                    if ~isfield(metadata, 'composition') || ...
+                            ~isfield(metadata.composition, 'components')
+                        continue
+                    end
+                    parts = metadata.composition.components;
+                    if any(strcmpi({parts.category}, category) & ...
+                            strcmpi({parts.spectrumID}, spectrumID))
+                        [~, compositeID] = fileparts(filePath);
+                        dependents(end+1, 1) = string(compositeID); %#ok<AGROW>
+                    end
+                end
+            end
         end
 
         function metadata = iReadSpectrumMetadata(filePath)

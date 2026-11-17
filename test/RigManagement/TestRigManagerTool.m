@@ -165,6 +165,56 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestRigManagerTool < 
             testCase.verifyEqual(string(app.LibraryRemoveButton.Enable), "off");
         end
 
+        function testCombineButtonForSpectraNeedsSelectionAndHidesForFilterSets(testCase)
+            store = testCase.createRig(1, 'Combine');
+            app = RigManagerTool([], 'manage', ...
+                'InitialRig', store.getRigInfo().uuid, ...
+                'StartWorkspace', 'opticalLibrary', 'Visible', false);
+            testCase.Apps{end+1} = app;
+
+            expectedVisible = struct('illumination', "on", 'filter', "on", ...
+                'camera', "on", 'filterSets', "off");
+            for category = fieldnames(expectedVisible)'
+                app.LibraryCategoryDropDown.Value = category{1};
+                app.LibraryCategoryDropDown.ValueChangedFcn([], []);
+                testCase.verifyEqual(string(app.LibraryCombineButton.Visible), ...
+                    expectedVisible.(category{1}), category{1});
+                if expectedVisible.(category{1}) == "on"
+                    % Combining starts from the selected table item.
+                    testCase.verifyEqual(string(app.LibraryCombineButton.Enable), ...
+                        "off", category{1});
+                    app.LibraryTable.CellSelectionCallback([], struct('Indices', [1 1]));
+                    testCase.verifyEqual(string(app.LibraryCombineButton.Enable), ...
+                        "on", category{1});
+                end
+            end
+        end
+
+        function testLibrarySelectionListsCompositionOfCombinedSpectrum(testCase)
+            store = testCase.createRig(1, 'CombineInfo');
+            suffix = strrep(char(java.util.UUID.randomUUID()), '-', '');
+            compositeID = ['CombineInfo_' suffix(1:8)];
+            UMITRigStore.createCompositeSpectrum('filter', compositeID, ...
+                struct('category', {'filter'; 'filter'}, ...
+                'spectrumID', {'FF0154080'; 'FF0151444'}), struct());
+            testCase.addTeardown(@() UMITRigStore.removeSpectrum('filter', compositeID));
+            app = RigManagerTool([], 'manage', ...
+                'InitialRig', store.getRigInfo().uuid, ...
+                'StartWorkspace', 'opticalLibrary', 'Visible', false);
+            testCase.Apps{end+1} = app;
+
+            app.LibraryCategoryDropDown.Value = 'filter';
+            app.LibraryCategoryDropDown.ValueChangedFcn([], []);
+            row = find(app.LibraryTable.Data.ID == string(compositeID));
+            testCase.assertNotEmpty(row);
+            app.LibraryTable.CellSelectionCallback([], struct('Indices', [row 1]));
+
+            text = strjoin(string(app.LibraryMetadataArea.Value), newline);
+            testCase.verifySubstring(text, "Combined from");
+            testCase.verifySubstring(text, "FF0154080 x FF0151444");
+            testCase.verifyEqual(string(app.LibraryRemoveButton.Enable), "on");
+        end
+
         function testSelectModeExposesSelectionContract(testCase)
             store = testCase.createRig(1, 'Select');
             app = RigManagerTool([], 'select', ...

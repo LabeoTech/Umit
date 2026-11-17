@@ -41,7 +41,161 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestUMITRigOptics < m
         end
     end
 
+    methods (Access = private)
+        function id = importBand(testCase, category, tag, center, width, floorValue)
+            % Import an asymmetric Gaussian band (distinct center/width per
+            % call) as a user spectrum and register it for cleanup.
+            if nargin < 6
+                floorValue = 1e-3;
+            end
+            suffix = strrep(char(java.util.UUID.randomUUID()), '-', '');
+            id = [tag '_' suffix(1:8)];
+            wavelength = (390:710)';
+            response = exp(-0.5 * ((wavelength - center) ./ width).^2) + floorValue;
+            source = fullfile(testCase.TempRoot, [id '.csv']);
+            writematrix([wavelength response], source);
+            spectrum = UMITRigStore.importSpectrum(source, category, id, struct());
+            testCase.UserLibraryFiles{end+1} = spectrum.file;
+        end
+
+        function trackComposite(testCase, spectrum)
+            testCase.UserLibraryFiles{end+1} = spectrum.file;
+        end
+    end
+
     methods (Test)
+        function testCompositeFilterIsNormalizedProduct(testCase)
+            idA = testCase.importBand('filter', 'CompA', 520, 30);
+            idB = testCase.importBand('filter', 'CompB', 560, 55);
+            a = UMITRigStore.getSpectrum('filter', idA);
+            b = UMITRigStore.getSpectrum('filter', idB);
+            components = struct('category', {'filter'; 'filter'}, ...
+                'spectrumID', {idA; idB});
+            compositeID = [idA '_x_' idB(end-3:end)];
+
+            composite = UMITRigStore.createCompositeSpectrum( ...
+                'filter', compositeID, components, struct('displayName', 'A and B'));
+            testCase.trackComposite(composite);
+
+            expected = a.response .* b.response;
+            expected = expected ./ max(expected);
+            testCase.verifyEqual(composite.response, expected, 'AbsTol', 1e-12);
+            testCase.verifyEqual(max(composite.response), 1);
+            testCase.verifyEqual(composite.metadata.composition.operation, 'product');
+            testCase.verifyEqual({composite.metadata.composition.components.spectrumID}, ...
+                {idA, idB});
+            listed = UMITRigStore.listSpectra('filter');
+            testCase.verifyTrue(any(listed.ID == string(compositeID)));
+        end
+
+        function testCompositeIlluminationAndNesting(testCase)
+            filterA = testCase.importBand('filter', 'CompC', 540, 25);
+            filterB = testCase.importBand('filter', 'CompD', 530, 70);
+            suffix = strrep(char(java.util.UUID.randomUUID()), '-', '');
+            filterAB = ['CompAB_' suffix(1:8)];
+            both = UMITRigStore.createCompositeSpectrum('filter', filterAB, ...
+                struct('category', {'filter'; 'filter'}, 'spectrumID', {filterA; filterB}), ...
+                struct());
+            testCase.trackComposite(both);
+
+            illumID = ['CompLED_' suffix(1:8)];
+            illum = UMITRigStore.createCompositeSpectrum('illumination', illumID, ...
+                struct('category', {'illumination'; 'filter'}, ...
+                'spectrumID', {'LED_521nm'; filterAB}), struct());
+            testCase.trackComposite(illum);
+
+            led = UMITRigStore.getSpectrum('illumination', 'LED_521nm');
+            expected = led.response .* both.response;
+            expected = expected ./ max(expected);
+            testCase.verifyEqual(illum.response, expected, 'AbsTol', 1e-12);
+            testCase.verifyEqual(illum.category, 'illumination');
+        end
+
+        function testCompositeRejectsInvalidComponentMixes(testCase)
+            idA = testCase.importBand('filter', 'CompE', 520, 30);
+            idB = testCase.importBand('filter', 'CompF', 560, 40);
+            create = @(category, comps) UMITRigStore.createCompositeSpectrum( ...
+                category, 'ShouldNotExist', comps, struct());
+            err = 'Umitoolbox:UMITRigStore:invalidComposite';
+
+            testCase.verifyError(@() create('filter', ...
+                struct('category', {'filter'}, 'spectrumID', {idA})), err);
+            testCase.verifyError(@() create('filter', ...
+                struct('category', {'filter'; 'illumination'}, ...
+                'spectrumID', {idA; 'LED_521nm'})), err);
+            testCase.verifyError(@() create('illumination', ...
+                struct('category', {'illumination'; 'illumination'}, ...
+                'spectrumID', {'LED_521nm'; 'LED_632nm'})), err);
+            testCase.verifyError(@() create('illumination', ...
+                struct('category', {'filter'; 'filter'}, ...
+                'spectrumID', {idA; idB})), err);
+            testCase.verifyError(@() create('camera', ...
+                struct('category', {'filter'; 'filter'}, ...
+                'spectrumID', {idA; idB})), err);
+            testCase.verifyError(@() create('camera', ...
+                struct('category', {'camera'; 'illumination'}, ...
+                'spectrumID', {'PF1024'; 'LED_521nm'})), err);
+        end
+
+        function testCompositeCameraIsNormalizedProductAndGuardsComponent(testCase)
+            filterID = testCase.importBand('filter', 'CompCamF', 560, 60);
+            camera = UMITRigStore.getSpectrum('camera', 'PF1024');
+            filterSpectrum = UMITRigStore.getSpectrum('filter', filterID);
+            suffix = strrep(char(java.util.UUID.randomUUID()), '-', '');
+            compositeID = ['CompCam_' suffix(1:8)];
+
+            composite = UMITRigStore.createCompositeSpectrum('camera', compositeID, ...
+                struct('category', {'camera'; 'filter'}, ...
+                'spectrumID', {'PF1024'; filterID}), struct());
+            testCase.trackComposite(composite);
+
+            expected = camera.response .* filterSpectrum.response;
+            expected = expected ./ max(expected);
+            testCase.verifyEqual(composite.response, expected, 'AbsTol', 1e-12);
+            testCase.verifyEqual(composite.category, 'camera');
+            testCase.verifyError(@() UMITRigStore.removeSpectrum('filter', filterID), ...
+                'Umitoolbox:UMITRigStore:spectrumInUse');
+            UMITRigStore.removeSpectrum('camera', compositeID);
+        end
+
+        function testCompositeRejectsNoOverlapAndDuplicateID(testCase)
+            % Zero floor: the two bands share no wavelengths, so the raw
+            % product is exactly zero.
+            narrowBlue = testCase.importBand('filter', 'CompBlue', 430, 3, 0);
+            narrowRed = testCase.importBand('filter', 'CompRed', 680, 3, 0);
+            testCase.verifyError(@() UMITRigStore.createCompositeSpectrum( ...
+                'filter', 'NoOverlapComp', ...
+                struct('category', {'filter'; 'filter'}, ...
+                'spectrumID', {narrowBlue; narrowRed}), struct()), ...
+                'Umitoolbox:UMITRigStore:invalidComposite');
+
+            % Duplicate ID: use overlapping bands so the ID check is reached.
+            idA = testCase.importBand('filter', 'CompDupA', 520, 30);
+            idB = testCase.importBand('filter', 'CompDupB', 560, 55);
+            testCase.verifyError(@() UMITRigStore.createCompositeSpectrum( ...
+                'filter', idA, ...
+                struct('category', {'filter'; 'filter'}, ...
+                'spectrumID', {idA; idB}), struct()), ...
+                'Umitoolbox:UMITRigStore:spectrumAlreadyExists');
+        end
+
+        function testRemoveSpectrumProtectedWhileCompositeDependsOnIt(testCase)
+            idA = testCase.importBand('filter', 'CompG', 520, 30);
+            idB = testCase.importBand('filter', 'CompH', 560, 55);
+            compositeID = ['CompGH_' idA(end-7:end)];
+            composite = UMITRigStore.createCompositeSpectrum('filter', compositeID, ...
+                struct('category', {'filter'; 'filter'}, 'spectrumID', {idA; idB}), ...
+                struct());
+            testCase.trackComposite(composite);
+
+            testCase.verifyError(@() UMITRigStore.removeSpectrum('filter', idA), ...
+                'Umitoolbox:UMITRigStore:spectrumInUse');
+            UMITRigStore.removeSpectrum('filter', compositeID);
+            UMITRigStore.removeSpectrum('filter', idA);
+            testCase.verifyError(@() UMITRigStore.getSpectrum('filter', idA), ...
+                'Umitoolbox:UMITRigStore:spectrumNotFound');
+        end
+
         function testBuiltInLibraryAndLegacyNumericalRegression(testCase)
             red = UMITRigStore.getSpectrum('illumination', 'LED_632nm');
             green = UMITRigStore.getSpectrum('illumination', 'LED_521nm');
