@@ -1613,6 +1613,123 @@ classdef EventsManager < handle
             end
         end
 
+        function restoreRepetition(obj, conditionName, repetitionIndex)
+            %RESTOREREPETITION Include again one or more ignored repetitions of a condition.
+            %
+            % Mirror of "removeRepetition" without purge: it sets the
+            % corresponding entries in "selectedEvents" back to true (both ON and
+            % OFF transitions of each repetition). Repetitions that are already
+            % included are left as they are. Unlike removeRepetition it also works
+            % for a condition whose repetitions are all ignored. Purged events are
+            % no longer in the event list and cannot be restored here; use
+            % "clearIgnoredEvents" or re-detect for those. Save to update events.mat.
+            %
+            % Inputs:
+            %   conditionName    : char | string scalar (case-insensitive)
+            %   repetitionIndex  : positive integer scalar or vector
+
+            conditionName = convertStringsToChars(conditionName);
+            validateattributes(conditionName, {'char'}, {'scalartext'}, ...
+                'restoreRepetition', 'conditionName');
+            validateattributes(repetitionIndex, {'numeric'}, ...
+                {'vector', 'real', 'finite', 'positive', 'integer'}, ...
+                'restoreRepetition', 'repetitionIndex');
+
+            if isempty(obj.eventID)
+                error('No events are currently available.')
+            end
+            condID = find(strcmpi(conditionName, obj.eventNameList), 1, 'first');
+            if isempty(condID)
+                error('The condition "%s" does not exist.', conditionName)
+            end
+            if isempty(obj.selectedEvents) || ~islogical(obj.selectedEvents) || ...
+                    ~isequal(size(obj.selectedEvents), size(obj.eventID))
+                obj.selectedEvents = true(size(obj.eventID));
+            end
+
+            repetitionIndex = unique(repetitionIndex(:)', 'stable');
+            idxCond = (obj.eventID == condID);
+            existing = unique(obj.repetitionID(obj.state & idxCond), 'stable');
+            for ii = 1:numel(repetitionIndex)
+                assert(ismember(repetitionIndex(ii), existing), ...
+                    'The repetition index %d is out of bounds for condition "%s".', ...
+                    repetitionIndex(ii), obj.eventNameList{condID});
+            end
+
+            obj.selectedEvents(idxCond & ismember(obj.repetitionID, repetitionIndex)) = true;
+
+            if isscalar(repetitionIndex)
+                fprintf('Repetition "%d" from condition "%s" will be included again!\n', ...
+                    repetitionIndex, obj.eventNameList{condID});
+            else
+                fprintf('Repetitions [%s] from condition "%s" will be included again!\n', ...
+                    num2str(repetitionIndex), obj.eventNameList{condID});
+            end
+        end
+
+        function repetitions = listRepetitions(obj, conditionName)
+            %LISTREPETITIONS Repetitions of a condition with their onset and state.
+            %
+            % Returns a table with one row per repetition of the condition
+            % (in order of appearance):
+            %   Repetition - repetition index (what removeRepetition expects)
+            %   Onset_s    - timestamp of the ON transition, in seconds
+            %   Ignored    - true when the repetition is ignored (selectedEvents false)
+            %
+            % The table is empty when the condition has no events. A condition that
+            % does not exist is an error.
+
+            conditionName = convertStringsToChars(conditionName);
+            validateattributes(conditionName, {'char'}, {'scalartext'}, ...
+                'listRepetitions', 'conditionName');
+
+            condID = find(strcmpi(conditionName, obj.eventNameList), 1, 'first');
+            if isempty(condID)
+                error('The condition "%s" does not exist.', conditionName)
+            end
+
+            Repetition = zeros(0, 1);
+            Onset_s = zeros(0, 1);
+            Ignored = false(0, 1);
+            if ~isempty(obj.eventID)
+                isOn = obj.state(:) & obj.eventID(:) == condID;
+                Repetition = double(obj.repetitionID(isOn));
+                Repetition = Repetition(:);
+                Onset_s = double(obj.timestamps(isOn));
+                Onset_s = Onset_s(:);
+                selected = obj.selectedEvents(:);
+                if isempty(selected) || numel(selected) ~= numel(obj.eventID)
+                    selected = true(numel(obj.eventID), 1);
+                end
+                Ignored = ~selected(isOn);
+            end
+            repetitions = table(Repetition, Onset_s, Ignored);
+        end
+
+        function tf = hasOtherSelectedEvents(obj, conditionName)
+            %HASOTHERSELECTEDEVENTS True when events outside the condition are still included.
+            %
+            % Used by the Events Manager to refuse an action that would leave no
+            % included event at all: ignoring or purging the last remaining
+            % condition, or ignoring every repetition of the only condition that
+            % still has included events. When it returns false, dropping the whole
+            % condition would leave nothing. A condition that does not exist is an
+            % error.
+
+            conditionName = convertStringsToChars(conditionName);
+            validateattributes(conditionName, {'char'}, {'scalartext'}, ...
+                'hasOtherSelectedEvents', 'conditionName');
+            condID = find(strcmpi(conditionName, obj.eventNameList), 1, 'first');
+            if isempty(condID)
+                error('The condition "%s" does not exist.', conditionName)
+            end
+            selected = obj.selectedEvents(:);
+            if isempty(selected) || numel(selected) ~= numel(obj.eventID)
+                selected = true(numel(obj.eventID), 1);
+            end
+            tf = any(selected & obj.eventID(:) ~= condID);
+        end
+
         function clearIgnoredEvents(obj)
             %CLEARIGNOREDEVENTS Reset selectedEvents and PurgedEvents to the default state.
             %

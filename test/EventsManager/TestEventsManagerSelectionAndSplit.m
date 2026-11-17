@@ -44,6 +44,75 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventsManagerSele
             testCase.verifyEqual(st, logical([1;0;1;0]));
         end
 
+        function testRestoreRepetitionUndoesRemoveRepetition(testCase)
+            % DFR-20261006-001: events are A1 A1 B1 B1 A2 A2.
+            prepareLabeledExternalObject(testCase);
+
+            testCase.Obj.removeRepetition('A', 2);
+            testCase.verifyEqual(testCase.Obj.selectedEvents, logical([1;1;1;1;0;0]));
+            testCase.Obj.restoreRepetition('A', 2);
+            testCase.verifyEqual(testCase.Obj.selectedEvents, true(6, 1), ...
+                'Both transitions of the repetition are included again.');
+
+            % Only the named repetition changes; an included one is left alone.
+            testCase.Obj.removeRepetition('A', [1 2]);
+            testCase.Obj.restoreRepetition('A', 1);
+            testCase.verifyEqual(testCase.Obj.selectedEvents, logical([1;1;1;1;0;0]));
+            testCase.Obj.restoreRepetition('A', 1);
+            testCase.verifyEqual(testCase.Obj.selectedEvents, logical([1;1;1;1;0;0]));
+        end
+
+        function testRestoreRepetitionWorksForAWhollyIgnoredCondition(testCase)
+            prepareLabeledExternalObject(testCase);
+
+            testCase.Obj.removeCondition('B');
+            testCase.Obj.restoreRepetition('b', 1);   % case-insensitive
+
+            testCase.verifyEqual(testCase.Obj.selectedEvents, true(6, 1));
+        end
+
+        function testRestoreRepetitionRejectsUnknownConditionAndRepetition(testCase)
+            prepareLabeledExternalObject(testCase);
+            testCase.Obj.removeRepetition('A', 2);
+            before = testCase.Obj.selectedEvents;
+
+            testCase.verifyError(@() testCase.Obj.restoreRepetition('Nope', 1), ?MException);
+            testCase.verifyError(@() testCase.Obj.restoreRepetition('A', 3), ?MException);
+            testCase.verifyError(@() testCase.Obj.restoreRepetition('A', 0), ?MException);
+            testCase.verifyEqual(testCase.Obj.selectedEvents, before);
+        end
+
+        function testListRepetitionsReportsOnsetAndState(testCase)
+            prepareLabeledExternalObject(testCase);
+
+            T = testCase.Obj.listRepetitions('A');
+            testCase.verifyEqual(T.Properties.VariableNames, {'Repetition', 'Onset_s', 'Ignored'});
+            testCase.verifyEqual(T.Repetition, [1; 2]);
+            testCase.verifyEqual(T.Ignored, [false; false]);
+            isOn = testCase.Obj.state & testCase.Obj.eventID == 1;
+            testCase.verifyEqual(T.Onset_s, double(testCase.Obj.timestamps(isOn)), 'AbsTol', 1e-9);
+
+            testCase.Obj.removeRepetition('A', 2);
+            testCase.verifyEqual(testCase.Obj.listRepetitions('A').Ignored, [false; true]);
+            testCase.verifyEqual(testCase.Obj.listRepetitions('b').Repetition, 1);
+            testCase.verifyError(@() testCase.Obj.listRepetitions('Nope'), ?MException);
+        end
+
+        function testHasOtherSelectedEventsSaysIfDroppingLeavesEvents(testCase)
+            prepareLabeledExternalObject(testCase);
+
+            testCase.verifyTrue(testCase.Obj.hasOtherSelectedEvents('A'));
+            testCase.verifyTrue(testCase.Obj.hasOtherSelectedEvents('b'));
+
+            testCase.Obj.removeCondition('B');
+            testCase.verifyFalse(testCase.Obj.hasOtherSelectedEvents('A'), ...
+                'A is the last condition with included events.');
+            testCase.verifyTrue(testCase.Obj.hasOtherSelectedEvents('B'), ...
+                'Dropping B again would still leave A.');
+
+            testCase.verifyError(@() testCase.Obj.hasOtherSelectedEvents('Nope'), ?MException);
+        end
+
         function testClearIgnoredEventsResetsSelection(testCase)
             prepareLabeledExternalObject(testCase);
 
