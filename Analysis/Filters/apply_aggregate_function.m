@@ -198,7 +198,9 @@ for iEntry = 1:numel(entryNames)
     switch dimName
 
         case 'T'
-            permOrder = [idxTarget setdiff(1:ndims(thisData), idxTarget)];
+            % The axis count comes from the dimension names, not ndims: a
+            % trailing singleton axis (E = 1) is absent from the array.
+            permOrder = [idxTarget setdiff(1:numel(thisDims), idxTarget)];
             dataP = permute(thisData, permOrder);
             szP = size(dataP);
             dataP = reshape(dataP, szP(1), []);
