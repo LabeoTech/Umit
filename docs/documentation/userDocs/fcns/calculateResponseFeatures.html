@@ -73,6 +73,9 @@ grand_parent: Functions
     <p>
         The AUC amplitude is calculated as the area under the baseline-corrected response in the post-event time window, ignoring <samp>NaN</samp> samples. The peak amplitude and the AUC amplitude are reported for every ROI, even when the response does not cross the threshold. With negative polarity, the trace is sign-flipped before the features are computed, so the amplitudes report the positive magnitude of the negative-going response.
     </p>
+    <p>
+        <b>First event instance with a filled baseline.</b> When the first event comes sooner than the baseline period after the start of the recording, <a href="split_data_by_event.html"><samp>split_data_by_event</samp></a> fills the missing baseline frames of that trial with the mean of the baseline frames it has. These frames have no noise, so the standard deviation of that baseline is too small and the onset threshold too low. The function works out how many frames were filled from the time of the first event (<samp>eventInfo.onsetSec</samp>), the baseline period and the frame rate, and raises a warning. (For files created before <samp>onsetSec</samp> existed, it recognizes the filled frames as a run of at least 2 identical values at the beginning of the baseline of the first instance.) The standard deviation of the first instance is then replaced by the mean of the baseline standard deviations of the other selected trials of the same condition. At least 2 trials of the condition are needed; otherwise the standard deviation is kept, and the onset latency and peak latency of the first instance may be too early.
+    </p>
     <p style="text-align: center;">
         <img src="../../assets/img/calculateResponseFeatures_fig1.png" alt="calculateResponseFeatures" width="440"><br>
         <i>Response features</i>

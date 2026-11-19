@@ -95,6 +95,15 @@ grand_parent: Functions
       <p>
         If trials have unequal lengths, the output is cropped to the shortest trial. UMT inputs are processed in RAM and keep a UMT output.
       </p>
+      <h4 id="first-event-before-baseline">First event sooner than the baseline period</h4>
+      <p>
+        The trial of the first event starts one baseline period before it. If the first event happens sooner than that after the start of the recording, part of its baseline is missing. The missing baseline frames of this trial are filled, pixel by pixel, with the mean of the baseline frames that the trial does have, so every trial keeps the same length and the same position of the event. A warning (<samp>Umitoolbox:split_data_by_event:firstTrialBaselinePadded</samp>) reports how many frames were filled and from how many valid frames.
+      </p>
+      <ul>
+        <li>At least one frame of the recording must precede the first event; otherwise there is nothing to fill from and the function stops with an error.</li>
+        <li>Only the first trial is filled. If any other event starts before the recording, or an event starts after its end, the function stops with an error that lists the events concerned, the baseline period and the length of the recording.</li>
+        <li>The filled frames have no noise, so the baseline of the first trial is less variable than the others (<a href="calculateResponseFeatures.html"><samp>calculateResponseFeatures</samp></a> corrects its standard deviation). To avoid the fill, reduce the <samp>baselinePeriod</samp> parameter in the EventsManager (<samp>setBaselinePeriod</samp>) so that it is not longer than the time before the first event, and run this function again. All trials then use the shorter baseline.</li>
+      </ul>
     </div>
 
     <h3 id="parameters">Parameters</h3>
