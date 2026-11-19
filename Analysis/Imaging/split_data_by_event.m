@@ -52,6 +52,12 @@ function outData = split_data_by_event(data, SaveFolder, varargin)
 %         EventsManager.splitDataByEvents, and keep a UMT output. The UMT
 %         must hold a single entry, with a T axis as its last axis. Already
 %         event-split data (an entry with T and E) are rejected.
+%       - The first event instance may come sooner than the baseline period
+%         after the recording start. The baseline frames its trial lacks are
+%         filled, pixel by pixel, with the mean of the baseline frames it has
+%         (at least one is needed, i.e. the onset is after the recording start),
+%         and a warning (Umitoolbox:split_data_by_event:firstTrialBaselinePadded)
+%         is raised. Any other event starting outside the recording is an error.
 %       - Every event instance of events.mat is saved, including the ones the
 %         user removed (ignored), so the E axis maps one to one onto
 %         events.mat (.dat header Phase 8b). Removal affects display and
@@ -105,9 +111,19 @@ frameRateHz = resolveDataInfoValue('frameRateHz', opts.Results.FrameRateHz, [], 
     mfilename, 'OwnValue', src.ownRate, 'OwnSource', 'the UMT entry meta.FrameRateHz');
 ev = EventsManager(SaveFolder);
 
+% Same check as the .dat path, so an unusable events.mat fails with an
+% explanation instead of producing an empty split.
+% The check also warns when the first trial's baseline has to be filled.
+iPlanTrials( ...
+    ev.getFrameMatrix(size(src.dataYXT, 3), '', [], ...
+    'FrameRateHz', frameRateHz, 'IncludeIgnored', true), ...
+    ev, size(src.dataYXT, 3), frameRateHz);
+
 dataByEv = ev.splitDataByEvents(src.dataYXT, 'FrameRateHz', frameRateHz, ...
-    'IncludeIgnored', true);
-assert(ndims(dataByEv) == 4, ...
+    'IncludeIgnored', true, 'PadFirstBaseline', true);
+% A single event instance comes back Y-X-T (MATLAB drops the trailing size-1
+% E axis); the reshape below restores it.
+assert(ismember(ndims(dataByEv), [3 4]), ...
     'Umitoolbox:split_data_by_event:invalidSplitOutput', ...
     'EventsManager.splitDataByEvents returned unexpected data dimensions.');
 
@@ -197,16 +213,11 @@ function outFile = iSplitDatFile(inFile, info, SaveFolder, ev, frameRateHz, defa
 % result equals the in-RAM split. Only one trial, in X slabs sized from the
 % available RAM, is held in memory.
 
-frMat = ev.getFrameMatrix(datAxisSize(info, 'T'), '', [], ...
+nFramesData = datAxisSize(info, 'T');
+frMat = ev.getFrameMatrix(nFramesData, '', [], ...
     'FrameRateHz', frameRateHz, 'IncludeIgnored', true);
 
-firstNaNCol = find(any(isnan(frMat), 1), 1, 'first');
-if ~isempty(firstNaNCol)
-    frMat = frMat(:, 1:firstNaNCol - 1);
-end
-assert(~isempty(frMat), ...
-    'Umitoolbox:split_data_by_event:noEventFrames', ...
-    'No event instance of events.mat has frames inside the recording.');
+[frMat, nLead, evOnsetFrame] = iPlanTrials(frMat, ev, nFramesData, frameRateHz);
 
 nTrials = size(frMat, 1);
 nFramesPerTrial = size(frMat, 2);
@@ -238,7 +249,17 @@ for iTrial = 1:nTrials
     outFrames = (iTrial - 1) * nFramesPerTrial + (1:nFramesPerTrial);
     for c = 1:nChunks
         xIdx = ((c-1) * chunkX + 1):min(c * chunkX, Nx);
-        slab = single(spatialSlabIO('read', slabIn, xIdx, frMat(iTrial, :)));
+        validCols = ~isnan(frMat(iTrial, :));
+        if all(validCols)
+            slab = single(spatialSlabIO('read', slabIn, xIdx, frMat(iTrial, :)));
+        else
+            % Only the first trial can lack its leading baseline frames: read
+            % what exists, then fill the rest with the baseline mean.
+            slab = nan(Ny, numel(xIdx), nFramesPerTrial, 'single');
+            slab(:, :, validCols) = single(spatialSlabIO('read', slabIn, xIdx, ...
+                frMat(iTrial, validCols)));
+            slab = padLeadingBaseline(slab, nLead, evOnsetFrame);
+        end
         spatialSlabIO('write', slabOut, xIdx, slab, outFrames);
     end
     fprintf('Trial %i/%i written\n', iTrial, nTrials)
@@ -250,6 +271,92 @@ clear cIn cOut; % close both files before the move below
 [moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
 assert(moveOk, 'Umitoolbox:split_data_by_event:outputMoveFailed', ...
     'Failed to move "%s" onto "%s": %s', tmpFile, outFile, moveMsg);
+end
+
+function [frMat, nLead, evOnsetFrame] = iPlanTrials(frMat, ev, nFrames, frameRateHz)
+%IPLANTRIALS Crop the trial frames, or fail with a detailed message.
+%
+% FRMAT is EventsManager.getFrameMatrix's output (IncludeIgnored). The first
+% trial may start before the recording (its missing baseline frames are filled
+% later with the baseline mean, with a warning); NLEAD is how many. It fails
+% when there is no event instance, when any other trial starts outside the
+% recording, or when the first trial has no recording frame before its onset.
+
+if isempty(frMat)
+    error('Umitoolbox:split_data_by_event:noEventFrames', ...
+        ['events.mat has no event instance to split. Detect the events ' ...
+         '(and check that they were not all removed) before running this function.']);
+end
+
+evOnsetFrame = round(double(ev.baselinePeriod) * frameRateHz);
+[frMat, nLead, ok, msg] = splitTrialFramePlan(frMat, evOnsetFrame, frameRateHz);
+if ~ok
+    error('Umitoolbox:split_data_by_event:noEventFrames', '%s', ...
+        iDescribeOutOfRecording(ev, nFrames, frameRateHz));
+end
+if nLead > 0
+    warning('Umitoolbox:split_data_by_event:firstTrialBaselinePadded', '%s', msg);
+end
+end
+
+function msg = iDescribeOutOfRecording(ev, nFrames, frameRateHz)
+%IDESCRIBEOUTOFRECORDING Explain why a trial starts outside the recording.
+%
+% Recomputes the start frame of every event instance with the same formula as
+% EventsManager.getFrameMatrix and lists the ones that begin before frame 1 or
+% after the last frame.
+
+durationS = nFrames / frameRateHz;
+msg = sprintf(['An event instance of events.mat starts outside the recording, so no ' ...
+    'trial could be split.\nRecording: %d frames at %.4g Hz (%.4g s).'], ...
+    nFrames, frameRateHz, durationS);
+
+try
+    onsetMask = ev.state & ~ev.PurgedEvents;
+    frOn = ceil(ev.timestamps(onsetMask) * frameRateHz);
+    frStart = frOn - round(ev.baselinePeriod * frameRateHz) + 1;
+    msg = sprintf('%s\nBaseline period: %.4g s. Event onsets: %.4g s to %.4g s.', ...
+        msg, ev.baselinePeriod, min(ev.timestamps(onsetMask)), max(ev.timestamps(onsetMask)));
+
+    badMask = frStart < 1 | frStart > nFrames;
+    % The first event may start before the recording as long as its trial holds
+    % at least one recording frame of its baseline (that baseline is then filled).
+    evOnsetFrame = round(double(ev.baselinePeriod) * frameRateHz);
+    if numel(frOn) >= 2
+        firstLen = frOn(2) - frOn(1);
+    else
+        firstLen = nFrames - frStart(1) + 1;
+    end
+    nLead1 = 1 - frStart(1);
+    if nLead1 > 0 && min(evOnsetFrame, firstLen) - nLead1 >= 1 && frStart(1) <= nFrames
+        badMask(1) = false;
+    end
+    bad = find(badMask);
+    if ~isempty(bad)
+        nShow = min(numel(bad), 5);
+        lines = strings(nShow, 1);
+        for k = 1:nShow
+            j = bad(k);
+            lines(k) = sprintf('  event %d: starts at frame %d', j, frStart(j));
+        end
+        msg = sprintf('%s\nStarting outside frames 1-%d (%d of %d event instances):\n%s', ...
+            msg, nFrames, numel(bad), numel(frStart), strjoin(lines, newline));
+        if numel(bad) > nShow
+            msg = sprintf('%s\n  ... and %d more', msg, numel(bad) - nShow);
+        end
+    end
+catch
+    % Diagnostic detail is best-effort; fall through to the generic hints.
+end
+
+msg = sprintf(['%s\nOnly the first event may start before the recording, and only ' ...
+    'if its trial holds at least one recording frame of its baseline (its missing ' ...
+    'baseline is then filled).\nLikely causes: the baseline period is longer than the time ' ...
+    'before an event (any event but the first, or a first event at the very start); ' ...
+    'the events were detected on a different (longer) recording; or the data frame ' ...
+    'rate differs from the one used for the events (e.g. after temporal binning). ' ...
+    'Shorten the baseline, purge the offending event, or re-detect the events on ' ...
+    'this recording.'], msg);
 end
 
 function src = iResolveInput(data, SaveFolder)

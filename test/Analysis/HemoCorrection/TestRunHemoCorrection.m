@@ -383,6 +383,51 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestRunHemoCorrection
             testCase.verifyLessThan(max(abs(outArray - single(loadData(fullfile(s.folder, outDat)))), [], 'all'), 1e-5);
         end
 
+        function testEventSplitWithAFilledFirstTrialIsCorrected(testCase)
+            % The first event comes sooner than the baseline: split_data_by_event
+            % filled that trial's missing baseline frames. The correction must
+            % still run (no NaN frames), with the other trials exact.
+            folder = fullfile(testCase.TempFolder, 'filledFirst');
+            mkdir(folder);
+            rate = 10;
+            nT = 100;
+            [Ny, Nx] = deal(6, 9);                         % non-square on purpose
+            stream = RandStream('mt19937ar', 'Seed', 5);
+            ref = single(1 + 0.05 * rand(stream, Ny, Nx, nT));
+            fluo = single(1 + 0.05 * rand(stream, Ny, Nx, nT));
+
+            onsets = [1 4 7];                              % baseline 2 s: first trial starts at frame -9
+            timestamps = reshape([onsets; onsets + 0.5], [], 1);
+            state = repmat([true; false], numel(onsets), 1);
+            eventID = ones(numel(timestamps), 1, 'uint16');
+            eventNameList = {'A'};
+            selectedEvents = true(size(eventID));
+            baselinePeriod = 2;
+            b_hasExternalSignal = true;
+            save(fullfile(folder, 'events.mat'), 'timestamps', 'state', 'eventID', ...
+                'eventNameList', 'selectedEvents', 'baselinePeriod', 'b_hasExternalSignal');
+
+            ev = EventsManager(folder);
+            fluoTrials = single(ev.splitDataByEvents(fluo, 'FrameRateHz', rate, ...
+                'IncludeIgnored', true, 'PadFirstBaseline', true));
+            refTrials = single(ev.splitDataByEvents(ref, 'FrameRateHz', rate, ...
+                'IncludeIgnored', true, 'PadFirstBaseline', true));
+            testCase.assertFalse(any(isnan(fluoTrials), 'all'));
+            saveData(fullfile(folder, 'ref.dat'), ref, 'DimNames', {'Y','X','T'}, ...
+                'FrameRateHz', rate);
+            saveData(fullfile(folder, 'fluoByEv.dat'), fluoTrials, ...
+                'DimNames', {'Y','X','T','E'}, 'FrameRateHz', rate);
+
+            out = HemoCorrection('fluoByEv.dat', folder, 'Algorithm', 'Ratiometric', ...
+                'Red', false, 'Green', false, 'Amber', false, 'Other', 'ref.dat');
+
+            result = single(loadData(fullfile(folder, out)));
+            testCase.verifySize(result, size(fluoTrials));
+            testCase.verifyFalse(any(isnan(result), 'all'));
+            expected = iExpectedRatiometric(fluoTrials, refTrials);
+            testCase.verifyLessThan(max(abs(result(:, :, :, 2:3) - expected(:, :, :, 2:3)), [], 'all'), 1e-5);
+        end
+
         function testEventSplitRejectsUnmatchedEventsAndReferenceDurations(testCase)
             s = iBuildEventFolder(testCase);
             args = {'Algorithm', 'Ratiometric', 'Red', false, 'Green', false, ...

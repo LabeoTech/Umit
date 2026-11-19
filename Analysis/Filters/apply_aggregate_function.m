@@ -394,14 +394,15 @@ else
     % Continuous Y-X-T: split the instances of events.mat and reduce them.
     evObj = EventsManager(SaveFolder);
     frameRateHz = resolveDataInfoValue('frameRateHz', explicitRate, dataFile, 'apply_aggregate_function');
-    [frMat, plan] = iEventFramePlan(evObj, nT, frameRateHz);
+    [frMat, plan, nLead, evOnsetFrame] = iEventFramePlan(evObj, nT, frameRateHz);
     nInst = size(frMat, 1);
     nCond = numel(plan.conditionID);
     trialLen = size(frMat, 2);
     outDims = {'Y','X','T','E'};
     outSizes = [nY, nX, trialLen, nCond];
     reduceSlab = @(slab) EventsManager.reduceByCondition( ...
-        iInstancesFromFrames(slab, frMat), plan, @(x) iCalcAgg(x, aggFcn, 4), 4);
+        iInstancesFromFrames(slab, frMat, nLead, evOnsetFrame), plan, ...
+        @(x) iCalcAgg(x, aggFcn, 4), 4);
     % Input slab, all instances (and a permuted copy), and the aggregate.
     bytesPerX = nY * (nT + 2 * trialLen * nInst + trialLen * nCond) * 4;
 end
@@ -469,11 +470,14 @@ end
 % =========================================================================
 % Helper: event frames and aggregation plan of a continuous recording
 % =========================================================================
-function [frMat, plan] = iEventFramePlan(evObj, nT, frameRateHz)
+function [frMat, plan, nLead, evOnsetFrame] = iEventFramePlan(evObj, nT, frameRateHz)
 %IEVENTFRAMEPLAN Frame matrix of every instance and its aggregation plan.
 %
 % Every instance is split, ignored ones included; the plan (EventsManager)
 % excludes the ignored ones from each condition's aggregate (Phase 8c).
+% As in split_data_by_event, the first trial may start before the recording:
+% NLEAD is how many leading baseline frames it lacks (filled by
+% iInstancesFromFrames) and a warning is raised.
 
 [frMat, conditionIDlist] = evObj.getFrameMatrix(nT, 'FrameRateHz', frameRateHz, ...
     'IncludeIgnored', true);
@@ -483,9 +487,19 @@ if isempty(frMat)
 end
 % Same trial length as EventsManager.splitDataByEvents (split_data_by_event):
 % crop every trial from the first frame that any instance lacks.
-firstNaNCol = find(any(isnan(frMat), 1), 1, 'first');
-if ~isempty(firstNaNCol)
-    frMat(:, firstNaNCol:end) = [];
+evOnsetFrame = round(double(evObj.baselinePeriod) * frameRateHz);
+[frPlanned, nLead, planOk, padMsg] = splitTrialFramePlan(frMat, evOnsetFrame, frameRateHz);
+if planOk
+    frMat = frPlanned;
+    if nLead > 0
+        warning('apply_aggregate_function:firstTrialBaselinePadded', '%s', padMsg);
+    end
+else
+    nLead = 0;
+    firstNaNCol = find(any(isnan(frMat), 1), 1, 'first');
+    if ~isempty(firstNaNCol)
+        frMat(:, firstNaNCol:end) = [];
+    end
 end
 evInfo = evObj.exportEventInfo('FrameRateHz', frameRateHz, 'IncludeIgnored', true);
 assert(isequal(double(evInfo.eventID(:)), double(conditionIDlist(:))), ...
@@ -497,8 +511,11 @@ end
 % =========================================================================
 % Helper: Y x X x T x E trials of every instance from a frame matrix
 % =========================================================================
-function dataYXTE = iInstancesFromFrames(dataYXT, frMat)
+function dataYXTE = iInstancesFromFrames(dataYXT, frMat, nLead, evOnsetFrame)
 %IINSTANCESFROMFRAMES Trials of DATAYXT (rows of FRMAT); NaN outside the data.
+%
+% The leading baseline frames the first trial lacks (NLEAD) are filled with
+% the mean of its valid baseline frames, as in split_data_by_event.
 
 nInst = size(frMat, 1);
 dataYXTE = nan(size(dataYXT, 1), size(dataYXT, 2), size(frMat, 2), nInst, 'single');
@@ -507,6 +524,9 @@ for iInst = 1:nInst
     if any(validMask)
         dataYXTE(:, :, validMask, iInst) = dataYXT(:, :, frMat(iInst, validMask));
     end
+end
+if nLead > 0
+    dataYXTE(:, :, :, 1) = padLeadingBaseline(dataYXTE(:, :, :, 1), nLead, evOnsetFrame);
 end
 end
 

@@ -2129,6 +2129,12 @@ classdef EventsManager < handle
             %     getEventInstances). Use it whenever split data is SAVED, so E maps
             %     onto events.mat; selectedList (4th output) flags which instances
             %     are selected (.dat header Phase 8b).
+            %   - 'PadFirstBaseline' (Name-Value, default false): when true, the
+            %     first trial may start before the recording; its missing leading
+            %     baseline frames are filled, pixel by pixel, with the mean of its
+            %     valid baseline frames (see splitTrialFramePlan, padLeadingBaseline).
+            %     Errors if another trial starts outside the recording or the first
+            %     one has no recording frame before its onset. Needs 'FrameRateHz'.
 
             p = inputParser();
             addRequired(p, 'obj');
@@ -2138,6 +2144,7 @@ classdef EventsManager < handle
             addParameter(p, 'FrameRateHz', [], @(x) isempty(x) || ...
                 (isnumeric(x) && isscalar(x) && isreal(x) && isfinite(x) && x > 0))
             addParameter(p, 'IncludeIgnored', false, @(x) islogical(x) && isscalar(x))
+            addParameter(p, 'PadFirstBaseline', false, @(x) islogical(x) && isscalar(x))
             parse(p, obj, data, varargin{:});
 
             [frMat, conditionIDlist, repetitionList, selectedList] = obj.getFrameMatrix( ...
@@ -2147,6 +2154,19 @@ classdef EventsManager < handle
             if isempty(frMat)
                 dataByEv = nan(size(data,1), size(data,2), 0, 0, 'single');
                 return
+            end
+
+            nLead = 0;
+            evOnsetFrame = 0;
+            if p.Results.PadFirstBaseline
+                % The first trial may start before the recording: crop the
+                % others as usual and fill its missing baseline below.
+                evOnsetFrame = round(double(obj.baselinePeriod) * p.Results.FrameRateHz);
+                [frMat, nLead, b_planOk] = splitTrialFramePlan(frMat, evOnsetFrame, ...
+                    p.Results.FrameRateHz);
+                assert(b_planOk, 'Umitoolbox:EventsManager:trialOutsideRecording', ...
+                    ['An event trial starts outside the recording, or the first trial ' ...
+                     'has no recording frame before its onset.']);
             end
 
             nTrials = size(frMat, 1);
@@ -2161,7 +2181,9 @@ classdef EventsManager < handle
                 dataByEv(:,:,b_validFrames(ii,:),ii) = data(:,:,frameIdx);
             end
 
-            if any(isnan(frMat(:)))
+            if p.Results.PadFirstBaseline
+                dataByEv(:,:,:,1) = padLeadingBaseline(dataByEv(:,:,:,1), nLead, evOnsetFrame);
+            elseif any(isnan(frMat(:)))
                 disp('Cropping trials to shortest length...');
                 firstNaNCol = find(any(isnan(frMat),1), 1, 'first');
                 if ~isempty(firstNaNCol)
@@ -2192,6 +2214,7 @@ classdef EventsManager < handle
             %           - eventID, repetitionIndex
             %           - selected       (logical; also as selectedEvents)
             %           - durationSec    (ON to OFF time; NaN when unknown)
+            %           - onsetSec       (ON timestamp, s from the recording start)
 
             p = inputParser();
             addParameter(p, 'FrameRateHz', [], @(x) isempty(x) || ...
@@ -2214,6 +2237,7 @@ classdef EventsManager < handle
             evInfo.selected = inst.selected(keep);
             evInfo.selectedEvents = evInfo.selected;
             evInfo.durationSec = inst.durationSec(keep);
+            evInfo.onsetSec = inst.onsetSec(keep);
         end
 
         function inst = getEventInstances(obj)
