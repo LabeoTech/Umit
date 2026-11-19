@@ -66,7 +66,9 @@ switch version
         % of event-split data (.dat header Phase 8b); nInstances: instances
         % reduced into each aggregated row (Phase 8c). Optional, so older
         % files remain valid (see normalizeOptionalEventInfoFields).
-        schema.optionalEventInfoFields = {'baselinePeriod', 'selected', 'durationSec', 'nInstances'};
+        % onsetSec: ON timestamp (s) of each event instance, instance rows only.
+        schema.optionalEventInfoFields = {'baselinePeriod', 'selected', 'durationSec', ...
+            'nInstances', 'onsetSec'};
 
         schema.allowedEventAxisModes = {'instances', 'aggregated_repetitions'};
 

@@ -61,6 +61,19 @@ function outData = calculateResponseFeatures(data, varargin)
 %         response peaking on that frame reports a latency of 0 s.
 %       - AUCamplitude integrates the baseline-corrected response over the
 %         selected window with unit frame spacing, omitting NaN samples.
+%       - If the first event instance came sooner than the baseline period
+%         after the recording start, split_data_by_event filled the baseline
+%         frames that trial lacks with the mean of the ones it has. How many
+%         follows from eventInfo.onsetSec (ON time of the first instance),
+%         baselinePeriod and FrameRateHz; for files without onsetSec they are
+%         recognised by a leading run of identical values (at least 2
+%         frames, not the whole baseline) in the first E slice. The baseline
+%         standard deviation of that trial is then replaced, per ROI, by the
+%         mean of the baseline standard deviations of the other selected
+%         trials of its condition (at least 2 trials are needed), and
+%         warning Umitoolbox:calculateResponseFeatures:firstTrialBaselineFilled
+%         is raised. Without another trial, the std is kept and the warning
+%         says the first instance's onset threshold may be too low.
 %       - The baseline level is the median (not mean) of the baseline
 %         period, matching the convention used elsewhere in Analysis/
 %         (normalizeBSLN, apply_detrend, genAmplitudeMaps).
@@ -206,6 +219,11 @@ featureNames = { ...
 nMeasure = numel(featureNames);
 outVals = nan(nROI, nMeasure, nE, 'single');
 
+% Baseline standard deviation of every trial (the onset threshold's spread).
+stdBsln = reshape(std(roiData(:, 1:baselineFrames, :), 0, 2, 'omitnan'), nROI, nE);
+stdBsln = iCorrectFilledFirstTrialStd(stdBsln, roiData(:, 1:baselineFrames, 1), ...
+    data.eventInfo, round(baselinePeriodSec * frameRateHz), frameRateHz);
+
 for iEvent = 1:nE
     avgResp = roiData(:, :, iEvent);
 
@@ -214,7 +232,7 @@ for iEvent = 1:nE
     end
 
     avgBsln = median(avgResp(:, 1:baselineFrames), 2, 'omitnan');
-    thr = avgBsln + STD_threshold .* std(avgResp(:, 1:baselineFrames), 0, 2, 'omitnan');
+    thr = avgBsln + STD_threshold .* stdBsln(:, iEvent);
 
     windowResp = avgResp(:, frOn:frOff);
     [peakValue, peakIdxLocal] = max(windowResp, [], 2);
@@ -346,6 +364,82 @@ if isnumeric(x) && isvector(x) && numel(x) == 2
     x = double(x(:).');
     tf = all(isfinite(x)) && all(x >= 0) && x(1) <= x(2);
 end
+end
+
+function stdBsln = iCorrectFilledFirstTrialStd(stdBsln, firstBaseline, eventInfo, evOnsetFrame, frameRateHz)
+%ICORRECTFILLEDFIRSTTRIALSTD Replace the baseline std of a filled first trial.
+%
+%   split_data_by_event fills the baseline frames the first trial lacks (the
+%   first event came sooner than the baseline period after the recording
+%   start) with the mean of the baseline frames it has. Those frames carry
+%   no noise, so the std of that baseline is too small and the onset
+%   threshold too low.
+%
+%   How many frames were filled follows from the event timing, as in
+%   EventsManager.getFrameMatrix: evOnsetFrame - ceil(onsetSec(1)*rate), when
+%   positive, with eventInfo.onsetSec the ON time of the first instance
+%   (s from the recording start). Files written before eventInfo.onsetSec
+%   existed lack it: then the filled frames are recognised by a leading run
+%   of identical values in every ROI (at least 2 frames, not the whole
+%   baseline).
+%
+%   The std of the first trial is then taken from the other trials of its
+%   condition (ignored instances excluded): the mean of their baseline
+%   stds, per ROI. A condition with no other trial cannot be corrected: a
+%   warning says so and the std is kept.
+%
+%   STDBSLN is ROI-by-E; FIRSTBASELINE is the ROI-by-baselineFrames data of
+%   the first E slice.
+
+if isfield(eventInfo, 'onsetSec') && numel(eventInfo.onsetSec) == size(stdBsln, 2) && ...
+        ~isnan(eventInfo.onsetSec(1))
+    nFilled = max(0, evOnsetFrame - ceil(double(eventInfo.onsetSec(1)) * frameRateHz));
+    if nFilled < 1 || nFilled >= size(firstBaseline, 2)
+        return
+    end
+else
+    nFilled = 1;
+    while nFilled < size(firstBaseline, 2) && ...
+            all(firstBaseline(:, nFilled + 1) == firstBaseline(:, 1))
+        nFilled = nFilled + 1;
+    end
+    if nFilled < 2 || nFilled >= size(firstBaseline, 2)
+        % No filled run, or the whole baseline is constant (a filled trial
+        % always keeps at least one real baseline frame): nothing to correct.
+        return
+    end
+end
+
+nE = size(stdBsln, 2);
+eventID = eventInfo.eventID(:);
+selected = true(nE, 1);
+if isfield(eventInfo, 'selected') && numel(eventInfo.selected) == nE
+    selected = logical(eventInfo.selected(:));
+end
+pool = [];
+if numel(eventID) == nE
+    pool = find(eventID == eventID(1) & selected);
+    pool(pool == 1) = [];
+end
+
+if isempty(pool)
+    warning('Umitoolbox:calculateResponseFeatures:firstTrialBaselineFilled', ...
+        ['The first %d baseline frames of the first event instance were filled by ' ...
+         'split_data_by_event (the event came sooner than the baseline period after ' ...
+         'the recording start). Its baseline ' ...
+         'standard deviation is too small, but its condition has no other selected trial ' ...
+         'to take it from (at least 2 are needed), so it was kept: the onset ' ...
+         'threshold, OnsetLatency and PeakLatency of the first instance may be too early.'], nFilled);
+    return
+end
+
+stdBsln(:, 1) = mean(stdBsln(:, pool), 2, 'omitnan');
+warning('Umitoolbox:calculateResponseFeatures:firstTrialBaselineFilled', ...
+    ['The first %d baseline frames of the first event instance were filled by ' ...
+     'split_data_by_event (the event came sooner than the baseline period after ' ...
+     'the recording start). Its baseline ' ...
+     'standard deviation was replaced by the mean of the %d other selected trial(s) of ' ...
+     'its condition.'], nFilled, numel(pool));
 end
 
 function area = iTrapzOmitNaN(values)

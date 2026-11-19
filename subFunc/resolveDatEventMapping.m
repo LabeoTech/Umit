@@ -26,8 +26,8 @@ function mapping = resolveDatEventMapping(Info, saveFolder)
 %       nEvents   - number of event instances in events.mat (NaN without)
 %       eventInfo - UMT-style eventInfo with one row per E slice:
 %                   eventID, repetitionIndex, eventName (string),
-%                   eventAxisMode ('instances'), selected, durationSec, and
-%                   baselinePeriod when known.
+%                   eventAxisMode ('instances'), selected, durationSec,
+%                   onsetSec (matched only), and baselinePeriod when known.
 %                   When matched it comes from events.mat. When aggregated
 %                   it is the aggregated eventInfo of the conditions, with
 %                   nInstances and selected recomputed from the CURRENT
@@ -105,6 +105,7 @@ eventInfo.eventName = inst.eventName(:);
 eventInfo.eventAxisMode = 'instances';
 eventInfo.selected = logical(inst.selected(:));
 eventInfo.durationSec = inst.durationSec(:);
+eventInfo.onsetSec = inst.onsetSec(:);
 if ~isempty(baselinePeriod)
     eventInfo.baselinePeriod = baselinePeriod;
 end

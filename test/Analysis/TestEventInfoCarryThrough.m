@@ -29,6 +29,38 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventInfoCarryThr
     end
 
     methods (Test)
+        function onsetSecIsKeptByTAggregationAndDroppedByEAggregation(testCase)
+            umt = testCase.UMT;
+            umt.eventInfo.onsetSec = [1; 2.5; 4];
+            umt = appendUMTEventInfo(umt, 'eventInfo', umt.eventInfo, 'overwrite', true);
+            testCase.verifyEqual(umt.eventInfo.onsetSec, [1; 2.5; 4]);
+
+            outT = apply_aggregate_function(umt, testCase.Folder, 'dimensionName', 'T');
+            testCase.verifyEqual(outT.eventInfo.onsetSec, [1; 2.5; 4]);
+
+            % One row per condition: a per-instance onset no longer applies.
+            outE = apply_aggregate_function(umt, testCase.Folder, 'dimensionName', 'E');
+            testCase.verifyFalse(isfield(outE.eventInfo, 'onsetSec'));
+        end
+
+        function onsetSecWithTheWrongLengthOrANegativeValueIsRejected(testCase)
+            info = testCase.UMT.eventInfo;
+
+            info.onsetSec = [1; 2];
+            testCase.verifyError(@() appendUMTEventInfo(testCase.UMT, ...
+                'eventInfo', info, 'overwrite', true), ...
+                'Umitoolbox:appendUMTEventInfo:invalidInput');
+
+            info.onsetSec = [1; -2; 3];
+            testCase.verifyError(@() appendUMTEventInfo(testCase.UMT, ...
+                'eventInfo', info, 'overwrite', true), ...
+                'Umitoolbox:appendUMTEventInfo:invalidInput');
+
+            info.onsetSec = [1; NaN; 3];                     % NaN = unknown is allowed
+            out = appendUMTEventInfo(testCase.UMT, 'eventInfo', info, 'overwrite', true);
+            testCase.verifyEqual(out.eventInfo.onsetSec, [1; NaN; 3]);
+        end
+
         function aggregateOverTKeepsFlags(testCase)
             out = apply_aggregate_function(testCase.UMT, testCase.Folder, 'dimensionName', 'T');
             iVerifyCarried(testCase, out, testCase.UMT.eventInfo);

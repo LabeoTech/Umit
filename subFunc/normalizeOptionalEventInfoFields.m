@@ -10,6 +10,10 @@ function eventInfo = normalizeOptionalEventInfoFields(eventInfo, eventInfoIn, er
 %       selected    - logical, false for ignored instances (.dat header 8b);
 %                     for aggregated rows, true when the slice has data
 %       durationSec - ON-to-OFF duration (s), non-negative or NaN (8b)
+%       onsetSec    - ON timestamp (s) of each event instance (instance rows
+%                     only), non-negative or NaN. Time zero is the recording
+%                     start, so with baselinePeriod and FrameRateHz it tells
+%                     how much of a trial's baseline lies before the recording.
 %       nInstances  - aggregated rows only: number of selected instances
 %                     reduced into the slice, non-negative integer (8c)
 %   Pass EVENTINFO = struct() with eventID set, or the same struct as
@@ -34,6 +38,16 @@ if isfield(eventInfoIn, 'durationSec') && ~isempty(eventInfoIn.durationSec)
              'with one non-negative value (or NaN) per row.']);
     end
     eventInfo.durationSec = double(dur(:));
+end
+
+if isfield(eventInfoIn, 'onsetSec') && ~isempty(eventInfoIn.onsetSec)
+    ons = eventInfoIn.onsetSec;
+    if ~isnumeric(ons) || numel(ons) ~= nE || any(ons(:) < 0)
+        error(errID, ...
+            ['Operation aborted. eventInfo.onsetSec must be a numeric vector ' ...
+             'with one non-negative value (or NaN) per row.']);
+    end
+    eventInfo.onsetSec = double(ons(:));
 end
 
 if isfield(eventInfoIn, 'nInstances') && ~isempty(eventInfoIn.nInstances)

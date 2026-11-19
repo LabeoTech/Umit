@@ -36,6 +36,8 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestResolveDatEventMa
             testCase.verifyEqual(m.eventInfo.eventName, ["A"; "B"; "A"]);
             testCase.verifyEqual(m.eventInfo.selected, logical([1; 1; 0]));
             testCase.verifyEqual(m.eventInfo.durationSec, [0.1; 0.1; 0.1], 'AbsTol', 1e-6);
+            expectedOnsets = EventsManager(testCase.Folder).getEventInstances().onsetSec;
+            testCase.verifyEqual(m.eventInfo.onsetSec, expectedOnsets(:));
             testCase.verifyTrue(isfield(m.eventInfo, 'baselinePeriod'));
             testCase.verifyEmpty(m.message);
         end

@@ -155,6 +155,95 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestCalculateResponse
                 'Umitoolbox:calculateResponseFeatures:InvalidTimeWindow');
         end
 
+        % -----------------------------------------------------------------
+        % First trial whose baseline was filled by split_data_by_event
+        % -----------------------------------------------------------------
+        function testFilledFirstTrialTakesItsStdFromTheOtherTrialsOfTheCondition(testCase)
+            % Trial 1's first 6 baseline frames are identical (filled). Its own
+            % std is about 0.105, the mean std of trials 2-3 is about 0.234, so
+            % the onset (first response frame above the threshold) moves from
+            % frame 3 (0.2 s) to frame 5 (0.4 s).
+            umt = iBuildFilledFirstTrialFixture([1;1;1], []);
+
+            [out, warnId, warnMsg] = iRunWarn(testCase, umt);
+
+            testCase.verifyEqual(warnId, 'Umitoolbox:calculateResponseFeatures:firstTrialBaselineFilled');
+            testCase.verifySubstring(warnMsg, 'replaced by the mean of the 2 other selected trial(s)');
+            testCase.verifyEqual(iOnsetLatency(out, 1), single([0.4; 0.4]), 'AbsTol', single(1e-5));
+        end
+
+        function testFilledFirstTrialWithoutAnotherTrialKeepsItsStdAndWarns(testCase)
+            % Trials 2-3 belong to another condition: nothing to take the std from.
+            umt = iBuildFilledFirstTrialFixture([1;2;2], []);
+
+            [out, warnId, warnMsg] = iRunWarn(testCase, umt);
+
+            testCase.verifyEqual(warnId, 'Umitoolbox:calculateResponseFeatures:firstTrialBaselineFilled');
+            testCase.verifySubstring(warnMsg, 'at least 2 are needed');
+            testCase.verifyEqual(iOnsetLatency(out, 1), single([0.2; 0.2]), 'AbsTol', single(1e-5));
+        end
+
+        function testIgnoredTrialsAreNotUsedForTheFilledTrialStd(testCase)
+            % Trial 2 is ignored: only trial 3 (std about 0.313) counts, so the
+            % threshold is higher still and the onset moves to frame 7 (0.6 s).
+            umt = iBuildFilledFirstTrialFixture([1;1;1], [true; false; true]);
+
+            [out, warnId, warnMsg] = iRunWarn(testCase, umt);
+
+            testCase.verifyEqual(warnId, 'Umitoolbox:calculateResponseFeatures:firstTrialBaselineFilled');
+            testCase.verifySubstring(warnMsg, 'the 1 other selected trial(s)');
+            testCase.verifyEqual(iOnsetLatency(out, 1), single([0.6; 0.6]), 'AbsTol', single(1e-5));
+        end
+
+        function testOnsetSecGivesTheExactNumberOfFilledFrames(testCase)
+            % First onset at 0.9 s = frame 9 with a 10-frame baseline: exactly
+            % 1 frame was filled, whatever the leading values look like.
+            umt = iBuildFilledFirstTrialFixture([1;1;1], []);
+            umt.eventInfo.onsetSec = [0.9; 3; 6];
+
+            [out, warnId, warnMsg] = iRunWarn(testCase, umt);
+
+            testCase.verifyEqual(warnId, 'Umitoolbox:calculateResponseFeatures:firstTrialBaselineFilled');
+            testCase.verifySubstring(warnMsg, 'The first 1 baseline frames');
+            testCase.verifyEqual(iOnsetLatency(out, 1), single([0.4; 0.4]), 'AbsTol', single(1e-5));
+        end
+
+        function testOnsetSecAtTheBaselineMeansNothingWasFilled(testCase)
+            % First onset at 1 s with a 1 s baseline: the trial is complete, so
+            % a constant run at the start of the baseline is real data. It is
+            % not corrected (own std 0.105: onset at frame 3, 0.2 s).
+            umt = iBuildFilledFirstTrialFixture([1;1;1], []);
+            umt.eventInfo.onsetSec = [1; 3; 6];
+
+            [out, warnId] = iRunWarn(testCase, umt);
+
+            testCase.verifyNotEqual(warnId, 'Umitoolbox:calculateResponseFeatures:firstTrialBaselineFilled');
+            testCase.verifyEqual(iOnsetLatency(out, 1), single([0.2; 0.2]), 'AbsTol', single(1e-5));
+        end
+
+        function testTrialsOtherThanTheFirstAreNotAffectedByTheCorrection(testCase)
+            umt = iBuildFilledFirstTrialFixture([1;1;1], []);
+
+            out = iRunWarn(testCase, umt);
+
+            % Trials 2 and 3 use their own std (0.156 and 0.313): the first
+            % response frame above 0.156 is frame 4 (0.3 s), above 0.313 is 7 (0.6 s).
+            testCase.verifyEqual(iOnsetLatency(out, 2), single([0.3; 0.3]), 'AbsTol', single(1e-5));
+            testCase.verifyEqual(iOnsetLatency(out, 3), single([0.6; 0.6]), 'AbsTol', single(1e-5));
+        end
+
+        function testBaselineWithoutAFilledRunRaisesNoWarning(testCase)
+            % A noisy first baseline and an all-constant baseline are both left alone.
+            umt = iBuildFilledFirstTrialFixture([1;1;1], []);
+            name = fieldnames(umt.data);
+            umt.data.(name{1}).value(:, 1:6, 1) = repmat(single([0.3 -0.1 0.2 -0.3 0.1 -0.2]), 2, 1);
+            [~, warnId] = iRunWarn(testCase, umt);
+            testCase.verifyNotEqual(warnId, 'Umitoolbox:calculateResponseFeatures:firstTrialBaselineFilled');
+
+            [~, warnId] = iRunWarn(testCase, iBuildValidFixture());
+            testCase.verifyNotEqual(warnId, 'Umitoolbox:calculateResponseFeatures:firstTrialBaselineFilled');
+        end
+
         function testRepetitionsRemainSeparateEventInstances(testCase)
             umt = iBuildValidFixture();
             umt = appendUMTEventInfo(umt, ...
@@ -183,6 +272,59 @@ folder = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture).
 umtFile = fullfile(folder, 'responseInput.umt');
 saveData(umtFile, umt);
 out = calculateResponseFeatures(umtFile, varargin{:});
+end
+
+function [out, warnId, warnMsg] = iRunWarn(testCase, umt)
+%IRUNWARN iRun that also returns the last warning raised by the call.
+lastwarn('', '');
+out = iRun(testCase, umt);
+[warnMsg, warnId] = lastwarn;
+end
+
+function lat = iOnsetLatency(out, iE)
+%IONSETLATENCY OnsetLatency (measure 6) of every ROI for event instance IE.
+name = fieldnames(out.data);
+lat = out.data.(name{1}).value(:, 6, iE);
+end
+
+function umt = iBuildFilledFirstTrialFixture(eventID, selected)
+%IBUILDFILLEDFIRSTTRIALFIXTURE 2 ROI x 30 T x 3 E at 10 Hz, baseline 1 s (10 frames).
+%
+%   Trial 1 has its first 6 baseline frames filled with the mean (0) of its
+%   last 4 real ones, as split_data_by_event does. Trials 2 and 3 have noisy
+%   baselines (std 0.156 and 0.313). The response is a ramp of 0.05 per frame.
+%   ROI 2 is twice ROI 1.
+
+frameRateHz = 10;
+base2 = single([0.1 -0.1 0.2 -0.2 0.1 -0.1 0.2 -0.2 0.1 -0.1]);
+base1 = [zeros(1, 6, 'single'), single([0.1 -0.1 0.2 -0.2])];
+resp = single(0.05 * (1:20));
+
+row = zeros(1, 30, 3, 'single');
+row(1, :, 1) = [base1, resp];
+row(1, :, 2) = [base2, resp];
+row(1, :, 3) = [2 * base2, resp];
+vals = [row; 2 * row];
+
+umt = genUMTStruct(vals, ...
+    'kind', 'roi', ...
+    'entryName', 'main', ...
+    'dimNames', {'ROI','T','E'}, ...
+    'labels', struct('ROI', {{'ROI1','ROI2'}}));
+umt.data.main.meta = struct('FrameRateHz', frameRateHz);
+
+names = repmat({'A'}, 3, 1);
+names(eventID == 2) = {'B'};
+umt = appendUMTEventInfo(umt, ...
+    'eventID', eventID(:), ...
+    'repetitionIndex', [1; 2; 3], ...
+    'eventName', names, ...
+    'eventAxisMode', 'instances', ...
+    'overwrite', true);
+umt.eventInfo.baselinePeriod = 1;
+if ~isempty(selected)
+    umt.eventInfo.selected = logical(selected(:));
+end
 end
 
 function umt = iBuildValidFixture()

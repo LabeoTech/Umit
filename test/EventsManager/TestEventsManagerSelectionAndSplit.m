@@ -244,6 +244,11 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventsManagerSele
             testCase.verifyEqual(evInfo.selected, logical([1;0;1]));
             testCase.verifyEqual(evInfo.repetitionIndex, uint16([1;1;2]));
             testCase.verifyEqual(evInfo.durationSec, [0.1;0.1;0.1], 'AbsTol', 1e-6);
+            % Onset times (s from the recording start), one per instance, in E order.
+            inst = testCase.Obj.getEventInstances();
+            testCase.verifyEqual(evInfo.onsetSec, inst.onsetSec);
+            testCase.verifySize(evInfo.onsetSec, [3 1]);
+            testCase.verifyEqual(evInfo.onsetSec, sort(evInfo.onsetSec));
             testCase.verifyFalse(isfield(evInfo, 'PurgedEvents'));
             testCase.verifyEqual(evInfo.baselinePeriod, testCase.Obj.baselinePeriod, 'AbsTol', 1e-6);
 
@@ -251,6 +256,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventsManagerSele
             evSel = testCase.Obj.exportEventInfo('FrameRateHz', 10, 'IncludeIgnored', false);
             testCase.verifyEqual(evSel.eventID, uint16([1;1]));
             testCase.verifyEqual(evSel.selected, true(2, 1));
+            testCase.verifyEqual(evSel.onsetSec, inst.onsetSec([1; 3]));
             testCase.verifyEqual(evInfo.FrameRateHz, testCase.Obj.AcqInfo.FrameRateHz);
         end
 
