@@ -521,7 +521,9 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestPipelineManagerFu
                 'Messages_long', result.globalPipeLog.Properties.VariableNames));
             shortMessage = string(result.globalPipeLog.Messages_short{1});
             longMessage = string(result.globalPipeLog.Messages_long{1});
-            testCase.verifySubstring(longMessage, ...
+            % getReport wraps its text to the Command Window width, which can
+            % split the phrase across lines: compare with whitespace collapsed.
+            testCase.verifySubstring(regexprep(longMessage, '\s+', ' '), ...
                 'has no header');
             testCase.verifyGreaterThan(strlength(longMessage), ...
                 strlength(shortMessage));
