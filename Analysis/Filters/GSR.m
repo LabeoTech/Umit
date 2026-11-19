@@ -299,54 +299,71 @@ nChunks = ceil(Nx / chunkSizePixels);
 slabIn = spatialSlabIO('open', dataFile, 'Info', metaData);
 c_in = onCleanup(@() spatialSlabIO('close', slabIn));
 
+% Write through a scratch file so the declared output only appears once the run
+% has completed, and so the input may be the very file the output replaces
+% (a pipeline re-run, or two GSR steps in a row). A failed run leaves no file.
 outFileName = fullfile(SaveFolder, 'GSR.dat');
-slabOut = spatialSlabIO('create', outFileName, datHeaderFromInfo(metaData, 'GSR'));
+tmpFileName = fullfile(SaveFolder, 'GSR_writing.dat');
+slabOut = spatialSlabIO('create', tmpFileName, datHeaderFromInfo(metaData, 'GSR'));
 c_out = onCleanup(@() spatialSlabIO('close', slabOut));
 
 h = waitbar(0, 'GSR: computing global signal (pass 1)...');
 h.Name = 'GSR (pass 1/2)';
 cleanupWaitbar = onCleanup(@() iCloseWaitbarSafely(h));
 
-% =====================================================================
-% PASS 1 - Compute dataset mean and global signal
-% =====================================================================
-stats = iZeroStats(Nt, Ne);
+try
+    % =================================================================
+    % PASS 1 - Compute dataset mean and global signal
+    % =================================================================
+    stats = iZeroStats(Nt, Ne);
 
-for ii = 1:nChunks
-    waitbar(ii / nChunks, h, 'GSR: computing global signal...');
+    for ii = 1:nChunks
+        waitbar(ii / nChunks, h, 'GSR: computing global signal...');
 
-    pxStart = (ii-1) * chunkSizePixels + 1;
-    pxEnd   = min(ii * chunkSizePixels, Nx);
-    idxX    = pxStart:pxEnd;
+        pxStart = (ii-1) * chunkSizePixels + 1;
+        pxEnd   = min(ii * chunkSizePixels, Nx);
+        idxX    = pxStart:pxEnd;
 
-    slab = spatialSlabIO('read', slabIn, idxX);
-    stats = iAddStats(stats, iAccumulateStats(slab, logical_mask(:, idxX)));
+        slab = spatialSlabIO('read', slabIn, idxX);
+        stats = iAddStats(stats, iAccumulateStats(slab, logical_mask(:, idxX)));
 
-    clear slab
+        clear slab
+    end
+
+    [mData, Sig] = iFinalizeStats(stats);
+
+    % =================================================================
+    % PASS 2 - Regress global signal chunk-by-chunk
+    % =================================================================
+    h.Name = 'GSR (pass 2/2)';
+
+    for ii = 1:nChunks
+        waitbar(ii / nChunks, h, 'GSR: regressing signal...');
+
+        pxStart = (ii-1) * chunkSizePixels + 1;
+        pxEnd   = min(ii * chunkSizePixels, Nx);
+        idxX    = pxStart:pxEnd;
+
+        slab = spatialSlabIO('read', slabIn, idxX);
+        slab = iRegressSlab(slab, Sig, mData);
+        spatialSlabIO('write', slabOut, idxX, slab);
+
+        clear slab
+    end
+
+    spatialSlabIO('finalize', slabOut);
+catch ME
+    clear c_out                                   % close the scratch file, then drop it
+    if isfile(tmpFileName)
+        delete(tmpFileName);
+    end
+    rethrow(ME)
 end
 
-[mData, Sig] = iFinalizeStats(stats);
-
-% =====================================================================
-% PASS 2 - Regress global signal chunk-by-chunk
-% =====================================================================
-h.Name = 'GSR (pass 2/2)';
-
-for ii = 1:nChunks
-    waitbar(ii / nChunks, h, 'GSR: regressing signal...');
-
-    pxStart = (ii-1) * chunkSizePixels + 1;
-    pxEnd   = min(ii * chunkSizePixels, Nx);
-    idxX    = pxStart:pxEnd;
-
-    slab = spatialSlabIO('read', slabIn, idxX);
-    slab = iRegressSlab(slab, Sig, mData);
-    spatialSlabIO('write', slabOut, idxX, slab);
-
-    clear slab
-end
-
-spatialSlabIO('finalize', slabOut);
+clear c_in c_out                                  % close both files before the move
+[moveOk, moveMsg] = movefile(tmpFileName, outFileName, 'f');
+assert(moveOk, 'GSR:outputMoveFailed', ...
+    'Failed to move "%s" onto "%s": %s', tmpFileName, outFileName, moveMsg);
 end
 
 % =========================================================================

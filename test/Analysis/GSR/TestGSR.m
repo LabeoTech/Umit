@@ -72,7 +72,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGSR < matlab.unit
 
             if isfield(info, 'parameters') && ~isempty(info.parameters)
                 tmpNames = {info.parameters.name};
-                paramNames = [paramNames; string(tmpNames(:))]; %#ok<AGROW>
+                paramNames = [paramNames; string(tmpNames(:))];
             end
 
             if isfield(info, 'arguments') && ~isempty(info.arguments)
@@ -80,7 +80,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGSR < matlab.unit
                 argMask = strcmpi(argKinds, 'parameter');
                 if any(argMask)
                     tmpNames = {info.arguments(argMask).name};
-                    paramNames = [paramNames; string(tmpNames(:))]; %#ok<AGROW>
+                    paramNames = [paramNames; string(tmpNames(:))];
                 end
             end
 
@@ -312,6 +312,49 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestGSR < matlab.unit
                 'Umitoolbox:GSR:unsupportedLayout');
         end
 
+        function testInputThatIsNamedLikeTheOutputIsReplacedCorrectly(testCase)
+            % A pipeline re-run (or two GSR steps in a row) has GSR.dat as both
+            % input and output: the result must equal the one from a differently
+            % named input, and no scratch file may be left.
+            refFolder = localPrepareWorkingFolder(testCase, 'RefNamedInput', false);
+            refOut = GSR('green.dat', refFolder, 'UseMask', false);
+            expected = single(loadData(refOut));
+
+            workFolder = localPrepareWorkingFolder(testCase, 'SameNameInput', false);
+            copyfile(fullfile(workFolder, 'green.dat'), fullfile(workFolder, 'GSR.dat'));
+
+            outFile = GSR('GSR.dat', workFolder, 'UseMask', false);
+
+            testCase.verifyEqual(outFile, fullfile(workFolder, 'GSR.dat'));
+            testCase.verifyEqual(single(loadData(outFile)), expected);
+            testCase.verifyEmpty(dir(fullfile(workFolder, '*_writing.dat')));
+        end
+
+        function testFailedRunLeavesNoOutputOrScratchFile(testCase)
+            % All-NaN data have no valid pixel: the run fails after the output
+            % was opened. It must neither leave a half-written GSR.dat nor a
+            % scratch file, and must not touch an existing GSR.dat.
+            workFolder = localPrepareWorkingFolder(testCase, 'FailedRun', false);
+            badFile = fullfile(workFolder, 'allNaN.dat');
+            saveData(badFile, nan(6, 5, 8, 'single'), 'DimNames', {'Y','X','T'}, ...
+                'FrameRateHz', 10);
+
+            testCase.verifyError(@() GSR(badFile, workFolder, 'UseMask', false), ?MException);
+
+            testCase.verifyFalse(isfile(fullfile(workFolder, 'GSR.dat')));
+            testCase.verifyEmpty(dir(fullfile(workFolder, '*_writing.dat')));
+
+            % An existing GSR.dat survives a failed run.
+            previous = fullfile(workFolder, 'GSR.dat');
+            copyfile(fullfile(workFolder, 'green.dat'), previous);
+            before = dir(previous);
+            testCase.verifyError(@() GSR(badFile, workFolder, 'UseMask', false), ?MException);
+            after = dir(previous);
+            testCase.verifyEqual(after.bytes, before.bytes);
+            testCase.verifyEqual(after.datenum, before.datenum);
+            testCase.verifyEmpty(dir(fullfile(workFolder, '*_writing.dat')));
+        end
+
         % =================================================================
         % PipelineManager integration
         %
@@ -532,7 +575,7 @@ assert(~isempty(fn), 'DataParams.mat is empty.');
 
 if isfield(testStruct, 'DataParams')
     varName = 'DataParams';
-elseif numel(fn) == 1 && isstruct(testStruct.(fn{1}))
+elseif isscalar(fn) && isstruct(testStruct.(fn{1}))
     varName = fn{1};
 else
     error('Could not identify the DataParams structure inside DataParams.mat.');
