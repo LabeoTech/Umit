@@ -9580,6 +9580,11 @@ classdef PipelineManager < handle
             obj.consumerCount = containers.Map('KeyType','char','ValueType','double');
             obj.tempFiles     = strings(0,1);
 
+            % Whatever way this folder run ends (completed, cancelled, failed), no
+            % array may stay in RAM afterwards: the host app keeps the manager
+            % alive and a retained leaf would starve later data loads.
+            releaseRamGuard = onCleanup(@() obj.releaseDataStoreRam());
+
             % Precompute consumer counts for DATA edges
             obj.buildConsumerCount();
 
@@ -13194,6 +13199,29 @@ classdef PipelineManager < handle
                         isfield(rec,'fileName') && strlength(string(rec.fileName)) > 0 && ...
                         isfile(char(string(rec.fileName)))
                     delete(char(string(rec.fileName)));
+                end
+            end
+        end
+
+        function releaseDataStoreRam(obj)
+            %RELEASEDATASTORERAM Drop every in-RAM array held by the run registry.
+            %
+            %   Records stay in obj.dataStore (their fileName/sourceInfo are still
+            %   used for file lookups after a run); only ramValue is cleared. Leaf
+            %   outputs are never cleared by decrementConsumers because they have no
+            %   consumer, so without this they stay in RAM until the next run or
+            %   until the manager is destroyed.
+
+            if isempty(obj.dataStore) || ~isa(obj.dataStore, 'containers.Map')
+                return
+            end
+
+            keys = obj.dataStore.keys;
+            for iK = 1:numel(keys)
+                rec = obj.dataStore(keys{iK});
+                if isstruct(rec) && isfield(rec, 'ramValue') && ~isempty(rec.ramValue)
+                    rec.ramValue = [];
+                    obj.dataStore(keys{iK}) = rec;
                 end
             end
         end
