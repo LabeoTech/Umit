@@ -90,6 +90,7 @@ classdef DatImageSource < handle
         CacheYRange double = []
         CacheXRange double = []
         LastCacheBytes double = 0
+        CacheCenter double = []  % [y x] of the cache before releaseCache()
     end
 
     methods
@@ -383,6 +384,49 @@ classdef DatImageSource < handle
             obj.CacheYRange = yRange;
             obj.CacheXRange = xRange;
             obj.LastCacheBytes = numel(newCache) * obj.BytesPerSample;
+        end
+
+        function releaseCache(obj)
+            %RELEASECACHE Free the temporal XY cache, keeping the source usable.
+            %
+            %   obj.releaseCache()
+            %
+            %   Frame and block reads fall back to the file, and an unlocked
+            %   source rebuilds its cache on the next pixel-trace request.
+            %   The cache center is remembered so restoreCache() can put the
+            %   same region back. DataViewer calls this on the open source
+            %   before building the next one, so the RAM it held counts as
+            %   available when the new source sizes its own cache.
+
+            if ~isempty(obj.CacheYRange) && ~isempty(obj.CacheXRange)
+                obj.CacheCenter = [round(mean(obj.CacheYRange)), ...
+                    round(mean(obj.CacheXRange))];
+            end
+
+            obj.CacheData = [];
+            obj.CacheYRange = [];
+            obj.CacheXRange = [];
+            obj.LastCacheBytes = 0;
+        end
+
+        function restoreCache(obj)
+            %RESTORECACHE Rebuild a released cache around its previous center.
+            %
+            %   obj.restoreCache()
+            %
+            %   No-op when the cache is already populated. Falls back to the
+            %   image center when no cache was ever released.
+
+            if ~isempty(obj.CacheData)
+                return
+            end
+
+            center = obj.CacheCenter;
+            if isempty(center)
+                center = [round(obj.Ny / 2), round(obj.Nx / 2)];
+            end
+
+            obj.updateCacheAround(center(1), center(2));
         end
 
         function rect = getCacheRectangle(obj)

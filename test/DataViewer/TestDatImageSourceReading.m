@@ -95,6 +95,57 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestDatImageSourceRea
             testCase.verifyEqual(src.CacheData, ref(src.CacheYRange, src.CacheXRange, :));
         end
 
+        function releasedCacheFreesRamAndKeepsReadsCorrect(testCase, kind)
+            [src, ref] = testCase.openCopy(kind, testCase.partialCacheBytes());
+            testCase.assertNotEmpty(src.CacheData);
+
+            src.releaseCache();
+
+            testCase.verifyEmpty(src.CacheData);
+            testCase.verifyEmpty(src.CacheYRange);
+            testCase.verifyEmpty(src.CacheXRange);
+            testCase.verifyEqual(src.LastCacheBytes, 0);
+            testCase.verifyFalse(src.hasPartialTemporalCache());
+            testCase.verifyEqual(src.getFrame(2), ref(:, :, 2), 'frame read falls back to disk');
+            testCase.verifyEqual(src.getFrameBlock(3, 2:5, 3:5), ref(2:5, 3:5, 3), ...
+                'block read falls back to disk');
+
+            [trace, status] = src.getPixelTrace(2, 3);
+            testCase.verifyEqual(status, 'cache_rebuilt', 'an unlocked source refills lazily');
+            testCase.verifyEqual(trace, squeeze(ref(2, 3, :)));
+        end
+
+        function restoreCacheRebuildsTheReleasedRegion(testCase, kind)
+            [src, ref] = testCase.openCopy(kind, testCase.partialCacheBytes());
+            src.updateCacheAround(size(ref, 1), size(ref, 2));
+            yBefore = src.CacheYRange;
+            xBefore = src.CacheXRange;
+
+            src.releaseCache();
+            src.restoreCache();
+
+            testCase.verifyEqual(src.CacheYRange, yBefore);
+            testCase.verifyEqual(src.CacheXRange, xBefore);
+            testCase.verifyEqual(src.CacheData, ref(yBefore, xBefore, :));
+
+            % A populated cache is left alone, and a never-released source is fine.
+            cacheBefore = src.CacheData;
+            src.restoreCache();
+            testCase.verifyEqual(src.CacheData, cacheBefore);
+        end
+
+        function restoreCacheRefillsALockedSource(testCase, kind)
+            [src, ref] = testCase.openCopy(kind, testCase.partialCacheBytes());
+            src.setCacheLocked(true);
+
+            src.releaseCache();
+            src.restoreCache();
+
+            testCase.verifyNotEmpty(src.CacheData);
+            testCase.verifyEqual(src.CacheData, ref(src.CacheYRange, src.CacheXRange, :));
+            testCase.verifyTrue(src.isCacheLocked());
+        end
+
         function roiTracesFromCacheAndDirect(testCase, kind)
             [src, ref] = testCase.openCopy(kind, testCase.partialCacheBytes());
             [Ny, Nx, Nt] = size(ref);
