@@ -9,11 +9,13 @@ function outData = normalizeBSLN(data, SaveFolder, varargin)
 %
 % Inputs:
 %   data       : .dat filename (or path) with axes Y-X-T (continuous) or
-%                Y-X-T-E (event-split, e.g. split_data_by_event output).
-%                Arrays, UMT structs, and .umt files are not supported.
+%                Y-X-T-E (event-split, e.g. split_data_by_event output), or
+%                a single-precision array of the same layout (3-D = Y-X-T,
+%                4-D = Y-X-T-E). UMT structs and .umt files are not
+%                supported.
 %
 %   SaveFolder : Folder of the .dat output; for trial mode it also holds
-%                events.mat.
+%                events.mat. Array input writes nothing to it.
 %
 % Name-Value parameters:
 %   normalizationMode : 'recording' or 'trial'
@@ -44,22 +46,30 @@ function outData = normalizeBSLN(data, SaveFolder, varargin)
 %   FrameRateHz       : Frame rate of DATA (Hz), needed for a numeric
 %                       baselineMode and for trial mode. PipelineManager
 %                       injects it from the data flowing into the step; the
-%                       .dat header provides it otherwise. AcqInfos.mat is
-%                       not used (resolveDataInfoValue).
+%                       .dat header provides it otherwise (an array has no
+%                       header, so a direct caller must pass it).
+%                       AcqInfos.mat is not used (resolveDataInfoValue).
 %
 % Output:
-%   outData           : Full path of the .dat output ("normBSLN.dat" in
-%                       SaveFolder), with the same axes and sizes as the
-%                       input (single precision). A Y-X-T-E file keeps its E
-%                       axis: every trial is normalized on its own, ignored
-%                       instances included, so the E axis still matches
-%                       events.mat.
+%   outData           : .dat input: full path of the .dat output
+%                       ("normBSLN.dat" in SaveFolder), with the same axes
+%                       and sizes as the input (single precision). A Y-X-T-E
+%                       file keeps its E axis: every trial is normalized on
+%                       its own, ignored instances included, so the E axis
+%                       still matches events.mat.
+%                       Array input: the normalized single array, same size.
 %
 % Notes:
 %   - The baseline of each pixel (and trial) is the median over the baseline
-%     frames, omitting NaN; a zero baseline is replaced by 1.
-%   - The file is streamed in X slabs sized from the available RAM and the
-%     output is written slab by slab (Low-RAM mode is always on).
+%     frames, omitting NaN; a zero baseline is replaced by 1. Both input
+%     modes share the same computation.
+%   - A .dat file is streamed in X slabs sized from the available RAM and
+%     the output is written slab by slab (Low-RAM mode is always on).
+%   - An array is normalized in RAM. Peak memory: the input, the normalized
+%     copy, and a baseline-sized temporary.
+%   - A Y-X-T-E array with a single trial (E = 1) loses its trailing
+%     singleton axis in MATLAB and arrives as Y-X-T, so trial mode rejects
+%     it (normalizeBSLN:TrialModeRequiresEventSplit); use a .dat file.
 %   - Continuous data are not split here: trial mode needs an event-split
 %     file, so split it first with split_data_by_event.
 
@@ -112,9 +122,16 @@ if ~isfolder(SaveFolder)
         'SaveFolder "%s" does not exist.', SaveFolder);
 end
 
+if isnumeric(data)
+    outData = iNormalizeArray(data, SaveFolder, normalizationMode, baselineMode, ...
+        b_centerAtOne, explicitRate);
+    return
+end
+
 if ~(ischar(data) || (isstring(data) && isscalar(data)))
     error('normalizeBSLN:UnsupportedInputType', ...
-        'Input "data" must be the name or path of a .dat file (arrays and UMT inputs are not supported).');
+        ['Input "data" must be the name or path of a .dat file or a single-precision ' ...
+         'Y-X-T / Y-X-T-E array (UMT structs and .umt files are not supported).']);
 end
 
 dataFile = char(string(data));
@@ -140,20 +157,22 @@ outData = iNormalizeDatFile(dataFile, SaveFolder, default_Output, normalizationM
     function info = localPipelineInfo()
         info = PipelineManager.createPipelineInfo(mfilename, ...
             ['Normalize image data by baseline (DeltaR/R0): Y-X-T and event-split ' ...
-             'Y-X-T-E .dat files in, a .dat file with the same axes out.']);
+             'Y-X-T-E data in (.dat file or in-memory array), the same kind of ' ...
+             'output with the same axes out.']);
         info.version = '2.0.0';
 
         info = PipelineManager.addInput( ...
             info, ...
             'data', ...
             {'ImageTimeSeries','ProcessedData','UnknownDataType'}, ...
-            'Input .dat file with axes Y-X-T or Y-X-T-E.', ...
+            ['Input .dat file or single-precision array with axes Y-X-T or ' ...
+             'Y-X-T-E.'], ...
             'kind', 'input', ...
             'position', 1, ...
             'callType', 'positional', ...
             'isData', true, ...
             'supportsFile', true, ...
-            'dataMode', 'file');
+            'dataMode', 'either');
 
         info = PipelineManager.addInput( ...
             info, ...
@@ -209,7 +228,8 @@ outData = iNormalizeDatFile(dataFile, SaveFolder, default_Output, normalizationM
             'outData', ...
             {'ImageTimeSeries','ProcessedData'}, ...
             'data', ...
-            'Baseline-normalized .dat output with the same axes as the input.', ...
+            ['Baseline-normalized output with the same axes as the input ' ...
+             '(.dat file for file input, array for array input).'], ...
             default_Output, ...
             1, ...
             'isData', true);
@@ -296,12 +316,7 @@ for c = 1:nChunks
 
     fprintf('Chunk %i/%i [Normalizing data ...]\n', c, nChunks)
     % The baseline of every pixel and trial: median over the first frames.
-    bsln = median(slab(:, :, 1:nBaseFrames, :), 3, 'omitnan');
-    bsln(bsln == 0) = 1;
-    slab = (slab - bsln) ./ bsln;
-    if b_centerAtOne
-        slab = slab + 1;
-    end
+    slab = iNormalizeBlock(slab, nBaseFrames, b_centerAtOne);
 
     fprintf('Chunk %i/%i [Writing to file ...]\n', c, nChunks)
     spatialSlabIO('write', slabOut, xIdx, slab);
@@ -314,6 +329,79 @@ clear cIn cOut; % close both files before the move below
 [moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
 assert(moveOk, 'normalizeBSLN:OutputMoveFailed', ...
     'Failed to move "%s" onto "%s": %s', tmpFile, outFile, moveMsg);
+end
+
+function block = iNormalizeBlock(block, nBaseFrames, b_centerAtOne)
+%INORMALIZEBLOCK DeltaR/R0 of a Y-X-T or Y-X-T-E block, shared by both input modes.
+% The baseline of every pixel (and trial) is the median over the first
+% nBaseFrames frames, omitting NaN; a zero baseline is replaced by 1.
+bsln = median(block(:, :, 1:nBaseFrames, :), 3, 'omitnan');
+bsln(bsln == 0) = 1;
+block = (block - bsln) ./ bsln;
+if b_centerAtOne
+    block = block + 1;
+end
+end
+
+% =========================================================================
+% Helper: normalization of an in-memory Y-X-T or Y-X-T-E array
+% =========================================================================
+function outData = iNormalizeArray(data, SaveFolder, normalizationMode, baselineMode, b_centerAtOne, explicitRate)
+%INORMALIZEARRAY Array in, array out; nothing is written to SaveFolder.
+
+if ~isa(data, 'single') || isempty(data) || ~(ndims(data) == 3 || ndims(data) == 4)
+    error('normalizeBSLN:UnsupportedInputType', ...
+        ['An array input must be a non-empty single-precision Y-X-T or Y-X-T-E ' ...
+         'array (got %s, %s). UMT structs and .umt files are not supported.'], ...
+        class(data), mat2str(size(data)));
+end
+
+[Ny, Nx, Nt, Ne] = size(data);
+hasE = ndims(data) == 4;
+
+if hasE && strcmp(normalizationMode, 'recording')
+    ignoredNote = '';
+    if ~(ischar(baselineMode) || (isstring(baselineMode) && isscalar(baselineMode)))
+        ignoredNote = ' The numeric baselineMode is ignored.';
+    end
+    warning('normalizeBSLN:RecordingModeOnEventSplit', ...
+        ['The input array is event-split (Y-X-T-E): normalizationMode "recording" does ' ...
+         'not apply, using "trial" (baseline period of events.mat).%s'], ignoredNote);
+    normalizationMode = 'trial';
+    baselineMode = 'auto';
+end
+
+isTrialMode = strcmp(normalizationMode, 'trial');
+if isTrialMode && ~hasE
+    error('normalizeBSLN:TrialModeRequiresEventSplit', ...
+        ['Trial-mode normalization needs a Y-X-T-E array, but the input is Y-X-T (%s). ' ...
+         'MATLAB drops a trailing singleton axis, so an event-split array with a ' ...
+         'single trial (E = 1) arrives as Y-X-T; use a .dat file for that case. ' ...
+         'Continuous data must be split first with split_data_by_event.'], ...
+        mat2str(size(data)));
+end
+
+needsRate = isTrialMode || ~(ischar(baselineMode) || (isstring(baselineMode) && isscalar(baselineMode)));
+freqHz = NaN;
+if needsRate
+    % An array has no header: the rate must come from FrameRateHz.
+    freqHz = resolveDataInfoValue('frameRateHz', explicitRate, data, 'normalizeBSLN');
+end
+
+if isTrialMode
+    mapInfo = struct('filePath', 'input data', 'dimNames', {{'Y','X','T','E'}}, ...
+        'dimSizes', [Ny, Nx, Nt, Ne]);
+    mapping = resolveDatEventMapping(mapInfo, SaveFolder);
+    if ~(isfield(mapping.eventInfo, 'baselinePeriod') && ~isempty(mapping.eventInfo.baselinePeriod))
+        error('normalizeBSLN:MissingBaselinePeriod', ...
+            'Trial-mode normalization needs a baseline period in the events.mat of "%s".', SaveFolder);
+    end
+    nBaseFrames = iResolveTrialBaselineFrames(Nt, freqHz, double(mapping.eventInfo.baselinePeriod));
+else
+    nBaseFrames = iResolveRecordingBaselineFrames(Nt, freqHz, baselineMode);
+end
+
+outData = iNormalizeBlock(data, nBaseFrames, b_centerAtOne);
 end
 
 function iDeleteIfExists(filePath)

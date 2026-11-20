@@ -1,8 +1,9 @@
 classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestNormalizeBSLN < matlab.unittest.TestCase
     %TESTNORMALIZEBSLN Unit tests for normalizeBSLN.
     %
-    % Contract: .dat input only (Y-X-T or event-split Y-X-T-E), a .dat
-    % output with the same axes, streamed in X slabs.
+    % Contract: .dat input (Y-X-T or event-split Y-X-T-E) gives a .dat
+    % output with the same axes, streamed in X slabs; a single array of the
+    % same layout gives the normalized array (nothing written).
     %
     % Coverage:
     %   1) Y-X-T recording normalization (auto and numeric baseline,
@@ -11,8 +12,12 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestNormalizeBSLN < m
     %   3) Y-X-T-E files: per-trial recording and trial (events.mat baseline)
     %      normalization, ignored instances kept on the E axis
     %   4) Forced multi-slab streaming against the single-slab result
-    %   5) Rejection of arrays, UMT inputs, other files, unsupported layouts,
-    %      trial mode on continuous data, and a missing baseline period
+    %   5) Rejection of unsupported arrays, UMT inputs, other files,
+    %      unsupported layouts, trial mode on continuous data, and a missing
+    %      baseline period
+    %   6) Array input equal to the .dat result (recording, numeric
+    %      baseline, NaN frames, zero baselines, trial mode), frame-rate and
+    %      single-trial guards
 
     properties
         SaveFolder char
@@ -88,7 +93,7 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestNormalizeBSLN < m
             testCase.verifyEqual(info.name, 'normalizeBSLN');
             dataInput = info.inputs(strcmp({info.inputs.name}, 'data'));
             testCase.verifyTrue(dataInput.supportsFile);
-            testCase.verifyEqual(dataInput.dataMode, 'file');
+            testCase.verifyEqual(dataInput.dataMode, 'either');
             testCase.verifyNumElements(info.outputs, 1);
             testCase.verifyEqual(info.outputs(1).defOutfilename, 'normBSLN.dat');
         end
@@ -289,9 +294,13 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestNormalizeBSLN < m
         function testRejectsUnsupportedInputs(testCase)
             sv = testCase.SaveFolder;
 
-            % Arrays and UMT structs.
-            testCase.verifyError(@() normalizeBSLN(rand(6, 5, 20, 'single'), sv), ...
-                'normalizeBSLN:UnsupportedInputType');
+            % Unsupported arrays (class, rank, empty) and UMT structs.
+            bad = {rand(6, 5, 20), true(6, 5, 20), rand(6, 5, 'single'), ...
+                rand(6, 5, 4, 3, 2, 'single'), zeros(6, 5, 0, 'single')};
+            for k = 1:numel(bad)
+                testCase.verifyError(@() normalizeBSLN(bad{k}, sv), ...
+                    'normalizeBSLN:UnsupportedInputType');
+            end
             umt = genUMTStruct(rand(6, 5, 20, 'single'), 'kind', 'image', ...
                 'entryName', 'main', 'dimNames', {'Y','X','T'});
             testCase.verifyError(@() normalizeBSLN(umt, sv), ...
@@ -314,6 +323,95 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestNormalizeBSLN < m
             writeTestDat(yx, rand(6, 5, 'single'), 10, 'DimNames', {'Y','X'});
             testCase.verifyError(@() normalizeBSLN(yx, sv), ...
                 'Umitoolbox:normalizeBSLN:unsupportedLayout');
+        end
+
+        function testArrayMatchesDatRecording(testCase, centerAtOne)
+            % Non-square (Y ~= X), with NaN frames and zero-baseline pixels.
+            Y = 7; X = 5; T = 40; rate = 10;
+            raw = 1 + rand(Y, X, T, 'single');
+            raw(2, 3, :) = 0;           % zero baseline pixel
+            raw(4, 1, 1:3) = NaN;       % NaN inside the baseline window
+            raw(:, :, 30) = NaN;        % NaN frame outside it
+            rawFile = fullfile(testCase.SaveFolder, 'synthetic.dat');
+            writeTestDat(rawFile, raw, rate, 'DimNames', {'Y','X','T'});
+
+            for baselineMode = {'auto', 1.2}
+                bm = baselineMode{1};
+                fileOut = single(loadData(normalizeBSLN(rawFile, testCase.SaveFolder, ...
+                    'baselineMode', bm, 'b_centerAtOne', centerAtOne)));
+                delete(fullfile(testCase.SaveFolder, 'normBSLN.dat'));
+                arrOut = normalizeBSLN(raw, testCase.SaveFolder, ...
+                    'baselineMode', bm, 'b_centerAtOne', centerAtOne, 'FrameRateHz', rate);
+
+                testCase.verifyClass(arrOut, 'single');
+                testCase.verifyEqual(arrOut, fileOut, 'AbsTol', 1e-6);
+                testCase.verifyTrue(isequal(isnan(arrOut), isnan(fileOut)));
+            end
+            testCase.verifyFalse(isfile(fullfile(testCase.SaveFolder, 'normBSLN.dat')), ...
+                'Array input must not write to SaveFolder.');
+        end
+
+        function testArrayRecordingAutoNeedsNoFrameRate(testCase)
+            raw = 1 + rand(7, 5, 40, 'single');
+            out = normalizeBSLN(raw, testCase.SaveFolder);
+            testCase.verifyEqual(out, ...
+                testCase.expectedRecording(raw, 10, 'auto', false), 'AbsTol', 1e-6);
+        end
+
+        function testArrayNumericBaselineNeedsFrameRate(testCase)
+            raw = 1 + rand(7, 5, 40, 'single');
+            testCase.verifyError(@() normalizeBSLN(raw, testCase.SaveFolder, ...
+                'baselineMode', 1.2), 'Umitoolbox:normalizeBSLN:missingFrameRateHz');
+        end
+
+        function testArrayTrialModeMatchesDat(testCase, centerAtOne)
+            [splitFile, byEv] = testCase.writeEventSplitFile();
+            rate = testCase.getFrameRateHz();
+            fileOut = single(loadData(normalizeBSLN(splitFile, testCase.SaveFolder, ...
+                'normalizationMode', 'trial', 'b_centerAtOne', centerAtOne)));
+            testCase.assumeEqual(ndims(byEv), 4, 'Fixture split has a single trial.');
+
+            arrOut = normalizeBSLN(byEv, testCase.SaveFolder, ...
+                'normalizationMode', 'trial', 'b_centerAtOne', centerAtOne, ...
+                'FrameRateHz', rate);
+
+            testCase.verifyEqual(arrOut, fileOut, 'AbsTol', 1e-6);
+        end
+
+        function testArrayEventSplitRecordingSwitchesToTrialWithWarning(testCase)
+            [~, byEv] = testCase.writeEventSplitFile();
+            rate = testCase.getFrameRateHz();
+            ev = EventsManager(testCase.SaveFolder);
+            nBase = min(size(byEv, 3), max(1, round(double(ev.baselinePeriod) * rate)));
+
+            [~, id, out] = iLastWarning(@() normalizeBSLN(byEv, testCase.SaveFolder, ...
+                'FrameRateHz', rate));
+
+            testCase.verifyEqual(id, 'normalizeBSLN:RecordingModeOnEventSplit');
+            testCase.verifyEqual(out, testCase.expectedPerTrial(byEv, nBase, false), ...
+                'AbsTol', 1e-6);
+        end
+
+        function testArrayTrialModeNeedsFrameRate(testCase)
+            [~, byEv] = testCase.writeEventSplitFile();
+            testCase.verifyError(@() normalizeBSLN(byEv, testCase.SaveFolder, ...
+                'normalizationMode', 'trial'), 'Umitoolbox:normalizeBSLN:missingFrameRateHz');
+        end
+
+        function testArrayTrialModeWithoutBaselinePeriodIsRejected(testCase)
+            [~, byEv] = testCase.writeEventSplitFile();
+            delete(fullfile(testCase.SaveFolder, 'events.mat'));
+            testCase.verifyError(@() normalizeBSLN(byEv, testCase.SaveFolder, ...
+                'normalizationMode', 'trial', 'FrameRateHz', testCase.getFrameRateHz()), ...
+                'normalizeBSLN:MissingBaselinePeriod');
+        end
+
+        function testArrayTrialModeOnYXTIsRejected(testCase)
+            % A single-trial Y-X-T-E array (E = 1) arrives as Y-X-T.
+            raw = 1 + rand(7, 5, 40, 'single');
+            testCase.verifyError(@() normalizeBSLN(raw, testCase.SaveFolder, ...
+                'normalizationMode', 'trial', 'FrameRateHz', 10), ...
+                'normalizeBSLN:TrialModeRequiresEventSplit');
         end
 
         function testTrialBaselineTooLongRejectedByEventsManager(testCase)
