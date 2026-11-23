@@ -63,6 +63,13 @@ function outData = normalizeBSLN(data, SaveFolder, varargin)
 %   - The baseline of each pixel (and trial) is the median over the baseline
 %     frames, omitting NaN; a zero baseline is replaced by 1. Both input
 %     modes share the same computation.
+%   - The input must be raw intensities: the result is divided by the
+%     baseline. Zero-centered data (already normalized by normalizeBSLN
+%     without b_centerAtOne, z-scored, or baseline-subtracted) have a baseline
+%     near 0. When at least 20 %% of the pixels (and trials) have a baseline
+%     smaller than 3 times the spread of their baseline frames, the function
+%     warns once (Umitoolbox:normalizeBSLN:ZeroCenteredInput); the result is
+%     not changed. The check needs at least 3 baseline frames.
 %   - A .dat file is streamed in X slabs sized from the available RAM and
 %     the output is written slab by slab (Low-RAM mode is always on).
 %   - An array is normalized in RAM. Peak memory: the input, the normalized
@@ -308,6 +315,7 @@ nChunks = calculateMaxChunkSize(double(Ny) * Nx * Nt * Ne * 4, 3, 0.2);
 chunkX = max(1, ceil(Nx / nChunks));
 nChunks = ceil(Nx / chunkX);
 
+lowBaselineCounts = [0 0];
 for c = 1:nChunks
     xIdx = ((c-1) * chunkX + 1):min(c * chunkX, Nx);
 
@@ -316,7 +324,8 @@ for c = 1:nChunks
 
     fprintf('Chunk %i/%i [Normalizing data ...]\n', c, nChunks)
     % The baseline of every pixel and trial: median over the first frames.
-    slab = iNormalizeBlock(slab, nBaseFrames, b_centerAtOne);
+    [slab, chunkCounts] = iNormalizeBlock(slab, nBaseFrames, b_centerAtOne);
+    lowBaselineCounts = lowBaselineCounts + chunkCounts;
 
     fprintf('Chunk %i/%i [Writing to file ...]\n', c, nChunks)
     spatialSlabIO('write', slabOut, xIdx, slab);
@@ -329,18 +338,41 @@ clear cIn cOut; % close both files before the move below
 [moveOk, moveMsg] = movefile(tmpFile, outFile, 'f');
 assert(moveOk, 'normalizeBSLN:OutputMoveFailed', ...
     'Failed to move "%s" onto "%s": %s', tmpFile, outFile, moveMsg);
+
+iWarnZeroCenteredInput(lowBaselineCounts);
 end
 
-function block = iNormalizeBlock(block, nBaseFrames, b_centerAtOne)
+function [block, lowBaselineCounts] = iNormalizeBlock(block, nBaseFrames, b_centerAtOne)
 %INORMALIZEBLOCK DeltaR/R0 of a Y-X-T or Y-X-T-E block, shared by both input modes.
 % The baseline of every pixel (and trial) is the median over the first
 % nBaseFrames frames, omitting NaN; a zero baseline is replaced by 1.
-bsln = median(block(:, :, 1:nBaseFrames, :), 3, 'omitnan');
+%
+% LOWBASELINECOUNTS is [traces examined, traces whose baseline is within 3
+% times the spread of their baseline frames] (see COUNTLOWBASELINE), measured
+% before the baseline is used; it stays [0 0] when fewer than 3 baseline
+% frames make the spread meaningless.
+baseFrames = block(:, :, 1:nBaseFrames, :);
+bsln = median(baseFrames, 3, 'omitnan');
+lowBaselineCounts = [0 0];
+if nBaseFrames >= 3
+    [lowBaselineCounts(1), lowBaselineCounts(2)] = countLowBaseline( ...
+        bsln, std(baseFrames, 0, 3, 'omitnan'));
+end
+clear baseFrames
 bsln(bsln == 0) = 1;
 block = (block - bsln) ./ bsln;
 if b_centerAtOne
     block = block + 1;
 end
+end
+
+function iWarnZeroCenteredInput(lowBaselineCounts)
+%IWARNZEROCENTEREDINPUT Warn once when most baselines divided by are near zero.
+
+warnIfBaselineNearZero('Umitoolbox:normalizeBSLN:ZeroCenteredInput', 'normalizeBSLN', ...
+    lowBaselineCounts(1), lowBaselineCounts(2), ...
+    ['Apply normalizeBSLN to raw intensities, not to data that were already ' ...
+     'normalized (normalizeBSLN, normalizeZScore, normalizeLPF with Normalize = false).']);
 end
 
 % =========================================================================
@@ -401,7 +433,8 @@ else
     nBaseFrames = iResolveRecordingBaselineFrames(Nt, freqHz, baselineMode);
 end
 
-outData = iNormalizeBlock(data, nBaseFrames, b_centerAtOne);
+[outData, lowBaselineCounts] = iNormalizeBlock(data, nBaseFrames, b_centerAtOne);
+iWarnZeroCenteredInput(lowBaselineCounts);
 end
 
 function iDeleteIfExists(filePath)

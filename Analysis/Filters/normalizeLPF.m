@@ -78,6 +78,15 @@ function outData = normalizeLPF(data, SaveFolder, varargin)
 %         for event-split data) are masked pixels and are not filtered:
 %         NaN pixels stay NaN; 0 pixels give NaN with Normalize=true
 %         (0/0) and 0 otherwise.
+%       - With Normalize = true the result is divided by the low-pass
+%         baseline, so the input must be raw intensities. Zero-centered data
+%         (the output of normalizeBSLN without b_centerAtOne, normalizeZScore,
+%         or a baseline-subtracted signal) have a baseline near 0 and the
+%         division gives spikes of arbitrary size. When at least 20 % of the
+%         traces have a baseline smaller than 3 times their own fluctuation,
+%         the function warns once (Umitoolbox:normalizeLPF:ZeroCenteredInput);
+%         the result is not changed. Normalize = false does not divide and
+%         never warns.
 %       - A .dat input may be the normLPF.dat this function writes: the
 %         output goes through normLPF_writing.dat and is then moved.
 
@@ -180,17 +189,21 @@ if isnumeric(data) || islogical(data)
             'Numeric input must be YXT or YXTE.');
     end
 
+    lowBaselineCounts = [0 0];
     if ndims(data) == 3
-        outData = iFilterArray(single(data), BaselineCutoffHz, SignalCutoffHz, ...
-            bNormalize, bApplyExpFit, Fs);
+        [outData, lowBaselineCounts] = iFilterArray(single(data), BaselineCutoffHz, ...
+            SignalCutoffHz, bNormalize, bApplyExpFit, Fs);
     else
         % Event-split data: every trial is filtered along T on its own.
         outData = zeros(size(data), 'single');
         for iTrial = 1:size(data, 4)
-            outData(:,:,:,iTrial) = iFilterArray(single(data(:,:,:,iTrial)), ...
-                BaselineCutoffHz, SignalCutoffHz, bNormalize, bApplyExpFit, Fs);
+            [outData(:,:,:,iTrial), trialCounts] = iFilterArray( ...
+                single(data(:,:,:,iTrial)), BaselineCutoffHz, SignalCutoffHz, ...
+                bNormalize, bApplyExpFit, Fs);
+            lowBaselineCounts = lowBaselineCounts + trialCounts;
         end
     end
+    iWarnZeroCenteredInput(lowBaselineCounts);
     return
 end
 
@@ -202,9 +215,10 @@ if isFileInput
     switch ext
         case '.dat'
             outData = fullfile(SaveFolder, 'normLPF.dat');
-            iFilterFile(dataFile, fileInfo, outData, ...
+            lowBaselineCounts = iFilterFile(dataFile, fileInfo, outData, ...
                 BaselineCutoffHz, SignalCutoffHz, ...
                 bNormalize, bApplyExpFit, Fs);
+            iWarnZeroCenteredInput(lowBaselineCounts);
             return
 
         otherwise
@@ -317,9 +331,12 @@ end
 % =========================================================================
 % Helper: Filter one in-memory Y-X-T array while preserving NaNs
 % =========================================================================
-function outArray = iFilterArray(inArray, BaselineCutoffHz, SignalCutoffHz, ...
-    bNormalize, bApplyExpFit, Fs)
+function [outArray, lowBaselineCounts] = iFilterArray(inArray, BaselineCutoffHz, ...
+    SignalCutoffHz, bNormalize, bApplyExpFit, Fs)
 %IFILTERARRAY Filter one numeric YXT block along T.
+%
+% LOWBASELINECOUNTS is [traces examined, traces with a near-zero baseline]
+% (see COUNTLOWBASELINE); both stay 0 unless bNormalize divides.
 
 if ~isa(inArray, 'single')
     workArray = single(inArray);
@@ -349,11 +366,14 @@ lpass = iDesignLowpass(BaselineCutoffHz, Fs);
 hpass = iDesignLowpass(SignalCutoffHz, Fs);
 
 outArray = workArray;
+lowBaselineCounts = [0 0];
 PrcLims = round(linspace(1, dims(1), 11));
 fprintf('Progress: ');
 for ind = 1:dims(1)
     Signal = double(reshape(workArray(ind,:,:), dims(2), Nt));
-    outArray(ind,:,:) = single(iFilterSignal(Signal, Pred, lpass, hpass, bNormalize));
+    [filteredRow, rowCounts] = iFilterSignal(Signal, Pred, lpass, hpass, bNormalize);
+    outArray(ind,:,:) = single(filteredRow);
+    lowBaselineCounts = lowBaselineCounts + rowCounts;
 
     if any(ind == PrcLims)
         idx = find(ind == PrcLims);
@@ -370,8 +390,11 @@ end
 % =========================================================================
 % Helper: Stream a Y-X-T or Y-X-T-E .dat file through the filter
 % =========================================================================
-function iFilterFile(inFile, fMetaData, outDat, lowFreq, highFreq, bDivide, bExpFit, Freq)
+function lowBaselineCounts = iFilterFile(inFile, fMetaData, outDat, lowFreq, highFreq, bDivide, bExpFit, Freq)
 %IFILTERFILE Filter a .dat file in X slabs and write OUTDAT.
+%
+% LOWBASELINECOUNTS is [traces examined, traces with a near-zero baseline]
+% summed over slabs and trials (see COUNTLOWBASELINE).
 %
 % FMETADATA is the input's .dat Info (axes Y-X-T or Y-X-T-E, checked by the
 % caller). FREQ is the resolved frame rate of the data. Every pixel (of
@@ -447,6 +470,7 @@ if bExpFit
     end
 end
 
+lowBaselineCounts = [0 0];
 for c = 1:nChunks
     xIdx = ((c-1) * chunkX + 1):min(c * chunkX, Nx);
     nX = numel(xIdx);
@@ -471,7 +495,8 @@ for c = 1:nChunks
     for e = 1:Ne
         for y = 1:Ny
             Signal = double(reshape(slab(y,:,:,e), nX, Nt));
-            filtered = iFilterSignal(Signal, PredByTrial{e}, lpass, hpass, bDivide);
+            [filtered, rowCounts] = iFilterSignal(Signal, PredByTrial{e}, lpass, hpass, bDivide);
+            lowBaselineCounts = lowBaselineCounts + rowCounts;
             slab(y,:,:,e) = reshape(cast(filtered, dataType), 1, nX, Nt);
 
             if ~hasEvents
@@ -508,8 +533,14 @@ end
 % =========================================================================
 % Helpers: filtering primitives
 % =========================================================================
-function out = iFilterSignal(Signal, Pred, lpass, hpass, bDivide)
+function [out, lowBaselineCounts] = iFilterSignal(Signal, Pred, lpass, hpass, bDivide)
 %IFILTERSIGNAL Filter the traces (rows) of SIGNAL (nPixels x T, double).
+%
+% LOWBASELINECOUNTS is [traces examined, traces whose baseline is within 3
+% times their own fluctuation], measured on the input traces before any
+% exponential-fit correction; it is only computed when BDIVIDE is true, since
+% only the division by the baseline is unstable for zero-centered input.
+% Masked (all-zero) traces are not examined.
 %
 % PRED is the exponential-fit design matrix (empty: no fit). LPASS and
 % HPASS are the baseline and signal low-pass filters (empty: disabled).
@@ -520,6 +551,7 @@ function out = iFilterSignal(Signal, Pred, lpass, hpass, bDivide)
 % else 0. NaN pixels are restored to NaN by the callers. Every trace is
 % filtered on its own, so leaving rows out does not change the others.
 
+lowBaselineCounts = [0 0];
 isZero = all(Signal == 0, 2);
 out = zeros(size(Signal));
 if bDivide
@@ -530,6 +562,11 @@ if ~any(keep)
     return
 end
 Signal = Signal(keep, :);
+
+if bDivide
+    [lowBaselineCounts(1), lowBaselineCounts(2)] = countLowBaseline( ...
+        mean(Signal, 2), std(Signal, 0, 2));
+end
 
 if ~isempty(Pred)
     B = Pred \ Signal';
@@ -553,6 +590,16 @@ if bDivide
 else
     out(keep, :) = LP_high - LP_low;
 end
+end
+
+function iWarnZeroCenteredInput(lowBaselineCounts)
+%IWARNZEROCENTEREDINPUT Warn once when most baselines divided by are near zero.
+
+warnIfBaselineNearZero('Umitoolbox:normalizeLPF:ZeroCenteredInput', 'normalizeLPF', ...
+    lowBaselineCounts(1), lowBaselineCounts(2), ...
+    ['Apply normalizeLPF with Normalize = true to raw intensities (not after ' ...
+     'normalizeBSLN, normalizeZScore or another normalization), or set Normalize ' ...
+     'to false.']);
 end
 
 function filt = iDesignLowpass(cutoffHz, Fs)

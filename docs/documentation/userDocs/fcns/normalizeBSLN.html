@@ -65,6 +65,14 @@ nav_order: 4
         MATLAB drops a trailing singleton axis, so an event-split array with a single trial (E = 1) arrives as a 3-D (Y,X,T) array and cannot be used in <b>trial</b> mode. Use the <samp>.dat</samp> file in that case.
       </p>
     </div>
+    <div class="warnnote">
+      <p><strong>Warning</strong><br>
+        The result is divided by the baseline, so the input must be <b>raw intensities</b>. Data that are already zero-centered (the output of <samp>normalizeBSLN</samp> itself with <samp>b_centerAtOne</samp> set to <b>false</b>, the output of <samp>normalizeZScore</samp>, or a baseline-subtracted signal) have a baseline close to zero, and dividing by it gives results of arbitrary size.
+      </p>
+      <p>
+        When at least 20% of the pixels (and trials) have a baseline smaller than 3 times the spread of their baseline frames, the function raises the warning <samp>Umitoolbox:normalizeBSLN:ZeroCenteredInput</samp>, once per call, however many slabs the file is read in. The run continues and the result is not changed. The warning appears in the MATLAB Command Window and can be silenced with <samp>warning('off', 'Umitoolbox:normalizeBSLN:ZeroCenteredInput')</samp>. Data centered at one (<samp>b_centerAtOne</samp> set to <b>true</b>) are not flagged. The check needs at least 3 baseline frames and is skipped with fewer.
+      </p>
+    </div>
     <h3 id="the-algorithm"> The algorithm</h3>
     <hr>
     <p>

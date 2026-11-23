@@ -59,6 +59,14 @@ nav_order: 5
     <p>
       A <samp>.dat</samp> input is streamed in slabs (Low-RAM mode), so the recording is never loaded whole. Event-split data are filtered trial by trial along T and keep their E dimension unchanged.
     </p>
+    <div class="warnnote">
+      <p><strong>Warning</strong><br>
+        With <samp>Normalize</samp> set to <b>true</b> (default), the signal is divided by its low-pass baseline, so the input must be <b>raw intensities</b>. Data that are already zero-centered (the output of <samp>normalizeBSLN</samp> with <samp>b_centerAtOne</samp> set to <b>false</b>, the output of <samp>normalizeZScore</samp>, or a baseline-subtracted signal) have a baseline close to zero, and dividing by it gives spikes of arbitrary size.
+      </p>
+      <p>
+        When at least 20% of the traces have a baseline smaller than 3 times their own fluctuation, the function raises the warning <samp>Umitoolbox:normalizeLPF:ZeroCenteredInput</samp>, once per call, however many slabs or trials the data are read in. The run continues and the result is not changed. The warning appears in the MATLAB Command Window and can be silenced with <samp>warning('off', 'Umitoolbox:normalizeLPF:ZeroCenteredInput')</samp>. To filter data that were already normalized, set <samp>Normalize</samp> to <b>false</b> (no division, no warning).
+      </p>
+    </div>
     <h3 id="the-algorithm"> The algorithm</h3>
     <hr>
     <p>
@@ -144,6 +152,9 @@ nav_order: 5
     <div class="content">
       <p>
         Sets this parameter to <b>True</b> (default) to return the output signal (R) as &Delta;R/R, otherwise set to <b>False</b> to return the output signal as &Delta;R (see the <a href="#the-algorithm">algorithm</a>) sections for details).
+      </p>
+      <p>
+        With <b>True</b>, the input must be raw intensities: the function warns when the input looks zero-centered (see the warning in the <a href="#input">input</a> section).
       </p>
     </div>
     <button title="click to expand" type="button" class="mycollapsible">
