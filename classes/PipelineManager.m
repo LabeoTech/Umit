@@ -871,6 +871,10 @@ classdef PipelineManager < handle
             %
             % Behavior:
             %   - Iteratively validates the DAG and removes nodes implicated in errors.
+            %   - Also removes steps whose analysis function no longer exists
+            %     (validateNodeFunctions). A step that loses its input because
+            %     of a removal is reported by the graph validation on the next
+            %     pass and is removed in turn.
             %   - Removes all incident connections of removed nodes.
             %   - After validation passes, removes any completely disconnected FOLDER nodes.
             %     Assumption: folder nodes are always roots (no incoming edges).
@@ -899,13 +903,16 @@ classdef PipelineManager < handle
             for pass = 1:maxPasses
 
                 [tf, report] = obj.validateGraph('throwOnError', false);
+                [tfFunctions, functionReport] = obj.validateNodeFunctions('throwOnError', false);
 
-                if tf
+                if tf && tfFunctions
                     break
                 end
 
                 % Extract candidate node IDs from error messages (best-effort)
-                ids = localExtractNodeIDs(report.errors);
+                % and from steps whose analysis function no longer exists.
+                ids = [localExtractNodeIDs(report.errors), ...
+                    reshape([functionReport.nodeErrors.nodeID], 1, [])];
 
                 % Keep only IDs that still exist in the graph
                 ids = unique(ids,'stable');
@@ -1448,6 +1455,10 @@ classdef PipelineManager < handle
                 error('PipelineManager:executePipeline:InvalidGraph', ...
                     'Pipeline validation failed. Run obj.diagnosePipeline() for details. Fix graph errors before execution.');
             end
+
+            % A step whose analysis function no longer exists cannot run:
+            % refuse before any folder-level work.
+            obj.validateNodeFunctions('throwOnError', true);
 
             % Validate configured parameter values before any folder-level work.
             obj.validateNodeParameters('throwOnError', true);
@@ -2032,6 +2043,120 @@ classdef PipelineManager < handle
             end
         end
 
+        function [tf, report] = validateNodeFunctions(obj, varargin)
+            %VALIDATENODEFUNCTIONS Check that every step's analysis function exists.
+            %
+            %   tf = obj.validateNodeFunctions()
+            %   [tf, report] = obj.validateNodeFunctions('throwOnError', false)
+            %
+            %   A saved pipeline can name a function that was renamed or removed
+            %   after the pipeline was saved. Such a step cannot run, so it is
+            %   reported here as a blocking error. The check mirrors LOADPIPE:
+            %   the function recorded in node.info.name (else the callable name
+            %   derived from the node) must be in obj.funcList.
+            %
+            %   report.errors     - One message per missing function. When a
+            %                       current function has a similar name the
+            %                       message suggests it.
+            %   report.warnings   - Always empty (kept for symmetry).
+            %   report.nodeErrors - struct array (nodeID, message) so node-level
+            %                       diagnostics can mark the offending step.
+            %
+            %   It is a separate validity layer from validateGraph (structure)
+            %   and validateNodeParameters (configuration).
+
+            p = inputParser;
+            addParameter(p, 'throwOnError', false, @(x)islogical(x)&&isscalar(x));
+            parse(p, varargin{:});
+            throwOnError = p.Results.throwOnError;
+
+            report = struct('errors', {{}}, 'warnings', {{}}, ...
+                'nodeErrors', struct('nodeID', {}, 'message', {}));
+            tf = true;
+
+            % Without a function list the check cannot decide anything.
+            if isempty(obj.nodes) || isempty(obj.funcList)
+                return
+            end
+
+            knownNames = string({obj.funcList.name});
+
+            for iNode = 1:numel(obj.nodes)
+                node = obj.nodes(iNode);
+
+                if ~isfield(node, 'kind') || ~strcmpi(node.kind, 'stream')
+                    continue
+                end
+
+                savedName = "";
+                if isfield(node, 'info') && isfield(node.info, 'name') && ~isempty(node.info.name)
+                    savedName = string(node.info.name);
+                end
+                callableName = string(obj.getCallableFuncName(node));
+
+                if any(knownNames == savedName) || any(knownNames == callableName)
+                    continue
+                end
+
+                if strlength(savedName) > 0
+                    missingName = savedName;
+                else
+                    missingName = callableName;
+                end
+
+                msg = sprintf(['Node "%s" (nodeID %d): analysis function "%s" was not found. ' ...
+                    'It may have been renamed or removed since the pipeline was saved.'], ...
+                    char(string(node.name)), node.id, char(missingName));
+
+                suggestion = closestKnownName(missingName, knownNames);
+                if strlength(suggestion) > 0
+                    msg = sprintf('%s Did you mean "%s"?', msg, char(suggestion));
+                end
+
+                report.errors{end+1} = msg;
+                report.nodeErrors(end+1) = struct('nodeID', node.id, 'message', msg);
+            end
+
+            tf = isempty(report.errors);
+
+            if ~tf && throwOnError
+                error('PipelineManager:validateNodeFunctions:MissingFunctions', ...
+                    '%s', strjoin(report.errors, newline));
+            end
+
+            % =============================================================
+            % Local helpers
+            % =============================================================
+            function suggestion = closestKnownName(target, candidates)
+                %CLOSESTKNOWNNAME Similar current name, e.g. a removed "run_" prefix.
+
+                suggestion = "";
+                targetKey = nameKey(target);
+                if strlength(targetKey) < 4
+                    return
+                end
+
+                bestGap = inf;
+                for iCandidate = 1:numel(candidates)
+                    candidateKey = nameKey(candidates(iCandidate));
+                    if strlength(candidateKey) < 4
+                        continue
+                    end
+                    isSimilar = candidateKey == targetKey || ...
+                        contains(targetKey, candidateKey) || contains(candidateKey, targetKey);
+                    gap = abs(strlength(candidateKey) - strlength(targetKey));
+                    if isSimilar && gap < bestGap
+                        bestGap = gap;
+                        suggestion = candidates(iCandidate);
+                    end
+                end
+            end
+
+            function key = nameKey(name)
+                key = string(regexprep(lower(char(string(name))), '[^a-z0-9]', ''));
+            end
+        end
+
         function [tf, report] = validateNodePreflight(obj, varargin)
             %VALIDATENODEPREFLIGHT Run optional folder-aware node preflights.
             %
@@ -2166,9 +2291,12 @@ classdef PipelineManager < handle
             %                 updates cached node runtime validation.
             %
             %   Returned report fields:
-            %       isValid        - True only if graph and parameter checks pass.
+            %       isValid        - True only if graph, parameter and function
+            %                        availability checks pass.
             %       graphIsValid   - Result from validateGraph.
             %       paramsAreValid - Result from validateNodeParameters.
+            %       functionsAreValid - Result from validateNodeFunctions
+            %                        (every step's analysis function exists).
             %       errors         - Combined graph + parameter errors.
             %       warnings       - Combined graph + parameter warnings.
             %       graphReport    - Raw graph-validation report.
@@ -2192,15 +2320,19 @@ classdef PipelineManager < handle
             paramReport.errors = [paramReport.errors, preflightReport.errors];
             paramReport.warnings = [paramReport.warnings, preflightReport.warnings];
 
+            [tfFunctions, functionReport] = obj.validateNodeFunctions('throwOnError', false);
+
             report = struct();
-            report.isValid        = tfGraph && tfParams && tfPreflight;
+            report.isValid        = tfGraph && tfParams && tfPreflight && tfFunctions;
             report.graphIsValid   = tfGraph;
             report.paramsAreValid = tfParams && tfPreflight;
             report.preflightIsValid = tfPreflight;
-            report.errors         = [graphReport.errors, paramReport.errors];
-            report.warnings       = [graphReport.warnings, paramReport.warnings];
+            report.functionsAreValid = tfFunctions;
+            report.errors         = [graphReport.errors, paramReport.errors, functionReport.errors];
+            report.warnings       = [graphReport.warnings, paramReport.warnings, functionReport.warnings];
             report.graphReport    = graphReport;
             report.paramReport    = paramReport;
+            report.functionReport = functionReport;
             report.nodeStatus     = obj.buildNodeStatusTable(graphReport, paramReport);
             report.hasWarnings = istable(report.nodeStatus) && any(report.nodeStatus.status == "warning");
             report.hasInvalidNonblocking = istable(report.nodeStatus) && ...
@@ -2221,6 +2353,7 @@ classdef PipelineManager < handle
 
                 fprintf('Graph valid:      %d\n', logical(report.graphIsValid));
                 fprintf('Parameters valid: %d\n', logical(report.paramsAreValid));
+                fprintf('Functions found:  %d\n', logical(report.functionsAreValid));
 
                 if ~isempty(report.errors)
                     fprintf('\nErrors (%d):\n', numel(report.errors));
@@ -8097,11 +8230,16 @@ classdef PipelineManager < handle
             paramReport.errors = [paramReport.errors, preflightReport.errors];
             paramReport.warnings = [paramReport.warnings, preflightReport.warnings];
 
-            tf = tfGraph && tfParams && tfPreflight;
+            [tfFunctions, functionReport] = obj.validateNodeFunctions('throwOnError', false);
+
+            % The function check must be part of the verdict: loadPipe marks a
+            % pipeline with missing functions invalid, and this method would
+            % otherwise overwrite that result.
+            tf = tfGraph && tfParams && tfPreflight && tfFunctions;
 
             report = struct();
-            report.errors = [graphReport.errors, paramReport.errors];
-            report.warnings = [graphReport.warnings, paramReport.warnings];
+            report.errors = [graphReport.errors, paramReport.errors, functionReport.errors];
+            report.warnings = [graphReport.warnings, paramReport.warnings, functionReport.warnings];
             report.nodeStatus = obj.buildNodeStatusTable(graphReport, paramReport);
             report.hasInvalidNonblocking = istable(report.nodeStatus) && ...
                 any(report.nodeStatus.status == "invalid_nonblocking");
@@ -8191,6 +8329,15 @@ classdef PipelineManager < handle
             end
 
             nodeIDs = nodeID(:).';
+
+            % -------------------------------------------------------------
+            % Analysis-function availability (renamed/removed functions)
+            % -------------------------------------------------------------
+            [~, functionReport] = obj.validateNodeFunctions('throwOnError', false);
+            for iFunctionError = 1:numel(functionReport.nodeErrors)
+                addNodeMessage(functionReport.nodeErrors(iFunctionError).nodeID, "blocking", ...
+                    functionReport.nodeErrors(iFunctionError).message);
+            end
 
             % -------------------------------------------------------------
             % Non-blocking node hygiene checks
