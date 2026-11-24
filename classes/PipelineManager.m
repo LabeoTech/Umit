@@ -5771,8 +5771,10 @@ classdef PipelineManager < handle
 
             candidatePath = fullfile(char(string(saveFolder)), char(candidateName));
 
+            % A file this pipeline's own earlier run registered in dataHistory.mat
+            % is replaced in place; only other files keep a numbered name free.
             if isfile(candidatePath)
-                tf = true;
+                tf = ~obj.isReplaceableRegisteredOutput(saveFolder, candidateName);
                 return
             end
 
@@ -5793,7 +5795,92 @@ classdef PipelineManager < handle
 
             hits = dir(fullfile(searchFolder, [basePart '.*']));
             hits = hits(~[hits.isdir]);
-            tf = ~isempty(hits);
+            if isempty(hits)
+                return
+            end
+
+            tf = false;
+            for iHit = 1:numel(hits)
+                hitName = hits(iHit).name;
+                if ~isempty(folderPart)
+                    hitName = fullfile(folderPart, hitName);
+                end
+                if ~obj.isReplaceableRegisteredOutput(saveFolder, hitName)
+                    tf = true;
+                    return
+                end
+            end
+        end
+
+        function tf = isReplaceableRegisteredOutput(obj, saveFolder, fileName)
+            %ISREPLACEABLEREGISTEREDOUTPUT True when a run may overwrite FILENAME in place.
+            %
+            %   An automatic output name that already exists is replaced in place
+            %   (instead of getting a numbered copy) only when the file is listed
+            %   in the SaveFolder's dataHistory.mat, i.e. an earlier pipeline run
+            %   wrote it, and it is not a file this pipeline reads as an input. Any
+            %   other file with the same name is left alone and the new output gets
+            %   a numbered name.
+
+            tf = false;
+
+            saveFolder = char(string(saveFolder));
+            fileName = char(string(fileName));
+            if isempty(saveFolder) || isempty(strtrim(fileName))
+                return
+            end
+
+            [folderPart, baseName, extName] = fileparts(fileName);
+            if ~isempty(folderPart)
+                return
+            end
+            plainName = [baseName extName];
+
+            historyFile = fullfile(saveFolder, 'dataHistory.mat');
+            if ~isfile(historyFile)
+                return
+            end
+
+            try
+                S = load(historyFile, 'dataHistory');
+            catch
+                return
+            end
+            if ~isfield(S, 'dataHistory') || ~isstruct(S.dataHistory) || ...
+                    ~isfield(S.dataHistory, 'file')
+                return
+            end
+
+            registered = strings(0,1);
+            for iHist = 1:numel(S.dataHistory)
+                if ~isempty(S.dataHistory(iHist).file)
+                    registered(end+1,1) = string(S.dataHistory(iHist).file); %#ok<AGROW>
+                end
+            end
+            if ~any(strcmpi(registered, plainName))
+                return
+            end
+
+            % Never replace a file the pipeline itself reads.
+            for iNode = 1:numel(obj.nodes)
+                if ~obj.isHistoryProxyNode(obj.nodes(iNode))
+                    continue
+                end
+                try
+                    inputFile = obj.resolveProxyNodeFile(obj.nodes(iNode));
+                catch
+                    inputFile = '';
+                end
+                if isempty(inputFile)
+                    continue
+                end
+                [~, inBase, inExt] = fileparts(char(string(inputFile)));
+                if strcmpi([inBase inExt], plainName)
+                    return
+                end
+            end
+
+            tf = true;
         end
 
         function [tf, reason] = classifyViewerCompatibleFile(~, filePath, outputTypes, isFinalOutput)
@@ -6743,16 +6830,23 @@ classdef PipelineManager < handle
             end
         end
 
-        function [fixedNames, bChanged] = resolveUniqueSaveNames(obj, saveFolder, requestedNames, excludeNodeID)
+        function [fixedNames, bChanged] = resolveUniqueSaveNames(obj, saveFolder, requestedNames, excludeNodeID, allowRegisteredOverwrite)
             %RESOLVEUNIQUESAVENAMES Ensure save filenames are unique vs disk and pipeline.
             %
             % Only SAVEABLE outputs participate in the reserved-name set.
             % saveFileName on outputMode='file' outputs is ignored.
+            %
+            % ALLOWREGISTEREDOVERWRITE (default false): when true, an existing file
+            % that an earlier run registered in dataHistory.mat is not a collision
+            % (it is replaced in place). Used for names the manager planned itself.
 
             bChanged = false;
 
             if nargin < 4
                 excludeNodeID = [];
+            end
+            if nargin < 5 || isempty(allowRegisteredOverwrite)
+                allowRegisteredOverwrite = false;
             end
 
             if nargin < 3 || isempty(requestedNames)
@@ -6821,6 +6915,10 @@ classdef PipelineManager < handle
                 diskHit = false;
                 if ~isempty(sf)
                     diskHit = isfile(fullfile(sf, char(cand)));
+                    if diskHit && allowRegisteredOverwrite && ...
+                            obj.isReplaceableRegisteredOutput(sf, cand)
+                        diskHit = false;
+                    end
                 end
                 pipeHit = any(strcmpi(cand, reserved)) || any(strcmpi(cand, chosen));
 
@@ -9515,7 +9613,7 @@ classdef PipelineManager < handle
             % kept as a last line of defense when this method is called outside a
             % normal executePipeline run.
             if isprop(obj,'b_avoidOverwrite') && obj.b_avoidOverwrite
-                [fixedNames, ~] = obj.resolveUniqueSaveNames(saveFolder, requested);
+                [fixedNames, ~] = obj.resolveUniqueSaveNames(saveFolder, requested, [], true);
             else
                 fixedNames = requested;
             end
@@ -9731,6 +9829,11 @@ classdef PipelineManager < handle
             % array may stay in RAM afterwards: the host app keeps the manager
             % alive and a retained leaf would starve later data loads.
             releaseRamGuard = onCleanup(@() obj.releaseDataStoreRam());
+
+            % A run that ends without reaching the final cleanup (an error, or a
+            % cancel before the first step) must still remove its own intermediates.
+            runState = containers.Map({'reachedFinalCleanup'}, {false});
+            tempAbortGuard = onCleanup(@() obj.cleanupTempsIfRunAborted(runState));
 
             % Precompute consumer counts for DATA edges
             obj.buildConsumerCount();
@@ -10132,7 +10235,10 @@ classdef PipelineManager < handle
             % -------------------------------------------------------------
             % Final cleanup
             % -------------------------------------------------------------
-            obj.cleanupTemps();
+            % Cancelled or failed runs leave unfinished intermediates: remove
+            % them all. A clean run only drops unreferenced temporaries.
+            obj.cleanupTemps(wasCancelled || ~isempty(failedNodeIDs));
+            runState('reachedFinalCleanup') = true; %#ok<NASGU>
 
             % =============================================================
             % Local helpers
@@ -13373,8 +13479,30 @@ classdef PipelineManager < handle
             end
         end
 
-        function cleanupTemps(obj)
+        function cleanupTempsIfRunAborted(obj, runState)
+            %CLEANUPTEMPSIFRUNABORTED Force-remove intermediates when a folder run ended abnormally.
+            %
+            %   RUNSTATE is a containers.Map whose 'reachedFinalCleanup' entry the
+            %   folder run sets to true once it got through its normal final cleanup.
+
+            if ~runState('reachedFinalCleanup')
+                obj.cleanupTemps(true);
+            end
+        end
+
+        function cleanupTemps(obj, forceAll)
             %CLEANUPTEMPS Defensive cleanup for temp files not referenced by any dataStore record.
+            %
+            %   CLEANUPTEMPS(OBJ, TRUE) also removes the temp files a dataStore record
+            %   still references. A cancelled or failed folder run uses it: the
+            %   intermediates still tracked in obj.tempFiles at that point belong to
+            %   an unfinished run, so they must not stay on disk where a later run
+            %   could mistake them for results. Promoted outputs are no longer in
+            %   obj.tempFiles and are never touched.
+
+            if nargin < 2
+                forceAll = false;
+            end
 
             if isempty(obj.tempFiles)
                 return
@@ -13385,7 +13513,7 @@ classdef PipelineManager < handle
 
             for iK = 1:numel(keys)
                 rec = obj.dataStore(keys{iK});
-                if isfield(rec,'isTemp') && rec.isTemp && strlength(rec.fileName) > 0
+                if ~forceAll && isfield(rec,'isTemp') && rec.isTemp && strlength(rec.fileName) > 0
                     referenced(end+1) = string(rec.fileName); %#ok<AGROW>
                 end
             end
@@ -13608,7 +13736,7 @@ classdef PipelineManager < handle
                         continue
                     end
 
-                    ok = movefile(srcPath, finalDstPath);
+                    ok = movefile(srcPath, finalDstPath, 'f');
                     if ~ok
                         error('PipelineManager:saveNodeDataOutputs:MoveFailed', ...
                             'Failed to move temp file "%s" -> "%s".', srcPath, finalDstPath);
@@ -13625,14 +13753,8 @@ classdef PipelineManager < handle
                     end
 
                     % Update dataHistory only when a temporary file is promoted
-                    if updateDataHistoryOnMove && ~isempty(obj.dataHistory)
-                        for iHist = 1:numel(obj.dataHistory)
-                            if isfield(obj.dataHistory(iHist),'file') && ...
-                                    strcmpi(char(string(obj.dataHistory(iHist).file)), char(oldFileName))
-                                obj.dataHistory(iHist).file = char(finalFileName);
-                                b_historyChanged = true;
-                            end
-                        end
+                    if updateDataHistoryOnMove
+                        localRenameHistoryFile(oldFileName, finalFileName);
                     end
 
                     savedFiles(end+1,1) = finalFileName; %#ok<AGROW>
@@ -13646,8 +13768,32 @@ classdef PipelineManager < handle
 
                     saveArgs = obj.saveDataArgs(rec.ramValue, ...
                         obj.recordSourceInfo(rec), node.id, outName);
-                    savedPath = saveData(dstPath, rec.ramValue, saveArgs{:});
-                    savedPath = char(string(savedPath));
+                    if localTargetExists(dstPath)
+                        % Replacing an existing output: write a scratch file
+                        % first so a failed or cancelled write never leaves a
+                        % half-written output behind, then move it over.
+                        [dstDir, dstBase, dstExt] = fileparts(dstPath);
+                        scratchBase = fullfile(dstDir, sprintf('%s%s_replace_%s', ...
+                            obj.tempOutputPrefix, obj.currentTempSessionTag, dstBase));
+                        scratchPath = saveData([scratchBase dstExt], rec.ramValue, ...
+                            saveArgs{:}, 'ChannelName', dstBase);
+                        scratchPath = char(string(scratchPath));
+                        if ~isfile(scratchPath)
+                            scratchPath = fullfile(dstDir, scratchPath);
+                        end
+                        scratchGuard = onCleanup(@() localDeleteIfFile(scratchPath));
+                        [~, ~, scratchExt] = fileparts(scratchPath);
+                        savedPath = fullfile(dstDir, [dstBase scratchExt]);
+                        [okMove, moveMsg] = movefile(scratchPath, savedPath, 'f');
+                        if ~okMove
+                            error('PipelineManager:saveNodeDataOutputs:MoveFailed', ...
+                                'Failed to replace "%s": %s', savedPath, moveMsg);
+                        end
+                        clear scratchGuard
+                    else
+                        savedPath = saveData(dstPath, rec.ramValue, saveArgs{:});
+                        savedPath = char(string(savedPath));
+                    end
 
                     if ~isfile(savedPath)
                         savedPath = fullfile(saveFolder, savedPath);
@@ -13693,7 +13839,7 @@ classdef PipelineManager < handle
                         [~,srcBase,srcExt] = fileparts(srcPath);
                         oldFileName = string(srcBase) + string(srcExt);
 
-                        ok = movefile(srcPath, finalDstPath);
+                        ok = movefile(srcPath, finalDstPath, 'f');
                         if ~ok
                             error('PipelineManager:saveNodeDataOutputs:MoveFailed', ...
                                 'Failed to move file "%s" -> "%s".', srcPath, finalDstPath);
@@ -13707,14 +13853,8 @@ classdef PipelineManager < handle
                             remove(obj.dataStore, keyOld);
                         end
 
-                        if updateDataHistoryOnMove && ~isempty(obj.dataHistory)
-                            for iHist = 1:numel(obj.dataHistory)
-                                if isfield(obj.dataHistory(iHist),'file') && ...
-                                        strcmpi(char(string(obj.dataHistory(iHist).file)), char(oldFileName))
-                                    obj.dataHistory(iHist).file = char(finalFileName);
-                                    b_historyChanged = true;
-                                end
-                            end
+                        if updateDataHistoryOnMove
+                            localRenameHistoryFile(oldFileName, finalFileName);
                         end
 
                         if ~isempty(obj.current_outFile)
@@ -13722,7 +13862,21 @@ classdef PipelineManager < handle
                             obj.current_outFile(outMask) = [];
                         end
                     else
-                        ok = copyfile(srcPath, finalDstPath);
+                        if isfile(finalDstPath)
+                            % Replace through a scratch copy so the existing
+                            % output stays intact until the copy is complete.
+                            [copyDir, copyBase, copyExt] = fileparts(finalDstPath);
+                            scratchCopy = fullfile(copyDir, sprintf('%s%s_replace_%s%s', ...
+                                obj.tempOutputPrefix, obj.currentTempSessionTag, copyBase, copyExt));
+                            ok = copyfile(srcPath, scratchCopy);
+                            if ok
+                                scratchGuard = onCleanup(@() localDeleteIfFile(scratchCopy));
+                                ok = movefile(scratchCopy, finalDstPath, 'f');
+                                clear scratchGuard
+                            end
+                        else
+                            ok = copyfile(srcPath, finalDstPath);
+                        end
                         if ~ok
                             error('PipelineManager:saveNodeDataOutputs:CopyFailed', ...
                                 'Failed to copy file "%s" -> "%s".', srcPath, finalDstPath);
@@ -13753,6 +13907,54 @@ classdef PipelineManager < handle
             % =============================================================
             % Local helper
             % =============================================================
+            function tf = localTargetExists(targetPath)
+                %LOCALTARGETEXISTS True when the target file (any extension if none) exists.
+                [tDir, tBase, tExt] = fileparts(targetPath);
+                if ~isempty(tExt)
+                    tf = isfile(targetPath);
+                else
+                    hitsLocal = dir(fullfile(tDir, [tBase '.*']));
+                    tf = any(~[hitsLocal.isdir]);
+                end
+            end
+
+            function localRenameHistoryFile(oldFileName, newFileName)
+                %LOCALRENAMEHISTORYFILE Point history entries of a moved file at its new name.
+                %
+                % An entry already stored under the new name belongs to the output
+                % this file replaces: it is dropped, so the history keeps one entry
+                % per file.
+                if isempty(obj.dataHistory)
+                    return
+                end
+
+                files = strings(numel(obj.dataHistory), 1);
+                for iHistLocal = 1:numel(obj.dataHistory)
+                    if isfield(obj.dataHistory(iHistLocal), 'file') && ...
+                            ~isempty(obj.dataHistory(iHistLocal).file)
+                        files(iHistLocal) = string(obj.dataHistory(iHistLocal).file);
+                    end
+                end
+
+                isMoved = strcmpi(files, string(oldFileName));
+                if ~any(isMoved)
+                    return
+                end
+
+                isReplaced = strcmpi(files, string(newFileName)) & ~isMoved;
+                for iMoved = find(isMoved(:)).'
+                    obj.dataHistory(iMoved).file = char(string(newFileName));
+                end
+                obj.dataHistory = obj.dataHistory(~isReplaced);
+                b_historyChanged = true;
+            end
+
+            function localDeleteIfFile(filePathIn)
+                if isfile(filePathIn)
+                    delete(filePathIn);
+                end
+            end
+
             function [finalPath, finalFileName] = localResolveFinalPath(dstPathIn, srcPathIn)
                 %LOCALRESOLVEFINALPATH Resolve final destination path/file name.
                 %
@@ -14669,6 +14871,19 @@ classdef PipelineManager < handle
 
                     hSrc = hs.inputs(hIdx).source;
                     cSrc = cs.inputs(cIdx).source;
+
+                    % A prepended step is the stored history of the input file,
+                    % recorded wherever that file was made. Its folder paths are
+                    % not this pipeline's folders, so a copied or moved dataset
+                    % folder would never match: compare them with the history
+                    % the candidate itself carries instead of the runtime folder.
+                    if ~candidateStepIsNode(k) && ...
+                            (strcmpi(nm,'SaveFolder') || strcmpi(nm,'RawFolder'))
+                        if ~isequal(char(string(hSrc)), char(string(cSrc)))
+                            return
+                        end
+                        continue
+                    end
 
                     if strcmpi(nm,'SaveFolder')
                         if ~isequal(char(string(hSrc)), char(string(saveFolder)))
