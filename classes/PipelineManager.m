@@ -768,6 +768,9 @@ classdef PipelineManager < handle
             end
 
             function rollbackAndWarn(warnID, warnMsg, vararginLocal)
+                if ~iscell(vararginLocal)
+                    vararginLocal = {vararginLocal};
+                end
                 beep()
                 warning(warnID, warnMsg, vararginLocal{:});
 
@@ -4375,6 +4378,175 @@ classdef PipelineManager < handle
             end
 
             obj.dataHistory = savedHistory;
+        end
+
+        function [action, reason] = chooseDataViewerSource(obj, currentFilePath, storedSourceNodeID)
+            %CHOOSEDATAVIEWERSOURCE Keep or replace the pipeline's DataViewer input file.
+            %
+            %   [action, reason] = obj.chooseDataViewerSource(currentFilePath, storedSourceNodeID)
+            %
+            %   DataViewer-managed tools reopen with a persistent pipeline. CURRENTFILEPATH
+            %   is the file DataViewer shows, STOREDSOURCENODEID the FileSource node that
+            %   held the pipeline's input at the last opening (NaN or empty if none).
+            %
+            %   ACTION is "keep" or "swap":
+            %       keep - the stored source stays the pipeline input. The pipeline is then
+            %              a recipe rooted at that file: a re-run recomputes from it, or
+            %              reuses the stored result as a cached prefix (b_skipSteps), so
+            %              finished steps are not applied a second time to their own output.
+            %       swap - the shown file becomes the input.
+            %   REASON names the rule that applied:
+            %       "noStoredSource"                 no usable stored source node
+            %       "storedSourceMissing"            the stored source file is gone
+            %       "sameFile"                       the shown file is the stored source
+            %       "currentIsResultOfStoredSource"  the shown file was made from the stored
+            %                                        source (its history says so) or is a
+            %                                        stored result of this pipeline
+            %       "currentNotDerived"              the shown file is unrelated
+            %
+            %   Nothing is changed in the graph.
+
+            action = "swap";
+            reason = "noStoredSource";
+
+            currentFilePath = char(string(currentFilePath));
+            if nargin < 3 || isempty(storedSourceNodeID) || ~isnumeric(storedSourceNodeID) || ...
+                    ~isfinite(storedSourceNodeID(1)) || isempty(obj.nodes)
+                return
+            end
+
+            idx = find([obj.nodes.id] == double(storedSourceNodeID(1)), 1, 'first');
+            if isempty(idx) || ~obj.isHistoryProxyNode(obj.nodes(idx))
+                return
+            end
+
+            storedRef = obj.resolveProxyNodeFile(obj.nodes(idx));
+            if isempty(storedRef)
+                return
+            end
+
+            storedPath = char(string(storedRef));
+            [~, storedBase, storedExt] = fileparts(storedPath);
+            storedFileName = [storedBase storedExt];
+            if ~isfile(storedPath) && ~isempty(obj.SaveFolderList)
+                storedPath = fullfile(obj.SaveFolderList{1}, storedFileName);
+            end
+
+            if ~isfile(storedPath)
+                reason = "storedSourceMissing";
+                return
+            end
+
+            normalizePath = @(p) lower(regexprep(strrep(char(string(p)), '/', filesep), '[\\/]+$', ''));
+            if strcmp(normalizePath(currentFilePath), normalizePath(storedPath))
+                action = "keep";
+                reason = "sameFile";
+                return
+            end
+
+            if obj.isDerivedFromFile(currentFilePath, storedFileName) || ...
+                    obj.isCachedResultOfPipeline(currentFilePath)
+                action = "keep";
+                reason = "currentIsResultOfStoredSource";
+                return
+            end
+
+            reason = "currentNotDerived";
+        end
+
+        function tf = isDerivedFromFile(obj, filePath, sourceFileName)
+            %ISDERIVEDFROMFILE True when a file's history says it was made from a source file.
+            %
+            %   tf = obj.isDerivedFromFile(filePath, sourceFileName)
+            %
+            %   FILEPATH has an entry in the dataHistory.mat of its own folder; SOURCEFILENAME
+            %   is a file name (no folder). The file counts as derived when one recorded step
+            %   reads that file name as a data input, directly or through the history it
+            %   inherited from an earlier result. The in-memory history state is left
+            %   untouched. Returns false for files without a history entry and for anything
+            %   it cannot resolve.
+
+            tf = false;
+
+            filePath = char(string(filePath));
+            sourceFileName = char(string(sourceFileName));
+            if isempty(strtrim(filePath)) || isempty(strtrim(sourceFileName)) || ~isfile(filePath)
+                return
+            end
+
+            [folder, name, ext] = fileparts(filePath);
+            fileName = [name ext];
+
+            savedHistory = obj.dataHistory;
+
+            try
+                obj.loadDataHistory(folder);
+
+                for iHist = 1:numel(obj.dataHistory)
+                    entry = obj.dataHistory(iHist);
+                    if ~isfield(entry, 'file') || ~strcmpi(char(string(entry.file)), fileName) || ...
+                            ~isfield(entry, 'info')
+                        continue
+                    end
+
+                    for iStep = 1:numel(entry.info)
+                        step = entry.info(iStep);
+                        if ~isfield(step, 'inputs') || isempty(step.inputs)
+                            continue
+                        end
+
+                        for iIn = 1:numel(step.inputs)
+                            inName = char(string(step.inputs(iIn).name));
+                            if any(strcmpi(inName, {'SaveFolder', 'RawFolder', 'metaData'}))
+                                continue
+                            end
+
+                            src = char(string(step.inputs(iIn).source));
+                            colon = find(src == ':', 1, 'first');
+                            if isempty(colon)
+                                continue
+                            end
+
+                            if strcmpi(strtrim(src(colon + 1:end)), sourceFileName)
+                                tf = true;
+                                break
+                            end
+                        end
+                        if tf, break, end
+                    end
+                    break
+                end
+            catch
+                tf = false;
+            end
+
+            obj.dataHistory = savedHistory;
+        end
+
+        function missingFolders = findFoldersMissingFile(obj, fileRef)
+            %FINDFOLDERSMISSINGFILE SaveFolders that do not contain a file.
+            %
+            %   missingFolders = obj.findFoldersMissingFile(fileRef)
+            %
+            %   FILEREF is a file name or a full path; only the file name is used, so a
+            %   source picked in one folder can be checked against every SaveFolder of a
+            %   batch. Returns a column cellstr of SaveFolders without the file (empty when
+            %   every folder has it). Adding a step only checks the first folder, so batch
+            %   authoring uses this to warn about the others before a run.
+
+            [~, name, ext] = fileparts(char(string(fileRef)));
+            fileName = [name ext];
+
+            missingFolders = cell(0, 1);
+            if isempty(fileName)
+                return
+            end
+
+            for iFolder = 1:numel(obj.SaveFolderList)
+                if ~isfile(fullfile(obj.SaveFolderList{iFolder}, fileName))
+                    missingFolders{end + 1, 1} = obj.SaveFolderList{iFolder}; %#ok<AGROW>
+                end
+            end
         end
 
         %%%%%%--Pipeline Visualization  -----------------------------------
