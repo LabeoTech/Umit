@@ -104,6 +104,8 @@ classdef PipelineManager < handle
         executionProgressLog struct = struct([]) % Progress events emitted during the latest execution.
         cachedLeafFiles struct = struct('saveFolder', {}, 'nodeID', {}, 'fileName', {}) % Leaf results reused from dataHistory (skipped steps) in the latest execution.
         currentExecutionWasCancelled logical = false % TRUE when the latest executePipeline run was cancelled by request.
+        executionStepWarnings table = table(strings(0,1), strings(0,1), strings(0,1), strings(0,1), strings(0,1), ...
+            'VariableNames', {'SaveFolder','StepTag','FunctionName','Identifier','Message'}) % Warnings raised by analysis functions during the latest execution.
         metaData
     end
 
@@ -1431,6 +1433,7 @@ classdef PipelineManager < handle
             obj.currentLeafOutputPolicy = runLeafPolicy;
             obj.currentTempSessionTag = obj.makeTempSessionTag();
             obj.executionProgressLog = struct([]);
+            obj.executionStepWarnings = obj.executionStepWarnings(false(height(obj.executionStepWarnings), 1), :);
             obj.cachedLeafFiles = struct('saveFolder', {}, 'nodeID', {}, 'fileName', {});
             obj.currentExecutionWasCancelled = false;
 
@@ -1794,7 +1797,8 @@ classdef PipelineManager < handle
                     globalStatus = "Cancelled";
                     shortErrMsg  = folderSkipMsg;
                     longErrMsg   = folderSkipMsg;
-                    outputFilesStr = "";
+                    % Steps that finished before the stop did create their files.
+                    outputFilesStr = obj.joinCurrentOutFiles();
 
                 elseif folderWasSkipped
 
@@ -1889,45 +1893,14 @@ classdef PipelineManager < handle
                     % ---------------------------------------------------------
                     % Files created during this run only
                     % ---------------------------------------------------------
-                    if isempty(obj.current_outFile)
-                        outputFilesStr = "";
-                    else
-                        outFiles = string(obj.current_outFile(:));
-                        outFiles = strip(outFiles);
-                        outFiles = outFiles(strlength(outFiles) > 0);
-                        outFiles = unique(outFiles, 'stable');
-
-                        if isempty(outFiles)
-                            outputFilesStr = "";
-                        else
-                            outputFilesStr = strjoin(outFiles, ", ");
-                        end
-                    end
+                    outputFilesStr = obj.joinCurrentOutFiles();
                 end
 
                 % ---------------------------------------------------------
                 % Append one summary row for this folder
                 % ---------------------------------------------------------
-                newRow = table( ...
-                    {char(string(obj.SaveFolderList_truncated{f}))}, ...
-                    {char(string(obj.RawFolderList_truncated{f}))}, ...
-                    {char(globalStatus)}, ...
-                    {char(shortErrMsg)}, ...
-                    {char(longErrMsg)}, ...
-                    folderStartedOn, ...
-                    folderFinishedOn, ...
-                    folderDuration_s, ...
-                    {char(outputFilesStr)}, ...
-                    'VariableNames', { ...
-                    'SaveFolder', ...
-                    'RawFolder', ...
-                    'Status', ...
-                    'Messages_short', ...
-                    'Messages_long', ...
-                    'StartedOn', ...
-                    'FinishedOn', ...
-                    'Duration_s', ...
-                    'OutputFiles'} );
+                newRow = obj.makeGlobalLogRow(f, globalStatus, shortErrMsg, longErrMsg, ...
+                    folderStartedOn, folderFinishedOn, folderDuration_s, outputFilesStr);
 
                 obj.globalPipeLog = [obj.globalPipeLog; newRow];
 
@@ -1959,6 +1932,14 @@ classdef PipelineManager < handle
                 if folderWasCancelled
                     break
                 end
+            end
+
+            % A stop leaves the remaining folders untouched: record them so the
+            % per-folder log and the counters always cover every selected folder.
+            notRunMsg = "Not run: the run was cancelled before this folder started.";
+            for fNotRun = height(obj.globalPipeLog) + 1 : numel(obj.SaveFolderList)
+                obj.globalPipeLog = [obj.globalPipeLog; obj.makeGlobalLogRow( ...
+                    fNotRun, "Not run", notRunMsg, notRunMsg, NaT, NaT, 0, "")];
             end
 
             executionFinishedOn = datetime('now');
@@ -5263,6 +5244,8 @@ classdef PipelineManager < handle
             result.progressLog = obj.executionProgressLog;
             result.outputManifest = outputManifest;
             result.createdFiles = obj.buildCreatedFilesTableFromGlobalLog();
+            result.stepWarnings = obj.executionStepWarnings;
+            result.folderSummary = obj.buildFolderSummary(result.createdFiles);
             result.viewerCompatibleFinalOutputs = outputManifest(isFinalViewer, :);
             result.unsavedFinalOutputs = outputManifest(isUnsavedFinal, :);
         end
@@ -5929,6 +5912,88 @@ classdef PipelineManager < handle
             end
 
             reason = "Unsupported DataViewer file extension.";
+        end
+
+        function row = makeGlobalLogRow(obj, folderIdx, status, shortMsg, longMsg, ...
+                startedOn, finishedOn, duration_s, outputFilesStr)
+            %MAKEGLOBALLOGROW One per-folder row of the global run summary log.
+
+            row = table( ...
+                {char(string(obj.SaveFolderList_truncated{folderIdx}))}, ...
+                {char(string(obj.RawFolderList_truncated{folderIdx}))}, ...
+                {char(status)}, ...
+                {char(shortMsg)}, ...
+                {char(longMsg)}, ...
+                startedOn, ...
+                finishedOn, ...
+                duration_s, ...
+                {char(outputFilesStr)}, ...
+                'VariableNames', { ...
+                'SaveFolder', ...
+                'RawFolder', ...
+                'Status', ...
+                'Messages_short', ...
+                'Messages_long', ...
+                'StartedOn', ...
+                'FinishedOn', ...
+                'Duration_s', ...
+                'OutputFiles'} );
+        end
+
+        function outputFilesStr = joinCurrentOutFiles(obj)
+            %JOINCURRENTOUTFILES Files recorded for the folder being run, comma separated.
+
+            outputFilesStr = "";
+            if isempty(obj.current_outFile)
+                return
+            end
+
+            outFiles = string(obj.current_outFile(:));
+            outFiles = strip(outFiles);
+            outFiles = outFiles(strlength(outFiles) > 0);
+            outFiles = unique(outFiles, 'stable');
+
+            if ~isempty(outFiles)
+                outputFilesStr = strjoin(outFiles, ", ");
+            end
+        end
+
+        function recordStepWarning(obj, stepTag, saveFolder, funcName, previousMessage, previousId)
+            %RECORDSTEPWARNING Keep the warning an analysis function raised, then restore lastwarn.
+            %
+            %   Called when a step's function returns or fails. lastwarn holds the
+            %   last warning raised since it was cleared before the call, so a step
+            %   that raises several different warnings is recorded with the last one.
+            %   Warnings do not change the run status.
+
+            [msg, id] = lastwarn;
+            if ~isempty(msg)
+                obj.executionStepWarnings(end+1, :) = {string(saveFolder), string(stepTag), ...
+                    string(funcName), string(id), string(msg)};
+            end
+            lastwarn(previousMessage, previousId);
+        end
+
+        function summary = buildFolderSummary(obj, createdFiles)
+            %BUILDFOLDERSUMMARY Counts of the latest run, one outcome per selected folder.
+
+            nSelected = numel(obj.SaveFolderList);
+            statusVals = strings(0,1);
+            if istable(obj.globalPipeLog) && ismember('Status', obj.globalPipeLog.Properties.VariableNames)
+                statusVals = string(obj.globalPipeLog.Status);
+            end
+
+            summary = PipelineManager.countFolderOutcomes(statusVals, nSelected);
+
+            summary.nCreatedFiles = 0;
+            summary.nTemporaryFiles = 0;
+            if istable(createdFiles) && ~isempty(createdFiles)
+                exists = logical(createdFiles.FileExists);
+                temporary = logical(createdFiles.IsTemporary);
+                summary.nCreatedFiles = sum(exists & ~temporary);
+                summary.nTemporaryFiles = sum(exists & temporary);
+            end
+            summary.nStepWarnings = height(obj.executionStepWarnings);
         end
 
         function status = summarizeGlobalExecutionStatus(obj)
@@ -10478,6 +10543,14 @@ classdef PipelineManager < handle
                     'functionName', funcName, ...
                     'message', sprintf('Stop requested before running function "%s".', funcName));
 
+                % Keep the warning the function raises (also when it fails):
+                % lastwarn is cleared before the call and read when the guard
+                % goes out of scope, which restores the caller's lastwarn.
+                [previousWarnMsg, previousWarnId] = lastwarn;
+                lastwarn('');
+                stepWarningGuard = onCleanup(@() obj.recordStepWarning( ...
+                    stepNode.name, saveFolderLocal, funcName, previousWarnMsg, previousWarnId));
+
                 if nOut == 0
                     f(posArgs{:}, nvArgs{:});
                 else
@@ -10487,6 +10560,7 @@ classdef PipelineManager < handle
                         [returnedValues{:}] = f(posArgs{:}, nvArgs{:});
                     end
                 end
+                clear stepWarningGuard
 
                 outCell = cell(1, numel(outputsLocal));
                 outCell(returnedOutputIndices) = returnedValues;
@@ -16290,6 +16364,91 @@ classdef PipelineManager < handle
 
     methods (Static)
 
+        function summary = countFolderOutcomes(statusVals, nSelected)
+            %COUNTFOLDEROUTCOMES Count folder outcomes in the six categories.
+            %
+            %   summary = PipelineManager.countFolderOutcomes(statusVals, nSelected)
+            %
+            %   STATUSVALS are the Status entries of the per-folder run log
+            %   ('Completed', 'Partially executed', 'Failed', 'Skipped', 'Cancelled',
+            %   'Not run'); NSELECTED is the number of selected folders. Every
+            %   selected folder falls in exactly one category, so the counts add up
+            %   to NSELECTED: a folder missing from the log counts as not run and an
+            %   unknown status as other.
+            %   Fields: nSelected, nCompleted, nCompletedWithErrors, nFailed,
+            %   nSkipped, nCancelled, nNotRun, nOther.
+
+            vals = lower(strtrim(string(statusVals(:))));
+
+            summary = struct();
+            summary.nSelected = nSelected;
+            summary.nCompleted = sum(vals == "completed");
+            summary.nCompletedWithErrors = sum(vals == "partially executed");
+            summary.nFailed = sum(vals == "failed");
+            summary.nSkipped = sum(vals == "skipped");
+            summary.nCancelled = sum(vals == "cancelled");
+            summary.nNotRun = sum(vals == "not run");
+
+            nKnown = summary.nCompleted + summary.nCompletedWithErrors + summary.nFailed + ...
+                summary.nSkipped + summary.nCancelled + summary.nNotRun;
+            summary.nOther = numel(vals) - nKnown;
+
+            % Folders with no log row at all were never reached.
+            summary.nNotRun = summary.nNotRun + max(0, nSelected - numel(vals));
+        end
+
+        function txt = formatFolderSummary(result)
+            %FORMATFOLDERSUMMARY One sentence with the folder counts and created files of a run.
+            %
+            %   txt = PipelineManager.formatFolderSummary(result)
+            %
+            %   The dialog, the activity log and the summary window use this one
+            %   text, so they always agree. RESULT is the struct returned by
+            %   executePipeline. A result without result.folderSummary (built by
+            %   hand) is counted from its globalPipeLog. Never throws.
+
+            s = [];
+            if isstruct(result) && isscalar(result) && isfield(result, 'folderSummary') && ...
+                    isstruct(result.folderSummary)
+                s = result.folderSummary;
+            elseif isstruct(result) && isscalar(result) && isfield(result, 'globalPipeLog') && ...
+                    istable(result.globalPipeLog) && ...
+                    ismember('Status', result.globalPipeLog.Properties.VariableNames)
+                statusVals = string(result.globalPipeLog.Status);
+                s = PipelineManager.countFolderOutcomes(statusVals, numel(statusVals));
+                s.nCreatedFiles = 0;
+                s.nTemporaryFiles = 0;
+                s.nStepWarnings = 0;
+                if isfield(result, 'createdFiles') && istable(result.createdFiles) && ...
+                        all(ismember({'FileExists','IsTemporary'}, result.createdFiles.Properties.VariableNames))
+                    exists = logical(result.createdFiles.FileExists);
+                    temporary = logical(result.createdFiles.IsTemporary);
+                    s.nCreatedFiles = sum(exists & ~temporary);
+                    s.nTemporaryFiles = sum(exists & temporary);
+                end
+            end
+
+            if isempty(s)
+                txt = 'Folders: no run information.';
+                return
+            end
+
+            txt = sprintf(['Folders: %d selected, %d completed, %d completed with errors, ' ...
+                '%d failed, %d skipped, %d cancelled, %d not run. Created files: %d.'], ...
+                s.nSelected, s.nCompleted, s.nCompletedWithErrors, s.nFailed, ...
+                s.nSkipped, s.nCancelled, s.nNotRun, s.nCreatedFiles);
+
+            if s.nOther > 0
+                txt = [txt sprintf(' Other: %d.', s.nOther)];
+            end
+            if s.nTemporaryFiles > 0
+                txt = [txt sprintf(' Temporary files: %d.', s.nTemporaryFiles)];
+            end
+            if s.nStepWarnings > 0
+                txt = [txt sprintf(' Step warnings: %d.', s.nStepWarnings)];
+            end
+        end
+
         function info = describeExecutionResult(resultOrError)
             %DESCRIBEEXECUTIONRESULT One-sentence outcome of a pipeline run, for dialogs.
             %
@@ -16361,6 +16520,20 @@ classdef PipelineManager < handle
                 otherwise
                     info.severity = 'info';
                     info.message = sprintf('Pipeline finished (status: %s).', char(statusText));
+            end
+
+            % Warnings raised by steps never change the status, but the outcome
+            % points at them so a clean-looking run does not hide them.
+            nStepWarnings = 0;
+            if isstruct(resultOrError) && isscalar(resultOrError) && ...
+                    isfield(resultOrError, 'stepWarnings') && istable(resultOrError.stepWarnings)
+                nStepWarnings = height(resultOrError.stepWarnings);
+            end
+            if nStepWarnings > 0
+                info.message = [info.message sprintf(' %d step warning(s): see the run summary.', nStepWarnings)];
+                if strcmp(info.severity, 'success')
+                    info.severity = 'warning';
+                end
             end
         end
 
