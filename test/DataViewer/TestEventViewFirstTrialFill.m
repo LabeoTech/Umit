@@ -1,4 +1,4 @@
-classdef TestEventViewFirstTrialFill < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestEventViewFirstTrialFill < matlab.unittest.TestCase
     %TESTEVENTVIEWFIRSTTRIALFILL Event view of a first trial that starts before the recording.
     %
     %   Covers planEventViewFrames, padEventTrialTrace and eventAverageFrame,

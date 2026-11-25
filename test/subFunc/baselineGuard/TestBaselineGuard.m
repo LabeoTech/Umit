@@ -1,4 +1,4 @@
-classdef TestBaselineGuard < matlab.unittest.TestCase
+classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestBaselineGuard < matlab.unittest.TestCase
     %TESTBASELINEGUARD countLowBaseline and warnIfBaselineNearZero.
     %
     %   The two helpers let a step that divides by a per-trace baseline notice
