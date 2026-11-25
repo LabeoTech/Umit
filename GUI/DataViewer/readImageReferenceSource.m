@@ -13,7 +13,9 @@ function [referenceImage, sourceInfo] = readImageReferenceSource(sourceFile, opt
 %       .tif/.tiff - Single image or multi-page TIFF stack.
 %       .dat       - UMIT DAT image time series using DatImageSource.
 %       .umt       - UMIT image source using UMTImageSource.
-%       .mat       - MAT-file variable selected from 2D numeric arrays.
+%       .mat       - MAT-file variable selected from 2D numeric arrays, or an
+%                    Image Reference file written by exportImageReferenceFile
+%                    (its ImageReference.image).
 %
 %   Behavior:
 %       - TIF stack: average up to maxFramesToAverage evenly spaced pages.
@@ -209,6 +211,22 @@ if isempty(vars)
         'MAT file contains no variables.');
 end
 
+% A file written by exportImageReferenceFile holds one struct variable,
+% 'ImageReference', whose .image is the reference. Read the image from it, so an
+% exported reference can be used as the source of a new one.
+[isExported, referenceImage] = iReadExportedImageReference(matFile, vars, opts);
+if isExported
+    referenceImage = iValidateReferenceImage(referenceImage);
+    sourceInfo = iBaseSourceInfo(matFile, 'external_mat', size(referenceImage));
+    sourceInfo.nSourceFrames = 1;
+    sourceInfo.usedFrameIndex = 1;
+    sourceInfo.selectedEntry = '';
+    sourceInfo.selectedVariable = 'ImageReference';
+    sourceInfo.sourceFrame = [];
+    sourceInfo.processingNotes = 'Created from an exported Image Reference file.';
+    return
+end
+
 candidateMask = arrayfun(@iIs2DNumericMatVariable, vars);
 candidateVars = vars(candidateMask);
 
@@ -251,6 +269,38 @@ sourceInfo.sourceFrame = [];
 sourceInfo.processingNotes = sprintf( ...
     'Created from MAT file variable "%s".', selectedVariable);
 
+end
+
+function [isExported, referenceImage] = iReadExportedImageReference(matFile, vars, opts)
+%IREADEXPORTEDIMAGEREFERENCE The image of an exported Image Reference file, if it is one.
+%
+% True when the file has a struct variable 'ImageReference' with a 2D numeric
+% 'image' field and the caller did not name another variable.
+
+isExported = false;
+referenceImage = [];
+
+if strlength(opts.Variable) > 0 && opts.Variable ~= "ImageReference"
+    return
+end
+
+isStruct = any(strcmp({vars.name}, 'ImageReference') & strcmp({vars.class}, 'struct'));
+if ~isStruct
+    return
+end
+
+S = load(matFile, 'ImageReference');
+R = S.ImageReference;
+if ~isstruct(R) || ~isscalar(R) || ~isfield(R, 'image') || ~isnumeric(R.image) || ...
+        ~ismatrix(R.image) || min(size(R.image)) < 2
+    return
+end
+
+referenceImage = R.image;
+if issparse(referenceImage)
+    referenceImage = full(referenceImage);
+end
+isExported = true;
 end
 
 % =========================================================================

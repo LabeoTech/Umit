@@ -2698,7 +2698,17 @@ classdef PipelineManager < handle
 
             assert(isfile(pipeFile), 'The file "%s" doesn''t exist!', pipeFile);
 
-            S = load(pipeFile,'-mat');
+            try
+                S = load(pipeFile,'-mat');
+            catch ME
+                % MATLAB's own text ("Not a binary MAT-file. Try load -ASCII ...") is
+                % meaningless for a pipeline file; keep it as the cause.
+                [~, pipeName, pipeExt] = fileparts(pipeFile);
+                ME2 = MException('PipelineManager:loadPipe:InvalidFile', ...
+                    '"%s" is not a valid pipeline file (it could not be read).', ...
+                    [pipeName pipeExt]);
+                throw(addCause(ME2, ME));
+            end
 
             if ~isfield(S,'pipeStruct')
                 error('PipelineManager:loadPipe:InvalidFile', ...
@@ -16291,6 +16301,9 @@ classdef PipelineManager < handle
 
                         elseif isnumeric(p.allowed) && numel(p.allowed)==2
 
+                            % The control's own limits stop out-of-range values being
+                            % entered at all (it shows a red outline and a tooltip and
+                            % reverts the field).
                             c = uieditfield(gl,'numeric');
                             c.Limits = p.allowed;
                             c.Value  = p.value;

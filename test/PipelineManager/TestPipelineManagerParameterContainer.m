@@ -132,6 +132,17 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestPipelineManagerPa
             testCase.verifyEmpty(testCase.AppliedLog);
         end
 
+        function numericFieldKeepsItsLimitsSoInvalidValuesCannotBeEntered(testCase)
+            % The control's own limits are the first line of defence: out-of-range
+            % typing is refused (red outline, tooltip, field reverts) before Apply.
+            [pm, tag] = testCase.newPipeline();
+            pm.setParameters(tag, testCase.Panel);
+            gain = findall(testCase.Panel, 'Type', 'uinumericeditfield');
+
+            testCase.verifyEqual(gain.Limits, [0 10]);
+            testCase.verifyError(@() set(gain, 'Value', -1), ?MException);
+        end
+
         function resetRestoresDefaultsInControls(testCase)
             [pm, tag] = testCase.newPipeline();
             pm.setParameters(tag, testCase.Panel);
