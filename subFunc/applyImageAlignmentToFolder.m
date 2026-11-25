@@ -79,6 +79,15 @@ function report = applyImageAlignmentToFolder(targetFolder, finalTform, opts)
 %       report - Compact operation report (also saved as
 %                manualAlignmentReport_<datetime>.mat).
 %
+%   Temporary pipeline outputs (PMTMP_*.dat):
+%       They are aligned with the recording, because they can be saved as permanent
+%       files later and an old-size copy would be a wrong-size file in an aligned
+%       folder. One that cannot be aligned (unreadable, not single precision, first
+%       two axes not Y and X, or a frame size different from the folder's) is skipped
+%       instead of blocking the folder. See classifyAlignmentDatFiles. The report
+%       records both groups: temporaryDatFilesTransformed (also part of
+%       datFilesTransformed) and datFilesSkipped ("name: reason").
+%
 %   Notes:
 %       .dat files must have Y and X as their first two axes (Y-X, Y-X-T,
 %       Y-X-E, Y-X-T-E, ...) and share one frame size; every Y-X plane is
@@ -161,8 +170,13 @@ if opts.keepEstimate
 end
 AcqInfoStream = iLoadAcqInfos(targetFolder);
 
-datFiles = dir(fullfile(targetFolder, '*.dat'));
-datInfos = iDescribeDatFiles(datFiles, opts.transformDat);
+% Temporary PMTMP_* outputs are aligned with the recording; one that cannot be aligned
+% is skipped and reported instead of blocking the folder.
+datClass = classifyAlignmentDatFiles(targetFolder, opts.transformDat);
+datFiles = datClass.files;
+datInfos = datClass.infos;
+tempDatNames = string({datFiles(datClass.isTemporary).name}).';
+report.datFilesSkipped = iSkippedDatText(datClass.skipped);
 
 oldSizeYX = iResolveOldSizeYX(AcqInfoStream, DataParams, datFiles, datInfos);
 report.oldSizeYX = oldSizeYX;
@@ -209,6 +223,9 @@ try
         staged = iAddStaged(staged, datPlan(iFile).Path, tmpPath);
         iTransformDatFile(datPlan(iFile), finalTform, referenceView, tmpPath);
         report.datFilesTransformed(end+1,1) = string(datPlan(iFile).Name);
+        if any(strcmpi(datPlan(iFile).Name, tempDatNames))
+            report.temporaryDatFilesTransformed(end+1,1) = string(datPlan(iFile).Name);
+        end
     end
 
     for iFile = 1:numel(umtPlan)
@@ -293,6 +310,8 @@ report.preFlipHorizontally = logical(opts.preFlipHorizontally);
 report.createdBy = char(opts.createdBy);
 report.reportPath = '';
 report.datFilesTransformed = strings(0,1);
+report.temporaryDatFilesTransformed = strings(0,1);
+report.datFilesSkipped = strings(0,1);
 report.umtFilesTransformed = strings(0,1);
 report.umtFilesSkipped = strings(0,1);
 report.roiFilesTransformed = strings(0,1);
@@ -388,31 +407,12 @@ transformedMask = imwarp(single(oldMask), finalTform, ...
     'FillValues', single(0)) > 0.5;
 end
 
-function datInfos = iDescribeDatFiles(datFiles, doTransform)
-%IDESCRIBEDATFILES loadMetaData of every .dat that will be transformed.
+function text = iSkippedDatText(skipped)
+%ISKIPPEDDATTEXT "name: reason" lines for the temporary .dat files left out.
 
-datInfos = cell(1, numel(datFiles));
-if ~doTransform
-    return
-end
-for iFile = 1:numel(datFiles)
-    datPath = fullfile(datFiles(iFile).folder, datFiles(iFile).name);
-    if ~isfile(datPath)
-        error('ImageAlignmentTool:MissingDatFile', ...
-            'DAT file disappeared during preflight: %s', datPath);
-    end
-    info = loadMetaData(datPath);
-    % umIT supports only single-precision .dat files: refuse before anything is written.
-    assertSingleDat(info, 'Context', sprintf('"%s"', datFiles(iFile).name));
-    dimNames = cellstr(string(info.dimNames));
-    dimNames = dimNames(:).';
-    if numel(dimNames) < 2 || ~isequal(dimNames(1:2), {'Y', 'X'})
-        error('ImageAlignmentTool:UnsupportedLayout', ...
-            ['DAT file "%s" has dimensions {%s}. Alignment needs image data ' ...
-             'whose first two axes are Y and X.'], ...
-            datFiles(iFile).name, strjoin(dimNames, ','));
-    end
-    datInfos{iFile} = info;
+text = strings(0, 1);
+for iSkip = 1:numel(skipped)
+    text(end + 1, 1) = string(skipped(iSkip).name) + ": " + string(skipped(iSkip).reason); %#ok<AGROW>
 end
 end
 
@@ -1336,6 +1336,7 @@ fprintf(fid, 'New image size [Y X]: %s\n\n', mat2str(failureInfo.report.newSizeY
 fprintf(fid, 'Files staged before the failure\n');
 fprintf(fid, '-------------------------------\n');
 iWriteStringList(fid, 'DAT files', failureInfo.report.datFilesTransformed);
+iWriteStringList(fid, 'Temporary DAT files skipped', failureInfo.report.datFilesSkipped);
 iWriteStringList(fid, 'UMT files', failureInfo.report.umtFilesTransformed);
 iWriteStringList(fid, 'ROI files', failureInfo.report.roiFilesTransformed);
 

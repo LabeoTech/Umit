@@ -236,6 +236,90 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestApplyRegistration
                 fullfile(testCase.TempFolder, 'maps.dat')).dimSizes(:).'), [fx.Ny fx.Nx 2]);
         end
 
+        function testClassifierListsTemporaryOutputsAndSkipsUnalignableOnes(testCase)
+            fx = testCase.Fixture;
+            green = single(loadData(fullfile(testCase.TempFolder, 'green.dat')));
+            writeTestDat(fullfile(testCase.TempFolder, 'PMTMP_20261125_100000_001_1234_stepA_1_outData.dat'), ...
+                green, 10, 'DimNames', {'Y','X','T'});
+            writeTestDat(fullfile(testCase.TempFolder, 'PMTMP_20261125_100000_002_1234_crop_1_outData.dat'), ...
+                green(1:10, 1:12, :), 10, 'DimNames', {'Y','X','T'});
+
+            plan = classifyAlignmentDatFiles(testCase.TempFolder);
+
+            testCase.verifyEqual(sort(string({plan.files.name}).'), ...
+                sort(["green.dat"; "red.dat"; ...
+                "PMTMP_20261125_100000_001_1234_stepA_1_outData.dat"]));
+            testCase.verifyEqual(sum(plan.isTemporary), 1);
+            testCase.verifyEqual(plan.sizeYX, [fx.Ny fx.Nx]);
+            testCase.verifyEqual(numel(plan.skipped), 1);
+            testCase.verifyEqual(string(plan.skipped.name), ...
+                "PMTMP_20261125_100000_002_1234_crop_1_outData.dat");
+            testCase.verifySubstring(plan.skipped.reason, '10 x 12');
+        end
+
+        function testAlignsACompatibleTemporaryOutputAndLabelsItInTheReport(testCase)
+            green = single(loadData(fullfile(testCase.TempFolder, 'green.dat')));
+            tempName = 'PMTMP_20261125_100000_001_1234_stepA_1_outData.dat';
+            writeTestDat(fullfile(testCase.TempFolder, tempName), green * 2, 10, ...
+                'DimNames', {'Y','X','T'});
+
+            applyRegistrationTformOnFolder(testCase.TempFolder, ...
+                'RequireUserConfirmation', false, 'OpenQCFigure', false);
+
+            registeredGreen = single(loadData(fullfile(testCase.TempFolder, 'green.dat')));
+            registeredTemp = single(loadData(fullfile(testCase.TempFolder, tempName)));
+            testCase.verifyEqual(size(registeredTemp), size(registeredGreen));
+            % The temporary file is the recording's green data times two, warped alike.
+            testCase.verifyEqual(registeredTemp, registeredGreen * 2, 'AbsTol', 1e-4);
+
+            report = iLoadLatestReport(testCase.TempFolder);
+            testCase.verifyTrue(any(report.datFilesTransformed == string(tempName)));
+            testCase.verifyEqual(report.temporaryDatFilesTransformed, string(tempName));
+            testCase.verifyEmpty(report.datFilesSkipped);
+        end
+
+        function testSkipsUnalignableTemporaryOutputsInsteadOfBlockingTheFolder(testCase)
+            fx = testCase.Fixture;
+            green = single(loadData(fullfile(testCase.TempFolder, 'green.dat')));
+            cropName = 'PMTMP_20261125_100000_002_1234_crop_1_outData.dat';
+            layoutName = 'PMTMP_20261125_100000_003_1234_odd_1_outData.dat';
+            writeTestDat(fullfile(testCase.TempFolder, cropName), green(1:10, 1:12, :), 10, ...
+                'DimNames', {'Y','X','T'});
+            writeLegacyDat(testCase.TempFolder, erase(layoutName, '.dat'), ...
+                zeros(2, fx.Ny, fx.Nx, 'single'), 'single', {'T','Y','X'});
+            cropBefore = computeFileChecksum(fullfile(testCase.TempFolder, cropName));
+            layoutBefore = computeFileChecksum(fullfile(testCase.TempFolder, layoutName));
+            beforeGreen = loadData(fullfile(testCase.TempFolder, 'green.dat'));
+
+            applyRegistrationTformOnFolder(testCase.TempFolder, ...
+                'RequireUserConfirmation', false, 'OpenQCFigure', false);
+
+            testCase.verifyFalse(isequal(beforeGreen, ...
+                loadData(fullfile(testCase.TempFolder, 'green.dat'))));
+            testCase.verifyEqual(computeFileChecksum(fullfile(testCase.TempFolder, cropName)), cropBefore);
+            testCase.verifyEqual(computeFileChecksum(fullfile(testCase.TempFolder, layoutName)), layoutBefore);
+
+            report = iLoadLatestReport(testCase.TempFolder);
+            testCase.verifyEqual(numel(report.datFilesSkipped), 2);
+            testCase.verifyTrue(any(startsWith(report.datFilesSkipped, string(cropName) + ": ")));
+            testCase.verifyTrue(any(startsWith(report.datFilesSkipped, string(layoutName) + ": ")));
+            testCase.verifyFalse(any(report.datFilesTransformed == string(cropName)));
+            testCase.verifyEmpty(report.temporaryDatFilesTransformed);
+        end
+
+        function testAPermanentFileOfAnotherSizeStillBlocksTheFolder(testCase)
+            green = single(loadData(fullfile(testCase.TempFolder, 'green.dat')));
+            writeTestDat(fullfile(testCase.TempFolder, 'cropped.dat'), green(1:10, 1:12, :), 10, ...
+                'DimNames', {'Y','X','T'});
+            before = snapshotRegistrationFiles(testCase.TempFolder);
+
+            testCase.verifyError(@() applyRegistrationTformOnFolder( ...
+                testCase.TempFolder, 'RequireUserConfirmation', false), ...
+                'ImageAlignmentTool:InconsistentDatSizes');
+
+            verifyRegistrationSnapshot(testCase, testCase.TempFolder, before);
+        end
+
         function testRegistersImageUMTAndLeavesOtherUMTsAlone(testCase)
             fx = testCase.Fixture;
             green = single(loadData(fullfile(testCase.TempFolder, 'green.dat')));
@@ -517,4 +601,12 @@ roi = struct('name', name, 'type', 'polygon', 'DOC', datetime('now'), ...
         'ROIParameters', struct('ROIType', 'polygon', 'Position', vertices, ...
         'Vertices', vertices)), ...
     'mask', mask, 'stats', stats);
+end
+
+function report = iLoadLatestReport(folder)
+%ILOADLATESTREPORT The alignment report written by the apply (the only one in the folder).
+listing = dir(fullfile(folder, 'manualAlignmentReport_*.mat'));
+assert(isscalar(listing), 'Expected exactly one manualAlignmentReport.');
+S = load(fullfile(folder, listing.name), 'report');
+report = S.report;
 end

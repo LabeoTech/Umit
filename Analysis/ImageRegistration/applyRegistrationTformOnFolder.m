@@ -14,6 +14,8 @@ function varargout = applyRegistrationTformOnFolder(SaveFolder, varargin)
 %       - every .dat whose first two axes are Y and X (Y-X, Y-X-T, Y-X-E,
 %         Y-X-T-E, ...), every image .umt entry and every current-format
 %         .roi file is aligned; DataParams.mask and DataParams.view follow;
+%       - temporary pipeline outputs (PMTMP_*.dat) are aligned too; one that cannot be
+%         aligned is skipped and listed in the report instead of blocking the folder;
 %       - the output frame is the reference image size;
 %       - linear interpolation, zero fill; NaN pixels are restored through
 %         the warped NaN mask;
@@ -135,6 +137,14 @@ modified = [report.datFilesTransformed; report.umtFilesTransformed; ...
     report.roiFilesTransformed; report.metadataFilesUpdated];
 for iFile = 1:numel(modified)
     fprintf('  - %s\n', modified(iFile));
+end
+if ~isempty(report.temporaryDatFilesTransformed)
+    fprintf('Temporary outputs transformed with the recording:\n');
+    fprintf('  - %s\n', report.temporaryDatFilesTransformed);
+end
+if ~isempty(report.datFilesSkipped)
+    fprintf('Temporary outputs skipped (not alignable):\n');
+    fprintf('  - %s\n', report.datFilesSkipped);
 end
 fprintf('Alignment report:\n  - %s\n\n', report.reportPath);
 
