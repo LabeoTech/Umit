@@ -125,7 +125,11 @@ function outData = correctMotionArtifact(data, SaveFolder, varargin)
 %   Overwrite=true, which has no suffix to tell it apart. The function
 %   records every .dat file it writes (name, size and modification time) in
 %   "MotionCorrectionLog.mat", next to that file; the record is kept even
-%   when SaveShifts is false. Replacing or regenerating the file, for
+%   when SaveShifts is false. The modification time is stored twice:
+%   "modified" (milliseconds since 1970, what the check compares) and
+%   "modifiedText" (the same instant as local time, yyyy-MM-dd HH:mm:ss.SSS,
+%   for people reading the log, for example in its JSON copy). Logs written
+%   before "modifiedText" existed get it when the next file is recorded. Replacing or regenerating the file, for
 %   example by importing it again, makes it a new file that is no longer
 %   recognized as corrected. Copies renamed outside this function, and files
 %   corrected by older versions that kept no record, cannot be recognized.
@@ -519,6 +523,34 @@ ms = double(java.io.File(filePath).lastModified());
 
 end
 
+function text = iReadableTime(ms)
+%IREADABLETIME Local time of a millisecond timestamp, as text.
+
+moment = datetime(ms / 1000, 'ConvertFrom', 'posixtime', 'TimeZone', 'local', ...
+    'Format', 'yyyy-MM-dd HH:mm:ss.SSS');
+text = char(moment);
+
+end
+
+function log = iAddReadableTime(log, template)
+%IADDREADABLETIME Give entries of an older log the readable time field.
+%
+% Logs written before 'modifiedText' existed lack it, and a struct array cannot
+% take a new entry with different fields. The text is derived from 'modified'.
+
+for k = 1:numel(log)
+    if ~isfield(log, 'modifiedText') || isempty(log(k).modifiedText)
+        log(k).modifiedText = iReadableTime(log(k).modified);
+    end
+end
+if isempty(log)
+    log = template([]);
+else
+    log = orderfields(log, template);
+end
+
+end
+
 function iRecordCorrection(destPath, entry, transformType)
 %IRECORDCORRECTION Record a .dat file this function just wrote.
 %
@@ -528,7 +560,11 @@ function iRecordCorrection(destPath, entry, transformType)
 [folder, name, ext] = fileparts(destPath);
 logFile = fullfile(folder, 'MotionCorrectionLog.mat');
 d = dir(destPath);
-rec = struct('file', [name ext], 'bytes', d.bytes, 'modified', iModifiedMs(destPath), ...
+modifiedMs = iModifiedMs(destPath);
+% 'modified' (milliseconds since 1970) is what iPriorCorrection compares;
+% 'modifiedText' is the same instant as readable local time.
+rec = struct('file', [name ext], 'bytes', d.bytes, 'modified', modifiedMs, ...
+    'modifiedText', iReadableTime(modifiedMs), ...
     'inputFile', entry.name, 'transformType', transformType, ...
     'appliedOn', char(datetime('now', 'Format', 'yyyy-MM-dd HH:mm:ss')), ...
     'appliedBy', mfilename);
@@ -537,7 +573,7 @@ MotionCorrectionLog = rec([]);
 if isfile(logFile)
     try
         S = load(logFile, 'MotionCorrectionLog');
-        MotionCorrectionLog = S.MotionCorrectionLog;
+        MotionCorrectionLog = iAddReadableTime(S.MotionCorrectionLog, rec);
     catch
         warning('Umitoolbox:correctMotionArtifact:UnreadableLog', ...
             'Could not read "%s"; it was replaced.', logFile);

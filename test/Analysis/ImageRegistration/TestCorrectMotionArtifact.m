@@ -296,6 +296,43 @@ classdef (SharedTestFixtures = {UMITTemporaryRootFixture}) TestCorrectMotionArti
                 dir(fullfile(testCase.TempFolder, 'green_MotionCorrected.dat')).bytes);
         end
 
+        function testLogStoresTheModifiedTimeAsReadableText(testCase)
+            correctMotionArtifact('green.dat', testCase.TempFolder, ...
+                'SaveShifts', false, 'ShowPlot', false);
+
+            S = load(fullfile(testCase.TempFolder, 'MotionCorrectionLog.mat'), 'MotionCorrectionLog');
+            entry = S.MotionCorrectionLog;
+            testCase.verifyClass(entry.modifiedText, 'char');
+            testCase.verifyNotEmpty(regexp(entry.modifiedText, ...
+                '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$', 'once'));
+            % The text is the same instant as the numeric value the guard compares.
+            readBack = datetime(entry.modifiedText, 'InputFormat', 'yyyy-MM-dd HH:mm:ss.SSS', ...
+                'TimeZone', 'local');
+            testCase.verifyEqual(posixtime(readBack) * 1000, entry.modified, 'AbsTol', 1);
+        end
+
+        function testOlderLogWithoutReadableTimeIsUpgradedAndStillRecognised(testCase)
+            % green.dat is corrected in place: only the log can recognise it afterwards.
+            correctMotionArtifact('green.dat', testCase.TempFolder, ...
+                'Overwrite', true, 'SaveShifts', false, 'ShowPlot', false);
+            logFile = fullfile(testCase.TempFolder, 'MotionCorrectionLog.mat');
+            S = load(logFile, 'MotionCorrectionLog');
+            MotionCorrectionLog = rmfield(S.MotionCorrectionLog, 'modifiedText');
+            save(logFile, 'MotionCorrectionLog');
+
+            correctMotionArtifact('red.dat', testCase.TempFolder, ...
+                'Overwrite', true, 'SaveShifts', false, 'ShowPlot', false);
+
+            S = load(logFile, 'MotionCorrectionLog');
+            log = S.MotionCorrectionLog;
+            testCase.verifyEqual(sort({log.file}), {'green.dat', 'red.dat'});
+            testCase.verifyTrue(all(arrayfun(@(e) ~isempty(e.modifiedText), log)));
+            % The upgraded entry still carries its numeric time, so it stays recognised.
+            testCase.verifyError(@() correctMotionArtifact('green.dat', ...
+                testCase.TempFolder, 'SaveShifts', false, 'ShowPlot', false), ...
+                'Umitoolbox:correctMotionArtifact:AlreadyCorrected');
+        end
+
         function testSuffixedCorrectedFileIsRefused(testCase)
             outFile = correctMotionArtifact('green.dat', testCase.TempFolder, ...
                 'SaveShifts', false, 'ShowPlot', false);
